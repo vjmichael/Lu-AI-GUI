@@ -74,3 +74,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .composer.dragActive{border:2px dashed #9bcdff;background:#27405b}
 
 .message .userText{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:14px;margin-top:10px}
+
+/* R21: window-wide, pointer-transparent drop target; WebView2 HTML5 drop. */
+.shell.appDragActive::after{content:"";position:fixed;inset:16px;border:3px dashed #69b7f7;border-radius:16px;background:rgba(32,82,129,.14);z-index:18;pointer-events:none}
+.appDropHint{position:fixed;z-index:19;left:50%;top:46%;transform:translate(-50%,-50%);background:#213b55;border:1px solid #85bff0;border-radius:12px;color:#f4faff;padding:16px 22px;box-shadow:0 12px 40px rgba(0,0,0,.38);pointer-events:none}
+.busyHint .spinner{will-change:transform}
+@media(prefers-reduced-motion:reduce){.busyHint .spinner{animation:none;will-change:auto}}

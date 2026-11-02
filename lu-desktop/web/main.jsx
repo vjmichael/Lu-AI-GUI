@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
+import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 
@@ -30,6 +31,7 @@ function App() {
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [working, setWorking] = useState(false);
+  const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -71,6 +73,13 @@ function App() {
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
     !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
+  useEffect(() => {
+    if (!(working && activity.startsWith('Loading'))) { setModelLoadSeconds(0); return; }
+    const started = Date.now();
+    setModelLoadSeconds(0);
+    const timer = setInterval(() => setModelLoadSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
 
   async function refreshCatalog() {
@@ -372,7 +381,7 @@ function App() {
     }
     const items = Array.from(files || []).slice(0, 8);
     for (const file of items) {
-      if (file.type === 'image/png' || file.type === 'image/jpeg') {
+      if (isPotentialImage(file)) {
         if (file.size <= 0 || file.size > MAX_IMAGE_ATTACHMENT) {
           setError(`Image ${file.name} exceeds the 8 MB limit`); continue;
         }
@@ -380,11 +389,12 @@ function App() {
           setError('Load an MMProj-compatible model before attaching images'); continue;
         }
         try {
+          const normalized = await normalizedImageFile(file);
           const dataUrl = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result);
             reader.onerror = () => reject(Error('Could not read image'));
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(normalized.blob);
           });
           const image = await invoke('lu_ingest_image_data_url', {dataUrl});
           if (image) {
@@ -394,7 +404,7 @@ function App() {
             if (previous.some(p => p.imageRef === image.imageRef)) URL.revokeObjectURL(previewUrl);
             else {
               previewUrls.current.add(previewUrl);
-              storeAttachment('images',[...previous,{...image, name:file.name, size:file.size, previewUrl}]);
+              storeAttachment('images',[...previous,{...image, name:file.name, size:file.size, previewUrl, detectedMimeType: normalized.mimeType}]);
             }
           }
         } catch (error) { setError(String(error)); }
@@ -427,7 +437,14 @@ function App() {
   }
   function handleDrop(event) {
     event.preventDefault(); setDragActive(false);
+    if (!loaded) { setError('Load a model before attaching files'); return; }
     void importAttachments(event.dataTransfer?.files);
+  }
+  function handleAppDrag(event) {
+    if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
+      event.preventDefault();
+      if (loaded) setDragActive(true);
+    }
   }
   function beginComposerDrag(event) {
     event.preventDefault();
@@ -447,7 +464,11 @@ function App() {
       <option value="">—</option>{folders.map(f => <option key={f.folderId} value={f.folderId}>{f.name}</option>)}
     </select>
   </div>;
-  return <div className="shell">
+  return <div className={'shell' + (dragActive ? ' appDragActive' : '')}
+    onDragEnter={handleAppDrag}
+    onDragOver={handleAppDrag}
+    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false); }}
+    onDrop={handleDrop}>
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">L</div><div><strong>Lu</strong><small>Independent desktop</small></div></div>
       <button className="newChatButton" onClick={newChat}><span>＋</span> New Chat</button>
@@ -487,7 +508,7 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint"><span className="spinner"></span> Loading model…</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
@@ -536,15 +557,11 @@ function App() {
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
         {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>}
-        {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}
-          onDragEnter={e => {e.preventDefault();setDragActive(true);}}
-          onDragOver={e => e.preventDefault()}
-          onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false);}}
-          onDrop={handleDrop}>
+        {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
-              <span title={im.name || im.mimeType}>{im.name || im.mimeType}</span>
+              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
               <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
             {textFiles.map((file,i)=><span key={i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
@@ -566,6 +583,7 @@ function App() {
           </div></form>}
       </div>
     </main>
+    {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
     {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <header><div><h2>Settings</h2><small>Local model management</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
