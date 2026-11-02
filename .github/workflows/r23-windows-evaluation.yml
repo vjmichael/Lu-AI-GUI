@@ -1,0 +1,127 @@
+# One-off Windows packaging verification for Lu R23.
+# GitHub remains the source repository; development and physical acceptance are separate.
+name: R23 Windows evaluation build
+on:
+  push:
+    branches: [lu/r23-per-model-inference-profiles-20261102]
+    paths: [.github/workflows/r23-windows-evaluation.yml]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rust 1.98 MSVC
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --target x86_64-pc-windows-msvc
+          rustup default 1.98.0
+          rustc --version
+      - name: Test R23 frontend
+        working-directory: lu-desktop
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run check
+          npm run test:ui
+      - name: Install pinned Vulkan SDK, Ninja and NSIS
+        run: |
+          choco install vulkan-sdk --version=1.4.350 -y --no-progress
+          choco install ninja nsis -y --no-progress
+          $sdk = 'C:\VulkanSDK\1.4.350.0'
+          if (!(Test-Path "$sdk\Bin\glslc.exe")) { throw 'Vulkan SDK shader compiler missing' }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          "$sdk\Bin" >> $env:GITHUB_PATH
+          'C:\Program Files (x86)\NSIS' >> $env:GITHUB_PATH
+      - name: Build pinned llama.cpp Vulkan server
+        run: |
+          git clone https://github.com/ggml-org/llama.cpp.git "$env:RUNNER_TEMP\llama.cpp"
+          git -C "$env:RUNNER_TEMP\llama.cpp" checkout --detach 7fe450e19305b828c199d602c23a8337aaa1f03b
+          $actual = git -C "$env:RUNNER_TEMP\llama.cpp" rev-parse HEAD
+          if ($actual -ne '7fe450e19305b828c199d602c23a8337aaa1f03b') { throw 'Unpinned engine revision' }
+          cmake -S "$env:RUNNER_TEMP\llama.cpp" -B "$env:RUNNER_TEMP\llama-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON -DLLAMA_BUILD_SERVER=ON -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'llama.cpp configure failed' }
+          cmake --build "$env:RUNNER_TEMP\llama-build" --target llama-server --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan llama.cpp build failed' }
+      - name: Pin exact engine and CRT package in ephemeral build
+        run: |
+          $dir = 'lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $engine = Get-ChildItem "$env:RUNNER_TEMP\llama-build" -Recurse -Filter llama-server.exe | Select-Object -First 1
+          if (!$engine) { throw 'llama-server.exe not found' }
+          Copy-Item $engine.FullName "$dir/llama-server.exe"
+          $crt = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022' -Recurse -ErrorAction SilentlyContinue -Filter vcruntime140_1.dll | Where-Object { $_.FullName -match 'x64\\Microsoft\\VC' } | Select-Object -First 1
+          if (!$crt) { throw 'VS x64 VC++ redistributable missing' }
+          foreach ($name in @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            $source = Join-Path $crt.DirectoryName $name
+            if (!(Test-Path $source)) { throw "Required CRT library missing: $name" }
+            Copy-Item $source "$dir/$name"
+          }
+          $entries = @()
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            $path = Join-Path $dir $name
+            $entries += [ordered]@{name=$name;sha256=(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant();bytes=(Get-Item $path).Length}
+          }
+          [ordered]@{upstreamCommit='7fe450e19305b828c199d602c23a8337aaa1f03b';engineVariant='vulkan';files=$entries} | ConvertTo-Json -Depth 5 | Set-Content "$dir/manifest.json"
+          $hostFile='lu-desktop/src-tauri/src/lib.rs'
+          $source=Get-Content $hostFile -Raw
+          $source=[regex]::Replace($source,'const ENGINE_SHA256: &str = "[a-f0-9]{64}";','const ENGINE_SHA256: &str = "'+$entries[0].sha256+'";')
+          $array=@'
+          const ENGINE_FILES: [(&str, &str, u64); 4] = [
+              ("llama-server.exe", ENGINE_SHA256, ENGINE_BYTES),
+              ("msvcp140.dll", "CRT_MSVCP_SHA", CRT_MSVCP_BYTES),
+              ("vcruntime140.dll", "CRT_VCRUNTIME_SHA", CRT_VCRUNTIME_BYTES),
+              ("vcruntime140_1.dll", "CRT_VCRUNTIME1_SHA", CRT_VCRUNTIME1_BYTES),
+          ];
+          '@
+          $array=$array.Replace('ENGINE_BYTES',[string]$entries[0].bytes).Replace('CRT_MSVCP_SHA',$entries[1].sha256).Replace('CRT_MSVCP_BYTES',[string]$entries[1].bytes).Replace('CRT_VCRUNTIME_SHA',$entries[2].sha256).Replace('CRT_VCRUNTIME_BYTES',[string]$entries[2].bytes).Replace('CRT_VCRUNTIME1_SHA',$entries[3].sha256).Replace('CRT_VCRUNTIME1_BYTES',[string]$entries[3].bytes)
+          $source=[regex]::Replace($source,'(?s)const ENGINE_FILES: \[\(&str, &str, u64\); 4\] = \[.*?\];',[System.Text.RegularExpressions.MatchEvaluator]{param($m) $array})
+          if (!$source.Contains($entries[0].sha256)) { throw 'Engine hash patch failed' }
+          [System.IO.File]::WriteAllText((Resolve-Path $hostFile),$source)
+      - name: Compile independent Tauri desktop
+        working-directory: lu-desktop/src-tauri
+        run: |
+          cargo test --locked --no-run
+          if ($LASTEXITCODE -ne 0) { throw 'Windows cargo test compilation failed' }
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Cargo release build failed' }
+      - name: Embed Common Controls v6 and package NSIS installer
+        run: |
+          $exe=(Resolve-Path 'lu-desktop/src-tauri/target/release/lu-desktop.exe').Path
+          $mf=Join-Path $env:RUNNER_TEMP 'lu-r23.manifest'
+          @'
+          <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+          <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+            <assemblyIdentity version="1.0.0.0" processorArchitecture="amd64" name="LuDesktop" type="win32"/>
+            <dependency><dependentAssembly>
+              <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+            </dependentAssembly></dependency>
+          </assembly>
+          '@ | Set-Content $mf
+          & mt.exe -manifest $mf "-outputresource:$exe;#1"
+          if ($LASTEXITCODE -ne 0) { throw 'Common Controls v6 embedding failed' }
+          $nsi='lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi'
+          (Get-Content $nsi -Raw).Replace('R20','R23') | Set-Content "$env:RUNNER_TEMP\r23.nsi"
+          $readme=Join-Path $env:RUNNER_TEMP 'README_R23_DEV_EVAL_NOT_ALPHA.txt'
+          'Lu R23 Windows x64 — development evaluation only. Verify inference profiles and Qwen on a physical AMD Vulkan machine. Not alpha-approved.' | Set-Content $readme
+          $output=Join-Path $env:GITHUB_WORKSPACE 'Lu_R23_Windows_Development_Evaluation_NOT_ALPHA.exe'
+          $engine=(Resolve-Path 'lu-desktop/src-tauri/resources/lu-inference').Path
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' "/DLU_DESKTOP_EXE=$exe" "/DLU_ENGINE_DIR=$engine" "/DLU_OUTFILE=$output" "/DLU_README=$readme" "$env:RUNNER_TEMP\r23.nsi"
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $output)) { throw 'NSIS packaging failed' }
+          Get-FileHash $output -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lu-R23-Windows-DEV-EVAL-NOT-ALPHA
+          path: Lu_R23_Windows_Development_Evaluation_NOT_ALPHA.exe
+          if-no-files-found: error
+          retention-days: 14
