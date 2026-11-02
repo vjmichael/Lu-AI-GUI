@@ -329,6 +329,36 @@ pub fn read_saved_multimodal_turn(
     Ok(SavedMultimodalTurn { prompt, images })
 }
 
+/// Lu-owned bounded sampling profile, applied equally to text and image chat.
+#[derive(Debug, Clone, Copy)]
+pub struct ChatSampling {
+    pub temperature: f32,
+    pub top_p: f32,
+    pub top_k: u32,
+    pub min_p: f32,
+}
+impl Default for ChatSampling {
+    fn default() -> Self {
+        Self {
+            temperature: 0.6,
+            top_p: 0.95,
+            top_k: 20,
+            min_p: 0.0,
+        }
+    }
+}
+impl ChatSampling {
+    pub fn valid(&self) -> bool {
+        self.temperature.is_finite()
+            && (0.0..=2.0).contains(&self.temperature)
+            && self.top_p.is_finite()
+            && (0.01..=1.0).contains(&self.top_p)
+            && (1..=100).contains(&self.top_k)
+            && self.min_p.is_finite()
+            && (0.0..=1.0).contains(&self.min_p)
+    }
+}
+
 /// The caller must first verify its model is loaded WITH the correct MMProj.
 /// On the current llama.cpp endpoint, image data is a user message `image_url`.
 /// No WebView/model-supplied URL is ever forwarded to the engine.
@@ -341,6 +371,25 @@ pub fn build_structured_chat_request(
     images: &[PinnedImage],
     max_new_tokens: u32,
 ) -> Result<String, MultimodalError> {
+    build_structured_chat_request_with_sampling(
+        prompt,
+        history,
+        images,
+        max_new_tokens,
+        ChatSampling::default(),
+    )
+}
+
+pub fn build_structured_chat_request_with_sampling(
+    prompt: &str,
+    history: &[crate::inference_host::ChatTurn],
+    images: &[PinnedImage],
+    max_new_tokens: u32,
+    sampling: ChatSampling,
+) -> Result<String, MultimodalError> {
+    if !sampling.valid() {
+        return Err(MultimodalError::InvalidGeneration);
+    }
     if prompt.trim().is_empty()
         || prompt.len() > MAX_PROMPT_BYTES
         || !(1..=32768).contains(&max_new_tokens)
@@ -386,10 +435,10 @@ pub fn build_structured_chat_request(
     } else {
         messages.push(json!({"role":"user","content":parts}));
     }
-    Ok(
-        json!({"messages":messages,"max_tokens":max_new_tokens,"temperature":0.0,"stream":true})
-            .to_string(),
-    )
+    Ok(json!({"messages":messages,"max_tokens":max_new_tokens,
+               "temperature":sampling.temperature,"top_p":sampling.top_p,
+               "top_k":sampling.top_k,"min_p":sampling.min_p,"stream":true})
+    .to_string())
 }
 
 /// Compatibility wrapper for the existing saved multimodal turn parser.

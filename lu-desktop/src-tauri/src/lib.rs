@@ -3,10 +3,12 @@
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
 mod generation_queue;
+mod inference_profile;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
+use inference_profile::InferenceProfile;
 use lu_core::{
     inference_bridge::BridgeError,
     inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
@@ -14,7 +16,7 @@ use lu_core::{
     mmproj_admission::admit_projector,
     model_admission::ModelAdmissionManager,
     model_import::{import_selected_gguf, import_selected_projector},
-    multimodal_saved_turn::{admit_data_url, PinnedImage, MAX_TOTAL_IMAGE_BYTES},
+    multimodal_saved_turn::{admit_data_url, ChatSampling, PinnedImage, MAX_TOTAL_IMAGE_BYTES},
     persistent_llama_backend::{PersistentEngineConfig, PersistentLlamaBackend},
     projector_identity::projector_filename_for_model,
     wire::proto,
@@ -150,6 +152,10 @@ struct GenerationEvent {
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
+    profiles_path: PathBuf,
+    profiles: Mutex<HashMap<String, InferenceProfile>>,
+    profile_ops: Mutex<()>,
+    active_profile: Arc<Mutex<InferenceProfile>>,
     chats: ChatStore,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
@@ -408,22 +414,37 @@ impl DesktopState {
                 projectors.push((record.model_ref.clone(), projector));
             }
         }
+        let profiles_path = root.join("inference-profiles.json");
+        let profiles = inference_profile::read(&profiles_path)?;
+        let active_profile = Arc::new(Mutex::new(InferenceProfile::default()));
+        let engine_profile = Arc::clone(&active_profile);
         let supervisor = TrustedInferenceSupervisor::new(
             "llama-vulkan".into(),
-            4096,
+            262_144, // transport admission ceiling, not allocated model context
             admitted_models,
             move || {
+                let profile = *engine_profile.lock().map_err(|_| "profile lock poisoned")?;
+                profile.validate()?;
                 let mut raw = [0u8; 32];
                 OsRng.fill_bytes(&mut raw);
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
                 PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(ENGINE_SHA256)?,
-                    threads: NonZeroUsize::new(4).unwrap(),
-                    context_tokens: 4096,
+                    threads: NonZeroUsize::new(profile.threads as usize).ok_or("zero threads")?,
+                    context_tokens: profile.context_tokens,
                     startup_timeout: Duration::from_secs(180),
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
+                })
+                .and_then(|mut backend| {
+                    backend.set_sampling(ChatSampling {
+                        temperature: profile.temperature,
+                        top_p: profile.top_p,
+                        top_k: profile.top_k,
+                        min_p: profile.min_p,
+                    })?;
+                    Ok(backend)
                 })
             },
         )
@@ -436,6 +457,10 @@ impl DesktopState {
         Ok(Self {
             models_dir,
             catalog_path,
+            profiles_path,
+            profiles: Mutex::new(profiles),
+            profile_ops: Mutex::new(()),
+            active_profile,
             chats: ChatStore::open(&root)?,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
@@ -663,6 +688,62 @@ fn lu_release_image(
     Ok(images.remove(&image_ref).is_some())
 }
 
+/// Profiles can be edited only while unloaded; the host verifies model ID.
+#[tauri::command]
+fn lu_get_inference_profile(
+    state: State<'_, Arc<DesktopState>>,
+    model_ref: String,
+) -> Result<InferenceProfile, String> {
+    let catalog = state.catalog.lock().map_err(|_| "catalog poisoned")?;
+    if !catalog.iter().any(|m| m.model_ref == model_ref) {
+        return Err("unknown model".into());
+    }
+    drop(catalog);
+    Ok(*state
+        .profiles
+        .lock()
+        .map_err(|_| "profile storage poisoned")?
+        .get(&model_ref)
+        .unwrap_or(&InferenceProfile::default()))
+}
+#[tauri::command]
+fn lu_save_inference_profile(
+    state: State<'_, Arc<DesktopState>>,
+    model_ref: String,
+    profile: InferenceProfile,
+) -> Result<(), String> {
+    profile.validate()?;
+    let _operation = state
+        .profile_ops
+        .lock()
+        .map_err(|_| "profile operation poisoned")?;
+    if state.generation_queue.has_jobs() {
+        return Err("wait for pending generations".into());
+    }
+    if state
+        .supervisor
+        .status()
+        .map_err(|_| "supervisor unavailable")?
+        .session_id
+        .is_some()
+    {
+        return Err("unload the current model before changing inference settings".into());
+    }
+    let catalog = state.catalog.lock().map_err(|_| "catalog poisoned")?;
+    if !catalog.iter().any(|m| m.model_ref == model_ref) {
+        return Err("unknown model".into());
+    }
+    drop(catalog);
+    let mut guard = state
+        .profiles
+        .lock()
+        .map_err(|_| "profile storage poisoned")?;
+    let mut next = guard.clone();
+    next.insert(model_ref, profile);
+    inference_profile::write(&state.profiles_path, &next)?;
+    *guard = next;
+    Ok(())
+}
 #[tauri::command]
 async fn lu_load_model(
     state: State<'_, Arc<DesktopState>>,
@@ -670,6 +751,10 @@ async fn lu_load_model(
 ) -> Result<String, String> {
     let state = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        let _operation = state
+            .profile_ops
+            .lock()
+            .map_err(|_| "profile operation poisoned")?;
         if state.generation_queue.has_jobs() {
             return Err("Finish or cancel queued generations before loading a model".into());
         }
@@ -678,6 +763,26 @@ async fn lu_load_model(
             return Err("unknown model".into());
         }
         drop(catalog);
+        let profile = *state
+            .profiles
+            .lock()
+            .map_err(|_| "profile storage poisoned")?
+            .get(&model_ref)
+            .unwrap_or(&InferenceProfile::default());
+        profile.validate()?;
+        if state
+            .supervisor
+            .status()
+            .map_err(|_| "supervisor unavailable")?
+            .session_id
+            .is_some()
+        {
+            return Err("unload current model before loading another".into());
+        }
+        *state
+            .active_profile
+            .lock()
+            .map_err(|_| "active profile poisoned")? = profile;
         let session_id = next_id("s-");
         state
             .supervisor
@@ -759,9 +864,16 @@ async fn lu_generate(
     if prompt.trim().is_empty()
         || prompt.len() > 16 * 1024
         || max_new_tokens == 0
-        || max_new_tokens > 4096
+        || max_new_tokens > 8192
     {
         return Err("invalid generation limits".into());
+    }
+    let profile = *state
+        .active_profile
+        .lock()
+        .map_err(|_| "active profile poisoned")?;
+    if max_new_tokens > profile.max_new_tokens || max_new_tokens >= profile.context_tokens {
+        return Err("generation exceeds loaded model profile".into());
     }
     let runtime = state
         .supervisor
@@ -1051,6 +1163,8 @@ pub fn run() {
             lu_ingest_image_data_url,
             lu_release_image,
             lu_load_model,
+            lu_get_inference_profile,
+            lu_save_inference_profile,
             lu_unload_model,
             lu_cancel,
             lu_generate,

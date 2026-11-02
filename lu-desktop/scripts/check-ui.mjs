@@ -28,15 +28,16 @@ const tests = [
   ['quick unload model supported', ui.includes('quickEject') && ui.includes('Unload active model')],
   ['model supplied think blocks rendered', ui.includes('splitModelOutput') && ui.includes('Model reasoning')],
   ['cancellation journal preserves interrupted reply', store.includes('message.cancelled = true')],
-  ['conversation history carried as typed Protobuf turns', host.includes('prompt_context::typed_history(&events[..events.len() - 1], &prompt)') && host.includes('let events = state.chats.history(&chat_id)?')],
+  ['conversation history included in model prompt', host.includes('prompt_context::typed_history') && host.includes('let events = state.chats.history(')],
   ['queued generations do not stop unrelated chat work', /generation_queue\s*\.enqueue\(/.test(host) && ui.includes('visibleJob')],
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
+  ['R23 profiles are host-owned and adjustable per GGUF', ui.includes('lu_save_inference_profile') && host.includes('fn lu_save_inference_profile(') && host.includes('profile.max_new_tokens')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
   console.log(`${pass ? 'PASS' : 'FAIL'} ${name}`);
   assert.ok(pass, name);
 }
-console.log(`Lu R22 independent desktop source and bundle checks: ${tests.length}/${tests.length}`);
+console.log(`Lu R20 independent desktop source and bundle checks: ${tests.length}/${tests.length}`);

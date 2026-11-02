@@ -14,7 +14,9 @@ use crate::inference_host::{
 use crate::mmproj_admission::AdmittedProjector;
 use crate::model_admission::AdmittedModel;
 use crate::multimodal_http::generate_chat_stream_body;
-use crate::multimodal_saved_turn::{build_structured_chat_request, PinnedImage};
+use crate::multimodal_saved_turn::{
+    build_structured_chat_request_with_sampling, ChatSampling, PinnedImage,
+};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
@@ -41,6 +43,7 @@ pub struct PersistentEngineConfig {
 
 pub struct PersistentLlamaBackend {
     config: PersistentEngineConfig,
+    sampling: ChatSampling,
     canonical_executable: PathBuf,
     pinned_model_file: Option<File>,
     pinned_projector_file: Option<File>,
@@ -123,6 +126,7 @@ impl PersistentLlamaBackend {
         let canonical_executable = verify_engine(&config.executable, &config.expected_sha256)?;
         Ok(Self {
             config,
+            sampling: ChatSampling::default(),
             canonical_executable,
             pinned_model_file: None,
             pinned_projector_file: None,
@@ -131,6 +135,15 @@ impl PersistentLlamaBackend {
             #[cfg(windows)]
             job: None,
         })
+    }
+    /// The trusted host sets sampling before engine load. Web content cannot
+    /// change active generation parameters behind an authorized request.
+    pub fn set_sampling(&mut self, profile: ChatSampling) -> Result<(), String> {
+        if !profile.valid() || self.process.is_some() {
+            return Err("invalid or active sampling profile".into());
+        }
+        self.sampling = profile;
+        Ok(())
     }
     pub fn pid(&self) -> Option<u32> {
         self.process.as_ref().map(Child::id)
@@ -352,11 +365,12 @@ impl InferenceBackend for PersistentLlamaBackend {
             return Err("load a compatible MMProj before image generation".into());
         }
         let port = self.active_port()?;
-        let body = build_structured_chat_request(
+        let body = build_structured_chat_request_with_sampling(
             &request.prompt,
             &request.history,
             images,
             request.max_new_tokens,
+            self.sampling,
         )
         .map_err(|_| "invalid structured image request".to_string())?;
         let mut piece = 0u32;
@@ -384,11 +398,12 @@ impl InferenceBackend for PersistentLlamaBackend {
             return Err("generation cancelled".into());
         }
         let port = self.active_port()?;
-        let body = build_structured_chat_request(
+        let body = build_structured_chat_request_with_sampling(
             &request.prompt,
             &request.history,
             &[],
             request.max_new_tokens,
+            self.sampling,
         )
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut piece = 0u32;

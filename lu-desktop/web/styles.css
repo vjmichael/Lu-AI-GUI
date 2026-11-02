@@ -80,3 +80,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .appDropHint{position:fixed;z-index:19;left:50%;top:46%;transform:translate(-50%,-50%);background:#213b55;border:1px solid #85bff0;border-radius:12px;color:#f4faff;padding:16px 22px;box-shadow:0 12px 40px rgba(0,0,0,.38);pointer-events:none}
 .busyHint .spinner{will-change:transform}
 @media(prefers-reduced-motion:reduce){.busyHint .spinner{animation:none;will-change:auto}}
+
+/* R23 model profiles: compact, familiar desktop settings. */
+.profilePanel { margin: 18px 0; padding: 14px; border: 1px solid #38506b; border-radius: 10px; background: #17263a; }
+.profilePanel h3 { margin-top: 0; }
+.profilePanel p { font-size: 12px; line-height: 1.5; }
+.profileGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.profileGrid label { display: flex; flex-direction: column; gap: 5px; color: #c6d5e8; font-size: 12px; }
+.profileGrid input { width: 100%; min-width: 0; padding: 7px; color: #eef4ff; background: #0d1b2b; border: 1px solid #47617a; border-radius: 6px; }
+.profileGrid input:focus-visible { outline: 2px solid #73b7ff; outline-offset: 1px; }
+.profilePanel .profileWarning { color: #d0b993; }

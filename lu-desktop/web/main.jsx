@@ -7,6 +7,7 @@ import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
+import { DEFAULT_PROFILE, normalizeProfile, profileField } from './inference_profile.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 
 function MessageText({text, role='assistant'}) {
@@ -35,6 +36,9 @@ function App() {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profile, setProfile] = useState({...DEFAULT_PROFILE});
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [loadedProfile, setLoadedProfile] = useState({...DEFAULT_PROFILE});
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -87,6 +91,25 @@ function App() {
     setModels(knownModels);
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
+  }
+  useEffect(() => {
+    if (!selectedModel) {setProfile({...DEFAULT_PROFILE});return;}
+    let alive = true;
+    invoke('lu_get_inference_profile', {modelRef:selectedModel})
+      .then(value => {if (alive) setProfile(normalizeProfile(value));})
+      .catch(error => {if (alive) setError(String(error));});
+    return () => {alive=false;};
+  }, [selectedModel]);
+  async function saveProfile() {
+    let next;
+    try {next = normalizeProfile(profile);} catch(error) {setError(String(error));return;}
+    if (!selectedModel || loaded) {setError('Unload the model to change its profile.');return;}
+    setProfileSaving(true);
+    try {
+      await invoke('lu_save_inference_profile',{modelRef:selectedModel,profile:next});
+      setActivity('Inference profile saved · load model to apply');
+    } catch(error) {setError(String(error));}
+    finally {setProfileSaving(false);}
   }
   async function refreshChats() {
     const list = await invoke('lu_chats');
@@ -262,7 +285,9 @@ function App() {
     if (!selectedModel || busy || loaded) return;
     setModelMenuOpen(false);
     action('Loading GGUF and projector', async () => {
+      const current = normalizeProfile(await invoke('lu_get_inference_profile', {modelRef:selectedModel}));
       await invoke('lu_load_model', {modelRef: selectedModel});
+      setLoadedProfile(current);
       await refreshCatalog();
     });
   }
@@ -331,7 +356,7 @@ function App() {
     try {
       const output = await invoke('lu_generate', {
         sessionId: runtime.sessionId, chatId: activeId,
-        prompt: submitted, imageRefs: refs, maxNewTokens: 512
+        prompt: submitted, imageRefs: refs, maxNewTokens: loadedProfile.maxNewTokens
       });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
@@ -594,6 +619,29 @@ function App() {
           onClick={() => setSelectedModel(m.modelRef)} disabled={busy}>
           <strong>{m.filename}</strong><small>{m.projectorAttached ? 'GGUF + MMProj' : 'GGUF only'} · {m.available ? 'Available' : 'Missing file'}</small></button>)}</div>
         <button className="subtleButton full" disabled={busy || loaded || !selected || selected.projectorAttached} onClick={attachProjector}>Attach MMProj to selected model</button>
+        <section className="profilePanel" aria-label="Selected model inference profile">
+          <h3>Inference profile</h3>
+          <p>Stored separately for each GGUF. Changes take effect at the next model load; models never auto-load.</p>
+          <div className="profileGrid">
+            {[
+              ['contextTokens','Context (tokens)',4096,262144,1024],
+              ['maxNewTokens','Max response tokens',128,8192,128],
+              ['temperature','Temperature',0,2,0.05],
+              ['topP','Top-p',0.01,1,0.01],
+              ['topK','Top-k',1,100,1],
+              ['minP','Min-p',0,1,0.01],
+              ['threads','CPU threads',1,64,1]
+            ].map(([key,label,min,max,step]) => <label key={key}>{label}
+              <input type="number" name={key} min={min} max={max} step={step}
+                disabled={!selectedModel || loaded || profileSaving} value={profile[key]}
+                onChange={e => setProfile(prev => profileField(prev,key,e.target.value))}/>
+            </label>)}
+          </div>
+          <p className="profileWarning">Higher context lengths increase KV-cache memory requirements. 262K is an optional stress setting, not the default. Sampling is applied to both text and image requests.</p>
+          <button type="button" className="primaryButton" disabled={!selectedModel || loaded || profileSaving}
+            onClick={saveProfile}>{profileSaving ? 'Saving…' : 'Save model profile'}</button>
+        </section>
+
         <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected model</button>
           <button className="subtleButton" disabled={busy || !loaded} onClick={unloadModel}>Unload current model</button></div>
         <div className="settingsStatus"><span className="statusDot" data-ready={loaded}></span>{activity || (loaded ? 'Ready' : 'No model loaded')}</div>
