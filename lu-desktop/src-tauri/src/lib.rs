@@ -2,6 +2,7 @@
 //! WebView receives opaque model/image/session IDs only. All disk selection is
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
+mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use lu_core::{
@@ -552,6 +553,45 @@ async fn lu_attach_projector(
     .await
     .map_err(|e| e.to_string())?
 }
+/// Admit bytes explicitly supplied through a user paste or drop gesture.
+/// This path never resolves a WebView-supplied filesystem location. The shared
+/// Lu Core image admission checks canonical base64, actual image structure,
+/// dimensions, MIME, and bounded decoded byte size.
+#[tauri::command]
+fn lu_ingest_image_data_url(
+    state: State<'_, Arc<DesktopState>>,
+    data_url: String,
+) -> Result<ImageView, String> {
+    // Check the encoded payload size before running any allocation-heavy decode.
+    if data_url.len() > 11 * 1024 * 1024 || !data_url.starts_with("data:image/") {
+        return Err("unsupported or oversized image attachment".into());
+    }
+    let pinned =
+        admit_data_url(&data_url).map_err(|error| format!("image admission: {error:?}"))?;
+    register_image(state.inner(), pinned)
+}
+
+fn register_image(state: &Arc<DesktopState>, pinned: PinnedImage) -> Result<ImageView, String> {
+    let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
+    if images.len() >= 4 && !images.contains_key(&pinned.image_ref) {
+        return Err("four image limit".into());
+    }
+    let total = images
+        .values()
+        .map(|image| image.bytes.len())
+        .sum::<usize>();
+    if !images.contains_key(&pinned.image_ref) && total + pinned.bytes.len() > MAX_TOTAL_IMAGE_BYTES
+    {
+        return Err("total image size limit".into());
+    }
+    let view = ImageView {
+        image_ref: pinned.image_ref.clone(),
+        mime_type: pinned.mime_type.into(),
+    };
+    images.insert(pinned.image_ref.clone(), pinned);
+    Ok(view)
+}
+
 #[tauri::command]
 async fn lu_pick_image(
     app: AppHandle,
@@ -585,22 +625,7 @@ async fn lu_pick_image(
         };
         let pinned = admit_data_url(&format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
             .map_err(|e| format!("image admission: {e:?}"))?;
-        let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
-        if images.len() >= 4 && !images.contains_key(&pinned.image_ref) {
-            return Err("four image limit".into());
-        }
-        let total = images.values().map(|i| i.bytes.len()).sum::<usize>();
-        if !images.contains_key(&pinned.image_ref)
-            && total + pinned.bytes.len() > MAX_TOTAL_IMAGE_BYTES
-        {
-            return Err("total image size limit".into());
-        }
-        let view = ImageView {
-            image_ref: pinned.image_ref.clone(),
-            mime_type: mime.into(),
-        };
-        images.insert(pinned.image_ref.clone(), pinned);
-        Ok(Some(view))
+        Ok(Some(register_image(&state, pinned)?))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -710,6 +735,8 @@ async fn lu_generate(
     let request_id = next_id("req-");
     let supervisor = Arc::clone(&state.supervisor);
     // A failed disk write must not leave a reservation permanently active.
+    let previous = state.chats.history(&chat_id)?;
+    let model_prompt = prompt_context::assemble(&previous, &prompt);
     state.chats.append_user(&chat_id, &prompt)?;
     if images.is_empty() {
         supervisor
@@ -717,7 +744,7 @@ async fn lu_generate(
                 &session_id,
                 &generation_id,
                 &request_id,
-                &prompt,
+                &model_prompt,
                 max_new_tokens,
             )
             .map_err(|e| format!("reserve: {e:?}"))?;
@@ -727,7 +754,7 @@ async fn lu_generate(
                 &session_id,
                 &generation_id,
                 &request_id,
-                &prompt,
+                &model_prompt,
                 max_new_tokens,
                 &images,
             )
@@ -771,9 +798,17 @@ async fn lu_generate(
             Ok(())
         };
         let result = if images.is_empty() {
-            supervisor.run_reserved(&sid, &gid, &rid, prompt, max_new_tokens, emit)
+            supervisor.run_reserved(&sid, &gid, &rid, model_prompt, max_new_tokens, emit)
         } else {
-            supervisor.run_reserved_images(&sid, &gid, &rid, prompt, max_new_tokens, images, emit)
+            supervisor.run_reserved_images(
+                &sid,
+                &gid,
+                &rid,
+                model_prompt,
+                max_new_tokens,
+                images,
+                emit,
+            )
         };
         match result {
             Ok(()) => {
@@ -786,8 +821,11 @@ async fn lu_generate(
             Err(error) => {
                 let message = format!("generation: {error:?}");
                 if message.contains("Cancelled") || message.contains("Canceled") {
-                    // Cancellation is expected UX, not a red error or a
-                    // phantom assistant message on the next app restart.
+                    // Preserve the exact partial output for a deliberate cancel.
+                    // It is interrupted, not a completed assistant answer.
+                    if !answer.is_empty() {
+                        state.chats.append_progress(&chat_id, &gid, &answer)?;
+                    }
                     state.chats.cancel(&chat_id, &gid)?;
                 } else if !answer.is_empty() {
                     // Genuine crashes/faults preserve recovered partial text.
@@ -891,6 +929,7 @@ pub fn run() {
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,
+            lu_ingest_image_data_url,
             lu_release_image,
             lu_load_model,
             lu_unload_model,

@@ -1,41 +1,46 @@
-LU INDEPENDENT DESKTOP R15 — DEVELOPMENT EVALUATION (NOT ALPHA)
+LU R17 INDEPENDENT DESKTOP — DEVELOPMENT EVALUATION (NOT ALPHA)
 ==============================================================
-This installer is for Windows acceptance testing only. It preserves R14's
-original flat chats.jsonl file while migrating history to separate journals.
+Windows x64 experimental app. This installer does not certify physical AMD
+Vulkan offload, Windows drag/drop, or MMProj vision acceptance. Do not treat
+this build as the approved Windows alpha.
 
-R15 UI: New Chat, Favorites, single-level Folders, Recent Chats, compact quick
-GGUF picker, Models/Import/Attach MMProj under Settings, bright loaded indicator,
-resizable/collapsible composer. Models in Lu's models folder are discovered on
-startup without starting inference. Use the Settings Rescan action for newly
-copied GGUF files; no model is automatically loaded on startup or selected by
-autocomplete. Explicitly press Load selected from the header or Settings.
+R17 CHANGES
+- Prompt appears in the transcript immediately; composer clears on send.
+- While Lu generates, draft your next prompt or open another chat.
+- Cancel preserves generated text with a stopped/interrupted status.
+- Model prompt includes bounded history of the current conversation, excluding
+  canceled assistant fragments from authoritative context.
+- More distinct user bubbles, flexible transcript width, collapsible model
+  <think> blocks when emitted, and quick header model unload.
+- Click Attach, paste an image, or drop PNG/JPEG and plaintext files on the
+  composer. Plaintext formats: txt, md, json, csv, log, py, rs, js, jsx, ts,
+  tsx. PDF/DOCX parsing is not implemented; other binaries are rejected.
+- Windows WebView HTML5 drag/drop enabled (native Tauri interception disabled).
 
-TEST STEPS
-1. Close R14, install R15 separately, launch Lu.
-2. Verify that all messages from the prior R14 flat log are visible in a
-   "Previous Lu conversation" entry. Original chats.jsonl is preserved.
-3. Create two new chats, add text turns, favorite one and move one into a
-   folder. Restart Lu; verify both histories, folder placement and favorite.
-4. Place a GGUF in Lu's managed models directory while stopped, then restart.
-   It must be listed but not loaded. Load a chosen GGUF explicitly via the
-   compact header dropdown. Verify normal text response and unload/reload.
-5. Settings > attach MMProj to compatible admitted GGUF; load and ask an
-   image-dependent question. Check that there is no invalid image-reference
-   warning on successful image cleanup.
-6. Cancel a streaming answer; no partial assistant response or alarming red
-   cancellation error should persist after restart.
-7. Verify the composer drag handle and collapse/expand; no runtime banner
-   should appear in the chat header.
+TESTING
+1. Back up %APPDATA%\org.lu.desktop if your Lu chat history matters.
+2. Close previous Lu builds before installing R17 to avoid shared AppData
+   contention. R17 installs under its own Program Files path.
+3. Verify imports, separate conversations, native text generation and quick
+   model unload.
+4. Enter a first prompt; confirm that it appears immediately and the composer
+   clears. Draft another while Lu is generating.
+5. Switch to another chat during generation; verify tokens do not appear in
+   the wrong chat. Return to the original chat when generation completes.
+6. Start a longer response, cancel it, and verify partial text remains with
+   'stopped' status after restart.
+7. Ask about Arkansas cost of living, cancel the answer, then ask the cost of
+   living again in the same chat. Verify the model remembers Arkansas.
+8. Paste a screenshot or drop a PNG/JPEG with a compatible MMProj attached;
+   try dropping a .txt/.md file. Record UI and backend results.
+9. Verify native Windows AMD Vulkan *layer offload* in logs; seeing a Vulkan
+   device alone is not sufficient.
 
 LIMITATIONS
-- R15 is NOT ALPHA and has not been executed on physical Windows by the build
-  environment; actual AMD Vulkan layer offload is unverified.
-- Image bytes are host-pinned only during a turn; image attachments and native
-  tool execution are not yet fully persisted/wired to the independent desktop.
-- This is a development-only cross-build with a real embedded ComCtl32 v6
-  RT_MANIFEST, but the complete Windows icon/version resource build remains
-  pending genuine Windows resource compiler acceptance.
-- Folder nesting and drag-and-drop were deliberately deferred; one folder
-  level and native file pickers work in this iteration.
-- Lu never deletes the user's AppData on uninstall. Backup existing data before
-  a new evaluation build if it is important.
+- Development-only Windows cross-build with real embedded ComCtl32 v6
+  RT_MANIFEST, but the complete production icon/version resource path has not
+  passed real Windows toolchain acceptance.
+- Native tool routing and full ANSF memory integration in the independent
+  desktop remain alpha gates.
+- Uninstall leaves user-owned chats and GGUF assets in AppData.
+- Model load progress remains a deferred enhancement.

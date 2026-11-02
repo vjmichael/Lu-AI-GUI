@@ -13,9 +13,9 @@ Unicode true
 !ifndef LU_README
   !error "Provide -DLU_README=<absolute path to evaluation README>"
 !endif
-Name "Lu R15 Independent Desktop - Development Evaluation (NOT ALPHA — COMMON CONTROLS V6 FIX)"
+Name "Lu R17 Independent Desktop - Development Evaluation (NOT ALPHA — COMMON CONTROLS V6 FIX)"
 OutFile "${LU_OUTFILE}"
-InstallDir "$LOCALAPPDATA\Programs\LuR15DesktopDevEval"
+InstallDir "$LOCALAPPDATA\Programs\LuR17DesktopDevEval"
 RequestExecutionLevel user
 SetCompressor zlib
 ShowInstDetails show
@@ -39,17 +39,17 @@ Section "Lu Desktop Development Evaluation" SEC_APP
   File "${LU_ENGINE_DIR}/vcruntime140.dll"
   File "${LU_ENGINE_DIR}/vcruntime140_1.dll"
   SetOutPath "$INSTDIR"
-  CreateDirectory "$SMPROGRAMS\Lu R15 Desktop Dev Eval"
-  CreateShortcut "$SMPROGRAMS\Lu R15 Desktop Dev Eval\Lu R15 Desktop Dev Eval.lnk" "$INSTDIR\lu-desktop.exe"
-  CreateShortcut "$SMPROGRAMS\Lu R15 Desktop Dev Eval\Read Me (NOT Alpha).lnk" "$INSTDIR\README_NOT_ALPHA.txt"
-  WriteUninstaller "$INSTDIR\UninstallLuR15DevEval.exe"
+  CreateDirectory "$SMPROGRAMS\Lu R17 Desktop Dev Eval"
+  CreateShortcut "$SMPROGRAMS\Lu R17 Desktop Dev Eval\Lu R17 Desktop Dev Eval.lnk" "$INSTDIR\lu-desktop.exe"
+  CreateShortcut "$SMPROGRAMS\Lu R17 Desktop Dev Eval\Read Me (NOT Alpha).lnk" "$INSTDIR\README_NOT_ALPHA.txt"
+  WriteUninstaller "$INSTDIR\UninstallLuR17DevEval.exe"
 SectionEnd
 
 Section "Uninstall"
-  Delete "$SMPROGRAMS\Lu R15 Desktop Dev Eval\Lu R15 Desktop Dev Eval.lnk"
-  Delete "$SMPROGRAMS\Lu R15 Desktop Dev Eval\Read Me (NOT Alpha).lnk"
-  RMDir "$SMPROGRAMS\Lu R15 Desktop Dev Eval"
-  Delete "$INSTDIR\UninstallLuR15DevEval.exe"
+  Delete "$SMPROGRAMS\Lu R17 Desktop Dev Eval\Lu R17 Desktop Dev Eval.lnk"
+  Delete "$SMPROGRAMS\Lu R17 Desktop Dev Eval\Read Me (NOT Alpha).lnk"
+  RMDir "$SMPROGRAMS\Lu R17 Desktop Dev Eval"
+  Delete "$INSTDIR\UninstallLuR17DevEval.exe"
   Delete "$INSTDIR\lu-desktop.exe"
   Delete "$INSTDIR\README_NOT_ALPHA.txt"
   Delete "$INSTDIR\msvcp140.dll"

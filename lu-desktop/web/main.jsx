@@ -2,6 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { splitModelOutput, streamForChat } from './response_view.mjs';
+
+function MessageText({text}) {
+  return <div className="messageContent">{splitModelOutput(text).map((part,i) =>
+    part.kind === 'think' ? <details key={i} className="thinkBlock"><summary>Model reasoning</summary><pre>{part.text}</pre></details>
+      : <p key={i}>{part.text}</p>)}</div>;
+}
+const MAX_TEXT_ATTACHMENT = 64 * 1024;
+const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
 
 function App() {
   const [models, setModels] = useState([]);
@@ -13,7 +22,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
-  const [stream, setStream] = useState('');
+  const [stream, setStream] = useState({chatId: null, text:''});
   const [working, setWorking] = useState(false);
   const [generationId, setGenerationId] = useState(null);
   const [error, setError] = useState('');
@@ -25,15 +34,25 @@ function App() {
   const [expandedFolders, setExpandedFolders] = useState([]);
   const [composerHeight, setComposerHeight] = useState(130);
   const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const endRef = useRef(null);
   const activeGeneration = useRef(null);
   const requestedChat = useRef(null);
   const dragSize = useRef(null);
+  const fileInput = useRef(null);
+  const runningChat = useRef(null);
+  const currentChat = useRef(null);
+  const pendingDrafts = useRef(new Map());
+  const draftText = useRef('');
+  const draftImages = useRef([]);
   const selected = models.find(m => m.modelRef === selectedModel);
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
   const busy = working || runtime.phase === 'Generating';
   const activeChat = chats.find(c => c.chatId === chatId);
+  const visibleStream = streamForChat(stream,chatId);
+  useEffect(() => { draftText.current = prompt; draftImages.current = images; }, [prompt, images]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -48,13 +67,22 @@ function App() {
     return list.chats;
   }
   async function switchChat(id) {
-    if (busy) return;
+    if (currentChat.current !== id) {
+      pendingDrafts.current.set(currentChat.current || 'new', {
+        prompt: draftText.current, images: draftImages.current
+      });
+    }
     requestedChat.current = id;
     const entries = await invoke('lu_history', {chatId: id});
     if (requestedChat.current !== id) return;
+    currentChat.current = id;
+    const draft = pendingDrafts.current.get(id) || {prompt:'',images:[]};
+    draftText.current = draft.prompt;
+    draftImages.current = draft.images;
+    setPrompt(draft.prompt);
+    setImages(draft.images);
     setChatId(id);
     setHistory(entries);
-    setStream('');
     setError('');
   }
   useEffect(() => {
@@ -68,18 +96,20 @@ function App() {
     })();
     listen('lu-generation-start', e => {
       if (!alive) return;
-      activeGeneration.current = e.payload;
+      activeGeneration.current = {generationId:e.payload, chatId:runningChat.current};
       setGenerationId(e.payload);
-      setStream('');
+      setStream({chatId:runningChat.current, text:''});
     }).then(fn => { if (alive) stopStart = fn; else fn(); });
     listen('lu-token', e => {
-      if (alive && e.payload?.generationId === activeGeneration.current) {
-        setStream(previous => previous + e.payload.text);
+      const generation = activeGeneration.current;
+      if (alive && generation && e.payload?.generationId === generation.generationId) {
+        setStream(previous => ({chatId:generation.chatId,
+          text:(previous.chatId === generation.chatId ? previous.text : '') + e.payload.text}));
       }
     }).then(fn => { if (alive) stopToken = fn; else fn(); });
     return () => { alive = false; stopStart(); stopToken(); };
   }, []);
-  useEffect(() => { endRef.current?.scrollIntoView({behavior: 'smooth'}); }, [history, stream, chatId]);
+  useEffect(() => { endRef.current?.scrollIntoView({behavior: 'smooth'}); }, [history, visibleStream, chatId]);
 
   async function action(label, call) {
     setError(''); setActivity(label); setWorking(true);
@@ -88,11 +118,11 @@ function App() {
     finally { setWorking(false); setActivity(''); }
   }
   async function newChat() {
-    await action('Creating chat', async () => {
+    try {
       const created = await invoke('lu_new_chat');
       const list = await refreshChats();
       if (list.some(c => c.chatId === created.chatId)) await switchChat(created.chatId);
-    });
+    } catch (error) { setError(String(error)); }
   }
   async function favoriteChat(chat) {
     await action('Updating favorite', async () => {
@@ -161,11 +191,11 @@ function App() {
     invoke('lu_release_image', {imageRef}).catch(error => setError(String(error)));
   }
   function cancel() {
-    if (!generationId || !runtime.sessionId) return;
+    if (!generationId || !runtime.sessionId || cancelling) return;
+    setCancelling(true);
     invoke('lu_cancel', {sessionId: runtime.sessionId, generationId})
-      .catch(error => setError(String(error)));
-    // Cancellation is intentional; partial streamed text is not a final answer.
-    setStream('');
+      .catch(error => { setCancelling(false); setError(String(error)); });
+    // Preserve the visible partial until the host journals it as interrupted.
   }
   async function send(e) {
     e.preventDefault();
@@ -177,11 +207,22 @@ function App() {
       const created = await invoke('lu_new_chat').catch(error => { setError(String(error)); return null; });
       if (!created) return;
       activeId = created.chatId;
+      currentChat.current = activeId;
       setChatId(activeId);
     }
+    runningChat.current = activeId;
+    // Capture the submitted turn immediately; leave the composer available
+    // for drafting the next prompt while inference runs.
+    draftText.current = '';
+    draftImages.current = [];
+    pendingDrafts.current.set(activeId, {prompt:'',images:[]});
+    setPrompt(''); setImages([]);
+    if (currentChat.current === activeId) {
+      setHistory(prev => [...prev, {role:'user',text:input,interrupted:false,cancelled:false}]);
+    }
+    setStream({chatId:activeId,text:''});
+    setWorking(true); setActivity('Generating response'); setError(''); setCancelling(false);
     let completed = false;
-    setStream('');
-    setWorking(true); setActivity('Generating response'); setError('');
     try {
       const output = await invoke('lu_generate', {
         sessionId: runtime.sessionId, chatId: activeId,
@@ -190,30 +231,77 @@ function App() {
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
     } catch (error) {
-      // A user-requested cancellation is not displayed as a red error.
       if (!/Cancelled|Canceled/i.test(String(error))) setError(String(error));
     } finally {
-      setWorking(false); setActivity('');
+      setWorking(false); setActivity(''); setCancelling(false);
       activeGeneration.current = null;
       setGenerationId(null);
-      setStream('');
       await refreshChats().catch(error => setError(String(error)));
-      await switchChatWhenSafe(activeId);
+      // A background turn must never steal focus from another conversation.
+      if (currentChat.current === activeId) {
+        const entries = await invoke('lu_history', {chatId:activeId})
+          .catch(error => {setError(String(error));return null;});
+        if (entries && currentChat.current === activeId) setHistory(entries);
+      }
+      setStream({chatId:null,text:''});
       await refreshCatalog().catch(error => setError(String(error)));
     }
-    if (completed) {
-      setPrompt(''); setImages([]);
-      for (const imageRef of refs) {
-        // Response was committed before releasing host-side images. A release
-        // failure is diagnostic, never a lost response or retry request.
-        await invoke('lu_release_image', {imageRef}).catch(() => {});
+    if (!completed && currentChat.current === activeId && !draftText.current.trim()) {
+      // Failed submissions remain editable. Already-journaled user turns are
+      // still displayed; the next attempt can be revised by the operator.
+      draftText.current = input;
+      setPrompt(input);
+    }
+    for (const imageRef of refs) {
+      await invoke('lu_release_image', {imageRef}).catch(() => {});
+    }
+  }
+  async function importAttachments(files) {
+    const items = Array.from(files || []).slice(0, 8);
+    for (const file of items) {
+      if (file.type === 'image/png' || file.type === 'image/jpeg') {
+        if (file.size <= 0 || file.size > MAX_IMAGE_ATTACHMENT) {
+          setError(`Image ${file.name} exceeds the 8 MB limit`); continue;
+        }
+        if (!loadedModel?.projectorAttached) {
+          setError('Load an MMProj-compatible model before attaching images'); continue;
+        }
+        try {
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(Error('Could not read image'));
+            reader.readAsDataURL(file);
+          });
+          const image = await invoke('lu_ingest_image_data_url', {dataUrl});
+          if (image) setImages(prev => prev.some(p => p.imageRef === image.imageRef) ? prev : [...prev,image]);
+        } catch (error) { setError(String(error)); }
+      } else if (/\.(txt|md|csv|json|log|py|rs|js|jsx|ts|tsx)$/i.test(file.name)) {
+        if (file.size <= 0 || file.size > MAX_TEXT_ATTACHMENT) {
+          setError(`Text attachment ${file.name} exceeds the 64 KB limit`);continue;
+        }
+        try {
+          const text = await file.text();
+          const addition = `\n\n[Attached text file: ${file.name.replace(/[\r\n\[\]]/g,'_')}]\n${text}`;
+          if (draftText.current.length + addition.length > 16384) {
+            setError('Attached text would exceed the prompt limit'); continue;
+          }
+          draftText.current += addition;
+          setPrompt(draftText.current);
+        } catch(error) { setError(String(error)); }
+      } else {
+        setError(`Unsupported attachment ${file.name}. Images and plaintext documents work; PDF/DOCX are not yet supported.`);
       }
     }
   }
-  async function switchChatWhenSafe(id) {
-    requestedChat.current = id;
-    const entries = await invoke('lu_history', {chatId:id});
-    if (requestedChat.current === id) { setChatId(id); setHistory(entries); }
+  function handlePaste(event) {
+    const fileItems = Array.from(event.clipboardData?.items || [])
+      .filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
+    if (fileItems.length) { event.preventDefault(); void importAttachments(fileItems); }
+  }
+  function handleDrop(event) {
+    event.preventDefault(); setDragActive(false);
+    void importAttachments(event.dataTransfer?.files);
   }
   function beginComposerDrag(event) {
     event.preventDefault();
@@ -225,7 +313,7 @@ function App() {
   }
   const selectModelText = loadedModel?.filename ?? selected?.filename ?? 'Choose a model';
   const renderChat = chat => <div key={chat.chatId} className={'chatRow ' + (chatId === chat.chatId ? 'active' : '')}>
-    <button className="chatName" title={chat.title} onClick={() => switchChat(chat.chatId)} disabled={busy}>{chat.title}</button>
+    <button className="chatName" title={chat.title} onClick={() => switchChat(chat.chatId)}>{chat.title}</button>
     <button className={'favoriteAction ' + (chat.favorite ? 'isFavorite' : '')} title={chat.favorite ? 'Remove favorite' : 'Favorite'}
       onClick={() => favoriteChat(chat)} disabled={busy} aria-label={chat.favorite ? 'Unfavorite chat' : 'Favorite chat'}>{chat.favorite ? '★' : '☆'}</button>
     <select className="chatMove" title="Move conversation to a folder" disabled={busy} value={chat.folderId || ''}
@@ -236,7 +324,7 @@ function App() {
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">L</div><div><strong>Lu</strong><small>Independent desktop</small></div></div>
-      <button className="newChatButton" onClick={newChat} disabled={busy}><span>＋</span> New Chat</button>
+      <button className="newChatButton" onClick={newChat}><span>＋</span> New Chat</button>
       <div className="chatSidebarContent">
         {chats.some(c => c.favorite) && <section className="chatSection"><h3>FAVORITES</h3>
           {chats.filter(c => c.favorite).map(renderChat)}</section>}
@@ -281,9 +369,10 @@ function App() {
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
                 <button className="subtleButton" onClick={() => {setModelMenuOpen(false);setSettingsOpen(true);}}>Manage models</button>
               </div>
-              {loaded && <p className="modelMenuNote">Unload the active model in Settings before changing models.</p>}
+              {loaded && <button className="subtleButton full" disabled={busy} onClick={() => {setModelMenuOpen(false);unloadModel();}}>⏏ Unload active model</button>}
             </div>}
           </div>
+          {loaded && <button className="quickEject" disabled={busy} title="Unload active model" onClick={unloadModel}>⏏</button>}
           <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
@@ -292,9 +381,10 @@ function App() {
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
         {history.map((entry,i) => <div key={i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
-          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.interrupted ? ' · interrupted' : ''}</span>
-          <p>{entry.text}</p></div>)}
-        {stream && <div className="message assistant streaming"><span className="messageRole">Lu · generating</span><p>{stream}</p></div>}
+          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
+          <MessageText text={entry.text}/></div>)}
+        {visibleStream && <div className="message assistant streaming"><span className="messageRole">Lu · generating</span><MessageText text={visibleStream}/></div>}
+        {!visibleStream && working && runningChat.current === chatId && <div className="message assistant streaming"><span className="messageRole"><span className="spinner"/> Lu · preparing response</span></div>}
         <div ref={endRef}></div>
       </div>
       <div className="composerArea">
@@ -303,14 +393,21 @@ function App() {
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
         {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>}
-        {!composerCollapsed && <form className="composer" onSubmit={send}>
+        {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}
+          onDragEnter={e => {e.preventDefault();setDragActive(true);}}
+          onDragOver={e => e.preventDefault()}
+          onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false);}}
+          onDrop={handleDrop}>
           {images.length > 0 && <div className="attachments">{images.map(im => <span key={im.imageRef} className="attachment">{im.mimeType}<button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button></span>)}</div>}
-          <textarea value={prompt} onChange={e => setPrompt(e.target.value)} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu…' : 'Load a GGUF model first…'} disabled={!loaded || busy}
+          <textarea value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
+            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Load a GGUF model first…'} disabled={!loaded}
+            onPaste={handlePaste}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
-          <div className="composerFooter"><button type="button" className="subtleButton" disabled={busy || !loaded || !loadedModel?.projectorAttached || images.length >= 4} onClick={pickImage}>+ Image</button>
-            <span className="composerHelp">Enter to send · Shift+Enter for newline</span>
-            {busy && generationId ? <button className="dangerButton" type="button" onClick={cancel}>Cancel</button>
+          <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
+              accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
+            <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <span className="composerHelp">Drop or paste images · attach text documents · Enter to send</span>
+            {busy && generationId ? <button className="dangerButton" type="button" onClick={cancel} disabled={cancelling}>{cancelling ? 'Stopping…' : 'Cancel'}</button>
               : <button className="primaryButton" type="submit" disabled={busy || !loaded || !prompt.trim()}>Send</button>}
           </div></form>}
       </div>

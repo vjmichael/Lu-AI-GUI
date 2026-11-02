@@ -66,6 +66,7 @@ pub struct ChatMessage {
     pub role: String,
     pub text: String,
     pub interrupted: bool,
+    pub cancelled: bool,
 }
 
 pub struct ChatStore {
@@ -403,7 +404,7 @@ impl ChatStore {
         let file = File::open(&path).map_err(|e| e.to_string())?;
         // Place a journaled partial assistant message at the exact position
         // where it was first generated. Completion finalizes it in place;
-        // cancellation removes it rather than showing an abandoned response.
+        // cancellation retains the partial output, visibly marked interrupted.
         let mut result: Vec<Option<ChatMessage>> = Vec::new();
         let mut pending = std::collections::HashMap::<String, usize>::new();
         for line in BufReader::new(file).lines() {
@@ -418,11 +419,13 @@ impl ChatStore {
                     role: "user".into(),
                     text,
                     interrupted: false,
+                    cancelled: false,
                 })),
                 Event::AssistantFinal { text } => result.push(Some(ChatMessage {
                     role: "assistant".into(),
                     text,
                     interrupted: false,
+                    cancelled: false,
                 })),
                 Event::AssistantProgress {
                     generation_id,
@@ -438,6 +441,7 @@ impl ChatStore {
                             role: "assistant".into(),
                             text,
                             interrupted: true,
+                            cancelled: false,
                         }));
                     }
                 }
@@ -450,7 +454,10 @@ impl ChatStore {
                 }
                 Event::AssistantCancelled { generation_id } => {
                     if let Some(i) = pending.remove(&generation_id) {
-                        result[i] = None;
+                        if let Some(message) = &mut result[i] {
+                            message.interrupted = true;
+                            message.cancelled = true;
+                        }
                     }
                 }
             }
@@ -496,7 +503,10 @@ mod tests {
             .unwrap();
         assert!(s.history(&a.chat_id).unwrap()[0].interrupted);
         s.cancel(&a.chat_id, "g-1").unwrap();
-        assert!(s.history(&a.chat_id).unwrap().is_empty());
+        let cancelled = s.history(&a.chat_id).unwrap();
+        assert_eq!(cancelled.len(), 1);
+        assert_eq!(cancelled[0].text, "unsaved final");
+        assert!(cancelled[0].interrupted && cancelled[0].cancelled);
         assert!(s.list().unwrap().0[0].favorite);
         assert_eq!(s.list().unwrap().0[0].folder_id, Some(f.folder_id));
         fs::remove_dir_all(root).unwrap();
