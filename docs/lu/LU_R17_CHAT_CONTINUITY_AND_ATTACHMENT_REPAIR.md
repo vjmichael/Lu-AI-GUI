@@ -8,7 +8,7 @@ Observed: submitted prompt hidden until generation completes; later draft text r
 
 ## Implemented R17 fixes
 
-1. **Immediate user turn / composer separation:** optimistic user bubble on send, prompt cleared before awaiting model completion. Newly typed draft stays editable while output streams, and a failed submission can restore the prior draft.
+1. **Immediate user turn / composer separation:** optimistic user bubble on send, prompt cleared before awaiting model completion. Newly typed draft stays editable while output streams, and a failed submission can restore the prior draft on failure (but not after an intentional cancellation).
 2. **Per-conversation streaming routing:** record the chat that initiated generation; stream events show only in that chat. Navigating to New Chat, another conversation, folders or favorites is allowed during output. Terminal event updates the originating chat without stealing focus.
 3. **Cancel keeps partial output:** Lu Core output collected so far is journaled before `AssistantCancelled`. The journal materializer retains that message marked interrupted/cancelled. Interrupted assistant output is not treated as an authoritative completed answer on the next turn. User prompt persists.
 4. **Conversation context:** `prompt_context::assemble` builds bounded model input from previous turns in the same chat plus the new user message, ignoring interrupted assistant output. Empty-history single prompts retain their original inference text. No cross-chat content is mixed.
@@ -30,7 +30,7 @@ Observed: submitted prompt hidden until generation completes; later draft text r
 
 - `r17-journal-context-tests.log`: **9/9** executable Rust conversation/context tests.
 - `r17-ui-check.log`: **24/24** static/source/bundle checks, including the original R15 invariants.
-- `r17-ui-tests.log`: **9/9** Node tests for think blocks, stream isolation, drag/drop config and host admission contract.
+- `r17-ui-tests.log`: **10/10** Node tests for think blocks, stream isolation, drag/drop config and host admission contract.
 - `r17-windows-cargo-check.log`: `cargo check --offline --target x86_64-pc-windows-msvc --tests` **PASS** against existing offline Rust/Tauri/SDK dependencies.
 - The full native Tauri Linux unit-test run requires unavailable system GLib/WebKit libraries; this is a host-environment limitation, not a Windows build-pass claim.
 

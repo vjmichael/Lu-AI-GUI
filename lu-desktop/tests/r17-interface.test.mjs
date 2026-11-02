@@ -29,6 +29,9 @@ test('submitting a message clears the composer before awaiting inference',()=>{
   const section=ui.slice(start,ui.indexOf('async function importAttachments(files)',start));
   assert.ok(section.indexOf("setPrompt(''); setImages([])") < section.indexOf("await invoke('lu_generate'"));
 });
+test('cancelled turn does not restore and duplicate the already journaled user prompt',()=>{
+  assert.ok(ui.includes('if (!completed && !cancelled && currentChat.current === activeId'));
+});
 test('transcript is never forcibly switched on background completion',()=>{
   assert.ok(!ui.includes('switchChatWhenSafe'));
   assert.ok(ui.includes('if (currentChat.current === activeId)'));

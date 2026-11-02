@@ -223,6 +223,7 @@ function App() {
     setStream({chatId:activeId,text:''});
     setWorking(true); setActivity('Generating response'); setError(''); setCancelling(false);
     let completed = false;
+    let cancelled = false;
     try {
       const output = await invoke('lu_generate', {
         sessionId: runtime.sessionId, chatId: activeId,
@@ -231,7 +232,8 @@ function App() {
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
     } catch (error) {
-      if (!/Cancelled|Canceled/i.test(String(error))) setError(String(error));
+      cancelled = /Cancelled|Canceled/i.test(String(error));
+      if (!cancelled) setError(String(error));
     } finally {
       setWorking(false); setActivity(''); setCancelling(false);
       activeGeneration.current = null;
@@ -246,7 +248,7 @@ function App() {
       setStream({chatId:null,text:''});
       await refreshCatalog().catch(error => setError(String(error)));
     }
-    if (!completed && currentChat.current === activeId && !draftText.current.trim()) {
+    if (!completed && !cancelled && currentChat.current === activeId && !draftText.current.trim()) {
       // Failed submissions remain editable. Already-journaled user turns are
       // still displayed; the next attempt can be revised by the operator.
       draftText.current = input;

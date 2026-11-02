@@ -16,7 +16,7 @@ const tests = [
   ['selection does not start model inference', !/onClick=\{\(\) => \{ setSelectedModel\([^}]*loadModel/.test(ui) && ui.includes('Selection does not load')],
   ['model discovery stays host owned and explicit', host.includes('fn scan_unindexed_models(') && host.includes('fn lu_rescan_models(')],
   ['no auto load in application setup', !/\.setup\([\s\S]*?lu_load_model\(/.test(host)],
-  ['prompt clears immediately and drafts restore on failure', ui.includes("setPrompt(''); setImages([]);") && ui.includes('if (!completed && currentChat.current === activeId')],
+  ['prompt clears immediately and drafts restore on failure', ui.includes("setPrompt(''); setImages([]);") && ui.includes('if (!completed && !cancelled && currentChat.current === activeId')],
   ['intentional cancellation retains partial text', !ui.includes("// Cancellation is intentional; partial streamed text is not a final answer.") && ui.includes('Preserve the visible partial') && ui.includes('Cancelled|Canceled')],
   ['composer is resizable and collapsible', ui.includes('beginComposerDrag') && ui.includes('composerCollapsed') && css.includes('composerResizer')],
   ['brighter green model loaded indicator', css.includes('#22f66e')],
@@ -35,4 +35,4 @@ for (const [name, pass] of tests) {
   console.log(`${pass ? 'PASS' : 'FAIL'} ${name}`);
   assert.ok(pass, name);
 }
-console.log(`R15 independent desktop source and bundle checks: ${tests.length}/${tests.length}`);
+console.log(`R17 independent desktop source and bundle checks: ${tests.length}/${tests.length}`);
