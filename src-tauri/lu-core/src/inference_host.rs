@@ -25,7 +25,13 @@ pub enum EngineError {
     AdmissionChanged,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatTurn {
+    pub role: String,
+    pub text: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationRequest {
+    pub history: Vec<ChatTurn>,
     pub prompt: String,
     pub max_new_tokens: u32,
 }
@@ -284,6 +290,7 @@ mod tests {
         };
         let result = host.generate_images(
             GenerationRequest {
+                history: Vec::new(),
                 prompt: "Describe it".into(),
                 max_new_tokens: 50,
             },
@@ -313,6 +320,7 @@ mod tests {
         assert_eq!(
             host.generate(
                 GenerationRequest {
+                    history: Vec::new(),
                     prompt: "x".into(),
                     max_new_tokens: 1
                 },
@@ -325,6 +333,7 @@ mod tests {
         let mut chunks = vec![];
         host.generate(
             GenerationRequest {
+                history: Vec::new(),
                 prompt: "x".into(),
                 max_new_tokens: 8,
             },

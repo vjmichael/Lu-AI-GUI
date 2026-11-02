@@ -808,7 +808,8 @@ async fn lu_generate(
             {
                 return Err("conversation changed during queued generation".into());
             }
-            let model_prompt = prompt_context::assemble(&events[..events.len() - 1], &prompt);
+            let history = prompt_context::typed_history(&events[..events.len() - 1], &prompt);
+            let model_prompt = prompt.clone();
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
@@ -818,17 +819,25 @@ async fn lu_generate(
             }
             if images.is_empty() {
                 supervisor
-                    .reserve_generation(&sid, &gid, &rid, &model_prompt, max_new_tokens)
+                    .reserve_generation_with_history(
+                        &sid,
+                        &gid,
+                        &rid,
+                        &model_prompt,
+                        max_new_tokens,
+                        &history,
+                    )
                     .map_err(|e| format!("reserve: {e:?}"))?;
             } else {
                 supervisor
-                    .reserve_generation_images(
+                    .reserve_generation_images_with_history(
                         &sid,
                         &gid,
                         &rid,
                         &model_prompt,
                         max_new_tokens,
                         &images,
+                        &history,
                     )
                     .map_err(|e| format!("reserve images: {e:?}"))?;
             }
@@ -879,15 +888,24 @@ async fn lu_generate(
                 Ok(())
             };
             let result = if images.is_empty() {
-                supervisor.run_reserved(&sid, &gid, &rid, model_prompt, max_new_tokens, emit)
+                supervisor.run_reserved_with_history(
+                    &sid,
+                    &gid,
+                    &rid,
+                    model_prompt,
+                    max_new_tokens,
+                    history,
+                    emit,
+                )
             } else {
-                supervisor.run_reserved_images(
+                supervisor.run_reserved_images_with_history(
                     &sid,
                     &gid,
                     &rid,
                     model_prompt,
                     max_new_tokens,
                     images,
+                    history,
                     emit,
                 )
             };

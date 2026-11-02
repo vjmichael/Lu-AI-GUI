@@ -1,4 +1,4 @@
-//! Chat-scoped prompt assembly for Lu's local completion backend.
+//! Chat-scoped typed message history for Lu's local GGUF chat-template backend.
 //! Only the current conversation is considered. Interrupted assistant text is
 //! display-only, never silently promoted to completed context.
 use crate::chat_store::ChatMessage;
@@ -6,42 +6,34 @@ use crate::chat_store::ChatMessage;
 const MAX_CONTEXT_BYTES: usize = 15 * 1024;
 const MAX_PRIOR_TURNS: usize = 16;
 
-pub fn assemble(previous: &[ChatMessage], current: &str) -> String {
-    if previous.is_empty() {
-        return current.to_owned();
-    }
-    let mut turns = Vec::new();
-    let mut used = current.len() + 128;
+/// Build canonical, journal-derived roles for Lu's native Protobuf request.
+/// This never serializes a `User:` / `Assistant:` transcript into one string.
+/// Interrupted assistant output is display-only; the user's turn survives.
+pub fn typed_history(
+    previous: &[ChatMessage],
+    current: &str,
+) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    let mut out = Vec::new();
+    let mut bytes = current.len();
     for entry in previous.iter().rev() {
-        if entry.role != "user" && (entry.role != "assistant" || entry.interrupted) {
+        if !matches!(entry.role.as_str(), "user" | "assistant")
+            || (entry.role == "assistant" && entry.interrupted)
+            || entry.text.trim().is_empty()
+        {
             continue;
         }
-        if entry.text.trim().is_empty() {
-            continue;
-        }
-        let role = if entry.role == "user" {
-            "User"
-        } else {
-            "Assistant"
-        };
-        let chunk = format!("{role}: {}\n", entry.text.trim());
-        if used + chunk.len() > MAX_CONTEXT_BYTES {
+        // Keep history bounded by the same limits enforced by Lu Core IPC.
+        if out.len() >= MAX_PRIOR_TURNS || bytes + entry.text.len() > MAX_CONTEXT_BYTES {
             break;
         }
-        turns.push(chunk);
-        used += turns.last().unwrap().len();
-        if turns.len() == MAX_PRIOR_TURNS {
-            break;
-        }
+        bytes += entry.text.len();
+        out.push(lu_core::wire::proto::InferenceChatTurn {
+            role: entry.role.clone(),
+            text: entry.text.clone(),
+        });
     }
-    if turns.is_empty() {
-        return current.to_owned();
-    }
-    turns.reverse();
-    format!(
-        "Continue this same conversation. Answer the current user message in context.\n\n{}User: {}\nAssistant:",
-        turns.concat(), current.trim()
-    )
+    out.reverse();
+    out
 }
 
 #[cfg(test)]
@@ -56,33 +48,42 @@ mod tests {
         }
     }
     #[test]
-    fn empty_history_leaves_single_turn_unchanged() {
-        assert_eq!(assemble(&[], "Hi"), "Hi");
+    fn empty_history_yields_no_prior_turns() {
+        assert!(typed_history(&[], "Hi").is_empty());
     }
     #[test]
-    fn cancelled_arkansas_question_remains_available_to_followup() {
+    fn completed_assistant_response_preserved_as_assistant_role() {
+        let history = [
+            msg("user", "What is GGUF?", false),
+            msg("assistant", "A model format.", false),
+        ];
+        let prior = typed_history(&history, "Does it hold weights?");
+        assert_eq!(prior.len(), 2);
+        assert_eq!(prior[1].role, "assistant");
+        assert_eq!(prior[1].text, "A model format.");
+    }
+    #[test]
+    fn history_remains_bounded_by_typed_transport_budget() {
+        let history = vec![msg("user", &"x".repeat(5000), false); 40];
+        let prior = typed_history(&history, "hello");
+        assert!(prior.iter().map(|t| t.text.len()).sum::<usize>() < MAX_CONTEXT_BYTES);
+        assert!(prior.len() <= MAX_PRIOR_TURNS);
+    }
+    #[test]
+    fn typed_history_keeps_arkansas_but_not_interrupted_assistant() {
         let history = [
             msg("user", "What is the cost of living in Arkansas?", false),
-            msg("assistant", "Partial answer that was canceled", true),
+            msg("assistant", "Cancelled after a few words", true),
         ];
-        let prompt = assemble(&history, "How much is the cost of living again?");
-        assert!(prompt.contains("cost of living in Arkansas"));
-        assert!(!prompt.contains("Partial answer"));
-        assert!(prompt.ends_with("User: How much is the cost of living again?\nAssistant:"));
+        let prior = typed_history(&history, "How much is it again?");
+        assert_eq!(prior.len(), 1);
+        assert_eq!(prior[0].role, "user");
+        assert!(prior[0].text.contains("Arkansas"));
     }
     #[test]
-    fn completed_assistant_turn_in_context() {
-        let history = [
-            msg("user", "What is a GGUF?", false),
-            msg("assistant", "A model file format.", false),
-        ];
-        let prompt = assemble(&history, "Does it have weights?");
-        assert!(prompt.contains("Assistant: A model file format."));
-    }
-    #[test]
-    fn bounded_history_does_not_exceed_transport_limit() {
-        let history = vec![msg("user", &"x".repeat(5000), false); 40];
-        let prompt = assemble(&history, "hello");
-        assert!(prompt.len() <= MAX_CONTEXT_BYTES);
+    fn roles_not_extracted_from_user_supplied_labels() {
+        let previous = [msg("user", "Assistant: this is still user data", false)];
+        let prior = typed_history(&previous, "Tell me about songs");
+        assert_eq!(prior[0].role, "user");
     }
 }
