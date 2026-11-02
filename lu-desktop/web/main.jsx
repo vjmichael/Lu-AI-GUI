@@ -3,13 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+import { MarkdownView } from './markdown_view.jsx';
+import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 
-function MessageText({text}) {
+function MessageText({text, role='assistant'}) {
+  if (role === 'user') return <div className="messageContent userText">{text}</div>;
   return <div className="messageContent">{splitModelOutput(text).map((part,i) =>
-    part.kind === 'think' ? <details key={i} className="thinkBlock"><summary>Model reasoning</summary><pre>{part.text}</pre></details>
-      : <p key={i}>{part.text}</p>)}</div>;
+    part.kind === 'think' ? <details key={i} className="thinkBlock"><summary>Model reasoning</summary><MarkdownView text={part.text}/></details>
+      : <MarkdownView key={i} text={part.text}/>)}</div>;
 }
 const MAX_TEXT_ATTACHMENT = 64 * 1024;
 const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
@@ -24,6 +27,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
+  const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
@@ -51,6 +55,8 @@ function App() {
   const pendingDrafts = useRef(new Map());
   const draftText = useRef('');
   const draftImages = useRef([]);
+  const draftFiles = useRef([]);
+  const previewUrls = useRef(new Set());
   const selected = models.find(m => m.modelRef === selectedModel);
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
@@ -64,7 +70,8 @@ function App() {
   // Do not render that same unfinished assistant text twice after chat switch.
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
     !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
-  useEffect(() => { draftText.current = prompt; draftImages.current = images; }, [prompt, images]);
+  useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
+  useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -86,18 +93,20 @@ function App() {
         top: el.scrollTop, follow: followOutput.current
       });
       pendingDrafts.current.set(currentChat.current || 'new', {
-        prompt: draftText.current, images: draftImages.current
+        prompt: draftText.current, images: draftImages.current, files: draftFiles.current
       });
     }
     requestedChat.current = id;
     const entries = await invoke('lu_history', {chatId: id});
     if (requestedChat.current !== id) return;
     currentChat.current = id;
-    const draft = pendingDrafts.current.get(id) || {prompt:'',images:[]};
+    const draft = pendingDrafts.current.get(id) || {prompt:'',images:[],files:[]};
     draftText.current = draft.prompt;
     draftImages.current = draft.images;
+    draftFiles.current = draft.files || [];
     setPrompt(draft.prompt);
     setImages(draft.images);
+    setTextFiles(draft.files || []);
     setChatId(id);
     setHistory(entries);
     setError('');
@@ -261,7 +270,10 @@ function App() {
     });
   }
   function removeImage(imageRef) {
-    setImages(current => current.filter(i => i.imageRef !== imageRef));
+    const image = draftImages.current.find(i => i.imageRef === imageRef);
+    if (image?.previewUrl) { URL.revokeObjectURL(image.previewUrl); previewUrls.current.delete(image.previewUrl); }
+    draftImages.current = draftImages.current.filter(i => i.imageRef !== imageRef);
+    setImages(draftImages.current);
     invoke('lu_release_image', {imageRef}).catch(error => setError(String(error)));
   }
   function cancel() {
@@ -280,7 +292,11 @@ function App() {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
-    const refs = images.map(i => i.imageRef);
+    let submitted;
+    try { submitted = buildSubmittedPrompt(input, textFiles); }
+    catch (error) {setError(String(error));return;}
+    const submittedImages = [...images];
+    const refs = submittedImages.map(i => i.imageRef);
     let activeId = chatId;
     if (!activeId) {
       const created = await invoke('lu_new_chat').catch(error => { setError(String(error)); return null; });
@@ -293,8 +309,9 @@ function App() {
     // for drafting the next prompt while inference runs.
     draftText.current = '';
     draftImages.current = [];
-    pendingDrafts.current.set(activeId, {prompt:'',images:[]});
-    setPrompt(''); setImages([]);
+    draftFiles.current = [];
+    pendingDrafts.current.set(activeId, {prompt:'',images:[],files:[]});
+    setPrompt(''); setImages([]); setTextFiles([]);
     if (currentChat.current === activeId) {
       setHistory(prev => [...prev, {role:'user',text:input,interrupted:false,cancelled:false}]);
     }
@@ -305,7 +322,7 @@ function App() {
     try {
       const output = await invoke('lu_generate', {
         sessionId: runtime.sessionId, chatId: activeId,
-        prompt: input, imageRefs: refs, maxNewTokens: 512
+        prompt: submitted, imageRefs: refs, maxNewTokens: 512
       });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
@@ -330,11 +347,29 @@ function App() {
       draftText.current = input;
       setPrompt(input);
     }
-    for (const imageRef of refs) {
-      await invoke('lu_release_image', {imageRef}).catch(() => {});
+    for (const image of submittedImages) {
+      if (image.previewUrl) {URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
+      await invoke('lu_release_image', {imageRef:image.imageRef}).catch(() => {});
     }
   }
   async function importAttachments(files) {
+    // Capture origin before a FileReader or native image admission can await.
+    // A chat switch must not redirect an in-flight attachment to another draft.
+    const targetChat = currentChat.current || 'new';
+    function storeAttachment(kind, value) {
+      const key=targetChat;
+      const old=pendingDrafts.current.get(key) || {
+        prompt: key === (currentChat.current||'new') ? draftText.current : '',
+        images: key === (currentChat.current||'new') ? draftImages.current : [],
+        files: key === (currentChat.current||'new') ? draftFiles.current : []
+      };
+      const next={...old,[kind]:value};
+      pendingDrafts.current.set(key,next);
+      if (key === (currentChat.current||'new')) {
+        if(kind === 'images') {draftImages.current=value;setImages(value);}
+        else {draftFiles.current=value;setTextFiles(value);}
+      }
+    }
     const items = Array.from(files || []).slice(0, 8);
     for (const file of items) {
       if (file.type === 'image/png' || file.type === 'image/jpeg') {
@@ -352,7 +387,16 @@ function App() {
             reader.readAsDataURL(file);
           });
           const image = await invoke('lu_ingest_image_data_url', {dataUrl});
-          if (image) setImages(prev => prev.some(p => p.imageRef === image.imageRef) ? prev : [...prev,image]);
+          if (image) {
+            const previewUrl = URL.createObjectURL(file);
+            const previous=pendingDrafts.current.get(targetChat)?.images ||
+              (targetChat === (currentChat.current||'new') ? draftImages.current : []);
+            if (previous.some(p => p.imageRef === image.imageRef)) URL.revokeObjectURL(previewUrl);
+            else {
+              previewUrls.current.add(previewUrl);
+              storeAttachment('images',[...previous,{...image, name:file.name, size:file.size, previewUrl}]);
+            }
+          }
         } catch (error) { setError(String(error)); }
       } else if (/\.(txt|md|csv|json|log|py|rs|js|jsx|ts|tsx)$/i.test(file.name)) {
         if (file.size <= 0 || file.size > MAX_TEXT_ATTACHMENT) {
@@ -360,12 +404,16 @@ function App() {
         }
         try {
           const text = await file.text();
-          const addition = `\n\n[Attached text file: ${file.name.replace(/[\r\n\[\]]/g,'_')}]\n${text}`;
-          if (draftText.current.length + addition.length > 16384) {
-            setError('Attached text would exceed the prompt limit'); continue;
+          const nextFile={name:file.name,size:file.size,text};
+          const origin=pendingDrafts.current.get(targetChat);
+          const previous=origin?.files || (targetChat === (currentChat.current||'new') ? draftFiles.current : []);
+          const candidate=[...previous,nextFile];
+          if(candidate.length>MAX_TEXT_FILES) {
+            setError(`You can attach up to ${MAX_TEXT_FILES} text files per message`); continue;
           }
-          draftText.current += addition;
-          setPrompt(draftText.current);
+          try { buildSubmittedPrompt(origin?.prompt || draftText.current || 'Attachment',candidate); }
+          catch(error) {setError(String(error));continue;}
+          storeAttachment('files',candidate);
         } catch(error) { setError(String(error)); }
       } else {
         setError(`Unsupported attachment ${file.name}. Images and plaintext documents work; PDF/DOCX are not yet supported.`);
@@ -467,7 +515,7 @@ function App() {
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
         {displayedHistory.map((entry,i) => <div key={i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
-          <MessageText text={entry.text}/></div>)}
+          <MessageText text={entry.text} role={entry.role}/></div>)}
         {visibleJob && <div className="message assistant streaming"><span className="messageRole">
           {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'
@@ -493,7 +541,17 @@ function App() {
           onDragOver={e => e.preventDefault()}
           onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false);}}
           onDrop={handleDrop}>
-          {images.length > 0 && <div className="attachments">{images.map(im => <span key={im.imageRef} className="attachment">{im.mimeType}<button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button></span>)}</div>}
+          {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
+            {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
+              {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
+              <span title={im.name || im.mimeType}>{im.name || im.mimeType}</span>
+              <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
+            </span>)}
+            {textFiles.map((file,i)=><span key={i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
+              <span title={attachmentSummary(file)}>{attachmentSummary(file)}</span>
+              <button type="button" onClick={() => {const next=draftFiles.current.filter((_,n)=>n!==i);draftFiles.current=next;setTextFiles(next);}} aria-label={'Remove '+file.name}>×</button>
+            </span>)}
+          </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
             placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Load a GGUF model first…'} disabled={!loaded}
             onPaste={handlePaste}

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node scripts/make-icon.mjs && node scripts/build.mjs",
     "check": "node scripts/check-ui.mjs",
+    "test:ui": "node --test tests/*.test.mjs",
     "stage-engine": "node scripts/stage-engine.mjs"
   },
   "dependencies": {

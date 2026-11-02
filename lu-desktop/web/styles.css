@@ -41,3 +41,36 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .transcriptWrap .messages{flex:1;min-height:0}
 .transcriptWrap .jumpLatest{position:absolute;right:clamp(20px,3vw,54px);bottom:14px;float:none}
 @media(prefers-reduced-motion:reduce){.spinner{animation:none}}
+/* R20: safe model Markdown, no injected HTML or stylesheet content. */
+.message .markdownBody{white-space:normal;overflow-wrap:anywhere;min-width:0}
+.message .markdownBody>:first-child{margin-top:10px}
+.message .markdownBody>:last-child{margin-bottom:0}
+.message .markdownBody p{line-height:1.65;white-space:pre-wrap;margin:9px 0}
+.message .markdownBody h2,.message .markdownBody h3,.message .markdownBody h4,.message .markdownBody h5{font-size:1.06em;line-height:1.4;margin:18px 0 7px;color:#f1f6ff}
+.message .markdownBody h2{font-size:1.18em}
+.message .markdownBody ul,.message .markdownBody ol{padding-left:24px;margin:10px 0;white-space:normal}
+.message .markdownBody li{margin:5px 0;line-height:1.5}
+.message .markdownBody blockquote{border-left:3px solid #7195b9;padding:4px 12px;margin:12px 0;background:#182739;border-radius:3px;color:#c5d5e5}
+.message .markdownBody hr{border:0;border-top:1px solid #40576e;margin:15px 0}
+.message .markdownBody a{color:#a2d1ff;text-underline-offset:3px}
+.message .markdownBody :not(pre)>code{font-family:Consolas,"Cascadia Code",monospace;background:#122033;border:1px solid #354b62;padding:2px 4px;border-radius:4px;font-size:.92em}
+.message .markdownBody .codeBlock{margin:11px 0;border:1px solid #40536b;border-radius:10px;overflow:hidden;background:#0f1926}
+.message .markdownBody .codeBlockHeader{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#203145;color:#b3c9dd;font-size:11px}
+.message .markdownBody .codeBlockHeader button{color:#d4e6fb;background:#304d6c;border:1px solid #55718c;border-radius:6px;padding:4px 9px}
+.message .markdownBody .codeBlock pre{padding:12px 14px;margin:0;max-width:100%;overflow:auto;color:#d8e9fc;font:12px/1.55 Consolas,"Cascadia Code",monospace;white-space:pre;tab-size:4}
+.message .markdownBody .markdownTableWrap{max-width:100%;overflow:auto;margin:11px 0}
+.message .markdownBody table{border-collapse:collapse;min-width:50%;font-size:12px}
+.message .markdownBody th,.message .markdownBody td{border:1px solid #426077;padding:7px 10px;text-align:left;vertical-align:top}
+.message .markdownBody th{background:#2b425c}
+.thinkBlock .markdownBody{font-size:12px}
+.thinkBlock .markdownBody>:first-child{margin-top:9px}
+/* Attachment metadata stays visible without embedding the entire file in the composer. */
+.attachments{max-height:126px;overflow:auto}
+.attachment{display:inline-flex;align-items:center;gap:7px;max-width:260px;min-height:37px;border:1px solid #516e8a;background:#263d56;overflow:hidden}
+.attachment>span:not(:first-child){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment img{width:38px;height:34px;object-fit:cover;border-radius:5px;border:1px solid #607e99}
+.attachment button{flex-shrink:0;font-size:17px;margin-left:auto}
+.attachment button:focus-visible,.codeBlockHeader button:focus-visible{outline:2px solid #a6d8ff;outline-offset:2px}
+.composer.dragActive{border:2px dashed #9bcdff;background:#27405b}
+
+.message .userText{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:14px;margin-top:10px}

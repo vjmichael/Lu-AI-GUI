@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {MarkdownView} from '../web/markdown_view.jsx';
+const raw='<img src=x onerror=alert(1)>\n\n[unsafe](javascript:alert%281%29)';
+const output=renderToStaticMarkup(<MarkdownView text={raw}/>);
+assert.ok(output.includes('&lt;img src=x onerror=alert(1)&gt;'),output);
+assert.ok(!output.includes('<img'),output);
+assert.ok(!output.includes('href="javascript:'),output);
+const normal=renderToStaticMarkup(<MarkdownView text={'## Header\n\n**bold** and `code`\n\n```python\nprint(1)\n```'}/>);
+assert.ok(normal.includes('<h3>Header</h3>'),normal);
+assert.ok(normal.includes('<strong>bold</strong>'),normal);
+assert.ok(normal.includes('print(1)'),normal);
+console.log('PASS R20 React SSR escaping and semantic Markdown rendering');

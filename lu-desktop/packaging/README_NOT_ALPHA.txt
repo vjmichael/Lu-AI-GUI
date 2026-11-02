@@ -1,10 +1,10 @@
-LU R18 INDEPENDENT DESKTOP — DEVELOPMENT EVALUATION (NOT ALPHA)
+LU R20 INDEPENDENT DESKTOP — DEVELOPMENT EVALUATION (NOT ALPHA)
 ==============================================================
 Windows x64 experimental app. This installer does not certify physical AMD
 Vulkan offload, Windows drag/drop, or MMProj vision acceptance. Do not treat
 this build as the approved Windows alpha.
 
-R18 CHANGES
+R20 CHANGES
 - Host-owned FIFO with up to eight accepted jobs across different chats.
 - One model invocation runs at once, as required by the current single-session
   inference supervisor. Queued chats are NOT discarded or implicitly canceled.
@@ -27,8 +27,8 @@ R18 CHANGES
 
 TESTING
 1. Back up %APPDATA%\org.lu.desktop if your Lu chat history matters.
-2. Close previous Lu builds before installing R18 to avoid shared AppData
-   contention. R18 installs under its own Program Files path.
+2. Close previous Lu builds before installing R20 to avoid shared AppData
+   contention. R20 installs under its own Program Files path.
 3. Verify imports, separate conversations, native text generation and quick
    model unload.
 4. Enter a first prompt; confirm that it appears immediately and the composer
@@ -57,3 +57,17 @@ LIMITATIONS
   desktop remain alpha gates.
 - Uninstall leaves user-owned chats and GGUF assets in AppData.
 - Model load progress remains a deferred enhancement.
+
+R20 GUI validation targets (development only):
+- Markdown headings, lists, tables and fenced code render as React text nodes.
+- Raw HTML and non-HTTP(S) links remain inert, without WebView HTML injection.
+- Code blocks have copy controls; streamed incomplete fences remain visible.
+- Image attachments display temporary local thumbnails; blob: is permitted only
+  in the image-src CSP rule, not scripts. Remove or submit revokes previews.
+- Text files display removable name/size chips; content is appended to the
+  model prompt only after Send. Four files / 16,384 chars maximum total.
+- Pending files remain attached to their originating chat across chat switches.
+- Markdown/PDF/DOCX parsing is not complete: simple .md text files are sent as
+  source text, and PDF/DOCX are explicitly rejected by this development build.
+- Windows WebView2 paste/drop, code copy and rendered table behavior require
+  physical acceptance before any R20 alpha claim.
