@@ -1,0 +1,46 @@
+{
+  "schema": "lu-r22-windows-evaluation-v1",
+  "sourceCommit": "0d34d70595f93979c8d4370627be217cda5f8041",
+  "installer": {
+    "file": "Lu_R22_Typed_Chat_Windows_DEV_EVAL_NOT_ALPHA.exe",
+    "bytes": 22806404,
+    "sha256": "fbb41433df3446dadef73157e0985dd18d232b886af8a0df103274991e4aaed4"
+  },
+  "windowsExecutable": {
+    "sha256": "201234ff03da1b82bfde35c847dd7c4208860e746364352fe5cebf28a38c6022"
+  },
+  "bundledVulkanPackage": {
+    "backend": "llama-vulkan",
+    "files": [
+      {
+        "name": "llama-server.exe",
+        "bytes": 55099904,
+        "sha256": "36155bc14f8eb02224105377c946528ccac91337d715386a77d6187cb98105b4"
+      },
+      {
+        "name": "msvcp140.dll",
+        "bytes": 557728,
+        "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+      },
+      {
+        "name": "vcruntime140.dll",
+        "bytes": 124544,
+        "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+      },
+      {
+        "name": "vcruntime140_1.dll",
+        "bytes": 49792,
+        "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+      }
+    ]
+  },
+  "checks": {
+    "frontendSource": 28,
+    "frontendUiTests": 43,
+    "priorLuCoreTests": 111,
+    "windowsLink": "pass",
+    "guiManifest": "pass",
+    "nsis": "pass",
+    "physicalWindows": "pending"
+  }
+}

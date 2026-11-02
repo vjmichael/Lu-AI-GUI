@@ -1,73 +1,49 @@
-LU R20 INDEPENDENT DESKTOP — DEVELOPMENT EVALUATION (NOT ALPHA)
-==============================================================
-Windows x64 experimental app. This installer does not certify physical AMD
-Vulkan offload, Windows drag/drop, or MMProj vision acceptance. Do not treat
-this build as the approved Windows alpha.
+LU R22 INDEPENDENT DESKTOP — DEVELOPMENT EVALUATION (NOT ALPHA)
+================================================================
+Windows x64 development evaluation of the R22 typed-chat source from
+vjmichael/Lu-AI-GUI. This version supersedes R21 for testing; R21 testing
+may be skipped. THIS IS NOT AN APPROVED WINDOWS ALPHA.
 
-R20 CHANGES
-- Host-owned FIFO with up to eight accepted jobs across different chats.
-- One model invocation runs at once, as required by the current single-session
-  inference supervisor. Queued chats are NOT discarded or implicitly canceled.
-- Per-chat token buffers, queued/running status, and per-chat Cancel control.
-- Canceling a queued chat does not interrupt another chat's active generation.
-- One pending generation per conversation until its turn completes.
-- Model unload/load blocked while active or queued generations remain.
-- Both normal and canceled turns keep their own conversation journals.
-- Prompt appears in the transcript immediately; composer clears on send.
-- While Lu generates, draft your next prompt or open another chat.
-- Cancel preserves generated text with a stopped/interrupted status.
-- Model prompt includes bounded history of the current conversation, excluding
-  canceled assistant fragments from authoritative context.
-- More distinct user bubbles, flexible transcript width, collapsible model
-  <think> blocks when emitted, and quick header model unload.
-- Click Attach, paste an image, or drop PNG/JPEG and plaintext files on the
-  composer. Plaintext formats: txt, md, json, csv, log, py, rs, js, jsx, ts,
-  tsx. PDF/DOCX parsing is not implemented; other binaries are rejected.
-- Windows WebView HTML5 drag/drop enabled (native Tauri interception disabled).
+WHAT CHANGED IN R22
+- User and assistant history is transmitted as typed Lu Protobuf chat turns
+  rather than flattening messages into a text transcript with User:/Assistant:.
+- Lu routes both normal and image prompts through llama.cpp chat completions,
+  allowing the model chat template to preserve role boundaries.
+- Better HTTP error reporting for rejected multimodal requests.
+- Retains existing conversation queue and cancellation semantics, model import,
+  MMProj pairing, image admission, MarkDown formatting and attachment previews.
 
-TESTING
-1. Back up %APPDATA%\org.lu.desktop if your Lu chat history matters.
-2. Close previous Lu builds before installing R20 to avoid shared AppData
-   contention. R20 installs under its own Program Files path.
-3. Verify imports, separate conversations, native text generation and quick
-   model unload.
-4. Enter a first prompt; confirm that it appears immediately and the composer
-   clears. Draft another while Lu is generating.
-5. While chat A is generating (do NOT cancel it), switch to chat B and send a
-   prompt. Verify B shows Queued while A keeps generating. A should finish,
-   then B should begin and complete. Return to A to confirm its answer.
-6. Queue a request in chat B and cancel only B while A is running. A must
-   continue uninterrupted. Also test canceling A without losing chat B.
-7. Send a second prompt in the SAME chat while its first request is active:
-   Lu must not submit a second competing generation for that chat.
-8. Start a longer response, cancel it, and verify partial text remains with
-   'stopped' status after restart.
-9. Ask about Arkansas cost of living, cancel the answer, then ask the cost of
-   living again in the same chat. Verify the model remembers Arkansas.
-10. Paste a screenshot or drop a PNG/JPEG with a compatible MMProj attached;
-   try dropping a .txt/.md file. Record UI and backend results.
-11. Verify native Windows AMD Vulkan *layer offload* in logs; seeing a Vulkan
-   device alone is not sufficient.
+WINDOWS MORNING ACCEPTANCE
+1. If preserving chat history matters, back up %APPDATA%\org.lu.desktop.
+   Close R20 and any earlier Lu versions before running this installer.
+2. Install R22 and launch. Verify no missing Windows entry-point errors.
+3. Choose the existing GGUF/MMProj pair. Load explicitly; merely selecting
+   a model does not load it. If a model fails to load, save the exact error.
+4. In a fresh chat ask: 'What is the cost of living in Arkansas?'. Cancel
+   mid-response, then ask 'What about compared with California?'. Look for
+   state-aware context and absence of repeating role tags.
+5. In a NEW chat ask 'What Christmas song do people often dislike?'. Confirm
+   no unrelated Arkansas or Yukon text appears. This is a check for isolation,
+   not an objective fact test; the model may answer imperfectly.
+6. Attach a known valid PNG/JPEG and describe a simple feature visible ONLY in
+   the image, then ask a follow-up. Verify the actual image reaches Lu and the
+   model gives a grounded answer. Record any HTTP diagnostics.
+7. Send Chat A and Chat B prompts without canceling A; B should queue and
+   then run. Cancel a queued Chat C without affecting A/B. Reopen the app and
+   confirm saved turns remain in their correct conversations.
+8. Unload GGUF and confirm GPU memory is released. Inspect backend logs if
+   available to verify actual AMD Vulkan layer offload, not just VRAM use.
+9. Test installation, shutdown, and uninstall. Do not delete user AppData
+   directories unless intentionally starting with a fresh profile.
 
-LIMITATIONS
-- Development-only Windows cross-build with real embedded ComCtl32 v6
-  RT_MANIFEST, but the complete production icon/version resource path has not
-  passed real Windows toolchain acceptance.
-- Native tool routing and full ANSF memory integration in the independent
-  desktop remain alpha gates.
-- Uninstall leaves user-owned chats and GGUF assets in AppData.
-- Model load progress remains a deferred enhancement.
+KNOWN LIMITATIONS / UNVERIFIED
+- Windows CPU/GPU offload and MMProj vision in R22 have not been physically
+  verified; Linux small-model chat smoke checks are not a substitute.
+- Native tools and full ANSF recovery integration remain open alpha gates.
+- Model-loading percentage, PDF/DOCX parsing and JSON repair are deferred.
+- The desktop cross-build uses a verified embedded Common Controls v6 manifest;
+  full production Windows resource/version validation is not complete.
+- Uninstall does not delete model files, chats, or other user-owned AppData.
 
-R20 GUI validation targets (development only):
-- Markdown headings, lists, tables and fenced code render as React text nodes.
-- Raw HTML and non-HTTP(S) links remain inert, without WebView HTML injection.
-- Code blocks have copy controls; streamed incomplete fences remain visible.
-- Image attachments display temporary local thumbnails; blob: is permitted only
-  in the image-src CSP rule, not scripts. Remove or submit revokes previews.
-- Text files display removable name/size chips; content is appended to the
-  model prompt only after Send. Four files / 16,384 chars maximum total.
-- Pending files remain attached to their originating chat across chat switches.
-- Markdown/PDF/DOCX parsing is not complete: simple .md text files are sent as
-  source text, and PDF/DOCX are explicitly rejected by this development build.
-- Windows WebView2 paste/drop, code copy and rendered table behavior require
-  physical acceptance before any R20 alpha claim.
+For evidence and source see:
+https://github.com/vjmichael/Lu-AI-GUI
