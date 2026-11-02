@@ -1,0 +1,65 @@
+# One-time source migration; not a Lu development or release workflow.
+# Imports a pinned, Lu-only source snapshot without importing Jan Git history.
+name: Import independent Lu R16 source once
+on:
+  push:
+    paths:
+      - '.github/workflows/import-lu-r16-once.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  import-standalone-source:
+    if: github.repository == 'vjmichael/Lu-AI-GUI'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout new Lu repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Fetch pinned Lu-only source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --single-branch \
+            --branch lu/standalone-clean-tree-r16-20261101 \
+            https://github.com/vjmichael/jan_alt.git "${RUNNER_TEMP}/lu-r16-source"
+          actual="$(git -C "${RUNNER_TEMP}/lu-r16-source" rev-parse HEAD)"
+          expected="282eba031ef06821fb5d1440154838700a5d33e5"
+          test "$actual" = "$expected" || {
+            echo "::error::Source branch moved; refusing an unpinned import"
+            exit 1
+          }
+          test -f "${RUNNER_TEMP}/lu-r16-source/lu-desktop/src-tauri/src/lib.rs"
+          test -f "${RUNNER_TEMP}/lu-r16-source/src-tauri/lu-core/src/lib.rs"
+          test -f "${RUNNER_TEMP}/lu-r16-source/src-tauri/lu-win-worker-job/src/lib.rs"
+          for jan_path in web-app packages extensions core; do
+            test ! -e "${RUNNER_TEMP}/lu-r16-source/$jan_path" || {
+              echo "::error::Jan application path unexpectedly present: $jan_path"
+              exit 1
+            }
+          done
+          rsync -a --exclude=.git --exclude=.github \
+            "${RUNNER_TEMP}/lu-r16-source/" "./"
+      - name: Verify clean Lu tree and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          for jan_path in web-app packages extensions core; do
+            test ! -e "$jan_path" || {
+              echo "::error::Unexpected Jan application path: $jan_path"
+              exit 1
+            }
+          done
+          test -f LICENSE
+          test -f NOTICE
+          test -f lu-desktop/package.json
+          test -f src-tauri/lu-core/Cargo.toml
+          git add -A
+          git -c user.name='Lu source migration' \
+              -c user.email='lu-migration@users.noreply.github.com' \
+              commit -m 'lu: seed standalone R16 source without Jan Git history'
+          git push origin HEAD:main
