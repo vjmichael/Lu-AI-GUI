@@ -34,8 +34,10 @@ test('global engine busy no longer blocks submitting in another chat',()=>{
   assert.match(send,/await invoke\('lu_generate'/);
 });
 test('host admission queues before supervisor reserve and binds events to chat IDs',()=>{
-  assert.ok(host.includes('generation_queue.enqueue('));
-  assert.ok(host.indexOf('generation_queue.enqueue(')<host.indexOf('supervisor.reserve_generation('));
+  const queueAdmission = host.search(/generation_queue\s*\.enqueue\(/);
+  const reservation = host.search(/supervisor\s*\.reserve_generation\(/);
+  assert.ok(queueAdmission >= 0, 'the host queue must admit generation first');
+  assert.ok(reservation > queueAdmission, 'host queue admission precedes supervisor reservation');
   assert.ok(host.includes('"lu-generation-queued"'));
   assert.ok(host.includes('"lu-generation-start"'));
   assert.ok(host.includes('chat_id: chat_id.clone()'));

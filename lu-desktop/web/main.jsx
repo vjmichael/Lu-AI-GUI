@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
+import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 
 function MessageText({text}) {
   return <div className="messageContent">{splitModelOutput(text).map((part,i) =>
@@ -35,7 +36,14 @@ function App() {
   const [composerHeight, setComposerHeight] = useState(130);
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const endRef = useRef(null);
+  const [chatQuery, setChatQuery] = useState('');
+  const [atBottom, setAtBottom] = useState(true);
+  const transcriptRef = useRef(null);
+  const scrollByChat = useRef(new Map());
+  const followOutput = useRef(true);
+  const searchRef = useRef(null);
+  const composerRef = useRef(null);
+  const modelMenuRef = useRef(null);
   const requestedChat = useRef(null);
   const dragSize = useRef(null);
   const fileInput = useRef(null);
@@ -48,6 +56,7 @@ function App() {
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
   const activeChat = chats.find(c => c.chatId === chatId);
+  const matchingChats = chats.filter(c => matchesChatTitle(c, chatQuery));
   const visibleJob = chatId ? jobs[chatId] : null;
   const visibleStream = visibleJob?.text ?? '';
   const chatBusy = Boolean(visibleJob);
@@ -71,6 +80,11 @@ function App() {
   }
   async function switchChat(id) {
     if (currentChat.current !== id) {
+      // Capture the outgoing reading position before the asynchronous read.
+      const el = transcriptRef.current;
+      if (el) scrollByChat.current.set(currentChat.current || 'new', {
+        top: el.scrollTop, follow: followOutput.current
+      });
       pendingDrafts.current.set(currentChat.current || 'new', {
         prompt: draftText.current, images: draftImages.current
       });
@@ -111,7 +125,65 @@ function App() {
     }).then(fn => { if (alive) stopToken = fn; else fn(); });
     return () => { alive = false; stopQueued(); stopStart(); stopToken(); };
   }, []);
-  useEffect(() => { endRef.current?.scrollIntoView({behavior: 'smooth'}); }, [history, visibleStream, chatId]);
+  // Follow new tokens only if the operator was already reading the end.
+  // Remember independent scroll positions when switching conversations.
+  function onTranscriptScroll() {
+    const el = transcriptRef.current;
+    if (!el) return;
+    const follow = nearTranscriptBottom(el);
+    followOutput.current = follow;
+    scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow});
+    setAtBottom(follow);
+  }
+  function jumpToLatest() {
+    const el = transcriptRef.current;
+    if (!el) return;
+    followOutput.current = true;
+    el.scrollTop = el.scrollHeight;
+    scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow:true});
+    setAtBottom(true);
+  }
+  useLayoutEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    const stored = scrollByChat.current.get(chatId || 'new');
+    followOutput.current = stored?.follow ?? true;
+    el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
+    setAtBottom(followOutput.current);
+  }, [chatId]);
+  useLayoutEffect(() => {
+    const el = transcriptRef.current;
+    if (!el || !followOutput.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [history, visibleStream, chatId]);
+  useEffect(() => { if (!settingsOpen) composerRef.current?.focus(); }, [chatId]);
+  useEffect(() => {
+    function onShortcut(event) {
+      if (event.defaultPrevented) return;
+      if (isSearchKey(event) && !settingsOpen) {
+        event.preventDefault(); setChatQuery(''); searchRef.current?.focus();
+      } else if (isNewChatKey(event) && !settingsOpen) {
+        event.preventDefault(); void newChat();
+      } else if (event.key === 'Escape') {
+        if (settingsOpen) setSettingsOpen(false);
+        else if (modelMenuOpen) setModelMenuOpen(false);
+        else if (document.activeElement === searchRef.current) {
+          setChatQuery(''); composerRef.current?.focus();
+        }
+      }
+    }
+    document.addEventListener('keydown', onShortcut);
+    return () => document.removeEventListener('keydown', onShortcut);
+  }, [settingsOpen, modelMenuOpen]);
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+    function onOutside(event) {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(event.target))
+        setModelMenuOpen(false);
+    }
+    document.addEventListener('pointerdown', onOutside);
+    return () => document.removeEventListener('pointerdown', onOutside);
+  }, [modelMenuOpen]);
 
   async function action(label, call) {
     setError(''); setActivity(label); setWorking(true);
@@ -331,7 +403,14 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">L</div><div><strong>Lu</strong><small>Independent desktop</small></div></div>
       <button className="newChatButton" onClick={newChat}><span>＋</span> New Chat</button>
+      <div className="chatSearchRow"><span aria-hidden="true">⌕</span><input ref={searchRef} type="search"
+        value={chatQuery} onChange={e => setChatQuery(e.target.value)} placeholder="Search chats"
+        aria-label="Search conversations" title="Search conversations (Ctrl+K)"/></div>
       <div className="chatSidebarContent">
+        {chatQuery.trim() ? <section className="chatSection"><h3>SEARCH RESULTS · {matchingChats.length}</h3>
+          {matchingChats.map(renderChat)}
+          {!matchingChats.length && <p className="asideHelp">No conversations match your search.</p>}
+        </section> : <>
         {chats.some(c => c.favorite) && <section className="chatSection"><h3>FAVORITES</h3>
           {chats.filter(c => c.favorite).map(renderChat)}</section>}
         <section className="chatSection"><div className="sectionHeading"><h3>FOLDERS</h3>
@@ -347,7 +426,7 @@ function App() {
         </section>
         <section className="chatSection"><h3>RECENT CHATS</h3>{chats.filter(c => !c.folderId).map(renderChat)}
           {!chats.length && <p className="asideHelp">Your conversations will appear here. Models are never loaded automatically.</p>}
-        </section>
+        </section></>}
       </div>
       <div className="sidebarFooter">
         <div className="runtimeStatus"><span className="statusDot" data-ready={loaded}></span><strong>{loaded ? 'Model loaded' : working && activity.startsWith('Loading') ? 'Loading model…' : 'No model loaded'}</strong></div>
@@ -361,7 +440,7 @@ function App() {
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
           {working && activity.startsWith('Loading') && <span className="busyHint"><span className="spinner"></span> Loading model…</span>}
-          <div className="modelSwitcherWrap">
+          <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
             {modelMenuOpen && <div className="modelMenu">
@@ -382,7 +461,7 @@ function App() {
           <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
-      <div className="messages" role="log" aria-live="polite">
+      <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-relevant="additions">
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
@@ -394,10 +473,17 @@ function App() {
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'
            : visibleJob.cancelling ? 'Lu · stopping' : 'Lu · generating'}
           </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}</div>}
-        <div ref={endRef}></div>
+      </div>
+        {!atBottom && <button type="button" className="jumpLatest" onClick={jumpToLatest}
+          aria-label="Jump to latest message">↓ Jump to latest</button>}
       </div>
       <div className="composerArea">
-        <div className="composerResizer" onPointerDown={beginComposerDrag} role="separator" aria-label="Resize composer" aria-orientation="horizontal">
+        <div className="composerResizer" onPointerDown={beginComposerDrag} role="separator"
+          aria-label="Resize composer" aria-orientation="horizontal" tabIndex={0}
+          aria-valuemin={100} aria-valuemax={460} aria-valuenow={composerHeight}
+          onKeyDown={e => {if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault(); setComposerHeight(h => Math.max(100, Math.min(460, h + (e.key === 'ArrowUp' ? 20 : -20))));
+          }}}>
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
@@ -408,14 +494,14 @@ function App() {
           onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false);}}
           onDrop={handleDrop}>
           {images.length > 0 && <div className="attachments">{images.map(im => <span key={im.imageRef} className="attachment">{im.mimeType}<button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button></span>)}</div>}
-          <textarea value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
+          <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
             placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Load a GGUF model first…'} disabled={!loaded}
             onPaste={handlePaste}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
+            onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
-            <span className="composerHelp">Drop or paste images · attach text documents · Enter to send</span>
+            <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
               : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}

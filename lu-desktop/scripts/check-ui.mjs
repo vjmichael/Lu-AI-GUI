@@ -29,7 +29,7 @@ const tests = [
   ['model supplied think blocks rendered', ui.includes('splitModelOutput') && ui.includes('Model reasoning')],
   ['cancellation journal preserves interrupted reply', store.includes('message.cancelled = true')],
   ['conversation history included in model prompt', host.includes('prompt_context::assemble') && host.includes('let events = state.chats.history(')],
-  ['queued generations do not stop unrelated chat work', host.includes('generation_queue.enqueue(') && ui.includes('visibleJob')],
+  ['queued generations do not stop unrelated chat work', /generation_queue\s*\.enqueue\(/.test(host) && ui.includes('visibleJob')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
