@@ -2,12 +2,14 @@
 //! WebView receives opaque model/image/session IDs only. All disk selection is
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
+mod generation_queue;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
+use generation_queue::{CancelState, GenerationQueue};
 use lu_core::{
     inference_bridge::BridgeError,
-    inference_supervisor::TrustedInferenceSupervisor,
+    inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
     inference_wire::decode_frame,
     mmproj_admission::admit_projector,
     model_admission::ModelAdmissionManager,
@@ -131,9 +133,18 @@ struct ImageView {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ChatEvent {
+    chat_id: String,
     generation_id: String,
     text: String,
     index: u32,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerationEvent {
+    chat_id: String,
+    generation_id: String,
+    phase: &'static str,
+    position: usize,
 }
 
 struct DesktopState {
@@ -142,6 +153,7 @@ struct DesktopState {
     chats: ChatStore,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
+    generation_queue: Arc<GenerationQueue>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
 }
 
@@ -427,6 +439,7 @@ impl DesktopState {
             chats: ChatStore::open(&root)?,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
+            generation_queue: Arc::new(GenerationQueue::default()),
             supervisor: Arc::new(supervisor),
         })
     }
@@ -657,6 +670,9 @@ async fn lu_load_model(
 ) -> Result<String, String> {
     let state = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        if state.generation_queue.has_jobs() {
+            return Err("Finish or cancel queued generations before loading a model".into());
+        }
         let catalog = state.catalog.lock().map_err(|_| "catalog poisoned")?;
         if !catalog.iter().any(|m| m.model_ref == model_ref) {
             return Err("unknown model".into());
@@ -679,6 +695,9 @@ async fn lu_unload_model(
 ) -> Result<(), String> {
     let state = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        if state.generation_queue.has_jobs() {
+            return Err("Finish or cancel queued generations before unloading the model".into());
+        }
         state
             .supervisor
             .unload(&session_id, &next_id("req-"))
@@ -694,11 +713,26 @@ fn lu_cancel(
     session_id: String,
     generation_id: String,
 ) -> Result<(), String> {
-    state
-        .supervisor
-        .cancel(&session_id, &generation_id, &next_id("req-"))
-        .map_err(|e| format!("cancel: {e:?}"))
+    // A queued job is canceled in place. It must never cancel the distinct
+    // generation currently executing on the single model session.
+    match state.generation_queue.cancel(&session_id, &generation_id)? {
+        CancelState::Queued => Ok(()),
+        CancelState::Active => {
+            match state
+                .supervisor
+                .cancel(&session_id, &generation_id, &next_id("req-"))
+            {
+                Ok(()) | Err(SupervisorError::WrongGeneration) => {
+                    // A narrow pre-reservation window: ticket's cancellation bit
+                    // is checked again after the supervisor reserves its turn.
+                    Ok(())
+                }
+                Err(error) => Err(format!("cancel: {error:?}")),
+            }
+        }
+    }
 }
+
 #[tauri::command]
 async fn lu_generate(
     app: AppHandle,
@@ -710,8 +744,6 @@ async fn lu_generate(
     max_new_tokens: u32,
 ) -> Result<String, String> {
     let state = Arc::clone(state.inner());
-    // Never accept image bytes or paths from the WebView. Only the native
-    // picker can create a pinned image and its opaque content-derived ID.
     let images: Vec<PinnedImage> = {
         let registered = state.images.lock().map_err(|_| "image registry poisoned")?;
         let mut resolved = Vec::new();
@@ -731,109 +763,178 @@ async fn lu_generate(
     {
         return Err("invalid generation limits".into());
     }
+    let runtime = state
+        .supervisor
+        .status()
+        .map_err(|e| format!("status: {e:?}"))?;
+    if runtime.session_id.as_deref() != Some(session_id.as_str()) {
+        return Err("model session changed; reload before submitting".into());
+    }
     let generation_id = next_id("g-");
     let request_id = next_id("req-");
     let supervisor = Arc::clone(&state.supervisor);
-    // A failed disk write must not leave a reservation permanently active.
-    let previous = state.chats.history(&chat_id)?;
-    let model_prompt = prompt_context::assemble(&previous, &prompt);
+    // Admission is bounded and host-owned: at most one active/pending turn
+    // per conversation and eight turns total for this loaded model session.
+    let (ticket, position) =
+        state
+            .generation_queue
+            .enqueue(&session_id, &chat_id, &generation_id)?;
+    // Durable user journal before acknowledgment, including queued prompts.
+    // Ticket drop releases the queue on any error before worker dispatch.
     state.chats.append_user(&chat_id, &prompt)?;
-    if images.is_empty() {
-        supervisor
-            .reserve_generation(
-                &session_id,
-                &generation_id,
-                &request_id,
-                &model_prompt,
-                max_new_tokens,
-            )
-            .map_err(|e| format!("reserve: {e:?}"))?;
-    } else {
-        supervisor
-            .reserve_generation_images(
-                &session_id,
-                &generation_id,
-                &request_id,
-                &model_prompt,
-                max_new_tokens,
-                &images,
-            )
-            .map_err(|e| format!("reserve images: {e:?}"))?;
-    }
-    // UI event emission is best-effort and must not strand a reserved turn.
-    let _ = app.emit("lu-generation-start", &generation_id);
+    let queued = GenerationEvent {
+        chat_id: chat_id.clone(),
+        generation_id: generation_id.clone(),
+        phase: "queued",
+        position,
+    };
+    let _ = app.emit("lu-generation-queued", queued);
     let sid = session_id.clone();
     let gid = generation_id.clone();
     let rid = request_id.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut answer = String::new();
-        let mut last_checkpoint = std::time::Instant::now();
-        let mut last_checkpoint_bytes = 0usize;
-        let emit = |wire: Vec<u8>| -> Result<(), BridgeError> {
-            let frame = decode_frame(&wire).map_err(BridgeError::Wire)?;
-            if let Some(proto::inference_frame::Body::Event(event)) = frame.body {
-                if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
-                    answer.push_str(&chunk.text);
-                    if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
-                        || last_checkpoint.elapsed() >= Duration::from_millis(750)
-                    {
-                        state
-                            .chats
-                            .append_progress(&chat_id, &gid, &answer)
-                            .map_err(|_| BridgeError::WrongOperation)?;
-                        last_checkpoint_bytes = answer.len();
-                        last_checkpoint = std::time::Instant::now();
-                    }
-                    app.emit(
-                        "lu-token",
-                        ChatEvent {
-                            generation_id: gid.clone(),
-                            text: chunk.text,
-                            index: chunk.chunk_index,
-                        },
+        let outcome = (|| -> Result<String, String> {
+            ticket.wait_for_slot()?;
+            if ticket.cancelled() {
+                return Err("Cancelled while queued".into());
+            }
+            let events = state.chats.history(&chat_id)?;
+            // With at most one turn per chat pending, the last user event is
+            // this submission. Read history *after* waiting so later turns
+            // use completed previous replies, but never duplicate ourselves.
+            if !events
+                .last()
+                .is_some_and(|m| m.role == "user" && m.text == prompt)
+            {
+                return Err("conversation changed during queued generation".into());
+            }
+            let model_prompt = prompt_context::assemble(&events[..events.len() - 1], &prompt);
+            if ticket.cancelled() {
+                return Err("Cancelled while queued".into());
+            }
+            let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
+            if runtime.session_id.as_deref() != Some(sid.as_str()) {
+                return Err("model session changed while queued".into());
+            }
+            if images.is_empty() {
+                supervisor
+                    .reserve_generation(&sid, &gid, &rid, &model_prompt, max_new_tokens)
+                    .map_err(|e| format!("reserve: {e:?}"))?;
+            } else {
+                supervisor
+                    .reserve_generation_images(
+                        &sid,
+                        &gid,
+                        &rid,
+                        &model_prompt,
+                        max_new_tokens,
+                        &images,
                     )
-                    .map_err(|_| BridgeError::WrongOperation)?;
+                    .map_err(|e| format!("reserve images: {e:?}"))?;
+            }
+            // Host cancellation can arrive between gate activation and the
+            // engine reservation. Propagate the latched bit after reserving.
+            if ticket.cancelled() {
+                let _ = supervisor.cancel(&sid, &gid, &next_id("req-"));
+            }
+            let _ = app.emit(
+                "lu-generation-start",
+                GenerationEvent {
+                    chat_id: chat_id.clone(),
+                    generation_id: gid.clone(),
+                    phase: "running",
+                    position: 0,
+                },
+            );
+            let mut answer = String::new();
+            let mut last_checkpoint = std::time::Instant::now();
+            let mut last_checkpoint_bytes = 0usize;
+            let emit = |wire: Vec<u8>| -> Result<(), BridgeError> {
+                let frame = decode_frame(&wire).map_err(BridgeError::Wire)?;
+                if let Some(proto::inference_frame::Body::Event(event)) = frame.body {
+                    if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
+                        answer.push_str(&chunk.text);
+                        if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
+                            || last_checkpoint.elapsed() >= Duration::from_millis(750)
+                        {
+                            state
+                                .chats
+                                .append_progress(&chat_id, &gid, &answer)
+                                .map_err(|_| BridgeError::WrongOperation)?;
+                            last_checkpoint_bytes = answer.len();
+                            last_checkpoint = std::time::Instant::now();
+                        }
+                        app.emit(
+                            "lu-token",
+                            ChatEvent {
+                                chat_id: chat_id.clone(),
+                                generation_id: gid.clone(),
+                                text: chunk.text,
+                                index: chunk.chunk_index,
+                            },
+                        )
+                        .map_err(|_| BridgeError::WrongOperation)?;
+                    }
                 }
-            }
-            Ok(())
-        };
-        let result = if images.is_empty() {
-            supervisor.run_reserved(&sid, &gid, &rid, model_prompt, max_new_tokens, emit)
-        } else {
-            supervisor.run_reserved_images(
-                &sid,
-                &gid,
-                &rid,
-                model_prompt,
-                max_new_tokens,
-                images,
-                emit,
-            )
-        };
-        match result {
-            Ok(()) => {
-                // Store the full final answer before the terminal marker, so
-                // restart never shows a completed turn as truncated.
-                state.chats.append_progress(&chat_id, &gid, &answer)?;
-                state.chats.complete(&chat_id, &gid)?;
-                Ok(answer)
-            }
-            Err(error) => {
-                let message = format!("generation: {error:?}");
-                if message.contains("Cancelled") || message.contains("Canceled") {
-                    // Preserve the exact partial output for a deliberate cancel.
-                    // It is interrupted, not a completed assistant answer.
-                    if !answer.is_empty() {
+                Ok(())
+            };
+            let result = if images.is_empty() {
+                supervisor.run_reserved(&sid, &gid, &rid, model_prompt, max_new_tokens, emit)
+            } else {
+                supervisor.run_reserved_images(
+                    &sid,
+                    &gid,
+                    &rid,
+                    model_prompt,
+                    max_new_tokens,
+                    images,
+                    emit,
+                )
+            };
+            match result {
+                Ok(()) => {
+                    state.chats.append_progress(&chat_id, &gid, &answer)?;
+                    state.chats.complete(&chat_id, &gid)?;
+                    Ok(answer)
+                }
+                Err(error) => {
+                    let message = format!("generation: {error:?}");
+                    if message.contains("Cancelled") || message.contains("Canceled") {
+                        if !answer.is_empty() {
+                            state.chats.append_progress(&chat_id, &gid, &answer)?;
+                        }
+                        state.chats.cancel(&chat_id, &gid)?;
+                    } else if !answer.is_empty() {
                         state.chats.append_progress(&chat_id, &gid, &answer)?;
                     }
-                    state.chats.cancel(&chat_id, &gid)?;
-                } else if !answer.is_empty() {
-                    // Genuine crashes/faults preserve recovered partial text.
-                    state.chats.append_progress(&chat_id, &gid, &answer)?;
+                    Err(message)
                 }
-                Err(message)
             }
+        })();
+        if outcome
+            .as_ref()
+            .err()
+            .is_some_and(|err| err.contains("Cancelled"))
+        {
+            // Queued cancellation may happen before a stream exists; record
+            // an explicit terminal event without fabricating assistant text.
+            let _ = state.chats.cancel(&chat_id, &gid);
         }
+        let phase = match &outcome {
+            Ok(_) => "completed",
+            Err(e) if e.contains("Cancelled") || e.contains("Canceled") => "cancelled",
+            Err(_) => "failed",
+        };
+        let _ = app.emit(
+            "lu-generation-finish",
+            GenerationEvent {
+                chat_id: chat_id.clone(),
+                generation_id: gid.clone(),
+                phase,
+                position: 0,
+            },
+        );
+        outcome
     })
     .await
     .map_err(|e| e.to_string())?

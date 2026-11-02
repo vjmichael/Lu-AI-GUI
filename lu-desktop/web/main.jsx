@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { splitModelOutput, streamForChat } from './response_view.mjs';
+import { splitModelOutput } from './response_view.mjs';
+import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 
 function MessageText({text}) {
   return <div className="messageContent">{splitModelOutput(text).map((part,i) =>
@@ -22,9 +23,8 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
-  const [stream, setStream] = useState({chatId: null, text:''});
+  const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [working, setWorking] = useState(false);
-  const [generationId, setGenerationId] = useState(null);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -35,13 +35,10 @@ function App() {
   const [composerHeight, setComposerHeight] = useState(130);
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
   const endRef = useRef(null);
-  const activeGeneration = useRef(null);
   const requestedChat = useRef(null);
   const dragSize = useRef(null);
   const fileInput = useRef(null);
-  const runningChat = useRef(null);
   const currentChat = useRef(null);
   const pendingDrafts = useRef(new Map());
   const draftText = useRef('');
@@ -49,9 +46,15 @@ function App() {
   const selected = models.find(m => m.modelRef === selectedModel);
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
-  const busy = working || runtime.phase === 'Generating';
+  const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
   const activeChat = chats.find(c => c.chatId === chatId);
-  const visibleStream = streamForChat(stream,chatId);
+  const visibleJob = chatId ? jobs[chatId] : null;
+  const visibleStream = visibleJob?.text ?? '';
+  const chatBusy = Boolean(visibleJob);
+  // An in-flight checkpoint is already visible in the live stream buffer.
+  // Do not render that same unfinished assistant text twice after chat switch.
+  const displayedHistory = visibleJob ? history.filter((entry,i) =>
+    !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; }, [prompt, images]);
 
   async function refreshCatalog() {
@@ -87,27 +90,26 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopStart = () => {}, stopToken = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
         if (alive && list.length) await switchChat(list[0].chatId);
       } catch (error) { if (alive) setError(String(error)); }
     })();
+    listen('lu-generation-queued', e => {
+      if (!alive || !e.payload?.chatId) return;
+      setJobs(prev => queuedJob(prev,e.payload));
+    }).then(fn => { if (alive) stopQueued = fn; else fn(); });
     listen('lu-generation-start', e => {
-      if (!alive) return;
-      activeGeneration.current = {generationId:e.payload, chatId:runningChat.current};
-      setGenerationId(e.payload);
-      setStream({chatId:runningChat.current, text:''});
+      if (!alive || !e.payload?.chatId) return;
+      setJobs(prev => startedJob(prev,e.payload));
     }).then(fn => { if (alive) stopStart = fn; else fn(); });
     listen('lu-token', e => {
-      const generation = activeGeneration.current;
-      if (alive && generation && e.payload?.generationId === generation.generationId) {
-        setStream(previous => ({chatId:generation.chatId,
-          text:(previous.chatId === generation.chatId ? previous.text : '') + e.payload.text}));
-      }
+      if (!alive || !e.payload?.chatId) return;
+      setJobs(prev => tokenForJob(prev,e.payload));
     }).then(fn => { if (alive) stopToken = fn; else fn(); });
-    return () => { alive = false; stopStart(); stopToken(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); };
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({behavior: 'smooth'}); }, [history, visibleStream, chatId]);
 
@@ -191,15 +193,20 @@ function App() {
     invoke('lu_release_image', {imageRef}).catch(error => setError(String(error)));
   }
   function cancel() {
-    if (!generationId || !runtime.sessionId || cancelling) return;
-    setCancelling(true);
-    invoke('lu_cancel', {sessionId: runtime.sessionId, generationId})
-      .catch(error => { setCancelling(false); setError(String(error)); });
-    // Preserve the visible partial until the host journals it as interrupted.
+    const current = chatId && jobs[chatId];
+    if (!current?.generationId || !runtime.sessionId || current.cancelling) return;
+    const origin = chatId;
+    setJobs(prev => ({...prev,[origin]:{...prev[origin],cancelling:true}}));
+    invoke('lu_cancel', {sessionId: runtime.sessionId, generationId: current.generationId})
+      .catch(error => {
+        setJobs(prev => prev[origin] ? ({...prev,[origin]:{...prev[origin],cancelling:false}}) : prev);
+        if (currentChat.current === origin) setError(String(error));
+      });
+    // Cancellation only targets this conversation's generation ID.
   }
   async function send(e) {
     e.preventDefault();
-    if (busy || !runtime.sessionId || !prompt.trim()) return;
+    if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
     const refs = images.map(i => i.imageRef);
     let activeId = chatId;
@@ -210,7 +217,6 @@ function App() {
       currentChat.current = activeId;
       setChatId(activeId);
     }
-    runningChat.current = activeId;
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
     draftText.current = '';
@@ -220,8 +226,8 @@ function App() {
     if (currentChat.current === activeId) {
       setHistory(prev => [...prev, {role:'user',text:input,interrupted:false,cancelled:false}]);
     }
-    setStream({chatId:activeId,text:''});
-    setWorking(true); setActivity('Generating response'); setError(''); setCancelling(false);
+    setJobs(prev => ({...prev,[activeId]: {generationId:null,phase:'submitting',position:0,text:''}}));
+    setError('');
     let completed = false;
     let cancelled = false;
     try {
@@ -233,11 +239,9 @@ function App() {
       completed = true;
     } catch (error) {
       cancelled = /Cancelled|Canceled/i.test(String(error));
-      if (!cancelled) setError(String(error));
+      if (!cancelled && currentChat.current === activeId) setError(String(error));
     } finally {
-      setWorking(false); setActivity(''); setCancelling(false);
-      activeGeneration.current = null;
-      setGenerationId(null);
+      // Keep the streaming bubble until the journal has been read back.
       await refreshChats().catch(error => setError(String(error)));
       // A background turn must never steal focus from another conversation.
       if (currentChat.current === activeId) {
@@ -245,8 +249,8 @@ function App() {
           .catch(error => {setError(String(error));return null;});
         if (entries && currentChat.current === activeId) setHistory(entries);
       }
-      setStream({chatId:null,text:''});
-      await refreshCatalog().catch(error => setError(String(error)));
+      setJobs(prev => removeJob(prev,activeId));
+      await refreshCatalog().catch(error => { if (currentChat.current === activeId) setError(String(error)); });
     }
     if (!completed && !cancelled && currentChat.current === activeId && !draftText.current.trim()) {
       // Failed submissions remain editable. Already-journaled user turns are
@@ -317,8 +321,8 @@ function App() {
   const renderChat = chat => <div key={chat.chatId} className={'chatRow ' + (chatId === chat.chatId ? 'active' : '')}>
     <button className="chatName" title={chat.title} onClick={() => switchChat(chat.chatId)}>{chat.title}</button>
     <button className={'favoriteAction ' + (chat.favorite ? 'isFavorite' : '')} title={chat.favorite ? 'Remove favorite' : 'Favorite'}
-      onClick={() => favoriteChat(chat)} disabled={busy} aria-label={chat.favorite ? 'Unfavorite chat' : 'Favorite chat'}>{chat.favorite ? '★' : '☆'}</button>
-    <select className="chatMove" title="Move conversation to a folder" disabled={busy} value={chat.folderId || ''}
+      onClick={() => favoriteChat(chat)} disabled={working} aria-label={chat.favorite ? 'Unfavorite chat' : 'Favorite chat'}>{chat.favorite ? '★' : '☆'}</button>
+    <select className="chatMove" title="Move conversation to a folder" disabled={working} value={chat.folderId || ''}
       onChange={e => moveChat(chat,e.target.value || null)} aria-label={'Move ' + chat.title}>
       <option value="">—</option>{folders.map(f => <option key={f.folderId} value={f.folderId}>{f.name}</option>)}
     </select>
@@ -382,11 +386,14 @@ function App() {
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {history.map((entry,i) => <div key={i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
+        {displayedHistory.map((entry,i) => <div key={i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
           <MessageText text={entry.text}/></div>)}
-        {visibleStream && <div className="message assistant streaming"><span className="messageRole">Lu · generating</span><MessageText text={visibleStream}/></div>}
-        {!visibleStream && working && runningChat.current === chatId && <div className="message assistant streaming"><span className="messageRole"><span className="spinner"/> Lu · preparing response</span></div>}
+        {visibleJob && <div className="message assistant streaming"><span className="messageRole">
+          {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
+           : visibleJob.phase === 'submitting' ? 'Lu · submitting'
+           : visibleJob.cancelling ? 'Lu · stopping' : 'Lu · generating'}
+          </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}</div>}
         <div ref={endRef}></div>
       </div>
       <div className="composerArea">
@@ -409,8 +416,9 @@ function App() {
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             <span className="composerHelp">Drop or paste images · attach text documents · Enter to send</span>
-            {busy && generationId ? <button className="dangerButton" type="button" onClick={cancel} disabled={cancelling}>{cancelling ? 'Stopping…' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={busy || !loaded || !prompt.trim()}>Send</button>}
+            {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
+                disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
+              : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
           </div></form>}
       </div>
     </main>
