@@ -1,0 +1,19 @@
+{
+  "name": "lu-independent-desktop",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/make-icon.mjs && node scripts/build.mjs",
+    "check": "node scripts/check-ui.mjs",
+    "stage-engine": "node scripts/stage-engine.mjs"
+  },
+  "dependencies": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "@tauri-apps/api": "2.11.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  }
+}

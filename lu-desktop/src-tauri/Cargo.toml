@@ -1,0 +1,27 @@
+[package]
+name = "lu-desktop"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Independent Lu-native Windows desktop, without Jan runtime dependencies"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "2.7.1"
+lu-core = { path = "../../src-tauri/lu-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
+
+[profile.dev]
+debug = 0
+[profile.release]
+lto = "thin"
+strip = true

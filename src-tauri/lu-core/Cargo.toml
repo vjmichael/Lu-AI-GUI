@@ -1,0 +1,33 @@
+[package]
+name = "lu-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Tauri-independent module contracts and native tool registry for Lu"
+license = "Apache-2.0"
+publish = false
+
+# Intentionally dependency-free at this stage. This is a separate Rust crate,
+# not wired into Jan/Cowork until its boundaries have been reviewed.
+[dependencies]
+cap-std = "4.0.3"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+prost = "0.14"
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+ed25519-dalek = "2.1"
+
+[build-dependencies]
+prost-build = "0.14"
+protoc-bin-vendored = "3"
+
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
+
+[target.'cfg(windows)'.dependencies]
+lu-win-worker-job = { path = "../lu-win-worker-job" }

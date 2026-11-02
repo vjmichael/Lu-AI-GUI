@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lu",
+  "version": "0.1.0-alpha.1",
+  "identifier": "org.lu.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Lu",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 780,
+        "minHeight": 560
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "resources/lu-inference/llama-server.exe": "lu-inference/llama-server.exe",
+      "resources/lu-inference/manifest.json": "lu-inference/manifest.json",
+      "resources/lu-inference/msvcp140.dll": "lu-inference/msvcp140.dll",
+      "resources/lu-inference/vcruntime140.dll": "lu-inference/vcruntime140.dll",
+      "resources/lu-inference/vcruntime140_1.dll": "lu-inference/vcruntime140_1.dll"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      }
+    }
+  }
+}

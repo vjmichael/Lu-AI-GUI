@@ -1,0 +1,12 @@
+Lu — independent desktop and Lu Core development snapshot
+
+Portions of Lu's source history were developed on a modified Jan fork.
+Jan: Copyright 2025 Menlo Research. Apache License, Version 2.0.
+Jan upstream: https://github.com/menloresearch/jan
+
+No Jan executable, Jan desktop frontend, Jan settings plugin, Jan Cowork
+runtime, or Jan inference worker is included in this standalone source tree.
+Some Lu Core data-migration compatibility modules explicitly recognize
+legacy Jan-format exports; they do not require or start Jan software.
+
+Preserve attribution and license notices on distributed derivative works.

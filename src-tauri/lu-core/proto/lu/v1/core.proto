@@ -1,0 +1,365 @@
+syntax = "proto3";
+package lu.v1;
+
+// Internal Lu transport. External model APIs remain JSON-compatible.
+message ToolCall {
+  uint32 contract_version = 1;
+  string call_id = 2;
+  string tool_id = 3;
+  optional string workspace_id = 4;
+  string input_type_url = 5;
+  bytes input = 6;
+}
+
+message ToolError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message ToolReply {
+  string call_id = 1;
+  string output_type_url = 2;
+  oneof outcome {
+    bytes output = 3;
+    ToolError failure = 4;
+  }
+}
+
+// Transitional typed wrapper for Jan's existing JSON-argument tools.
+// New native Lu tools should define dedicated typed request/result messages.
+message LegacyJsonArguments {
+  string json = 1;
+}
+
+message LegacyImage {
+  string name = 1;
+  string data_url = 2;
+}
+
+message LegacyToolResult {
+  string content = 1;
+  optional string diff = 2;
+  repeated LegacyImage images = 3;
+}
+
+// Lu's first actual bundled native tools (no MCP server or local command).
+// Paths are relative to the user-authorized workspace root.
+message ReadTextFileRequest {
+  string path = 1;
+  optional uint32 max_bytes = 2;
+}
+message ReadTextFileResult {
+  string content = 1;
+  uint64 bytes_read = 2;
+  bool truncated = 3;
+}
+message ListDirectoryRequest {
+  string path = 1;
+  optional uint32 limit = 2;
+}
+message FileEntry {
+  string name = 1;
+  string kind = 2;
+  uint64 size_bytes = 3;
+}
+message ListDirectoryResult {
+  repeated FileEntry entries = 1;
+  bool truncated = 2;
+}
+
+// Bounded read-only metadata and one-directory content search. These are
+// host-scoped Protobuf requests, not paths or permission grants from the model.
+message FileStatRequest {
+  string path = 1;
+}
+message FileStatResult {
+  string kind = 1;
+  uint64 size_bytes = 2;
+  bool read_only = 3;
+}
+message SearchTextRequest {
+  string path = 1; // One selected directory; empty selects workspace root.
+  string query = 2; // Literal, case-sensitive UTF-8 substring.
+  optional uint32 max_files = 3;
+  optional uint32 max_matches = 4;
+}
+message SearchTextHit {
+  string path = 1;
+  uint32 line_number = 2;
+  string excerpt = 3;
+}
+message SearchTextResult {
+  repeated SearchTextHit hits = 1;
+  uint32 scanned_files = 2;
+  bool truncated = 3;
+}
+
+// CE worker IPC is native Protobuf, independent of legacy model-side JSON.
+// Every envelope is still length-delimited by the host (u32 big-endian).
+// Fields here carry data only, NEVER a permission token or host path.
+message CeWorkerFrame {
+  uint32 protocol_version = 1;
+  oneof body {
+    CeWorkerInvoke invoke = 2;
+    CeWorkerRead read = 3;
+    CeWorkerWrite write = 4;
+    CeWorkerBrokerResult broker_result = 5;
+    CeWorkerResult result = 6;
+  }
+}
+message CeWorkerInvoke {
+  string call_id = 1;
+  string tool_id = 2;
+  string input_type_url = 3;
+  bytes input = 4;
+}
+message CeWorkerRead {
+  uint64 request_id = 1;
+  string tool_id = 2;
+  string relative_path = 3;
+}
+message CeWorkerWrite {
+  uint64 request_id = 1;
+  string tool_id = 2;
+  string relative_path = 3;
+  bytes data = 4;
+}
+message CeWorkerBrokerResult {
+  uint64 request_id = 1;
+  bool ok = 2;
+  bytes data = 3;
+}
+message CeWorkerResult {
+  string output_type_url = 1;
+  bytes output = 2;
+}
+
+// Host-supported signed Core Extension tool contracts. A tool descriptor must
+// select exactly one of these effect/type pairs or a future host-vetted adapter.
+// Arbitrary type URLs, JSON blobs, and unvalidated opaque tool bytes are denied.
+message CeReadRequest {
+  string relative_path = 1;
+  uint32 max_bytes = 2;
+}
+message CeReadResult {
+  bytes data = 1;
+  uint64 bytes_read = 2;
+  bool truncated = 3;
+}
+message CeWriteRequest {
+  string relative_path = 1;
+  bytes data = 2;
+}
+message CeWriteResult {
+  uint64 bytes_written = 1;
+  bool committed = 2;
+}
+message CeExecuteArgument {
+  string name = 1;
+  string value = 2;
+}
+message CeExecuteRequest {
+  // Must equal the host-owned tool ID, never a shell command/path.
+  string operation = 1;
+  repeated CeExecuteArgument arguments = 2;
+}
+message CeExecuteResult {
+  // Only "ok" or "failed"; no serialized exception or host handle.
+  string status = 1;
+  bytes output = 2;
+}
+
+
+// P3: Lu-native inference lifecycle and event stream. All identifiers are
+// host-issued opaque references, not filesystem paths, network URLs, API keys,
+// or executable names. Model-originated text has no authority to load an engine.
+// A desktop/WebView adapter may translate to JSON only at that external boundary.
+// Each frame is versioned and canonicalized by inference_wire.rs.
+// A syntactically valid model_ref is NOT an authorization to use that model:
+// the trusted Lu host must bind it to a user-admitted model before loading.
+// Cancellation frames signal a host-held token; only a terminal inference
+// event establishes completion or failure.
+message InferenceFrame {
+  uint32 protocol_version = 1;
+  string request_id = 2;
+  oneof body {
+    InferenceLoadRequest load = 3;
+    InferenceGenerateRequest generate = 4;
+    InferenceCancelRequest cancel = 5;
+    InferenceUnloadRequest unload = 6;
+    InferenceStatusRequest status = 7;
+    InferenceEvent event = 8;
+  }
+}
+
+message InferenceLoadRequest {
+  string model_ref = 1; // Host-issued catalog ID; resolved by trusted host.
+  string backend_id = 2; // ID of an already installed, verified adapter.
+  optional string projector_ref = 3; // Optional compatible mmproj asset.
+  uint32 context_tokens = 4;
+}
+
+// Images are host-issued opaque references to independently admitted bytes.
+// Neither a path nor base64 image data crosses this Protobuf boundary. MIME,
+// length, and hash are validation hints, NEVER authority to read a file.
+message InferenceImageAttachment {
+  string image_ref = 1;
+  string mime_type = 2;  // image/png or image/jpeg only
+  bytes sha256 = 3;      // Exact digest of host-pinned immutable bytes
+  uint32 size_bytes = 4;
+}
+
+message InferenceGenerateRequest {
+  string session_id = 1;
+  string generation_id = 2;
+  string prompt = 3;
+  uint32 max_new_tokens = 4;
+  repeated InferenceImageAttachment images = 5;
+}
+
+message InferenceCancelRequest {
+  string session_id = 1;
+  string generation_id = 2;
+}
+
+message InferenceUnloadRequest {
+  string session_id = 1;
+}
+
+message InferenceStatusRequest {
+  string session_id = 1;
+}
+
+enum InferencePhase {
+  INFERENCE_PHASE_UNSPECIFIED = 0;
+  INFERENCE_PHASE_IDLE = 1;
+  INFERENCE_PHASE_LOADING = 2;
+  INFERENCE_PHASE_READY = 3;
+  INFERENCE_PHASE_GENERATING = 4;
+  INFERENCE_PHASE_UNLOADING = 5;
+  INFERENCE_PHASE_FAILED = 6;
+}
+
+message InferenceEvent {
+  string session_id = 1;
+  string generation_id = 2; // Empty for load/status/unload lifecycle events.
+  uint64 sequence = 3;
+  oneof kind {
+    InferenceStateChanged state = 4;
+    InferenceTextChunk text_chunk = 5;
+    InferenceFinished finished = 6;
+    InferenceFailure failure = 7;
+    InferenceResourceUsage resource_usage = 8;
+  }
+}
+
+message InferenceStateChanged {
+  InferencePhase phase = 1;
+  string backend_id = 2;
+  string model_ref = 3;
+}
+
+message InferenceTextChunk {
+  string text = 1;
+  uint32 chunk_index = 2; // Output piece number, NOT tokenizer token ID.
+}
+
+message InferenceFinished {
+  bool cancelled = 1;
+  uint64 generated_bytes = 2;
+  uint32 output_pieces = 3;
+}
+
+message InferenceFailure {
+  string code = 1; // Stable host-controlled error category.
+  bool retryable = 2;
+  // Do not send model content, host paths or secrets in error messages.
+  string message = 3;
+}
+
+message InferenceResourceUsage {
+  uint64 resident_bytes = 1;
+  uint64 virtual_bytes = 2;
+  uint64 model_load_millis = 3;
+  uint64 time_to_first_output_millis = 4;
+  uint64 generation_millis = 5;
+  uint32 reported_output_tokens = 6; // Zero when backend cannot report tokens.
+}
+
+// Alpha DX-00: content-free, host-owned causal diagnostic observations.
+// This is an INTERNAL Protobuf contract, not a model tool or authorization.
+// The ephemeral trace_ref MUST be minted by a trusted Lu host; validation
+// checks its shape but NEVER treats the reference as a capability or grant.
+// sequence is assigned by the host collector, parent_sequence references an
+// earlier event in the same trace, and elapsed_millis is only comparable
+// within the same clock_domain (different processes do not share clocks).
+enum DiagnosticStage {
+  DIAGNOSTIC_STAGE_UNSPECIFIED = 0;
+  DIAGNOSTIC_STAGE_USER_SUBMITTED = 1;
+  DIAGNOSTIC_STAGE_USER_SAVED = 2;
+  DIAGNOSTIC_STAGE_IPC_INVOKED = 3;
+  DIAGNOSTIC_STAGE_NATIVE_TURN_RECEIVED = 4;
+  DIAGNOSTIC_STAGE_SAVED_USER_ATTESTED = 5;
+  DIAGNOSTIC_STAGE_TASK_AUTHORIZED = 6;
+  DIAGNOSTIC_STAGE_WORKER_ENTERED = 7;
+  DIAGNOSTIC_STAGE_MODEL_LOOP_ENTERED = 8;
+  DIAGNOSTIC_STAGE_MODEL_LOOP_RETURNED = 9;
+  DIAGNOSTIC_STAGE_NATIVE_IPC_RETURNED = 10;
+  DIAGNOSTIC_STAGE_STREAM_CLOSED = 11;
+  DIAGNOSTIC_STAGE_ASSISTANT_SAVED = 12;
+  DIAGNOSTIC_STAGE_ASSISTANT_RENDERED = 13;
+  DIAGNOSTIC_STAGE_TOOL_DISPATCH_ENTERED = 14;
+  DIAGNOSTIC_STAGE_TOOL_DISPATCH_RETURNED = 15;
+  DIAGNOSTIC_STAGE_CANCEL_REQUESTED = 16;
+  DIAGNOSTIC_STAGE_WORKER_TERMINATED = 17;
+  DIAGNOSTIC_STAGE_RECOVERY_COMPLETED = 18;
+  DIAGNOSTIC_STAGE_SESSION_READY = 19;
+  DIAGNOSTIC_STAGE_USER_REJECTED = 20;
+  DIAGNOSTIC_STAGE_NATIVE_TURN_FAILED = 21;
+}
+enum DiagnosticOutcome {
+  DIAGNOSTIC_OUTCOME_UNSPECIFIED = 0;
+  DIAGNOSTIC_OUTCOME_ENTERED = 1;
+  DIAGNOSTIC_OUTCOME_SUCCEEDED = 2;
+  DIAGNOSTIC_OUTCOME_FAILED = 3;
+  DIAGNOSTIC_OUTCOME_CANCELLED = 4;
+  DIAGNOSTIC_OUTCOME_TIMED_OUT = 5;
+}
+enum DiagnosticClockDomain {
+  DIAGNOSTIC_CLOCK_UNSPECIFIED = 0;
+  DIAGNOSTIC_CLOCK_WEBVIEW = 1;
+  DIAGNOSTIC_CLOCK_HOST = 2;
+  DIAGNOSTIC_CLOCK_WORKER = 3;
+}
+enum DiagnosticFailureCode {
+  DIAGNOSTIC_FAILURE_NONE = 0;
+  DIAGNOSTIC_FAILURE_UNKNOWN = 1;
+  DIAGNOSTIC_FAILURE_INPUT_INVALID = 2;
+  DIAGNOSTIC_FAILURE_AUTHORITY_DENIED = 3;
+  DIAGNOSTIC_FAILURE_PERSISTENCE = 4;
+  DIAGNOSTIC_FAILURE_BACKEND_UNAVAILABLE = 5;
+  DIAGNOSTIC_FAILURE_RESOURCE_EXHAUSTED = 6;
+  DIAGNOSTIC_FAILURE_TRANSPORT = 7;
+  DIAGNOSTIC_FAILURE_TIMEOUT = 8;
+  DIAGNOSTIC_FAILURE_CANCELLED = 9;
+  DIAGNOSTIC_FAILURE_PROTOCOL = 10;
+  DIAGNOSTIC_FAILURE_PROCESS_EXIT = 11;
+}
+message DiagnosticEvent {
+  uint64 sequence = 1;         // Host collector sequence, not a user/tool ID.
+  uint64 parent_sequence = 2;  // Zero only for a root event.
+  DiagnosticStage stage = 3;
+  DiagnosticOutcome outcome = 4;
+  uint64 elapsed_millis = 5;   // Monotonic within clock_domain.
+  DiagnosticClockDomain clock_domain = 6;
+  DiagnosticFailureCode failure_code = 7;
+  uint32 attempt = 8;          // Bounded retry index; never a permission.
+  uint32 clock_epoch = 9;      // Host-minted process clock incarnation, within domain+attempt.
+}
+message DiagnosticTrace {
+  uint32 protocol_version = 1;
+  string trace_ref = 2;       // Host-minted transient 32-char lowercase hex.
+  uint32 dropped_events = 3; // Recorded loss: a missing stage is not proof.
+  repeated DiagnosticEvent events = 4;
+}

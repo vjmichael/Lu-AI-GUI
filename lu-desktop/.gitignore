@@ -1,0 +1,7 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/lu-inference/*.exe
+src-tauri/resources/lu-inference/*.dll
+*.log

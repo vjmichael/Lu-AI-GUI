@@ -1,0 +1,58 @@
+{
+  "architecture": "x86_64-pc-windows-msvc",
+  "backendId": "llama-vulkan",
+  "buildType": "Release",
+  "compiler": "clang-cl 20.1.8",
+  "engineVariant": "vulkan",
+  "files": [
+    {
+      "bytes": 55099904,
+      "name": "llama-server.exe",
+      "sha256": "36155bc14f8eb02224105377c946528ccac91337d715386a77d6187cb98105b4"
+    },
+    {
+      "bytes": 557728,
+      "name": "msvcp140.dll",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+    },
+    {
+      "bytes": 124544,
+      "name": "vcruntime140.dll",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    {
+      "bytes": 49792,
+      "name": "vcruntime140_1.dll",
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+    }
+  ],
+  "gpuLayersRequested": 99,
+  "linkage": "static llama.cpp; dynamic MSVC CRT; Windows Vulkan loader imported",
+  "release_status": "development-build-needs-physical-windows-verification",
+  "schema": "lu-inference-package-v1",
+  "sourceArchiveSha256": "8bffe21a3ecce942656e687eaa78276b8410653d740e8e6f1a3542b309706201",
+  "upstreamCommit": "7fe450e19305b828c199d602c23a8337aaa1f03b",
+  "vulkanImportLibrary": "cross-generated from Linux Vulkan loader symbols, not yet checked against Windows loader",
+  "vulkanSdkVersion": "1.4.350.0",
+  "windowsSystemImports": [
+    "KERNEL32.dll",
+    "SHELL32.dll",
+    "MSVCP140.dll",
+    "WS2_32.dll",
+    "vulkan-1.dll",
+    "ADVAPI32.dll",
+    "VCRUNTIME140.dll",
+    "VCRUNTIME140_1.dll",
+    "api-ms-win-crt-locale-l1-1-0.dll",
+    "api-ms-win-crt-stdio-l1-1-0.dll",
+    "api-ms-win-crt-heap-l1-1-0.dll",
+    "api-ms-win-crt-runtime-l1-1-0.dll",
+    "api-ms-win-crt-math-l1-1-0.dll",
+    "api-ms-win-crt-filesystem-l1-1-0.dll",
+    "api-ms-win-crt-time-l1-1-0.dll",
+    "api-ms-win-crt-string-l1-1-0.dll",
+    "api-ms-win-crt-environment-l1-1-0.dll",
+    "api-ms-win-crt-convert-l1-1-0.dll",
+    "api-ms-win-crt-utility-l1-1-0.dll"
+  ]
+}

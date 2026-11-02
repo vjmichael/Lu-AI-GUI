@@ -1,0 +1,14 @@
+node_modules/
+dist/
+target/
+*.log
+*.exe
+*.dll
+*.msi
+*.zip
+*.7z
+.DS_Store
+*.tmp
+*.partial
+.env
+.lu-local/
