@@ -138,6 +138,21 @@ pub fn generate_image_chat_stream(
     max_new_tokens: u32,
     timeout: Duration,
     cancelled: impl Fn() -> bool,
+    on_text: impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    let body = build_llama_chat_request(turn, max_new_tokens)
+        .map_err(|_| "invalid admitted multimodal request".to_string())?;
+    generate_chat_stream_body(port, api_key, &body, timeout, cancelled, on_text)
+}
+
+/// The JSON format here is strictly the external llama.cpp HTTP contract.
+/// Host / worker / model authority remains carried through Lu's Protobuf IPC.
+pub fn generate_chat_stream_body(
+    port: u16,
+    api_key: &str,
+    body: &str,
+    timeout: Duration,
+    cancelled: impl Fn() -> bool,
     mut on_text: impl FnMut(String) -> Result<(), String>,
 ) -> Result<(), String> {
     if port == 0
@@ -145,11 +160,11 @@ pub fn generate_image_chat_stream(
         || !api_key.bytes().all(|b| b.is_ascii_hexdigit())
         || timeout.is_zero()
         || timeout > Duration::from_secs(3600)
+        || body.is_empty()
+        || body.len() > 48 * 1024 * 1024
     {
-        return Err("invalid trusted multimodal endpoint settings".into());
+        return Err("invalid trusted chat endpoint settings".into());
     }
-    let body = build_llama_chat_request(turn, max_new_tokens)
-        .map_err(|_| "invalid admitted multimodal request".to_string())?;
     let deadline = Instant::now() + timeout;
     check(&cancelled, deadline)?;
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
@@ -170,7 +185,14 @@ pub fn generate_image_chat_stream(
     let mut reader = BufReader::new(socket);
     let status = read_line_bounded(&mut reader, MAX_HEADER_BYTES, &cancelled, deadline)?;
     if !status.starts_with(b"HTTP/1.1 200 ") && !status.starts_with(b"HTTP/1.0 200 ") {
-        return Err("llama server rejected multimodal request".into());
+        // No engine response body, request content, image bytes, or credentials
+        // cross this error boundary. HTTP status alone identifies the class.
+        let code = std::str::from_utf8(&status)
+            .ok()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .filter(|v| v.len() == 3 && v.bytes().all(|b| b.is_ascii_digit()))
+            .unwrap_or("unknown");
+        return Err(format!("llama.cpp chat request rejected (HTTP {code}); verify matching GGUF/MMProj, chat-template support and engine diagnostics"));
     }
     let mut header_total = status.len();
     let mut chunked = false;
@@ -393,5 +415,46 @@ mod tests {
             |_| Ok(())
         )
         .is_err());
+    }
+    #[test]
+    fn rejection_exposes_only_status_not_server_supplied_text() {
+        let stream=b"HTTP/1.1 400 Bad Request\r\nContent-Length: 44\r\n\r\nsecret-image-content-shall-not-be-returned".to_vec();
+        let (port, handle) = fixture(stream, true);
+        let err = generate_image_chat_stream(
+            port,
+            &"ab".repeat(32),
+            &turn(),
+            32,
+            Duration::from_secs(5),
+            || false,
+            |_| Ok(()),
+        )
+        .unwrap_err();
+        handle.join().unwrap();
+        assert!(err.contains("HTTP 400"));
+        assert!(!err.contains("secret-image-content"));
+    }
+    #[test]
+    fn text_generation_uses_chat_completions_not_raw_completion() {
+        let stream = b"data: {\"choices\":[{\"delta\":{\"content\":\"Ready\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n";
+        let (port, handle) = fixture(response(&[stream]), false);
+        let body =
+            crate::multimodal_saved_turn::build_structured_chat_request("Ping", &[], &[], 20)
+                .unwrap();
+        let mut text = String::new();
+        generate_chat_stream_body(
+            port,
+            &"ab".repeat(32),
+            &body,
+            Duration::from_secs(5),
+            || false,
+            |piece| {
+                text.push_str(&piece);
+                Ok(())
+            },
+        )
+        .unwrap();
+        handle.join().unwrap();
+        assert_eq!(text, "Ready");
     }
 }

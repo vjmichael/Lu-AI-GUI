@@ -13,13 +13,12 @@ use crate::inference_host::{
 };
 use crate::mmproj_admission::AdmittedProjector;
 use crate::model_admission::AdmittedModel;
-use crate::multimodal_http::generate_image_chat_stream;
-use crate::multimodal_saved_turn::{PinnedImage, SavedMultimodalTurn};
-use serde_json::json;
+use crate::multimodal_http::generate_chat_stream_body;
+use crate::multimodal_saved_turn::{build_structured_chat_request, PinnedImage};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -27,10 +26,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-
-const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
-const MAX_HEADERS_BYTES: usize = 16 * 1024;
-const MAX_EVENT_BYTES: usize = 64 * 1024;
 
 /// Values originate from a host-controlled engine manifest and configuration;
 /// none may be taken from model-generated text or tool arguments.
@@ -357,21 +352,23 @@ impl InferenceBackend for PersistentLlamaBackend {
             return Err("load a compatible MMProj before image generation".into());
         }
         let port = self.active_port()?;
-        let turn = SavedMultimodalTurn {
-            prompt: request.prompt.clone(),
-            images: images.to_vec(),
-        };
+        let body = build_structured_chat_request(
+            &request.prompt,
+            &request.history,
+            images,
+            request.max_new_tokens,
+        )
+        .map_err(|_| "invalid structured image request".to_string())?;
         let mut piece = 0u32;
-        generate_image_chat_stream(
+        generate_chat_stream_body(
             port,
             &self.config.api_key,
-            &turn,
-            request.max_new_tokens,
+            &body,
             self.config.request_timeout,
             || cancel.is_cancelled(),
             |text| {
                 emit(TokenChunk { text, index: piece })
-                    .map_err(|_| "multimodal stream receiver unavailable".to_string())?;
+                    .map_err(|_| "chat stream receiver unavailable".to_string())?;
                 piece = piece.saturating_add(1);
                 Ok(())
             },
@@ -387,233 +384,33 @@ impl InferenceBackend for PersistentLlamaBackend {
             return Err("generation cancelled".into());
         }
         let port = self.active_port()?;
-        let deadline = Instant::now() + self.config.request_timeout;
-        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-        let mut socket = TcpStream::connect_timeout(&address, Duration::from_secs(2))
-            .map_err(|e| e.to_string())?;
-        socket
-            .set_read_timeout(Some(Duration::from_millis(250)))
-            .map_err(|e| e.to_string())?;
-        socket
-            .set_write_timeout(Some(Duration::from_secs(2)))
-            .map_err(|e| e.to_string())?;
-        let body = json!({
-            "prompt": request.prompt,
-            "n_predict": request.max_new_tokens,
-            "temperature": 0.0,
-            "stream": true,
-            "cache_prompt": true,
-        })
-        .to_string();
-        let headers = format!(
-            "POST /completion HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nAccept: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            self.config.api_key, body.len()
-        );
-        socket
-            .write_all(headers.as_bytes())
-            .map_err(|e| e.to_string())?;
-        socket
-            .write_all(body.as_bytes())
-            .map_err(|e| e.to_string())?;
-        let mut reader = BufReader::new(socket);
-        let status = read_line_bounded(&mut reader, deadline, cancel, MAX_HEADERS_BYTES)?;
-        if !status.starts_with("HTTP/1.1 200 ") && !status.starts_with("HTTP/1.0 200 ") {
-            return Err(format!(
-                "inference endpoint rejected request: {}",
-                status.trim()
-            ));
-        }
-        let mut header_total = status.len();
-        let mut chunked = false;
-        loop {
-            let line = read_line_bounded(&mut reader, deadline, cancel, MAX_HEADERS_BYTES)?;
-            header_total += line.len();
-            if header_total > MAX_HEADERS_BYTES {
-                return Err("oversized inference response headers".into());
-            }
-            if line == "\r\n" || line == "\n" {
-                break;
-            }
-            if line.to_ascii_lowercase().starts_with("transfer-encoding:")
-                && line.to_ascii_lowercase().contains("chunked")
-            {
-                chunked = true;
-            }
-        }
-        if !chunked {
-            return Err("engine did not provide a bounded chunked event stream".into());
-        }
-        let mut events = Vec::new();
-        let mut total = 0usize;
-        let mut index = 0u32;
-        let mut stopped = false;
-        let mut event_count = 0u32;
-        let mut content_fields = 0u32;
-        let mut predicted_tokens = None;
-        let mut stop_type = String::new();
-        while !stopped {
-            let count_line = read_line_bounded(&mut reader, deadline, cancel, 128)?;
-            let length_hex = count_line.trim().split(';').next().unwrap_or("");
-            let length = usize::from_str_radix(length_hex, 16)
-                .map_err(|_| "invalid chunked inference framing")?;
-            if length == 0 {
-                break;
-            }
-            if length > MAX_EVENT_BYTES || total.saturating_add(length) > MAX_RESPONSE_BYTES {
-                return Err("inference response exceeded byte limit".into());
-            }
-            let mut chunk = vec![0u8; length];
-            read_exact_until(&mut reader, &mut chunk, deadline, cancel)?;
-            let mut end = [0u8; 2];
-            read_exact_until(&mut reader, &mut end, deadline, cancel)?;
-            if end != *b"\r\n" {
-                return Err("invalid inference chunk terminator".into());
-            }
-            total += length;
-            events.extend_from_slice(&chunk);
-            if events.len() > MAX_EVENT_BYTES {
-                return Err("oversized inference event".into());
-            }
-            while let Some(data) = take_sse_frame(&mut events) {
-                let payload =
-                    std::str::from_utf8(&data).map_err(|_| "invalid UTF-8 in inference event")?;
-                for line in payload
-                    .lines()
-                    .filter_map(|line| line.strip_prefix("data: "))
-                {
-                    if line == "[DONE]" {
-                        stopped = true;
-                        break;
-                    }
-                    let event: serde_json::Value = serde_json::from_str(line)
-                        .map_err(|e| format!("malformed inference event: {e}"))?;
-                    event_count = event_count.saturating_add(1);
-                    if event.get("content").is_some() {
-                        content_fields = content_fields.saturating_add(1);
-                    }
-                    if let Some(n) = event.get("tokens_predicted").and_then(|v| v.as_u64()) {
-                        predicted_tokens = Some(n);
-                    }
-                    if let Some(kind) = event.get("stop_type").and_then(|v| v.as_str()) {
-                        stop_type = kind.to_owned();
-                    }
-                    if let Some(text) = event.get("content").and_then(|x| x.as_str()) {
-                        if !text.is_empty() {
-                            emit(TokenChunk {
-                                text: text.to_owned(),
-                                index,
-                            })
-                            .map_err(|e| format!("inference output callback failed: {e:?}"))?;
-                            index = index.saturating_add(1);
-                        }
-                    }
-                    if event.get("stop").and_then(|x| x.as_bool()) == Some(true) {
-                        stopped = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if cancel.is_cancelled() {
-            return Err("generation cancelled".into());
-        }
-        if index == 0 {
-            return Err(format!("persistent engine produced no text: events={event_count}, content_fields={content_fields}, predicted_tokens={predicted_tokens:?}, stop_type={stop_type}"));
-        }
-        Ok(())
+        let body = build_structured_chat_request(
+            &request.prompt,
+            &request.history,
+            &[],
+            request.max_new_tokens,
+        )
+        .map_err(|_| "invalid structured text request".to_string())?;
+        let mut piece = 0u32;
+        generate_chat_stream_body(
+            port,
+            &self.config.api_key,
+            &body,
+            self.config.request_timeout,
+            || cancel.is_cancelled(),
+            |text| {
+                emit(TokenChunk { text, index: piece })
+                    .map_err(|_| "chat stream receiver unavailable".to_string())?;
+                piece = piece.saturating_add(1);
+                Ok(())
+            },
+        )
     }
 }
 impl Drop for PersistentLlamaBackend {
     fn drop(&mut self) {
         self.unload();
     }
-}
-/// SSE event separators are independent from HTTP chunk boundaries.
-/// Return exactly one fully buffered frame, leaving incomplete data untouched.
-fn take_sse_frame(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    let lf = buffer
-        .windows(2)
-        .position(|part| part == b"\n\n")
-        .map(|p| (p, 2));
-    let crlf = buffer
-        .windows(4)
-        .position(|part| part == b"\r\n\r\n")
-        .map(|p| (p, 4));
-    let (at, len) = match (lf, crlf) {
-        (Some(a), Some(b)) => {
-            if a.0 < b.0 {
-                a
-            } else {
-                b
-            }
-        }
-        (Some(a), None) => a,
-        (None, Some(b)) => b,
-        (None, None) => return None,
-    };
-    Some(buffer.drain(..at + len).collect())
-}
-
-fn read_line_bounded(
-    reader: &mut BufReader<TcpStream>,
-    deadline: Instant,
-    cancel: &Cancellation,
-    max: usize,
-) -> Result<String, String> {
-    let mut bytes = Vec::new();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("generation cancelled".into());
-        }
-        if Instant::now() >= deadline {
-            return Err("generation deadline exceeded".into());
-        }
-        let mut byte = [0u8; 1];
-        match reader.read(&mut byte) {
-            Ok(0) => return Err("inference endpoint closed connection".into()),
-            Ok(_) => {
-                bytes.push(byte[0]);
-                if byte[0] == b'\n' {
-                    break;
-                }
-            }
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
-            {
-                continue
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-        if bytes.len() > max {
-            return Err("inference line exceeds protocol limit".into());
-        }
-    }
-    String::from_utf8(bytes).map_err(|_| "inference protocol line is not UTF-8".into())
-}
-fn read_exact_until(
-    reader: &mut BufReader<TcpStream>,
-    buf: &mut [u8],
-    deadline: Instant,
-    cancel: &Cancellation,
-) -> Result<(), String> {
-    let mut position = 0;
-    while position < buf.len() {
-        if cancel.is_cancelled() {
-            return Err("generation cancelled".into());
-        }
-        if Instant::now() >= deadline {
-            return Err("generation deadline exceeded".into());
-        }
-        match reader.read(&mut buf[position..]) {
-            Ok(0) => return Err("truncated inference response".into()),
-            Ok(n) => position += n,
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    Ok(())
 }
 #[cfg(test)]
 mod tests {
@@ -640,21 +437,6 @@ mod tests {
     }
 
     #[test]
-    fn sse_frames_survive_arbitrary_http_chunk_splits() {
-        let mut buffer = Vec::new();
-        buffer.extend_from_slice(b"data: {\"content\":\"Hello\",\"stop\":false}\n");
-        assert!(take_sse_frame(&mut buffer).is_none());
-        buffer.extend_from_slice(b"\ndata: {\"content\":\" world\",\"stop\":false}\r\n");
-        let first = take_sse_frame(&mut buffer).unwrap();
-        assert!(String::from_utf8(first).unwrap().contains("Hello"));
-        assert!(take_sse_frame(&mut buffer).is_none());
-        buffer.extend_from_slice(b"\r\n");
-        let second = take_sse_frame(&mut buffer).unwrap();
-        assert!(String::from_utf8(second).unwrap().contains(" world"));
-        assert!(buffer.is_empty());
-    }
-
-    #[test]
     fn image_generation_requires_loaded_mmproj_before_http() {
         let executable = std::env::current_exe().unwrap();
         let digest: [u8; 32] = Sha256::digest(std::fs::read(&executable).unwrap()).into();
@@ -676,6 +458,7 @@ mod tests {
         };
         let result = backend.generate_with_images(
             &GenerationRequest {
+                history: Vec::new(),
                 prompt: "What is shown?".into(),
                 max_new_tokens: 100,
             },

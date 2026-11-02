@@ -210,12 +210,20 @@ message InferenceImageAttachment {
   uint32 size_bytes = 4;
 }
 
+// Host-owned, journal-derived chat history. Roles are typed at the Lu IPC
+// boundary and are never parsed from model-supplied natural-language text.
+message InferenceChatTurn {
+  string role = 1; // user or assistant
+  string text = 2;
+}
+
 message InferenceGenerateRequest {
   string session_id = 1;
   string generation_id = 2;
   string prompt = 3;
   uint32 max_new_tokens = 4;
   repeated InferenceImageAttachment images = 5;
+  repeated InferenceChatTurn history = 6;
 }
 
 message InferenceCancelRequest {

@@ -280,6 +280,14 @@ impl<B: InferenceBackend> InferenceBridge<B> {
         let mut pieces = 0u32;
         let mut bytes = 0u64;
         let generation = GenerationRequest {
+            history: request
+                .history
+                .iter()
+                .map(|turn| crate::inference_host::ChatTurn {
+                    role: turn.role.clone(),
+                    text: turn.text.clone(),
+                })
+                .collect(),
             prompt: request.prompt.clone(),
             max_new_tokens: request.max_new_tokens,
         };
@@ -430,6 +438,7 @@ mod tests {
                 prompt: "Hello".into(),
                 max_new_tokens: 8,
                 images: Vec::new(),
+                history: Vec::new(),
             }),
         );
         let mut events = Vec::new();

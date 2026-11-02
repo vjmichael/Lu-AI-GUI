@@ -73,6 +73,21 @@ pub fn validate_frame(frame: &proto::InferenceFrame) -> Result<(), InferenceWire
             {
                 return Err(InferenceWireError::InvalidField("generation limits"));
             }
+            if request.history.len() > 16
+                || request.history.iter().any(|turn| {
+                    !matches!(turn.role.as_str(), "user" | "assistant")
+                        || turn.text.trim().is_empty()
+                        || turn.text.len() > 15 * 1024
+                })
+                || request
+                    .history
+                    .iter()
+                    .map(|turn| turn.text.len())
+                    .sum::<usize>()
+                    > 15 * 1024
+            {
+                return Err(InferenceWireError::InvalidField("chat_history"));
+            }
             let images: Vec<ImageRef<'_>> = request
                 .images
                 .iter()
@@ -220,6 +235,7 @@ mod tests {
                     prompt: "x".repeat(MAX_INFERENCE_PROMPT_BYTES + 1),
                     max_new_tokens: 32,
                     images: Vec::new(),
+                    history: Vec::new(),
                 },
             )),
         };
@@ -307,6 +323,7 @@ mod tests {
                         sha256: vec![0x11; 32],
                         size_bytes: 4096,
                     }],
+                    history: Vec::new(),
                 },
             )),
         };
@@ -318,6 +335,35 @@ mod tests {
         assert_eq!(
             encode_frame(&bad),
             Err(InferenceWireError::InvalidField("image_attachments"))
+        );
+    }
+    #[test]
+    fn protobuf_chat_roles_fail_closed_and_roundtrip() {
+        let mut frame = proto::InferenceFrame {
+            protocol_version: INFERENCE_PROTOCOL_VERSION,
+            request_id: "req-typed".into(),
+            body: Some(proto::inference_frame::Body::Generate(
+                proto::InferenceGenerateRequest {
+                    session_id: "s-typed".into(),
+                    generation_id: "g-typed".into(),
+                    prompt: "What is the cost?".into(),
+                    max_new_tokens: 128,
+                    images: Vec::new(),
+                    history: vec![proto::InferenceChatTurn {
+                        role: "user".into(),
+                        text: "Arkansas".into(),
+                    }],
+                },
+            )),
+        };
+        let encoded = encode_frame(&frame).unwrap();
+        assert_eq!(decode_frame(&encoded).unwrap(), frame);
+        if let Some(proto::inference_frame::Body::Generate(ref mut request)) = frame.body {
+            request.history[0].role = "system".into();
+        }
+        assert_eq!(
+            encode_frame(&frame),
+            Err(InferenceWireError::InvalidField("chat_history"))
         );
     }
 }

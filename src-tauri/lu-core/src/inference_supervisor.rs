@@ -294,6 +294,24 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         prompt: &str,
         max_new_tokens: u32,
     ) -> Result<(), SupervisorError> {
+        self.reserve_generation_with_history(
+            session_id,
+            generation_id,
+            request_id,
+            prompt,
+            max_new_tokens,
+            &[],
+        )
+    }
+    pub fn reserve_generation_with_history(
+        &self,
+        session_id: &str,
+        generation_id: &str,
+        request_id: &str,
+        prompt: &str,
+        max_new_tokens: u32,
+        history: &[proto::InferenceChatTurn],
+    ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
         let frame = Self::frame(
             request_id,
@@ -303,6 +321,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
                 prompt: prompt.into(),
                 max_new_tokens,
                 images: Vec::new(),
+                history: history.to_vec(),
             }),
         );
         validate_frame(&frame).map_err(|_| SupervisorError::InvalidRequest)?;
@@ -326,6 +345,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         prompt: &str,
         max_new_tokens: u32,
         images: &[PinnedImage],
+        history: &[proto::InferenceChatTurn],
     ) -> Result<proto::InferenceFrame, SupervisorError> {
         if images.is_empty() || images.len() > 4 {
             return Err(SupervisorError::InvalidRequest);
@@ -351,6 +371,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
                 prompt: prompt.into(),
                 max_new_tokens,
                 images: refs,
+                history: history.to_vec(),
             }),
         );
         validate_frame(&frame).map_err(|_| SupervisorError::InvalidRequest)?;
@@ -368,6 +389,26 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         max_new_tokens: u32,
         images: &[PinnedImage],
     ) -> Result<(), SupervisorError> {
+        self.reserve_generation_images_with_history(
+            session_id,
+            generation_id,
+            request_id,
+            prompt,
+            max_new_tokens,
+            images,
+            &[],
+        )
+    }
+    pub fn reserve_generation_images_with_history(
+        &self,
+        session_id: &str,
+        generation_id: &str,
+        request_id: &str,
+        prompt: &str,
+        max_new_tokens: u32,
+        images: &[PinnedImage],
+        history: &[proto::InferenceChatTurn],
+    ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
         Self::image_frame(
             session_id,
@@ -376,6 +417,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             prompt,
             max_new_tokens,
             images,
+            history,
         )?;
         let mut control = session
             .control
@@ -401,6 +443,28 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         images: Vec<PinnedImage>,
         emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
     ) -> Result<(), SupervisorError> {
+        self.run_reserved_images_with_history(
+            session_id,
+            generation_id,
+            request_id,
+            prompt,
+            max_new_tokens,
+            images,
+            Vec::new(),
+            emit,
+        )
+    }
+    pub fn run_reserved_images_with_history(
+        &self,
+        session_id: &str,
+        generation_id: &str,
+        request_id: &str,
+        prompt: String,
+        max_new_tokens: u32,
+        images: Vec<PinnedImage>,
+        history: Vec<proto::InferenceChatTurn>,
+        emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
+    ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
         let frame = Self::image_frame(
             session_id,
@@ -409,6 +473,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             &prompt,
             max_new_tokens,
             &images,
+            &history,
         )?;
         let cancellation = {
             let control = session
@@ -447,6 +512,26 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         max_new_tokens: u32,
         emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
     ) -> Result<(), SupervisorError> {
+        self.run_reserved_with_history(
+            session_id,
+            generation_id,
+            request_id,
+            prompt,
+            max_new_tokens,
+            Vec::new(),
+            emit,
+        )
+    }
+    pub fn run_reserved_with_history(
+        &self,
+        session_id: &str,
+        generation_id: &str,
+        request_id: &str,
+        prompt: String,
+        max_new_tokens: u32,
+        history: Vec<proto::InferenceChatTurn>,
+        emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
+    ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
         let frame = Self::frame(
             request_id,
@@ -456,6 +541,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
                 prompt,
                 max_new_tokens,
                 images: Vec::new(),
+                history,
             }),
         );
         validate_frame(&frame).map_err(|_| SupervisorError::InvalidRequest)?;
