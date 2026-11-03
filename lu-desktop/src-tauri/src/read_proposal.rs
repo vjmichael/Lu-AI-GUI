@@ -109,6 +109,36 @@ impl ReadApprovalQueue {
         Ok(proposal)
     }
 
+    /// Read the immutable host-bound origin for a pending request. Only
+    /// trusted Rust host code may call this; the WebView supplies neither
+    /// generation identity nor an executable capability.
+    pub fn origin_for_conversation(
+        &self,
+        proposal_id: &str,
+        conversation_id: &str,
+    ) -> Result<String, ProposalError> {
+        let guard = self.pending.lock().map_err(|_| ProposalError::Unavailable)?;
+        let entry = guard.get(proposal_id).ok_or(ProposalError::Unknown)?;
+        if entry.conversation_id != conversation_id {
+            return Err(ProposalError::WrongConversation);
+        }
+        Ok(entry.generation_id.clone())
+    }
+
+    pub fn dismiss_for_conversation(
+        &self,
+        proposal_id: &str,
+        conversation_id: &str,
+    ) -> Result<(), ProposalError> {
+        let mut guard = self.pending.lock().map_err(|_| ProposalError::Unavailable)?;
+        let entry = guard.get(proposal_id).ok_or(ProposalError::Unknown)?;
+        if entry.conversation_id != conversation_id {
+            return Err(ProposalError::WrongConversation);
+        }
+        guard.remove(proposal_id);
+        Ok(())
+    }
+
     /// This consumes the pending proposal exactly once, INCLUDING a denied
     /// approval. A new request must be staged to retry a cancelled/mismatched
     /// selection. A native OS dialog (not the model/WebView) chooses `selected`.
