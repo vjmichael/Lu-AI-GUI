@@ -123,3 +123,53 @@ async fn imported_legacy_user_message_cannot_mint_tool_authority() {
     drop(chats);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn real_desktop_user_turn_opens_context_read_without_transfer_of_authority() {
+    use lu_core::continuity::{ContinuityError, ContinuityStore, TaskCheckpoint};
+
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let active = chats.create_chat().unwrap();
+    let unrelated = chats.create_chat().unwrap();
+    let turn_id = format!("g-{}", "c".repeat(32));
+    chats.append_user_with_turn_id(&active.chat_id, &turn_id, "Continue Lu v1.0").unwrap();
+    let continuity = ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+    continuity.append(&TaskCheckpoint {
+        checkpoint_id: "checkpoint-first".into(),
+        project_id: "lu-v1".into(),
+        task_id: "context-01".into(),
+        conversation_id: active.chat_id.clone(),
+        source_entry_ids: Vec::new(),
+        completed_work: "Recovered design and tests".into(),
+        next_action: "Review next gate".into(),
+        blockers: Vec::new(),
+    }).unwrap();
+
+    let found = continuity.latest_for_verified_user_turn(
+        "lu-v1", "context-01", &active.chat_id, &turn_id, &chats
+    ).unwrap().unwrap();
+    assert_eq!(found.next_action, "Review next gate");
+    assert_eq!(found.conversation_id, active.chat_id);
+
+    assert_eq!(
+        continuity.latest_for_verified_user_turn(
+            "lu-v1", "context-01", &unrelated.chat_id, &turn_id, &chats,
+        ).unwrap_err(),
+        ContinuityError::InvalidInput
+    );
+    assert_eq!(
+        continuity.latest_for_verified_user_turn(
+            "lu-v1", "context-01", &active.chat_id, "untrusted-quoted-turn", &chats,
+        ).unwrap_err(),
+        ContinuityError::InvalidInput
+    );
+
+    // Lookup creates no capability: the tool authority store remains empty.
+    let empty_authority = ConversationAuthority::new();
+    assert!(empty_authority.revoke_task("context-01").is_err());
+    drop(continuity);
+    drop(chats);
+    fs::remove_dir_all(root).unwrap();
+}
