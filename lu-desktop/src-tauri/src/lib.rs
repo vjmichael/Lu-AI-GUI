@@ -830,7 +830,7 @@ async fn lu_generate(
             .enqueue(&session_id, &chat_id, &generation_id)?;
     // Durable user journal before acknowledgment, including queued prompts.
     // Ticket drop releases the queue on any error before worker dispatch.
-    state.chats.append_user(&chat_id, &prompt)?;
+    state.chats.append_user_with_turn_id(&chat_id, &generation_id, &prompt)?;
     let queued = GenerationEvent {
         chat_id: chat_id.clone(),
         generation_id: generation_id.clone(),
