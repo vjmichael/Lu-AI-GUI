@@ -241,6 +241,56 @@ impl ContinuityStore {
         Ok(result)
     }
 
+
+    /// Host-facing resume read tied to the *exact* authenticated conversation,
+    /// project and task. Unlike `latest(project,task)`, a guessed or reused
+    /// project/task identifier cannot expose a checkpoint from another chat.
+    /// This does not authenticate a user by itself: trusted desktop code must
+    /// independently verify conversation ownership before making this call.
+    /// A remembered task record never carries authorization to invoke tools.
+    pub fn latest_for_conversation(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        conversation_id: &str,
+    ) -> Result<Option<TaskCheckpoint>, ContinuityError> {
+        if !valid_id(project_id) || !valid_id(task_id) || !valid_id(conversation_id) {
+            return Err(ContinuityError::InvalidInput);
+        }
+        let conn = self.conn.lock().map_err(|_| ContinuityError::Locked)?;
+        let row: Option<StoredCheckpoint> = conn
+            .query_row(
+                "SELECT checkpoint_id,project_id,task_id,conversation_id,
+                        source_entry_ids,completed_work,next_action,blockers
+                 FROM continuity_checkpoints
+                 WHERE project_id=?1 AND task_id=?2 AND conversation_id=?3
+                 ORDER BY sequence DESC LIMIT 1",
+                params![project_id, task_id, conversation_id],
+                |r| {
+                    Ok((
+                        r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
+                        r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(|(checkpoint_id, project_id, task_id, conversation_id,
+                  source_entry_ids, completed_work, next_action, blockers)| {
+            let source_entry_ids: Vec<i64> = serde_json::from_str(&source_entry_ids)
+                .map_err(|_| ContinuityError::InvalidInput)?;
+            let blockers: Vec<String> = serde_json::from_str(&blockers)
+                .map_err(|_| ContinuityError::InvalidInput)?;
+            let checkpoint = TaskCheckpoint {
+                checkpoint_id, project_id, task_id, conversation_id,
+                source_entry_ids, completed_work, next_action, blockers,
+            };
+            if !validate(&checkpoint) {
+                return Err(ContinuityError::InvalidInput);
+            }
+            Ok(checkpoint)
+        }).transpose()
+    }
+
     pub fn latest(
         &self,
         project_id: &str,
