@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d75d2bbffa696e3ab9f9d86baef33d7f91d0783d",
+  "sourceCommitBeforeLock": "039fe3e11affaa30121ad3dfb2009816d9bda31d",
   "trackedFileCount": 235,
   "files": [
     {
@@ -9,11 +9,11 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "0868f54f6e6756bf7c29383a103746cf1db4b0ec"
+      "blob": "27121b635612fff1928503af7263a4776beaa04c"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
-      "blob": "06e8ac44b59ebf3808f9cf021e5f8d56239e9691"
+      "blob": "0735e22ee2e43f4faf86026b33a51821d6537e14"
     },
     {
       "path": ".gitignore",
@@ -73,7 +73,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "69201d4ca430f83603fe6bf995bacf849870fa3d"
+      "blob": "ccb69648d060c8e26eee7abeef217f9aa7486fda"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
