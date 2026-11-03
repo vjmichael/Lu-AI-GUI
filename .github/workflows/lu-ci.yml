@@ -95,4 +95,6 @@ jobs:
             if ((Get-Content $p -Raw) -match '/mnt/data/|local-vendor') { Remove-Item $p }
           }
       - name: Compile check (not physical GPU testing)
-        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --no-run --manifest-path lu-desktop/src-tauri/Cargo.toml
