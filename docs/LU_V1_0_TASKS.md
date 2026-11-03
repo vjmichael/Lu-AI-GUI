@@ -140,3 +140,10 @@ Earlier CONTAIN-01 text requiring mandatory AppContainer/restricted worker must 
 
 ## CI capacity safeguard — 2026-11-03
 REPO-01 and WIN-LOAD-01 GitHub Actions now cancel superseded runs sharing the same workflow/ref, preserving Windows CI capacity on rapid source commits. The latest commit still receives independent source-lock, native-core, portable diagnostics, frontend, native-chat, and Windows checks. A cancelled old run is never reported as green.
+
+## AUTH-01 — authentic desktop journal to Lu Core read-only dispatch (2026-11-03)
+- Added `src-tauri/lu-core/tests/desktop_persisted_authority.rs`: compiles the actual published desktop `chat_store.rs` as a Lu Core integration fixture, with an actual OS file outside the chat storage folder.
+- Tests require *both* a host-verified persisted user turn (`ConversationAuthority::open_user_task`) and a separately issued exact-effect host grant (`PolicyEngine::grant`) before `dispatch_bound` can read the real file. Unrelated conversation, missing grant, wrong scope, revoked task, and legacy untrusted message are denied.
+- Added the required `rand` test dependency to compile the real desktop source. The test must be observed passing in CI before acceptance.
+- This is a production-code **integration test**, not a complete production UI integration: no tool approval dialog, native tool choice, dispatch from the GUI or credential/policy persistence are claimed. No mandatory worker sandbox.
+- Preserve accepted `0.1.0-alpha.2`; REPO-01 local archive convergence and Win11 physical acceptance remain open.
