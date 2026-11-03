@@ -190,3 +190,10 @@ This design is the authoritative product-level map; detailed protocols remain in
 
 ## 11. Current CONTEXT-01 implementation receipt (2026-11-03)
 Added `ContinuityStore::latest_for_verified_user_turn` so the trusted desktop host can require a verified current user turn before looking up a checkpoint by exact project/task/conversation. A remembered checkpoint is only context; it is never an authority grant. Updated regression tests reject stale/quoted instructions and cross-chat impersonation. This code is **not yet connected to desktop UI or automatic retrieval**, and CI acceptance of this commit remains to be established.
+
+## 12. TOOLS-01 milestone — first real native desktop file inspection (2026-11-03)
+- Added an explicit `Inspect file` desktop action. The trusted host obtains the file via a native OS picker; the WebView/model cannot supply a path, scope or effect grant. This action works without loading an LLM.
+- The native host persists a new authenticated user turn, opens an exact `lu.files.read_text` authority and separate policy grant, dispatches the Protobuf file read through Lu Core's registry, immediately revokes the task, and persists the answer in chat history.
+- The current text adapter reads up to 64 KiB from the **selected file only**. The root is selected per call and **is not** a universal Lu application sandbox.
+- Portable integration tests cover read correctness, restart persistence, duplicate turn denial, other-conversation isolation and bounded read. This is not a general model-driven tool-approval flow, and complete CI / installed-app acceptance remains outstanding.
+- Next: verify the committed revision, repair CI, implement reviewable model-proposed exact-target read grants, then effect-journalled atomic writes.
