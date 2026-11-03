@@ -3,10 +3,12 @@
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
 mod generation_queue;
+mod load_trace;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
+use load_trace::{LoadTrace, LoadTraceView};
 use lu_core::{
     inference_bridge::BridgeError,
     inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
@@ -154,6 +156,7 @@ struct DesktopState {
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
+    load_trace: Mutex<LoadTrace>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
 }
 
@@ -440,6 +443,7 @@ impl DesktopState {
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
+            load_trace: Mutex::new(LoadTrace::default()),
             supervisor: Arc::new(supervisor),
         })
     }
@@ -663,30 +667,61 @@ fn lu_release_image(
     Ok(images.remove(&image_ref).is_some())
 }
 
+/// A diagnostic snapshot can be polled while the blocking engine load runs.
+/// It does not query the engine, acquire the model catalog lock, or expose paths.
+#[tauri::command]
+fn lu_load_diagnostics(state: State<'_, Arc<DesktopState>>) -> Result<LoadTraceView, String> {
+    let trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+    Ok(trace.snapshot())
+}
+
 #[tauri::command]
 async fn lu_load_model(
     state: State<'_, Arc<DesktopState>>,
     model_ref: String,
 ) -> Result<String, String> {
     let state = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        if state.generation_queue.has_jobs() {
-            return Err("Finish or cancel queued generations before loading a model".into());
+    // Register immediately, before spawn_blocking. The UI can distinguish a
+    // responsive host from a stalled engine with lu_load_diagnostics.
+    {
+        let mut trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+        trace.begin(next_id("load-"), model_ref.clone()).map_err(str::to_owned)?;
+    }
+    let worker_state = Arc::clone(&state);
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| {
+            if worker_state.generation_queue.has_jobs() {
+                return Err("Finish or cancel queued generations before loading a model".into());
+            }
+            let catalog = worker_state.catalog.lock().map_err(|_| "catalog poisoned")?;
+            if !catalog.iter().any(|m| m.model_ref == model_ref) {
+                return Err("unknown model".into());
+            }
+            drop(catalog);
+            {
+                let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+                trace.record("supervisor_enter", None);
+            }
+            let session_id = next_id("s-");
+            worker_state
+                .supervisor
+                .load(&model_ref, session_id.clone(), &next_id("req-"))
+                .map_err(|e| format!("model load failed: {e:?}"))?;
+            Ok(session_id)
+        })();
+        // Do not propagate raw engine diagnostics through the trace. The
+        // original Result still returns to the invoking user.
+        if let Ok(mut trace) = worker_state.load_trace.lock() {
+            trace.finish(if result.is_ok() { "ok" } else { "error" });
         }
-        let catalog = state.catalog.lock().map_err(|_| "catalog poisoned")?;
-        if !catalog.iter().any(|m| m.model_ref == model_ref) {
-            return Err("unknown model".into());
+        result
+    }).await;
+    if joined.is_err() {
+        if let Ok(mut trace) = state.load_trace.lock() {
+            trace.finish("worker_join_error");
         }
-        drop(catalog);
-        let session_id = next_id("s-");
-        state
-            .supervisor
-            .load(&model_ref, session_id.clone(), &next_id("req-"))
-            .map_err(|e| format!("model load failed: {e:?}"))?;
-        Ok(session_id)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
+    joined.map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn lu_unload_model(
@@ -1051,6 +1086,7 @@ pub fn run() {
             lu_ingest_image_data_url,
             lu_release_image,
             lu_load_model,
+            lu_load_diagnostics,
             lu_unload_model,
             lu_cancel,
             lu_generate,
