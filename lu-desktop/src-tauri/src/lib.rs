@@ -156,6 +156,7 @@ struct DesktopState {
     catalog_path: PathBuf,
     chats: ChatStore,
     read_proposals: read_proposal::ReadApprovalQueue,
+    _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
     catalog: Mutex<Vec<StoredModel>>,
@@ -377,6 +378,24 @@ impl DesktopState {
     fn new(app: &AppHandle) -> Result<Self, String> {
         let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        // Establish process-exclusive ownership before touching recoverable
+        // journals; no second live Lu may mark its effects UNCERTAIN.
+        let owner = lu_core::desktop_owner::DesktopOwner::acquire(
+            &root.join("desktop-owner.sqlite")
+        ).map_err(|e| format!("Lu app data directory already in use or unavailable: {e:?}"))?;
+        let effects = lu_core::journal::EffectJournal::open(
+            &root.join("native-effects.sqlite")
+        ).map_err(|e| format!("effect journal unavailable: {e:?}"))?;
+        let approvals = lu_core::read_approval_ledger::ReadApprovalLedger::open(
+            &root.join("read-approvals.sqlite")
+        ).map_err(|e| format!("approval journal unavailable: {e:?}"))?;
+        // All old owners are excluded. Interrupted actions are never retried;
+        // these remain auditable, not executable grants.
+        effects.reconcile_interrupted()
+            .map_err(|e| format!("native effect startup reconciliation: {e:?}"))?;
+        approvals.reconcile_pending()
+            .map_err(|e| format!("read approval startup reconciliation: {e:?}"))?;
+
         let models_dir = root.join("lu-models");
         fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
         let engine_dir = app
@@ -456,11 +475,9 @@ impl DesktopState {
             catalog_path,
             chats: ChatStore::open(&root)?,
             read_proposals: read_proposal::ReadApprovalQueue::default(),
-            effects: lu_core::journal::EffectJournal::open(&root.join("native-effects.sqlite"))
-                .map_err(|e| format!("effect journal unavailable: {e:?}"))?,
-            read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger::open(
-                &root.join("read-approvals.sqlite"))
-                .map_err(|e| format!("approval decision ledger unavailable: {e:?}"))?,
+            _owner: owner,
+            effects,
+            read_approval_ledger: approvals,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
