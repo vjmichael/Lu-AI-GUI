@@ -1153,6 +1153,9 @@ async fn lu_approve_read_proposal(
         approved.max_bytes, lu_core::read_approval_ledger::ReadDecision::Approved,
     ).map_err(|e| format!("approval not durably committed: {e:?}"))?;
     let turn_id = next_id("g-");
+    state.read_approval_ledger.link_effect(
+        &proposal_id, &chat_id, &origin, &turn_id,
+    ).map_err(|e| format!("approved effect identity not persisted: {e:?}"))?;
     native_host_read::inspect_selected_file_with_receipt(
         &state.chats, &chat_id, &turn_id, &selected, u64::from(approved.max_bytes),
         Some(&state.effects),
