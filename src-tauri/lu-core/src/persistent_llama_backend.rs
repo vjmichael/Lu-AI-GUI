@@ -25,6 +25,7 @@ use std::{
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
+    sync::Arc,
 };
 
 /// Values originate from a host-controlled engine manifest and configuration;
@@ -37,6 +38,8 @@ pub struct PersistentEngineConfig {
     pub startup_timeout: Duration,
     pub request_timeout: Duration,
     pub api_key: String,
+    /// Host observer receives only known stage and operating-system PID.
+    pub load_observer: Option<Arc<dyn Fn(&'static str, Option<u32>) + Send + Sync>>,
 }
 
 pub struct PersistentLlamaBackend {
@@ -132,6 +135,11 @@ impl PersistentLlamaBackend {
             job: None,
         })
     }
+    fn observe(&self, phase: &'static str, pid: Option<u32>) {
+        if let Some(observer) = self.config.load_observer.as_ref() {
+            observer(phase, pid);
+        }
+    }
     pub fn pid(&self) -> Option<u32> {
         self.process.as_ref().map(Child::id)
     }
@@ -150,9 +158,11 @@ impl PersistentLlamaBackend {
     fn wait_ready(&mut self, deadline: Instant, port: u16) -> Result<(), String> {
         loop {
             if !self.is_running() {
+                self.observe("engine_exited_before_ready", self.pid());
                 return Err("persistent llama.cpp engine exited during model loading".into());
             }
             if Instant::now() >= deadline {
+                self.observe("engine_health_timeout", self.pid());
                 return Err("persistent GGUF model load timed out".into());
             }
             let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
@@ -169,6 +179,7 @@ impl PersistentLlamaBackend {
                     let mut status = String::new();
                     if reader.read_line(&mut status).is_ok() && status.starts_with("HTTP/1.1 200 ")
                     {
+                        self.observe("engine_health_200", self.pid());
                         return Ok(());
                     }
                 }
@@ -314,6 +325,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             self.job = Some(job);
         }
         self.process = Some(child);
+        self.observe("engine_spawned", self.pid());
         self.pinned_model_file = Some(file);
         self.pinned_projector_file = projector_file;
         self.port = Some(port);
@@ -448,6 +460,7 @@ mod tests {
             startup_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             api_key: "ab".repeat(32),
+            load_observer: None,
         };
         let mut backend = PersistentLlamaBackend::new(config).unwrap();
         let image = crate::multimodal_saved_turn::PinnedImage {
