@@ -1,0 +1,29 @@
+name: Lu WIN-LOAD-01 host trace tests
+on:
+  push:
+    branches:
+      - 'lu/win-load-01-host-trace-*'
+  pull_request:
+    paths:
+      - 'lu-desktop/src-tauri/src/load_trace.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - '.github/workflows/lu-win-load-01.yml'
+permissions:
+  contents: read
+jobs:
+  rust-load-trace:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record source identity
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          Write-Host "CI_COMMIT=$env:GITHUB_SHA"
+      - name: Run host lifecycle regression tests
+        working-directory: lu-desktop/src-tauri
+        shell: pwsh
+        run: cargo test --locked load_trace::tests -- --nocapture
+# This is *not* full Lu integration acceptance. REPO-01 must verify the
+# complete development source manifest and exact Git commit before global CI.
