@@ -156,6 +156,7 @@ struct DesktopState {
     catalog_path: PathBuf,
     chats: ChatStore,
     read_proposals: read_proposal::ReadApprovalQueue,
+    effects: lu_core::journal::EffectJournal,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
@@ -454,6 +455,8 @@ impl DesktopState {
             catalog_path,
             chats: ChatStore::open(&root)?,
             read_proposals: read_proposal::ReadApprovalQueue::default(),
+            effects: lu_core::journal::EffectJournal::open(&root.join("native-effects.sqlite"))
+                .map_err(|e| format!("effect journal unavailable: {e:?}"))?,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
@@ -1056,8 +1059,9 @@ async fn lu_inspect_text_file(
     .map_err(|e| format!("file picker failed: {e}"))??;
     let Some(selected) = selected else { return Ok(None) };
     let turn_id = next_id("g-");
-    let result = native_host_read::inspect_selected_file(
-        &state.chats, &chat_id, &turn_id, &selected,
+    let result = native_host_read::inspect_selected_file_with_receipt(
+        &state.chats, &chat_id, &turn_id, &selected, 64 * 1024,
+        Some(&state.effects),
     ).await?;
     Ok(Some(result))
 }
@@ -1108,8 +1112,9 @@ async fn lu_approve_read_proposal(
         &proposal_id, &chat_id, &origin, &selected,
     ).map_err(|e| format!("selected file differs from requested read: {e:?}"))?;
     let turn_id = next_id("g-");
-    native_host_read::inspect_selected_file_limited(
+    native_host_read::inspect_selected_file_with_receipt(
         &state.chats, &chat_id, &turn_id, &selected, u64::from(approved.max_bytes),
+        Some(&state.effects),
     ).await.map(Some)
 }
 
