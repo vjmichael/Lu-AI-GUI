@@ -81,3 +81,12 @@ Using recovered user-supplied Rust 1.98 + offline vendored crates, executed the 
 - Frontend/source suite: **89/89 passed**. SHA manifest: **253/253 files passed**.
 - Exact local source archive SHA256: `d459b577ddb27a841f0ee9cec1519a6628a1bd858837fcdc6547dda9b5d2f88b`.
 - Native Tauri/Windows host complete build and GitHub CI have **not** run against this source snapshot. REPO-01 remains open; do not call the source synchronized. Physical Windows acceptance remains deferred.
+
+## 2026-11-03 — REPO-01 published tree and WIN-LOAD-01 engine observations
+
+- Published-source integrity: a reproducible `source-tree.lock.json` lists every Git-tracked file by exact blob SHA, and `scripts/verify-source-tree.mjs` rejects missing, added, changed, or index-divergent tracked sources. `lu-repo01-full-source.yml` runs the lock and mutation tests. This proves that **GitHub CI is testing the pinned GitHub source**, not that it matches the unpublished latest local snapshot.
+- Cross-branch consolidation: added the unique CI/task ledger/native-chat scaffold from `lu/v1-01-windows-icon-import-20261103`. This is NOT a substitute for the locally verified 253-file source archive described above. Specifically `ansf_bridge.rs`, `native-dx`, and the locally patched `chat_store.rs` have not been recovered from the unpublished archive.
+- WIN-LOAD-01: backend now reports actual `engine_spawned` with operating-system PID, `engine_health_200` after authenticated localhost HTTP readiness, `engine_exited_before_ready`, and `engine_health_timeout`; the host stores these in the 96-entry bounded diagnostic trace. No raw engine logs, command line, file path or key is exposed.
+- Rust unit regression added for typed engine event callback and PID events; Windows CI outcome must be examined independently.
+- **REPO-01 full local-to-GitHub convergence remains OPEN** until the exact last 253-file local development source is available and compared with the committed repository. The GitHub source lock subgate can pass without satisfying that independent criterion.
+- No physical Windows or GPU acceptance performed, per deferred-test policy.
