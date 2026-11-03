@@ -154,3 +154,6 @@ REPO-01 and WIN-LOAD-01 GitHub Actions now cancel superseded runs sharing the sa
 - Moved the full **actual `ChatStore` + `ConversationAuthority` + `PolicyEngine` + `NativeToolRegistry`** integration tests to `lu-desktop/tests/native-auth/` as an independently versioned portable harness.
 - Restored Lu Core's original locked dependency list. Added a separate GitHub job `auth-portable`; successful identity checks do not count as authorization acceptance until this test passes.
 - Proves the *host-authorized dispatch contract*, but no UI approval surface or production event routing is yet enabled. User confirmation remains required for operations not already delegated. Native host access is not a sandbox policy.
+
+## CI regression correction — AUTH-01 corrupt journal fixture
+Portable chat-journal CI located a genuine fixture path error in the newly added corrupt-record test: production journals reside at `<root>/conversations/<chat-id>.jsonl`, not `<root>/<chat-id>.jsonl`. Fixed the test path, retaining strict fail-closed corrupted-row verification. Do not count this as a successful test until the corrected commit is exercised in CI.
