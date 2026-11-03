@@ -90,3 +90,12 @@ Using recovered user-supplied Rust 1.98 + offline vendored crates, executed the 
 - Rust unit regression added for typed engine event callback and PID events; Windows CI outcome must be examined independently.
 - **REPO-01 full local-to-GitHub convergence remains OPEN** until the exact last 253-file local development source is available and compared with the committed repository. The GitHub source lock subgate can pass without satisfying that independent criterion.
 - No physical Windows or GPU acceptance performed, per deferred-test policy.
+
+## LU-AUTONOMY-01 — capability freedom with enforced limits (2026-11-03)
+Design audited against `SECURITY_AUTHORITY_AND_OS_CEILING.md`, `conversation_authority.rs`, `policy.rs`, `native_files.rs`, `journal.rs`, persistent engine and Win32 Job code.
+- **PROVISION-01 / P0 NEW:** host-owned capability inventory plus verified user-scope runtime/SDK installation and rollback; never let agent invoke unreviewed installer scripts or demand UAC.
+- **ORCH-01 / P0 NEW:** task capability preflight, dependency resolution and durable resume; distinguish unavailable tools, denied authority and missing environments.
+- **WIN-JOB-01 / P0 NEW:** engine calls `Job::assign_and_resume_suspended` while inspected Job implementation only exposes `assign`; reconcile and compile Windows process contract.
+- **CONTAIN-01 remains blocking:** Job Object process lifetime is not a restricted worker identity or egress/filesystem sandbox.
+- **DEV-01 / after core:** sandboxed Lu Dev self-build/test and separately approved stable promotion.
+- Audit and acceptance: [LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md](LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md). No new implementation or security acceptance claimed by the design audit.
