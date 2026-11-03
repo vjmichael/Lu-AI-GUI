@@ -12,9 +12,7 @@ pub mod conversation_authority {
 #[path = "../../../src-tauri/src/chat_store.rs"]
 mod chat_store;
 
-// The ANSF SQLite implementation and host bridge are also compiled directly
-// from production files; no ANSF storage behavior is mocked.
-#[path = "../../../src-tauri/lu-core/src/ansf.rs"]
+// The production ANSF SQLite module is compiled directly without a mock.
+// The newer local ANSF bridge is not yet present in this published revision.
+#[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
-#[path = "../../../src-tauri/src/ansf_bridge.rs"]
-mod ansf_bridge;
