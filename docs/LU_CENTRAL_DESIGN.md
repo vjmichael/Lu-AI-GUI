@@ -211,3 +211,6 @@ Lu's read-only tool now has **two independent durable traces**: a host-owned app
 Neither the old model instruction nor a persisted approval decision is automatically renewed on restart. Until Lu has single-instance/exclusive database ownership and effect-specific reconciliation, pending approvals are not restored to an executable queue and unfinished calls cannot be blindly replayed. The durable read path is opt-in at its Rust API and enabled in desktop native file inspection. This milestone does **not** close the wider durability requirements for atomic writes, worker termination, external consequences, reparse-point race pinning or end-to-end Windows acceptance.
 
 Next gate: validate exact-revision Rust/Windows CI and implement exclusive startup recovery and robust resource identity before enabling write operations.
+
+## 15. JOURNAL-01A reconciliation key (development, 2026-11-03)
+A host-generated effect call ID is now durably linked to an approved model proposal via a unique database field. This makes it possible to correlate the human decision and subsequent `EffectJournal` state without interpreting either record as a fresh capability. Duplicate and cross-conversation effect bindings are rejected. Startup reconciliation still requires independent ownership verification and is not automatically enabled.
