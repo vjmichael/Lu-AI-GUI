@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: repo01-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify-source:
     runs-on: ubuntu-latest
