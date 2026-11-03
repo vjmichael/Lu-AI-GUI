@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5ebf521149f7577e1a3003d3dc4b4c53439d50e7",
+  "sourceCommitBeforeLock": "d75d2bbffa696e3ab9f9d86baef33d7f91d0783d",
   "trackedFileCount": 235,
   "files": [
     {
@@ -73,7 +73,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "15d3b55aeb96a69d884bf425d7358c518696d51c"
+      "blob": "69201d4ca430f83603fe6bf995bacf849870fa3d"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -197,7 +197,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
-      "blob": "a8d134ff7efbc987d43b2aeca238bf6cc801dafc"
+      "blob": "579b4870773a37ddd41a80b6227214d6b2ddf46e"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
@@ -205,7 +205,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "a728bf6f489b5affd8e2c0186e6e5bbfa6be2754"
+      "blob": "c8f1fcf48f0269ff49245cedd0a650dd22f584ce"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -245,7 +245,7 @@
     },
     {
       "path": "lu-desktop/tests/r18-queue.test.mjs",
-      "blob": "d0000921df2ab98e74c241563680459eb5fea785"
+      "blob": "bb7f59be1a2c59c2892ddc46c720b0dde948254b"
     },
     {
       "path": "lu-desktop/tests/r19-desktop-ux.test.mjs",
@@ -389,7 +389,7 @@
     },
     {
       "path": "src-tauri/lu-core/examples/persistent_llama_resilience_smoke.rs",
-      "blob": "84d0eff8f1b54da11fa6dbfb9bf7f550ed90086a"
+      "blob": "9c4979900eda2bd916a9708704e6c9dd7bb49525"
     },
     {
       "path": "src-tauri/lu-core/examples/persistent_llama_smoke.rs",
