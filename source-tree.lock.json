@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "59897af9b7d4d2c57be12290d960fedcba2c8b66",
+  "sourceCommitBeforeLock": "f9a55c7b72300d3f87975f4d13cd45ab411c8e3a",
   "trackedFileCount": 244,
   "files": [
     {
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "32187d98637958550aa74e2132ca46cf1db7b43a"
+      "blob": "ed587a8f3b6ddea7d59df7b6e814d433fd19fc8f"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -401,7 +401,7 @@
     },
     {
       "path": "src-tauri/lu-core/examples/inference_supervisor_smoke.rs",
-      "blob": "d104c1d57701b9c6f298b287ee65a9164bbeff62"
+      "blob": "3e93bb1bc1619a94f7a5f45f45278dc7b7418831"
     },
     {
       "path": "src-tauri/lu-core/examples/linux_persistent_llama_resilience_smoke.rs",
@@ -409,7 +409,7 @@
     },
     {
       "path": "src-tauri/lu-core/examples/llama_cli_smoke.rs",
-      "blob": "922a6a0e2dbd7053663c19ed80e9e4e86f98d5e6"
+      "blob": "ac28e86fe1062dd195a01e005daf025dc006c4f1"
     },
     {
       "path": "src-tauri/lu-core/examples/persistent_llama_resilience_smoke.rs",
@@ -417,7 +417,7 @@
     },
     {
       "path": "src-tauri/lu-core/examples/persistent_llama_smoke.rs",
-      "blob": "79a31fed778c6feeb1a05d717f3f942c3949af69"
+      "blob": "4f50abea4da9f4e709f003a745d3c341e50a44d9"
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
@@ -933,7 +933,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/read_approval_ledger.rs",
-      "blob": "0eb8112597232159a77deec59eb72360d6693c0c"
+      "blob": "7e50fd235570ba460e42923bb5c90ac4355e2464"
     },
     {
       "path": "src-tauri/lu-core/tests/real_gguf_import.rs",
