@@ -61,6 +61,9 @@ jobs:
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml
   diagnostics-portable:
     needs: source-identity
+    # The unpublished native-dx harness is not yet part of the GitHub tree.
+    # Mark it skipped, never pretend a no-op is a passing diagnostics suite.
+    if: ${{ hashFiles('lu-desktop/tests/native-dx/Cargo.toml') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,8 +71,7 @@ jobs:
         with:
           toolchain: '1.98.0'
       - name: Portable native diagnostics regression
-        run: |
-          if test -f lu-desktop/tests/native-dx/Cargo.toml; then cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml; else echo 'SKIP: native-dx absent from published repo; not a pass'; fi
+        run: cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml
   native-core:
     runs-on: ubuntu-latest
     steps:
