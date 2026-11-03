@@ -61,9 +61,6 @@ jobs:
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml
   diagnostics-portable:
     needs: source-identity
-    # The unpublished native-dx harness is not yet part of the GitHub tree.
-    # Mark it skipped, never pretend a no-op is a passing diagnostics suite.
-    if: ${{ hashFiles('lu-desktop/tests/native-dx/Cargo.toml') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
