@@ -36,6 +36,8 @@ pub struct ReadDecisionRecord {
     pub file_name: String,
     pub max_bytes: u32,
     pub decision: ReadDecision,
+    /// Host-generated native call identity. An approval never dispatches by itself.
+    pub effect_call_id: Option<String>,
 }
 pub struct ReadApprovalLedger { connection: Mutex<Connection> }
 fn valid_id(s: &str) -> bool {
@@ -59,6 +61,7 @@ impl ReadApprovalLedger {
                 file_name TEXT NOT NULL,
                 max_bytes INTEGER NOT NULL CHECK (max_bytes BETWEEN 1 AND 65536),
                 state TEXT NOT NULL CHECK(state IN ('PENDING','APPROVED','DENIED','INTERRUPTED')),
+                effect_call_id TEXT UNIQUE,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -68,6 +71,21 @@ impl ReadApprovalLedger {
                 BEFORE DELETE ON lu_read_approvals BEGIN
                 SELECT RAISE(ABORT,'approval audit rows are immutable records');
             END;"
+        )?;
+        // Upgrade an early pre-release journal without dropping historical rows.
+        let has_effect_id = {
+            let mut stmt = connection.prepare("PRAGMA table_info(lu_read_approvals)")?;
+            let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            let mut found = false;
+            for name in names { if name? == "effect_call_id" { found = true; } }
+            found
+        };
+        if !has_effect_id {
+            connection.execute("ALTER TABLE lu_read_approvals ADD COLUMN effect_call_id TEXT", [])?;
+        }
+        connection.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS lu_read_approvals_effect_call_id
+             ON lu_read_approvals(effect_call_id);"
         )?;
         Ok(Self { connection: Mutex::new(connection) })
     }
@@ -95,13 +113,13 @@ impl ReadApprovalLedger {
     pub fn get(&self, proposal_id: &str) -> Result<Option<ReadDecisionRecord>, ReadLedgerError> {
         if !valid_id(proposal_id) { return Err(ReadLedgerError::Invalid); }
         let conn = self.connection.lock().map_err(|_| ReadLedgerError::Poisoned)?;
-        let raw: Option<(String,String,String,String,i64,String)> = conn.query_row(
-            "SELECT proposal_id,chat_id,generation_id,file_name,max_bytes,state
+        let raw: Option<(String,String,String,String,i64,String,Option<String>)> = conn.query_row(
+            "SELECT proposal_id,chat_id,generation_id,file_name,max_bytes,state,effect_call_id
              FROM lu_read_approvals WHERE proposal_id=?1",
             [proposal_id],
-            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))
+            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))
         ).optional()?;
-        raw.map(|(proposal_id,chat_id,generation_id,file_name,max_bytes,state)| {
+        raw.map(|(proposal_id,chat_id,generation_id,file_name,max_bytes,state,effect_call_id)| {
             if !(1..=65536).contains(&max_bytes) || !valid_filename(&file_name) {
                 return Err(ReadLedgerError::Invalid);
             }
@@ -109,6 +127,7 @@ impl ReadApprovalLedger {
                 proposal_id, chat_id, generation_id, file_name,
                 max_bytes: max_bytes as u32,
                 decision: ReadDecision::parse(&state).ok_or(ReadLedgerError::Invalid)?,
+                effect_call_id,
             })
         }).transpose()
     }
@@ -148,6 +167,31 @@ impl ReadApprovalLedger {
         tx.commit()?;
         Ok(())
     }
+    /// Binds one approved proposal to an exact host-generated native call.
+    /// This is an audit join, not tool authorization. Replays are refused.
+    pub fn link_effect(
+        &self, proposal_id: &str, chat_id: &str,
+        generation_id: &str, effect_call_id: &str,
+    ) -> Result<(), ReadLedgerError> {
+        if !valid_id(proposal_id) || !valid_id(chat_id) ||
+            !valid_id(generation_id) || !valid_id(effect_call_id) {
+            return Err(ReadLedgerError::Invalid);
+        }
+        let conn = self.connection.lock().map_err(|_| ReadLedgerError::Poisoned)?;
+        let result = conn.execute(
+            "UPDATE lu_read_approvals
+             SET effect_call_id=?1, updated_at=CURRENT_TIMESTAMP
+             WHERE proposal_id=?2 AND chat_id=?3 AND generation_id=?4
+               AND state='APPROVED' AND effect_call_id IS NULL",
+            params![effect_call_id, proposal_id, chat_id, generation_id],
+        );
+        match result {
+            Ok(1) => Ok(()),
+            Ok(_) => Err(ReadLedgerError::Transition),
+            Err(e) => Err(ReadLedgerError::Database(e.to_string())),
+        }
+    }
+
     /// Call only after exclusive desktop ownership is established and any
     /// previous instance is stopped. Never auto-approve interrupted requests.
     pub fn reconcile_pending(&self) -> Result<usize, ReadLedgerError> {
