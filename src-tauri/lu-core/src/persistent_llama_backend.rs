@@ -302,9 +302,12 @@ impl InferenceBackend for PersistentLlamaBackend {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            // CREATE_SUSPENDED | CREATE_NO_WINDOW: no uncontained child code
-            // executes before we put the process into a kill-on-close Job.
-            command.creation_flags(0x0800_0000 | 0x0000_0004);
+            // CREATE_NO_WINDOW only. The std::process::Child interface does
+            // not expose the suspended primary thread handle needed to resume.
+            // Job assignment immediately follows spawn, before health probing.
+            // This has a short assignment race: lifetime supervision, NOT a
+            // security sandbox or a claim of race-free containment.
+            command.creation_flags(0x0800_0000);
         }
         // Establish the lifetime guard before launching the engine. If the
         // process cannot enter the Job, kill and reap it rather than running an
@@ -315,7 +318,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         #[allow(unused_mut)]
         let mut child = command.spawn().map_err(|e| e.to_string())?;
         #[cfg(windows)]
-        if let Err(error) = job.assign_and_resume_suspended(&child) {
+        if let Err(error) = job.assign(&child) {
             let _ = child.kill();
             let _ = child.wait();
             return Err(format!("cannot contain Lu engine child: {error}"));
