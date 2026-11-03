@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify exact committed development-source manifest
+        run: node lu-desktop/scripts/verify-source-manifest.mjs
       - name: Check manifest versions
         shell: bash
         run: |
