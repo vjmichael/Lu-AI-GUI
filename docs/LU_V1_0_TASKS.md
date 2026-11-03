@@ -147,3 +147,10 @@ REPO-01 and WIN-LOAD-01 GitHub Actions now cancel superseded runs sharing the sa
 - Added the required `rand` test dependency to compile the real desktop source. The test must be observed passing in CI before acceptance.
 - This is a production-code **integration test**, not a complete production UI integration: no tool approval dialog, native tool choice, dispatch from the GUI or credential/policy persistence are claimed. No mandatory worker sandbox.
 - Preserve accepted `0.1.0-alpha.2`; REPO-01 local archive convergence and Win11 physical acceptance remain open.
+
+## AUTH-01 portable harness correction — 2026-11-03
+
+- The initial real-desktop verifier integration test under `src-tauri/lu-core/tests/` introduced a `rand` dev dependency not represented by the frozen core Cargo.lock, correctly rejected by `cargo test --locked`.
+- Moved the full **actual `ChatStore` + `ConversationAuthority` + `PolicyEngine` + `NativeToolRegistry`** integration tests to `lu-desktop/tests/native-auth/` as an independently versioned portable harness.
+- Restored Lu Core's original locked dependency list. Added a separate GitHub job `auth-portable`; successful identity checks do not count as authorization acceptance until this test passes.
+- Proves the *host-authorized dispatch contract*, but no UI approval surface or production event routing is yet enabled. User confirmation remains required for operations not already delegated. Native host access is not a sandbox policy.
