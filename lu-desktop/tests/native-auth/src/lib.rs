@@ -2,6 +2,8 @@
 //! A host-readable file is NOT an authorization grant.
 #[path = "../../../src-tauri/src/chat_store.rs"]
 mod chat_store;
+#[path = "../../../src-tauri/src/native_host_read.rs"]
+mod native_host_read;
 
 use chat_store::ChatStore;
 use lu_core::{
@@ -170,6 +172,63 @@ fn real_desktop_user_turn_opens_context_read_without_transfer_of_authority() {
     let empty_authority = ConversationAuthority::new();
     assert!(empty_authority.revoke_task("context-01").is_err());
     drop(continuity);
+    drop(chats);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn user_selected_text_is_read_through_host_authorized_native_tool_and_journaled() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let chat = chats.create_chat().unwrap();
+    let other_chat = chats.create_chat().unwrap();
+    let files = root.join("selected-host-location");
+    fs::create_dir_all(&files).unwrap();
+    fs::write(files.join("readme.md"), "# Native Lu inspection\n").unwrap();
+
+    let turn = format!("g-{}", "e".repeat(32));
+    let result = native_host_read::inspect_selected_file(
+        &chats, &chat.chat_id, &turn, &files.join("readme.md")
+    ).await.unwrap();
+    assert_eq!(result.file_name, "readme.md");
+    assert_eq!(result.text, "# Native Lu inspection\n");
+    assert!(!result.truncated);
+    let history = chats.history(&chat.chat_id).unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].role, "user");
+    assert_eq!(history[1].role, "assistant");
+    assert_eq!(history[1].text, result.text);
+    assert!(!history[1].interrupted);
+    assert!(chats.history(&other_chat.chat_id).unwrap().is_empty());
+    assert!(native_host_read::inspect_selected_file(
+        &chats, &chat.chat_id, &turn, &files.join("readme.md")
+    ).await.is_err(), "a used turn must not be admitted twice");
+
+    drop(chats);
+    let reopened = ChatStore::open(&root.join("chats")).unwrap();
+    assert_eq!(reopened.history(&chat.chat_id).unwrap()[1].text, "# Native Lu inspection\n");
+    drop(reopened);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn selected_native_read_refuses_link_or_nonfile_and_oversized_text() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let chat = chats.create_chat().unwrap();
+    let turn = format!("g-{}", "f".repeat(32));
+    assert!(native_host_read::inspect_selected_file(
+        &chats, &chat.chat_id, &turn, &root
+    ).await.is_err());
+    assert!(chats.history(&chat.chat_id).unwrap().is_empty());
+    fs::write(root.join("large.txt"), "x".repeat(70000)).unwrap();
+    let result = native_host_read::inspect_selected_file(
+        &chats, &chat.chat_id, &turn, &root.join("large.txt")
+    ).await.unwrap();
+    assert!(result.truncated);
+    assert_eq!(result.text.len(), 64 * 1024);
     drop(chats);
     fs::remove_dir_all(root).unwrap();
 }
