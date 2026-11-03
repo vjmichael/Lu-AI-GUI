@@ -26,3 +26,14 @@ This is a **clean working tree** branch, not a new Git repository. Its Git commi
 ## Third-party provenance
 
 The project retains appropriate Apache-2.0 licensing and notices for any code or documentation derived from the Jan fork. See `LICENSE` and `NOTICE`. Clean source layout does not erase upstream attribution.
+
+## v1.0 development process (2026-11-03)
+
+Lu `0.1.0-alpha.2` is the accepted *functional-alpha baseline*. The project has moved to local development with GitHub Actions as the automated test runner. **Routine physical Windows retesting is deferred until near v1.0**; it is tracked, not waived. All new changes require task IDs, commit provenance, CI results, and a deferred manual acceptance scenario.
+
+- [Master v1.0 task board](docs/LU_V1_0_TASKS.md)
+- [Deferred Windows acceptance](docs/LU_V1_0_DEFERRED_WINDOWS_ACCEPTANCE.md)
+- [v1.0 design gates](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md)
+- [CI workflow](.github/workflows/lu-ci.yml)
+
+**REPO-01 source convergence is open:** the repository app sources are older than the tested local `0.1.0-alpha.3-dev.1` working tree. CI must reject stale source rather than certify it. No hosted CI pass is claimed until the matching full source is committed and the workflow completes successfully.
