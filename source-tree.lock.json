@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "031ae625b6a078b9a0ed1a88046ecd6011c31da0",
+  "sourceCommitBeforeLock": "48b1fbd6cacc1d48ace118bdb2f65b4c20aed277",
   "trackedFileCount": 233,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "a6c7a8c22fc7542a333804206d17d1809588c3d1"
+      "blob": "76ba3801b837d07d7614a91825b7125d0aff7bf7"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
-      "blob": "5c1bd0e2eb4018ca1bebefa32acfa88493eb7539"
+      "blob": "47295341a7e1ef6fc3861d795bb4db4219cddd65"
     },
     {
       "path": ".gitignore",
@@ -73,7 +73,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "75f538786248176e5f875089eebd8360418c9319"
+      "blob": "5e86732b16b753b355be5e5fddc5d0fdedd58ed2"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -209,7 +209,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
-      "blob": "eab49b11ba3587d7b3cd4f3f4b4c8b01e64ed14e"
+      "blob": "461c4b2ba0d0109d2391d8961c9c0f42da5195e2"
     },
     {
       "path": "lu-desktop/src-tauri/src/main.rs",
@@ -629,7 +629,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "003eeaaf8489ad25449ff9aee0d15ea03f2a64f2"
+      "blob": "e291965aaf12b46d8b9495591534fbf04e390cd4"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
