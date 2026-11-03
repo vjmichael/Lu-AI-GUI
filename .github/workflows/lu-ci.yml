@@ -59,6 +59,17 @@ jobs:
           toolchain: '1.98.0'
       - name: Test the production chat journal without GUI dependencies
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml
+  auth-portable:
+    name: Trusted desktop user-turn to native tool dispatch
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test real persisted chat authority and bounded read dispatch
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml
   diagnostics-portable:
     needs: source-identity
     runs-on: ubuntu-latest
