@@ -214,3 +214,8 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - Added a nullable unique `effect_call_id` to approval records (including a migration for pre-release journal rows). The trusted host binds the fresh generated tool call ID to the APPROVED model proposal **before** tool dispatch.
 - One pending proposal cannot bind to another chat/generation, one approval cannot bind twice, and two approvals cannot share an effect ID. Persisted approval can now be joined to the matching `EffectJournal` result after restart; this is only an audit link, not authorization.
 - Added regression cases for restart link survival, ID replay, different-chat collision and end-to-end persisted text/receipt correlation. CI is required before declaring the gate accepted.
+
+## CI-01 follow-up — updated smoke examples (2026-11-03)
+- Prior source-locked CI run `41742393532` had source-identity, frontend, diagnostics, portable native-chat, and portable native-auth **PASS**, but native-core **FAIL** on stale example `examples/inference_supervisor_smoke.rs` missing `PersistentEngineConfig::load_observer`; Windows-host was cancelled by subsequent revisions.
+- Repaired that initializer, and proactively checked **all Rust examples** under `lu-core/examples/` for both `load_observer` and `GenerationRequest::history`. Corrected `inference_supervisor_smoke.rs`, `persistent_llama_smoke.rs` and `llama_cli_smoke.rs` (alongside the prior `linux_persistent_llama_resilience_smoke.rs` fix).
+- Added pre-release approval schema migration test to prove older decision rows survive addition of `effect_call_id`. These changes remain pending native-core and installed Windows verification on their exact source-locked revision.
