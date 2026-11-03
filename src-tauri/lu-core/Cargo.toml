@@ -27,7 +27,6 @@ protoc-bin-vendored = "3"
 
 
 [dev-dependencies]
-rand = "0.8" # real desktop ChatStore is compiled into AUTH-01 integration test
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 
 [target.'cfg(windows)'.dependencies]
