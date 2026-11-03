@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ba9c4e0aad69c3d58fed07900a050d74420b7293",
+  "sourceCommitBeforeLock": "031ae625b6a078b9a0ed1a88046ecd6011c31da0",
   "trackedFileCount": 233,
   "files": [
     {
@@ -45,7 +45,7 @@
     },
     {
       "path": "docs/LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md",
-      "blob": "3aefd2264c0d8340babb0be82228342eaeda160d"
+      "blob": "3954455a02f113a24dc6868b11ee38626c7bca7d"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -69,11 +69,11 @@
     },
     {
       "path": "docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md",
-      "blob": "54cc7c7db4f232568634df9aa49e84d5e09a75b3"
+      "blob": "d5373d5b37b594709b6a938be6e4e3262e9d0c28"
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "acd665731b8b6970986fd87b8ecae2f157153f58"
+      "blob": "75f538786248176e5f875089eebd8360418c9319"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -361,7 +361,7 @@
     },
     {
       "path": "src-tauri/lu-core/SECURITY_AUTHORITY_AND_OS_CEILING.md",
-      "blob": "74c08b500e025f2fdd521f1600ca3177928c849d"
+      "blob": "e217e8c397623979ea323bdedea772a3358f4aec"
     },
     {
       "path": "src-tauri/lu-core/build.rs",
@@ -885,7 +885,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/policy_native.rs",
-      "blob": "3c9b6ce189dfb46097d134b3e13eb73dfd0ba455"
+      "blob": "bf0727f9c9b556cf110e50210d170b7d388ada20"
     },
     {
       "path": "src-tauri/lu-core/tests/protobuf_wire.rs",
