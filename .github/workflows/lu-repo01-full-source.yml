@@ -1,0 +1,31 @@
+name: Lu REPO-01 frozen source verification
+on:
+  push:
+    branches:
+      - 'lu/win-load-01-host-trace-*'
+      - main
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked-source snapshot
+        run: node scripts/verify-source-tree.mjs
+      - name: Run REPO-01 malicious-edit fixtures
+        run: node --test tests/source-identity.test.mjs
+      - name: Record immutable build identity
+        run: |
+          git rev-parse HEAD
+          git status --porcelain
+# This gate proves integrity of the repository checkout relative to its
+# committed manifest. It does not prove an external unpublished local copy.
