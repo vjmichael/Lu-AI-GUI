@@ -378,6 +378,7 @@ async fn durable_native_read_has_applied_receipt_and_survives_chat_restart() {
         "p-1", &chat.chat_id, "model-generation-1", "note.txt",
         24, ReadDecision::Approved,
     ).unwrap();
+    approvals.link_effect("p-1", &chat.chat_id, "model-generation-1", &turn).unwrap();
     let read = native_host_read::inspect_selected_file_with_receipt(
         &chats, &chat.chat_id, &turn, &files.join("note.txt"), 24, Some(&effects)
     ).await.unwrap();
@@ -391,7 +392,9 @@ async fn durable_native_read_has_applied_receipt_and_survives_chat_restart() {
     let approvals = ReadApprovalLedger::open(&root.join("approvals.sqlite")).unwrap();
     let effects = EffectJournal::open(&root.join("effects.sqlite")).unwrap();
     let chats = ChatStore::open(&root.join("chats")).unwrap();
-    assert_eq!(approvals.get("p-1").unwrap().unwrap().decision, ReadDecision::Approved);
+    let decision = approvals.get("p-1").unwrap().unwrap();
+    assert_eq!(decision.decision, ReadDecision::Approved);
+    assert_eq!(decision.effect_call_id.as_deref(), Some(turn.as_str()));
     assert_eq!(effects.get(&turn).unwrap().unwrap().state, EffectState::Applied);
     assert_eq!(chats.history(&chat.chat_id).unwrap()[1].text, "persisted verified text");
     assert_eq!(effects.reconcile_interrupted().unwrap(), 0);
