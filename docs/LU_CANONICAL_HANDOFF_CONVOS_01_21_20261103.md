@@ -66,3 +66,8 @@ This is the stable entrypoint for engineering continuation across `ChatGPT - Lu 
 - Continue code and tests in that same branch unless a verified new branch is necessary. Keep alpha.2 immutable.
 - Record every change with task ID, commit SHA, exact test results and what is **not** proven.
 - Amend this handoff only for significant owner decisions or newly verified scope, not speculative assistant proposals.
+
+## CONTEXT-01 implementation update — 2026-11-03
+- Extended existing `src-tauri/lu-core/src/continuity.rs` rather than creating another authoritative memory store. `latest_for_conversation(project_id,task_id,conversation_id)` scopes resume records to all three trusted host identities.
+- Added `tests/continuity_conversation_scope.rs` with restart, same-task/different-chat, no cross-chat data read, immutable checkpoint-ID conflict, and malformed requested identity regressions.
+- **Not yet complete:** No production desktop retrieval/use of this lookup, no cross-chat user-facing provenance browser, no automatic source-grounded context assembly, and no conversion of any checkpoint into task authority. Tests are pending CI and do not imply authenticated owner login.
