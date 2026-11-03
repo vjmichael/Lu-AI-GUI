@@ -25,6 +25,7 @@ pub(crate) struct LoadEvent {
     pub model_ref: String,
     pub phase: &'static str,
     pub elapsed_ms: u64,
+    pub pid: Option<u32>,
     pub outcome: Option<&'static str>,
 }
 
@@ -63,6 +64,10 @@ impl LoadTrace {
     }
 
     pub fn record(&mut self, phase: &'static str, outcome: Option<&'static str>) {
+        self.record_engine(phase, outcome, None);
+    }
+
+    pub fn record_engine(&mut self, phase: &'static str, outcome: Option<&'static str>, pid: Option<u32>) {
         let Some(active) = self.active.as_ref() else { return };
         self.sequence = self.sequence.saturating_add(1);
         let event = LoadEvent {
@@ -71,6 +76,7 @@ impl LoadTrace {
             model_ref: active.model_ref.clone(),
             phase,
             elapsed_ms: active.started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            pid,
             outcome,
         };
         if self.events.len() == MAX_EVENTS {
@@ -156,6 +162,20 @@ mod tests {
         let view = trace.snapshot();
         assert_eq!(view.events[0].model_ref, model);
         assert_eq!(view.events[0].operation_id, load);
+    }
+
+    #[test]
+    fn actual_engine_pid_is_recorded_without_engine_arguments() {
+        let mut trace = LoadTrace::default();
+        trace.begin(format!("load-{}", "a".repeat(32)), format!("m-{}", "b".repeat(32))).unwrap();
+        trace.record_engine("engine_spawned", None, Some(49152));
+        trace.record_engine("engine_health_200", None, Some(49152));
+        trace.finish("ok");
+        let events = trace.snapshot().events;
+        assert_eq!(events[1].pid, Some(49152));
+        assert_eq!(events[2].phase, "engine_health_200");
+        assert_eq!(events[2].pid, Some(49152));
+        assert_eq!(events[3].pid, None);
     }
 
     #[test]
