@@ -700,6 +700,10 @@ async fn lu_load_model(
             drop(catalog);
             {
                 let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+                trace.record("catalog_verified", None);
+            }
+            {
+                let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
                 trace.record("supervisor_enter", None);
             }
             let session_id = next_id("s-");
