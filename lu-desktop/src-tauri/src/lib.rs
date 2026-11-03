@@ -5,6 +5,7 @@ mod chat_store;
 mod generation_queue;
 mod load_trace;
 mod native_host_read;
+mod read_proposal;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -154,6 +155,7 @@ struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
     chats: ChatStore,
+    read_proposals: read_proposal::ReadApprovalQueue,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
@@ -451,6 +453,7 @@ impl DesktopState {
             models_dir,
             catalog_path,
             chats: ChatStore::open(&root)?,
+            read_proposals: read_proposal::ReadApprovalQueue::default(),
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
@@ -963,6 +966,22 @@ async fn lu_generate(
                 Ok(()) => {
                     state.chats.append_progress(&chat_id, &gid, &answer)?;
                     state.chats.complete(&chat_id, &gid)?;
+                    // Only the completed model output (not frontend strings,
+                    // retrieved documents or a partial stream) may propose
+                    // a read. Staging is inert; execution requires a separate
+                    // native-picker selection by the human.
+                    let proposal_id = next_id("p-");
+                    if let Ok(proposal) = state.read_proposals.stage(
+                        &proposal_id, &chat_id, &gid, &answer,
+                    ) {
+                        let _ = app.emit("lu-read-proposal", ReadProposalEvent {
+                            chat_id: chat_id.clone(),
+                            proposal_id,
+                            file_name: proposal.file_name,
+                            purpose: proposal.purpose,
+                            max_bytes: proposal.max_bytes,
+                        });
+                    }
                     Ok(answer)
                 }
                 Err(error) => {
@@ -1041,6 +1060,68 @@ async fn lu_inspect_text_file(
         &state.chats, &chat_id, &turn_id, &selected,
     ).await?;
     Ok(Some(result))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadProposalEvent {
+    chat_id: String,
+    proposal_id: String,
+    file_name: String,
+    purpose: String,
+    max_bytes: u32,
+}
+
+/// User approval is not a WebView-provided Boolean. The only approval path
+/// opens a trusted OS picker, matches its selected filename to the exact
+/// model proposal, and performs a separately granted native read.
+#[tauri::command]
+async fn lu_approve_read_proposal(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<Option<native_host_read::InspectedFile>, String> {
+    let state = Arc::clone(state.inner());
+    let origin = state
+        .read_proposals
+        .origin_for_conversation(&proposal_id, &chat_id)
+        .map_err(|e| format!("proposal unavailable: {e:?}"))?;
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file()
+            .add_filter("Text and source files", &[
+                "txt", "md", "rs", "js", "jsx", "ts", "tsx",
+                "json", "toml", "yaml", "yml", "py", "log", "csv",
+            ])
+            .blocking_pick_file()
+            .map(|item| item.into_path().map_err(|e| e.to_string()))
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("approval picker failed: {e}"))??;
+    let Some(selected) = selected else {
+        state.read_proposals.dismiss_for_conversation(&proposal_id, &chat_id)
+            .map_err(|e| format!("dismissal failed: {e:?}"))?;
+        return Ok(None);
+    };
+    let approved = state.read_proposals.approve_selected(
+        &proposal_id, &chat_id, &origin, &selected,
+    ).map_err(|e| format!("selected file differs from requested read: {e:?}"))?;
+    let turn_id = next_id("g-");
+    native_host_read::inspect_selected_file_limited(
+        &state.chats, &chat_id, &turn_id, &selected, u64::from(approved.max_bytes),
+    ).await.map(Some)
+}
+
+#[tauri::command]
+fn lu_dismiss_read_proposal(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<(), String> {
+    state.read_proposals
+        .dismiss_for_conversation(&proposal_id, &chat_id)
+        .map_err(|e| format!("proposal dismissal: {e:?}"))
 }
 
 #[tauri::command]
@@ -1136,6 +1217,8 @@ pub fn run() {
             lu_cancel,
             lu_generate,
             lu_inspect_text_file,
+            lu_approve_read_proposal,
+            lu_dismiss_read_proposal,
             lu_history,
             lu_chats,
             lu_new_chat,
