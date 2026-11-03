@@ -35,6 +35,20 @@ pub async fn inspect_selected_file(
     turn_id: &str,
     path: &Path,
 ) -> Result<InspectedFile, String> {
+    inspect_selected_file_limited(chats, chat_id, turn_id, path, MAX_INSPECTION_BYTES).await
+}
+
+/// The selected file cannot increase the model-proposed byte budget.
+pub async fn inspect_selected_file_limited(
+    chats: &ChatStore,
+    chat_id: &str,
+    turn_id: &str,
+    path: &Path,
+    max_bytes: u64,
+) -> Result<InspectedFile, String> {
+    if max_bytes == 0 || max_bytes > MAX_INSPECTION_BYTES {
+        return Err("invalid approved read limit".into());
+    }
     let metadata = fs::symlink_metadata(path).map_err(|_| "selected file unavailable")?;
     if !metadata.file_type().is_file() {
         return Err("select an ordinary text file (not a link or directory)".into());
@@ -53,7 +67,7 @@ pub async fn inspect_selected_file(
         .to_owned();
     // The current small native file tool takes simple UTF-8 relative names;
     // a file-picker result does not waive its validated argument contract.
-    if file_name.is_empty() || file_name.contains(['\\', ':', '/']) {
+    if file_name.is_empty() || file_name.chars().any(|c| matches!(c, '\\' | ':' | '/' | '\0')) {
         return Err("selected filename is not supported by this tool".into());
     }
     let root = path.parent().ok_or("selected file has no parent folder")?;
@@ -101,7 +115,7 @@ pub async fn inspect_selected_file(
 
     let args = serde_json::json!({
         "path": file_name,
-        "max_bytes": MAX_INSPECTION_BYTES,
+        "max_bytes": max_bytes,
     }).to_string();
     let call = catalog
         .encode_call(&allowed, TOOL_NAME, turn_id, Some(&scope_id), &args)
