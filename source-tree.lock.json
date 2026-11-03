@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "429aca8b4da3215429d0a3c8dfce7f80e219ecd2",
-  "trackedFileCount": 239,
+  "sourceCommitBeforeLock": "959438b4954115fc6be1e216679de4866d9e4631",
+  "trackedFileCount": 240,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -29,7 +29,7 @@
     },
     {
       "path": "README.md",
-      "blob": "7febd477d40948e2c99a6ee75f7449521970d330"
+      "blob": "73dcb3730ece8de0565ddef027a6d80fc9b116c4"
     },
     {
       "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
@@ -50,6 +50,10 @@
     {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
       "blob": "3788425ab42ab6a586de36dc680621d6f6df280a"
+    },
+    {
+      "path": "docs/LU_CENTRAL_DESIGN.md",
+      "blob": "295aee0d699e63b5a3fdad2d2f64031cd232a830"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -77,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "6348ac9615f62ebabf12db636ce9cd927400330d"
+      "blob": "67efa3bfdbfc12517c801988be59204c4574ff9f"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -233,7 +237,7 @@
     },
     {
       "path": "lu-desktop/tests/native-auth/src/lib.rs",
-      "blob": "c5f2f2e2c99486036492ef532b5c703e8f1147bf"
+      "blob": "ac1aaf070f77b36e23af765057122cf55270b2e5"
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
@@ -489,7 +493,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/continuity.rs",
-      "blob": "52323f42acc3a52de012daed4bdca50dcf0553a1"
+      "blob": "aa672cc64358d82773f5e87f006bd09cccda34ad"
     },
     {
       "path": "src-tauri/lu-core/src/contracts.rs",
@@ -793,7 +797,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/continuity_conversation_scope.rs",
-      "blob": "15993c2e955481737c3e5d4cf58961a1dad704c8"
+      "blob": "d21d8c1dd226d947070fd76c3287e01ec8012124"
     },
     {
       "path": "src-tauri/lu-core/tests/conversation_authority.rs",
@@ -897,7 +901,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/p2_inference_lifecycle.rs",
-      "blob": "b1e2aa87344c853443ab52bb05caf76b27ef68fc"
+      "blob": "56882fc3aa59f418b86b317e12bb644c2ddbe002"
     },
     {
       "path": "src-tauri/lu-core/tests/passive_diagnostics.rs",
