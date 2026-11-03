@@ -196,3 +196,8 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - Portable integration tests cover a strict untrusted parser, write substitution refusal, injected unknown fields, duplicate ID denial, wrong chat/turn, selected-file mismatch, single-use semantics and real bounded native text reads. No automated write execution.
 - **Outstanding:** CI verification and real Windows UI acceptance, stronger resource identity pinning across native picker → worker open, completed-output identity/ref verification beyond the in-memory generation handler, persisted proposal receipts/recovery, tool schema advertisement to the LLM, richer target-level authorization and long-running worker cancellation.
 - `AUTH-02` is **not complete** merely because code was committed; pending models are never auto-authorized, and this only covers a human-reviewed read-only tool.
+
+## AUTH-02 verification snapshot and CI-01 stale fixture repair (2026-11-03)
+- GitHub Desktop CI run `41740888531` on prior locked commit `d1de182`: source identity **PASS**, frontend **PASS**, portable chat journal **PASS**, portable authenticated desktop/native dispatch including AUTH-02 **PASS**, diagnostics-portable **PASS**. Windows-host was still in progress at this observation.
+- Native-core was **FAIL** due to obsolete `PersistentEngineConfig` initializer in `tests/real_gguf_tool_json.rs` missing `load_observer`; updated it to `None`. The correction must pass on a *new* source-locked commit before native-core is accepted.
+- No installed Windows user approval test, file-identity race test, or durable approval/recovery acceptance yet. Do not declare V1-04 complete.
