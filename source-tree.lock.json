@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6571248631796ab69da77885c88fddebd783b56d",
+  "sourceCommitBeforeLock": "a23c856cd6bfee0232c3ab1c8e1b7bc366ee6a4f",
   "trackedFileCount": 237,
   "files": [
     {
@@ -73,7 +73,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "c5e34324f7b292e79625b9113afbbccd9a1eeeec"
+      "blob": "80033bf2209b32b078444209bd009f81ee0d5b5d"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -197,7 +197,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
-      "blob": "579b4870773a37ddd41a80b6227214d6b2ddf46e"
+      "blob": "08bcd6da38cf5a552209734a3473b67bd3b98137"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
