@@ -80,3 +80,17 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .appDropHint{position:fixed;z-index:19;left:50%;top:46%;transform:translate(-50%,-50%);background:#213b55;border:1px solid #85bff0;border-radius:12px;color:#f4faff;padding:16px 22px;box-shadow:0 12px 40px rgba(0,0,0,.38);pointer-events:none}
 .busyHint .spinner{will-change:transform}
 @media(prefers-reduced-motion:reduce){.busyHint .spinner{animation:none;will-change:auto}}
+
+/* AUTH-02: human-controlled, inert model-proposed file read. */
+.readProposalCard {
+  margin: 8px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #57616d);
+  border-radius: 10px;
+  background: var(--panel, rgba(120, 130, 150, 0.09));
+  display: grid;
+  gap: 8px;
+}
+.readProposalCard p { margin: 0; overflow-wrap: anywhere; }
+.readProposalCard small { opacity: .85; overflow-wrap: anywhere; }
+.readProposalCard .settingsActions { display: flex; gap: 8px; flex-wrap: wrap; }
