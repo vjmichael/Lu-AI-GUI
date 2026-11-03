@@ -22,6 +22,14 @@ jobs:
         run: |
           git rev-parse HEAD
           Write-Host "CI_COMMIT=$env:GITHUB_SHA"
+      - name: Stage CI-only nonfunctional build resource placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
       - name: Run host lifecycle regression tests
         working-directory: lu-desktop/src-tauri
         shell: pwsh
