@@ -138,7 +138,7 @@ mod tests {
         trace.finish("error");
         assert!(!trace.snapshot().loading);
         assert!(trace.begin("load-3".into(), "m-third".into()).is_ok());
-        assert_eq!(trace.snapshot().events.last().unwrap().operation_id, "load-3");
+        assert_eq!(trace.snapshot().events.last().unwrap().operation_id, "redacted-load-id");
     }
 
     #[test]
