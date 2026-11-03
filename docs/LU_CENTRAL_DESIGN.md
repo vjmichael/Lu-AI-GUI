@@ -78,6 +78,12 @@ Windows Job Objects, worker cleanup and resource guardians improve reliability a
 - Memory-pane UX: search, browse original sources, show links/revisions and contradictions, edit current beliefs, make primary, link selected old chat content to current project with provenance.
 - Existing `ContinuityStore` is the checkpoint implementation: conversation/project/task-scoped lookup, validated ANSF source-entry IDs and immutable checkpoint identity. Production desktop adapter, owner checks, full context projection and activation remain incomplete.
 
+### 4.3 Context change monitoring and observing/learning
+- **CCM (context change monitoring):** track changes to declared goal, scope, assumptions, sources and constraints. A shift in user intent prompts an authority check, not silent reuse of an earlier grant.
+- **Observe & Learn is OFF by default** until an explicit user consent flow enables it. Any persisted observation must have provenance and accessible user controls. Transient raw capture should be discarded after the approved encoding/derivation step unless the owner specifically authorized its storage. Never infer broad permanent authority from enabling observation.
+- Search/summarization ranks sources by recency, source fidelity, topic and the current project; conflicting remembered decisions should be visible instead of silently replaced. The final model working set is only a projection of durable source records.
+- Edits and cross-chat links must preserve parent/source identity and distinguish exact old text, corrected current text and derived interpretation.
+
 ## 5. Durable agents, workers, and Lu Dev
 - Multi-step tasks have host-owned identities, checkpoints, visible progress, timeouts, pause/soft-interrupt/cancel, replan upon real goal or assumption change, recovery after app restart and worker death.
 - Worker manager has resource guardian (CPU, RAM, GPU/VRAM, disk, concurrency), bounded queues, actual OS process cleanup and clear cancellation semantics. Idle/prewarm behavior, if added, is measured rather than assumed.
@@ -135,3 +141,6 @@ Windows Job Objects, worker cleanup and resource guardians improve reliability a
 6. Continue with the first currently testable gate, currently V1-04 AUTH/UI dispatch and V1-08 continuation; do not let the documentation task stall implementation.
 
 This design is the authoritative product-level map; detailed protocols remain in linked specifications and source code.
+
+## 11. Current CONTEXT-01 implementation receipt (2026-11-03)
+Added `ContinuityStore::latest_for_verified_user_turn` so the trusted desktop host can require a verified current user turn before looking up a checkpoint by exact project/task/conversation. A remembered checkpoint is only context; it is never an authority grant. Updated regression tests reject stale/quoted instructions and cross-chat impersonation. This code is **not yet connected to desktop UI or automatic retrieval**, and CI acceptance of this commit remains to be established.
