@@ -1,4 +1,4 @@
-# Lu: Original Jan Modification Design vs. Implementation
+> **HISTORICAL DOCUMENT — SECURITY SUPERSESSION (2026-11-03):** This October 25 gap analysis is preserved for provenance but its mandatory OS-isolated worker, default network-deny, restricted-token and universal workspace-only assumptions are superseded by the project owner's latest decision. Lu has broad native host access; OS permissions are not independent action authority. See [canonical cross-conversation handoff](../../../docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md) and [current binding security decision](SECURITY_AUTHORITY_AND_OS_CEILING.md). Do not treat this older audit as a current implementation mandate.\n\n# Lu: Original Jan Modification Design vs. Implementation
 
 **Audit:** 2026-10-25  
 **Source:** `Jan-Mod-Design-Document.md` (2026-10-21, revised 2026-10-22), including later user decisions in the Lu project.  
