@@ -11,6 +11,9 @@ on:
       - '.github/workflows/lu-win-load-01.yml'
 permissions:
   contents: read
+concurrency:
+  group: win-load-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   portable-load-trace:
     runs-on: ubuntu-latest
