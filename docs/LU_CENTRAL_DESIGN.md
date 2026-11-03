@@ -127,6 +127,52 @@ Windows Job Objects, worker cleanup and resource guardians improve reliability a
 
 **Order:** Preserve alpha -> converge exact repo source and CI -> authorized native read-only GUI tool -> durable effects and host tools -> ANSF + context UI integration -> agent orchestration/worker recovery -> model, media and UX hardening -> Windows v1.0 E2E release acceptance.
 
+### 8.1 Roadmap source reconciliation (R22 → owner-accepted alpha → v1.0)
+
+This is the **operative v1.0 roadmap**, not merely a link to another file. It incorporates:
+- `docs/LU_R22_STRUCTURED_CHAT_AND_ALPHA_V1_ROADMAP.md` (also present in Library), originally written before the alpha acceptance decision;
+- `docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md` (V1-01 through V1-10 acceptance gates);
+- `docs/LU_V1_0_TASKS.md` (live P0/P1 engineering ledger with deferred Windows tests);
+- `docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md` (owner acceptance of the functional alpha).
+
+**Status precedence:** The Nov 3 owner acceptance of `0.1.0-alpha.2` supersedes R22's earlier statement that functional alpha had not been accepted. It does **not** waive remaining v1.0 hardening, especially installed-app tool authority, backup/restart, verified GPU offload, signing and failure injection. The former alpha A5 native-tool and advanced worker-recovery obligations are tracked as v1.0 core gates rather than retroactively invalidating accepted alpha. Older default-deny sandbox/containment proposals are superseded as universal requirements; verified task authority and worker lifecycle safeguards are retained.
+
+### 8.2 Phased execution roadmap
+
+Each phase has concrete exit conditions; units and docs alone cannot close an end-to-end gate.
+
+| Phase | Priority and dependency | Deliverable | Exit/acceptance evidence |
+| --- | --- | --- | --- |
+| 0. Baseline and source convergence | P0; prerequisite to claims about built source | Freeze accepted alpha.2; reconcile unpublished alpha.3-dev source snapshot; source hash/manifest, exact branch and commit; remove old CI paths | Full source comparison, immutable baseline artifact identities, CI on exact source revision; unmerged or missing local files explicitly reported |
+| 1. Windows UX and model reliability | P0/P1; can run alongside phase 0 | Taskbar/PE icon, responsive loading and watchdog diagnostics, measured GGUF import, catalog/MMProj binding, thumbnail rehydration, clear loader status, per-model inference profile | Automated frontend + Windows compilation and instrumented lifecycle tests; physical Win11/Vulkan/model QA deferred to release |
+| 2. Durable conversation, ANSF and media | P0; prerequisite for trustworthy replay/context | Existing chat journal migration to ANSF immutable originals; SQLite indexes, revisions, source provenance, attachment refs; PDF/DOCX/text parsing, backup/import/export, cross-chat read mediation | Restart/crash and migration/rollback fixtures; original IDs/text/media retained, citations source-correct; no legacy chat silently lost |
+| 3. Human-authenticated native tool execution | P0; independent of model output | Current persisted USER turn + trusted task origin; host-issued tool/effect/target grant; expiry/revocation; model-visible small schemas and Protobuf; **first desktop read-only tool** with approval and denial UI | Real app dispatch; arbitrary user-authorized host path works; unrelated chat, injection, wrong target and revoked task fail; no model-granted authority |
+| 4. Native worker and practical toolset | P0; builds on phase 3 | Process lifecycle and resource guardian; native read/search/atomic write/move/trash/restore, Git, archive, JSON validation, OCR and useful document tools; capability discovery for installed SDKs/compilers | Real tool invocation and per-target admission; atomic/reversible changes, command cleanup; no mandatory sandbox; OS permission distinct from authority |
+| 5. Durable effects and agent continuity | P0; phases 2–4 integrate | Journal PREPARED/EXECUTING/APPLIED/FAILED/UNCERTAIN, idempotency receipts; work queue, cancellation, pause/soft interrupt, progress, bounded agent loops, checkpoint and recovery | Forced crash/restart and worker-kill matrix; uncertain effects reconciled, never blind repeated writes; meaningful task resumes with no authority inheritance |
+| 6. Memory intelligence and context UX | P0; phase 2 and 5 foundations | ANSF library search; bounded token-aware source retrieval, cross-chat references, mutable beliefs/objects and supersession, user-editable memory pane, inspectable provenance, continuity plane and context change monitoring | Search/retrieval accuracy, citations, contradiction and revision tests; auth-scoped read, restart resume, no old chat acting as a fresh user grant; Observe & Learn explicit opt-in |
+| 7. Production UX stabilization | P1; ongoing alongside all phases | Accessible interface, cross-chat FIFO, streaming partial checkpoints, model switching, attachment paste/drag, document/image history, responsive busy states, tool cards and read/processed/applied receipts | UI automated and soak tests; cross-chat cancellation attribution, no lost partial text, no false status or preview downgrade |
+| 8. Windows release candidate and v1.0 sign-off | P0; depends on all required gates | Signed/reproducible NSIS, pinned engine binaries/DLLs, fresh install/upgrade/uninstall, full real-model and AMD Vulkan/MMProj tests, backup/restore, permission/effect recovery | Independent installed-app E2E: install → import/load model → text+image → authorized tool → restart/restore → effect replay/cancel → uninstall; negative and adversarial tests pass |
+
+**Engineering order for the current branch:** correct any locked CI build errors → finish Phase 3 read-only GUI authority/dispatch → Phase 4 atomic operations + Phase 5 journal → Phase 2/6 ANSF and context integration → finalize Phase 1/7 reliability → Phase 8 physical release. This preserves dependencies without unnecessarily serializing independent work.
+
+### 8.3 Original R22 capability list retained as explicit acceptance work
+
+- **Memory:** ANSF immutable exact archive, searchable chapter/library, revisions and source links, bounded retrieval and current beliefs. An internal SQLite table is not equivalent to the memory-pane UX.
+- **Media continuity:** content-addressed image references surviving restart; safe preview rehydration; actual model/MMProj-compatible image Q&A and follow-up without pretending old images were sent. Preserve document source identity and extraction limits.
+- **Document intake:** PDF/DOCX/text parsing with provenance, bounded extraction, source/chunk references and negative security cases. Plain Markdown success does not establish arbitrary document support.
+- **Model manager:** explicit load/unload/catalog, multiple model folders and MMProj pairing, real Vulkan/CPU profiles, physical offload evidence, resource usage and safe failure handling. No automatic weight loading merely because files were discovered.
+- **Native operations:** filesystem, search, Git, archive, validation, JSON, OCR and command execution; first-party native registry and Protobuf. Discovery never grants effect authority.
+- **Background agent:** durable tasks, progress, pause/stop/retry, cancellation propagation, worker/process supervision and no blind replay after uncertain effects.
+- **GUI:** rename/delete/restore chats and folders, favorites, full text/image/document history, accessibility, virtualized large transcripts, tool/provenance cards, theme/input preferences; no Jan runtime inheritance.
+- **Security and quality:** current broad-host-access/human-authority contract, true owner-origin verification, invocation target review, crash/resource safety, audit and revocation, adversarial tests. Mandatory AppContainer or universal network default deny are **not** adopted.
+- **Release:** single installer, reproducible pinned native engine, real-model benchmark matrix, measured GPU/CPU, migration and rollback, installed-app acceptance.
+
+### 8.4 Deferred and intentionally non-blocking
+Advanced JSON repair (distinct from strict JSON validation), model councils, large real-time video/audio, DLC IDE/NVP/Research/Writing, optional native image generation, remote/server mode and theme ecosystems remain **after core v1.0** unless explicitly re-scoped by the owner. No arbitrary 100% model-loader indicator may replace measured engine progress.
+
+### 8.5 Change tracking
+Live statuses and receipt IDs are maintained in `LU_V1_0_TASKS.md`, with exact source/CI evidence and deferred Windows scenarios. This central design owns **requirements, dependencies, phases and exit criteria**. Roadmap status must be updated here when the owner changes a feature's inclusion or stage; routine per-commit CI updates stay in the task ledger. All future Lu sessions should read this section before starting new work.
+
 ## 9. Explicit supersessions and deferred items
 - **Superseded:** mandatory AppContainer/restricted-token/workspace-only sandbox; Jan runtime inheritance; blanket claim that an OS permission equals authority; forcing every operation to ask approval despite explicit task delegation.
 - **Deferred:** advanced JSON repair loop (strict validation remains mandatory), council, large A/V pipeline, DLC workspaces and self-modifying stable installation, arbitrary fake load-percentage telemetry.
