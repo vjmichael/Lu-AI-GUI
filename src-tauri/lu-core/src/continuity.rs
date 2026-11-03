@@ -248,6 +248,27 @@ impl ContinuityStore {
     /// This does not authenticate a user by itself: trusted desktop code must
     /// independently verify conversation ownership before making this call.
     /// A remembered task record never carries authorization to invoke tools.
+    /// Production host adapter: require an authenticated USER turn in this
+    /// exact conversation before reading its derived task checkpoint.
+    /// Historical context can never itself mint tool authority. The verifier
+    /// must also establish account/conversation ownership, not just an ID match.
+    pub fn latest_for_verified_user_turn(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        conversation_id: &str,
+        current_user_turn_id: &str,
+        verifier: &dyn crate::conversation_authority::TrustedUserTurnVerifier,
+    ) -> Result<Option<TaskCheckpoint>, ContinuityError> {
+        if !valid_id(conversation_id)
+            || !valid_id(current_user_turn_id)
+            || !verifier.verify_user_turn(conversation_id, current_user_turn_id)
+        {
+            return Err(ContinuityError::InvalidInput);
+        }
+        self.latest_for_conversation(project_id, task_id, conversation_id)
+    }
+
     pub fn latest_for_conversation(
         &self,
         project_id: &str,
