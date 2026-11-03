@@ -39,3 +39,8 @@ This increment is **development code, not a completed WIN-LOAD-01 gate**. The re
 - Commit: `3cc6eed418c0db9dd4009a7d70dc5f5b95aa3ae4`. Commit/push confirmed; Windows CI result not yet verified. This changes development branch only, not `0.1.0-alpha.2`.
 - Remaining WIN-LOAD-01: measured engine-process milestones, OS GPU/VRAM evidence, load cancellation and safe process cleanup; independently prove WebView/host/engine responsiveness in tests.
 - REPO-01 remains blocking for full Lu CI: verify the exact 252-file development snapshot against GitHub, not only this 5-file branch delta.
+
+## Increment 3 — catalog versus supervisor isolation
+- Commit `8b0b00abeba7f07835ca9a86c9c9877ec781364d` records a new `catalog_verified` phase after a model's opaque ID is confirmed against the host-owned catalog and its lock is released.
+- Event chain is now `accepted` → `catalog_verified` → `supervisor_enter` → `finished`, for successful admission. Missing `catalog_verified` narrows investigation to pre-supervisor work, but does not by itself identify the stalled component.
+- No bytes-read estimate, GPU/VRAM claim, or model progress percentage is inferred. Tests for engine readiness and cancellation still outstanding.
