@@ -482,6 +482,33 @@ mod tests {
         assert!(result.unwrap_err().contains("MMProj"));
     }
     #[test]
+    fn observer_receives_only_phase_and_pid() {
+        use std::sync::Mutex;
+        let executable = std::env::current_exe().unwrap();
+        let digest: [u8; 32] = Sha256::digest(std::fs::read(&executable).unwrap()).into();
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let destination = Arc::clone(&captured);
+        let observer: Arc<dyn Fn(&'static str, Option<u32>) + Send + Sync> =
+            Arc::new(move |phase, pid| destination.lock().unwrap().push((phase, pid)));
+        let backend = PersistentLlamaBackend::new(PersistentEngineConfig {
+            executable,
+            expected_sha256: digest,
+            threads: NonZeroUsize::new(2).unwrap(),
+            context_tokens: 4096,
+            startup_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(5),
+            api_key: "ab".repeat(32),
+            load_observer: Some(observer),
+        }).unwrap();
+        backend.observe("engine_spawned", Some(1234));
+        backend.observe("engine_health_200", Some(1234));
+        assert_eq!(&*captured.lock().unwrap(), &[
+            ("engine_spawned", Some(1234)),
+            ("engine_health_200", Some(1234)),
+        ]);
+    }
+
+    #[test]
     fn refuses_unsigned_engine_identity() {
         assert!(verify_engine(Path::new("missing"), &[0u8; 32]).is_err());
     }
