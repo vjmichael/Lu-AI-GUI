@@ -4,6 +4,8 @@
 mod chat_store;
 #[path = "../../../src-tauri/src/native_host_read.rs"]
 mod native_host_read;
+#[path = "../../../src-tauri/src/read_proposal.rs"]
+mod read_proposal;
 
 use chat_store::ChatStore;
 use lu_core::{
@@ -231,4 +233,70 @@ async fn selected_native_read_refuses_link_or_nonfile_and_oversized_text() {
     assert_eq!(result.text.len(), 64 * 1024);
     drop(chats);
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn untrusted_read_proposal_requires_exact_native_file_selection_once() {
+    use read_proposal::{ProposalError, ReadApprovalQueue};
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let target = root.join("note.txt");
+    let other = root.join("other.txt");
+    fs::write(&target, "approved file").unwrap();
+    fs::write(&other, "not approved").unwrap();
+    let queue = ReadApprovalQueue::default();
+    let json = r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"Summarize this note","max_bytes":4096}"#;
+    let staged = queue.stage("p-1", "chat-1", "g-1", json).unwrap();
+    assert_eq!(staged.file_name, "note.txt");
+    assert_eq!(queue.stage("p-1", "chat-1", "g-1", json), Err(ProposalError::Duplicate));
+    assert_eq!(
+        queue.approve_selected("p-1", "other-chat", "g-1", &target),
+        Err(ProposalError::WrongConversation)
+    );
+    assert_eq!(
+        queue.approve_selected("p-1", "chat-1", "g-1", &target),
+        Err(ProposalError::Unknown), "denial must consume the proposal"
+    );
+    queue.stage("p-2", "chat-1", "g-2", json).unwrap();
+    assert_eq!(
+        queue.approve_selected("p-2", "chat-1", "g-2", &other),
+        Err(ProposalError::TargetMismatch)
+    );
+    queue.stage("p-3", "chat-1", "g-3", json).unwrap();
+    assert_eq!(
+        queue.approve_selected("p-3", "chat-1", "other-origin", &target),
+        Err(ProposalError::WrongOrigin)
+    );
+    queue.stage("p-4", "chat-1", "g-4", json).unwrap();
+    assert_eq!(queue.approve_selected("p-4", "chat-1", "g-4", &target).unwrap(), staged);
+    assert_eq!(queue.approve_selected("p-4", "chat-1", "g-4", &target), Err(ProposalError::Unknown));
+    drop(queue);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn proposal_parser_rejects_malformed_json_paths_overbroad_reads_and_mutations() {
+    use read_proposal::{ProposalError, ReadApprovalQueue};
+    let queue = ReadApprovalQueue::default();
+    for (i, raw) in [
+        r#"{"kind":"propose_read_file","file_name":"../secret","purpose":"Read","max_bytes":4096}"#,
+        r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"Read","max_bytes":65537}"#,
+        r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"Read","max_bytes":0}"#,
+        r#"{"kind":"propose_write_file","file_name":"note.txt","purpose":"Read","max_bytes":4096}"#,
+        r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"Read","max_bytes":4096,"grant":"all"}"#,
+        r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"","max_bytes":4096}"#,
+        r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"Read","max_bytes":4096,"file_name":"other.txt"}"#,
+        r#"{"kind":"propose_read_file","file_name":"C:\\secret.txt","purpose":"Read","max_bytes":4096}"#,
+        "{ malformed json",
+    ].iter().enumerate() {
+        assert_eq!(
+            queue.stage(&format!("p-{i}"), "chat-1", "g-1", raw),
+            Err(ProposalError::Invalid),
+            "unsafe proposal admitted: {raw}"
+        );
+    }
+    let good = r#"{"kind":"propose_read_file","file_name":"note.txt","purpose":"Read","max_bytes":1024}"#;
+    queue.stage("p-ok", "chat-1", "g-1", good).unwrap();
+    assert_eq!(queue.clear_conversation("chat-1").unwrap(), 1);
+    assert_eq!(queue.dismiss("p-ok"), Err(ProposalError::Unknown));
 }
