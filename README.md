@@ -26,3 +26,15 @@ This is a **clean working tree** branch, not a new Git repository. Its Git commi
 ## Third-party provenance
 
 The project retains appropriate Apache-2.0 licensing and notices for any code or documentation derived from the Jan fork. See `LICENSE` and `NOTICE`. Clean source layout does not erase upstream attribution.
+
+## v1.0 development workflow (2026-11-03)
+
+Lu `0.1.0-alpha.2` remains the functional baseline; routine physical Windows tests are deferred until nearer v1.0. New changes use task IDs, Git commit provenance, CI results and deferred acceptance scenarios.
+
+- [Master task board](docs/LU_V1_0_TASKS.md)
+- [Deferred Windows acceptance](docs/LU_V1_0_DEFERRED_WINDOWS_ACCEPTANCE.md)
+- [V1 design gates](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md)
+- [Windows CI](.github/workflows/lu-ci.yml)
+- [REPO-01 full-tree lock](source-tree.lock.json) and [verifier](scripts/verify-source-tree.mjs)
+
+The REPO-01 lock verifies the **published, tracked Git checkout** in CI. It cannot independently prove equality with an unpublished local development directory. That external source equality requires a separate local manifest comparison; it is not inferred from a GitHub self-check.
