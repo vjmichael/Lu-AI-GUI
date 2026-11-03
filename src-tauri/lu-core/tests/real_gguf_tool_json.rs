@@ -206,6 +206,7 @@ async fn gguf_model_generates_tool_json_reads_file_and_continues() {
                 startup_timeout: Duration::from_secs(120),
                 request_timeout: Duration::from_secs(120),
                 api_key: api_key.clone(),
+                load_observer: None,
             })
         },
     )
