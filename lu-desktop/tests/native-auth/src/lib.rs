@@ -357,3 +357,64 @@ fn model_proposal_rejection_preserves_other_chats_and_is_idempotent() {
     assert_eq!(queue.origin_for_conversation("p-b", "chat-b").unwrap(), "generation-b");
     assert_eq!(queue.clear_conversation("chat-b").unwrap(), 1);
 }
+
+#[tokio::test]
+async fn durable_native_read_has_applied_receipt_and_survives_chat_restart() {
+    use lu_core::journal::{EffectJournal, EffectState};
+    use lu_core::read_approval_ledger::{ReadApprovalLedger, ReadDecision};
+
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let files = root.join("external-files");
+    fs::create_dir_all(&files).unwrap();
+    fs::write(files.join("note.txt"), "persisted verified text").unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let chat = chats.create_chat().unwrap();
+    let turn = format!("g-{}", "3".repeat(32));
+    let effects = EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let approvals = ReadApprovalLedger::open(&root.join("approvals.sqlite")).unwrap();
+    approvals.stage("p-1", &chat.chat_id, "model-generation-1", "note.txt", 24).unwrap();
+    approvals.decide(
+        "p-1", &chat.chat_id, "model-generation-1", "note.txt",
+        24, ReadDecision::Approved,
+    ).unwrap();
+    let read = native_host_read::inspect_selected_file_with_receipt(
+        &chats, &chat.chat_id, &turn, &files.join("note.txt"), 24, Some(&effects)
+    ).await.unwrap();
+    assert_eq!(read.text, "persisted verified text");
+    assert_eq!(effects.get(&turn).unwrap().unwrap().state, EffectState::Applied);
+    assert!(effects.get(&turn).unwrap().unwrap().receipt.is_some());
+
+    drop(approvals);
+    drop(effects);
+    drop(chats);
+    let approvals = ReadApprovalLedger::open(&root.join("approvals.sqlite")).unwrap();
+    let effects = EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    assert_eq!(approvals.get("p-1").unwrap().unwrap().decision, ReadDecision::Approved);
+    assert_eq!(effects.get(&turn).unwrap().unwrap().state, EffectState::Applied);
+    assert_eq!(chats.history(&chat.chat_id).unwrap()[1].text, "persisted verified text");
+    assert_eq!(effects.reconcile_interrupted().unwrap(), 0);
+    drop(approvals); drop(effects); drop(chats);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pending_read_approval_is_interrupted_after_restart_never_automatically_granted() {
+    use lu_core::read_approval_ledger::{ReadApprovalLedger, ReadDecision, ReadLedgerError};
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let db = ReadApprovalLedger::open(&root.join("approvals.sqlite")).unwrap();
+    db.stage("p-orphan", "chat-a", "generation-a", "notes.txt", 4096).unwrap();
+    drop(db);
+    // Called only in an isolated test after the simulated old owner is gone.
+    let reopened = ReadApprovalLedger::open(&root.join("approvals.sqlite")).unwrap();
+    assert_eq!(reopened.reconcile_pending().unwrap(), 1);
+    assert_eq!(reopened.get("p-orphan").unwrap().unwrap().decision, ReadDecision::Interrupted);
+    assert_eq!(reopened.decide(
+        "p-orphan", "chat-a", "generation-a", "notes.txt", 4096,
+        ReadDecision::Approved,
+    ), Err(ReadLedgerError::Transition));
+    drop(reopened);
+    fs::remove_dir_all(root).unwrap();
+}
