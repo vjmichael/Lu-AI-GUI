@@ -157,6 +157,7 @@ struct DesktopState {
     chats: ChatStore,
     read_proposals: read_proposal::ReadApprovalQueue,
     effects: lu_core::journal::EffectJournal,
+    read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
@@ -457,6 +458,9 @@ impl DesktopState {
             read_proposals: read_proposal::ReadApprovalQueue::default(),
             effects: lu_core::journal::EffectJournal::open(&root.join("native-effects.sqlite"))
                 .map_err(|e| format!("effect journal unavailable: {e:?}"))?,
+            read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger::open(
+                &root.join("read-approvals.sqlite"))
+                .map_err(|e| format!("approval decision ledger unavailable: {e:?}"))?,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
@@ -977,13 +981,24 @@ async fn lu_generate(
                     if let Ok(proposal) = state.read_proposals.stage(
                         &proposal_id, &chat_id, &gid, &answer,
                     ) {
-                        let _ = app.emit("lu-read-proposal", ReadProposalEvent {
-                            chat_id: chat_id.clone(),
-                            proposal_id,
-                            file_name: proposal.file_name,
-                            purpose: proposal.purpose,
-                            max_bytes: proposal.max_bytes,
-                        });
+                        // Persist host-bound intent BEFORE displaying a usable
+                        // proposal card. No persistent record grants action.
+                        if state.read_approval_ledger.stage(
+                            &proposal_id, &chat_id, &gid,
+                            &proposal.file_name, proposal.max_bytes,
+                        ).is_ok() {
+                            let _ = app.emit("lu-read-proposal", ReadProposalEvent {
+                                chat_id: chat_id.clone(),
+                                proposal_id,
+                                file_name: proposal.file_name,
+                                purpose: proposal.purpose,
+                                max_bytes: proposal.max_bytes,
+                            });
+                        } else {
+                            let _ = state.read_proposals.dismiss_for_conversation(
+                                &proposal_id, &chat_id,
+                            );
+                        }
                     }
                     Ok(answer)
                 }
@@ -1104,13 +1119,39 @@ async fn lu_approve_read_proposal(
     .await
     .map_err(|e| format!("approval picker failed: {e}"))??;
     let Some(selected) = selected else {
+        let record = state.read_approval_ledger.get(&proposal_id)
+            .map_err(|e| format!("approval record unavailable: {e:?}"))?
+            .ok_or("unknown approval record")?;
+        state.read_approval_ledger.decide(
+            &proposal_id, &chat_id, &origin, &record.file_name,
+            record.max_bytes, lu_core::read_approval_ledger::ReadDecision::Denied,
+        ).map_err(|e| format!("approval denial not recorded: {e:?}"))?;
         state.read_proposals.dismiss_for_conversation(&proposal_id, &chat_id)
             .map_err(|e| format!("dismissal failed: {e:?}"))?;
         return Ok(None);
     };
-    let approved = state.read_proposals.approve_selected(
+    let approved = match state.read_proposals.approve_selected(
         &proposal_id, &chat_id, &origin, &selected,
-    ).map_err(|e| format!("selected file differs from requested read: {e:?}"))?;
+    ) {
+        Ok(approved) => approved,
+        Err(error) => {
+            // The in-memory proposal was consumed: record a denial if the
+            // trusted ledger still names this exact originating task.
+            if let Ok(Some(record)) = state.read_approval_ledger.get(&proposal_id) {
+                let _ = state.read_approval_ledger.decide(
+                    &proposal_id, &chat_id, &origin, &record.file_name,
+                    record.max_bytes, lu_core::read_approval_ledger::ReadDecision::Denied,
+                );
+            }
+            return Err(format!("selected file differs from requested read: {error:?}"));
+        }
+    };
+    // Only the host may commit this user decision; a replayed/modified
+    // proposal cannot pass the atomic pending-to-approved transition.
+    state.read_approval_ledger.decide(
+        &proposal_id, &chat_id, &origin, &approved.file_name,
+        approved.max_bytes, lu_core::read_approval_ledger::ReadDecision::Approved,
+    ).map_err(|e| format!("approval not durably committed: {e:?}"))?;
     let turn_id = next_id("g-");
     native_host_read::inspect_selected_file_with_receipt(
         &state.chats, &chat_id, &turn_id, &selected, u64::from(approved.max_bytes),
@@ -1124,6 +1165,15 @@ fn lu_dismiss_read_proposal(
     chat_id: String,
     proposal_id: String,
 ) -> Result<(), String> {
+    let origin = state.read_proposals.origin_for_conversation(&proposal_id, &chat_id)
+        .map_err(|e| format!("proposal unavailable: {e:?}"))?;
+    let record = state.read_approval_ledger.get(&proposal_id)
+        .map_err(|e| format!("approval record unavailable: {e:?}"))?
+        .ok_or("unknown approval record")?;
+    state.read_approval_ledger.decide(
+        &proposal_id, &chat_id, &origin, &record.file_name,
+        record.max_bytes, lu_core::read_approval_ledger::ReadDecision::Denied,
+    ).map_err(|e| format!("proposal denial not recorded: {e:?}"))?;
     state.read_proposals
         .dismiss_for_conversation(&proposal_id, &chat_id)
         .map_err(|e| format!("proposal dismissal: {e:?}"))
