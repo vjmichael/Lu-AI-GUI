@@ -32,3 +32,10 @@ No selected model filesystem path, prompt, API key, stdout/stderr, image content
 
 ## Status / blockers
 This increment is **development code, not a completed WIN-LOAD-01 gate**. The repository's historical `main` still differs from the locally staged development source. REPO-01 full-source manifest synchronization remains mandatory before whole-application CI can be accepted. This increment's GitHub Actions workflow checks Windows Rust tests of its own branch and must not be represented as a complete Lu build/test.
+
+## Increment 2 — diagnostics identifier privacy hardening (2026-11-03)
+- The load trace now sanitizes both WebView-originated model references and operation IDs *at the telemetry boundary*, before any event is recorded. Only Lu host-format identifiers (m-/load- plus 32 lowercase hex digits) are retained; arbitrary or malformed values become fixed redaction tokens.
+- Added Rust regressions proving untrusted IDs cannot echo model paths/usernames into diagnostic snapshots and that canonical host identifiers remain correlatable.
+- Commit: `3cc6eed418c0db9dd4009a7d70dc5f5b95aa3ae4`. Commit/push confirmed; Windows CI result not yet verified. This changes development branch only, not `0.1.0-alpha.2`.
+- Remaining WIN-LOAD-01: measured engine-process milestones, OS GPU/VRAM evidence, load cancellation and safe process cleanup; independently prove WebView/host/engine responsiveness in tests.
+- REPO-01 remains blocking for full Lu CI: verify the exact 252-file development snapshot against GitHub, not only this 5-file branch delta.
