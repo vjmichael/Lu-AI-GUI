@@ -127,3 +127,13 @@ Earlier CONTAIN-01 text requiring mandatory AppContainer/restricted worker must 
 - Added actual `native-dx` harness compiling production `load_trace.rs` directly, with a restart-isolation regression; no Tauri, GPU or mocked trace logic.
 - Added independent Linux portable diagnostics job to WIN-LOAD-01 workflow and retained Windows full desktop compile and engine-observer tests.
 - This provides quicker test feedback while avoiding false acceptance of unpublished source files. GitHub CI status must still be checked on the exact locked commit.
+
+## 2026-11-03 — CI drift repairs and AUTH-01 persisted identity
+
+- **CI-01:** GitHub Rust compile evidence identified the resilience example missing `GenerationRequest.history` and `PersistentEngineConfig.load_observer`; both initializers updated. No unverified inference acceptance claimed.
+- **UX-01:** Frontend CI exposed an obsolete regex asserting `reserve_generation`; adjusted to the actual history-aware reserve API, retaining the queue-before-reservation assertion.
+- **AUTH-01:** Production `ChatStore` now stores `user_turn_id` alongside the append-only `User` event, derived from the existing host-generated generation ID. The host `lu_generate` command uses the new append path. Old/imported User events keep an optional absent ID and are **not** trusted.
+- **AUTH-01:** `trusted_user_turn_text` fails closed for unknown conversation/turn, duplicate IDs, malformed rows and oversized log; `ChatStore` implements Lu Core's `TrustedUserTurnVerifier` contract. Regression covers legitimate persisted turn, restart, cross-chat denial, duplicate denial, malformed trailing row and legacy context.
+- **AUTH-01 remains PARTIAL:** The native tool grant/admission dispatcher is not yet wired to this verifier and no user approval interface is established. This code cannot authorize a tool by itself.
+- **REPO-01 remains OPEN:** GitHub's locked tree still differs from the unpublished exact local alpha.3-dev source snapshot. No physical Windows retest was performed.
+- Windows job/desktop CI and the above native tests must be verified against the refreshed exact commit before closing their gates.
