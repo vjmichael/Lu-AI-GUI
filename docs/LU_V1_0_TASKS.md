@@ -16,12 +16,12 @@
 | WIN-LOAD-02 | P1 | Actual model load progress | TODO | Only engine-measured data may drive percentages |
 | MEDIA-01 | P1 | Reliable saved image preview rehydration | TODO | Restart, retry, missing media cases |
 | MODEL-01 | P1 | GGUF/MMProj profile, engine logs, GPU offload evidence | IN PROGRESS | Parser/integration tests; physical Vulkan check deferred |
-| DATA-01 | P0 | ANSF/SQLite conversations, immutable revisions, migration and backup | TODO | Crash/restart/migration tests |
-| AUTH-01 | P0 | Authenticated user-turn tool scopes and revocation | TODO | Adversarial authorization tests |
+| DATA-01 | P0 | ANSF/SQLite conversations, immutable revisions, migration and backup | PARTIAL | Crash/restart/migration tests |
+| AUTH-01 | P0 | Authenticated user-turn tool scopes and revocation | PARTIAL | Adversarial authorization and live desktop grant/dispatch tests |
 | LIFECYCLE-01 | P0 | Native process lifecycle, cancellation, clean termination and resource safeguards (not mandatory sandboxing) | TODO | Actual Windows start/stop/reap and crash recovery |
 | TOOLS-01 | P0 | First-party native read, search, atomic file writes, git, archives and JSON | TODO | End-to-end authorized Protobuf calls |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
-| MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |
+| MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |\n| CONTEXT-01 | P0 | Canonical recoverable goals, provenance, cross-chat context and task handoff (never authority transfer) | DOCS RECOVERED | Durable Lu Core continuity + host-authenticated recall integration and crash/restart tests |
 | AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | TODO | Multi-step failure recovery |
 | UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | IN PROGRESS | UI automated tests |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
@@ -157,3 +157,10 @@ REPO-01 and WIN-LOAD-01 GitHub Actions now cancel superseded runs sharing the sa
 
 ## CI regression correction — AUTH-01 corrupt journal fixture
 Portable chat-journal CI located a genuine fixture path error in the newly added corrupt-record test: production journals reside at `<root>/conversations/<chat-id>.jsonl`, not `<root>/<chat-id>.jsonl`. Fixed the test path, retaining strict fail-closed corrupted-row verification. Do not count this as a successful test until the corrected commit is exercised in CI.
+
+## CONTEXT-01 — original Lu conversations recovered (2026-11-03)
+- Recovered relevant original/Lu conversation decisions and compared against the current repository's alpha acceptance, R22 roadmap, security contract and v1.0 scope. Published [canonical design/handoff](LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md) and made it the README entrypoint. This is a selective recovered cross-conversation synthesis, not a complete 21-chat verbatim export.
+- **No more user-as-message-bus design:** immutable ANSF source, revision/supersession links, bounded source-grounded retrieval, durable task context/checkpoints and cross-chat *context only* are a core v1.0 acceptance requirement.
+- Superseded October 25 sandbox-first audit marked historical; current owner decision is broad native host access with user-delegated authority.
+- Next engineered gate: finish real host-approved read-only tool turn, then persist context/authority separately. Context and imported conversation data must never mint tools or extend grant scopes.
+- **Still open:** complete historical transcript ingestion, full unpublished local source convergence, source-locked Windows CI and production GUI runtime wiring.
