@@ -300,3 +300,60 @@ fn proposal_parser_rejects_malformed_json_paths_overbroad_reads_and_mutations() 
     assert_eq!(queue.clear_conversation("chat-1").unwrap(), 1);
     assert_eq!(queue.dismiss("p-ok"), Err(ProposalError::Unknown));
 }
+
+#[tokio::test]
+async fn completed_model_proposal_can_only_execute_with_matching_os_selected_file_and_limit() {
+    use read_proposal::{ProposalError, ReadApprovalQueue};
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let files = root.join("host-files");
+    fs::create_dir_all(&files).unwrap();
+    let target = files.join("notes.txt");
+    fs::write(&target, "z".repeat(8192)).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let chat = chats.create_chat().unwrap();
+    let other = chats.create_chat().unwrap();
+    let raw = r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"Review first 128 bytes","max_bytes":128}"#;
+    let pending = ReadApprovalQueue::default();
+    pending.stage("p-bound", &chat.chat_id, "model-output-1", raw).unwrap();
+    assert_eq!(
+        pending.origin_for_conversation("p-bound", &other.chat_id),
+        Err(ProposalError::WrongConversation)
+    );
+    assert_eq!(
+        pending.origin_for_conversation("p-bound", &chat.chat_id).unwrap(),
+        "model-output-1"
+    );
+    let request = pending.approve_selected(
+        "p-bound", &chat.chat_id, "model-output-1", &target
+    ).unwrap();
+    assert_eq!(request.max_bytes, 128);
+    let result = native_host_read::inspect_selected_file_limited(
+        &chats, &chat.chat_id, &format!("g-{}", "1".repeat(32)),
+        &target, u64::from(request.max_bytes),
+    ).await.unwrap();
+    assert!(result.truncated);
+    assert_eq!(result.text.len(), 128);
+    assert!(chats.history(&other.chat_id).unwrap().is_empty());
+    assert_eq!(pending.origin_for_conversation("p-bound", &chat.chat_id), Err(ProposalError::Unknown));
+    assert!(native_host_read::inspect_selected_file_limited(
+        &chats, &chat.chat_id, &format!("g-{}", "2".repeat(32)),
+        &target, 65537,
+    ).await.is_err(), "native tool cannot exceed the maximum allowed inspection budget");
+    drop(chats);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn model_proposal_rejection_preserves_other_chats_and_is_idempotent() {
+    use read_proposal::{ProposalError, ReadApprovalQueue};
+    let queue = ReadApprovalQueue::default();
+    let raw = r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"Read","max_bytes":4096}"#;
+    queue.stage("p-a", "chat-a", "generation-a", raw).unwrap();
+    queue.stage("p-b", "chat-b", "generation-b", raw).unwrap();
+    assert_eq!(queue.dismiss_for_conversation("p-a", "chat-b"), Err(ProposalError::WrongConversation));
+    queue.dismiss_for_conversation("p-a", "chat-a").unwrap();
+    assert_eq!(queue.dismiss_for_conversation("p-a", "chat-a"), Err(ProposalError::Unknown));
+    assert_eq!(queue.origin_for_conversation("p-b", "chat-b").unwrap(), "generation-b");
+    assert_eq!(queue.clear_conversation("chat-b").unwrap(), 1);
+}
