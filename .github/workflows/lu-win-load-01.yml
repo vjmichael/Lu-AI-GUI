@@ -12,6 +12,16 @@ on:
 permissions:
   contents: read
 jobs:
+  portable-load-trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test real load diagnostics module without Tauri dependencies
+        run: cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml
   rust-load-trace:
     runs-on: windows-latest
     timeout-minutes: 30
