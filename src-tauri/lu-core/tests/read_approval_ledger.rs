@@ -74,3 +74,34 @@ fn a_read_approval_can_never_bind_to_another_conversation_or_duplicate_effect() 
     drop(db);
     fs::remove_file(p).unwrap();
 }
+
+#[test]
+fn upgrades_early_approval_schema_without_erasing_old_decisions() {
+    use rusqlite::Connection;
+    let p = path();
+    let conn = Connection::open(&p).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE lu_read_approvals (
+            proposal_id TEXT PRIMARY KEY NOT NULL,
+            chat_id TEXT NOT NULL,
+            generation_id TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            max_bytes INTEGER NOT NULL,
+            state TEXT NOT NULL
+        );
+        INSERT INTO lu_read_approvals
+            (proposal_id,chat_id,generation_id,file_name,max_bytes,state)
+        VALUES ('p-old','chat-a','g-old','old.txt',512,'APPROVED');"
+    ).unwrap();
+    drop(conn);
+    let upgraded = ReadApprovalLedger::open(&p).unwrap();
+    assert_eq!(upgraded.get("p-old").unwrap().unwrap().decision,ReadDecision::Approved);
+    assert_eq!(upgraded.get("p-old").unwrap().unwrap().effect_call_id,None);
+    upgraded.link_effect("p-old","chat-a","g-old","g-effect-migrated").unwrap();
+    assert_eq!(
+        upgraded.get("p-old").unwrap().unwrap().effect_call_id.as_deref(),
+        Some("g-effect-migrated")
+    );
+    drop(upgraded);
+    fs::remove_file(p).unwrap();
+}
