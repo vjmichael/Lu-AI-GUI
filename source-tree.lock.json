@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a23c856cd6bfee0232c3ab1c8e1b7bc366ee6a4f",
-  "trackedFileCount": 237,
+  "sourceCommitBeforeLock": "429aca8b4da3215429d0a3c8dfce7f80e219ecd2",
+  "trackedFileCount": 239,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -29,7 +29,7 @@
     },
     {
       "path": "README.md",
-      "blob": "9c827a628b4d37e1e46666113c71678917b8d159"
+      "blob": "7febd477d40948e2c99a6ee75f7449521970d330"
     },
     {
       "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
@@ -46,6 +46,10 @@
     {
       "path": "docs/LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md",
       "blob": "3954455a02f113a24dc6868b11ee38626c7bca7d"
+    },
+    {
+      "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
+      "blob": "3788425ab42ab6a586de36dc680621d6f6df280a"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -73,7 +77,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "80033bf2209b32b078444209bd009f81ee0d5b5d"
+      "blob": "6348ac9615f62ebabf12db636ce9cd927400330d"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -365,7 +369,7 @@
     },
     {
       "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
-      "blob": "6ea7df9cb203088fdab9fb0b4cc3b51445ba1520"
+      "blob": "eddab7b3f0936403f374260a6f012acb1a8d9998"
     },
     {
       "path": "src-tauri/lu-core/MEMORY_AND_MEDIA_ROADMAP.md",
@@ -485,7 +489,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/continuity.rs",
-      "blob": "3f0f6ed7e001ff80bd45b85e061810866c81d095"
+      "blob": "52323f42acc3a52de012daed4bdca50dcf0553a1"
     },
     {
       "path": "src-tauri/lu-core/src/contracts.rs",
@@ -786,6 +790,10 @@
     {
       "path": "src-tauri/lu-core/tests/continuity.rs",
       "blob": "77f7c00fb9cd8ea4320526a92dbf0338bb6c9e7e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/continuity_conversation_scope.rs",
+      "blob": "15993c2e955481737c3e5d4cf58961a1dad704c8"
     },
     {
       "path": "src-tauri/lu-core/tests/conversation_authority.rs",
