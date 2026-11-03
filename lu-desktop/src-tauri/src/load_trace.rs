@@ -9,6 +9,14 @@ use std::{
 
 const MAX_EVENTS: usize = 96;
 
+/// Diagnostics only retain canonical Lu-generated opaque model references.
+fn diagnostic_model_ref(value: &str) -> String {
+    let valid = value.len() == 34
+        && value.starts_with("m-")
+        && value.as_bytes()[2..].iter().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
+    if valid { value.to_owned() } else { "redacted-model-ref".to_owned() }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LoadEvent {
@@ -41,7 +49,15 @@ impl LoadTrace {
         if self.active.is_some() {
             return Err("another model load is already in progress");
         }
-        self.active = Some(ActiveLoad { operation_id, model_ref, started: Instant::now() });
+        let safe_operation = if operation_id.len() == 37
+            && operation_id.starts_with("load-")
+            && operation_id.as_bytes()[5..].iter().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        { operation_id } else { "redacted-load-id".to_owned() };
+        self.active = Some(ActiveLoad {
+            operation_id: safe_operation,
+            model_ref: diagnostic_model_ref(&model_ref),
+            started: Instant::now(),
+        });
         self.record("accepted", None);
         Ok(())
     }
@@ -117,6 +133,29 @@ mod tests {
         assert!(!trace.snapshot().loading);
         assert!(trace.begin("load-3".into(), "m-third".into()).is_ok());
         assert_eq!(trace.snapshot().events.last().unwrap().operation_id, "load-3");
+    }
+
+    #[test]
+    fn untrusted_ids_cannot_leak_paths() {
+        let mut trace = LoadTrace::default();
+        trace.begin("invalid load secret Alice".into(), "private Alice GGUF path".into()).unwrap();
+        trace.record("supervisor_enter", None);
+        trace.finish("error");
+        let serialized = serde_json::to_string(&trace.snapshot()).unwrap();
+        assert!(!serialized.contains("Alice"));
+        assert!(serialized.contains("redacted-model-ref"));
+        assert!(serialized.contains("redacted-load-id"));
+    }
+
+    #[test]
+    fn host_generated_identifiers_survive_redaction() {
+        let mut trace = LoadTrace::default();
+        let model = format!("m-{}", "abcdef0123456789".repeat(2));
+        let load = format!("load-{}", "abcdef0123456789".repeat(2));
+        trace.begin(load.clone(), model.clone()).unwrap();
+        let view = trace.snapshot();
+        assert_eq!(view.events[0].model_ref, model);
+        assert_eq!(view.events[0].operation_id, load);
     }
 
     #[test]
