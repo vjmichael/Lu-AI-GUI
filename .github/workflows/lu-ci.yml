@@ -24,6 +24,9 @@ jobs:
           const t=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.conf.json','utf8'));
           const c=fs.readFileSync('lu-desktop/src-tauri/Cargo.toml','utf8');
           console.log('Lu source version:',p.version);
+          if (p.version !== '0.1.0-alpha.3-dev.1') {
+            throw Error('REPO-01 source convergence required: GitHub still has old Lu source');
+          }
           if (p.version!==t.version || !c.includes('version = "'+p.version+'"')) {
             throw Error('Mixed source versions: not an eligible release candidate');
           }
