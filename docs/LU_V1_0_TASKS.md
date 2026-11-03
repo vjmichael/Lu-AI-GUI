@@ -18,7 +18,7 @@
 | MODEL-01 | P1 | GGUF/MMProj profile, engine logs, GPU offload evidence | IN PROGRESS | Parser/integration tests; physical Vulkan check deferred |
 | DATA-01 | P0 | ANSF/SQLite conversations, immutable revisions, migration and backup | TODO | Crash/restart/migration tests |
 | AUTH-01 | P0 | Authenticated user-turn tool scopes and revocation | TODO | Adversarial authorization tests |
-| CONTAIN-01 | P0 | OS-enforced native worker isolation and cleanup | TODO | Windows Job Object/token limits |
+| LIFECYCLE-01 | P0 | Native process lifecycle, cancellation, clean termination and resource safeguards (not mandatory sandboxing) | TODO | Actual Windows start/stop/reap and crash recovery |
 | TOOLS-01 | P0 | First-party native read, search, atomic file writes, git, archives and JSON | TODO | End-to-end authorized Protobuf calls |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
 | MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |
@@ -32,7 +32,7 @@ Each change records task ID, commit SHA, tests (command/platform/results), CI ru
 ## Execution order
 1. REPO-01 and CI-01 (converge exact source; CI must identify build).
 2. WIN-LOAD-01, model/GUI observability, DATA-01.
-3. AUTH-01 and CONTAIN-01 before privileged TOOLS-01.
+3. AUTH-01 plus trusted effect-specific authorization and LIFECYCLE-01 before broad native TOOLS-01; mandatory sandboxing is not required.
 4. JOURNAL-01, MEMORY-01, AGENT-01.
 5. UX/installer hardening and RELEASE-01.
 
@@ -99,3 +99,16 @@ Design audited against `SECURITY_AUTHORITY_AND_OS_CEILING.md`, `conversation_aut
 - **CONTAIN-01 remains blocking:** Job Object process lifetime is not a restricted worker identity or egress/filesystem sandbox.
 - **DEV-01 / after core:** sandboxed Lu Dev self-build/test and separately approved stable promotion.
 - Audit and acceptance: [LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md](LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md). No new implementation or security acceptance claimed by the design audit.
+
+## Owner-corrected autonomy architecture — 2026-11-03
+**Binding design:** Lu has unrestricted *access* to the available host environment, not unrestricted *authority* to act. OS permissions do not imply user authorization. Previous mandatory sandbox/restricted worker interpretations are superseded. Use the full native Windows host with trusted task-bound authorization at each consequential action; preserve resource-guardian supervision, journaling, user approval for high-impact operations, rollback and cancellation. See `src-tauri/lu-core/SECURITY_AUTHORITY_AND_OS_CEILING.md`.
+
+| ID | Priority | Task | State | Acceptance |
+| --- | --- | --- | --- | --- |
+| AUTH-ACCESS-01 | P0 | Distinguish host capability availability, Windows OS permission, authenticated user authority and exact execution admission | DESIGN CORRECTED | Real native tool can access an explicitly authorized host path; identical capability without user delegation is rejected |
+| PROVISION-01 | P0 | Discover/provision native compilers, SDKs and dependencies without requiring an artificial container or workspace-only cache | DESIGN CORRECTED | Approved user-wide/system-wide install works through legitimate user interaction; unapproved install denied |
+| LIFECYCLE-01 | P0 | Native process supervision, cleanup, cancellation and resource guardian (not universal sandboxing) | TODO | OS-level process lifecycle tests plus recovery receipts |
+| ORCH-01 | P0 | Continue authorized multi-step work and resolve prerequisites with durable delegation | TODO | Restart/resume without permission inflation |
+| WIN-JOB-01 | P0 | Reconcile pinned llama backend suspended process call with Win Job wrapper API | TODO | Windows compile and engine process cleanup tests |
+
+Earlier CONTAIN-01 text requiring mandatory AppContainer/restricted worker must be treated as **superseded**, not as an unsatisfied requirement to implement universal sandboxing. Historical records remain for provenance.
