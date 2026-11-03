@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7238fa2c71a0c7440153a1a2fb5bcba67849acba",
+  "sourceCommitBeforeLock": "0ece440dbcb35daa73cfb1ed4d9accd0d94ba338",
   "trackedFileCount": 242,
   "files": [
     {
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "5f86538279742e6d48bd0df3c351eb64e0cf39e2"
+      "blob": "0da6823b6b99c6ab650259ae37b0bfb60d5c05e0"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -933,7 +933,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/real_gguf_tool_json.rs",
-      "blob": "5adabb99ed2f4629b6166b77d1efe39bf2c210f9"
+      "blob": "9efb06c9a5777c5b6afab71adab7394446c4ef28"
     },
     {
       "path": "src-tauri/lu-core/tests/registry_contracts.rs",
