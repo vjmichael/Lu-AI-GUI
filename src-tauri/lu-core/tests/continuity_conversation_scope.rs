@@ -72,3 +72,39 @@ fn continuity_never_promotes_an_unverified_source_or_stolen_checkpoint_id() {
     drop(store);
     fs::remove_file(&path).unwrap();
 }
+
+struct CurrentAuthenticatedTurn;
+impl lu_core::conversation_authority::TrustedUserTurnVerifier for CurrentAuthenticatedTurn {
+    fn verify_user_turn(&self, conversation_id: &str, user_turn_id: &str) -> bool {
+        conversation_id == "chat-a" && user_turn_id == "trusted-current-user-turn"
+    }
+}
+
+#[test]
+fn resuming_context_requires_current_authenticated_turn_not_recalled_authority() {
+    let path = unique_path();
+    let store = ContinuityStore::open(&path).unwrap();
+    store.append(&checkpoint("cp-a", "chat-a", "verify tool result")).unwrap();
+    store.append(&checkpoint("cp-b", "chat-b", "unrelated notes")).unwrap();
+    let verifier = CurrentAuthenticatedTurn;
+    assert_eq!(
+        store.latest_for_verified_user_turn(
+            "lu", "v1", "chat-a", "trusted-current-user-turn", &verifier,
+        ).unwrap().unwrap().checkpoint_id,
+        "cp-a"
+    );
+    assert_eq!(
+        store.latest_for_verified_user_turn(
+            "lu", "v1", "chat-b", "trusted-current-user-turn", &verifier,
+        ).unwrap_err(),
+        ContinuityError::InvalidInput
+    );
+    assert_eq!(
+        store.latest_for_verified_user_turn(
+            "lu", "v1", "chat-a", "old-quoted-instruction", &verifier,
+        ).unwrap_err(),
+        ContinuityError::InvalidInput
+    );
+    drop(store);
+    fs::remove_file(&path).unwrap();
+}
