@@ -112,3 +112,11 @@ Design audited against `SECURITY_AUTHORITY_AND_OS_CEILING.md`, `conversation_aut
 | WIN-JOB-01 | P0 | Reconcile pinned llama backend suspended process call with Win Job wrapper API | TODO | Windows compile and engine process cleanup tests |
 
 Earlier CONTAIN-01 text requiring mandatory AppContainer/restricted worker must be treated as **superseded**, not as an unsatisfied requirement to implement universal sandboxing. Historical records remain for provenance.
+
+## 2026-11-03 — WIN-JOB-01 and CI-01 compile unblock pass
+
+- WIN-JOB-01: The Windows llama backend previously used `CREATE_SUSPENDED` but called nonexistent `Job::assign_and_resume_suspended`. It now uses `CREATE_NO_WINDOW` and the existing `Job::assign` directly after spawn, with failure killing/reaping the child. This is **process lifetime supervision only**; there is a narrow pre-assignment window and no claim of race-free containment or mandatory sandboxing.
+- WIN-LOAD-01: Corrected a regression where a deliberately noncanonical `load-3` operation ID was expected to survive diagnostic redaction. It now expects `redacted-load-id`, consistent with data-minimization rules.
+- CI-01: Replaced nonexistent source verification script with `scripts/verify-source-tree.mjs`; fixed `src-tauri/lu-core` location; removed the invalid assumption that published code equals the unpublished local alpha.3-dev source.
+- CI Windows compile tasks now explicitly create **invalid, non-executable placeholder engine resources** solely to pass Tauri resource existence checks. They may not be packaged, distributed or used as inference acceptance evidence. A real NSIS build must stage the pinned four-component Vulkan engine with `stage-engine.mjs`.
+- Pending: confirm CI tests for this exact commit, then address failures actually reported by Rust compiler/tests. Published source is still not the private latest local source (REPO-01 external convergence remains open). No physical retest.
