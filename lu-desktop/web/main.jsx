@@ -32,6 +32,8 @@ function App() {
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
+  const [modelLoadTrace, setModelLoadTrace] = useState(null);
+  const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -79,6 +81,34 @@ function App() {
     setModelLoadSeconds(0);
     const timer = setInterval(() => setModelLoadSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);
+  }, [working, activity]);
+  useEffect(() => {
+    if (!(working && activity.startsWith('Loading'))) {
+      setModelLoadTrace(null);
+      setLastHostLoadReply(0);
+      return;
+    }
+    let mounted = true;
+    let pending = false;
+    async function sampleHost() {
+      if (pending) return; // One outstanding probe; no unbounded request buildup.
+      pending = true;
+      try {
+        const trace = await invoke('lu_load_diagnostics');
+        if (mounted) {
+          setModelLoadTrace(trace);
+          setLastHostLoadReply(Date.now());
+        }
+      } catch {
+        // A failed probe is not proof of a GPU or WebView deadlock.
+        if (mounted) setLastHostLoadReply(0);
+      } finally {
+        pending = false;
+      }
+    }
+    sampleHost();
+    const timer = setInterval(sampleHost, 1500);
+    return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
 
@@ -508,7 +538,7 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed · {lastHostLoadReply && Date.now() - lastHostLoadReply < 5000 ? 'Host responding' : 'Host response pending'}{modelLoadTrace?.loading && modelLoadTrace.events?.length > 0 ? ' · ' + modelLoadTrace.events[modelLoadTrace.events.length - 1].phase.replaceAll('_', ' ') : ''}</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
