@@ -197,3 +197,10 @@ Added `ContinuityStore::latest_for_verified_user_turn` so the trusted desktop ho
 - The current text adapter reads up to 64 KiB from the **selected file only**. The root is selected per call and **is not** a universal Lu application sandbox.
 - Portable integration tests cover read correctness, restart persistence, duplicate turn denial, other-conversation isolation and bounded read. This is not a general model-driven tool-approval flow, and complete CI / installed-app acceptance remains outstanding.
 - Next: verify the committed revision, repair CI, implement reviewable model-proposed exact-target read grants, then effect-journalled atomic writes.
+
+## 13. AUTH-02 model-proposed read approval (development, 2026-11-03)
+- A successfully completed LLM reply containing one strict `propose_read_file` object may create an **inert pending request**. It does not automatically authorize or execute anything.
+- The trusted Rust host stores the proposal bound to its actual originating chat/generation; the desktop shows a review card listing purpose, exact filename and bounded maximum bytes. Approval opens the native OS file picker; mismatch, cancellation, wrong chat/generation, repeated approval and malformed JSON fail closed.
+- A separately created authenticated human approval turn dispatches the existing native Protobuf read. Reads never exceed the specific proposed byte budget (64 KiB hard cap); the temporary grant is revoked. Model text never conveys independent tool authority.
+- Tests are added in the portable desktop-auth harness, but full GitHub Rust/Windows CI and installed-app acceptance are **not yet established**. This is not a claim of automatic schema-advertised model tool calling, transactionally durable proposal queue, race-free file pinning, or full authorization for write/execute/network effects.
+- Next: verify and repair CI on exact revision, pin native resource identity and durable approvals/receipts, then add the schema-advertised typed model tool loop and broader native operations.
