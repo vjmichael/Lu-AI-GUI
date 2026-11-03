@@ -2,7 +2,9 @@
 
 Lu is a standalone, locally hosted AI desktop application built with Tauri 2, React, Rust, and a pinned llama.cpp engine. This source tree is distinct from Jan's desktop, Cowork, plugin and inference execution paths. The optional legacy-format import helpers in Lu Core are data migration adapters only; they are not Jan runtime dependencies.
 
-**Status:** source development / Windows evaluation; not an accepted alpha release.
+**Status (2026-11-03):** Lu `0.1.0-alpha.2` accepted by the project owner as the **functional Windows alpha development baseline**, following physical GGUF/MMProj, streaming, chat history, image/doc persistence, FIFO cancellation and Retry tests. It is **not** a production-stable or fully secured v1.0 release. Windows model-load `Not Responding`, missing taskbar icon, import feedback, signing and thumbnail timing remain tracked defects.
+
+**Current project documents:** [Alpha baseline and observed defects](docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md) · [v1.0 design reconciliation and engineering gates](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md). The historical Jan-mod design is subordinate to later Lu architecture and security decisions.
 
 ## Code map
 
