@@ -7,6 +7,7 @@ on:
     paths:
       - 'lu-desktop/src-tauri/src/load_trace.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'src-tauri/lu-core/src/persistent_llama_backend.rs'
       - '.github/workflows/lu-win-load-01.yml'
 permissions:
   contents: read
@@ -25,5 +26,9 @@ jobs:
         working-directory: lu-desktop/src-tauri
         shell: pwsh
         run: cargo test --locked load_trace::tests -- --nocapture
+      - name: Run typed real engine lifecycle observer tests
+        working-directory: src-tauri/lu-core
+        shell: pwsh
+        run: cargo test --locked persistent_llama_backend::tests -- --nocapture
 # This is *not* full Lu integration acceptance. REPO-01 must verify the
 # complete development source manifest and exact Git commit before global CI.
