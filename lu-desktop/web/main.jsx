@@ -327,6 +327,34 @@ function App() {
       });
     // Cancellation only targets this conversation's generation ID.
   }
+  async function inspectSelectedTextFile() {
+    if (working || chatBusy) return;
+    let targetId = chatId;
+    if (!targetId) {
+      try {
+        const newChat = await invoke('lu_new_chat');
+        targetId = newChat.chatId;
+        currentChat.current = targetId;
+        setChatId(targetId);
+        await refreshChats();
+      } catch (error) { setError(String(error)); return; }
+    }
+    setError('');
+    try {
+      const result = await invoke('lu_inspect_text_file', {chatId: targetId});
+      if (result && currentChat.current === targetId) {
+        setHistory(await invoke('lu_history', {chatId: targetId}));
+        setActivity(result.truncated ? 'File inspected (first 64 KiB)' : 'File inspected');
+      }
+      if (result) await refreshChats();
+    } catch (error) {
+      setError(String(error));
+      await refreshChats().catch(() => {});
+      if (currentChat.current === targetId)
+        setHistory(await invoke('lu_history', {chatId: targetId}).catch(() => []));
+    }
+  }
+
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
@@ -606,6 +634,7 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
