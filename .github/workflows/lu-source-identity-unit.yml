@@ -1,0 +1,29 @@
+name: Lu source identity unit checks
+on:
+  push:
+    branches:
+      - 'lu/repo01-source-identity-gate-*'
+  pull_request:
+    paths:
+      - 'scripts/source-identity.mjs'
+      - 'tests/source-identity.test.mjs'
+      - '.github/workflows/lu-source-identity-unit.yml'
+jobs:
+  source-identity-unit:
+    name: Source identity unit tests (not full-tree acceptance)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run fail-closed source verification fixtures
+        run: node --test tests/source-identity.test.mjs
+      - name: Record workflow commit identity
+        run: |
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          git rev-parse HEAD
+# REPO-01 full-tree CI gate is NOT enabled until the complete staged source,
+# its manifest, and the exact branch source revision are published together.
