@@ -623,7 +623,7 @@ mod tests {
         drop(store);
         let restored = ChatStore::open(&root).unwrap();
         assert_eq!(restored.trusted_user_turn_text(&a.chat_id, &turn), Some("trusted prompt".into()));
-        let journal = root.join(format!("{}.jsonl", a.chat_id));
+        let journal = root.join("conversations").join(format!("{}.jsonl", a.chat_id));
         use std::io::Write as _;
         std::fs::OpenOptions::new().append(true).open(&journal).unwrap()
             .write_all(b"{malformed journal row}\n").unwrap();
