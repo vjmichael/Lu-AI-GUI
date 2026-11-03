@@ -164,3 +164,7 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - Superseded October 25 sandbox-first audit marked historical; current owner decision is broad native host access with user-delegated authority.
 - Next engineered gate: finish real host-approved read-only tool turn, then persist context/authority separately. Context and imported conversation data must never mint tools or extend grant scopes.
 - **Still open:** complete historical transcript ingestion, full unpublished local source convergence, source-locked Windows CI and production GUI runtime wiring.
+
+## CONTEXT-01 code continuation (2026-11-03)
+- Added exact `ContinuityStore::latest_for_conversation(project,task,chat)` lookup to avoid accidentally returning another chat's task checkpoint when project/task IDs overlap. Existing continuity SQLite remains the source of truth.
+- Added independent Rust tests for restart, same-task/different-chat retrieval, immutability conflict and invalid conversation identities. CI pending; does **not** grant tool authority or make ANSF auto-retrieval available in the desktop.
