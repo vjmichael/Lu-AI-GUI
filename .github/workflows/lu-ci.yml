@@ -1,0 +1,100 @@
+name: Lu Desktop CI
+on:
+  push:
+    paths: ['lu-desktop/**', 'src-tauri/**', '.github/workflows/lu-ci.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact committed development-source manifest
+        run: node lu-desktop/scripts/verify-source-manifest.mjs
+      - name: Check manifest versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('lu-desktop/package.json','utf8'));
+          const t=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.conf.json','utf8'));
+          const c=fs.readFileSync('lu-desktop/src-tauri/Cargo.toml','utf8');
+          console.log('Lu source version:',p.version);
+          if (p.version !== '0.1.0-alpha.3-dev.1') {
+            throw Error('REPO-01 source convergence required: GitHub still has old Lu source');
+          }
+          if (p.version!==t.version || !c.includes('version = "'+p.version+'"')) {
+            throw Error('Mixed source versions: not an eligible release candidate');
+          }
+          NODE
+  frontend:
+    needs: source-identity
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lu-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          if test -f package-lock.json; then npm ci; else npm install --no-audit --no-fund; fi
+      - run: npm run build
+      - run: npm run check
+      - run: npm run test:ui
+  chat-journal-portable:
+    name: Portable native chat journal security tests
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test the production chat journal without GUI dependencies
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml
+  diagnostics-portable:
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Portable native diagnostics regression
+        run: cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml
+  native-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/lu-core/Cargo.toml
+  windows-host:
+    needs: source-identity
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Strip developer-local Cargo vendor setting if present
+        shell: pwsh
+        run: |
+          $p='lu-desktop/src-tauri/.cargo/config.toml'
+          if (Test-Path $p) {
+            if ((Get-Content $p -Raw) -match '/mnt/data/|local-vendor') { Remove-Item $p }
+          }
+      - name: Compile check (not physical GPU testing)
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --no-run --manifest-path lu-desktop/src-tauri/Cargo.toml
