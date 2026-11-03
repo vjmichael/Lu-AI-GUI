@@ -46,6 +46,20 @@ pub async fn inspect_selected_file_limited(
     path: &Path,
     max_bytes: u64,
 ) -> Result<InspectedFile, String> {
+    inspect_selected_file_with_receipt(chats, chat_id, turn_id, path, max_bytes, None).await
+}
+
+/// Durable host dispatch. The journal is opened and owned by the native
+/// desktop host, not a model-visible or WebView-provided path. This records
+/// PREPARED -> EXECUTING -> APPLIED / UNCERTAIN before chat presentation.
+pub async fn inspect_selected_file_with_receipt(
+    chats: &ChatStore,
+    chat_id: &str,
+    turn_id: &str,
+    path: &Path,
+    max_bytes: u64,
+    effects: Option<&lu_core::journal::EffectJournal>,
+) -> Result<InspectedFile, String> {
     if max_bytes == 0 || max_bytes > MAX_INSPECTION_BYTES {
         return Err("invalid approved read limit".into());
     }
@@ -120,18 +134,16 @@ pub async fn inspect_selected_file_limited(
     let call = catalog
         .encode_call(&allowed, TOOL_NAME, turn_id, Some(&scope_id), &args)
         .map_err(|e| format!("read arguments refused: {e:?}"))?;
-    let response = authority
-        .dispatch_bound(
-            &registry,
-            call,
-            BoundCallOrigin {
-                conversation_id: chat_id.to_owned(),
-                user_turn_id: turn_id.to_owned(),
-                task_id: task_id.clone(),
-            },
-            &policy,
-        )
-        .await;
+    let origin = BoundCallOrigin {
+        conversation_id: chat_id.to_owned(),
+        user_turn_id: turn_id.to_owned(),
+        task_id: task_id.clone(),
+    };
+    let response = if let Some(journal) = effects {
+        authority.dispatch_bound_durable(&registry, journal, call, origin, &policy).await
+    } else {
+        authority.dispatch_bound(&registry, call, origin, &policy).await
+    };
     // Revoke even if the read fails. No approval can outlive this operation.
     let _ = authority.revoke_task(&task_id);
     let _ = policy.revoke_scope(&scope_id);
