@@ -4,6 +4,7 @@
 mod chat_store;
 mod generation_queue;
 mod load_trace;
+mod native_host_read;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -1012,6 +1013,36 @@ struct ChatListView {
     chats: Vec<ChatSummary>,
     folders: Vec<ChatFolder>,
 }
+/// Explicit user-initiated OS dialog. The WebView cannot supply a path,
+/// task grant, scope or model-generated approval.
+#[tauri::command]
+async fn lu_inspect_text_file(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+) -> Result<Option<native_host_read::InspectedFile>, String> {
+    let state = Arc::clone(state.inner());
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("Text and source files", &[
+                "txt", "md", "rs", "js", "jsx", "ts", "tsx", "json",
+                "toml", "yaml", "yml", "py", "log", "csv",
+            ])
+            .blocking_pick_file()
+            .map(|file| file.into_path().map_err(|e| e.to_string()))
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("file picker failed: {e}"))??;
+    let Some(selected) = selected else { return Ok(None) };
+    let turn_id = next_id("g-");
+    let result = native_host_read::inspect_selected_file(
+        &state.chats, &chat_id, &turn_id, &selected,
+    ).await?;
+    Ok(Some(result))
+}
+
 #[tauri::command]
 fn lu_chats(state: State<'_, Arc<DesktopState>>) -> Result<ChatListView, String> {
     let (chats, folders) = state.chats.list()?;
@@ -1104,6 +1135,7 @@ pub fn run() {
             lu_unload_model,
             lu_cancel,
             lu_generate,
+            lu_inspect_text_file,
             lu_history,
             lu_chats,
             lu_new_chat,
