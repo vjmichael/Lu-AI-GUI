@@ -137,3 +137,6 @@ Earlier CONTAIN-01 text requiring mandatory AppContainer/restricted worker must 
 - **AUTH-01 remains PARTIAL:** The native tool grant/admission dispatcher is not yet wired to this verifier and no user approval interface is established. This code cannot authorize a tool by itself.
 - **REPO-01 remains OPEN:** GitHub's locked tree still differs from the unpublished exact local alpha.3-dev source snapshot. No physical Windows retest was performed.
 - Windows job/desktop CI and the above native tests must be verified against the refreshed exact commit before closing their gates.
+
+## CI capacity safeguard — 2026-11-03
+REPO-01 and WIN-LOAD-01 GitHub Actions now cancel superseded runs sharing the same workflow/ref, preserving Windows CI capacity on rapid source commits. The latest commit still receives independent source-lock, native-core, portable diagnostics, frontend, native-chat, and Windows checks. A cancelled old run is never reported as green.
