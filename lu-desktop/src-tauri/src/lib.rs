@@ -156,7 +156,7 @@ struct DesktopState {
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
-    load_trace: Mutex<LoadTrace>,
+    load_trace: Arc<Mutex<LoadTrace>>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
 }
 
@@ -411,6 +411,10 @@ impl DesktopState {
                 projectors.push((record.model_ref.clone(), projector));
             }
         }
+        // Observer is constructed before the supervisor so its engine callback
+        // can report real child lifecycle events without acquiring engine locks.
+        let load_trace = Arc::new(Mutex::new(LoadTrace::default()));
+        let engine_trace = Arc::clone(&load_trace);
         let supervisor = TrustedInferenceSupervisor::new(
             "llama-vulkan".into(),
             4096,
@@ -419,6 +423,7 @@ impl DesktopState {
                 let mut raw = [0u8; 32];
                 OsRng.fill_bytes(&mut raw);
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
+                let engine_trace_for_load = Arc::clone(&engine_trace);
                 PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(ENGINE_SHA256)?,
@@ -427,6 +432,11 @@ impl DesktopState {
                     startup_timeout: Duration::from_secs(180),
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
+                    load_observer: Some(Arc::new(move |phase, pid| {
+                        if let Ok(mut trace) = engine_trace_for_load.lock() {
+                            trace.record_engine(phase, None, pid);
+                        }
+                    })),
                 })
             },
         )
@@ -443,7 +453,7 @@ impl DesktopState {
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
-            load_trace: Mutex::new(LoadTrace::default()),
+            load_trace,
             supervisor: Arc::new(supervisor),
         })
     }
