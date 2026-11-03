@@ -47,6 +47,16 @@ jobs:
       - run: npm run build
       - run: npm run check
       - run: npm run test:ui
+  diagnostics-portable:
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Portable native diagnostics regression
+        run: cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml
   native-core:
     runs-on: ubuntu-latest
     steps:
