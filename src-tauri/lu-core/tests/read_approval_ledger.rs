@@ -15,11 +15,15 @@ fn approval_decisions_persist_reject_replay_and_do_not_mint_permission() {
     assert_eq!(db.decide("p-01","chat-a","g-02","report.txt",1024,ReadDecision::Approved),Err(ReadLedgerError::Conflict));
     assert_eq!(db.decide("p-01","chat-a","g-01","other.txt",1024,ReadDecision::Approved),Err(ReadLedgerError::Conflict));
     db.decide("p-01","chat-a","g-01","report.txt",1024,ReadDecision::Approved).unwrap();
+    db.link_effect("p-01","chat-a","g-01","g-effect-01").unwrap();
+    assert_eq!(db.link_effect("p-01","chat-a","g-01","g-effect-01"),Err(ReadLedgerError::Transition));
+    assert_eq!(db.get("p-01").unwrap().unwrap().effect_call_id.as_deref(),Some("g-effect-01"));
     assert_eq!(db.decide("p-01","chat-a","g-01","report.txt",1024,ReadDecision::Denied),Err(ReadLedgerError::Transition));
     assert_eq!(db.get("p-01").unwrap().unwrap().decision,ReadDecision::Approved);
     drop(db);
     let reopened=ReadApprovalLedger::open(&p).unwrap();
     assert_eq!(reopened.get("p-01").unwrap().unwrap().decision,ReadDecision::Approved);
+    assert_eq!(reopened.get("p-01").unwrap().unwrap().effect_call_id.as_deref(),Some("g-effect-01"));
     assert_eq!(reopened.reconcile_pending().unwrap(),0);
     drop(reopened);
     fs::remove_file(p).unwrap();
@@ -49,6 +53,24 @@ fn invalid_approval_and_untrusted_targets_fail_closed() {
     assert_eq!(db.stage("p-invalid","chat-a","g-1","good.txt",0),Err(ReadLedgerError::Invalid));
     assert_eq!(db.stage("p-invalid","chat-a","g-1","good.txt",65537),Err(ReadLedgerError::Invalid));
     assert_eq!(db.decide("missing","chat-a","g-1","good.txt",64,ReadDecision::Approved),Err(ReadLedgerError::Missing));
+    drop(db);
+    fs::remove_file(p).unwrap();
+}
+
+#[test]
+fn a_read_approval_can_never_bind_to_another_conversation_or_duplicate_effect() {
+    let p=path();
+    let db=ReadApprovalLedger::open(&p).unwrap();
+    db.stage("p-a", "chat-a", "model-a", "one.txt", 1024).unwrap();
+    db.stage("p-b", "chat-b", "model-b", "two.txt", 1024).unwrap();
+    assert_eq!(db.link_effect("p-a","chat-a","model-a","g-1"),Err(ReadLedgerError::Transition));
+    db.decide("p-a","chat-a","model-a","one.txt",1024,ReadDecision::Approved).unwrap();
+    db.decide("p-b","chat-b","model-b","two.txt",1024,ReadDecision::Approved).unwrap();
+    assert_eq!(db.link_effect("p-a","chat-b","model-a","g-1"),Err(ReadLedgerError::Transition));
+    assert_eq!(db.link_effect("p-a","chat-a","model-b","g-1"),Err(ReadLedgerError::Transition));
+    db.link_effect("p-a","chat-a","model-a","g-1").unwrap();
+    assert!(db.link_effect("p-b","chat-b","model-b","g-1").is_err(), "one effect cannot be authorized by two approvals");
+    assert_eq!(db.get("p-b").unwrap().unwrap().effect_call_id,None);
     drop(db);
     fs::remove_file(p).unwrap();
 }
