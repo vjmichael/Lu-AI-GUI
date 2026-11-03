@@ -72,3 +72,12 @@ See [Deferred Windows acceptance](LU_V1_0_DEFERRED_WINDOWS_ACCEPTANCE.md) and [v
 - Local Node regression suite **89/89 PASS**; portable source identity check PASS; source snapshot SHA manifest **252/252 PASS**.
 - Latest full local source archive SHA-256: `3d0eaa6f6ccf4f56c656c25ef368386c1a39168b5f7366fcbbd078933db30be7`. The source archive is **not pushed**.
 - **Native Rust test execution remains unverified** because this working environment lacks `cargo` and `rustc`; full current source is still not on the GitHub branch, so REPO-01 remains BLOCKED. Physical tests deferred until near v1.0.
+
+## 2026-11-03 — portable Rust native tests executed locally
+
+Using recovered user-supplied Rust 1.98 + offline vendored crates, executed the **real** source modules:
+- `cargo test --offline --manifest-path lu-desktop/tests/native-chat/Cargo.toml`: **11/11 passed**. Includes the production `ChatStore`, real SQLite `AnsfStore`, and the host-only ANSF mirror. Regression proves corrupted-journal fail-closed, duplicate ID rejection, restart and cross-chat isolation, ANSF idempotency/workspace isolation.
+- `cargo test --offline --manifest-path lu-desktop/tests/native-dx/Cargo.toml`: **3/3 passed**.
+- Frontend/source suite: **89/89 passed**. SHA manifest: **253/253 files passed**.
+- Exact local source archive SHA256: `d459b577ddb27a841f0ee9cec1519a6628a1bd858837fcdc6547dda9b5d2f88b`.
+- Native Tauri/Windows host complete build and GitHub CI have **not** run against this source snapshot. REPO-01 remains open; do not call the source synchronized. Physical Windows acceptance remains deferred.
