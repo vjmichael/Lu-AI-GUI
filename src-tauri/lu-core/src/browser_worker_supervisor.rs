@@ -221,7 +221,7 @@ impl OwnedBrowserWorker {
                 self.bridge.authorize_next_transition(false);
             }
         }
-        let mut first_visibility_done=false;
+        let mut operation_visibility_used=false;
         loop {
             let frame=self.output.recv_timeout(self.timeout).map_err(|e|match e {
                 RecvTimeoutError::Timeout=>BrowserSupervisorError::Deadline,
@@ -232,14 +232,20 @@ impl OwnedBrowserWorker {
                 if self.visibility==BrowserVisibilityPreference::AlwaysVisible{
                     return Err(BrowserSupervisorError::UnauthorizedVisibility);
                 }
-                if !first_visibility_done && self.browser.is_none(){
+                if self.browser.is_none(){
                     return Err(BrowserSupervisorError::MissingChromiumCustody);
                 }
-                if !self.bridge_has_pending_start(){
+                if !self.bridge.is_transition_authorized(){
+                    // Exactly one operation-specific transition is permitted.
+                    // The initial automatic hide is a distinct launch event.
+                    if operation_visibility_used {
+                        return Err(BrowserSupervisorError::UnauthorizedVisibility);
+                    }
                     let Some(visible)=operation.expected_window_transition() else {
                         return Err(BrowserSupervisorError::UnauthorizedVisibility);
                     };
                     self.bridge.authorize_next_transition(visible);
+                    operation_visibility_used=true;
                 }
                 let browser=self.browser.as_mut().ok_or(
                     BrowserSupervisorError::MissingChromiumCustody)?;
@@ -249,7 +255,6 @@ impl OwnedBrowserWorker {
                     .and_then(|_|self.stdin.write_all(b"\n"))
                     .and_then(|_|self.stdin.flush())
                     .map_err(|_|BrowserSupervisorError::WorkerExited)?;
-                first_visibility_done=true;
                 continue;
             }
             if value.get("ok").and_then(Value::as_bool).is_none(){
@@ -257,9 +262,6 @@ impl OwnedBrowserWorker {
             }
             return Ok(value);
         }
-    }
-    fn bridge_has_pending_start(&self)->bool{
-        self.startup_pending==false && self.bridge.is_transition_authorized()
     }
     pub fn worker_pid(&self)->u32 {self.child.id()}
 }
