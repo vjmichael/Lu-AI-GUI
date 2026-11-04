@@ -468,7 +468,8 @@ message WebAcademicSearchResult {
   bool leads_verified = 5; // Must remain false: discovery != verification.
 }
 
-\n// TOOLS-10D: a browser action is ONE canonical typed invocation.
+
+// TOOLS-10D: a browser action is ONE canonical typed invocation.
 // Operation and arguments are inseparable at the native authorization boundary.
 // Window visibility and human handoff are intentionally not model tool actions.
 message BrowserOperationRequest {
