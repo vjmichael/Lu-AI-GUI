@@ -338,7 +338,10 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             .control
             .lock()
             .map_err(|_| SupervisorError::Poisoned)?;
-        if control.closing || !control.backend_ready || control.active.is_some() {
+        if !control.backend_ready {
+            return Err(SupervisorError::Unavailable);
+        }
+        if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
         control.active = Some(Active {
@@ -432,7 +435,10 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             .control
             .lock()
             .map_err(|_| SupervisorError::Poisoned)?;
-        if control.closing || !control.backend_ready || control.active.is_some() {
+        if !control.backend_ready {
+            return Err(SupervisorError::Unavailable);
+        }
+        if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
         control.active = Some(Active {
@@ -788,7 +794,7 @@ mod tests {
         assert!(failed.is_err());
         assert_eq!(supervisor.status().unwrap().phase,EnginePhase::Idle);
         assert_eq!(supervisor.reserve_generation("session","g-2","req-2",
-            "hello",16),Err(SupervisorError::Busy));
+            "hello",16),Err(SupervisorError::Unavailable));
         supervisor.unload("session","unload").unwrap();
         fs::remove_dir_all(root).unwrap();
     }
