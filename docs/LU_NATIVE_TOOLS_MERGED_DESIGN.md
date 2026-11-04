@@ -1,12 +1,12 @@
 # Lu native tool system — merged authoritative design
 
 **Decision:** 2026-11-04. **Owner's design precedence:** preserve the original
-\`Jan-Mod-Design-Document.md\` architecture and tool intentions as the **primary
+`Jan-Mod-Design-Document.md` architecture and tool intentions as the **primary
 tool specification**, then merge in Lu-specific source and explicit owner
 decisions. Earlier assistant-authored tool notes are implementation drafts and
 **cannot silently supersede the original**.
 
-**Source of truth:** the user's Library copy of \`Jan-Mod-Design-Document.md\`,
+**Source of truth:** the preserved original [Jan-Mod-Design-Document.md](reference/Jan-Mod-Design-Document.md), copied into this repository from the user's Library without editing,
 especially §§3.9 (workspace tools), 4.1–4.9 (typed IPC/model boundary/MBRL/
 effect journal), 5.1–5.3 (consolidated toolkit and two-layer schemas), 6A
 (ambient availability/context) and 7 (loop guard). This consolidated document
@@ -14,9 +14,9 @@ is a Lu-native, implementation-oriented **merge of those tool requirements**,
 not a claim to replace/reproduce every other section of the full historical
 Jan design.
 
-**Additional binding sources:** \`docs/LU_CENTRAL_DESIGN.md\`,
-\`docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md\`,
-\`docs/LU_V1_0_TASKS.md\`, and documented direct owner decisions,
+**Additional binding sources:** `docs/LU_CENTRAL_DESIGN.md`,
+`docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md`,
+`docs/LU_V1_0_TASKS.md`, and documented direct owner decisions,
 particularly v1.0 general-purpose Lu, trusted per-task permission, no
 mandatory Lu-wide sandbox, and DLC platform/runtime work postponed to v2.0.
 Changes to owner-specific decisions require an actual owner instruction,
@@ -28,7 +28,7 @@ For every native tool, use the following order:
 
 1. **Latest explicit owner decision** on the precise conflict, including
    the 2026-11-04 instruction to prefer the original tool design.
-2. **Original \`Jan-Mod-Design-Document.md\` tool architecture and intended
+2. **Original `Jan-Mod-Design-Document.md` tool architecture and intended
    behavior**, even where a later Lu note simplified/reworded it.
 3. **Later explicitly owner-confirmed Lu-specific requirements**, to the
    extent they can coexist with #2 (e.g. Windows native host, Protobuf IPC,
@@ -52,7 +52,7 @@ the intended architecture. A small model (e.g. the user's Qwen 27B) must
 internal code is unified.
 
 - **Model-facing JSON:** task-specific, narrow names and few arguments, e.g.
-  \`file_read(path)\`, \`file_edit(path,search,replace)\`, \`file_write(path,content)\`.
+  `file_read(path)`, `file_edit(path,search,replace)`, `file_write(path,content)`.
   Limit advertised schemas to the presently relevant, truly authorized
   capabilities; identify the active catalog in the model context. Do not
   advertise a native tool that the installed host cannot dispatch.
@@ -77,22 +77,22 @@ The original consolidated domains and their intended roles:
 
 | Native domain | Core purpose / model-facing examples | Status / timing |
 | --- | --- | --- |
-| \`file\` | Create, read, edit, patch, append, copy, rename, metadata, symlink | Core v1.0; edits use owner-approved atomic journal, no extra WRITE-01E research here |
-| \`read\` | Several bounded files/lines/streams | Core; trust exact selected targets and resource limits |
-| \`search\` | Directory/list/content/symbol/references | Basic Core; IDE symbol graph later |
-| \`exec\` | Language-specific code and sandboxed/host execution | Explicit host authority; no arbitrary shell grant from tool catalog |
-| \`web\` | Search/fetch/render/research | Core can stage; optional external providers |
-| \`memory\` | Persisted get/set/list/delete/history with provenance | Core ANSF/SQLite |
-| \`work\` | Save/load/clear scoped work state | Core durable task state |
-| \`scratchpad\` | Validate/change/commit staging area | Staged domain; never substitute for durable effect journal |
-| \`background\` | Start/status/stop supervised tasks | Core lifecycle and resource guardian |
-| \`media\` | Image/audio/video transformations | Stage according to verified model/native capability |
-| \`validate\` | Schema and semantic validation | **Separate** from JSON syntax repair |
-| \`json\` | **Internal JSON model boundary repair and validation** | Original bounded MBRL; **not** a user file inspector |
-| \`loop_guard\` | Call repetition, oscillation and runaway-turn prevention | Core agent dispatcher |
-| \`transcribe\` | Speech/audio transcription | Capability-driven |
-| \`video\` | Video analysis and processing | Optional capability, NVP workspace remains DLC |
-| \`symlink\`, \`env\` | Operations absorbed into \`file\`, \`exec\` | Not duplicated standalone default tools |
+| `file` | Create, read, edit, patch, append, copy, rename, metadata, symlink | Core v1.0; edits use owner-approved atomic journal, no extra WRITE-01E research here |
+| `read` | Several bounded files/lines/streams | Core; trust exact selected targets and resource limits |
+| `search` | Directory/list/content/symbol/references | Basic Core; IDE symbol graph later |
+| `exec` | Language-specific code and sandboxed/host execution | Explicit host authority; no arbitrary shell grant from tool catalog |
+| `web` | Search/fetch/render/research | Core can stage; optional external providers |
+| `memory` | Persisted get/set/list/delete/history with provenance | Core ANSF/SQLite |
+| `work` | Save/load/clear scoped work state | Core durable task state |
+| `scratchpad` | Validate/change/commit staging area | Staged domain; never substitute for durable effect journal |
+| `background` | Start/status/stop supervised tasks | Core lifecycle and resource guardian |
+| `media` | Image/audio/video transformations | Stage according to verified model/native capability |
+| `validate` | Schema and semantic validation | **Separate** from JSON syntax repair |
+| `json` | **Internal JSON model boundary repair and validation** | Original bounded MBRL; **not** a user file inspector |
+| `loop_guard` | Call repetition, oscillation and runaway-turn prevention | Core agent dispatcher |
+| `transcribe` | Speech/audio transcription | Capability-driven |
+| `video` | Video analysis and processing | Optional capability, NVP workspace remains DLC |
+| `symlink`, `env` | Operations absorbed into `file`, `exec` | Not duplicated standalone default tools |
 
 This table is a **domain design map**, not a claim that every operation above
 has shipped. If existing Lu Core Rust exposes multiple small handlers, they
@@ -106,36 +106,36 @@ A. internal typed Protobuf, B. model-boundary reliability, and C. the durable
 effect journal. Lu must not confuse them.
 
 1. Collect complete model/engine frames; partial streams are
-   \`INCOMPLETE_STREAM\`, **not executable errors or partial tool arguments**.
+   `INCOMPLETE_STREAM`, **not executable errors or partial tool arguments**.
 2. Strictly parse the full JSON and validate the schema; reject duplicates,
    unknown/missing required fields, excessive size and ambiguous decoding.
 3. Apply at most **one deterministic syntax normalization** (e.g. exact
    Markdown JSON fence or trailing comma), not guessed parameters.
 4. Allow at most **two model regenerations** on pre-dispatch syntax/schema
-   errors; stop as \`BLOCKED\`/\`NEEDS_USER\` on exhaustion. Revalidate each
+   errors; stop as `BLOCKED`/`NEEDS_USER` on exhaustion. Revalidate each
    candidate against the current host catalog and human task authority.
-5. Return typed error/status such as \`JSON_SYNTAX_INVALID\`,
-   \`TOOL_SCHEMA_INVALID\`, \`UNKNOWN_TOOL\`, \`POLICY_DENIED\`,
-   \`PAYLOAD_TOO_LARGE\`, \`PROTOBUF_DECODE_INVALID\`,
-   \`TOOL_EXECUTION_FAILED\`, or \`OPERATION_OUTCOME_UNKNOWN\`.
+5. Return typed error/status such as `JSON_SYNTAX_INVALID`,
+   `TOOL_SCHEMA_INVALID`, `UNKNOWN_TOOL`, `POLICY_DENIED`,
+   `PAYLOAD_TOO_LARGE`, `PROTOBUF_DECODE_INVALID`,
+   `TOOL_EXECUTION_FAILED`, or `OPERATION_OUTCOME_UNKNOWN`.
    Do not automatically retry denied, cancelled or possibly applied effects.
 6. Preserve transcript validity: paired typed tool-result errors when a
    presented tool call is rejected; never synthesize a false execution.
 7. Plain ordinary text and explanatory code blocks cannot be converted
    into privileged native tool invocations merely because they mention JSON.
 
-\`docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md\` is a **source status and
+`docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md` is a **source status and
 test note under this specification**, not a competing source of requirements.
 
 ## 4. Original durable-effect and loop-protection rules
 
-- Status: \`PREPARED → EXECUTING → APPLIED | FAILED | UNCERTAIN\`,
-  with immutable call/task IDs and typed effects. Only retry a \`FAILED\`
-  operation when its registered idempotency class permits. \`APPLIED\`
-  cannot replay. \`UNCERTAIN\` requires authoritative observation/reconcile.
+- Status: `PREPARED → EXECUTING → APPLIED | FAILED | UNCERTAIN`,
+  with immutable call/task IDs and typed effects. Only retry a `FAILED`
+  operation when its registered idempotency class permits. `APPLIED`
+  cannot replay. `UNCERTAIN` requires authoritative observation/reconcile.
 - Registration-time idempotency classes from original §4.9:
-  \`natural\` for reads/searches, \`keyed\` for supported idempotency-key APIs,
-  \`reconcile\` for observable file writes, and \`ask_user\` for opaque
+  `natural` for reads/searches, `keyed` for supported idempotency-key APIs,
+  `reconcile` for observable file writes, and `ask_user` for opaque
   external commands/deletions/network sends. The model cannot self-label
   an effect harmless at runtime.
 - A batch operation should be represented as **one validated manifest**
@@ -159,10 +159,10 @@ the native primitive in the core; **activation and advertisement must be
 scoped to an explicitly delegated repository/code task or a future IDE
 workspace**. No globally advertised Git tool merely because Git is installed.
 
-- Current TOOLS-03 minimal operation set: \`git_status\`, \`git_log\`,
-  \`git_diff\`, each a narrow schema, typed Protobuf, host-selected
-  repository/executable, \`ReadWorkspace\` per-turn authorization.
-  **No \`git reset\`, checkout, fetch, push, arbitrary flags, hooks, editable
+- Current TOOLS-03 minimal operation set: `git_status`, `git_log`,
+  `git_diff`, each a narrow schema, typed Protobuf, host-selected
+  repository/executable, `ReadWorkspace` per-turn authorization.
+  **No `git reset`, checkout, fetch, push, arbitrary flags, hooks, editable
   config or general-purpose shell entrypoint.**
 - Git native subprocess is an **OS program with process side effects**
   (possible locks, hooks, helpers and metadata) and therefore demands
@@ -203,7 +203,7 @@ Before implementing or modifying **every** TOOLS-* module:
 
 **Review applies immediately to TOOLS-03 Git and next TOOLS-04 archives**.
 It also corrects earlier TOOLS-02 confusion: the JSON tool was an internal
-boundary service; only separate \`validate\` schema operations may be
+boundary service; only separate `validate` schema operations may be
 model-visible in a task-specific manner.
 
 ## 7. Reconciliation and unresolved decisions
@@ -212,7 +212,7 @@ model-visible in a task-specific manner.
 | --- | --- |
 | Git is Code workspace addition (§3.9) vs Lu v1.0 Git in Core | Implement Git **primitives** in Core, **activate** for relevant authorized code/repository tasks; full IDE workspace/DLC remains later |
 | ~15 unified native domains (§5.2) vs current per-operation Rust modules | Keep the unified **domain implementation**; present narrow per-task facades to smaller LLMs; no proliferation of unscoped APIs |
-| JSON "tool" listed (§5.2) vs mistaken user-facing JSON inspector | Original MBRL controls: **internal** JSON repair/validation; separate \`validate\` domain for schema operations; no JSON file inspection GUI |
+| JSON "tool" listed (§5.2) vs mistaken user-facing JSON inspector | Original MBRL controls: **internal** JSON repair/validation; separate `validate` domain for schema operations; no JSON file inspection GUI |
 | 1 normalization + 2 regenerations (§4.8) vs later "advanced repair deferred" note | Original bounded MBRL is v1.0; semantic guessing/reconstruction is not required |
 | Older system prompt says no permission prompts for ordinary file/web calls (§6A) vs newer host authority | Current explicit owner task-scoped delegation applies; **avoid repeated prompts within a grant** but never infer permission from availability |
 | Original AppContainer/CLM for code (§8) vs newer no mandatory sandbox | Later explicit owner decision overrides **mandatory** sandboxing; preserve resource/authority controls and offer optional isolation |
