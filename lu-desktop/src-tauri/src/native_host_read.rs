@@ -7,7 +7,7 @@ use lu_core::{
     conversation_authority::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
     },
-    native_files::register_bundled_file_tools,
+    native_files::register_bundled_file_tools_pinned,
     policy::{CapabilityGrant, PolicyEngine},
     registry::NativeToolRegistry,
 };
@@ -84,9 +84,24 @@ pub async fn inspect_selected_file_with_receipt(
     if file_name.is_empty() || file_name.chars().any(|c| matches!(c, '\\' | ':' | '/' | '\0')) {
         return Err("selected filename is not supported by this tool".into());
     }
+    // Open once and retain the native OS handle for the entire Protobuf
+    // dispatch. An attacker replacing the pathname after this point cannot
+    // change which file Lu reads.
+    let pinned = fs::File::open(path).map_err(|e| format!("approved file open failed: {e}"))?;
+    let pinned_metadata = pinned.metadata().map_err(|e| format!("approved file metadata: {e}"))?;
+    if !pinned_metadata.is_file() {
+        return Err("approved file handle is not a regular file".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if pinned_metadata.dev() != metadata.dev() || pinned_metadata.ino() != metadata.ino() {
+            return Err("selected file changed before handle acquisition".into());
+        }
+    }
     let root = path.parent().ok_or("selected file has no parent folder")?;
     let registry = NativeToolRegistry::new();
-    let catalog = register_bundled_file_tools(&registry, root)
+    let catalog = register_bundled_file_tools_pinned(&registry, root, &file_name, pinned)
         .map_err(|e| format!("native file registration: {e:?}"))?;
     let allowed = BTreeSet::from([TOOL_NAME.to_string()]);
 
