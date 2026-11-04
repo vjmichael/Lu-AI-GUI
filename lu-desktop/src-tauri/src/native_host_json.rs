@@ -40,13 +40,13 @@ fn result_from_json(value: &serde_json::Value, file_name: String)
     -> Result<InspectedJsonFile, String>
 {
     let field = value.get("result").ok_or("JSON inspection result is unavailable")?;
-    let text = |name| field.get(name).and_then(|x| x.as_str()).map(str::to_owned);
-    let number = |name| field.get(name).and_then(|x| x.as_u64());
+    let text = |name: &str| field.get(name).and_then(|x| x.as_str()).map(str::to_owned);
+    let number = |name: &str| field.get(name).and_then(|x| x.as_u64());
     let list = field.get("top_level_keys").and_then(|x| x.as_array())
         .ok_or("JSON key summary unavailable")?
         .iter().map(|x| x.as_str().map(str::to_owned))
         .collect::<Option<Vec<_>>>().ok_or("JSON key summary invalid")?;
-    let narrow = |name| number(name)
+    let narrow = |name: &str| number(name)
         .and_then(|n| u32::try_from(n).ok()).ok_or("JSON offset invalid");
     Ok(InspectedJsonFile {
         file_name,
