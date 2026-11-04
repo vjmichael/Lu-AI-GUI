@@ -1836,8 +1836,8 @@ async fn lu_inspect_edit_recovery(
         record.decision!=lu_core::edit_approval_ledger::EditDecision::Approved {
         return Err("no approved edit for this conversation".into());
     }
-    let call_id=record.effect_call_id.ok_or("no effect call recorded")?;
-    let exact_target=record.selected_target.ok_or("no reviewed target recorded")?;
+    let call_id=record.effect_call_id.clone().ok_or("no effect call recorded")?;
+    let exact_target=record.selected_target.clone().ok_or("no reviewed target recorded")?;
     let expected_folder=std::path::Path::new(&exact_target)
         .parent().ok_or("no original containing folder")?;
     let chosen=tauri::async_runtime::spawn_blocking(move || {
@@ -1852,8 +1852,8 @@ async fn lu_inspect_edit_recovery(
     if chosen!=expected_folder {
         return Err("selected folder is not the exact originally reviewed destination".into());
     }
-    let dir=cap_std::fs::Dir::open_ambient_dir(&chosen,cap_std::ambient_authority())
-        .map_err(|e|format!("recovery folder cannot be opened: {e}"))?;
+    let dir=Arc::new(cap_std::fs::Dir::open_ambient_dir(&chosen,cap_std::ambient_authority())
+        .map_err(|e|format!("recovery folder cannot be opened: {e}"))?);
     let observation=lu_core::native_edit_existing::observe_edit(&dir,&call_id);
     let effect_record=state.effects.get(&call_id)
         .map_err(|e|format!("effect journal unavailable: {e:?}"))?;
@@ -1882,6 +1882,7 @@ async fn lu_inspect_edit_recovery(
     // and edited target, plus exact agreement with the trusted approval
     // record, may display an undo candidate. Display never grants rollback.
     let mut rollback_review_status = "NO_VERIFIED_APPLIED_EDIT".to_string();
+    let mut rollback_review_id=None;
     let rollback_preview = if receipt_verified &&
         observation == lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified {
         match lu_core::native_edit_existing::inspect_rollback_candidate(
@@ -1892,6 +1893,40 @@ async fn lu_inspect_edit_recovery(
                 record.replacement_sha256 == preview.replacement_sha256 &&
                 record.filename == preview.file_name => {
                 rollback_review_status = "VERIFIED_READ_ONLY_UNDO_CANDIDATE".into();
+                // Native folder picker, verified original receipt and exact
+                // bytes. A separate rollback review is persisted and pinned.
+                let review_id=next_id("rb-");
+                let approval=lu_core::rollback_approval_ledger::RollbackRecord {
+                    review_id:review_id.clone(),chat_id:chat_id.clone(),
+                    original_proposal_id:proposal_id.clone(),
+                    original_edit_id:call_id.clone(),target:exact_target.clone(),
+                    filename:record.filename.clone(),
+                    expected_current_sha256:preview.replacement_sha256.clone(),
+                    restored_sha256:preview.original_sha256.clone(),
+                    restore_bytes:preview.restore_text.len() as u64,
+                    decision:lu_core::rollback_approval_ledger::RollbackDecision::Reviewed,
+                    rollback_effect_id:None,
+                };
+                let selected=rollback_review::SelectedRollback {
+                    record:approval.clone(),directory:chosen.clone(),
+                    directory_cap:Arc::clone(&dir),preview:preview.clone()
+                };
+                match state.rollback_approval_ledger.stage(&approval) {
+                    Ok(())=>match state.rollback_reviews.stage(selected) {
+                        Ok(())=>rollback_review_id=Some(review_id),
+                        Err(error)=>{
+                            let _=state.rollback_approval_ledger.deny(
+                                &approval.review_id,&chat_id
+                            );
+                            rollback_review_status=format!(
+                                "UNDO_REVIEW_NOT_STAGED_{error:?}"
+                            );
+                        }
+                    },
+                    Err(error)=>rollback_review_status=format!(
+                        "UNDO_REVIEW_LEDGER_UNAVAILABLE_{error:?}"
+                    ),
+                }
                 Some(RollbackPreviewView {
                     file_name: preview.file_name,
                     original_sha256: preview.original_sha256,
@@ -1914,7 +1949,8 @@ async fn lu_inspect_edit_recovery(
     };
     Ok(EditRecoveryObservationView {
         proposal_id,observation:format!("{observation:?}"),effect,
-        assessment:assessment.into(),rollback_preview,rollback_review_status
+        assessment:assessment.into(),rollback_preview,rollback_review_status,
+        rollback_review_id
     })
 }
 
