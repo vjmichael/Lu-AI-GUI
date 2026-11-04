@@ -5,7 +5,6 @@ use std::{
     net::{IpAddr, Ipv4Addr, ToSocketAddrs},
     path::Path,
     process::Command,
-    time::Duration,
 };
 use sha2::{Digest, Sha256};
 
@@ -62,9 +61,9 @@ fn validated_host(url: &str) -> Result<(String,String),FetchError> {
         return Err(FetchError::InvalidUrl);
     }
     let remainder=&url[8..];
-    let end=remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
+    let end=remainder.find(|c| matches!(c, '/' | '?' | '#')).unwrap_or(remainder.len());
     let authority=&remainder[..end];
-    if authority.is_empty() || authority.len()>MAX_HOST_LEN || authority.chars().any(|c| matches!(c, ':' | '@' | '[' | ']' | '%' | '\\\\')) {
+    if authority.is_empty() || authority.len()>MAX_HOST_LEN || authority.chars().any(|c| matches!(c, ':' | '@' | '[' | ']' | '%' | '\\')) {
         return Err(FetchError::InvalidUrl);
     }
     let host=authority.to_ascii_lowercase();
