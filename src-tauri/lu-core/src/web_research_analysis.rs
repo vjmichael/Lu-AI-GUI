@@ -93,6 +93,41 @@ impl AnalysisStore {
         }
         Ok(verified)
     }
+    /// An auditable JSON evidence matrix, not a prose answer invented by LLM.
+    /// A verified publication can still have a model-interpreted meaning.
+    pub fn export_verified_json(&self,ledger:&EvidenceLedger)
+        ->Result<serde_json::Value,AnalysisError>{
+        let rows=self.export_rechecked(ledger)?;
+        let mut entries=Vec::new();
+        for row in rows {
+            let source=ledger.record(&row.source_id)?;
+            let Some(url)=source.record_url else {
+                return Err(AnalysisError::UnverifiedPassage);
+            };
+            let Some(sha)=source.content_sha256 else {
+                return Err(AnalysisError::UnverifiedPassage);
+            };
+            entries.push(serde_json::json!({
+                "source_id":row.source_id,
+                "title":source.title,
+                "catalog_record_url":url,
+                "document_sha256":sha,
+                "thesis_claim":row.thesis_claim,
+                "verified_direct_quote":row.direct_quote,
+                "stance_interpretation":row.stance,
+                "reasoning_interpretation":row.reasoning,
+                "interpretation_review_status":row.status,
+                "locator":"full-text",
+                "page_number_verified":false
+            }));
+        }
+        Ok(serde_json::json!({
+            "schema":"lu.research.evidence.v1",
+            "source_count_in_matrix":entries.len(),
+            "interpretations_are_not_independently_verified":true,
+            "entries":entries,
+        }))
+    }
     pub fn human_review(&mut self,source_id:&str,claim:&str,quote:&str)
         ->Result<(),AnalysisError>{
         // A caller's user identity and approval must be checked by Lu's trusted
@@ -141,6 +176,9 @@ mod tests {
         let output=analysis.export_rechecked(&ledger).unwrap();
         assert_eq!(output.len(),1);
         assert_eq!(output[0].status,"MODEL_INTERPRETATION");
+        let report=analysis.export_verified_json(&ledger).unwrap();
+        assert_eq!(report["entries"][0]["page_number_verified"],false);
+        assert_eq!(report["entries"][0]["interpretation_review_status"],"MODEL_INTERPRETATION");
         assert_eq!(analysis.count_for(Stance::Complicates).unwrap(),1);
     }
 }
