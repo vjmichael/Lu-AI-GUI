@@ -68,6 +68,7 @@ pub mod native_create_new;
 pub mod write_format;
 pub mod write_recovery;
 pub mod document_preferences;
+pub mod edit_safety;
 pub mod ownership_store;
 pub mod passive_diagnostics;
 pub mod passive_localization;
