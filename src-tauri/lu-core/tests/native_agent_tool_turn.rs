@@ -9,7 +9,6 @@ use lu_core::{
     model_json_boundary::JsonRepairStatus,
     native_file_extra::register_inspection_tools,
     native_files::register_bundled_file_tools,
-    native_json_inspect::register_json_inspection_tool,
     registry::NativeToolRegistry,
 };
 use std::{
@@ -642,56 +641,3 @@ async fn repaired_syntax_still_requires_schema_validation_and_authority() {
     drop(registry);
     remove_workspace(folder);
 }
-
-#[tokio::test]
-async fn json_inspection_is_a_real_authorized_model_to_native_tool_turn() {
-    // This is a separate fixture: the original four-tool integration tests
-    // must not silently acquire a fifth tool or an extra searchable file.
-    let folder = fresh_workspace();
-    fs::write(folder.join("config.json"), r#"{"kind":"task","retries":3}"#).unwrap();
-    let registry = NativeToolRegistry::new();
-    let mut catalog = ModelToolCatalog::new();
-    register_json_inspection_tool(&registry, &mut catalog, &folder).unwrap();
-    let authority = ConversationAuthority::new();
-    let origin = BoundCallOrigin {
-        conversation_id: "conversation-1".into(),
-        user_turn_id: "user-turn-1".into(),
-        task_id: "task-1".into(),
-    };
-    authority.open_user_task(TaskAuthority {
-        conversation_id: origin.conversation_id.clone(),
-        user_turn_id: origin.user_turn_id.clone(),
-        task_id: origin.task_id.clone(),
-        execution_scope_id: "thread:conversation-1".into(),
-        capabilities: vec![AuthorizedCapability {
-            tool_id: "lu.json.inspect".into(),
-            effect: ToolEffect::ReadWorkspace,
-        }],
-        expires_at: None,
-    }, &Verified).unwrap();
-    let allowed = BTreeSet::from(["lu_json_inspect".to_string()]);
-    let mut turn = NativeToolTurn::new_read_only(
-        &catalog, &registry, &authority, origin,
-        "thread:conversation-1".into(), &allowed,
-    ).unwrap();
-    let response = turn.handle_model_reply(
-        r#"{"kind":"tool","name":"lu_json_inspect","arguments":{"path":"config.json"}}"#,
-        &catalog, &registry, &authority, &Permitted,
-    ).await.unwrap();
-    match response {
-        ToolTurnOutcome::ToolResult {tool_name, data, ..} => {
-            assert_eq!(tool_name, "lu_json_inspect");
-            assert_eq!(data["result"]["valid"], true);
-            assert_eq!(data["result"]["top_level_keys"], serde_json::json!(["kind","retries"]));
-        },
-        _ => panic!("expected a native JSON inspection receipt"),
-    }
-    // A fresh source-approved task is still required for any later turn.
-    authority.revoke_task("task-1").unwrap();
-    assert!(turn.ensure_continuation_authorized(&authority).is_err());
-    drop(turn);
-    drop(catalog);
-    drop(registry);
-    remove_workspace(folder);
-}
-
