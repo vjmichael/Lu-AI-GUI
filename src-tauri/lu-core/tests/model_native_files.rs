@@ -177,6 +177,9 @@ fn malformed_oversized_and_unadvertised_calls_are_rejected_without_dispatch() {
     let catalog = register_bundled_file_tools(&registry, &root).unwrap();
     let read = BTreeSet::from(["lu_files_read_text".to_string()]);
     for input in [
+        r#"{"path":"hello.txt","path":"../secrets.txt"}"#,
+        r#"{"path":"hello.txt","max_bytes":10,"max_bytes":1000}"#,
+        r#"{"path":"hello.txt","metadata":{"grant":0,"grant":1}}"#,
         r#"{"path":"hello.txt","extra":true}"#,
         r#"{"path":42}"#,
         r#"{"path":"../secrets.txt"}"#,
