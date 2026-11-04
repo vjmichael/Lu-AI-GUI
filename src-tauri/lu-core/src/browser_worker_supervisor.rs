@@ -140,6 +140,7 @@ pub struct OwnedBrowserWorker {
     visibility:BrowserVisibilityPreference,
     timeout:Duration,
     startup_pending:bool,
+    failed:bool,
 }
 impl OwnedBrowserWorker {
     pub fn launch(config:BrowserLaunchConfig,browser:Option<OwnedBrowserWindow>)
@@ -181,7 +182,7 @@ impl OwnedBrowserWorker {
             child,stdin,output:rx,reader:Some(reader),
             bridge:VisibilityBridge::new(),browser,_profile_lease:None,
             visibility:config.visibility,timeout:config.command_timeout,
-            startup_pending:true,
+            startup_pending:true,failed:false,
         })
     }
     /// Establish matching ownership: same profile, same host-launched
@@ -215,6 +216,21 @@ impl OwnedBrowserWorker {
         Ok(worker)
     }
     pub fn execute(&mut self,operation:BrowserOperation,arguments:Value)
+        ->Result<Value,BrowserSupervisorError>{
+        if self.failed {return Err(BrowserSupervisorError::WorkerExited);}
+        let result=self.execute_inner(operation,arguments);
+        if result.is_err(){
+            // Late replies after a deadline must never be mistaken for
+            // replies to a future command. Poison this session and kill its
+            // entire owned browser; recovery must explicitly launch anew.
+            self.failed=true;
+            let _=self.child.kill();
+            let _=self.child.wait();
+            self.browser.take();
+        }
+        result
+    }
+    fn execute_inner(&mut self,operation:BrowserOperation,arguments:Value)
         ->Result<Value,BrowserSupervisorError>{
         let Some(args)=arguments.as_object() else {
             return Err(BrowserSupervisorError::Protocol);
@@ -286,7 +302,11 @@ impl Drop for OwnedBrowserWorker {
     fn drop(&mut self){
         let _=self.child.kill();
         let _=self.child.wait();
-        if let Some(reader)=self.reader.take(){let _=reader.join();}
+        self.browser.take();
+        // A descendant may have inherited stdout. Waiting forever on a
+        // blocking reader thread would deadlock Lu shutdown; detach rather
+        // than join until OS process-tree containment is fully verified.
+        self.reader.take();
     }
 }
 #[cfg(test)]
