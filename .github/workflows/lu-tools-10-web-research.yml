@@ -62,6 +62,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution -- --nocapture
       - name: Desktop browser setting native wiring fixtures
         run: node --test lu-desktop/tests/browser-visibility-settings.test.mjs
+      - name: Native desktop browser permission and package lifecycle tests
+        run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
       - name: Browser protocol and human takeover fixtures
         run: node --test tests/lu-browser-worker.test.mjs
       - name: Source identity
