@@ -42,3 +42,15 @@ test('reviewed package embeds manifest and Tauri includes browser resources',()=
   assert.ok(stage.includes('manifest.platform!==process.platform'));
   assert.ok(stage.includes('manifest.arch!==process.arch'));
 });
+
+test('desktop registers scoped browser model tools only after native consent and launch',()=>{
+  assert.ok(host.includes('register_scoped_browser_tools('));
+  assert.ok(host.includes('let scoped=lu_core::native_browser_tool::ScopedBrowserTask'));
+  assert.ok(host.includes('authority:state.browser_authority.clone()'));
+  assert.ok(host.includes('policy:Arc::new(BrowserReadOnlyPolicy)'));
+  assert.ok(host.includes('runner:Arc::clone(&state.browser_runtime)'));
+  assert.ok(host.includes('model_catalog=lu_core::model::ModelToolCatalog::new()'));
+  assert.ok(host.includes('browser_tools: Mutex<Option<DesktopBrowserTools>>'));
+  assert.ok(host.includes('tools.take()'));
+  assert.ok(!host.includes('fn lu_browser_execute('));
+});
