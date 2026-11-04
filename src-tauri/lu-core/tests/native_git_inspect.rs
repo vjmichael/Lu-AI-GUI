@@ -234,10 +234,13 @@ async fn unsafe_model_git_arguments_and_unapproved_dispatch_are_refused() {
         &catalog, &auth, origin, "git-scope".into(), &permitted,
     ).unwrap();
     auth.revoke_task("git-task").unwrap();
+    // The model-facing tool-turn adapter intentionally returns a paired
+    // typed permission-denied tool result instead of exposing a raw dispatch
+    // error or leaving the transcript with an unanswered tool call.
     let denial = turn.handle_model_reply(
         r#"{"kind":"tool","name":"lu_git_log","arguments":{"limit":1}}"#,
         &catalog, &registry, &auth, &Allow,
-    ).await.expect("revoked scope is returned as a paired typed denial");
+    ).await.expect("revoked authority must yield a structured denial");
     let ToolTurnOutcome::ToolResult { data, .. } = denial else {
         panic!("revoked grant must produce a structured denied tool result");
     };
