@@ -8,7 +8,9 @@ use std::{io, process::Child};
 type Hwnd = isize;
 type Lparam = isize;
 const SW_HIDE: i32 = 0;
-const SW_SHOW: i32 = 5;
+// Show without activating: Lu must not seize desktop keyboard focus simply
+// because a research page needs human verification.
+const SW_SHOWNOACTIVATE: i32 = 4;
 
 #[link(name = "user32")]
 unsafe extern "system" {
@@ -45,7 +47,7 @@ fn window_for_owned_child(child:&Child)->io::Result<Hwnd> {
 pub fn set_owned_browser_visible(child:&Child, visible:bool)->io::Result<()> {
     let hwnd=window_for_owned_child(child)?;
     // SAFETY: window was matched to the host-owned process, not user input.
-    unsafe {ShowWindow(hwnd,if visible {SW_SHOW} else {SW_HIDE})};
+    unsafe {ShowWindow(hwnd,if visible {SW_SHOWNOACTIVATE} else {SW_HIDE})};
     // ShowWindow's return value indicates *previous* visibility, not success.
     let now=unsafe {IsWindowVisible(hwnd)}!=0;
     if now!=visible {
