@@ -165,6 +165,28 @@ struct ActiveBrowserTask {
     origins:Vec<String>,
     starting:bool,
 }
+struct DesktopBrowserTools {
+    registry:lu_core::registry::NativeToolRegistry,
+    model_catalog:lu_core::model::ModelToolCatalog,
+}
+/// A native BrowserModelKind::Read registration is not itself authority:
+/// ConversationAuthority and this separate host policy decide each call.
+struct BrowserReadOnlyPolicy;
+impl lu_core::contracts::ToolAuthorizer for BrowserReadOnlyPolicy {
+    fn authorize(
+        &self,
+        call:&lu_core::contracts::ToolInvocation,
+        descriptor:&lu_core::contracts::ToolDescriptor,
+    )->Result<(),lu_core::contracts::AuthorizationError>{
+        if descriptor.effect!=lu_core::contracts::ToolEffect::NetworkRead
+          ||descriptor.id!=lu_core::browser_authorized_execution::BROWSER_READ_TOOL
+          ||call.tool_id!=descriptor.id{
+            return Err(lu_core::contracts::AuthorizationError::new(
+                "interactive browser actions require separate user consent"));
+        }
+        Ok(())
+    }
+}
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
@@ -179,9 +201,10 @@ struct DesktopState {
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     browser_preferences: lu_core::browser_preferences::BrowserPreferences,
-    browser_runtime: native_browser_host::DesktopBrowserHost,
+    browser_runtime: Arc<native_browser_host::DesktopBrowserHost>,
     browser_authority: lu_core::conversation_authority::ConversationAuthority,
     browser_task: Mutex<Option<ActiveBrowserTask>>,
+    browser_tools: Mutex<Option<DesktopBrowserTools>>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -545,12 +568,13 @@ impl DesktopState {
             documents_os_dir,
             document_preferences,
             browser_preferences,
-            browser_runtime: native_browser_host::DesktopBrowserHost::new(
+            browser_runtime: Arc::new(native_browser_host::DesktopBrowserHost::new(
                 app.path().resource_dir().map_err(|e|format!("browser resource root unavailable: {e}"))?,
                 root.clone()
-            ),
+            )),
             browser_authority: lu_core::conversation_authority::ConversationAuthority::new(),
             browser_task: Mutex::new(None),
+            browser_tools: Mutex::new(None),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1455,6 +1479,7 @@ async fn lu_browser_runtime_status(
         }else{None};
         drop(current);
         if let Some(task)=stale{
+            if let Ok(mut tools)=state.browser_tools.lock(){tools.take();}
             state.browser_authority.revoke_task(&task.task_id)
                 .map_err(|e|format!("browser crash revocation failed: {e:?}"))?;
         }
@@ -1476,6 +1501,7 @@ async fn lu_browser_stop(
         let revoke_result=active.as_ref().map(|task|
             state.browser_authority.revoke_task(&task.task_id));
         let stop_result=state.browser_runtime.stop();
+        if let Ok(mut installed)=state.browser_tools.lock(){installed.take();}
         if let Some(Err(e))=revoke_result {
             return Err(format!("browser stopped; grant revocation failed: {e:?}"));
         }
@@ -1566,10 +1592,38 @@ async fn lu_browser_start(
     }
     // Stop may have revoked the task during browser startup. Do not leave
     // an approved process alive after that revocation races completion.
+    // Install one native-model route for the exact approved conversation.
+    // Model discovery does NOT grant authority; the registry rechecks this
+    // same task on every call and BrowserReadOnlyPolicy denies interaction.
+    let registry=lu_core::registry::NativeToolRegistry::new();
+    let mut model_catalog=lu_core::model::ModelToolCatalog::new();
+    let scoped=lu_core::native_browser_tool::ScopedBrowserTask{
+        authority:state.browser_authority.clone(),
+        origin:lu_core::conversation_authority::BoundCallOrigin{
+            conversation_id:chat_id.clone(),
+            user_turn_id:user_turn_id.clone(),
+            task_id:task_id.clone(),
+        },
+        scope:lu_core::browser_authorized_execution::BrowserOriginScope::from_host_grant(
+            approved_origins.clone()
+        ).map_err(|_|"Approved browser origin became invalid")?,
+        policy:Arc::new(BrowserReadOnlyPolicy),
+        runner:Arc::clone(&state.browser_runtime) as Arc<dyn lu_core::native_browser_tool::BrowserTaskRunner>,
+    };
+    if let Err(e)=lu_core::native_browser_tool::register_scoped_browser_tools(
+        &registry,&mut model_catalog,scoped
+    ){
+        let _=state.browser_authority.revoke_task(&task_id);
+        let _=state.browser_runtime.stop();
+        return Err(format!("browser native tool registration failed: {e}"));
+    }
     let still_authorized={
         let mut active=state.browser_task.lock()
             .map_err(|_|"browser task lock poisoned")?;
         if let Some(task)=active.as_mut().filter(|task|task.task_id==task_id){
+            let mut tools=state.browser_tools.lock()
+                .map_err(|_|"browser tool registration lock poisoned")?;
+            *tools=Some(DesktopBrowserTools{registry,model_catalog});
             task.starting=false;
             true
         }else{false}
