@@ -490,6 +490,49 @@ impl Drop for PersistentLlamaBackend {
 mod tests {
     use super::*;
     #[test]
+    fn independent_watchdog_terminates_a_real_owned_stuck_child() {
+        // This test requires no GPU or llama weights. It exercises the
+        // OS child handle independently of the blocked HTTP/client thread.
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "ping -n 30 127.0.0.1 > NUL"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = Command::new("sleep");
+            command.arg("30");
+            command
+        };
+        let child = Arc::new(Mutex::new(command.stdin(Stdio::null())
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()));
+        let cancellation = Cancellation::default();
+        let cancellation_for_thread = cancellation.clone();
+        let stopper = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            cancellation_for_thread.cancel();
+        });
+        let owned = Arc::clone(&child);
+        let start = Instant::now();
+        let outcome = PersistentLlamaBackend::run_with_watchdog(
+            Arc::clone(&child), &cancellation, move || {
+                while start.elapsed() < Duration::from_secs(8) {
+                    if owned.lock().unwrap().try_wait().unwrap().is_some() {
+                        return Ok(());
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err("watchdog failed to interrupt owned child".into())
+            },
+        );
+        stopper.join().unwrap();
+        assert!(outcome.is_ok(), "{outcome:?}");
+        let mut owned = child.lock().unwrap();
+        assert!(owned.try_wait().unwrap().is_some());
+        let _ = owned.wait();
+    }
+    #[test]
     fn api_key_requires_full_host_entropy() {
         assert!(!valid_api_key("1234"));
         assert!(valid_api_key(&"0a".repeat(32)));
