@@ -7,7 +7,7 @@ use lu_core::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
     },
     journal::EffectJournal,
-    native_create_new::{register_create_new, ExactCreateNewPolicy, REQUEST_TYPE, TOOL_ID},
+    native_create_new::{register_create_new_pinned, ExactCreateNewPolicy, REQUEST_TYPE, TOOL_ID},
     policy::{CapabilityGrant, PolicyEngine},
     registry::NativeToolRegistry,
     wire::proto,
@@ -15,7 +15,8 @@ use lu_core::{
 use prost::Message;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::{path::Path, sync::Arc};
+use cap_std::{ambient_authority, fs::Dir};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +36,26 @@ pub async fn execute_approved_create(
     trusted_directory: &Path,
     proposal: &ProposedWrite,
 ) -> Result<CreatedFile, String> {
+    let pinned = Arc::new(Dir::open_ambient_dir(trusted_directory, ambient_authority())
+        .map_err(|e| format!("trusted directory handle unavailable: {e}"))?);
+    execute_approved_create_pinned(
+        chats, effects, chat_id, user_turn_id, effect_call_id,
+        trusted_directory, pinned, proposal,
+    ).await
+}
+
+/// The real desktop approval path keeps this directory handle open from
+/// review through Protobuf effect publication; the model cannot retarget it.
+pub async fn execute_approved_create_pinned(
+    chats: &ChatStore,
+    effects: &EffectJournal,
+    chat_id: &str,
+    user_turn_id: &str,
+    effect_call_id: &str,
+    trusted_directory: &Path,
+    pinned: Arc<Dir>,
+    proposal: &ProposedWrite,
+) -> Result<CreatedFile, String> {
     if proposal.kind != "propose_create_file"
         || proposal.content.len() > crate::write_proposal::MAX_WRITE_PREVIEW_BYTES
     {
@@ -50,7 +71,7 @@ pub async fn execute_approved_create(
             proposal.file_name, proposal.content.len(), sha),
     )?;
     let registry = NativeToolRegistry::new();
-    register_create_new(&registry, trusted_directory)
+    register_create_new_pinned(&registry, pinned)
         .map_err(|e| format!("cannot register native create-new tool: {e:?}"))?;
     let authority = ConversationAuthority::new();
     let policy = PolicyEngine::new();
