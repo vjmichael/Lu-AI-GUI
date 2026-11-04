@@ -693,9 +693,10 @@ async fn run_supervised_native_turn_inner(
             return Err(NativeGenerationError::PromptTooLarge);
         }
     }
-    // One bounded correction for an invented model tool that never reached dispatch.
-    let mut unknown_tool_retry_used = false;
-    for generation in 1..=(MAX_TOOL_STEPS + 2) {
+    // Original MBRL: one deterministic normalization in the parser, then
+    // up to two regenerations for *pre-dispatch* schema/syntax errors.
+    let mut json_regenerations = 0u32;
+    for generation in 1..=MAX_TOTAL_MODEL_GENERATIONS {
         if cancel.is_cancelled() {
             turn.halt();
             return Err(NativeGenerationError::Cancelled);
@@ -798,36 +799,65 @@ async fn run_supervised_native_turn_inner(
                     &format!("{error:?}"),
                     parsed_candidate.as_ref().map(|p| p.repair),
                 )?;
-                // UnknownTool is rejected before dispatch. Recheck the step
-                // count so no reply that may have caused an effect is retried.
-                if !unknown_tool_retry_used
-                    && host_routed_calls == 0
-                    && !cancel.is_cancelled()
-                    && turn.step_count() == dispatch_count_before
-                    && matches!(
-                        &error,
-                        ToolTurnError::Catalog(ModelToolError::UnknownTool(_))
-                    )
-                {
-                    // Host-owned text only. Never feed the untrusted rejected
-                    // model output or invented tool name back as instructions.
-                    let reminder = r#"
+                // There is no second execution attempt if any effect was
+                // entered, denied, cancelled or left UNCERTAIN. A JSON error
+                // does not mint permission for a tool.
+                if let Some(code) = regenerable_json_failure(&error, &reply) {
+                    if host_routed_calls == 0
+                        && !cancel.is_cancelled()
+                        && turn.step_count() == dispatch_count_before
+                    {
+                        // Rejected, *parsed* tool requests receive a correlated
+                        // typed error in the transcript. This is a synthetic
+                        // lu_boundary notice, NOT a native execution receipt.
+                        if parsed_candidate.as_ref().is_some_and(|candidate| {
+                            candidate.object.get("kind").and_then(Value::as_str) == Some("tool")
+                        }) {
+                            let feedback =
+                                rejected_tool_boundary_feedback(&task_id, generation, code)?;
+                            let checked = parse_host_tool_feedback_boundary(
+                                &feedback, MAX_LU_TOOL_FEEDBACK_BYTES,
+                            ).map_err(|_| NativeGenerationError::InvalidInferenceEvent)?;
+                            record_audit(
+                                journal, &conversation_id, &task_id,
+                                ModelAuditKind::ToolFeedback, &feedback, None,
+                            )?;
+                            records.push(NativeTurnRecord::ModelOutput(reply.clone()));
+                            records.push(NativeTurnRecord::ToolFeedback(Value::Object(checked)));
+                        }
+                        if json_regenerations < MAX_JSON_REGENERATIONS {
+                            // Only host-authored correction reaches the model.
+                            // No untrusted rejected tool name/path/args are
+                            // promoted to system instructions.
+                            let reminder = r#"
 <|im_end|>
 <|im_start|>system
-Lu rejected an unadvertised tool. It was NOT executed.
-Do not invent names. For greetings and ordinary questions, answer with ONLY
-{"kind":"final","text":"your answer"}.
-If a tool is necessary, choose ONLY an exact name from the advertised catalog.
-Output one compact JSON object without extra fields.
+Lu rejected the previous model JSON. It was NOT executed.
+Output one strict JSON object only; no code fences or extra fields.
+For a final answer: {"kind":"final","text":"your answer"}.
+For a tool, use ONLY a name in the advertised catalog, required
+keys and correct types. Never invent arguments or permissions.
 <|im_end|>
 <|im_start|>assistant
 "#;
-                    if prompt.len() + reminder.len() > MAX_LU_TURN_PROMPT_BYTES {
-                        return Err(NativeGenerationError::PromptTooLarge);
+                            if prompt.len() + reminder.len() > MAX_LU_TURN_PROMPT_BYTES {
+                                turn.halt();
+                                return Err(NativeGenerationError::PromptTooLarge);
+                            }
+                            prompt.push_str(reminder);
+                            json_regenerations += 1;
+                            continue;
+                        }
+                        record_audit(
+                            journal, &conversation_id, &task_id,
+                            ModelAuditKind::GenerationFailure,
+                            "BOUNDARY_BLOCKED: JSON regeneration budget exhausted", None,
+                        )?;
+                        turn.halt();
+                        return Err(NativeGenerationError::ModelReplyStructure(
+                            "json_regeneration_exhausted",
+                        ));
                     }
-                    prompt.push_str(reminder);
-                    unknown_tool_retry_used = true;
-                    continue;
                 }
                 if matches!(
                     error,
@@ -841,6 +871,11 @@ Output one compact JSON object without extra fields.
             }
         };
         records.push(NativeTurnRecord::ModelOutput(reply));
+        // A successful tool result starts a fresh JSON response stage.
+        // Rejection retries cannot spill into a later executed step.
+        if matches!(outcome, ToolTurnOutcome::ToolResult { .. }) {
+            json_regenerations = 0;
+        }
         // The awaited tool may already have made a change. Never label that
         // change rolled back merely because cancellation/revocation arrived.
         // Persist its result first, then stop before a second model generation.
