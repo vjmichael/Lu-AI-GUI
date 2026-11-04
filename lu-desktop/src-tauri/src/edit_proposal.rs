@@ -231,3 +231,21 @@ impl EditProposalQueue {
         pending.remove(id);Ok(())
     }
 }
+
+#[cfg(test)]
+mod json_boundary_tests {
+    use super::*;
+    #[test]
+    fn staged_edit_refuses_conflicting_model_replacement_json() {
+        let q = EditProposalQueue::default();
+        let good = r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello"}"#;
+        assert!(q.stage("ok", "chat", "turn", good).is_ok());
+        for bad in [
+            r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello","content":"secret"}"#,
+            r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello",}"#,
+            r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello""#,
+        ] {
+            assert_eq!(q.stage("bad", "chat", "turn", bad), Err(EditProposalError::Invalid));
+        }
+    }
+}
