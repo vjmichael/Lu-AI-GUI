@@ -157,6 +157,13 @@ struct GenerationEvent {
     position: usize,
 }
 
+/// Host-only browser task; the browser never chooses this identity or scope.
+struct ActiveBrowserTask {
+    task_id:String,
+    chat_id:String,
+    user_turn_id:String,
+    origins:Vec<String>,
+}
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
@@ -172,6 +179,8 @@ struct DesktopState {
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     browser_preferences: lu_core::browser_preferences::BrowserPreferences,
     browser_runtime: native_browser_host::DesktopBrowserHost,
+    browser_authority: lu_core::conversation_authority::ConversationAuthority,
+    browser_task: Mutex<Option<ActiveBrowserTask>>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -539,6 +548,8 @@ impl DesktopState {
                 app.path().resource_dir().map_err(|e|format!("browser resource root unavailable: {e}"))?,
                 root.clone()
             ),
+            browser_authority: lu_core::conversation_authority::ConversationAuthority::new(),
+            browser_task: Mutex::new(None),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1437,7 +1448,83 @@ fn lu_browser_runtime_status(
 fn lu_browser_stop(
     state: State<'_, Arc<DesktopState>>
 ) -> Result<bool,String> {
+    // Revocation and worker shutdown are both host-only. Never leave a
+    // still-valid network grant after the user stops a research browser.
+    let active=state.browser_task.lock()
+        .map_err(|_|"browser task lock poisoned")?.take();
+    if let Some(ref task)=active{
+        state.browser_authority.revoke_task(&task.task_id)
+            .map_err(|e|format!("browser task revocation failed: {e:?}"))?;
+    }
     state.browser_runtime.stop()
+}
+
+/// Native user approval is mandatory before any browser session starts.
+/// The trusted host chooses an authenticated USER turn from the journal;
+/// a web page or model cannot forge one with a message string.
+#[tauri::command]
+async fn lu_browser_start(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    origin:String,
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    use lu_core::{
+        browser_authorized_execution::{BrowserOriginScope,BROWSER_READ_TOOL},
+        conversation_authority::{AuthorizedCapability,TaskAuthority},
+        contracts::ToolEffect,
+    };
+    let state=Arc::clone(state.inner());
+    let scope=BrowserOriginScope::from_host_grant(vec![origin])
+        .map_err(|_|"Invalid or non-public HTTPS browser origin")?;
+    let user_turn_id=state.chats.latest_authenticated_user_turn_id(&chat_id)
+        .ok_or("No authenticated user turn in this conversation")?;
+    // Before presenting approval, check the actual bundled runtime.
+    state.browser_runtime.require_launch_ready()?;
+    let approved_origins=scope.origins();
+    let dialog_text=format!(
+        "Allow Lu to research this website in the current conversation?\n\n{}\n\nPermission: read-only navigation and page content. Form submissions, clicks and typing require a separate interaction grant.\n\nThe browser may temporarily appear for human verification.",
+        approved_origins.join("\n")
+    );
+    let approved=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(dialog_text)
+            .title("Lu — Authorize research browser")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Allow website".into(),"Deny".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("browser approval dialog failed: {e}"))?;
+    if !approved{return Err("Browser request denied by user".into());}
+    let task_id=next_id("browser-task-");
+    state.browser_authority.open_user_task(
+        TaskAuthority {
+            conversation_id:chat_id.clone(),
+            user_turn_id:user_turn_id.clone(),
+            task_id:task_id.clone(),
+            execution_scope_id:next_id("browser-scope-"),
+            capabilities:vec![AuthorizedCapability{
+                tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead
+            }],
+            expires_at:Some(std::time::SystemTime::now()+Duration::from_secs(3600)),
+        },
+        &state.chats
+    ).map_err(|e|format!("browser authority refused: {e:?}"))?;
+    // The launch is blocking and may wait for Chromium and Playwright. Run
+    // off the Tauri event loop, retaining host-only path and origin authority.
+    let native_state=Arc::clone(&state);
+    let allowed=approved_origins.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||
+        native_state.browser_runtime.launch_for_native_grant(
+            allowed,&native_state.browser_preferences)
+    ).await.map_err(|e|format!("browser supervisor panicked: {e}"))?;
+    if let Err(error)=result{
+        let _=state.browser_authority.revoke_task(&task_id);
+        return Err(error);
+    }
+    *state.browser_task.lock().map_err(|_|"browser task lock poisoned")?=
+        Some(ActiveBrowserTask{
+            task_id,chat_id,user_turn_id,origins:approved_origins
+        });
+    state.browser_runtime.status(&state.browser_preferences)
 }
 
 #[tauri::command]
@@ -2315,6 +2402,7 @@ pub fn run() {
             lu_document_settings,
             lu_browser_settings,
             lu_browser_runtime_status,
+            lu_browser_start,
             lu_browser_stop,
             lu_set_browser_visibility,
             lu_choose_default_document_folder,
