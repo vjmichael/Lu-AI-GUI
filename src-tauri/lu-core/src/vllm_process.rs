@@ -16,10 +16,6 @@ use std::{
 };
 
 const MAX_CONTROL: usize = 64 * 1024;
-const SIGKILL: i32 = 9;
-unsafe extern "C" {
-    fn kill(pid: i32, sig: i32) -> i32;
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum WorkerError {
@@ -123,13 +119,23 @@ impl VllmWorkerProcess {
         if child.try_wait().map_err(|_| WorkerError::Io)?.is_some() { return Ok(()); }
         let pgid = i32::try_from(child.id()).map_err(|_| WorkerError::InvalidConfig)?;
         if pgid <= 1 { return Err(WorkerError::InvalidConfig); }
-        // SAFETY: negative PGID was assigned to the owned child at spawn.
-        let result = unsafe { kill(-pgid, SIGKILL) };
-        if result != 0 {
+        // Keep Lu Core's `forbid(unsafe_code)` guarantee intact.
+        // The fixed OS utility signals only this owned dedicated group.
+        // It is NOT an engine-provided command or shell snippet.
+        let signalled = Command::new("/bin/kill")
+            .arg("-s").arg("KILL").arg("--").arg(format!("-{pgid}"))
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !signalled {
+            // Emergency fallback reaches only the direct child. Because
+            // descendants may survive, report an unverified stop rather
+            // than incorrectly claiming clean group termination.
             let _ = child.kill();
         }
         child.wait().map_err(|_| WorkerError::ReapFailed)?;
-        Ok(())
+        if signalled { Ok(()) } else { Err(WorkerError::ReapFailed) }
     }
 }
 impl VllmControlTransport for VllmWorkerProcess {
