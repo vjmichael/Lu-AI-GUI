@@ -1,8 +1,10 @@
 use lu_core::document_preferences::{DocumentPreferences,DocumentPreferenceError};
-use std::{fs,path::PathBuf,time::{SystemTime,UNIX_EPOCH}};
+use std::{fs,path::PathBuf,sync::atomic::{AtomicU64,Ordering},time::{SystemTime,UNIX_EPOCH}};
+static FIXTURE_SEQUENCE: AtomicU64=AtomicU64::new(0);
 fn root()->PathBuf{
-    let p=std::env::temp_dir().join(format!("lu-docs-pref-{}-{}",
-        std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+    let p=std::env::temp_dir().join(format!("lu-docs-pref-{}-{}-{}",
+        std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        FIXTURE_SEQUENCE.fetch_add(1,Ordering::Relaxed)));
     fs::create_dir_all(&p).unwrap();p
 }
 #[test]
