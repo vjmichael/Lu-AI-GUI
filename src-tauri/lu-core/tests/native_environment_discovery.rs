@@ -112,7 +112,7 @@ async fn ambient_inventory_and_native_turn_are_fresh_without_execution() {
     assert_eq!(data["result"]["evidence"],"file_present_only");
     assert_eq!(data["result"]["execution_verified"],false);
     assert!(data["result"]["version"].is_null());
-    assert!(!data.to_string().contains(&root.to_string_lossy().to_string()));
+    assert!(!data.to_string().contains(root.to_string_lossy().as_ref()));
     assert_eq!(fs::read(&python).unwrap(),b"not a real runtime; never execute");
     // Refresh after an actual change: host file presence is sampled each time.
     fs::remove_file(&python).unwrap();
