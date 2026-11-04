@@ -20,7 +20,7 @@
 | AUTH-01 | P0 | Authenticated user-turn tool scopes and revocation | PARTIAL | Adversarial authorization and live desktop grant/dispatch tests |
 | LIFECYCLE-01 | P0 | Native process lifecycle, cancellation, clean termination and resource safeguards (not mandatory sandboxing) | TODO | Actual Windows start/stop/reap and crash recovery |
 | TOOLS-01 | P0 | First-party native read, search, atomic file writes, git, archives and JSON | TODO | End-to-end authorized Protobuf calls |
-| TOOLS-02 | P0 | Bounded read-only JSON file inspection, strict nested duplicate-key detection and source digest | SOURCE IMPLEMENTED; CI PENDING | Native Protobuf/model catalog, host grant, Linux/Windows Rust adversarial tests; desktop UX deferred |
+| TOOLS-02 | P0 | Bounded read-only JSON file inspection, strict nested duplicate-key detection and source digest | DEVELOPMENT SOURCE + NATIVE PICKER; CI PENDING | Native Protobuf/model catalog, host-selected pinned file, journaled per-task grant, Linux/Windows tests and desktop compiler; installed-app acceptance open |
 | TOOLS-03 | P0 | Git inspect (status/log/diff) with host-selected repo and safe subprocess containment | TODO | No shell injection, hostile repo/config tests, Windows/Linux CI and authorized dispatch |
 | TOOLS-04 | P1 | Archive listing/inspection before archive extraction or creation | TODO | Zip-slip, symlink, decompression bomb limits, duplicate members, OS CI |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
@@ -397,3 +397,9 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - New isolated work `lu/tools-02-json-validation-20261103` adds a **read-only** JSON structure and syntax inspection tool with canonical Protobuf/model codec, scoped directory handle, max-byte cap, duplicate key refusal, no raw-value output and no file mutation; integrated into a real `NativeToolTurn` test. Current state: source-only until exact-commit native Linux/Windows CI verifies it. No claim it is already exposed in the installed GUI.
 - Next non-write tools: Git read-only inspect/status, archive listing and bounded compression utilities, structured source/schema validation and program discovery. Continue through existing registry + per-turn `ConversationAuthority`; no model-created grants.
 - **DLC redesign held for v2.0**. Native Windows and Linux both use AF_UNIX, never Windows named pipes; NVP requests cooperative Lu-owned model unload/reload for RAM/VRAM allocation, Cognitum remains optional reviewed reasoning/calculation provider. See `LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md` and Lu issues #8/#9. Design only; no DLC implementation in the current v1.0 branch.
+
+## TOOLS-02 source checkpoint — native OS picker (2026-11-03)
+
+- Added a **user-initiated native JSON file picker** to the desktop composer, without a model/WebView pathname or inherited permission. The inspected file stays bound to the opened OS handle and is dispatched via `ConversationAuthority`, `PolicyEngine`, `NativeToolRegistry`, typed Protobuf and `EffectJournal`, using a persisted real user-turn identity.
+- The structured summary is appended to the selected conversation. Invalid JSON is a report, not permission to repair or edit; raw file contents are not embedded by the JSON inspection tool. New source tests cover the frontend host-command contract and pinned file refusal.
+- This code is **not in the accepted alpha.2 installer**. Native CI and installed app review are separate gates. Do not resume WRITE-01E edge-case work as part of this tool.
