@@ -261,7 +261,10 @@ fn run_engine(
         .env("OMP_THREAD_LIMIT", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        // Windows Tesseract's validated diagnostic subprocess uses a pipe.
+        // Drain its stderr privately to avoid blocking on engine diagnostics;
+        // never expose raw OCR engine logs to the model or a user tool result.
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     if let Some(windows_root) = std::env::var_os("SystemRoot") {
         command.env("SystemRoot", windows_root);
@@ -276,6 +279,13 @@ fn run_engine(
         let _=process.kill();let _=process.wait();
         return Err(error("OCR_PROCESS", "OCR engine output unavailable"));
     };
+    let stderr = process.stderr.take()
+        .ok_or_else(|| error("OCR_PROCESS", "OCR engine diagnostics unavailable"))?;
+    let stderr_reader = std::thread::spawn(move || {
+        // Drain without buffering unbounded native diagnostics.
+        let mut sink = std::io::sink();
+        let _ = std::io::copy(&mut stderr.take(64 * 1024), &mut sink);
+    });
     let bytes = pinned.image.image_bytes.clone();
     let writer = std::thread::spawn(move || input.write_all(&bytes));
     let too_large = Arc::new(AtomicBool::new(false));
@@ -298,11 +308,12 @@ fn run_engine(
                 std::thread::sleep(Duration::from_millis(20)),
             _ => {
                 let _=process.kill();let _=process.wait();
-                let _=writer.join();let _=reader.join();
+                let _=writer.join();let _=reader.join();let _=stderr_reader.join();
                 return Err(error("OCR_TIMEOUT","OCR backend failed to finish on time"));
             }
         }
     };
+    let _ = stderr_reader.join();
     let input_ok=writer.join().map_err(|_|error("OCR_PROCESS","OCR input worker stopped"))?;
     let result=reader.join().map_err(|_|error("OCR_PROCESS","OCR output worker stopped"))?
         .map_err(|_|error("OCR_PROCESS","OCR output stream failed"))?;
