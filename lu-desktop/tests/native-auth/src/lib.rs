@@ -33,6 +33,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH}
 };
 static NATIVE_AUTH_TMP_SEQUENCE:AtomicU64=AtomicU64::new(0);
+#[cfg(windows)]
+fn picked_windows_file_identity(
+    dir:&cap_std::fs::Dir, name:&str
+)->lu_core::windows_file_guard::WindowsFileIdentity{
+    let opened=dir.open(name).unwrap().into_std();
+    lu_core::windows_file_guard::inspect_open_file(&opened).unwrap()
+}
 fn temp_root() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "lu-real-chat-authority-{}-{}-{}",
@@ -930,7 +937,9 @@ async fn desktop_rollback_separate_approval_restores_verified_original_and_prese
     let reviews=RollbackReviewQueue::default();
     let selected=SelectedRollback{
         record:reviewed.clone(),directory:initial.directory.clone(),
-        directory_cap:initial.directory_cap.clone(),preview:preview.clone()
+        directory_cap:initial.directory_cap.clone(),preview:preview.clone(),
+        #[cfg(windows)]
+        selected_file_identity:picked_windows_file_identity(&initial.directory_cap,"settings.json")
     };
     reviews.stage(selected).unwrap();
     assert!(matches!(reviews.take(&reviewed.review_id,"other-chat"),
@@ -1011,7 +1020,9 @@ async fn desktop_rollback_refuses_external_edit_before_authorizing_a_new_effect(
             restored_sha256:preview.original_sha256.clone(),restore_bytes:preview.restore_text.len() as u64,
             decision:RollbackDecision::Reviewed,rollback_effect_id:None,
         },
-        directory:chosen.directory.clone(),directory_cap:chosen.directory_cap.clone(),preview
+        directory:chosen.directory.clone(),directory_cap:chosen.directory_cap.clone(),preview,
+        #[cfg(windows)]
+        selected_file_identity:picked_windows_file_identity(&chosen.directory_cap,"notes.md")
     };
     fs::write(&target,b"Edited outside Lu\n").unwrap();
     let rollback_id=format!("g-{}","1".repeat(32));
