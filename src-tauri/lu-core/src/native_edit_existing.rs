@@ -8,7 +8,10 @@
 //! Compatibility caveat: replacement may not preserve ACLs, alternate data
 //! streams, xattrs or hardlink identities. Windows native metadata/directory
 //! flush and hostile cross-process race acceptance remain release gates.
-use std::{io::{Read, Write}, path::Path, sync::Arc};
+use std::{io::{Read, Write}, path::Path, sync::{Arc, Mutex}};
+// Process-local serialization across ALL registrations/roots. This is not an
+// operating-system lock against a non-cooperating external editor.
+static EDIT_TRANSACTION_GATE: Mutex<()> = Mutex::new(());
 use cap_std::fs::{Dir, OpenOptions};
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -202,6 +205,8 @@ fn commit_in_dir(
     approval_sha: &str,
     stop: StopPoint,
 ) -> Result<EditReceipt, EditCommitError> {
+    let _serialization = EDIT_TRANSACTION_GATE.lock()
+        .map_err(|_| EditCommitError::Uncertain)?;
     if !filename(target) { return Err(EditCommitError::InvalidTarget); }
     if !valid_id(operation_id) { return Err(EditCommitError::InvalidOperationId); }
     if !valid_sha(baseline_sha) || !valid_sha(approval_sha) {
@@ -370,6 +375,8 @@ fn rollback_with_stop(
     root: &Dir, target: &str, original_edit_id: &str, rollback_id: &str,
     expected_current: &str, expected_restored: &str, stop: StopPoint
 ) -> Result<u64, EditCommitError> {
+    let _serialization = EDIT_TRANSACTION_GATE.lock()
+        .map_err(|_| EditCommitError::Uncertain)?;
     if !filename(target) || !valid_id(original_edit_id) || !valid_id(rollback_id) ||
         !valid_sha(expected_current) || !valid_sha(expected_restored) ||
         original_edit_id == rollback_id {
