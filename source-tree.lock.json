@@ -769,7 +769,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "c5528757d3b0086828f76c4926d950639c7a3666"
+      "blob": "0fbb09a74ef7823b14b31ad77e7acb530c51e686"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
@@ -817,7 +817,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/vllm_control.rs",
-      "blob": "591cd22564effcfdcb4afe4550761b3634bdadb4"
+      "blob": "d3bc4c30f108fc6e472e324c12b717ff8baf5f20"
     },
     {
       "path": "src-tauri/lu-core/src/vllm_process.rs",
@@ -1165,11 +1165,11 @@
     },
     {
       "path": "src-tauri/vllm-worker/lu_vllm_worker.py",
-      "blob": "9107c9bd363ea0e133162d15c7db88743c46a11f"
+      "blob": "0836cc87ba6a1d840a8b3e8546a1bcbabcfaa903"
     },
     {
       "path": "src-tauri/vllm-worker/test_lu_vllm_worker.py",
-      "blob": "480ede357bd882230224a5ea0d6593cccadcfffc"
+      "blob": "3ad857755e3a0a3ab22c40e6945fa595fb5e3a0f"
     },
     {
       "path": "tests/source-identity.test.mjs",
