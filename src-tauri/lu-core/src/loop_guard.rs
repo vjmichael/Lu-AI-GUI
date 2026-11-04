@@ -1,53 +1,49 @@
-//! TOOLS-08: host-owned, per-turn structural loop prevention.
+//! TOOLS-08 — progress-aware, host-owned prevention of stalled native-tool loops.
 //!
-//! Implements the *intent* of original Jan-Mod-Design-Document §7.
-//! Unlike the previous pattern breaker this watches *actual validated tool
-//! proposals*, not generated prose. It is NEVER a model-facing tool or a
-//! permission to dispatch. A blocked call cannot reach native authorization,
-//! the effect journal, the registered native tool, or a subprocess.
+//! A useful task may make hundreds of individually authorized file edits;
+//! a tool name, target path or raw call count is not evidence of looping.
+//! Examine the *result of each admitted call* before judging later calls.
 //!
-//! Original §7 has a five-call history and a separate 20-attempt counter;
-//! mistakenly checking "recentCalls.length >= 20" with window=5 would never
-//! fire. This implementation keeps a separate monotonically increasing
-//! per-turn attempt counter. The existing Lu native turn's MAX_TOOL_STEPS=8
-//! remains a stricter independent ceiling; this guard does not enlarge it.
+//! Read results: new semantic content is progress; repeating the same answer
+//! is not. Writes: only committed, typed before/after state witnesses or a
+//! verified create-new receipt are proof of mutation. An "ok" flag alone,
+//! a new call ID, timestamp or changed model arguments are NOT proof.
+//! Unverified writes require additional host evidence for long workflows.
+//! Block/Kill never reaches the effect journal or native registry.
 
 use std::collections::{BTreeSet, VecDeque};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-pub const DEFAULT_LOOP_WINDOW: usize = 5;
-pub const DEFAULT_TOTAL_WARN: u32 = 20;
-pub const DEFAULT_EXACT_PREVIOUS: usize = 2;
+use crate::contracts::ToolEffect;
+
+pub const DEFAULT_LOOP_WINDOW: usize = 8;
+pub const DEFAULT_STALLED_WARNING: u32 = 3;
+pub const DEFAULT_STALLED_BLOCK: u32 = 8;
 pub const DEFAULT_KILL_BLOCKS: u32 = 3;
-const MAX_SIGNATURE_TOKENS: usize = 512;
-const MAX_SIGNATURE_DEPTH: usize = 24;
+const MAX_SEEN_RESULTS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopReason {
-    ExactRepeat,
-    PingPong,
-    SimilarArguments,
-    ExcessiveCalls,
+    NoProgress,
+    RepeatedFailure,
+    OutputCycle,
+    UnverifiedEffect,
 }
-
 impl LoopReason {
-    /// Fixed host-owned language. Never reflect raw tool JSON, path, user
-    /// content, previous model outputs or secret arguments in model feedback.
     pub const fn message(self) -> &'static str {
         match self {
-            Self::ExactRepeat =>
-                "Repeated identical tool request. Try a different approach.",
-            Self::PingPong =>
-                "Alternating tool calls form a loop. Change the approach.",
-            Self::SimilarArguments =>
-                "This tool was repeatedly called with similar arguments. Check progress.",
-            Self::ExcessiveCalls =>
-                "High number of tool calls in this turn. Consider finishing or changing strategy.",
+            Self::NoProgress =>
+                "Recent tool calls have not established new information or state. Change approach.",
+            Self::RepeatedFailure =>
+                "The same failing operation was repeated without progress. Change approach.",
+            Self::OutputCycle =>
+                "Tool responses are cycling without new information. Change approach.",
+            Self::UnverifiedEffect =>
+                "Further actions need an independently verified state-change receipt.",
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopVerdict {
     Allow,
@@ -55,190 +51,265 @@ pub enum LoopVerdict {
     Block(LoopReason),
     Kill(LoopReason),
 }
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LoopPolicy {
-    pub window_size: usize,
-    pub warn_threshold_same_tool: usize,
-    pub warn_threshold_total: u32,
-    pub block_threshold_exact: usize,
-    pub block_ping_pong: bool,
-    pub kill_after_blocks: u32,
-    pub similarity_threshold: f64,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressEvidence {
+    /// Bounded, verified native result supplied genuinely new information.
+    NewInformation,
+    /// Host-applied state change evidenced by a typed before/after receipt.
+    StateChanged,
+    /// Execution returned the same observation, a failure, or a no-op.
+    NoProgress,
+    /// Tool claimed success but omitted a strong change witness.
+    Unverified,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoopPolicy {
+    pub window_size: usize,
+    pub warn_after_stalled: u32,
+    pub block_after_stalled: u32,
+    pub kill_after_blocks: u32,
+}
 impl Default for LoopPolicy {
     fn default() -> Self {
         Self {
             window_size: DEFAULT_LOOP_WINDOW,
-            warn_threshold_same_tool: 3,
-            warn_threshold_total: DEFAULT_TOTAL_WARN,
-            block_threshold_exact: DEFAULT_EXACT_PREVIOUS,
-            block_ping_pong: true,
+            warn_after_stalled: DEFAULT_STALLED_WARNING,
+            block_after_stalled: DEFAULT_STALLED_BLOCK,
             kill_after_blocks: DEFAULT_KILL_BLOCKS,
-            similarity_threshold: 0.7,
         }
     }
 }
 impl LoopPolicy {
     pub fn validate(self) -> Result<Self, &'static str> {
-        if !(4..=32).contains(&self.window_size) ||
-            self.warn_threshold_same_tool == 0 ||
-            self.warn_threshold_same_tool > self.window_size ||
-            self.warn_threshold_total == 0 ||
-            self.block_threshold_exact == 0 ||
-            self.block_threshold_exact > self.window_size ||
-            self.kill_after_blocks == 0 ||
-            !self.similarity_threshold.is_finite() ||
-            !(0.0..=1.0).contains(&self.similarity_threshold)
+        if !(4..=32).contains(&self.window_size)
+            || self.warn_after_stalled == 0
+            || self.block_after_stalled < self.warn_after_stalled + 1
+            || self.block_after_stalled > 128
+            || self.kill_after_blocks == 0
+            || self.kill_after_blocks > 10
         {
-            return Err("invalid trusted host loop protection policy");
+            return Err("invalid host progress-guard policy");
         }
         Ok(self)
     }
 }
-
-struct RecentCall {
+#[derive(Clone)]
+struct ObservedCall {
     tool: String,
     args_hash: [u8; 32],
-    signature: BTreeSet<[u8; 32]>,
+    progress: ProgressEvidence,
 }
-
 pub struct LoopGuard {
     policy: LoopPolicy,
-    recent: VecDeque<RecentCall>,
-    attempted: u32,
+    recent: VecDeque<ObservedCall>,
+    seen: VecDeque<[u8; 32]>,
+    attempts: u64,
+    no_progress: u32,
     consecutive_blocks: u32,
+    recovery_attempted: bool,
+    blocked_last: bool,
 }
 
 impl Default for LoopGuard {
     fn default() -> Self {
-        Self::new(LoopPolicy::default()).expect("built-in loop policy valid")
+        Self::new(LoopPolicy::default()).expect("built-in policy is valid")
     }
 }
-
 impl LoopGuard {
-    /// Create per authenticated *turn*, not per conversation/AI model/tool.
-    /// Only the trusted host supplies this policy. The model cannot tune it.
     pub fn new(policy: LoopPolicy) -> Result<Self, &'static str> {
         Ok(Self {
             policy: policy.validate()?,
             recent: VecDeque::new(),
-            attempted: 0,
+            seen: VecDeque::new(),
+            attempts: 0,
+            no_progress: 0,
             consecutive_blocks: 0,
+            recovery_attempted: false,
+            blocked_last: false,
         })
     }
-
-    pub fn attempted(&self) -> u32 { self.attempted }
+    pub fn attempted(&self) -> u64 { self.attempts }
+    pub fn no_progress_streak(&self) -> u32 { self.no_progress }
     pub fn consecutive_blocks(&self) -> u32 { self.consecutive_blocks }
 
-    /// Invoked only after the outer model JSON and native codec have strictly
-    /// validated the tool name + arguments, immediately before native dispatch.
-    /// Call counts include blocked requests. A blocked request is *not*
-    /// added to the successful-call history, preserving the exact loop pattern
-    /// for the next attempt and guaranteeing escalation.
+    /// Called AFTER model JSON and typed codec validation and BEFORE
+    /// ConversationAuthority/durable native dispatch. It sees no effects.
+    /// The next validated result MUST be observed (or turn halted) before
+    /// another model response is admitted by this sequential native turn.
     pub fn check(&mut self, tool: &str, args: &Map<String, Value>) -> LoopVerdict {
-        self.attempted = self.attempted.saturating_add(1);
-        let canonical = serde_json::to_vec(args)
-            .expect("an already validated JSON object always serializes");
-        let args_hash = digest(&canonical);
-        let signature = signature(args);
-
-        let exact = self.recent.iter()
-            .filter(|call| call.tool == tool && call.args_hash == args_hash)
+        self.attempts = self.attempts.saturating_add(1);
+        let args_hash = digest(&serde_json::to_vec(args)
+            .expect("validated JSON map serializes"));
+        let identical_stalled = self.recent.iter()
+            .filter(|r| r.tool == tool && r.args_hash == args_hash
+                && r.progress == ProgressEvidence::NoProgress)
             .count();
-        if exact >= self.policy.block_threshold_exact {
-            return self.block(LoopReason::ExactRepeat);
-        }
-
-        // A B A B A is blocked on the 5th call. Merely calling two *different*
-        // tools in sequence is not a loop.
-        if self.policy.block_ping_pong && self.recent.len() >= 4 {
+        let recent_all_stalled = self.recent.iter().rev().take(4)
+            .all(|r| r.progress == ProgressEvidence::NoProgress)
+            && self.recent.len() >= 4;
+        let pingpong = self.recent.len() >= 4 && recent_all_stalled && {
             let n = self.recent.len();
             let a = &self.recent[n-4].tool;
             let b = &self.recent[n-3].tool;
-            let a2 = &self.recent[n-2].tool;
-            let b2 = &self.recent[n-1].tool;
-            if a == a2 && b == b2 && a != b && tool == a {
-                return self.block(LoopReason::PingPong);
-            }
-        }
-
-        let same_tool: Vec<_> = self.recent.iter()
-            .filter(|call| call.tool == tool).collect();
-        let near_repeat = same_tool.len() >= self.policy.warn_threshold_same_tool
-            && same_tool.iter().any(|call|
-                jaccard(&signature, &call.signature) > self.policy.similarity_threshold
-            );
-
-        let warning = if near_repeat {
-            Some(LoopReason::SimilarArguments)
-        } else if self.attempted >= self.policy.warn_threshold_total {
-            Some(LoopReason::ExcessiveCalls)
-        } else {
-            None
+            a != b && a == &self.recent[n-2].tool
+                && b == &self.recent[n-1].tool && tool == a
         };
-        self.consecutive_blocks = 0;
-        self.recent.push_back(RecentCall {
-            tool: tool.into(), args_hash, signature
+        // If the stalled threshold is reached, give one *different* call
+        // a recovery chance. It must demonstrate progress or the next tool
+        // proposal is blocked. Repeating the stalled action never qualifies.
+        let is_new_approach = !self.recent.iter().any(|r|
+            r.tool == tool && r.args_hash == args_hash);
+        let exhausted = self.no_progress >= self.policy.block_after_stalled
+            && (!is_new_approach || self.recovery_attempted);
+        let exact_failed = identical_stalled >= 2 && self.no_progress >= 2;
+        let reason = if exhausted { Some(LoopReason::NoProgress) }
+            else if exact_failed { Some(LoopReason::RepeatedFailure) }
+            else if pingpong { Some(LoopReason::OutputCycle) }
+            else { None };
+        if let Some(reason) = reason {
+            self.blocked_last = true;
+            self.consecutive_blocks = self.consecutive_blocks.saturating_add(1);
+            if self.consecutive_blocks >= self.policy.kill_after_blocks {
+                return LoopVerdict::Kill(reason);
+            }
+            return LoopVerdict::Block(reason);
+        }
+        self.blocked_last = false;
+        if self.no_progress >= self.policy.block_after_stalled && is_new_approach {
+            self.recovery_attempted = true;
+        }
+        if self.no_progress >= self.policy.warn_after_stalled {
+            LoopVerdict::Warn(if self.recent.back()
+                .is_some_and(|r|r.progress == ProgressEvidence::Unverified) {
+                LoopReason::UnverifiedEffect
+            } else { LoopReason::NoProgress })
+        } else {
+            LoopVerdict::Allow
+        }
+    }
+
+    /// Call exactly once for every successfully decoded native *feedback*
+    /// after dispatch; never trust a model's assertion of completion.
+    pub fn observe_feedback(
+        &mut self, tool: &str, args: &Map<String, Value>,
+        feedback: &Value, effect: ToolEffect,
+    ) -> ProgressEvidence {
+        let observation = self.classify(feedback, effect, tool);
+        self.observe(tool, args, observation);
+        observation
+    }
+
+    /// Trusted effect supervisor may report a verified receipt; this API is
+    /// not model-facing and MUST NOT be called with untrusted success claims.
+    pub fn observe(
+        &mut self, tool: &str, args: &Map<String, Value>, result: ProgressEvidence,
+    ) {
+        let args_hash = digest(&serde_json::to_vec(args).expect("validated JSON serializes"));
+        self.recent.push_back(ObservedCall {
+            tool: tool.into(), args_hash, progress: result,
         });
         while self.recent.len() > self.policy.window_size {
             self.recent.pop_front();
         }
-        match warning {
-            Some(reason) => LoopVerdict::Warn(reason),
-            None => LoopVerdict::Allow,
-        }
-    }
-
-    fn block(&mut self, reason: LoopReason) -> LoopVerdict {
-        self.consecutive_blocks = self.consecutive_blocks.saturating_add(1);
-        if self.consecutive_blocks >= self.policy.kill_after_blocks {
-            LoopVerdict::Kill(reason)
+        self.blocked_last = false;
+        if matches!(result, ProgressEvidence::NewInformation | ProgressEvidence::StateChanged) {
+            self.no_progress = 0;
+            self.consecutive_blocks = 0;
+            self.recovery_attempted = false;
         } else {
-            LoopVerdict::Block(reason)
-        }
-    }
-}
-
-fn digest(bytes: &[u8]) -> [u8;32] {
-    let hash = Sha256::digest(bytes);
-    let mut result = [0_u8;32];
-    result.copy_from_slice(&hash);
-    result
-}
-
-fn signature(args: &Map<String, Value>) -> BTreeSet<[u8;32]> {
-    fn visit(value: &Value, path: &str, depth: usize, tokens: &mut BTreeSet<[u8;32]>) {
-        if depth > MAX_SIGNATURE_DEPTH || tokens.len() >= MAX_SIGNATURE_TOKENS {
-            return;
-        }
-        match value {
-            Value::Object(items) => for (key, child) in items {
-                if tokens.len() >= MAX_SIGNATURE_TOKENS { break; }
-                let next = format!("{path}/{}", key.replace('~',"~0").replace('/',"~1"));
-                tokens.insert(digest(format!("key:{next}").as_bytes()));
-                visit(child, &next, depth+1, tokens);
-            },
-            Value::Array(items) => for (index, child) in items.iter().enumerate() {
-                if tokens.len() >= MAX_SIGNATURE_TOKENS { break; }
-                visit(child, &format!("{path}/{index}"), depth+1, tokens);
-            },
-            _ => {
-                let scalar = serde_json::to_string(value)
-                    .expect("validated scalar JSON serializes");
-                tokens.insert(digest(format!("val:{path}={scalar}").as_bytes()));
+            self.no_progress = self.no_progress.saturating_add(1);
+            // An unverified operation is not the same as a verified no-op:
+            // preserve the signal and require a host witness for long work.
+            if result == ProgressEvidence::Unverified && self.no_progress < self.policy.warn_after_stalled {
+                self.consecutive_blocks = 0;
             }
         }
     }
-    let mut tokens = BTreeSet::new();
-    visit(&Value::Object(args.clone()), "", 0, &mut tokens);
-    tokens
-}
 
-fn jaccard(a: &BTreeSet<[u8;32]>, b: &BTreeSet<[u8;32]>) -> f64 {
-    if a.is_empty() && b.is_empty() { return 1.0; }
-    let intersection = a.intersection(b).count();
-    let union = a.len() + b.len() - intersection;
-    if union == 0 { 1.0 } else { intersection as f64 / union as f64 }
+    fn classify(
+        &mut self, feedback: &Value, effect: ToolEffect, tool: &str,
+    ) -> ProgressEvidence {
+        if feedback.get("ok").and_then(Value::as_bool) != Some(true) {
+            return ProgressEvidence::NoProgress;
+        }
+        let Some(result) = feedback.get("result") else {
+            return ProgressEvidence::Unverified;
+        };
+        match effect {
+            ToolEffect::ReadWorkspace | ToolEffect::NetworkRead => {
+                // Remove unstable metadata, not actual content; only new
+                // semantic results count as progress. A changed call ID or
+                // timing field is never evidence of new information.
+                let normalized = without_volatiles(result);
+                let fingerprint = digest(&serde_json::to_vec(&normalized)
+                    .expect("trusted JSON serializes"));
+                if self.seen.contains(&fingerprint) {
+                    ProgressEvidence::NoProgress
+                } else {
+                    self.seen.push_back(fingerprint);
+                    while self.seen.len() > MAX_SEEN_RESULTS { self.seen.pop_front(); }
+                    ProgressEvidence::NewInformation
+                }
+            }
+            ToolEffect::WriteWorkspace => {
+                // A verified edit witness is the only general-purpose
+                // postcondition we currently understand. The *native* typed
+                // result must say it committed AND the after-hash changed.
+                let obj = result.as_object();
+                let committed = obj.and_then(|m|m.get("committed"))
+                    .and_then(Value::as_bool) == Some(true);
+                let before = obj.and_then(|m|m.get("original_sha256"))
+                    .and_then(Value::as_str);
+                let after = obj.and_then(|m|m.get("replacement_sha256"))
+                    .and_then(Value::as_str);
+                if committed && matches!((before, after), (Some(a), Some(b))
+                    if valid_sha(a) && valid_sha(b) && a != b)
+                {
+                    return ProgressEvidence::StateChanged;
+                }
+                if committed && matches!((before, after), (Some(a), Some(b))
+                    if valid_sha(a) && valid_sha(b) && a == b)
+                {
+                    return ProgressEvidence::NoProgress;
+                }
+                // Create-new cannot succeed twice for the same target under
+                // existing native create-only semantics.
+                if committed && tool == "lu_create_new_file" {
+                    return ProgressEvidence::StateChanged;
+                }
+                ProgressEvidence::Unverified
+            }
+            _ => ProgressEvidence::Unverified,
+        }
+    }
+}
+fn digest(bytes: &[u8]) -> [u8;32] {
+    let sum = Sha256::digest(bytes);
+    let mut out = [0u8;32];
+    out.copy_from_slice(&sum);
+    out
+}
+fn valid_sha(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b|b.is_ascii_hexdigit())
+}
+fn without_volatiles(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut stable=Map::new();
+            for (key, v) in map {
+                if matches!(key.as_str(),
+                    "call_id" | "request_id" | "duration_ms" |
+                    "elapsed_ms" | "timestamp" | "created_at" |
+                    "updated_at" | "execution_time" | "_lu_loop_warning"
+                ) {
+                    continue;
+                }
+                stable.insert(key.clone(),without_volatiles(v));
+            }
+            Value::Object(stable)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(without_volatiles).collect()),
+        _ => value.clone(),
+    }
 }
