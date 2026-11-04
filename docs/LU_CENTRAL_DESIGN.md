@@ -168,14 +168,14 @@ Each phase has concrete exit conditions; units and docs alone cannot close an en
 - **Release:** single installer, reproducible pinned native engine, real-model benchmark matrix, measured GPU/CPU, migration and rollback, installed-app acceptance.
 
 ### 8.4 Deferred and intentionally non-blocking
-Advanced JSON repair (distinct from strict JSON validation), model councils, large real-time video/audio, DLC IDE/NVP/Research/Writing, optional native image generation, remote/server mode and theme ecosystems remain **after core v1.0** unless explicitly re-scoped by the owner. No arbitrary 100% model-loader indicator may replace measured engine progress.
+Speculative, semantics-changing JSON reconstruction beyond the original bounded MBRL is deferred; the original Model Boundary Reliability Layer (**strict validation → one deterministic punctuation normalization → up to two authorized model regenerations → structured rejection/BLOCKED**) is **part of core v1.0**, by explicit owner direction on 2026-11-04. Model councils, large real-time video/audio, DLC IDE/NVP/Research/Writing, optional native image generation, remote/server mode and theme ecosystems remain **after core v1.0** unless explicitly re-scoped by the owner. No arbitrary 100% model-loader indicator may replace measured engine progress.
 
 ### 8.5 Change tracking
 Live statuses and receipt IDs are maintained in `LU_V1_0_TASKS.md`, with exact source/CI evidence and deferred Windows scenarios. This central design owns **requirements, dependencies, phases and exit criteria**. Roadmap status must be updated here when the owner changes a feature's inclusion or stage; routine per-commit CI updates stay in the task ledger. All future Lu sessions should read this section before starting new work.
 
 ## 9. Explicit supersessions and deferred items
 - **Superseded:** mandatory AppContainer/restricted-token/workspace-only sandbox; Jan runtime inheritance; blanket claim that an OS permission equals authority; forcing every operation to ask approval despite explicit task delegation.
-- **Deferred:** advanced JSON repair loop (strict validation remains mandatory), council, large A/V pipeline, DLC workspaces and self-modifying stable installation, arbitrary fake load-percentage telemetry.
+- **Current:** built-in model boundary JSON strict parse, bounded deterministic correction, at most two model regenerations after pre-dispatch syntax/schema rejection, and typed error feedback. **Deferred:** speculative semantics-changing JSON reconstruction or model-generated permission/value guesses, council, large A/V pipeline, DLC workspaces and self-modifying stable installation, arbitrary fake load-percentage telemetry.
 - **Not a product requirement:** the assistant's own Debian environment or external tool availability restrictions. Lu must discover and use host capabilities under delegated authority instead.
 
 ## 10. Engineering change control and handoff
@@ -272,3 +272,9 @@ The desktop also exposes read-only write recovery: audit state from the approval
 5. **Post-write readback verification** and a conservative response on failure. No unbounded AI self-repair cycles: a failed attempt does not trigger model-originated repeated edits. Any correction is a new proposal/approval.
 
 The EDIT-01 deterministic preflight library and tests are now present; the actual replace/patch executor, backup and rollback are **not implemented** and must not be represented as complete. New-file creation remains no-overwrite. The broader design must be tested with externally changing files, writer crashes, malformed UTF-8, invalid syntax, interrupted backups, journal corruption, and Windows/Linux filesystem differences.
+
+## TOOLS-02 owner scope confirmation — original MBRL (2026-11-04)
+
+- The user's **original** `Jan-Mod-Design-Document.md` §§4.6–4.8 specifies model-boundary strict JSON parsing, syntax-only normalization once, **up to two model regenerations**, typed rejection and transcript continuity; a distinct `json_repair` internal utility is described in §5.2. This is NOT a user-facing JSON file picker/editor.
+- Explicit 2026-11-04 decision supersedes prior blanket deferral wording: **implement the full original bounded MBRL**, not speculative semantics-changing repair. Every model/native tool boundary must refuse malformed/duplicate/schema-invalid JSON before typed Protobuf dispatch; verified host feedback must not be malformed on return. Rejections may safely request another model attempt only before dispatch and within active authority. Unknown/denied/possibly-applied effects must never be replayed as if a syntax error.
+- Source branch `lu/tools-02-json-validation-20261103` holds native `NativeToolTurn` recovery, correlated synthetic no-execution boundary feedback, strict external llama.cpp SSE parsing, and strict desktop read/create/edit proposal parsing; installed-app GUI acceptance and complete catalog-advertised native desktop dispatch are separately verified gates. No additional user tool, model grants or existing-file write optimization is part of MBRL.
