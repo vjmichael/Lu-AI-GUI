@@ -15,7 +15,7 @@ import {
   copyFileSync,existsSync,lstatSync,mkdirSync,realpathSync,
   readdirSync,readFileSync,rmSync,writeFileSync
 } from 'node:fs';
-import {join,resolve,dirname,relative,sep} from 'node:path';
+import {join,resolve,dirname,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const repo=resolve(import.meta.dirname,'../..');
@@ -81,7 +81,7 @@ function copyTree(root,prefix){
         throw Error('Candidate symlink escapes component tree');
       const meta=lstatSync(resolved);
       if(meta.isDirectory())walk(resolved,part);
-      else if(meta.isFile())copyRegular(resolved,prefix+'/'+part,base);
+      else if(meta.isFile())copyRegular(resolved,prefix?prefix+'/'+part:part,base);
       else throw Error('Unsupported candidate component '+p);
     }
   }
