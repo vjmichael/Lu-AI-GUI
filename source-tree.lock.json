@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-04-archive.yml",
-      "blob": "4c84dccbd0ad92eb9ad6ccb2067bdc282cbe264b"
+      "blob": "a774d9dbcd76441586ee3afc3cdb5706065b186a"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -441,7 +441,7 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.lock",
-      "blob": "b9b0b03418418f971039d59893a5ac0b3efbc40c"
+      "blob": "90d33fc905e8d177cbd0bca5492e338aa0da8414"
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
@@ -1033,7 +1033,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_inspect.rs",
-      "blob": "dd39b371303e8031fa365148d290a603213233fa"
+      "blob": "2efa4af78eedc6b88ac4e8a1d2094a6f1fc3c8f8"
     },
     {
       "path": "src-tauri/lu-core/tests/native_atomic_write.rs",
