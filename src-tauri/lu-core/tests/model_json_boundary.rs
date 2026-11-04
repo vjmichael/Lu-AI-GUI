@@ -3,7 +3,9 @@
 //! Outbound tool results are serialized, not heuristically repaired.
 
 use lu_core::model_json_boundary::{
-    parse_model_boundary, serialize_host_boundary, JsonBoundaryError, JsonRepairStatus,
+    parse_exact_boundary_object, parse_host_tool_feedback_boundary,
+    parse_model_boundary, serialize_host_boundary, serialize_host_tool_feedback_boundary,
+    JsonBoundaryError, JsonRepairStatus,
     MAX_BOUNDARY_JSON_BYTES,
 };
 use serde_json::json;
@@ -119,5 +121,98 @@ fn outgoing_host_feedback_is_strict_serialized_json() {
     assert_eq!(
         serialize_host_boundary(&value, 8),
         Err(JsonBoundaryError::TooLarge)
+    );
+}
+
+#[test]
+fn strict_tool_arguments_cannot_be_repaired_or_reinterpreted() {
+    let valid = r#"{"path":"report.json","metadata":{"nested":true}}"#;
+    assert_eq!(
+        parse_exact_boundary_object(valid, MAX_BOUNDARY_JSON_BYTES).unwrap()["path"],
+        "report.json"
+    );
+    for bad in [
+        r#"{"path":"safe.txt","path":"evil.txt"}"#,
+        r#"{"path":"safe.txt","metadata":{"k":1,"k":2}}"#,
+        r#"{"path":"safe.txt",}"#,
+        "&#123;not json}",
+        r#"{"path":"broken\"#,
+        r#"[{"path":"safe.txt"}]"#,
+    ] {
+        assert!(
+            parse_exact_boundary_object(bad, MAX_BOUNDARY_JSON_BYTES).is_err(),
+            "unsafe JSON arguments accepted: {bad:?}"
+        );
+    }
+    assert_eq!(
+        parse_exact_boundary_object(valid, 5),
+        Err(JsonBoundaryError::TooLarge)
+    );
+}
+
+#[test]
+fn host_feedback_must_have_exact_identity_success_or_failure_semantics() {
+    let success = json!({
+        "ok":true,
+        "tool":"lu_files_read_text",
+        "result":{"content":"A string with escaped \"quotes\" and unicode ✓"}
+    });
+    let raw = serialize_host_tool_feedback_boundary(
+        "lu-call-1", "lu_files_read_text", &success, MAX_BOUNDARY_JSON_BYTES,
+    ).unwrap();
+    let parsed = parse_host_tool_feedback_boundary(&raw, MAX_BOUNDARY_JSON_BYTES).unwrap();
+    assert_eq!(parsed["response"]["result"]["content"], "A string with escaped \"quotes\" and unicode ✓");
+
+    let rejected = json!({
+        "ok":false,"tool":"lu_files_read_text",
+        "error":{"code":"PERMISSION_DENIED","message":"denied","retryable":false}
+    });
+    let raw = serialize_host_tool_feedback_boundary(
+        "lu-call-2", "lu_files_read_text", &rejected, MAX_BOUNDARY_JSON_BYTES,
+    ).unwrap();
+    let parsed = parse_host_tool_feedback_boundary(&raw, MAX_BOUNDARY_JSON_BYTES).unwrap();
+    assert_eq!(parsed["response"]["error"]["code"], "PERMISSION_DENIED");
+
+    for corrupt in [
+        r#"{"kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":true,"tool":"lu_files_read_text"}}"#,
+        r#"{"kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":true,"tool":"lu_files_read_text","result":null,"error":{"code":"A","message":"","retryable":false}}}"#,
+        r#"{"kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":true,"tool":"lu_files_other","result":null}}"#,
+        r#"{"kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":false,"tool":"lu_files_read_text","result":null}}"#,
+        r#"{"kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":true,"tool":"lu_files_read_text","result":null},"unknown":1}"#,
+        r#"{"kind":"tool_result","kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":true,"tool":"lu_files_read_text","result":null}}"#,
+        r#"{"kind":"tool_result","call_id":"c","name":"lu_files_read_text","response":{"ok":true,"tool":"lu_files_read_text","result":null,}}"#,
+    ] {
+        assert!(parse_host_tool_feedback_boundary(corrupt, MAX_BOUNDARY_JSON_BYTES).is_err(),
+            "invalid host JSON escaped the boundary: {corrupt}");
+    }
+    assert_eq!(
+        serialize_host_tool_feedback_boundary(
+            "c", "lu_files_read_text", &json!({"ok":true}), MAX_BOUNDARY_JSON_BYTES,
+        ),
+        Err(JsonBoundaryError::InvalidEnvelope)
+    );
+    assert_eq!(
+        serialize_host_tool_feedback_boundary(
+            "c", "lu_files_read_text", &success, 20,
+        ),
+        Err(JsonBoundaryError::TooLarge)
+    );
+}
+
+#[test]
+fn outbound_host_serializer_cannot_emit_duplicate_keys_even_from_custom_serializer() {
+    use serde::ser::SerializeMap;
+    struct DuplicateKeys;
+    impl serde::Serialize for DuplicateKeys {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok,S::Error> {
+            let mut map = serializer.serialize_map(Some(2))?;
+            map.serialize_entry("grant", &"none")?;
+            map.serialize_entry("grant", &"administrator")?;
+            map.end()
+        }
+    }
+    assert_eq!(
+        serialize_host_boundary(&DuplicateKeys, MAX_BOUNDARY_JSON_BYTES),
+        Err(JsonBoundaryError::DuplicateKey)
     );
 }
