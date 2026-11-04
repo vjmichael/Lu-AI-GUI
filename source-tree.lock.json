@@ -5,7 +5,7 @@
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "82cde3c64c3bdb171c03ed01f6385b1be0abea93"
+      "blob": "ec231eb33f844f26fc4ef918864005b43e241a36"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
