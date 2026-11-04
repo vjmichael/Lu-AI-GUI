@@ -153,3 +153,21 @@ impl WriteProposalQueue {
         Ok(entries.remove(id).unwrap().generation_id)
     }
 }
+
+#[cfg(test)]
+mod json_boundary_tests {
+    use super::*;
+    #[test]
+    fn staged_create_refuses_conflicting_model_json_before_host_review() {
+        let q = WriteProposalQueue::default();
+        let good = r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"draft","content":"hello"}"#;
+        assert!(q.stage("ok", "chat", "turn", good).is_ok());
+        for bad in [
+            r#"{"kind":"propose_create_file","file_name":"notes.md","file_name":"other.md","purpose":"draft","content":"hello"}"#,
+            r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"draft","content":"hello","content":"bad"}"#,
+            r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"draft","content":"hello",}"#,
+        ] {
+            assert_eq!(q.stage("bad", "chat", "turn", bad), Err(WriteProposalError::Invalid));
+        }
+    }
+}
