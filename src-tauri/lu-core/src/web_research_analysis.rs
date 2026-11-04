@@ -7,6 +7,14 @@ use std::path::Path;
 
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Stance { Supports, Challenges, Complicates }
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum SourceClass { Primary, Secondary, Tertiary, Unclassified }
+impl SourceClass {
+    fn code(self)->&'static str {
+        match self {Self::Primary=>"PRIMARY",Self::Secondary=>"SECONDARY",
+            Self::Tertiary=>"TERTIARY",Self::Unclassified=>"UNCLASSIFIED"}
+    }
+}
 impl Stance {
     fn code(self)->&'static str {
         match self {Self::Supports=>"SUPPORTS",Self::Challenges=>"CHALLENGES",Self::Complicates=>"COMPLICATES"}
@@ -49,6 +57,11 @@ impl AnalysisStore {
             assessment_status TEXT NOT NULL DEFAULT 'MODEL_INTERPRETATION'
               CHECK(assessment_status IN ('MODEL_INTERPRETATION','HUMAN_REVIEWED')),
             PRIMARY KEY(source_id,thesis_claim,direct_quote)
+          );
+          CREATE TABLE IF NOT EXISTS research_source_class(
+            source_id TEXT PRIMARY KEY,
+            class TEXT NOT NULL CHECK(class IN ('PRIMARY','SECONDARY','TERTIARY','UNCLASSIFIED')),
+            review_status TEXT NOT NULL CHECK(review_status IN ('MODEL_CLASSIFICATION','HUMAN_REVIEWED'))
           );")?;
         Ok(Self{db})
     }
@@ -93,6 +106,21 @@ impl AnalysisStore {
         }
         Ok(verified)
     }
+    pub fn classify_source(&mut self,ledger:&EvidenceLedger,id:&str,
+        category:SourceClass)->Result<(),AnalysisError>{
+        if !clean(id,128) || !ledger.eligible_for_reviewed_bibliography(id)? {
+            return Err(AnalysisError::UnverifiedPassage);
+        }
+        self.db.execute("INSERT OR REPLACE INTO research_source_class
+            (source_id,class,review_status) VALUES (?1,?2,'MODEL_CLASSIFICATION')",
+            params![id,category.code()])?;
+        Ok(())
+    }
+    pub fn source_class(&self,id:&str)->Result<(String,String),AnalysisError>{
+        Ok(self.db.query_row("SELECT class,review_status FROM research_source_class
+           WHERE source_id=?1",[id],|row|Ok((row.get(0)?,row.get(1)?)))
+           .optional()?.unwrap_or(("UNCLASSIFIED".into(),"NOT_REVIEWED".into())))
+    }
     /// An auditable JSON evidence matrix, not a prose answer invented by LLM.
     /// A verified publication can still have a model-interpreted meaning.
     pub fn export_verified_json(&self,ledger:&EvidenceLedger)
@@ -107,7 +135,10 @@ impl AnalysisStore {
             let Some(sha)=source.content_sha256 else {
                 return Err(AnalysisError::UnverifiedPassage);
             };
+            let (source_class,class_review)=self.source_class(&row.source_id)?;
             entries.push(serde_json::json!({
+                "source_class_model_assessment":source_class,
+                "source_class_review_status":class_review,
                 "source_id":row.source_id,
                 "title":source.title,
                 "catalog_record_url":url,
@@ -176,7 +207,10 @@ mod tests {
         let output=analysis.export_rechecked(&ledger).unwrap();
         assert_eq!(output.len(),1);
         assert_eq!(output[0].status,"MODEL_INTERPRETATION");
+        analysis.classify_source(&ledger,"s1",SourceClass::Primary).unwrap();
         let report=analysis.export_verified_json(&ledger).unwrap();
+        assert_eq!(report["entries"][0]["source_class_model_assessment"],"PRIMARY");
+        assert_eq!(report["entries"][0]["source_class_review_status"],"MODEL_CLASSIFICATION");
         assert_eq!(report["entries"][0]["page_number_verified"],false);
         assert_eq!(report["entries"][0]["interpretation_review_status"],"MODEL_INTERPRETATION");
         assert_eq!(analysis.count_for(Stance::Complicates).unwrap(),1);
