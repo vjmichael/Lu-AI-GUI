@@ -95,6 +95,42 @@ message SearchTextResult {
   bool truncated = 3;
 }
 
+// TOOLS-03: host-authorized native Git inspection. The model supplies only
+// read limits and (for diff) a workspace-relative path. It never supplies a
+// Git command, Git executable, repository root, ref or permission token.
+message GitStatusRequest {
+  optional uint32 max_entries = 1;
+}
+message GitStatusEntry {
+  string path = 1;
+  string state = 2;
+}
+message GitStatusResult {
+  repeated GitStatusEntry entries = 1;
+  bool truncated = 2;
+}
+message GitLogRequest {
+  optional uint32 limit = 1;
+}
+message GitCommitSummary {
+  string commit = 1;
+  uint64 unix_time = 2;
+  string subject = 3;
+}
+message GitLogResult {
+  repeated GitCommitSummary commits = 1;
+  bool truncated = 2;
+}
+message GitDiffRequest {
+  string path = 1; // Optional, host-scoped workspace-relative file
+  optional uint32 max_bytes = 2;
+}
+message GitDiffResult {
+  string diff = 1;
+  bool truncated = 2;
+  uint64 observed_bytes = 3;
+}
+
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
 // Every envelope is still length-delimited by the host (u32 big-endian).
 // Fields here carry data only, NEVER a permission token or host path.
