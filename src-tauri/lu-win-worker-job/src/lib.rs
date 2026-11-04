@@ -12,6 +12,8 @@
 pub mod file_guard;
 /// Audited security descriptor and time custody; all FFI remains native.
 pub mod metadata_guard;
+/// Owned headed-browser visibility via native Win32 HWND custody.
+pub mod browser_window;
 
 use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, ptr};
 
