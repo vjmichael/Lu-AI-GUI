@@ -1,0 +1,77 @@
+name: Lu TOOLS-05 native schema validation
+on:
+  push:
+    branches:
+      - lu/tools-05-schema-validation-20261104
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux real JSON Schema and adversarial Protobuf
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify committed tracked source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Compile standard JSON Schema library and exercise native validation
+        run: cargo test --manifest-path src-tauri/lu-core/Cargo.toml --test native_schema_validation -- --nocapture
+      - name: Resolve both Cargo dependency graphs for exact lockfile reconciliation
+        if: always()
+        shell: bash
+        run: |
+          cargo metadata --manifest-path src-tauri/lu-core/Cargo.toml --format-version 1 >/dev/null
+          cargo metadata --manifest-path lu-desktop/src-tauri/Cargo.toml --format-version 1 >/dev/null
+      - name: Emit Cargo-generated locks for authenticated repository reconciliation
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          for path, token in [
+              ("src-tauri/lu-core/Cargo.lock", "LU_CORE_CARGO_LOCK"),
+              ("lu-desktop/src-tauri/Cargo.lock", "LU_DESKTOP_CARGO_LOCK"),
+          ]:
+              with open(path, "rb") as file:
+                  encoded = base64.b64encode(file.read()).decode("ascii")
+              print(token + "_BEGIN")
+              for i in range(0, len(encoded), 2000):
+                  print(token + "_DATA:" + encoded[i:i+2000])
+              print(token + "_END")
+          PY
+      - name: Upload Cargo-generated lockfiles as evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tools05-cargo-locks
+          path: |
+            src-tauri/lu-core/Cargo.lock
+            lu-desktop/src-tauri/Cargo.lock
+          retention-days: 7
+
+  windows:
+    name: Windows real JSON Schema and adversarial Protobuf
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify committed tracked source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Compile standard JSON Schema and exercise native validation
+        run: cargo test --manifest-path src-tauri/lu-core/Cargo.toml --test native_schema_validation -- --nocapture
