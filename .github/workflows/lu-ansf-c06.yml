@@ -1,0 +1,30 @@
+name: Lu ANSF C06 Rust FTS5 bridge
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/ansf_cognitum_bridge.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'src-tauri/lu-core/tests/ansf_cognitum_bridge.rs'
+      - '.github/workflows/lu-ansf-c06.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ansf-c06:
+    name: "Rust ANSF (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo test current-revision FTS5 Rust bridge
+        run: cargo test --manifest-path src-tauri/lu-core/Cargo.toml --test ansf_cognitum_bridge
+      - name: Cargo test immutable ANSF revision semantics
+        run: cargo test --manifest-path src-tauri/lu-core/Cargo.toml --test ansf_revisions
