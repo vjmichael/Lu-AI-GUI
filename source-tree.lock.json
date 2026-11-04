@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "2fd3f2b0d3249c7b6a4f63c37e5a99725e9f282f",
-  "trackedFileCount": 293,
+  "trackedFileCount": 294,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -665,7 +665,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "1cae268c832890c7fbed27e4325b95ab487a4684"
+      "blob": "e954603812ff1593c6ee6cd9cc169d2d4d3deb00"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -822,6 +822,10 @@
     {
       "path": "src-tauri/lu-core/src/web_research_planner.rs",
       "blob": "6ea26c260d84172668fda668d8bad845507c9d9d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_search_openalex.rs",
+      "blob": "62931947288eea19758d84aa3ff9f7055ad21fa5"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
