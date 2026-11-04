@@ -166,8 +166,13 @@ impl DesktopBrowserHost {
     pub fn status(&self,preferences:&BrowserPreferences)->Result<BrowserRuntimeView,String>{
         let mode=preferences.visibility()
             .map_err(|e|format!("browser preferences unavailable: {e:?}"))?;
-        let running=self.session.lock().map_err(|_|"browser supervisor lock poisoned")?
-            .is_some();
+        let mut session=self.session.lock()
+            .map_err(|_|"browser supervisor lock poisoned")?;
+        if session.as_mut().is_some_and(|worker|!worker.is_alive()){
+            session.take(); // crash recovery closes stale worker ownership
+        }
+        let running=session.is_some();
+        drop(session);
         let package_available=self.packaged_components_present();
         let launch_ready=self.package_verified();
         let reason=if launch_ready{
