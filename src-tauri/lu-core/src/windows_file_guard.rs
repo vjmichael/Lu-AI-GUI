@@ -5,5 +5,6 @@ pub use lu_win_worker_job::file_guard::{inspect_open_file, WindowsFileIdentity};
 
 /// Safe, handle-only security/time prepublication checks.
 pub use lu_win_worker_job::metadata_guard::{
-    SecurityMetadataSnapshot,snapshot_metadata,check_source_metadata,prepare_stage_metadata
+    SecurityMetadataSnapshot,snapshot_metadata,check_source_metadata,prepare_stage_metadata,
+    no_write_lease
 };
