@@ -696,6 +696,62 @@ mod tests {
     }
 
     #[test]
+    fn read_only_undo_review_requires_verified_backup_and_unchanged_published_file() {
+        let path = temp();
+        let original = b"{\"version\":1}\n";
+        let edited = b"{\"version\":2}\n";
+        fs::write(path.join("notes.json"), original).unwrap();
+        let root = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
+        let id = "g-undo-preview-test-00001";
+        commit_in_dir(&root, "notes.json", id,
+            &sha(original), edited, &sha(b"reviewed"), StopPoint::Never).unwrap();
+        let preview = inspect_rollback_candidate(&root, "notes.json", id).unwrap();
+        assert_eq!(preview.current_text.as_bytes(), edited);
+        assert_eq!(preview.restore_text.as_bytes(), original);
+        assert_eq!(preview.original_sha256, sha(original));
+        assert_eq!(preview.replacement_sha256, sha(edited));
+        assert_eq!(
+            inspect_rollback_candidate(&root, "different.json", id),
+            Err(EditCommitError::InvalidRecoveryRecord)
+        );
+        assert!(root.symlink_metadata("different.json").is_err());
+        fs::write(path.join("notes.json"), b"{\"version\":3}\n").unwrap();
+        assert_eq!(
+            inspect_rollback_candidate(&root, "notes.json", id),
+            Err(EditCommitError::SourceConflict)
+        );
+        fs::write(path.join("notes.json"), edited).unwrap();
+        fs::write(path.join(sidecar(id, "orig")), b"{\"version\":0}\n").unwrap();
+        assert_eq!(
+            inspect_rollback_candidate(&root, "notes.json", id),
+            Err(EditCommitError::InvalidRecoveryRecord)
+        );
+        assert_eq!(fs::read(path.join("notes.json")).unwrap(), edited);
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn undo_review_does_not_consume_the_original_or_create_a_second_effect() {
+        let path = temp();
+        fs::write(path.join("memo.md"), b"Before\n").unwrap();
+        let root = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
+        let id = "g-undo-preview-memo-00001";
+        commit_in_dir(&root, "memo.md", id, &sha(b"Before\n"), b"After\n",
+            &sha(b"reviewed"), StopPoint::Never).unwrap();
+        let one = inspect_rollback_candidate(&root, "memo.md", id).unwrap();
+        let two = inspect_rollback_candidate(&root, "memo.md", id).unwrap();
+        assert_eq!(one, two);
+        assert_eq!(one.current_text, "After\n");
+        assert_eq!(one.restore_text, "Before\n");
+        assert_eq!(fs::read(path.join("memo.md")).unwrap(), b"After\n");
+        assert_eq!(fs::read(path.join(sidecar(id, "orig"))).unwrap(), b"Before\n");
+        assert!(!path.join(sidecar(id, "rollback-meta")).exists());
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn source_conflict_and_invalid_json_cannot_publish() {
         let path = temp();
         fs::write(path.join("t.json"), b"{\"a\":1}").unwrap();
