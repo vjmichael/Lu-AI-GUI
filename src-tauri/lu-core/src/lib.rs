@@ -62,6 +62,7 @@ pub mod model_turn_journal;
 pub mod multimodal_http;
 pub mod multimodal_saved_turn;
 pub mod native_file_extra;
+pub mod native_git_inspect;
 pub mod native_files;
 pub mod native_atomic_write;
 pub mod native_create_new;
