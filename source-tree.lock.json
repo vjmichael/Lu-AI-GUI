@@ -1037,7 +1037,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_git_inspect.rs",
-      "blob": "8acc904ce6b1d2213a49e87a2760ad4f6046f7d5"
+      "blob": "d934256b2c28c28698363a6ccf518e8dc5d5841c"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
