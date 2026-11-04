@@ -54,3 +54,14 @@ test('desktop registers scoped browser model tools only after native consent and
   assert.ok(host.includes('tools.take()'));
   assert.ok(!host.includes('fn lu_browser_execute('));
 });
+
+test('host internal model calls use only the active trusted turn and read-only catalog',()=>{
+  assert.ok(host.includes('async fn dispatch_authenticated_browser_model_call('));
+  assert.ok(host.includes('task.chat_id!=chat_id||task.user_turn_id!=user_turn_id'));
+  assert.ok(host.includes('task.execution_scope_id.clone()'));
+  assert.ok(host.includes('allowed.insert("lu_browser_read".into())'));
+  assert.ok(host.includes('tools.model_catalog.encode_call('));
+  assert.ok(host.includes('tools.registry.dispatch(invocation,&BrowserReadOnlyPolicy).await'));
+  assert.ok(host.includes('tools.model_catalog.decode_result('));
+  assert.ok(!host.includes('fn lu_browser_execute('));
+});
