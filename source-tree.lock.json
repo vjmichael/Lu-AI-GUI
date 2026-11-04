@@ -1169,7 +1169,7 @@
     },
     {
       "path": "src-tauri/lu-core/workers/lu_browser_worker.mjs",
-      "blob": "bf1087152213baa7aea0fce129ab4142de74ba79"
+      "blob": "91298da20057449e4818430c4034f753c027b57a"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
@@ -1193,7 +1193,7 @@
     },
     {
       "path": "tests/lu-browser-worker.test.mjs",
-      "blob": "ef61ae4e474bb55906266017360fc5755d0c3d88"
+      "blob": "e58b61e94ace8467b2879c41fd78498290b40c52"
     },
     {
       "path": "tests/source-identity.test.mjs",
