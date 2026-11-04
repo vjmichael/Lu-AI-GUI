@@ -90,3 +90,7 @@ Windows-specific existing-file transaction safety guard added: opened-handle 128
 
 ## CI accepted checkpoint — WRITE-01E.4C.1
 The conservative Windows opened-handle guard passed exact implementation commit `8eb7fa51`: Lu Desktop CI `41773702637`, REPO-01 `41773702703`, WIN-LOAD `41773702696`, all successful. This is a development CI milestone only; Windows installed-app, metadata preservation, noncooperating-race CAS and power-loss safety remain open. FFI is isolated to `lu-win-worker-job`; Lu Core forbids unsafe. Continue from this branch/draft PR #5 rather than regenerating another independent file-edit implementation.
+
+
+## WRITE-01E.4C.2 handoff
+On branch `lu/write-01e-approved-edit-gate-20261103`, the Windows opened-file ID is now captured by the native picker, compared to the pinned directory entry, committed in the v2 review hash persisted to the existing SQLite approval ledger, and bound to a selected-ID-only native tool registration. The executor verifies the same selected ID before its journaled intent and before publishing; an unbound Windows tool refuses effects. The separate rollback selects a fresh current ID and verifies it across preview, host confirmation, and native commit. Windows adversarial tests cover same-content substitutions between selection and dispatch and native-entry identity checks. Keep PR #5 draft, alpha.2 unchanged; verify exact CI before calling this stage accepted. ACL/ADS metadata preservation, noncooperating-editor CAS and directory/power-loss semantics remain open.
