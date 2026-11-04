@@ -77,11 +77,35 @@ struct EditManifest {
     original_sha256: String,
     replacement_sha256: String,
     approval_sha256: String,
+    /// Hash of Win32 owner/group/DACL plus creation time, not raw ACL data.
+    /// Legacy manifests without this evidence are not promoted on Windows.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    native_metadata_sha256: Option<String>,
 }
 
 fn sha(bytes: &[u8]) -> String { format!("{:x}", Sha256::digest(bytes)) }
 fn valid_sha(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+/// Windows recovery must have native metadata evidence. A legacy Windows
+/// manifest without the witness remains available for manual custody review,
+/// but cannot be automatically classified as verified.
+fn valid_native_metadata_sha(value:Option<&str>)->bool {
+    #[cfg(windows)]
+    {value.is_some_and(valid_sha)}
+    #[cfg(not(windows))]
+    {value.is_none()}
+}
+#[cfg(windows)]
+fn native_metadata_sha(file:&std::fs::File)->Result<String,EditCommitError> {
+    let metadata=crate::windows_file_guard::snapshot_metadata(file)
+        .map_err(|_|EditCommitError::UnsafeTarget)?;
+    Ok(sha(&metadata.immutable_identity_bytes()))
+}
+#[cfg(windows)]
+fn matches_native_metadata(root:&Dir,target:&str,digest:&str)->bool {
+    let Ok(file)=root.open(target) else {return false;};
+    native_metadata_sha(&file.into_std()).is_ok_and(|sha|sha==digest)
 }
 fn valid_id(value: &str) -> bool {
     (16..=128).contains(&value.len()) &&
@@ -204,7 +228,8 @@ fn read_manifest(root: &Dir, id: &str) -> Result<EditManifest, EditCommitError> 
         .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
     if manifest.schema != 1 || manifest.edit_id != id ||
         !filename(&manifest.target) || !valid_sha(&manifest.original_sha256) ||
-        !valid_sha(&manifest.replacement_sha256) || !valid_sha(&manifest.approval_sha256) {
+        !valid_sha(&manifest.replacement_sha256) || !valid_sha(&manifest.approval_sha256) ||
+        !valid_native_metadata_sha(manifest.native_metadata_sha256.as_deref()) {
         return Err(EditCommitError::InvalidRecoveryRecord);
     }
     Ok(manifest)
@@ -275,6 +300,12 @@ fn commit_in_dir_selected(
         original_sha256: baseline_sha.into(),
         replacement_sha256: sha(replacement),
         approval_sha256: approval_sha.into(),
+        native_metadata_sha256:{
+            #[cfg(windows)]
+            {Some(sha(&original_metadata.immutable_identity_bytes()))}
+            #[cfg(not(windows))]
+            {None}
+        },
     };
     let manifest_data = serde_json::to_vec(&manifest)
         .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
@@ -473,6 +504,8 @@ struct RollbackManifest {
     target: String,
     prior_sha256: String,
     restore_sha256: String,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    native_metadata_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -507,7 +540,8 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
     };
     if m.schema != 1 || m.rollback_id != id || !valid_id(&m.original_edit_id) ||
         !filename(&m.target) || !valid_sha(&m.prior_sha256) ||
-        !valid_sha(&m.restore_sha256) {
+        !valid_sha(&m.restore_sha256) ||
+        !valid_native_metadata_sha(m.native_metadata_sha256.as_deref()) {
         return RollbackObservation::ChangedOrDamaged;
     }
     let Ok(original_manifest) = read_manifest(root, &m.original_edit_id) else {
@@ -657,6 +691,12 @@ fn rollback_with_stop_selected(
         schema: 1, rollback_id: rollback_id.into(),
         original_edit_id: original_edit_id.into(), target: target.into(),
         prior_sha256: expected_current.into(), restore_sha256: expected_restored.into(),
+        native_metadata_sha256:{
+            #[cfg(windows)]
+            {Some(sha(&original_metadata.immutable_identity_bytes()))}
+            #[cfg(not(windows))]
+            {None}
+        },
     };
     let meta_bytes = serde_json::to_vec(&rollback_meta)
         .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
