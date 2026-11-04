@@ -184,6 +184,12 @@ export class BrowserSession {
       return {status:'RESUMED',url:this.page.url(),windowVisibility:this.windowVisibility};
     }
     if (this.paused) throw new BrowserGateError('NEEDS_HUMAN');
+    // Browser input may never continue on a redirect, popup or document
+    // outside the trusted origin grants. Context.route is a second,
+    // independent network fence; current-page checks protect interaction.
+    if (!['navigate','show_browser','hide_browser'].includes(op)) {
+      approvedUrl(this.page.url(),this.origins);
+    }
     if (op === 'show_browser') {
       await this.#setWindowVisibility('VISIBLE');
       return {status:'VISIBLE',windowVisibility:this.windowVisibility};
