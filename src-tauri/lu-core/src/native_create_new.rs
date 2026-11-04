@@ -49,6 +49,10 @@ impl ToolAuthorizer for ExactCreateNewPolicy<'_> {
             || format!("{:x}", Sha256::digest(&request.data)) != self.expected_sha256 {
             return Err(AuthorizationError::new("create-new target or bytes differ from approval"));
         }
+        let content = std::str::from_utf8(&request.data)
+            .map_err(|_| AuthorizationError::new("requested write was not UTF-8"))?;
+        crate::write_format::identify_text_format(&request.relative_path, content)
+            .map_err(|_| AuthorizationError::new("unsupported or malformed text format"))?;
         self.host_policy.authorize(invocation, descriptor)
     }
 }
@@ -88,6 +92,14 @@ impl NativeTool for CreateNewTool {
             {
                 return Err(ToolFailure::new("BAD_ARGUMENTS", "invalid create-new target or size", false));
             }
+            let content = std::str::from_utf8(&request.data)
+                .map_err(|_| ToolFailure::new(
+                    "INVALID_TEXT", "create-new text tool only accepts UTF-8", false
+                ))?;
+            crate::write_format::identify_text_format(&request.relative_path, content)
+                .map_err(|_| ToolFailure::new(
+                    "INVALID_TEXT_FORMAT", "filename and UTF-8 content failed text-format admission", false
+                ))?;
             let call_id = invocation.call_id;
             tokio::task::spawn_blocking(move || {
                 let receipt = create_new_atomic(
