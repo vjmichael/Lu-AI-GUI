@@ -121,7 +121,7 @@ pub async fn inspect_selected_json_with_receipt(
     let call = catalog.encode_call(
         &permitted, MODEL_NAME, turn_id, Some(&scope_id),
         &serde_json::json!({
-            "path": file_name,
+            "path": file_name.clone(),
             "max_bytes": MAX_JSON_INSPECTION_BYTES,
         }).to_string(),
     ).map_err(|e| format!("JSON inspection arguments invalid: {e:?}"))?;
