@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "118c01a698af7d3b044aaecdc15cce5b64f98222",
-  "trackedFileCount": 273,
+  "trackedFileCount": 274,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "4c480aa6439e031ec85b1492ce66d37db176eb2d"
+      "blob": "a905bee49a0f1ac1658924dcdb13525f3f51e632"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "e1deb78513e0d451e85eb9bb68027fe9aea3f69b"
+      "blob": "41ac20136ed1af493cc2ec18c32473ac722f1d5b"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/WRITE_01E_DURABLE_EDIT_TRANSACTION_20261103.md",
-      "blob": "4e23318cfcc634fb2d718bfa5451575e4f2d8096"
+      "blob": "8c0637a004f75a5e93a82d89ce2ed73a576ae1d8"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -769,7 +769,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
-      "blob": "18ee764fdf2eb2c60e12fbb12495028572b821ff"
+      "blob": "1ddeaeee28b1787f05119dc1fbf157ca4f15c156"
     },
     {
       "path": "src-tauri/lu-core/src/wire.rs",
@@ -1088,8 +1088,12 @@
       "blob": "6b13f31db384ca06d403a58f4c1235e44e57e746"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/file_guard.rs",
+      "blob": "36c92bccf9569840bdfa35a37daddc1e61ee6fee"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "d00c9ee9fbc041a7dee01bd12d591555b309a6a5"
+      "blob": "c38c150c1458dea7e111f909fce2ac2899d3ec35"
     },
     {
       "path": "tests/source-identity.test.mjs",
