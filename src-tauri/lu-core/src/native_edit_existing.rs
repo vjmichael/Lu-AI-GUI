@@ -1596,6 +1596,28 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_tampered_prepublication_seal_cannot_validate_a_matching_file() {
+        let path=temp();
+        fs::write(path.join("notes.md"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let id="g-win-publish-seal-tamper-001";
+        commit_in_dir(&root,"notes.md",id,&sha(b"before"),
+            b"after",&sha(b"reviewed"),StopPoint::Never).unwrap();
+        assert_eq!(observe_edit(&root,id),EditObservation::ReplacementAndBackupVerified);
+        let seal_path=path.join(sidecar(id,"seal"));
+        let mut value:serde_json::Value=serde_json::from_slice(
+            &fs::read(&seal_path).unwrap()).unwrap();
+        value["native_file_id"]=serde_json::Value::String("0".repeat(48));
+        fs::write(&seal_path,serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(observe_edit(&root,id),EditObservation::ChangedOrDamaged);
+        assert_eq!(inspect_rollback_candidate(&root,"notes.md",id),
+            Err(EditCommitError::InvalidRecoveryRecord));
+        assert_eq!(fs::read(path.join("notes.md")).unwrap(),b"after");
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_legacy_manifest_without_security_witness_fails_closed() {
         let path=temp();
         fs::write(path.join("notes.md"),b"before").unwrap();
