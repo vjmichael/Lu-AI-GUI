@@ -190,7 +190,38 @@ async fn real_tesseract_engine_acceptance_when_host_provisioned() {
             }.encode_to_vec(),
         },
     };
-    let result=r.dispatch(invocation,&Allow).await.expect("real Tesseract must run");
+    let result=match r.dispatch(invocation,&Allow).await {
+        Ok(result)=>result,
+        Err(error)=>{
+            // CI-only controlled synthetic fixture diagnostics. Lu never
+            // returns raw backend stderr from a real user's image.
+            #[cfg(windows)]
+            {
+                use std::process::{Command,Stdio};
+                use std::io::Write;
+                let executable=std::env::var_os("LU_OCR_TEST_TESSERACT").unwrap();
+                let tessdata=std::env::var_os("LU_OCR_TEST_TESSDATA").unwrap();
+                let mut cmd=Command::new(executable);
+                cmd.arg("stdin").arg("stdout").arg("--tessdata-dir")
+                    .arg(tessdata).arg("-l").arg("eng").arg("--psm").arg("6")
+                    .arg("tsv").env_clear().env("OMP_THREAD_LIMIT","1")
+                    .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+                if let Some(sysroot)=std::env::var_os("SystemRoot"){
+                    cmd.env("SystemRoot",sysroot);
+                }
+                let mut child=cmd.spawn().expect("debug trusted OCR command");
+                let mut stdin=child.stdin.take().unwrap();
+                let bytes=png_fixture().image_bytes;
+                let write=std::thread::spawn(move || stdin.write_all(&bytes));
+                let output=child.wait_with_output().expect("debug trusted OCR output");
+                eprintln!("WINDOWS OCR DIAG (SYNTHETIC fixture only) status={:?}, stderr={:?}, stdout_len={}, write={:?}",
+                    output.status.code(),
+                    String::from_utf8_lossy(&output.stderr).chars().take(800).collect::<String>(),
+                    output.stdout.len(),write.join().ok());
+            }
+            panic!("real Tesseract must run: {error:?}");
+        }
+    };
     let decoded=proto::OcrFallbackResult::decode(result.payload.bytes.as_slice()).unwrap();
     assert_eq!(decoded.image_ref,"image-20261104-1");
     assert_eq!(decoded.method,"ocr_fallback");
