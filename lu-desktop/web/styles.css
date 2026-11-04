@@ -94,3 +94,31 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .readProposalCard p { margin: 0; overflow-wrap: anywhere; }
 .readProposalCard small { opacity: .85; overflow-wrap: anywhere; }
 .readProposalCard .settingsActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* WRITE-01C: bounded review of all proposed bytes and explicit destination. */
+.writeProposalCard .writePreview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  max-height: 320px;
+  padding: 12px;
+  margin: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border, #57616d);
+  user-select: text;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+.writeProposalCard .writeTarget,
+.writeRecoveryRow .writeTarget {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 12px;
+}
+.writeRecoveryRow {
+  border-top: 1px solid var(--border, #57616d);
+  padding: 8px 0;
+  display: grid;
+  gap: 4px;
+}
