@@ -76,11 +76,16 @@ impl BrowserOriginScope {
         Ok(Self{approved})
     }
     pub fn allows(&self,url:&str)->bool {
-        let Ok(parsed)=url::Url::parse(url) else{return false;};
-        parsed.scheme()=="https" && parsed.username().is_empty()
-          && parsed.password().is_none()
-          && parsed.port_or_known_default()==Some(443)
-          &&self.approved.contains(&parsed.origin().ascii_serialization())
+        if url.len()>2048||url.chars().any(char::is_control)||url.contains('\\'){
+            return false;
+        }
+        let Some(remainder)=url.strip_prefix("https://") else{return false;};
+        let host=remainder.split(&['/','?','#'][..]).next().unwrap_or("");
+        // Restrict to ASCII hostnames under an exact host grant. This is
+        // intentionally narrower than a full URL parser: no credentials,
+        // ports, IDNA aliases, percent-escaped authority, or IP addresses.
+        if !valid_origin(&format!("https://{host}")){return false;}
+        self.approved.contains(&format!("https://{host}"))
     }
     pub fn origins(&self)->Vec<String>{self.approved.iter().cloned().collect()}
 }
