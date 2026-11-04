@@ -30,8 +30,11 @@ function App() {
   const [images, setImages] = useState([]);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
+  const [modelLoadTrace, setModelLoadTrace] = useState(null);
+  const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -80,6 +83,34 @@ function App() {
     const timer = setInterval(() => setModelLoadSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [working, activity]);
+  useEffect(() => {
+    if (!(working && activity.startsWith('Loading'))) {
+      setModelLoadTrace(null);
+      setLastHostLoadReply(0);
+      return;
+    }
+    let mounted = true;
+    let pending = false;
+    async function sampleHost() {
+      if (pending) return; // One outstanding probe; no unbounded request buildup.
+      pending = true;
+      try {
+        const trace = await invoke('lu_load_diagnostics');
+        if (mounted) {
+          setModelLoadTrace(trace);
+          setLastHostLoadReply(Date.now());
+        }
+      } catch {
+        // A failed probe is not proof of a GPU or WebView deadlock.
+        if (mounted) setLastHostLoadReply(0);
+      } finally {
+        pending = false;
+      }
+    }
+    sampleHost();
+    const timer = setInterval(sampleHost, 1500);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
 
   async function refreshCatalog() {
@@ -122,7 +153,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -141,7 +172,12 @@ function App() {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
     }).then(fn => { if (alive) stopToken = fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); };
+    listen('lu-read-proposal', e => {
+      const proposal = e.payload;
+      if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
+      setReadProposals(prev => ({...prev, [proposal.proposalId]: proposal}));
+    }).then(fn => { if (alive) stopReadProposal = fn; else fn(); });
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -297,6 +333,65 @@ function App() {
       });
     // Cancellation only targets this conversation's generation ID.
   }
+  async function inspectSelectedTextFile() {
+    if (working || chatBusy) return;
+    let targetId = chatId;
+    if (!targetId) {
+      try {
+        const newChat = await invoke('lu_new_chat');
+        targetId = newChat.chatId;
+        currentChat.current = targetId;
+        setChatId(targetId);
+        await refreshChats();
+      } catch (error) { setError(String(error)); return; }
+    }
+    setError('');
+    try {
+      const result = await invoke('lu_inspect_text_file', {chatId: targetId});
+      if (result && currentChat.current === targetId) {
+        setHistory(await invoke('lu_history', {chatId: targetId}));
+        setActivity(result.truncated ? 'File inspected (first 64 KiB)' : 'File inspected');
+      }
+      if (result) await refreshChats();
+    } catch (error) {
+      setError(String(error));
+      await refreshChats().catch(() => {});
+      if (currentChat.current === targetId)
+        setHistory(await invoke('lu_history', {chatId: targetId}).catch(() => []));
+    }
+  }
+
+  async function reviewReadProposal(proposal) {
+    try {
+      const result = await invoke('lu_approve_read_proposal', {
+        chatId: proposal.chatId, proposalId: proposal.proposalId
+      });
+      if (result) {
+        await refreshChats();
+        if (currentChat.current === proposal.chatId)
+          setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+        setActivity(result.truncated ? 'Approved native read completed (truncated)' : 'Approved native read completed');
+      }
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      // The host consumes a proposal on selection, cancellation or rejection.
+      setReadProposals(prev => {
+        const next = {...prev}; delete next[proposal.proposalId]; return next;
+      });
+    }
+  }
+  async function rejectReadProposal(proposal) {
+    try {
+      await invoke('lu_dismiss_read_proposal', {
+        chatId: proposal.chatId, proposalId: proposal.proposalId
+      });
+    } catch (error) { setError(String(error)); }
+    setReadProposals(prev => {
+      const next = {...prev}; delete next[proposal.proposalId]; return next;
+    });
+  }
+
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
@@ -508,7 +603,7 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed · {lastHostLoadReply && Date.now() - lastHostLoadReply < 5000 ? 'Host responding' : 'Host response pending'}{modelLoadTrace?.loading && modelLoadTrace.events?.length > 0 ? ' · ' + modelLoadTrace.events[modelLoadTrace.events.length - 1].phase.replaceAll('_', ' ') : ''}</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
@@ -557,6 +652,23 @@ function App() {
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
         {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>}
+        {Object.values(readProposals).filter(proposal => proposal.chatId === chatId).map(proposal =>
+          <section key={proposal.proposalId} className="readProposalCard" role="group"
+            aria-label="Model proposed file read">
+            <strong>Lu requests a file read</strong>
+            <p>{proposal.purpose}</p>
+            <small>Requested filename: {proposal.fileName} · Up to {proposal.maxBytes} bytes.
+              This request has no authorization until you select the matching file.</small>
+            <div className="settingsActions">
+              <button type="button" className="primaryButton" onClick={() => reviewReadProposal(proposal)}>
+                Choose and approve file
+              </button>
+              <button type="button" className="subtleButton" onClick={() => rejectReadProposal(proposal)}>
+                Deny
+              </button>
+            </div>
+          </section>
+        )}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
@@ -576,6 +688,7 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>

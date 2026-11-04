@@ -3,10 +3,14 @@
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
 mod generation_queue;
+mod load_trace;
+mod native_host_read;
+mod read_proposal;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
+use load_trace::{LoadTrace, LoadTraceView};
 use lu_core::{
     inference_bridge::BridgeError,
     inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
@@ -151,9 +155,14 @@ struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
     chats: ChatStore,
+    read_proposals: read_proposal::ReadApprovalQueue,
+    _owner: lu_core::desktop_owner::DesktopOwner,
+    effects: lu_core::journal::EffectJournal,
+    read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
+    load_trace: Arc<Mutex<LoadTrace>>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
 }
 
@@ -369,6 +378,24 @@ impl DesktopState {
     fn new(app: &AppHandle) -> Result<Self, String> {
         let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        // Establish process-exclusive ownership before touching recoverable
+        // journals; no second live Lu may mark its effects UNCERTAIN.
+        let owner = lu_core::desktop_owner::DesktopOwner::acquire(
+            &root.join("desktop-owner.sqlite")
+        ).map_err(|e| format!("Lu app data directory already in use or unavailable: {e:?}"))?;
+        let effects = lu_core::journal::EffectJournal::open(
+            &root.join("native-effects.sqlite")
+        ).map_err(|e| format!("effect journal unavailable: {e:?}"))?;
+        let approvals = lu_core::read_approval_ledger::ReadApprovalLedger::open(
+            &root.join("read-approvals.sqlite")
+        ).map_err(|e| format!("approval journal unavailable: {e:?}"))?;
+        // All old owners are excluded. Interrupted actions are never retried;
+        // these remain auditable, not executable grants.
+        effects.reconcile_interrupted()
+            .map_err(|e| format!("native effect startup reconciliation: {e:?}"))?;
+        approvals.reconcile_pending()
+            .map_err(|e| format!("read approval startup reconciliation: {e:?}"))?;
+
         let models_dir = root.join("lu-models");
         fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
         let engine_dir = app
@@ -408,6 +435,10 @@ impl DesktopState {
                 projectors.push((record.model_ref.clone(), projector));
             }
         }
+        // Observer is constructed before the supervisor so its engine callback
+        // can report real child lifecycle events without acquiring engine locks.
+        let load_trace = Arc::new(Mutex::new(LoadTrace::default()));
+        let engine_trace = Arc::clone(&load_trace);
         let supervisor = TrustedInferenceSupervisor::new(
             "llama-vulkan".into(),
             4096,
@@ -416,6 +447,7 @@ impl DesktopState {
                 let mut raw = [0u8; 32];
                 OsRng.fill_bytes(&mut raw);
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
+                let engine_trace_for_load = Arc::clone(&engine_trace);
                 PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(ENGINE_SHA256)?,
@@ -424,6 +456,11 @@ impl DesktopState {
                     startup_timeout: Duration::from_secs(180),
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
+                    load_observer: Some(Arc::new(move |phase, pid| {
+                        if let Ok(mut trace) = engine_trace_for_load.lock() {
+                            trace.record_engine(phase, None, pid);
+                        }
+                    })),
                 })
             },
         )
@@ -437,9 +474,14 @@ impl DesktopState {
             models_dir,
             catalog_path,
             chats: ChatStore::open(&root)?,
+            read_proposals: read_proposal::ReadApprovalQueue::default(),
+            _owner: owner,
+            effects,
+            read_approval_ledger: approvals,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
+            load_trace,
             supervisor: Arc::new(supervisor),
         })
     }
@@ -663,30 +705,65 @@ fn lu_release_image(
     Ok(images.remove(&image_ref).is_some())
 }
 
+/// A diagnostic snapshot can be polled while the blocking engine load runs.
+/// It does not query the engine, acquire the model catalog lock, or expose paths.
+#[tauri::command]
+fn lu_load_diagnostics(state: State<'_, Arc<DesktopState>>) -> Result<LoadTraceView, String> {
+    let trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+    Ok(trace.snapshot())
+}
+
 #[tauri::command]
 async fn lu_load_model(
     state: State<'_, Arc<DesktopState>>,
     model_ref: String,
 ) -> Result<String, String> {
     let state = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        if state.generation_queue.has_jobs() {
-            return Err("Finish or cancel queued generations before loading a model".into());
+    // Register immediately, before spawn_blocking. The UI can distinguish a
+    // responsive host from a stalled engine with lu_load_diagnostics.
+    {
+        let mut trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+        trace.begin(next_id("load-"), model_ref.clone()).map_err(str::to_owned)?;
+    }
+    let worker_state = Arc::clone(&state);
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| {
+            if worker_state.generation_queue.has_jobs() {
+                return Err("Finish or cancel queued generations before loading a model".into());
+            }
+            let catalog = worker_state.catalog.lock().map_err(|_| "catalog poisoned")?;
+            if !catalog.iter().any(|m| m.model_ref == model_ref) {
+                return Err("unknown model".into());
+            }
+            drop(catalog);
+            {
+                let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+                trace.record("catalog_verified", None);
+            }
+            {
+                let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
+                trace.record("supervisor_enter", None);
+            }
+            let session_id = next_id("s-");
+            worker_state
+                .supervisor
+                .load(&model_ref, session_id.clone(), &next_id("req-"))
+                .map_err(|e| format!("model load failed: {e:?}"))?;
+            Ok(session_id)
+        })();
+        // Do not propagate raw engine diagnostics through the trace. The
+        // original Result still returns to the invoking user.
+        if let Ok(mut trace) = worker_state.load_trace.lock() {
+            trace.finish(if result.is_ok() { "ok" } else { "error" });
         }
-        let catalog = state.catalog.lock().map_err(|_| "catalog poisoned")?;
-        if !catalog.iter().any(|m| m.model_ref == model_ref) {
-            return Err("unknown model".into());
+        result
+    }).await;
+    if joined.is_err() {
+        if let Ok(mut trace) = state.load_trace.lock() {
+            trace.finish("worker_join_error");
         }
-        drop(catalog);
-        let session_id = next_id("s-");
-        state
-            .supervisor
-            .load(&model_ref, session_id.clone(), &next_id("req-"))
-            .map_err(|e| format!("model load failed: {e:?}"))?;
-        Ok(session_id)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
+    joined.map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn lu_unload_model(
@@ -781,7 +858,7 @@ async fn lu_generate(
             .enqueue(&session_id, &chat_id, &generation_id)?;
     // Durable user journal before acknowledgment, including queued prompts.
     // Ticket drop releases the queue on any error before worker dispatch.
-    state.chats.append_user(&chat_id, &prompt)?;
+    state.chats.append_user_with_turn_id(&chat_id, &generation_id, &prompt)?;
     let queued = GenerationEvent {
         chat_id: chat_id.clone(),
         generation_id: generation_id.clone(),
@@ -913,6 +990,33 @@ async fn lu_generate(
                 Ok(()) => {
                     state.chats.append_progress(&chat_id, &gid, &answer)?;
                     state.chats.complete(&chat_id, &gid)?;
+                    // Only the completed model output (not frontend strings,
+                    // retrieved documents or a partial stream) may propose
+                    // a read. Staging is inert; execution requires a separate
+                    // native-picker selection by the human.
+                    let proposal_id = next_id("p-");
+                    if let Ok(proposal) = state.read_proposals.stage(
+                        &proposal_id, &chat_id, &gid, &answer,
+                    ) {
+                        // Persist host-bound intent BEFORE displaying a usable
+                        // proposal card. No persistent record grants action.
+                        if state.read_approval_ledger.stage(
+                            &proposal_id, &chat_id, &gid,
+                            &proposal.file_name, proposal.max_bytes,
+                        ).is_ok() {
+                            let _ = app.emit("lu-read-proposal", ReadProposalEvent {
+                                chat_id: chat_id.clone(),
+                                proposal_id,
+                                file_name: proposal.file_name,
+                                purpose: proposal.purpose,
+                                max_bytes: proposal.max_bytes,
+                            });
+                        } else {
+                            let _ = state.read_proposals.dismiss_for_conversation(
+                                &proposal_id, &chat_id,
+                            );
+                        }
+                    }
                     Ok(answer)
                 }
                 Err(error) => {
@@ -963,6 +1067,138 @@ struct ChatListView {
     chats: Vec<ChatSummary>,
     folders: Vec<ChatFolder>,
 }
+/// Explicit user-initiated OS dialog. The WebView cannot supply a path,
+/// task grant, scope or model-generated approval.
+#[tauri::command]
+async fn lu_inspect_text_file(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+) -> Result<Option<native_host_read::InspectedFile>, String> {
+    let state = Arc::clone(state.inner());
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("Text and source files", &[
+                "txt", "md", "rs", "js", "jsx", "ts", "tsx", "json",
+                "toml", "yaml", "yml", "py", "log", "csv",
+            ])
+            .blocking_pick_file()
+            .map(|file| file.into_path().map_err(|e| e.to_string()))
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("file picker failed: {e}"))??;
+    let Some(selected) = selected else { return Ok(None) };
+    let turn_id = next_id("g-");
+    let result = native_host_read::inspect_selected_file_with_receipt(
+        &state.chats, &chat_id, &turn_id, &selected, 64 * 1024,
+        Some(&state.effects),
+    ).await?;
+    Ok(Some(result))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadProposalEvent {
+    chat_id: String,
+    proposal_id: String,
+    file_name: String,
+    purpose: String,
+    max_bytes: u32,
+}
+
+/// User approval is not a WebView-provided Boolean. The only approval path
+/// opens a trusted OS picker, matches its selected filename to the exact
+/// model proposal, and performs a separately granted native read.
+#[tauri::command]
+async fn lu_approve_read_proposal(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<Option<native_host_read::InspectedFile>, String> {
+    let state = Arc::clone(state.inner());
+    let origin = state
+        .read_proposals
+        .origin_for_conversation(&proposal_id, &chat_id)
+        .map_err(|e| format!("proposal unavailable: {e:?}"))?;
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file()
+            .add_filter("Text and source files", &[
+                "txt", "md", "rs", "js", "jsx", "ts", "tsx",
+                "json", "toml", "yaml", "yml", "py", "log", "csv",
+            ])
+            .blocking_pick_file()
+            .map(|item| item.into_path().map_err(|e| e.to_string()))
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("approval picker failed: {e}"))??;
+    let Some(selected) = selected else {
+        let record = state.read_approval_ledger.get(&proposal_id)
+            .map_err(|e| format!("approval record unavailable: {e:?}"))?
+            .ok_or("unknown approval record")?;
+        state.read_approval_ledger.decide(
+            &proposal_id, &chat_id, &origin, &record.file_name,
+            record.max_bytes, lu_core::read_approval_ledger::ReadDecision::Denied,
+        ).map_err(|e| format!("approval denial not recorded: {e:?}"))?;
+        state.read_proposals.dismiss_for_conversation(&proposal_id, &chat_id)
+            .map_err(|e| format!("dismissal failed: {e:?}"))?;
+        return Ok(None);
+    };
+    let approved = match state.read_proposals.approve_selected(
+        &proposal_id, &chat_id, &origin, &selected,
+    ) {
+        Ok(approved) => approved,
+        Err(error) => {
+            // The in-memory proposal was consumed: record a denial if the
+            // trusted ledger still names this exact originating task.
+            if let Ok(Some(record)) = state.read_approval_ledger.get(&proposal_id) {
+                let _ = state.read_approval_ledger.decide(
+                    &proposal_id, &chat_id, &origin, &record.file_name,
+                    record.max_bytes, lu_core::read_approval_ledger::ReadDecision::Denied,
+                );
+            }
+            return Err(format!("selected file differs from requested read: {error:?}"));
+        }
+    };
+    // Only the host may commit this user decision; a replayed/modified
+    // proposal cannot pass the atomic pending-to-approved transition.
+    state.read_approval_ledger.decide(
+        &proposal_id, &chat_id, &origin, &approved.file_name,
+        approved.max_bytes, lu_core::read_approval_ledger::ReadDecision::Approved,
+    ).map_err(|e| format!("approval not durably committed: {e:?}"))?;
+    let turn_id = next_id("g-");
+    state.read_approval_ledger.link_effect(
+        &proposal_id, &chat_id, &origin, &turn_id,
+    ).map_err(|e| format!("approved effect identity not persisted: {e:?}"))?;
+    native_host_read::inspect_selected_file_with_receipt(
+        &state.chats, &chat_id, &turn_id, &selected, u64::from(approved.max_bytes),
+        Some(&state.effects),
+    ).await.map(Some)
+}
+
+#[tauri::command]
+fn lu_dismiss_read_proposal(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<(), String> {
+    let origin = state.read_proposals.origin_for_conversation(&proposal_id, &chat_id)
+        .map_err(|e| format!("proposal unavailable: {e:?}"))?;
+    let record = state.read_approval_ledger.get(&proposal_id)
+        .map_err(|e| format!("approval record unavailable: {e:?}"))?
+        .ok_or("unknown approval record")?;
+    state.read_approval_ledger.decide(
+        &proposal_id, &chat_id, &origin, &record.file_name,
+        record.max_bytes, lu_core::read_approval_ledger::ReadDecision::Denied,
+    ).map_err(|e| format!("proposal denial not recorded: {e:?}"))?;
+    state.read_proposals
+        .dismiss_for_conversation(&proposal_id, &chat_id)
+        .map_err(|e| format!("proposal dismissal: {e:?}"))
+}
+
 #[tauri::command]
 fn lu_chats(state: State<'_, Arc<DesktopState>>) -> Result<ChatListView, String> {
     let (chats, folders) = state.chats.list()?;
@@ -1051,9 +1287,13 @@ pub fn run() {
             lu_ingest_image_data_url,
             lu_release_image,
             lu_load_model,
+            lu_load_diagnostics,
             lu_unload_model,
             lu_cancel,
             lu_generate,
+            lu_inspect_text_file,
+            lu_approve_read_proposal,
+            lu_dismiss_read_proposal,
             lu_history,
             lu_chats,
             lu_new_chat,

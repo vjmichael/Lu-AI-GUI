@@ -48,6 +48,7 @@ fn run() -> Result<(), String> {
                 startup_timeout: Duration::from_secs(120),
                 request_timeout: Duration::from_secs(180),
                 api_key: api_key.clone(),
+                load_observer: None,
             })
         },
     )

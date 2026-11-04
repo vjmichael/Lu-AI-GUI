@@ -25,6 +25,7 @@ use std::{
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
+    sync::Arc,
 };
 
 /// Values originate from a host-controlled engine manifest and configuration;
@@ -37,6 +38,8 @@ pub struct PersistentEngineConfig {
     pub startup_timeout: Duration,
     pub request_timeout: Duration,
     pub api_key: String,
+    /// Host observer receives only known stage and operating-system PID.
+    pub load_observer: Option<Arc<dyn Fn(&'static str, Option<u32>) + Send + Sync>>,
 }
 
 pub struct PersistentLlamaBackend {
@@ -132,6 +135,11 @@ impl PersistentLlamaBackend {
             job: None,
         })
     }
+    fn observe(&self, phase: &'static str, pid: Option<u32>) {
+        if let Some(observer) = self.config.load_observer.as_ref() {
+            observer(phase, pid);
+        }
+    }
     pub fn pid(&self) -> Option<u32> {
         self.process.as_ref().map(Child::id)
     }
@@ -150,9 +158,11 @@ impl PersistentLlamaBackend {
     fn wait_ready(&mut self, deadline: Instant, port: u16) -> Result<(), String> {
         loop {
             if !self.is_running() {
+                self.observe("engine_exited_before_ready", self.pid());
                 return Err("persistent llama.cpp engine exited during model loading".into());
             }
             if Instant::now() >= deadline {
+                self.observe("engine_health_timeout", self.pid());
                 return Err("persistent GGUF model load timed out".into());
             }
             let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
@@ -169,6 +179,7 @@ impl PersistentLlamaBackend {
                     let mut status = String::new();
                     if reader.read_line(&mut status).is_ok() && status.starts_with("HTTP/1.1 200 ")
                     {
+                        self.observe("engine_health_200", self.pid());
                         return Ok(());
                     }
                 }
@@ -291,9 +302,12 @@ impl InferenceBackend for PersistentLlamaBackend {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            // CREATE_SUSPENDED | CREATE_NO_WINDOW: no uncontained child code
-            // executes before we put the process into a kill-on-close Job.
-            command.creation_flags(0x0800_0000 | 0x0000_0004);
+            // CREATE_NO_WINDOW only. The std::process::Child interface does
+            // not expose the suspended primary thread handle needed to resume.
+            // Job assignment immediately follows spawn, before health probing.
+            // This has a short assignment race: lifetime supervision, NOT a
+            // security sandbox or a claim of race-free containment.
+            command.creation_flags(0x0800_0000);
         }
         // Establish the lifetime guard before launching the engine. If the
         // process cannot enter the Job, kill and reap it rather than running an
@@ -304,7 +318,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         #[allow(unused_mut)]
         let mut child = command.spawn().map_err(|e| e.to_string())?;
         #[cfg(windows)]
-        if let Err(error) = job.assign_and_resume_suspended(&child) {
+        if let Err(error) = job.assign(&child) {
             let _ = child.kill();
             let _ = child.wait();
             return Err(format!("cannot contain Lu engine child: {error}"));
@@ -314,6 +328,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             self.job = Some(job);
         }
         self.process = Some(child);
+        self.observe("engine_spawned", self.pid());
         self.pinned_model_file = Some(file);
         self.pinned_projector_file = projector_file;
         self.port = Some(port);
@@ -448,6 +463,7 @@ mod tests {
             startup_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             api_key: "ab".repeat(32),
+            load_observer: None,
         };
         let mut backend = PersistentLlamaBackend::new(config).unwrap();
         let image = crate::multimodal_saved_turn::PinnedImage {
@@ -468,6 +484,33 @@ mod tests {
         );
         assert!(result.unwrap_err().contains("MMProj"));
     }
+    #[test]
+    fn observer_receives_only_phase_and_pid() {
+        use std::sync::Mutex;
+        let executable = std::env::current_exe().unwrap();
+        let digest: [u8; 32] = Sha256::digest(std::fs::read(&executable).unwrap()).into();
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let destination = Arc::clone(&captured);
+        let observer: Arc<dyn Fn(&'static str, Option<u32>) + Send + Sync> =
+            Arc::new(move |phase, pid| destination.lock().unwrap().push((phase, pid)));
+        let backend = PersistentLlamaBackend::new(PersistentEngineConfig {
+            executable,
+            expected_sha256: digest,
+            threads: NonZeroUsize::new(2).unwrap(),
+            context_tokens: 4096,
+            startup_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(5),
+            api_key: "ab".repeat(32),
+            load_observer: Some(observer),
+        }).unwrap();
+        backend.observe("engine_spawned", Some(1234));
+        backend.observe("engine_health_200", Some(1234));
+        assert_eq!(&*captured.lock().unwrap(), &[
+            ("engine_spawned", Some(1234)),
+            ("engine_health_200", Some(1234)),
+        ]);
+    }
+
     #[test]
     fn refuses_unsigned_engine_identity() {
         assert!(verify_engine(Path::new("missing"), &[0u8; 32]).is_err());
