@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "77fdc8c25c5e28f905f2759418da2b0449c09435",
+  "sourceCommitBeforeLock": "b42b2e5597b61156562d49d8e655ee98e5c25d27",
   "trackedFileCount": 278,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "562e643854b51cba9618ebe53b23fc0ca5b4abc0"
+      "blob": "82cde3c64c3bdb171c03ed01f6385b1be0abea93"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -773,7 +773,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "97397b2772ad93dcd18198be87d70867a42ca13e"
+      "blob": "330c46f0b7ee4dc4ee1e7642f27f66f6888c3785"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
@@ -1069,7 +1069,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/supervised_native_turn.rs",
-      "blob": "9890e9fef6b1e820522c73458ece5ffde2aed4dd"
+      "blob": "017f1a2504aa576611921f43728a0d794e05157c"
     },
     {
       "path": "src-tauri/lu-core/tests/supervisor_dynamic_catalog.rs",
