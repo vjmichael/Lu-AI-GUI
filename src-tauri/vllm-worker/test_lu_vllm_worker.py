@@ -58,6 +58,21 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("abort_ack_unverified", [x["event"] for x in self.events])
         self.assertIn("finished", [x["event"] for x in self.events])
 
+    async def test_native_abort_plus_empty_engine_reports_verified_stop(self):
+        class VerifiedEngine(FakeEngine):
+            def get_num_unfinished_requests(self):
+                return 0 if self.terminated.is_set() else 1
+        self.engine=VerifiedEngine()
+        self.worker.engine=self.engine
+        await self.worker.handle({"op": "generate", "id": "req_1",
+                                  "prompt": "hello", "max_new_tokens": 30})
+        await asyncio.sleep(0.01)
+        await self.worker.handle({"op": "abort", "id": "req_1"})
+        await asyncio.sleep(0.01)
+        self.assertIn("abort_verified_empty_engine",
+                      [x["event"] for x in self.events])
+        self.assertEqual(self.engine.aborted, ["req_1"])
+
     async def test_status_explicitly_does_not_claim_scheduler_verification(self):
         await self.worker.handle({"op": "status", "id": "req_1"})
         self.assertIs(self.events[-1]["independent_scheduler_verified"], False)
