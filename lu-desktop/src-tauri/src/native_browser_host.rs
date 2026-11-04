@@ -8,6 +8,9 @@ use lu_core::{
     browser_preferences::BrowserPreferences,
     browser_worker_supervisor::{OwnedBrowserWorker,BrowserLaunchConfig,BrowserOperation},
     browser_chromium_launcher::launch_owned_headed_chromium,
+    browser_authorized_execution::{BrowserOriginScope,execute_authorized_browser_operation},
+    conversation_authority::{ConversationAuthority,BoundCallOrigin},
+    contracts::{ToolAuthorizer,ToolInvocation},
 };
 use serde::Serialize;
 use std::{
@@ -241,6 +244,28 @@ impl DesktopBrowserHost {
             *owned=Some(worker);
             Ok(())
         }
+    }
+    /// Internal model-tool dispatch. The host scheduler supplies the
+    /// immutable task, invocation and previously approved origin scope.
+    /// The WebView never gets a general-purpose browser execute command.
+    #[allow(dead_code)]
+    pub(crate) fn execute_authorized(
+        &self,
+        authority:&ConversationAuthority,
+        origin:&BoundCallOrigin,
+        invocation:&ToolInvocation,
+        host_policy:&dyn ToolAuthorizer,
+        scope:&BrowserOriginScope,
+        operation:BrowserOperation,
+        arguments:serde_json::Value,
+    )->Result<serde_json::Value,String>{
+        let mut session=self.session.lock()
+            .map_err(|_|"browser supervisor lock poisoned")?;
+        let worker=session.as_mut().ok_or("No browser worker is running")?;
+        execute_authorized_browser_operation(
+            authority,origin,invocation,host_policy,scope,
+            worker,operation,arguments
+        ).map_err(|e|format!("browser task rejected: {e:?}"))
     }
     pub fn stop(&self)->Result<bool,String>{
         let mut session=self.session.lock()
