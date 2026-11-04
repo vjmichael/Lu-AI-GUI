@@ -624,7 +624,8 @@ mod tests {
         }).collect();
         let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
         assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
-        assert_eq!(results.iter().filter(|r| **r == Err(EditCommitError::SourceConflict)).count(), 1);
+        assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
+        assert!(results.iter().any(|r| r.as_ref().err() == Some(&EditCommitError::SourceConflict)));
         let final_bytes = fs::read(path.join("t.txt")).unwrap();
         assert!(final_bytes == b"first" || final_bytes == b"second");
         drop(root);
