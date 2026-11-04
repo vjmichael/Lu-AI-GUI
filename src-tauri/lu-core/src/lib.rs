@@ -38,6 +38,7 @@ pub mod cpu_topology;
 pub mod cross_chat_reference;
 pub mod diagnostic_contract;
 pub mod diagnostic_localization;
+pub mod dlc_interop;
 pub mod durable;
 pub mod export_contract;
 pub mod gguf_preflight;
@@ -128,6 +129,10 @@ pub use conversation_authority::{
     TrustedUserTurnVerifier,
 };
 pub use core_extension::{CoreExtensionError, CoreExtensionHost};
+pub use dlc_interop::{
+    decode_dlc_frame, encode_dlc_frame, validate_dlc_frame, DlcAdmission,
+    DlcAdmittedRequest, DlcInteropError, DlcPermission, DLC_PROTOCOL_VERSION,
+};
 pub use durable::DurableDispatcher;
 pub use host_resource_authority::{
     AuthorizedResource, HostPrincipal, HostResourceAuthority, ResourceAction, ResourceDenial,
