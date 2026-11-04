@@ -29,6 +29,7 @@ if(createHash('sha256').update(manifestBytes).digest('hex')!==expected)
 const manifest=JSON.parse(manifestBytes.toString('utf8'));
 if(manifest.schema!==1||manifest.runtime!=='lu-browser'||
    manifest.status!=='reviewed'||manifest.playwrightVersion!=='1.64.1'||
+   manifest.platform!==process.platform||manifest.arch!==process.arch||
    !Array.isArray(manifest.files)||manifest.files.length<4)
   throw Error('Unsupported or incomplete browser package manifest');
 const required=process.platform==='win32'
