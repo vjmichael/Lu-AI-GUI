@@ -87,3 +87,6 @@ Development remains on `lu/write-01e-approved-edit-gate-20261103` / draft PR #5,
 
 ## WRITE-01E.4C.1 handoff
 Windows-specific existing-file transaction safety guard added: opened-handle 128-bit FileId/volume checks, hardlink/ADS/reparse/special-attribute refusal, identity comparison from original edit/rollback through the final prepublish barrier, and guarded recovery manifest reads. GitHub Windows CI has dedicated native tests, including identity substitution with identical bytes. It is a conservative fail-closed implementation; it does not preserve arbitrary ACLs or make the last check-and-rename atomic to non-cooperating writers. Check the exact new source lock and CI before promotion. The accepted alpha is still frozen; PR #5 remains in draft.
+
+## CI accepted checkpoint — WRITE-01E.4C.1
+The conservative Windows opened-handle guard passed exact implementation commit `8eb7fa51`: Lu Desktop CI `41773702637`, REPO-01 `41773702703`, WIN-LOAD `41773702696`, all successful. This is a development CI milestone only; Windows installed-app, metadata preservation, noncooperating-race CAS and power-loss safety remain open. FFI is isolated to `lu-win-worker-job`; Lu Core forbids unsafe. Continue from this branch/draft PR #5 rather than regenerating another independent file-edit implementation.
