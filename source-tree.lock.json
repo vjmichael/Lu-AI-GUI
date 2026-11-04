@@ -917,7 +917,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/document_preferences.rs",
-      "blob": "19e07bccd70bf2e63cfc56e255e8544e67f8079c"
+      "blob": "11cdf445466c03845a25b27ba118f3372c6431e7"
     },
     {
       "path": "src-tauri/lu-core/tests/durable_dispatch.rs",
