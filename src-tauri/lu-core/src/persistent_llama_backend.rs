@@ -159,12 +159,10 @@ impl PersistentLlamaBackend {
     /// inside HTTP streaming, this thread can kill a Lu-owned child even if
     /// the generating thread becomes blocked in the backend.
     fn run_with_watchdog<T>(
-        &mut self,
+        child: Arc<Mutex<Child>>,
         cancellation: &Cancellation,
         request: impl FnOnce() -> Result<T, String>,
     ) -> Result<T, String> {
-        let child = self.process.as_ref().cloned()
-            .ok_or_else(|| "llama.cpp worker is not loaded".to_owned())?;
         let completed = Arc::new(AtomicBool::new(false));
         let completed_for_thread = Arc::clone(&completed);
         let cancellation = cancellation.clone();
@@ -420,7 +418,8 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured image request".to_string())?;
         let mut piece = 0u32;
-        let result = self.run_with_watchdog(cancel, || generate_chat_stream_body(
+        let child = self.process.as_ref().cloned().ok_or("llama.cpp worker is not loaded")?;
+        let result = Self::run_with_watchdog(child, cancel, || generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -459,7 +458,8 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut piece = 0u32;
-        let result = self.run_with_watchdog(cancel, || generate_chat_stream_body(
+        let child = self.process.as_ref().cloned().ok_or("llama.cpp worker is not loaded")?;
+        let result = Self::run_with_watchdog(child, cancel, || generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
