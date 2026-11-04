@@ -172,7 +172,7 @@ impl ResearchPlanner {
 mod tests {
     use super::*;
     #[test]
-    fn 180_results_are_discovered_not_verified_and_doi_variants_deduplicate() {
+    fn many_results_are_discovered_not_verified_and_doi_variants_deduplicate() {
         let mut planner=ResearchPlanner::open(Path::new(":memory:")).unwrap();
         for i in 0..180 {
             assert!(planner.discover_doi(&format!("10.1234/study{i}"),&format!("s{i}"),
