@@ -1532,7 +1532,7 @@ fn lu_write_recovery(
         let effect = effect_state
             .map(|state|format!("{:?}",state))
             .unwrap_or_else(|| "NOT_STARTED".into());
-        let observed_target = match record.selected_target.as_deref() {
+        let observed_target: String = match record.selected_target.as_deref() {
             Some(t) if current_documents.as_ref().is_some_and(|folder|
                 folder.join(&record.file_name).to_string_lossy().as_ref() == t) =>
                 native_host_write::inspect_recovery_target(
