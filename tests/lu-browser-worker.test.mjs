@@ -188,3 +188,39 @@ test('lost native visibility acknowledgement times out closed', async () => {
   assert.equal(await bridge.setVisible({visible:false}),false);
   bridge.close();
 });
+
+test('trusted loopback CDP attaches to one native-owned headed browser without relaunch',async()=>{
+  let connected=0,launched=0;
+  const page={url:()=> 'https://archive.example/record'};
+  const context={route:async()=>{},pages:()=>[page]};
+  const controller=nativeWindow();
+  const provider={
+    connectOverCDP:async endpoint=>{
+      assert.equal(endpoint,'http://127.0.0.1:41007');
+      connected++;
+      return {contexts:()=>[context],close:async()=>{}};
+    },
+    launchPersistentContext:async()=>{launched++;throw Error('Must not relaunch');}
+  };
+  const worker=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/owned/profile',
+    cdpEndpoint:'http://127.0.0.1:41007',chromiumProvider:provider,
+    windowController:controller
+  });
+  const ready=await worker.start();
+  assert.equal(ready.windowVisibility,'HIDDEN');
+  assert.equal(connected,1);
+  assert.equal(launched,0);
+  assert.deepEqual(controller.calls.map(x=>x.visible),[false]);
+  await worker.close();
+});
+test('rejects non-loopback CDP targets and remote-debugging websocket injections',()=>{
+  for(const url of ['http://192.168.1.4:9222','https://127.0.0.1:9222',
+    'http://localhost:9222','http://127.0.0.1:9222/path',
+    'http://127.0.0.1:9222@evil.example']) {
+    assert.throws(()=>new BrowserSession({
+      origins:['https://archive.example'],profileDirectory:'/trusted/profile',
+      cdpEndpoint:url
+    }),e=>e.code==='UNTRUSTED_CDP_ENDPOINT');
+  }
+});
