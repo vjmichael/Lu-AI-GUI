@@ -583,6 +583,30 @@ mod tests {
         let _ = owned.wait();
     }
     #[test]
+    fn slot_verification_requires_one_real_idle_slot() {
+        for (json, expected) in [
+            (r#"[{"id":0,"is_processing":false}]"#,true),
+            (r#"[{"id":0,"is_processing":true}]"#,false),
+            (r#"[{"id":0,"is_processing":false},{"id":1,"is_processing":false}]"#,false),
+            (r#"[{"id":0,"is_processing":"false"}]"#,false),
+        ] {
+            let listener=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();
+            let port=listener.local_addr().unwrap().port();
+            let payload=json.to_string();
+            let handler=thread::spawn(move || {
+                let (mut conn,_) = listener.accept().unwrap();
+                conn.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                let mut buf=[0u8;1024];
+                let n=conn.read(&mut buf).unwrap();
+                assert!(buf[..n].starts_with(b"GET /slots HTTP/1.1"));
+                let response=format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",payload.len(),payload);
+                conn.write_all(response.as_bytes()).unwrap();
+            });
+            assert_eq!(PersistentLlamaBackend::slots_idle(port,&"ab".repeat(32)),expected);
+            handler.join().unwrap();
+        }
+    }
+    #[test]
     fn api_key_requires_full_host_entropy() {
         assert!(!valid_api_key("1234"));
         assert!(valid_api_key(&"0a".repeat(32)));
