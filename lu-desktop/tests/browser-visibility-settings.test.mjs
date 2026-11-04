@@ -38,9 +38,9 @@ test('runtime status and stop are host-owned, and no unpinned Chromium launches'
   assert.ok(ui.includes("invoke('lu_browser_runtime_status')"));
   assert.ok(ui.includes("invoke('lu_browser_stop')"));
   assert.ok(ui.includes('disabled={!browserRuntime?.running}'));
-  assert.ok(browserHost.includes('CHROMIUM_PIN:Option<ComponentPin>=None'));
-  assert.ok(browserHost.includes('NODE_PIN:Option<ComponentPin>=None'));
-  assert.ok(browserHost.includes('PLAYWRIGHT_PIN:Option<ComponentPin>=None'));
+  assert.ok(browserHost.includes('EMBEDDED_BROWSER_MANIFEST'));
+  assert.ok(browserHost.includes('manifest.status!="reviewed"'));
+  assert.ok(browserHost.includes('pin_matches(&dir.join(&file.path),&file.sha256,file.bytes)'));
   assert.ok(browserHost.includes('Lu browser runtime unavailable: missing reviewed, pinned package'));
   assert.ok(!host.includes('fn lu_browser_navigate('));
 });
