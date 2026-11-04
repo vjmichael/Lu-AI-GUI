@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "6cb55326d6e9a7c7e39671376c0eff908413914a",
-  "trackedFileCount": 292,
+  "trackedFileCount": 293,
   "files": [
     {
       "path": ".github/workflows/lu-backend-control-01.yml",
@@ -677,7 +677,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "586de1930d0919753c8bb1f36de101ff5744e603"
+      "blob": "0d1fe2caf741e0d937b2577f99c666ffc9e40533"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -818,6 +818,10 @@
     {
       "path": "src-tauri/lu-core/src/vllm_control.rs",
       "blob": "671d08de050b5fff2fecbcc04636b7dc038df5af"
+    },
+    {
+      "path": "src-tauri/lu-core/src/vllm_process.rs",
+      "blob": "80b7b5efa27f220e023e45124bc7c2d0c1003527"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
