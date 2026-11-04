@@ -1172,6 +1172,7 @@ struct WriteRecoveryView {
     effect: String,
     effect_call_id: Option<String>,
     observed_target: String,
+    assessment: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1394,12 +1395,14 @@ fn lu_write_recovery(
     let records = state.write_approval_ledger.recent_for_chat(&chat_id)
         .map_err(|e| format!("write recovery unavailable: {e:?}"))?;
     records.into_iter().map(|record| {
-        let effect = if let Some(ref call_id) = record.effect_call_id {
+        let effect_state = if let Some(ref call_id) = record.effect_call_id {
             state.effects.get(call_id)
                 .map_err(|e| format!("effect receipt unavailable: {e:?}"))?
-                .map(|r| format!("{:?}", r.state))
-                .unwrap_or_else(|| "NOT_STARTED".into())
-        } else { "NOT_STARTED".into() };
+                .map(|r| r.state)
+        } else { None };
+        let effect = effect_state
+            .map(|state|format!("{:?}",state))
+            .unwrap_or_else(|| "NOT_STARTED".into());
         let observed_target = match record.selected_target.as_deref() {
             Some(t) if state.drafts_dir.join(&record.file_name)
                 .to_string_lossy().as_ref() == t =>
@@ -1408,6 +1411,17 @@ fn lu_write_recovery(
                 ).into(),
             _ => "NOT_SELECTED_OR_UNTRUSTED_PATH".into(),
         };
+        let observation = match observed_target.as_str() {
+            "MATCHES_APPROVED_BYTES" => lu_core::write_recovery::TargetObservation::Matching,
+            "MISSING" => lu_core::write_recovery::TargetObservation::Missing,
+            "DIFFERENT_BYTES" | "NOT_ORDINARY_FILE" =>
+                lu_core::write_recovery::TargetObservation::Different,
+            "NOT_READABLE" => lu_core::write_recovery::TargetObservation::Unavailable,
+            _ => lu_core::write_recovery::TargetObservation::NotChecked,
+        };
+        let assessment = lu_core::write_recovery::assess(
+            record.decision, effect_state, observation
+        ).label().to_owned();
         Ok(WriteRecoveryView {
             proposal_id: record.proposal_id,
             file_name: record.file_name,
@@ -1418,6 +1432,7 @@ fn lu_write_recovery(
             effect,
             effect_call_id: record.effect_call_id,
             observed_target,
+            assessment,
         })
     }).collect()
 }
