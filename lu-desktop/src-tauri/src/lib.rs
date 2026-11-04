@@ -1374,18 +1374,8 @@ fn lu_open_created_folder(
     let effect = state.effects.get(&call_id)
         .map_err(|e|format!("effect receipt unavailable: {e:?}"))?
         .ok_or("No verified file creation")?;
-    if effect.state != lu_core::journal::EffectState::Applied ||
-        effect.tool_id != lu_core::native_create_new::TOOL_ID {
-        return Err("File creation has not been verified".into());
-    }
-    let target = PathBuf::from(record.selected_target.ok_or("No approved destination")?);
-    if target.file_name().and_then(|x|x.to_str()) != Some(record.file_name.as_str()) {
-        return Err("Stored destination conflicts with approved file".into());
-    }
-    let folder = target.parent().ok_or("Stored destination has no folder")?;
-    if !lu_core::document_preferences::ordinary_directory(folder) {
-        return Err("Containing folder no longer exists or was replaced".into());
-    }
+    let folder = lu_core::document_preferences::verified_created_folder(&record, &effect)
+        .map_err(|e|format!("Stored file link is not verified: {e:?}"))?;
     #[cfg(windows)]
     let executable = "explorer.exe";
     #[cfg(target_os="linux")]
@@ -1396,7 +1386,7 @@ fn lu_open_created_folder(
     return Err("Opening containing folders unsupported on this platform".into());
     #[cfg(any(windows,target_os="linux",target_os="macos"))]
     {
-        std::process::Command::new(executable).arg(folder)
+        std::process::Command::new(executable).arg(&folder)
             .spawn().map_err(|e|format!("Could not open containing folder: {e}"))?;
         Ok(())
     }
