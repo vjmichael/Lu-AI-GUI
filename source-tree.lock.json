@@ -1177,7 +1177,7 @@
     },
     {
       "path": "tests/lu-browser-real.test.mjs",
-      "blob": "d43df7145e64d544d45a220dcf9d5506b9dc210b"
+      "blob": "01503bef057573778b6ed0cf230912578e1d4872"
     },
     {
       "path": "tests/lu-browser-worker.test.mjs",
