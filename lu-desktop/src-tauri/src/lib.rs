@@ -1889,6 +1889,13 @@ async fn lu_inspect_edit_recovery(
     let mut rollback_review_id=None;
     let rollback_preview = if receipt_verified &&
         observation == lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified {
+        #[cfg(windows)]
+        let identity_before_preview={
+            let opened=dir.open(&record.filename)
+                .map_err(|_|"native-selected rollback target unavailable")?.into_std();
+            lu_core::windows_file_guard::inspect_open_file(&opened)
+                .map_err(|_|"native-selected rollback target unsafe")?
+        };
         match lu_core::native_edit_existing::inspect_rollback_candidate(
             &dir, &record.filename, &call_id
         ) {
@@ -1920,8 +1927,12 @@ async fn lu_inspect_edit_recovery(
                 let selected_file_identity={
                     let file=dir.open(&record.filename)
                         .map_err(|_|"native reselected file is unavailable")?.into_std();
-                    lu_core::windows_file_guard::inspect_open_file(&file)
-                        .map_err(|_|"native reselected file identity is not safe")?
+                    let after=lu_core::windows_file_guard::inspect_open_file(&file)
+                        .map_err(|_|"native reselected file identity is not safe")?;
+                    if after!=identity_before_preview {
+                        return Err("file ID changed while reviewing rollback; select again".into());
+                    }
+                    after
                 };
                 let selected=rollback_review::SelectedRollback {
                     record:approval.clone(),directory:chosen.clone(),
