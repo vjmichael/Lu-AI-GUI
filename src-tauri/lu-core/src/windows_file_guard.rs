@@ -1,4 +1,4 @@
 //! Safe bridge to Lu's isolated Windows Win32 file-handle FFI.
 //! lu-core forbids unsafe code; Win32 ABI lives in lu-win-worker-job.
 #![cfg(windows)]
-pub(crate) use lu_win_worker_job::file_guard::{inspect_open_file, WindowsFileIdentity};
+pub use lu_win_worker_job::file_guard::{inspect_open_file, WindowsFileIdentity};
