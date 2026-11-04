@@ -72,6 +72,7 @@ pub mod persistent_llama_backend;
 pub mod platform_compute;
 pub mod policy;
 pub mod read_approval_ledger;
+pub mod write_approval_ledger;
 pub mod desktop_owner;
 pub mod privilege_guard;
 pub mod projector_identity;
