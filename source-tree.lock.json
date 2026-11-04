@@ -213,7 +213,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
-      "blob": "7a731688668e9f6cdcd8503a7ec65aed9a25b18f"
+      "blob": "be13c798ee8c0fc5c4dbeda8a9f5236d1087ba65"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
