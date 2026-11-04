@@ -188,5 +188,12 @@ async fn invalid_frames_scope_denial_and_missing_zip_are_rejected() {
     assert_eq!(data["error"]["code"],"PERMISSION_DENIED");
     assert_eq!(data["error"]["retryable"],false);
     assert_eq!(turn.step_count(),1);
+    // The registered archive inspector retains a pinned ZIP File. Linux
+    // permits unlinking an open file, while Windows does not. Release all
+    // native handles before removing this synthetic temporary repository.
+    drop(turn);
+    drop(auth);
+    drop(cat);
+    drop(reg);
     fs::remove_dir_all(root).unwrap();
 }
