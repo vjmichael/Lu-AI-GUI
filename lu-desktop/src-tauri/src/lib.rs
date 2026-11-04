@@ -10,6 +10,7 @@ mod write_proposal;
 mod native_host_write;
 mod edit_proposal;
 mod native_host_edit;
+mod rollback_review;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -164,6 +165,8 @@ struct DesktopState {
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
     edit_proposals: edit_proposal::EditProposalQueue,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
+    rollback_reviews: rollback_review::RollbackReviewQueue,
+    rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
@@ -409,6 +412,11 @@ impl DesktopState {
         ).map_err(|e| format!("edit approvals unavailable: {e:?}"))?;
         edit_approvals.reconcile_pending()
             .map_err(|e| format!("edit approval reconciliation failed: {e:?}"))?;
+        let rollback_approvals=lu_core::rollback_approval_ledger::RollbackApprovalLedger::open(
+            &root.join("rollback-approvals.sqlite")
+        ).map_err(|e|format!("rollback approvals unavailable: {e:?}"))?;
+        rollback_approvals.reconcile_pending()
+            .map_err(|e|format!("rollback review reconciliation failed: {e:?}"))?;
         // Native OS Documents, never a private Lu app-data folder. Windows
         // honors redirected Known Folder Documents; Linux honors XDG when
         // reported by Tauri's platform path resolver.
@@ -516,6 +524,8 @@ impl DesktopState {
             write_approval_ledger: write_approvals,
             edit_proposals: edit_proposal::EditProposalQueue::default(),
             edit_approval_ledger: edit_approvals,
+            rollback_reviews: rollback_review::RollbackReviewQueue::default(),
+            rollback_approval_ledger: rollback_approvals,
             documents_os_dir,
             document_preferences,
             _owner: owner,
@@ -1249,6 +1259,23 @@ struct EditRecoveryObservationView {
     assessment: String,
     rollback_preview: Option<RollbackPreviewView>,
     rollback_review_status: String,
+    rollback_review_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all="camelCase")]
+struct RollbackHistoryView {
+    review_id:String,
+    original_proposal_id:String,
+    original_edit_id:String,
+    file_name:String,
+    exact_target:String,
+    decision:String,
+    effect:String,
+    effect_call_id:Option<String>,
+    restored_sha256:String,
+    receipt_verified:bool,
+    assessment:String,
 }
 
 #[derive(Clone, Serialize)]
@@ -2055,6 +2082,9 @@ pub fn run() {
             lu_deny_edit_file,
             lu_edit_recovery,
             lu_inspect_edit_recovery,
+            lu_confirm_rollback,
+            lu_deny_rollback,
+            lu_rollback_history,
             lu_open_edited_folder,
             lu_history,
             lu_chats,
