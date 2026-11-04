@@ -32,6 +32,16 @@ Cognitum is the second useful integration experiment: it offers *mathematical, c
 
 Cognitum evidence / prior design: [Cognitum PR #61](https://github.com/vjmichael/cognitum/pull/61), [Lu issue #8](https://github.com/vjmichael/Lu-AI-GUI/issues/8), and Cognitum `docs/lu-dlc-ce-addenda.md`.
 
+## IDE DLC — advanced Git and GitHub CLI (`gh`) integration
+
+**Owner-confirmed 2026-11-04:** Basic local Git status/history/diff belong in **Lu Core v1.0** and remain exposed only for a relevant approved repository task. **Advanced code-development Git operations and GitHub platform workflows belong to the future IDE DLC**.
+
+- The IDE composes Core's native Git inspection with explicit development operations: branch/worktree management, staging, commits, reviewing changes, test/CI invocation and reviewed push/publish/rollback workflows.
+- The official GitHub CLI **`gh`** is a prospective standard external dependency for GitHub-specific actions: authenticate, inspect/create PRs and issues, view/run GitHub Actions, browse releases and GitHub APIs. Reference: https://cli.github.com/manual/ and https://cli.github.com/manual/gh_auth_login. The IDE should prefer the established official CLI rather than inventing its own GitHub protocol/credential handling.
+- `git` remains the local repository engine; `gh` is the GitHub service client. Network/API operations must have independent human-task grants (especially remote writes), correctly scoped GitHub credentials, current repository/branch identity, reviewed effects and auditable outcomes. Lu never supplies auth tokens to the LLM. Use native account/credential storage and a host-supervised process boundary.
+- This is **documented only**, no `gh` launcher, token request, GitHub connector or IDE-specific API is added to TOOLS-03. The GitHub website/repository is not Lu's sole development hub; local worktree operations remain first-class.
+- Validate exact installed `gh` version and source/provenance when implementing; user-friendly single-installer provisioning and opt-in sign-in, not manual mandatory CLI setup.
+
 ## Existing research versus shipping claims
 
 | Research/source evidence | What it demonstrates | What it does not prove |
