@@ -160,7 +160,7 @@ fn inspect(root: &Dir, request: proto::ArchiveListRequest)
             continue;
         }
         entries.push(proto::ArchiveEntry {
-            path: name,
+            path: name.into_owned(),
             kind: if directory { "directory" } else { "file" }.into(),
             compressed_bytes: compressed,
             declared_uncompressed_bytes: expanded,
