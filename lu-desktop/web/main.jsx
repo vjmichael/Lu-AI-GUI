@@ -31,6 +31,8 @@ function App() {
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
+  const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
+  const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
@@ -153,7 +155,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -177,7 +179,12 @@ function App() {
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
       setReadProposals(prev => ({...prev, [proposal.proposalId]: proposal}));
     }).then(fn => { if (alive) stopReadProposal = fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); };
+    listen('lu-write-proposal', e => {
+      const proposal = e.payload;
+      if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
+      setWriteProposals(prev => ({...prev, [proposal.proposalId]: proposal}));
+    }).then(fn => { if (alive) stopWriteProposal = fn; else fn(); });
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -390,6 +397,59 @@ function App() {
     setReadProposals(prev => {
       const next = {...prev}; delete next[proposal.proposalId]; return next;
     });
+  }
+
+  async function refreshWriteRecovery(targetChat = chatId) {
+    if (!targetChat) { setWriteRecovery([]); return; }
+    const records = await invoke('lu_write_recovery', {chatId: targetChat});
+    if (currentChat.current === targetChat) setWriteRecovery(records);
+  }
+  useEffect(() => {
+    if (chatId) refreshWriteRecovery(chatId).catch(() => setWriteRecovery([]));
+    else setWriteRecovery([]);
+  }, [chatId]);
+
+  async function reviewWriteDestination(proposal) {
+    setError('');
+    try {
+      const destination = await invoke('lu_review_write_destination', {
+        chatId: proposal.chatId, proposalId: proposal.proposalId
+      });
+      setWriteProposals(prev => ({
+        ...prev,
+        [proposal.proposalId]: {...prev[proposal.proposalId], destination}
+      }));
+    } catch (error) { setError(String(error)); }
+  }
+  async function confirmWrite(proposal) {
+    setError('');
+    try {
+      const written = await invoke('lu_confirm_write', {
+        chatId: proposal.chatId, proposalId: proposal.proposalId
+      });
+      await refreshChats();
+      if (currentChat.current === proposal.chatId)
+        setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+      setActivity('Created new file: ' + written.fileName);
+    } catch (error) { setError(String(error)); }
+    finally {
+      // The trusted host consumes the proposal exactly once, including on
+      // failure. Never retry a create automatically.
+      setWriteProposals(prev => {
+        const next = {...prev}; delete next[proposal.proposalId]; return next;
+      });
+      await refreshWriteRecovery(proposal.chatId).catch(() => {});
+    }
+  }
+  async function denyWrite(proposal) {
+    try {
+      await invoke('lu_deny_write', {
+        chatId: proposal.chatId, proposalId: proposal.proposalId
+      });
+      setWriteProposals(prev => {
+        const next = {...prev}; delete next[proposal.proposalId]; return next;
+      });
+    } catch (error) { setError(String(error)); }
   }
 
   async function send(e) {
@@ -669,6 +729,50 @@ function App() {
             </div>
           </section>
         )}
+        {Object.values(writeProposals).filter(p => p.chatId === chatId).map(proposal =>
+          <section key={proposal.proposalId} className="readProposalCard writeProposalCard"
+            role="group" aria-label="Review proposed new file">
+            <strong>Lu proposes creating a NEW file (no overwrite)</strong>
+            <p>{proposal.purpose}</p>
+            <small>Filename: {proposal.fileName} · {proposal.bytes} bytes · SHA-256: {proposal.sha256}</small>
+            <small>Review all proposed content before allowing creation:</small>
+            <pre className="writePreview">{proposal.content}</pre>
+            {proposal.destination ? <>
+              <strong>Exact reviewed destination</strong>
+              <code className="writeTarget">{proposal.destination.exactTarget}</code>
+              <small>Only this destination and these exact bytes may be created.
+                This approval is single-use and will not survive an interrupted attempt.</small>
+            </> : <small>Files are created only in Lu Drafts. Select Review destination to
+              display the exact local path before confirming. Nothing has been written.</small>}
+            <div className="settingsActions">
+              {!proposal.destination ?
+                <button type="button" className="primaryButton"
+                  onClick={() => reviewWriteDestination(proposal)}>Review exact destination</button> :
+                <button type="button" className="primaryButton"
+                  onClick={() => confirmWrite(proposal)}>Confirm create-new file</button>}
+              <button type="button" className="subtleButton"
+                onClick={() => denyWrite(proposal)}>Deny</button>
+            </div>
+          </section>
+        )}
+        {writeRecovery.length > 0 && <section className="readProposalCard"
+          aria-label="Write recovery records">
+          <strong>Write recovery and audit</strong>
+          <small>Read-only evidence from durable approval and effect journals.
+            Uncertain operations are not automatically retried.</small>
+          {writeRecovery.map(record =>
+            <div key={record.proposalId} className="writeRecoveryRow">
+              <strong>{record.fileName}</strong>
+              <small>Approval: {record.approval} · Effect: {record.effect} · {record.bytes} bytes</small>
+              {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
+              <small>SHA-256: {record.sha256}</small>
+            </div>
+          )}
+          <button type="button" className="subtleButton"
+            onClick={() => refreshWriteRecovery().catch(error => setError(String(error)))}>
+            Refresh recovery evidence
+          </button>
+        </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
