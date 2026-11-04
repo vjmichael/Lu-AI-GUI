@@ -714,3 +714,48 @@ fn recovery_observation_reports_missing_mismatched_and_untrusted_objects_without
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn model_file_proposals_choose_text_format_but_not_folder_authority() {
+    use write_proposal::WriteProposalQueue;
+    let proposals=WriteProposalQueue::default();
+    let json=r#"{"kind":"propose_create_file","file_name":"settings.json","purpose":"Store config","content":"{\"enabled\":true}"}"#;
+    let created=proposals.stage("pw-json","chat-a","g-authorized-model",json).unwrap();
+    assert_eq!(created.file_name,"settings.json");
+    assert_eq!(created.content,r#"{"enabled":true}"#);
+    assert!(proposals.take_confirmed_pinned("pw-json","chat-a").is_err(),
+        "model filename/format is never a folder or execution grant");
+    for (i,raw) in [
+        r#"{"kind":"propose_create_file","file_name":"bad.json","purpose":"data","content":"{bad}"}"#,
+        r#"{"kind":"propose_create_file","file_name":"picture.png","purpose":"image","content":"not really a png"}"#,
+        r#"{"kind":"propose_create_file","file_name":"malware.exe","purpose":"binary","content":"text"}"#,
+        r#"{"kind":"propose_create_file","file_name":"../out.txt","purpose":"escape","content":"text"}"#,
+    ].iter().enumerate() {
+        assert!(proposals.stage(&format!("pw-bad-{i}"),"chat-a","g-model",raw).is_err());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn host_review_keeps_selected_directory_identity_when_name_is_replaced() {
+    let root=temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chosen=root.join("chosen");
+    fs::create_dir_all(&chosen).unwrap();
+    let queue=write_proposal::WriteProposalQueue::default();
+    let raw=r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"Save notes","content":"# Notes"}"#;
+    queue.stage("pw-one","chat-a","generation-a",raw).unwrap();
+    let (_target,_generation,_proposal)=queue.choose_directory("pw-one","chat-a",&chosen).unwrap();
+    let moved=root.join("moved");
+    fs::rename(&chosen,&moved).unwrap();
+    fs::create_dir(&chosen).unwrap();
+    let (_origin,_path,pinned,proposal)=queue.take_confirmed_pinned("pw-one","chat-a").unwrap();
+    let receipt=lu_core::native_atomic_write::create_new_atomic_in_dir(
+        &pinned,&proposal.file_name,"g-user-created-0001",proposal.content.as_bytes()
+    ).unwrap();
+    assert_eq!(receipt.target,"notes.md");
+    assert_eq!(fs::read(moved.join("notes.md")).unwrap(),b"# Notes");
+    assert!(!chosen.join("notes.md").exists());
+    drop(pinned);
+    fs::remove_dir_all(root).unwrap();
+}
