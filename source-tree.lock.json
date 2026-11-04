@@ -733,7 +733,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_ocr_fallback.rs",
-      "blob": "d7fac9b3d66c9ceb27b08bdedef23b0410ba7588"
+      "blob": "ccb61de9744c562693af6ff0bcbca21bdd548352"
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
