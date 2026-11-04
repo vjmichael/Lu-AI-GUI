@@ -1,38 +1,58 @@
-# TOOLS-08 — Original Jan §7 host-owned loop guard
+# TOOLS-08 — Progress-aware tool and streaming generation loop prevention
 
-**2026-11-04. Scope:** internal Lu Core tool-turn safety and progression, not another model tool. **Primary design source:** [unaltered Jan-Mod-Design-Document.md](reference/Jan-Mod-Design-Document.md) §7 and [original-first merged native tool design](LU_NATIVE_TOOLS_MERGED_DESIGN.md) §4. This is a subordinate implementation and CI record.
+**Owner revision: 2026-11-04.** This is the authoritative review of TOOLS-08 on its development branch. **Design authority:** Owner's later explicit instruction supersedes the numeric-call and pattern-only heuristics in [original Jan §7](reference/Jan-Mod-Design-Document.md). Preserve Jan's **internal pre-dispatch guard** and Allow/Warn/Block/Kill concept, but **do not stop productive long tasks for calling a tool eight times, editing the same file repeatedly, or merely alternating tools**.
 
-## Original design audit and corrective interpretation
+## 1. Two loops, two detectors
 
-The original Jan design §7 replaces the old output-pattern breaker with a **structural check of actual tool calls before execution**. It requires:
-- A sliding **5-call history** per turn to detect exact same-tool/same-argument requests and **A → B → A → B → A** ping-pong.
-- Similar-argument warnings using **Jaccard similarity >0.7** after **3 prior calls to the same tool**, rather than blocking legitimate work with different arguments.
-- A separate **per-turn total-call counter** (original warn threshold **20**), and **graduated** actions Allow, Warn, Block and Kill; three consecutive blocks stop the turn.
-- Fixed, understandable model-feedback reasons; **no** execution on Block or Kill; preserve user progress and permissions.
+**Tool loops:** A validated tool request is compared with **host-observed results and verified mutation receipts** from previous calls. Lu must distinguish success/changed data from unchanged results, repeated errors, no-op edits and unverified effects. The model cannot declare its own progress.
 
-**Original sketch defect repaired intentionally:** §7.2 allocates a five-entry history but its pseudocode checks `recentCalls.length >= 20` instead of `totalCallsThisTurn >= 20`. That branch is unreachable. TOOLS-08 counts total attempts *separately*, including blocked proposals. Current native Lu turns independently allow **at most 8 calls** (existing `MAX_TOOL_STEPS`), so the default original 20-call warning cannot fire in a single native turn until the host changes that separate ceiling. We **do not** silently raise the ceiling or change Jan's default just to make the warning trigger. Unit tests prove the independent counter works at 20.
+**Generation/text loops:** The token stream needs its own host-side repetition guard. A stream can loop on the same words without making any tool call. The detector accumulates text across arbitrary chunk boundaries and interrupts only a **large exact repeated suffix** (at least 1 KiB and six copies of a period of at most 512 bytes); ordinary short repeated words are permitted. Existing per-generation max-new-token, bounded output, backend request deadline and cancellation remain separate protections. In Lu's current supervised GGUF adapter the detector runs **while chunks are emitted**, not after a giant response is assembled.
 
-## Implementation map
+## 2. Unlimited *productive* native calls, bounded resource exposure
 
-| Original intent | Lu Core native implementation |
+- **Removed** `MAX_TOOL_STEPS=8`, the old `ToolTurnError::StepLimit`, and `MAX_TOTAL_MODEL_GENERATIONS=(MAX_TOOL_STEPS+1)*3`. There is **no fixed count of allowed tool invocations** or supervised generations.
+- Tool calls still require exactly the same current-turn authority, effect-specific approval and durable journal. **Repetition is not authorization**; a different write/edit still must be individually permitted.
+- Host retains **30-minute foreground task deadline**, existing per-model-generation `max_new_tokens=512` default in this adapter, **64 KiB model-response and tool-feedback limits**, **128 KiB cumulative prompt limit**, bounded workers, per-operation cancellation and journal durability. The 30-minute duration is **not** a tool-call count; long background jobs need a deliberate checkpoint/continuation route instead of an infinite foreground request.
+- Progress should allow repeated operations on the **same file** if the *actual content hash changes*, including multiple independently approved append, replace, patch and edit transactions. The file path itself, operation name or fresh call ID is not a progress witness.
+- The original §7 setting `warn_threshold_total=20` is now obsolete **by explicit owner instruction**; call count is telemetry, not a stopping/warning condition. Original `window_size=5` is expanded to **8 recent observations** because the guard now checks results as well as call patterns.
+
+## 3. Actual progress evidence
+
+| Native result/effect | Progress classification |
 | --- | --- |
-| Structural per-turn guard | `src-tauri/lu-core/src/loop_guard.rs` holds `LoopGuard` on each **host-created `NativeToolTurn`**; never global to every conversation or model |
-| Stable argument fingerprint | Validated `serde_json` map serialized deterministically; SHA-256 digest. Jaccard similarity uses bounded hashed path/field/primitive tokens and cannot reveal raw arguments |
-| History and policy | Host-owned validated `LoopPolicy`, defaults Jan §7: window=5, warn same tool after 3 prior, total=20, block third exact, pingpong=true, similar >0.7, kill after 3 blocks |
-| Actual interception | `agent_tool_loop.rs` calls guard **after full model JSON + native codec validation**, **before** `dispatch_bound` or `dispatch_bound_durable`. The host's authority/effect journal are never entered for Block/Kill |
-| Allow | Existing native tool dispatch, current `ConversationAuthority`, policy and effect journal, unchanged |
-| Warn | Run the authorized native tool normally; add fixed host warning `_lu_loop_warning` inside successful result object; preserve outer strict `{ok,tool,result}` feedback |
-| Block | No dispatch, no journal effect; return valid typed model feedback `{ok:false, tool, error:{code:"LOOP_DETECTED", message, retryable:false}}`; consumes one step slot to prevent endless refusal messages |
-| Kill | Halt the current turn and return `ToolTurnError::LoopTerminated` (supervisor class `loop_terminated`), prohibit another model continuation or effect |
-| Sensitive data | Only fixed, enum-derived feedback; never reflect original tool parameters, file paths, credentials or raw model text in loop warning/error |
-| Existing tool ceilings | Independent `MAX_TOOL_STEPS=8` and bounded model JSON/SSE/MBRL remain in force, rather than being replaced |
-| Model-facing surface | **No** `lu_loop_guard` model tool, no tool catalog schema, no GUI control needed for correctness; host cannot be instructed by a document to disable guard |
+| Read or network read, successful and materially different stable result | `NewInformation` |
+| Repeated same result (ignoring transient timestamps/call IDs/duration fields) | `NoProgress` |
+| Any failed/denied operation | `NoProgress` (does not imply safe retry) |
+| Authorized write with a **committed typed before/after SHA-256 receipt** whose hashes differ | `StateChanged` |
+| Committed edit whose original and replacement hashes are identical | `NoProgress` |
+| Successful write without a verifiable state-change receipt | `Unverified` (never automatically assume progress) |
+| Executable, elevated, and other unsupported effects | `Unverified` pending effect-specific host receipts |
 
-The guard's history tracks **approved/attempted native proposals**; Block/Kill do not append calls, preserving the recognized pattern until a genuinely different request is tried. After an ordinary Allow/Warn, the consecutive-block counter resets. A new task turn starts with a fresh guard; a halted turn cannot continue.
+Read result fingerprints are bounded, **host-supplied** semantic JSON (unstable metadata removed) and tracked in a capped 512-entry ring. That catches duplicate content even when the model changes a search query or reads a different file. A read result's novelty is not proof that the overall user goal is finished; it is evidence the task learned something new.
 
-## Verification, remaining production gates
+A write receipt **must** come from the native trusted worker and existing durable effect authorization; model text, output from retrieved files or a fabricated JSON field cannot mint a state change. Current `native_edit_existing` already has typed before/after hashes; create-new has a separate create-only postcondition. **More effect-specific receipt adapters** are still needed for every model-facing write and DLC tool.
 
-- Real Linux/Windows Rust tests: exact third-call block and three-block termination; A/B alternation with distinct arguments; similarity warning without false blocking; independent 20-attempt counter; invalid policy; real file registry and bounded tool feedback; observer proves native dispatch not invoked on blocks; separate step cap survives; repeat history not shared across newly created turns.
-- Re-run existing `native_agent_tool_turn` and `supervised_native_turn` tests because these use the same dispatcher and model feedback. No Cargo dependency or lockfile changes.
-- **Durable reconstruction pending:** the `LoopGuard` in-memory history is not currently serialized into ANSF/task journals. A crashed/restarted turn must reconcile recent tool proposals and outcomes from host-owned durable records before authorizing continuation; otherwise conservative halt/review on recovery. This is a **release integration gate**, not a completed feature.
-- Actual installed Windows desktop and GGUF model loop behavior, independent long-task cancellation, user-visible termination messaging and audit verification remain separate checks. No change to accepted `0.1.0-alpha.2`; this branch is isolated from unresolved TOOLS-03 Git, TOOLS-04 ZIP, TOOLS-05 schema, TOOLS-06 environment and TOOLS-07 OCR.
+## 4. Revised escalation
+
+The default policy counts **consecutive calls without verified progress**, not total calls: warn at **3 unproductive results** and block at **8**. One novel operation is allowed to attempt recovery at the stagnant threshold; if it also fails to demonstrate progress, subsequent calls block. Exact repeated failures can block earlier after two observed unsuccessful duplicates. A clear unchanged-output A/B cycle also blocks. Three consecutive blocks terminate the turn.
+
+**After every verified advance the stall counter and block escalation reset.** This means 100 successful meaningful edits are not penalized. The model is told to change strategy for stagnation; merely tweaking a JSON argument or incrementing a page number cannot fabricate a new result. Block/Kill never dispatches a native tool or creates an effect-journal entry.
+
+Existing JSON MBRL (one deterministic normalization and up to two **syntax** regenerations) remains distinct; `LOOP_DETECTED` is **not** a trigger to repeat an uncertain write.
+
+## 5. Implementation
+
+- `src-tauri/lu-core/src/loop_guard.rs`: `LoopGuard::check` before native dispatch and `observe_feedback` afterward; `ProgressEvidence` from **typed, host-decoded result** and effect class; verified progress resets stagnation.
+- `src-tauri/lu-core/src/agent_tool_loop.rs`: remove fixed eight-call check; retain monotonic call IDs, separate numeric-overflow failure and all existing grants; attach fixed bounded warning inside result; do not reveal raw args.
+- `src-tauri/lu-core/src/generation_loop_guard.rs`: independent streaming token/text-cycle detector; ignores short benign repetition and checks across chunk boundaries.
+- `src-tauri/lu-core/src/supervised_tool_generation.rs`: no fixed generation count; bounded wall clock, output/prompt sizes, JSON repair stages and current-turn authority; immediately interrupt repetitive streaming output with terminal `token_loop` classification.
+- Tests: numerous changing-read results in one turn; **80 distinct edits with hash-changing postconditions on the same file** (structural host feedback test); a real trusted native read repeated **24 times while content changes**; a real journaled supervised model sequence executing **25 useful native reads**; failures, unchanged edits, stale metadata, no-progress A/B cycling, escalation, bounded feedback, token output periodicity, Windows handle cleanup and regression of original authority checks.
+
+## 6. Release acceptance gaps — do not overclaim
+
+- **Durable progress reconstruction:** in-memory `LoopGuard` history is not yet persisted as a dedicated signed progress record; on crash/restart the host must conservatively halt or rebuild only from trusted journal evidence before resuming.
+- **Write progress verification:** the first source implementation recognizes committed before/after state hashes. Expand strong effect-specific receipts and a **task-goal progress model** before calling arbitrary native tool/DLC outcomes genuine progress. A changing timestamp/return value is not enough.
+- **Streaming cancellation:** Lu backend must actually honor an interrupted stream callback and kill/reap workers; prove locally with real GGUF/llama-server and installed Windows GUI, not only Rust mock tests.
+- **Long context:** the existing cumulative 128 KiB prompt limit is not an eight-call cap but will eventually constrain long workflows. Host-owned summarization/checkpointing must preserve tool receipts and grants; it cannot erase progress history to evade the guard.
+- **Time budget:** host foreground timeout currently 30 minutes, model backends must separately enforce per-generation deadlines. No user-visible promise of indefinite unbounded autonomous execution.
+- **CI:** Linux/Windows native + supervised tests on the **exact source-locked revision**, source-tree verification, desktop CI. Accepted `0.1.0-alpha.2` untouched; draft PR #19 stays unmerged until accepted.
