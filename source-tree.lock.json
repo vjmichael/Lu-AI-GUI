@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9c7219afb11cacf3866c48da4c75789e47a949f0",
+  "sourceCommitBeforeLock": "ca6c95956e3e2c32e7dc93bbc3d06a9bb57dfc30",
   "trackedFileCount": 284,
   "files": [
     {
@@ -61,11 +61,11 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "270a753e0831607251c380d9f6789d8ce0c27257"
+      "blob": "ba0065bbcc11cf6c500d0dacad06f066998fc6cd"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
-      "blob": "d65d57f5304c4431aa4fc4ecb04966a502c2a68e"
+      "blob": "f9e15064a8f22f8d2a8e2e9f30ef033066a33931"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/TOOLS_03_GIT_INSPECTION_DESIGN_CHECK_20261104.md",
-      "blob": "a4dfc42120749ea6cdd7c90dc31bb104893d4988"
+      "blob": "f3e469f886448553d8308a6eb27f1f94336dd6fe"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -733,7 +733,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_git_inspect.rs",
-      "blob": "09331eb0e1979f211bb5b7cd3f5bb7764fd648ea"
+      "blob": "8f6f088e7068e2ff50be429d82e52da2d9f6f940"
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
@@ -1037,7 +1037,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_git_inspect.rs",
-      "blob": "ce3d4abfce3805d1c52983ae59d376aba1a52e22"
+      "blob": "84198d9156c7c46f53b128473b501603e57ec2be"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
