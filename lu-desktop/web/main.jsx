@@ -38,6 +38,9 @@ function App() {
   const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
   const [editRecovery, setEditRecovery] = useState([]);
   const [editObservations, setEditObservations] = useState({});
+  const [rollbackReviewed, setRollbackReviewed] = useState({});
+  const [rollbackHistory, setRollbackHistory] = useState([]);
+  const [latestRestored, setLatestRestored] = useState(null);
   const [latestEdited, setLatestEdited] = useState(null);
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
@@ -425,9 +428,11 @@ function App() {
     if (chatId) {
       refreshWriteRecovery(chatId).catch(() => setWriteRecovery([]));
       refreshEditRecovery(chatId).catch(() => setEditRecovery([]));
-      setEditObservations({});
+      refreshRollbackHistory(chatId).catch(() => setRollbackHistory([]));
+      setEditObservations({}); setRollbackReviewed({});
     } else {
-      setWriteRecovery([]); setEditRecovery([]); setEditObservations({});
+      setWriteRecovery([]); setEditRecovery([]);
+      setEditObservations({}); setRollbackHistory([]); setRollbackReviewed({});
     }
   }, [chatId]);
 
@@ -437,12 +442,51 @@ function App() {
     const records = await invoke('lu_edit_recovery',{chatId:targetChat});
     if (currentChat.current === targetChat) setEditRecovery(records);
   }
+  async function refreshRollbackHistory(targetChat = chatId) {
+    if (!targetChat) { setRollbackHistory([]); return; }
+    const records = await invoke('lu_rollback_history',{chatId:targetChat});
+    if (currentChat.current === targetChat) setRollbackHistory(records);
+  }
   async function inspectEditRecovery(record) {
     try {
       const result = await invoke('lu_inspect_edit_recovery',{
         chatId,proposalId:record.proposalId
       });
       setEditObservations(prev => ({...prev,[record.proposalId]:result}));
+      setRollbackReviewed({});
+    } catch (error) { setError(String(error)); }
+  }
+  async function confirmRollback(record) {
+    const observation = editObservations[record.proposalId];
+    const reviewId = observation?.rollbackReviewId;
+    if (!reviewId || !rollbackReviewed[reviewId]) return;
+    setError('');
+    try {
+      const restored = await invoke('lu_confirm_rollback',{chatId,reviewId});
+      if (restored) {
+        setActivity('Restored previous version: '+restored.fileName);
+        setLatestRestored({...restored,chatId});
+        await refreshChats();
+        if (currentChat.current === chatId)
+          setHistory(await invoke('lu_history',{chatId}));
+      } else setActivity('Kept current file; restoration denied');
+    } catch (error) { setError(String(error)); }
+    finally {
+      setEditObservations(prev => {const next={...prev};delete next[record.proposalId];return next;});
+      setRollbackReviewed(prev => ({...prev,[reviewId]:false}));
+      await refreshRollbackHistory(chatId).catch(() => {});
+      await refreshEditRecovery(chatId).catch(() => {});
+    }
+  }
+  async function denyRollback(record) {
+    const reviewId = editObservations[record.proposalId]?.rollbackReviewId;
+    if (!reviewId) return;
+    try {
+      await invoke('lu_deny_rollback',{chatId,reviewId});
+      setActivity('Kept current file; restoration not approved');
+      setEditObservations(prev => {const next={...prev};delete next[record.proposalId];return next;});
+      setRollbackReviewed(prev => ({...prev,[reviewId]:false}));
+      await refreshRollbackHistory(chatId).catch(() => {});
     } catch (error) { setError(String(error)); }
   }
   async function reviewExistingFile(proposal) {
@@ -997,8 +1041,29 @@ function App() {
                 <pre className="editFullText" aria-label="Verified original text">{
                   editObservations[record.proposalId].rollbackPreview.restoreText
                 }</pre>
-                <small>Undo remains disabled pending its own human authorization, metadata
-                  safeguards and independent Windows acceptance.</small>
+                <small>This restoration has its own authorization. A native confirmation
+                  will ask again before any filesystem operation. The edited version is separately
+                  backed up. Changes made by another program will block the restore.</small>
+                {editObservations[record.proposalId].rollbackReviewId && <>
+                  <label className="editReviewAck">
+                    <input type="checkbox"
+                      checked={Boolean(rollbackReviewed[editObservations[record.proposalId].rollbackReviewId])}
+                      onChange={e => setRollbackReviewed(prev => ({
+                        ...prev,
+                        [editObservations[record.proposalId].rollbackReviewId]:e.target.checked
+                      }))}/>
+                    I reviewed the complete current file, original version and restoration changes.
+                  </label>
+                  <div className="settingsActions">
+                    <button className="primaryButton" type="button"
+                      disabled={!rollbackReviewed[editObservations[record.proposalId].rollbackReviewId]}
+                      onClick={() => confirmRollback(record)}>
+                      Confirm original restore in native dialog
+                    </button>
+                    <button className="subtleButton" type="button"
+                      onClick={() => denyRollback(record)}>Keep current version</button>
+                  </div>
+                </>}
               </details>}
               {record.approval === 'Approved' && <button type="button" className="subtleButton"
                 onClick={() => inspectEditRecovery(record)}>Reselect folder to inspect artifacts</button>}
@@ -1013,6 +1078,33 @@ function App() {
             onClick={() => refreshEditRecovery().catch(error => setError(String(error)))}>
             Refresh edit recovery ledger
           </button>
+        </section>}
+        {rollbackHistory.length > 0 && <section className="readProposalCard"
+          aria-label="Restoration authorization and recovery history">
+          <strong>Restoration history and recovery</strong>
+          <small>Separate user approval, journal effect, and verified receipt. A failed or
+            uncertain restore is never automatically repeated, even after a restart.</small>
+          {rollbackHistory.map(record =>
+            <div key={record.reviewId} className="writeRecoveryRow">
+              <strong>{record.fileName}</strong>
+              <small>Review: {record.decision} · Restore effect: {record.effect}</small>
+              <small>Verified restoration receipt: {record.receiptVerified ? 'Yes' : 'No'}</small>
+              <small>Assessment: {record.assessment}</small>
+              <small>Original edit effect: {record.originalEditId}</small>
+              <small>Restore SHA-256: {record.restoredSha256}</small>
+              <code className="writeTarget">{record.exactTarget}</code>
+            </div>
+          )}
+          <button type="button" className="subtleButton"
+            onClick={() => refreshRollbackHistory().catch(error => setError(String(error)))}>
+            Refresh restoration history
+          </button>
+        </section>}
+        {latestRestored?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Original version restored: {latestRestored.fileName}</strong>
+          <small>Restored {latestRestored.restoredBytes} bytes · SHA-256: {latestRestored.restoredSha256}</small>
+          <small>New rollback effect: {latestRestored.rollbackEffectId}</small>
+          <small>The prior edited bytes were retained as a separate rollback backup.</small>
         </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
