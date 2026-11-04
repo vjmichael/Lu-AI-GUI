@@ -20,6 +20,7 @@ use crate::{
     contracts::{AuthorizationError, ModuleKind, ModuleManifest, NativeTool,
         ProtoPayload, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolFailure,
         ToolFuture, ToolInvocation, ToolOutput, CORE_CONTRACT_VERSION},
+    journal::{EffectRecord, EffectState},
     edit_safety::{plan_text_edit, verify_reviewed_edit, ReviewedEdit, TextEditPlan,
         MAX_EDIT_DOCUMENT_BYTES},
     registry::{NativeToolRegistry, RegistryError},
@@ -264,6 +265,40 @@ fn commit_in_dir(
         replacement_sha256: manifest.replacement_sha256,
         bytes_written: replacement.len() as u64,
     })
+}
+
+/// A journal row marked APPLIED is not itself proof of a successful, exact
+/// edit. Decode the durable ToolReply AND typed EditExistingResult and bind
+/// the receipt to the originally reviewed bytes, length and call ID.
+///
+/// This is a pure verifier; it does not authorize a restore or make an
+/// UNCERTAIN effect eligible for replay.
+pub fn verified_edit_receipt(
+    effect: &EffectRecord, call_id: &str, original_sha: &str,
+    replacement_sha: &str, replacement_bytes: u64,
+) -> bool {
+    if effect.state != EffectState::Applied ||
+        effect.tool_id != EDIT_TOOL_ID ||
+        effect.call_id != call_id ||
+        !valid_id(call_id) || !valid_sha(original_sha) ||
+        !valid_sha(replacement_sha) {
+        return false;
+    }
+    let Some(bytes) = effect.receipt.as_deref() else { return false; };
+    let Ok(reply) = crate::wire::decode_reply(bytes) else { return false; };
+    if reply.call_id != call_id || reply.output_type_url != EDIT_RESULT_TYPE {
+        return false;
+    }
+    let Some(proto::tool_reply::Outcome::Output(payload)) = reply.outcome else {
+        return false;
+    };
+    let Ok(result) = proto::EditExistingResult::decode(payload.as_slice()) else {
+        return false;
+    };
+    result.committed && result.backup_id == call_id &&
+        result.original_sha256 == original_sha &&
+        result.replacement_sha256 == replacement_sha &&
+        result.bytes_written == replacement_bytes
 }
 
 /// READ-ONLY observation for recovery. This does not update the effect journal
