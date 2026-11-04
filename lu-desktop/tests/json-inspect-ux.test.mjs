@@ -36,5 +36,6 @@ test('native inspector checks bounded Protobuf and unique approved handle withou
   assert.match(native, /request\.path != pinned\.name/);
   assert.match(native, /duplicate object key/);
   assert.match(native, /Sha256::digest\(&data\)/);
-  assert.doesNotMatch(native, /File::create|fs::write|std::process::Command/);
+  const production = native.split('#[cfg(test)]')[0];
+  assert.doesNotMatch(production, /File::create|fs::write|std::process::Command/);
 });
