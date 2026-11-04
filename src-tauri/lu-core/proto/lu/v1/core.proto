@@ -95,6 +95,23 @@ message SearchTextResult {
   bool truncated = 3;
 }
 
+// TOOLS-05: task-scoped, effect-free JSON Schema validation.
+// "schema_json" and "instance_json" are separately bounded, canonical JSON
+// bytes. This is NOT Lu's internal model/tool JSON repair service.
+message SchemaValidateRequest {
+  bytes schema_json = 1;
+  bytes instance_json = 2;
+}
+message SchemaValidationIssue {
+  string instance_path = 1; // Data-only JSON Pointer; no executable command.
+  string message = 2;       // Bounded human-readable validator diagnosis.
+}
+message SchemaValidateResult {
+  bool valid = 1;
+  repeated SchemaValidationIssue issues = 2;
+  bool truncated = 3;
+}
+
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
 // Every envelope is still length-delimited by the host (u32 big-endian).
 // Fields here carry data only, NEVER a permission token or host path.
