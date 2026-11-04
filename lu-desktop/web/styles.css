@@ -178,3 +178,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .editProposalCard .editDiff { border-color: #587898; }
 .editProposalCard .editReviewAck { display: flex; align-items: flex-start; gap: 9px; line-height: 1.4; }
 .editProposalCard .editReviewAck input { margin-top: 4px; flex-shrink: 0; }
+
+.editUndoPreview { margin-top: 10px; padding: 10px; border: 1px solid #415a71; border-radius: 8px; }
+.editUndoPreview summary { cursor: pointer; font-weight: 600; padding: 5px 0; }
+.editUndoPreview .editFullText { display: block; width: 100%; max-height: 300px; overflow: auto;
+  white-space: pre; overflow-wrap: normal; padding: 10px 12px; border: 1px solid #334c65;
+  border-radius: 7px; background: #101b2a; color: #dbeaf8;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
