@@ -163,6 +163,7 @@ struct ActiveBrowserTask {
     chat_id:String,
     user_turn_id:String,
     origins:Vec<String>,
+    starting:bool,
 }
 struct DesktopState {
     models_dir: PathBuf,
@@ -1443,10 +1444,14 @@ fn lu_browser_runtime_status(
 ) -> Result<native_browser_host::BrowserRuntimeView,String> {
     let status=state.browser_runtime.status(&state.browser_preferences)?;
     if !status.running{
-        // A crashed browser must not strand an active grant that prevents
-        // the next user-authorized session from starting.
-        let stale=state.browser_task.lock()
-            .map_err(|_|"browser task lock poisoned")?.take();
+        // A crashed browser must not strand a grant. An in-progress launch
+        // is NOT a crash and must retain its task reservation.
+        let mut current=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        let stale=if current.as_ref().is_some_and(|task|!task.starting){
+            current.take()
+        }else{None};
+        drop(current);
         if let Some(task)=stale{
             state.browser_authority.revoke_task(&task.task_id)
                 .map_err(|e|format!("browser crash revocation failed: {e:?}"))?;
@@ -1534,7 +1539,8 @@ async fn lu_browser_start(
         }
         *current=Some(ActiveBrowserTask{
             task_id:task_id.clone(),chat_id:chat_id.clone(),
-            user_turn_id:user_turn_id.clone(),origins:approved_origins.clone()
+            user_turn_id:user_turn_id.clone(),origins:approved_origins.clone(),
+            starting:true
         });
     }
     let native_state=Arc::clone(&state);
@@ -1556,9 +1562,14 @@ async fn lu_browser_start(
     }
     // Stop may have revoked the task during browser startup. Do not leave
     // an approved process alive after that revocation races completion.
-    let still_authorized=state.browser_task.lock()
-        .map_err(|_|"browser task lock poisoned")?
-        .as_ref().is_some_and(|task|task.task_id==task_id);
+    let still_authorized={
+        let mut active=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        if let Some(task)=active.as_mut().filter(|task|task.task_id==task_id){
+            task.starting=false;
+            true
+        }else{false}
+    };
     if !still_authorized{
         let _=state.browser_runtime.stop();
         return Err("Browser startup was cancelled by user".into());
