@@ -160,7 +160,8 @@ struct DesktopState {
     read_proposals: read_proposal::ReadApprovalQueue,
     write_proposals: write_proposal::WriteProposalQueue,
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
-    drafts_dir: PathBuf,
+    documents_os_dir: PathBuf,
+    document_preferences: lu_core::document_preferences::DocumentPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -399,11 +400,16 @@ impl DesktopState {
         ).map_err(|e| format!("write approvals unavailable: {e:?}"))?;
         write_approvals.reconcile_pending()
             .map_err(|e| format!("write approval reconciliation failed: {e:?}"))?;
-        let drafts_dir = root.join("lu-drafts");
-        fs::create_dir_all(&drafts_dir).map_err(|e| e.to_string())?;
-        if !is_real_directory(&drafts_dir) {
-            return Err("Lu Drafts directory must be an ordinary directory".into());
-        }
+        // Native OS Documents, never a private Lu app-data folder. Windows
+        // honors redirected Known Folder Documents; Linux honors XDG when
+        // reported by Tauri's platform path resolver.
+        let documents_os_dir = app.path().document_dir()
+            .map_err(|e|format!(
+                "System Documents directory unavailable; configure your user Documents folder: {e}"
+            ))?;
+        let document_preferences = lu_core::document_preferences::DocumentPreferences::open(
+            &root.join("documents-preferences.sqlite")
+        ).map_err(|e|format!("document preferences unavailable: {e:?}"))?;
         // All old owners are excluded. Interrupted actions are never retried;
         // these remain auditable, not executable grants.
         effects.reconcile_interrupted()
@@ -492,7 +498,8 @@ impl DesktopState {
             read_proposals: read_proposal::ReadApprovalQueue::default(),
             write_proposals: write_proposal::WriteProposalQueue::default(),
             write_approval_ledger: write_approvals,
-            drafts_dir,
+            documents_os_dir,
+            document_preferences,
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1295,7 +1302,11 @@ async fn lu_review_write_destination(
     // Destination is selected only by the trusted host. A model or WebView
     // string can pick a workflow, NEVER supply a writable filesystem path.
     let selected = match destination_mode.as_deref() {
-        None | Some("lu_drafts") => state.drafts_dir.clone(),
+        None | Some("user_documents") | Some("lu_drafts") =>
+            state.document_preferences.selected(&state.documents_os_dir)
+                .map_err(|e|format!(
+                    "Default Documents folder unavailable. Choose a folder in Advanced Settings: {e:?}"
+                ))?,
         Some("choose_folder") => {
             let selected = tauri::async_runtime::spawn_blocking(move || {
                 app.dialog().file().blocking_pick_folder()
