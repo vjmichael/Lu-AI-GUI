@@ -189,6 +189,7 @@ impl PersistentLlamaBackend {
     }
 }
 impl InferenceBackend for PersistentLlamaBackend {
+    fn has_loaded_model(&self) -> bool { self.process.is_some() }
     fn process_id(&self) -> Option<u32> {
         self.pid()
     }
