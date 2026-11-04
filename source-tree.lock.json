@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bd83b5f3af8a620302e2939e21c1739b5ba59085",
+  "sourceCommitBeforeLock": "954593060e04080985703ca5ca1432a349b83b0f",
   "trackedFileCount": 284,
   "files": [
     {
@@ -1037,7 +1037,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_ocr_fallback.rs",
-      "blob": "8b7df4823e0520dce8021e6cc0372e0991dd3f3d"
+      "blob": "ef617c3f6ae2340759a6e19456380425221666e3"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
