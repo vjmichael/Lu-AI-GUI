@@ -103,9 +103,13 @@ impl VllmWorkerProcess {
         if bytes.is_empty() || bytes.len() > MAX_CONTROL || !bytes.ends_with(b"\n") {
             return Err(WorkerError::Protocol);
         }
-        let value: Value = serde_json::from_slice(&bytes).map_err(|_| WorkerError::Protocol)?;
-        if !value.is_object() { return Err(WorkerError::Protocol); }
-        Ok(value)
+        // Reject duplicate fields rather than letting JSON last-key-wins
+        // semantics mutate a request ID, event kind or error classification.
+        let frame = std::str::from_utf8(&bytes).map_err(|_| WorkerError::Protocol)?;
+        let exact = crate::model_json_boundary::parse_exact_boundary_object(
+            frame.trim(), MAX_CONTROL
+        ).map_err(|_| WorkerError::Protocol)?;
+        Ok(Value::Object(exact))
     }
     pub fn is_running(&self) -> Result<bool, WorkerError> {
         let mut child = self.child.lock().map_err(|_| WorkerError::Poisoned)?;
