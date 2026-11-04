@@ -51,6 +51,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
+  const [browserMode, setBrowserMode] = useState(null);
+  const [savingBrowserMode, setSavingBrowserMode] = useState(false);
   const [latestCreated, setLatestCreated] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
@@ -174,6 +176,9 @@ function App() {
         if (alive && list.length) await switchChat(list[0].chatId);
         if (alive) invoke('lu_document_settings')
           .then(value => {if (alive) setDocumentSettings(value);})
+          .catch(error => {if (alive) setError(String(error));});
+        if (alive) invoke('lu_browser_settings')
+          .then(mode => {if (alive) setBrowserMode(mode);})
           .catch(error => {if (alive) setError(String(error));});
       } catch (error) { if (alive) setError(String(error)); }
     })();
@@ -555,6 +560,17 @@ function App() {
       setDocumentSettings(result);
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
+  }
+  async function saveBrowserVisibility(mode) {
+    if (savingBrowserMode || (mode !== 'automatic' && mode !== 'always-visible')) return;
+    setSavingBrowserMode(true);
+    setError('');
+    try {
+      const saved = await invoke('lu_set_browser_visibility', {mode});
+      setBrowserMode(saved);
+      setActivity('Browser preference saved');
+    } catch (error) { setError(String(error)); }
+    finally { setSavingBrowserMode(false); }
   }
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
@@ -1161,6 +1177,32 @@ function App() {
           </div>
           <p className="settingsNotice">Lu saves only after reviewing the exact file contents and destination.
             Modifying existing files requires a separate validated edit/backup pipeline.</p>
+        </section>}
+        {advancedSettingsOpen && <section className="advancedDocumentSettings"
+          aria-label="Browser visibility settings">
+          <h3>Research browser</h3>
+          <p>Lu uses headed Chromium and Playwright for research. The browser mode
+            changes window visibility only; it does not authorize browsing or network access.</p>
+          <fieldset className="browserVisibilityChoices" disabled={savingBrowserMode || browserMode === null}>
+            <legend>When Lu launches its browser</legend>
+            <label>
+              <input type="radio" name="browser-visibility" value="automatic"
+                checked={browserMode === 'automatic'}
+                onChange={() => saveBrowserVisibility('automatic')}/>
+              <span><strong>Automatic (default)</strong>
+                <small>Keep Chromium hidden while Lu browses. Reveal the same session
+                  when human verification is required.</small></span>
+            </label>
+            <label>
+              <input type="radio" name="browser-visibility" value="always-visible"
+                checked={browserMode === 'always-visible'}
+                onChange={() => saveBrowserVisibility('always-visible')}/>
+              <span><strong>Always visible</strong>
+                <small>Watch Lu browse automatically without taking your mouse or keyboard.</small></span>
+            </label>
+          </fieldset>
+          <p className="settingsNotice">This preference applies to the next browser session.
+            Native window visibility and human takeover are under development.</p>
         </section>}
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
