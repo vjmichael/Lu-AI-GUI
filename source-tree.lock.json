@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "118c01a698af7d3b044aaecdc15cce5b64f98222",
-  "trackedFileCount": 274,
+  "trackedFileCount": 275,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "ecc4f107b1a6ffd438cd5ff9403fd535f3eeb776"
+      "blob": "a5e541ffc9f2df2ce3242d8febcc19d0f9a5902f"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
-      "blob": "98f29d53b8686a4628089f886fd72ec31c16a24a"
+      "blob": "175231e59788971aa2ee672df54807f6984e0c16"
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "ab6e776308e833ff2c16f57ae24574004b9c10ca"
+      "blob": "fa47e47cd05c1864705cc0c287393fd3c8a0ee2f"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/WRITE_01E_DURABLE_EDIT_TRANSACTION_20261103.md",
-      "blob": "b1d1e94ed8ab7ec3cf6161a010db1e27c3944475"
+      "blob": "e58e89ceea47d269c395df8dc3d7b4bf2873c5f5"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -693,7 +693,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_edit_existing.rs",
-      "blob": "051be3d5eed5a196a2f1bd3b92382eea06412c5e"
+      "blob": "02eae04169ccfa468044fb632401d4feda411557"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
@@ -769,7 +769,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
-      "blob": "094475f225b5b5a38db34f1d050eabe4e829bb23"
+      "blob": "72e45031ae6c24ee61f4c2346d7ba2a5ec06da7c"
     },
     {
       "path": "src-tauri/lu-core/src/wire.rs",
@@ -1093,7 +1093,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "c38c150c1458dea7e111f909fce2ac2899d3ec35"
+      "blob": "5eac4d785d25a723a486e5eb39ce925e95c9d759"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
+      "blob": "075ec3fcb0f12256b242e18af779bac99a0b118f"
     },
     {
       "path": "tests/source-identity.test.mjs",
