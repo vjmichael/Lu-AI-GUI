@@ -214,3 +214,8 @@ Next gate: validate exact-revision Rust/Windows CI and implement exclusive start
 
 ## 15. JOURNAL-01A reconciliation key (development, 2026-11-03)
 A host-generated effect call ID is now durably linked to an approved model proposal via a unique database field. This makes it possible to correlate the human decision and subsequent `EffectJournal` state without interpreting either record as a fresh capability. Duplicate and cross-conversation effect bindings are rejected. Startup reconciliation still requires independent ownership verification and is not automatically enabled.
+
+## 16. JOURNAL-01B — cooperative single-instance ownership and startup reconciliation (2026-11-03)
+The trusted desktop now holds a process-lifetime SQLite writer transaction on a **dedicated ownership database** before opening user stores. This prevents a *second cooperating Lu instance with the same app-data directory* from wrongly marking the first one's live effects as interrupted. Once the prior owner has exited or crashed, the next instance may reconcile old `EXECUTING` effects as `UNCERTAIN` and old unapproved `PENDING` read proposals as `INTERRUPTED`. Neither state grants execution, and no blind replay is permitted. The held lock is lifetime-owned by `DesktopState`; the lock is separate from the regular chat/effect databases, which continue to serve the app.
+
+This is not an AppContainer, mandatory filesystem sandbox, or an OS-wide exclusion mechanism for unrelated programs. Exact picked-file handle identity and all write/execute idempotency gates remain future work. Production/Windows evidence is tracked in `LU_V1_0_TASKS.md` on the exact source-locked commit.
