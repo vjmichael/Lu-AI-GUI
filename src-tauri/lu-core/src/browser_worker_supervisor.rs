@@ -58,6 +58,8 @@ pub struct BrowserLaunchConfig {
     pub trusted_script:PathBuf,
     pub trusted_profile:PathBuf,
     pub approved_origins:Vec<String>,
+    /// Host-discovered DevTools endpoint of a separately launched Chromium.
+    pub cdp_endpoint:Option<String>,
     pub visibility:BrowserVisibilityPreference,
     pub command_timeout:Duration,
 }
@@ -71,6 +73,11 @@ fn valid_origin(input:&str)->bool{
         && !host.starts_with('.')&&!host.ends_with('.')
         && host.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'.'||c==b'-')
 }
+fn valid_loopback_cdp(input:&str)->bool {
+    let Some(port)=input.strip_prefix("http://127.0.0.1:") else{return false;};
+    !port.is_empty()&&port.bytes().all(|b|b.is_ascii_digit())
+        &&port.parse::<u16>().ok().is_some_and(|n|n>0)
+}
 impl BrowserLaunchConfig {
     pub fn validate(&self)->Result<(),BrowserSupervisorError>{
         if !self.trusted_node.is_absolute()||!self.trusted_node.is_file()
@@ -78,6 +85,7 @@ impl BrowserLaunchConfig {
             ||!self.trusted_profile.is_absolute()||!self.trusted_profile.is_dir()
             ||self.approved_origins.is_empty()||self.approved_origins.len()>32
             ||self.approved_origins.iter().any(|origin|!valid_origin(origin))
+            ||self.cdp_endpoint.as_ref().is_some_and(|endpoint|!valid_loopback_cdp(endpoint))
             ||self.command_timeout<Duration::from_millis(100)
             ||self.command_timeout>Duration::from_secs(60){
             return Err(BrowserSupervisorError::InvalidConfig);
@@ -108,13 +116,14 @@ impl OwnedBrowserWorker {
         ->Result<Self,BrowserSupervisorError>{
         config.validate()?;
         if config.visibility==BrowserVisibilityPreference::AutomaticHidden
-            && browser.is_none(){
+            && (browser.is_none()||config.cdp_endpoint.is_none()){
             return Err(BrowserSupervisorError::MissingChromiumCustody);
         }
         let settings=json!({
             "origins":config.approved_origins,
             "profileDirectory":config.trusted_profile,
             "visibilityMode":config.visibility.worker_mode(),
+            "cdpEndpoint":config.cdp_endpoint,
         });
         let mut child=Command::new(&config.trusted_node)
             .arg(&config.trusted_script)
@@ -235,6 +244,9 @@ mod tests {
     #[test]
     fn only_public_https_origins_are_admitted(){
         assert!(valid_origin("https://archive.example"));
+        assert!(valid_loopback_cdp("http://127.0.0.1:41007"));
+        assert!(!valid_loopback_cdp("http://127.0.0.1:99999"));
+        assert!(!valid_loopback_cdp("http://localhost:41007"));
         for candidate in ["http://archive.example","https://x/y",
             "https://foo@bar","https://127.0.0.1:8443",
             "https://evil.example?q=1","https://foo\\bar"] {
