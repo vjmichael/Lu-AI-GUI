@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify native JSON picker UI and host authority boundary
+        run: node --test lu-desktop/tests/json-inspect-ux.test.mjs
       - name: Verify frozen Git source identity
         run: node scripts/verify-source-tree.mjs
       - uses: dtolnay/rust-toolchain@stable
@@ -33,6 +35,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify native JSON picker UI and host authority boundary
+        run: node --test lu-desktop/tests/json-inspect-ux.test.mjs
       - name: Verify frozen Git source identity
         run: node scripts/verify-source-tree.mjs
       - uses: dtolnay/rust-toolchain@stable
