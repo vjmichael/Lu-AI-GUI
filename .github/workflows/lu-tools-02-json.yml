@@ -1,0 +1,45 @@
+name: Lu TOOLS-02 native JSON inspect
+on:
+  push:
+    branches:
+      - lu/tools-02-json-validation-20261103
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen Git source identity
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Typed native JSON inspection tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml native_json_inspect::tests -- --nocapture
+      - name: Actual Lu model-to-native tool and permission regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn -- --nocapture
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen Git source identity
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Typed native JSON inspection tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml native_json_inspect::tests -- --nocapture
+      - name: Actual Lu model-to-native tool and permission regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn -- --nocapture
+# Real Lu Core code on both platforms, no installed-app GUI/OS dialog claim.
