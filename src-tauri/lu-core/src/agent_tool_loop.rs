@@ -23,7 +23,6 @@ use crate::{
     registry::NativeToolRegistry,
 };
 
-pub const MAX_TOOL_STEPS: u32 = 8;
 pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
 
 // Compiled-in host observation with no model-supplied identifiers or text.
@@ -55,7 +54,7 @@ pub enum ToolTurnError {
     UnexpectedFields,
     TooLarge,
     NoAuthorizedTools,
-    StepLimit,
+    CounterOverflow,
     LoopTerminated,
     AlreadyFinished,
     Revoked,
@@ -169,7 +168,7 @@ impl NativeToolTurn {
     }
 
     /// Host-only structural loop diagnostics. No tool arguments are exposed.
-    pub fn loop_attempt_count(&self) -> u32 {
+    pub fn loop_attempt_count(&self) -> u64 {
         self.loop_guard.attempted()
     }
 
@@ -386,9 +385,6 @@ impl NativeToolTurn {
         if object.len() != 3 || !object.contains_key("name") || !object.contains_key("arguments") {
             return Err(ToolTurnError::UnexpectedFields);
         }
-        if self.steps >= MAX_TOOL_STEPS {
-            return Err(ToolTurnError::StepLimit);
-        }
         let name = object
             .get("name")
             .and_then(Value::as_str)
@@ -410,7 +406,11 @@ impl NativeToolTurn {
             .take(12)
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
-        let call_id = format!("lu-{prefix}-{}", self.steps + 1);
+        // There is NO fixed count of tool calls. Only numeric overflow,
+        // progress evidence, task deadlines and normal permissions bound the turn.
+        let next_step = self.steps.checked_add(1)
+            .ok_or(ToolTurnError::CounterOverflow)?;
+        let call_id = format!("lu-{prefix}-{next_step}");
         let invocation = catalog
             .encode_call(
                 &self.advertised,
@@ -421,23 +421,21 @@ impl NativeToolTurn {
             )
             .map_err(ToolTurnError::Catalog)?;
 
-        if self.read_only {
-            let descriptors = registry
-                .tools()
-                .map_err(|_| ToolTurnError::ReadOnlyTurnViolation)?;
-            if !descriptors.iter().any(|descriptor| {
-                descriptor.id == invocation.tool_id
-                    && descriptor.effect == ToolEffect::ReadWorkspace
-            }) {
-                return Err(ToolTurnError::ReadOnlyTurnViolation);
-            }
+        let descriptors = registry.tools()
+            .map_err(|_| ToolTurnError::ReadOnlyTurnViolation)?;
+        let effect = descriptors.iter()
+            .find(|descriptor| descriptor.id == invocation.tool_id)
+            .map(|descriptor| descriptor.effect)
+            .ok_or(ToolTurnError::ReadOnlyTurnViolation)?;
+        if self.read_only && effect != ToolEffect::ReadWorkspace {
+            return Err(ToolTurnError::ReadOnlyTurnViolation);
         }
 
-        // Original Jan §7: protect the authoritative native dispatcher,
-        // not only model text. This check happens AFTER full JSON + typed
-        // codec validation and BEFORE the effect journal, auth dispatch or
-        // registered tool executes. Block/kill cannot cause an effect.
-        // A blocked attempt still consumes the strict per-turn step budget.
+        // Progress-aware guard runs after valid JSON/Protobuf input, but
+        // before native authorization/effects. No raw-count cap, and same-file
+        // edits with different operations are not assumed to be a loop.
+        // An unproductive blocked attempt still contributes to the
+        // host-owned no-progress escalation, never to an OS effect.
         let guard_verdict = self.loop_guard.check(name, args);
         match guard_verdict {
             LoopVerdict::Kill(_) => {
@@ -445,7 +443,7 @@ impl NativeToolTurn {
                 return Err(ToolTurnError::LoopTerminated);
             }
             LoopVerdict::Block(reason) => {
-                self.steps += 1;
+                self.steps = next_step;
                 return Ok(ToolTurnOutcome::ToolResult {
                     call_id,
                     tool_name: name.into(),
@@ -469,7 +467,7 @@ impl NativeToolTurn {
 
         // A tool can be advertised earlier, then revoked. Host checks exact
         // origin, tool effect and workspace scope again at dispatch time.
-        self.steps += 1;
+        self.steps = next_step;
         observe(ToolDispatchCheckpoint::Entered);
         let response = if let Some(effects) = effects {
             authority
@@ -497,6 +495,10 @@ impl NativeToolTurn {
         let mut data = catalog
             .decode_result(&self.advertised, name, &response)
             .map_err(ToolTurnError::Catalog)?;
+        // A decoded native result is the only evidence eligible to advance
+        // the loop guard; new arguments, call IDs and messages never are.
+        // For writes, progression requires a strong typed change receipt.
+        self.loop_guard.observe_feedback(name, args, &data, effect);
         if let Some(reason) = warning {
             // Fixed host language only; never echo user content/arguments.
             // Keep outer tool feedback schema unchanged (ok/tool/result).
