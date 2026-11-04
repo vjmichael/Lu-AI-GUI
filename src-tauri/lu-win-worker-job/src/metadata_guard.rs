@@ -47,6 +47,20 @@ pub struct SecurityMetadataSnapshot {
     pub last_access:FileTime,
     owner_group_dacl:Vec<u8>,
 }
+/// Stable, non-secret metadata evidence for an on-disk edit/rollback
+/// manifest. Excludes last-access (ordinary reads may change it) and
+/// last-write (intentionally changes on edit). A SHA-256 of these bytes
+/// is persisted instead of writing users' security descriptors to sidecars.
+impl SecurityMetadataSnapshot {
+    pub fn immutable_identity_bytes(&self)->Vec<u8> {
+        let mut bytes=b"LU-WIN-EDIT-METADATA-v1".to_vec();
+        bytes.extend_from_slice(&self.creation.low.to_le_bytes());
+        bytes.extend_from_slice(&self.creation.high.to_le_bytes());
+        bytes.extend_from_slice(&(self.owner_group_dacl.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&self.owner_group_dacl);
+        bytes
+    }
+}
 fn deny(reason:&str)->io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied,format!(
         "Windows metadata-safe existing-file replacement refused: {reason}"
@@ -208,6 +222,23 @@ mod tests {
         let opened=File::open(&path).unwrap();
         assert!(no_write_lease(&opened).is_ok());
         drop(opened);fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn persistent_metadata_evidence_is_stable_for_file_reads_and_staged_copy() {
+        let p=temp();
+        let a=p.join("baseline.txt");
+        let b=p.join("replacement.txt");
+        fs::write(&a,b"before").unwrap();
+        fs::write(&b,b"after").unwrap();
+        let original=File::open(&a).unwrap();
+        let snapshot=snapshot_metadata(&original).unwrap();
+        let evidence=snapshot.immutable_identity_bytes();
+        let staged=fs::OpenOptions::new().read(true).write(true).open(&b).unwrap();
+        prepare_stage_metadata(&original,&staged,&snapshot).unwrap();
+        assert_eq!(evidence,snapshot_metadata(&staged).unwrap().immutable_identity_bytes());
+        assert_eq!(evidence,snapshot_metadata(&original).unwrap().immutable_identity_bytes());
+        drop(staged);drop(original);fs::remove_dir_all(p).unwrap();
     }
 
     #[test]
