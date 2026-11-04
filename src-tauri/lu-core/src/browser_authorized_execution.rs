@@ -10,8 +10,10 @@ use crate::{
     browser_worker_supervisor::{BrowserOperation,BrowserSupervisorError,OwnedBrowserWorker},
     conversation_authority::{BoundCallOrigin,ConversationAuthority},
     contracts::{AuthorizationError,ProtoPayload,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
+    wire::proto,
 };
 use serde_json::Value;
+use prost::Message;
 use std::collections::BTreeSet;
 
 pub const BROWSER_READ_TOOL:&str="lu.web.browser.read";
@@ -22,7 +24,6 @@ const BROWSER_OUTPUT:&str="type.googleapis.com/lu.v1.BrowserOperationResult";
 #[derive(Debug)]
 pub enum BrowserAuthorizationError{
     MissingGrant,
-    WrongTask,
     UnapprovedOrigin,
     UnsupportedModelOperation,
     InvalidArguments,
@@ -94,6 +95,68 @@ impl BrowserOriginScope {
     }
     pub fn origins(&self)->Vec<String>{self.approved.iter().cloned().collect()}
 }
+/// Convert the exact, externally validated operation into one canonical
+/// typed request. This is encoding, NOT a permission grant; its output still
+/// requires immutable conversation authority and host policy at dispatch.
+pub fn encode_browser_request(
+    operation:BrowserOperation,args:&Value
+)->Result<ProtoPayload,BrowserAuthorizationError>{
+    required_effect(operation)?;
+    let object=args.as_object().ok_or(BrowserAuthorizationError::InvalidArguments)?;
+    if object.contains_key("op")||object.contains_key("type"){
+        return Err(BrowserAuthorizationError::InvalidArguments);
+    }
+    let json=serde_json::to_vec(args)
+        .map_err(|_|BrowserAuthorizationError::InvalidArguments)?;
+    if json.len()>8192{return Err(BrowserAuthorizationError::InvalidArguments);}
+    Ok(ProtoPayload{
+        type_url:BROWSER_INPUT.into(),
+        bytes:proto::BrowserOperationRequest{
+            operation:operation.operation_name().into(),
+            arguments_json:json,
+        }.encode_to_vec()
+    })
+}
+fn operation_from_name(name:&str)->Option<BrowserOperation>{
+    use BrowserOperation as O;
+    Some(match name{
+        "status"=>O::Status,"navigate"=>O::Navigate,
+        "read"=>O::Read,"accessibility"=>O::Accessibility,
+        "screenshot"=>O::Screenshot,"click"=>O::Click,
+        "click_selector"=>O::ClickSelector,"type"=>O::Type,
+        "press"=>O::Press,"scroll"=>O::Scroll,
+        "back"=>O::Back,"forward"=>O::Forward,
+        _=>return None,
+    })
+}
+/// Fail closed unless the Protobuf wire format is canonical, the JSON is a
+/// bounded canonical object, and the operation is a model-allowed capability.
+pub fn decode_browser_request(
+    invocation:&ToolInvocation
+)->Result<(BrowserOperation,Value),BrowserAuthorizationError>{
+    if invocation.input.type_url!=BROWSER_INPUT||invocation.input.bytes.len()>9000{
+        return Err(BrowserAuthorizationError::InvalidArguments);
+    }
+    let raw=proto::BrowserOperationRequest::decode(invocation.input.bytes.as_slice())
+        .map_err(|_|BrowserAuthorizationError::InvalidArguments)?;
+    if raw.encode_to_vec()!=invocation.input.bytes{
+        return Err(BrowserAuthorizationError::InvalidArguments);
+    }
+    let operation=operation_from_name(&raw.operation)
+        .ok_or(BrowserAuthorizationError::UnsupportedModelOperation)?;
+    required_effect(operation)?;
+    if raw.arguments_json.len()>8192{
+        return Err(BrowserAuthorizationError::InvalidArguments);
+    }
+    let args:Value=serde_json::from_slice(&raw.arguments_json)
+        .map_err(|_|BrowserAuthorizationError::InvalidArguments)?;
+    let obj=args.as_object().ok_or(BrowserAuthorizationError::InvalidArguments)?;
+    if obj.contains_key("op")||obj.contains_key("type")
+      ||serde_json::to_vec(&args).ok().as_deref()!=Some(raw.arguments_json.as_slice()){
+        return Err(BrowserAuthorizationError::InvalidArguments);
+    }
+    Ok((operation,args))
+}
 /// Only the host scheduler supplies the immutable origin & invocation.
 /// The browser command is not executable without a verified task capability
 /// and the ordinary Lu host authorizer. Never infer approval from a webpage.
@@ -106,10 +169,13 @@ pub fn authorize_browser_operation(
     operation:BrowserOperation,
     args:&Value,
 )->Result<(),BrowserAuthorizationError>{
+    let (decoded_operation,decoded_args)=decode_browser_request(invocation)?;
+    if operation!=decoded_operation||*args!=decoded_args{
+        return Err(BrowserAuthorizationError::InvalidArguments);
+    }
     let effect=required_effect(operation)?;
     let descriptor=browser_descriptor(effect)?;
-    if invocation.tool_id!=descriptor.id || !args.is_object()
-       ||invocation.input.bytes.len()>8192 {
+    if invocation.tool_id!=descriptor.id {
         return Err(BrowserAuthorizationError::InvalidArguments);
     }
     if matches!(operation,BrowserOperation::Navigate){
@@ -165,6 +231,62 @@ mod tests {
         assert!(required_effect(BrowserOperation::Hide).is_err());
     }
     #[test]
+    fn typed_browser_operation_must_match_the_exact_authorized_payload(){
+        let request=encode_browser_request(BrowserOperation::Navigate,
+            &serde_json::json!({"url":"https://papers.example/first"})).unwrap();
+        let invocation=ToolInvocation{
+            call_id:"call1".into(),tool_id:BROWSER_READ_TOOL.into(),
+            workspace_id:None,input:request,
+        };
+        assert_eq!(decode_browser_request(&invocation).unwrap().0,BrowserOperation::Navigate);
+        let auth=ConversationAuthority::new();
+        let origin=BoundCallOrigin{
+            conversation_id:"chat".into(),user_turn_id:"user".into(),task_id:"task".into()
+        };
+        struct Allow;
+        impl ToolAuthorizer for Allow {
+            fn authorize(&self,_:&ToolInvocation,_:&ToolDescriptor)->Result<(),AuthorizationError>{
+                Ok(())
+            }
+        }
+        let scope=BrowserOriginScope::from_host_grant(vec!["https://papers.example".into()]).unwrap();
+        for (op,args) in [
+            (BrowserOperation::Read,serde_json::json!({"url":"https://papers.example/first"})),
+            (BrowserOperation::Navigate,serde_json::json!({"url":"https://papers.example/second"}))
+        ] {
+            let result=authorize_browser_operation(&auth,&origin,&invocation,&Allow,
+                &scope,op,&args);
+            assert!(matches!(result,Err(BrowserAuthorizationError::InvalidArguments)));
+        }
+        // Even with an exact payload and permissive host policy, an absent
+        // persisted USER task cannot authorize a native browser action.
+        assert!(matches!(authorize_browser_operation(&auth,&origin,&invocation,&Allow,
+            &scope,BrowserOperation::Navigate,
+            &serde_json::json!({"url":"https://papers.example/first"})),
+            Err(BrowserAuthorizationError::MissingGrant)));
+        assert!(encode_browser_request(BrowserOperation::Show,
+            &serde_json::json!({})).is_err());
+        assert!(encode_browser_request(BrowserOperation::HumanResolved,
+            &serde_json::json!({})).is_err());
+    }
+    #[test]
+    fn noncanonical_browser_wire_and_json_do_not_reach_worker(){
+        let payload=encode_browser_request(BrowserOperation::Read,&serde_json::json!({})).unwrap();
+        let mut invocation=ToolInvocation{
+            call_id:"call".into(),tool_id:BROWSER_READ_TOOL.into(),
+            workspace_id:None,input:payload,
+        };
+        invocation.input.bytes.push(0);
+        assert!(decode_browser_request(&invocation).is_err());
+        invocation.input=ProtoPayload{
+            type_url:BROWSER_INPUT.into(),
+            bytes:proto::BrowserOperationRequest{
+                operation:"read".into(),arguments_json:b"{ \"x\": 1 }".to_vec(),
+            }.encode_to_vec(),
+        };
+        assert!(decode_browser_request(&invocation).is_err());
+    }
+    #[test]
     fn untrusted_model_input_cannot_substitute_permission(){
         struct Denied;
         impl ToolAuthorizer for Denied {
@@ -179,7 +301,8 @@ mod tests {
         let invocation=ToolInvocation{
             call_id:"test".into(),tool_id:BROWSER_READ_TOOL.into(),
             workspace_id:None,
-            input:ProtoPayload{type_url:BROWSER_INPUT.into(),bytes:vec![]}
+            input:encode_browser_request(BrowserOperation::Navigate,
+                &serde_json::json!({"url":"https://papers.example/a"})).unwrap()
         };
         let scope=BrowserOriginScope::from_host_grant(vec!["https://papers.example".into()]).unwrap();
         let denied=authorize_browser_operation(&auth,&origin,&invocation,&Denied,
