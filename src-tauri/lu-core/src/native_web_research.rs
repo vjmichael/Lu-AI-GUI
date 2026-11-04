@@ -213,6 +213,28 @@ mod tests {
         }
         assert!(valid_https_candidate("https://api.openalex.org/works"));
     }
+    struct Denied;
+    impl crate::contracts::ToolAuthorizer for Denied {
+        fn authorize(&self,_:&ToolInvocation,_:&ToolDescriptor)
+            ->Result<(),crate::contracts::AuthorizationError>{
+            Err(crate::contracts::AuthorizationError::new("no network grant"))
+        }
+    }
+    #[tokio::test]
+    async fn discovery_is_not_network_authority() {
+        let registry=NativeToolRegistry::new();
+        let mut catalog=ModelToolCatalog::new();
+        let binary=std::env::current_exe().unwrap();
+        register_web_research_tools(&registry,&mut catalog,&binary,None).unwrap();
+        let allowed=std::collections::BTreeSet::from(["lu_web_academic_search".to_owned()]);
+        let call=catalog.encode_call(&allowed,"lu_web_academic_search","web-1",None,
+            r#"{"query":"historical manuscripts","page":2}"#).unwrap();
+        assert_eq!(call.tool_id,SEARCH);
+        assert!(matches!(
+            registry.dispatch(call,&Denied).await,
+            Err(crate::registry::DispatchError::Denied(_))
+        ));
+    }
     #[test]
     fn a_search_result_cannot_smuggle_verified_true() {
         let codec=SearchCodec;
