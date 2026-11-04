@@ -241,7 +241,13 @@ impl LoopGuard {
                 // Remove unstable metadata, not actual content; only new
                 // semantic results count as progress. A changed call ID or
                 // timing field is never evidence of new information.
-                let normalized = without_volatiles(result);
+                // Do not count a different echoed filename, page number or
+                // operation request as genuine information. Only known
+                // data-bearing result fields can attest new observations.
+                let Some(semantic) = semantic_read_result(result) else {
+                    return ProgressEvidence::Unverified;
+                };
+                let normalized = without_volatiles(&semantic);
                 let fingerprint = digest(&serde_json::to_vec(&normalized)
                     .expect("trusted JSON serializes"));
                 if self.seen.contains(&fingerprint) {
@@ -312,4 +318,25 @@ fn without_volatiles(value: &Value) -> Value {
         Value::Array(items) => Value::Array(items.iter().map(without_volatiles).collect()),
         _ => value.clone(),
     }
+}
+
+/// Recognize actual information fields from trusted typed native decoders.
+/// Tool-specific decoders can add fields to this allowlist during review.
+/// Unrecognized metadata alone is not proof of progress.
+fn semantic_read_result(result: &Value) -> Option<Value> {
+    let object = result.as_object()?;
+    const EVIDENCE_FIELDS: &[&str] = &[
+        "content", "text", "entries", "matches", "hits", "files",
+        "diff", "commits", "items", "rows", "data", "results",
+        "kind", "size_bytes", "read_only", "exists",
+        "valid", "issues", "truncated", "bytes_read",
+        "candidate_present", "evidence", "word_count",
+    ];
+    let mut evidence = Map::new();
+    for field in EVIDENCE_FIELDS {
+        if let Some(value) = object.get(*field) {
+            evidence.insert((*field).to_owned(), value.clone());
+        }
+    }
+    if evidence.is_empty() { None } else { Some(Value::Object(evidence)) }
 }
