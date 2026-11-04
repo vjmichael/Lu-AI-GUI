@@ -208,7 +208,7 @@ async fn rejected_arguments_have_no_effect_and_stale_source_is_uncertain_not_ret
     let policy = PolicyEngine::new();
     let origin = open_task(&authority, &policy, "approved-edit-turn", "scope-edit-01", EDIT_TOOL_ID);
     let plan = plan_text_edit("notes.json", old, &sha(old), new).unwrap();
-    let review = bind_reviewed_edit(&plan, "notes.json", old, new).unwrap();
+    let review = review_test_selected(&plan,&root,old,new);
     let fence = ExactEditPolicy {
         host_policy: &policy, plan: &plan, reviewed: &review,
         approved_original: old, approved_replacement: new,
