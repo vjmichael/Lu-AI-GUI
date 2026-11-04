@@ -380,3 +380,90 @@ pub fn register_inspection_tools(
     }).map_err(|e| format!("cannot publish search schema: {e:?}"))?;
     Ok(())
 }
+
+
+#[cfg(test)]
+mod recursive_search_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn fixture() -> (PathBuf, Dir) {
+        let path = std::env::temp_dir().join(format!(
+            "lu-recursive-search-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(path.join("nested").join("deeper")).unwrap();
+        std::fs::write(path.join("top.rs"), "needle first\n").unwrap();
+        std::fs::write(path.join("nested").join("middle.txt"), "needle second\n").unwrap();
+        std::fs::write(path.join("nested").join("deeper").join("last.rs"), "needle third\n").unwrap();
+        std::fs::write(path.join(".secret"), "needle secret\n").unwrap();
+        let dir = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+        (path, dir)
+    }
+
+    fn request(recursive: bool, suffix: Option<&str>) -> proto::SearchTextRequest {
+        proto::SearchTextRequest {
+            path: String::new(),
+            query: "needle".into(),
+            max_files: Some(16),
+            max_matches: Some(16),
+            recursive: Some(recursive),
+            file_suffix: suffix.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn recursive_search_remains_opt_in_and_scoped() {
+        let (path, dir) = fixture();
+        let plain = search(&dir, request(false, None)).unwrap();
+        let plain = proto::SearchTextResult::decode(plain.payload.bytes.as_slice()).unwrap();
+        assert_eq!(plain.scanned_directories, 1);
+        assert_eq!(plain.hits.len(), 1);
+        assert_eq!(plain.hits[0].path, "top.rs");
+        let recursive = search(&dir, request(true, None)).unwrap();
+        let recursive = proto::SearchTextResult::decode(recursive.payload.bytes.as_slice()).unwrap();
+        assert_eq!(recursive.scanned_directories, 3);
+        assert_eq!(recursive.hits.len(), 3);
+        assert!(!recursive.truncated);
+        let filtered = search(&dir, request(true, Some(".rs"))).unwrap();
+        let filtered = proto::SearchTextResult::decode(filtered.payload.bytes.as_slice()).unwrap();
+        assert_eq!(filtered.hits.len(), 2);
+        assert!(filtered.hits.iter().all(|h| h.path.ends_with(".rs")));
+        drop(dir);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recursion_limits_and_invalid_filters_do_not_silently_succeed() {
+        let (path, dir) = fixture();
+        let mut req = request(true, None);
+        req.max_matches = Some(1);
+        let result = search(&dir, req).unwrap();
+        let result = proto::SearchTextResult::decode(result.payload.bytes.as_slice()).unwrap();
+        assert!(result.truncated);
+        let mut req = request(true, Some("../secret"));
+        assert!(search(&dir, req.clone()).is_err());
+        req.file_suffix = None;
+        req.path = "../outside".into();
+        assert!(search(&dir, req).is_err());
+        drop(dir);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_not_recursed_or_listed() {
+        use std::os::unix::fs::symlink;
+        let (path, dir) = fixture();
+        symlink("nested", path.join("alias")).unwrap();
+        symlink("top.rs", path.join("alias.rs")).unwrap();
+        let result = search(&dir, request(true, None)).unwrap();
+        let result = proto::SearchTextResult::decode(result.payload.bytes.as_slice()).unwrap();
+        assert_eq!(result.hits.len(), 3);
+        assert!(result.hits.iter().all(|h| !h.path.starts_with("alias")));
+        drop(dir);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+}
