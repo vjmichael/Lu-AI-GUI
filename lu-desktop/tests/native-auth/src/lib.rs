@@ -743,7 +743,7 @@ fn host_review_keeps_selected_directory_identity_when_name_is_replaced() {
     let chosen=root.join("chosen");
     fs::create_dir_all(&chosen).unwrap();
     let queue=write_proposal::WriteProposalQueue::default();
-    let raw=r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"Save notes","content":"# Notes"}"#;
+    let raw=r##"{"kind":"propose_create_file","file_name":"notes.md","purpose":"Save notes","content":"# Notes"}"##;
     queue.stage("pw-one","chat-a","generation-a",raw).unwrap();
     let (_target,_generation,_proposal)=queue.choose_directory("pw-one","chat-a",&chosen).unwrap();
     let moved=root.join("moved");
