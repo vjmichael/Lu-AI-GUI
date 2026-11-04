@@ -46,3 +46,39 @@ fn refuses_symlinks_missing_directories_and_never_silently_uses_app_data(){
     assert_eq!(db.selected(&docs).unwrap(),docs.canonicalize().unwrap());
     drop(db);fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn saved_file_link_requires_approved_record_matching_actual_applied_effect() {
+    use lu_core::{
+        document_preferences::verified_created_folder,
+        journal::{EffectRecord,EffectState},
+        native_create_new::TOOL_ID,
+        write_approval_ledger::{WriteDecision,WriteDecisionRecord},
+    };
+    let root=root();let docs=root.join("Documents");
+    fs::create_dir_all(&docs).unwrap();
+    let mut approval=WriteDecisionRecord{
+        proposal_id:"pw-one".into(),chat_id:"chat-a".into(),generation_id:"g-model".into(),
+        file_name:"report.md".into(),bytes:10,sha256:"a".repeat(64),
+        decision:WriteDecision::Approved,
+        selected_target:Some(docs.join("report.md").to_string_lossy().into_owned()),
+        effect_call_id:Some("g-effect-one".into()),
+    };
+    let mut effect=EffectRecord {
+        call_id:"g-effect-one".into(),tool_id:TOOL_ID.into(),
+        fingerprint:"hash".into(),state:EffectState::Applied,receipt:Some(vec![1]),
+    };
+    assert_eq!(verified_created_folder(&approval,&effect).unwrap(),docs);
+    effect.state=EffectState::Uncertain;
+    assert!(verified_created_folder(&approval,&effect).is_err());
+    effect.state=EffectState::Applied;
+    effect.call_id="g-other".into();
+    assert!(verified_created_folder(&approval,&effect).is_err());
+    effect.call_id="g-effect-one".into();
+    approval.decision=WriteDecision::Interrupted;
+    assert!(verified_created_folder(&approval,&effect).is_err());
+    approval.decision=WriteDecision::Approved;
+    approval.selected_target=Some(docs.join("different.txt").to_string_lossy().into_owned());
+    assert!(verified_created_folder(&approval,&effect).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
