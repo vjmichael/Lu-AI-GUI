@@ -1398,6 +1398,88 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_postpublish_same_bytes_wrong_file_id_is_never_acknowledged() {
+        let path=temp();
+        fs::write(path.join("notes.md"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let id="g-win-postpublish-id-swap-edit-001";
+        let outcome=commit_in_dir(&root,"notes.md",id,&sha(b"before"),
+            b"after",&sha(b"approved"),StopPoint::AfterPublishSameBytesIdentitySwap);
+        assert_eq!(outcome,Err(EditCommitError::Uncertain));
+        assert_eq!(fs::read(path.join("notes.md")).unwrap(),b"after");
+        assert_eq!(fs::read(path.join(sidecar(id,"orig"))).unwrap(),b"before");
+        assert_eq!(fs::read(path.join(sidecar(id,"published-displaced"))).unwrap(),b"after");
+        assert_eq!(observe_edit(&root,id),EditObservation::ChangedOrDamaged);
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_postpublish_same_bytes_wrong_file_id_is_never_acknowledged() {
+        let path=temp();
+        fs::write(path.join("notes.md"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let edit_id="g-win-postpublish-id-swap-old-001";
+        let rollback_id="g-win-postpublish-id-swap-undo-001";
+        commit_in_dir(&root,"notes.md",edit_id,&sha(b"before"),
+            b"after",&sha(b"approved"),StopPoint::Never).unwrap();
+        let result=rollback_with_stop(
+            &root,"notes.md",edit_id,rollback_id,&sha(b"after"),
+            &sha(b"before"),StopPoint::AfterPublishSameBytesIdentitySwap
+        );
+        assert_eq!(result,Err(EditCommitError::Uncertain));
+        assert_eq!(fs::read(path.join("notes.md")).unwrap(),b"before");
+        assert_eq!(fs::read(path.join(sidecar(rollback_id,"prior"))).unwrap(),b"after");
+        assert_eq!(observe_rollback(&root,rollback_id),RollbackObservation::ChangedOrDamaged);
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_recovery_requires_metadata_witness_even_when_text_bytes_match() {
+        use std::process::Command;
+        let path=temp();
+        fs::write(path.join("notes.md"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let id="g-win-security-witness-rollback-001";
+        commit_in_dir(&root,"notes.md",id,&sha(b"before"),
+            b"after",&sha(b"approved"),StopPoint::Never).unwrap();
+        assert_eq!(observe_edit(&root,id),EditObservation::ReplacementAndBackupVerified);
+        assert!(inspect_rollback_candidate(&root,"notes.md",id).is_ok());
+        // This modifies only the DACL and inheritance flag; content remains
+        // identical. A byte-hash-only recovery system would falsely pass.
+        let status=Command::new("icacls").arg(path.join("notes.md"))
+            .arg("/inheritance:d").status().expect("Windows icacls unavailable");
+        assert!(status.success());
+        assert_eq!(fs::read(path.join("notes.md")).unwrap(),b"after");
+        assert_eq!(observe_edit(&root,id),EditObservation::ChangedOrDamaged);
+        assert_eq!(inspect_rollback_candidate(&root,"notes.md",id),
+            Err(EditCommitError::InvalidRecoveryRecord));
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_legacy_manifest_without_security_witness_fails_closed() {
+        let path=temp();
+        fs::write(path.join("notes.md"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let id="g-win-legacy-manifest-refusal-001";
+        commit_in_dir(&root,"notes.md",id,&sha(b"before"),
+            b"after",&sha(b"approved"),StopPoint::Never).unwrap();
+        let meta_path=path.join(sidecar(id,"meta"));
+        let mut data:serde_json::Value=serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        data.as_object_mut().unwrap().remove("native_metadata_sha256");
+        fs::write(&meta_path,serde_json::to_vec(&data).unwrap()).unwrap();
+        assert_eq!(observe_edit(&root,id),EditObservation::ChangedOrDamaged);
+        assert_eq!(inspect_rollback_candidate(&root,"notes.md",id),
+            Err(EditCommitError::InvalidRecoveryRecord));
+        assert_eq!(fs::read(path.join("notes.md")).unwrap(),b"after");
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_external_writer_forces_uncertain_but_never_publishes() {
         let path=temp();
         let target=path.join("notes.txt");
