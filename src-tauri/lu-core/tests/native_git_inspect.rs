@@ -244,7 +244,9 @@ async fn unsafe_model_git_arguments_and_unapproved_dispatch_are_refused() {
     assert_eq!(data["ok"], false);
     assert_eq!(data["error"]["code"], "PERMISSION_DENIED");
     assert_eq!(data["error"]["retryable"], false);
-    assert_eq!(turn.step_count(), 0);
+    // Attempted calls consume a dispatch step even when permission is
+    // revoked. No native Git effect was authorized or performed.
+    assert_eq!(turn.step_count(), 1);
     drop(turn); drop(auth); drop(catalog); drop(registry);
     teardown(root);
 }
