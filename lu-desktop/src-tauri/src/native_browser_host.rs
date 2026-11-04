@@ -77,8 +77,9 @@ pub struct DesktopBrowserHost {
 fn safe_manifest_path(path:&str)->bool{
     !path.is_empty()&&path.len()<240&&!path.starts_with('/')
       &&path.split('/').all(|part|!part.is_empty()&&part!="."&&part!=".."
+        &&part.trim()==part
         &&part.bytes().all(|c|c.is_ascii_alphanumeric()
-          ||matches!(c,b'.'|b'_'|b'-')))
+          ||matches!(c,b'.'|b'_'|b'-'|b' ')))
 }
 fn pin_matches(path:&Path,expected_sha:&str,expected_len:u64)->bool {
     use sha2::{Digest,Sha256};
