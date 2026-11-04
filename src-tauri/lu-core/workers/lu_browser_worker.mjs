@@ -32,6 +32,37 @@ function boundedText(value, max) {
   }
   return value;
 }
+// Native host acknowledges window visibility through a dedicated reply type.
+export class HostVisibilityController {
+  constructor({write,timeoutMs=5000}={}) {
+    if(typeof write!=='function'||!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>30000)
+      throw new BrowserGateError('INVALID_HOST_BRIDGE');
+    this.write=write;this.timeoutMs=timeoutMs;this.sequence=0;this.pending=new Map();
+  }
+  setVisible({visible}) {
+    if(typeof visible!=='boolean') throw new BrowserGateError('INVALID_VISIBILITY');
+    const requestId='visibility-'+(++this.sequence);
+    return new Promise(resolve=>{
+      const timer=setTimeout(()=>{this.pending.delete(requestId);resolve(false);},this.timeoutMs);
+      this.pending.set(requestId,{timer,resolve});
+      try {this.write(JSON.stringify({type:'host_visibility_request',requestId,visible})+'\\n');}
+      catch {clearTimeout(timer);this.pending.delete(requestId);resolve(false);}
+    });
+  }
+  acceptHostReply(message) {
+    if(!message||message.type!=='host_visibility_response'||
+       typeof message.requestId!=='string'||typeof message.ok!=='boolean')return false;
+    const target=this.pending.get(message.requestId);
+    if(!target)return false;
+    clearTimeout(target.timer);this.pending.delete(message.requestId);
+    target.resolve(message.ok);return true;
+  }
+  close() {
+    for(const item of this.pending.values()){clearTimeout(item.timer);item.resolve(false);}
+    this.pending.clear();
+  }
+}
+
 export class BrowserSession {
   constructor({origins, profileDirectory, chromiumProvider, softwareRendering = false,
     visibilityMode = 'automatic', windowController = null} = {}) {
@@ -235,22 +266,40 @@ export class BrowserSession {
 }
 async function main() {
   const config=JSON.parse(process.env.LU_BROWSER_HOST_CONFIG || '{}');
-  const session=new BrowserSession(config);
+  const bridge=new HostVisibilityController({write:line=>process.stdout.write(line)});
+  const session=new BrowserSession({...config,windowController:bridge});
   let started=false;
+  let queue=Promise.resolve();
   const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity});
-  for await (const line of input) {
+  input.on('line',line=>{
     let request;
     try {
-      if (line.length>8192) throw new BrowserGateError('COMMAND_TOO_LARGE');
+      if(line.length>8192)throw new BrowserGateError('COMMAND_TOO_LARGE');
       request=JSON.parse(line);
-      if (!started) { await session.start(); started=true; }
-      const result=await session.execute(request);
-      process.stdout.write(JSON.stringify({ok:true,result})+'\n');
-    } catch(error) {
-      const code=error instanceof BrowserGateError ? error.code : 'BROWSER_FAILED';
-      process.stdout.write(JSON.stringify({ok:false,error:{code}})+'\n');
+    } catch {
+      process.stdout.write(JSON.stringify({ok:false,error:{code:'INVALID_COMMAND'}})+'\\n');
+      return;
     }
-  }
+    if(request?.type==='host_visibility_response'){
+      bridge.acceptHostReply(request);
+      return;
+    }
+    // Commands are serialized; host replies are not. Otherwise first
+    // automatic hide deadlocks waiting for its own acknowledgement.
+    queue=queue.then(async()=>{
+      try {
+        if(!started){await session.start();started=true;}
+        const result=await session.execute(request);
+        process.stdout.write(JSON.stringify({ok:true,result})+'\\n');
+      }catch(error){
+        const code=error instanceof BrowserGateError?error.code:'BROWSER_FAILED';
+        process.stdout.write(JSON.stringify({ok:false,error:{code}})+'\\n');
+      }
+    });
+  });
+  await new Promise(resolve=>input.once('close',resolve));
+  bridge.close();
+  await queue;
   await session.close();
 }
 if (process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) {
