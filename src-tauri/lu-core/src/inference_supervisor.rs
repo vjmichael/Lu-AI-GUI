@@ -48,6 +48,7 @@ struct Active {
 struct SessionControl {
     active: Option<Active>,
     closing: bool,
+    backend_ready: bool,
 }
 struct Session<B: InferenceBackend> {
     session_id: String,
@@ -64,6 +65,12 @@ struct GenerationCleanup<B: InferenceBackend> {
 }
 impl<B: InferenceBackend> Drop for GenerationCleanup<B> {
     fn drop(&mut self) {
+        // The backend may have ejected its own worker in response to an
+        // unverified streaming failure. Observe the real engine phase before
+        // releasing the reservation; otherwise status would falsely say Ready.
+        let ready = self.session.engine.lock()
+            .map(|engine| engine.phase() == EnginePhase::Ready)
+            .unwrap_or(false);
         if let Ok(mut control) = self.session.control.lock() {
             if control
                 .active
@@ -71,6 +78,7 @@ impl<B: InferenceBackend> Drop for GenerationCleanup<B> {
                 .is_some_and(|a| a.generation_id == self.generation_id)
             {
                 control.active = None;
+                control.backend_ready = ready;
             }
         }
     }
@@ -280,6 +288,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             control: Mutex::new(SessionControl {
                 active: None,
                 closing: false,
+                backend_ready: true,
             }),
         }));
         Ok(frame)
@@ -329,7 +338,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             .control
             .lock()
             .map_err(|_| SupervisorError::Poisoned)?;
-        if control.closing || control.active.is_some() {
+        if control.closing || !control.backend_ready || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
         control.active = Some(Active {
@@ -423,7 +432,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             .control
             .lock()
             .map_err(|_| SupervisorError::Poisoned)?;
-        if control.closing || control.active.is_some() {
+        if control.closing || !control.backend_ready || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
         control.active = Some(Active {
@@ -683,10 +692,16 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: control.active.as_ref().map(|a| a.generation_id.clone()),
             phase: if control.active.is_some() {
                 EnginePhase::Generating
-            } else {
+            } else if control.backend_ready {
                 EnginePhase::Ready
+            } else {
+                EnginePhase::Idle
             },
-            pid: session.pid,
+            pid: if control.backend_ready || control.active.is_some() {
+                session.pid
+            } else {
+                None
+            },
         })
     }
 }
