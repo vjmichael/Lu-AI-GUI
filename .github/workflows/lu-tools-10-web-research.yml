@@ -36,6 +36,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Native source-level research security tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_ -- --nocapture
+      - name: Persistent browser settings tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences -- --nocapture
       - name: Browser visibility state and platform adapter tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings -- --nocapture
       - name: Host-authorized visibility bridge tests
