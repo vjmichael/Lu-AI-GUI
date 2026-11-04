@@ -163,7 +163,7 @@ jobs:
       - name: Windows ACL, creation-time and no-write-lease native FFI acceptance
         shell: pwsh
         run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib metadata_guard::tests -- --nocapture
-      - name: Windows native existing-file edit/restore unsafe-metadata refusal
+      - name: Windows native edit recovery, publication seal and competing-rename evidence
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_edit_existing::tests::windows_ -- --nocapture
       - name: Windows picker-to-authorized-effect same-byte FileId swap refusal
