@@ -95,7 +95,10 @@ fn io(e: std::io::Error) -> EditCommitError { EditCommitError::Io(e.to_string())
 fn sync_parent(dir: &Dir) -> Result<(), EditCommitError> {
     #[cfg(unix)]
     {
-        dir.try_clone().map_err(io)?.into_std_file().sync_all().map_err(io)?;
+        // cap-std may hold an O_PATH directory descriptor on Linux; fsync
+        // on that descriptor fails EBADF. Open a readable directory handle
+        // relative to the pinned capability instead of syncing O_PATH.
+        dir.open(".").map_err(io)?.sync_all().map_err(io)?;
     }
     // Windows directory FlushFileBuffers requires special native directory
     // handles. Synced files and the WAL journal do not constitute an NTFS
