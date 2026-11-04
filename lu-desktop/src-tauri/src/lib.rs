@@ -1414,7 +1414,7 @@ fn lu_write_recovery(
                 native_host_write::inspect_recovery_target(
                     &state.drafts_dir, &record.file_name, record.bytes, &record.sha256
                 ).into(),
-            _ => "NOT_SELECTED_OR_UNTRUSTED_PATH".into(),
+            _ => "EXTERNAL_TARGET_NOT_AUTOMATICALLY_INSPECTED".into(),
         };
         let observation = match observed_target.as_str() {
             "MATCHES_APPROVED_BYTES" => lu_core::write_recovery::TargetObservation::Matching,
