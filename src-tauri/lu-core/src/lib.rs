@@ -14,6 +14,7 @@ pub mod agent_tool_loop;
 pub mod loop_guard;
 pub mod generation_loop_guard;
 pub mod backend_control;
+pub mod vllm_control;
 pub mod ansf;
 pub mod ansf_import;
 pub mod ansf_library;
