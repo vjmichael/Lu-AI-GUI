@@ -46,7 +46,7 @@ const seen=new Set();
 function copyRegular(src,relativePath,root){
   const relativeParts=relativePath.split('/');
   if(!relativeParts.every(p=>p&&p!=='.'&&p!=='..'
-    &&/^[a-zA-Z0-9._-]+$/.test(p)))
+    &&/^[a-zA-Z0-9._ -]+$/.test(p)&&p.trim()===p))
     throw Error('Unsafe browser candidate path '+relativePath);
   if(seen.has(relativePath))throw Error('Duplicate candidate path '+relativePath);
   const actual=realpathSync(src);
