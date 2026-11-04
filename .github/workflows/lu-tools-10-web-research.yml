@@ -86,3 +86,16 @@ jobs:
         run: cd src-tauri/lu-core/workers && npx playwright install --with-deps chromium
       - name: Headed Chromium lifecycle and screenshot acceptance
         run: xvfb-run -a node --test tests/lu-browser-real.test.mjs
+      - name: Real Lu-owned X11 window control prerequisites
+        run: sudo apt-get install -y xdotool
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native Rust host owns headed Chromium and switches visibility
+        shell: bash
+        run: |
+          CHROMIUM="$(node --input-type=module -e "import {chromium} from './src-tauri/lu-core/workers/node_modules/playwright/index.mjs'; console.log(chromium.executablePath())")"
+          LU_BROWSER_NATIVE_ACCEPTANCE=1 \
+          LU_BROWSER_CHROMIUM="$CHROMIUM" \
+          LU_BROWSER_NODE="$(command -v node)" \
+          LU_BROWSER_XDOTOOL="$(command -v xdotool)" \
+            xvfb-run -a cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance -- --nocapture
+
