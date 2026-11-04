@@ -33,7 +33,8 @@ function boundedText(value, max) {
   return value;
 }
 export class BrowserSession {
-  constructor({origins, profileDirectory, chromiumProvider, softwareRendering = false} = {}) {
+  constructor({origins, profileDirectory, chromiumProvider, softwareRendering = false,
+    visibilityMode = 'automatic', windowController = null} = {}) {
     if (!Array.isArray(origins) || origins.length === 0 || origins.length > 32) {
       throw new BrowserGateError('INVALID_ORIGINS');
     }
@@ -48,6 +49,14 @@ export class BrowserSession {
     this.profileDirectory = profileDirectory; // host owns path and access control
     this.chromiumProvider = chromiumProvider;
     this.softwareRendering = softwareRendering === true;
+    if (!['automatic','always-visible'].includes(visibilityMode)) {
+      throw new BrowserGateError('INVALID_VISIBILITY_MODE');
+    }
+    this.visibilityMode = visibilityMode;
+    // Only a host-owned native window controller may manipulate Chromium's window.
+    // Playwright Page/Browser APIs must not pretend a window was hidden.
+    this.windowController = windowController;
+    this.windowVisibility = 'NOT_STARTED';
     this.context = null;
     this.page = null;
     this.paused = null;
@@ -68,7 +77,37 @@ export class BrowserSession {
       } catch { await route.abort(); }
     });
     this.page = this.context.pages()[0] ?? await this.context.newPage();
-    return {status:'READY'};
+    try {
+      if (this.visibilityMode === 'automatic') {
+        await this.#setWindowVisibility('HIDDEN');
+      } else {
+        this.windowVisibility = 'VISIBLE';
+      }
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+    return {status:'READY',windowVisibility:this.windowVisibility};
+  }
+  async #setWindowVisibility(visibility) {
+    if (!this.windowController || typeof this.windowController.setVisible !== 'function') {
+      throw new BrowserGateError('NATIVE_WINDOW_CONTROLLER_UNAVAILABLE');
+    }
+    // A trusted controller must prove the window belongs to this same Chromium
+    // session. It must not hide another application's window by title matching.
+    const response = await this.windowController.setVisible({
+      context:this.context,visible:visibility==='VISIBLE'
+    });
+    if (response !== true) throw new BrowserGateError('WINDOW_VISIBILITY_FAILED');
+    this.windowVisibility=visibility;
+  }
+  async #requestHuman(reason) {
+    this.paused=reason;
+    // Never claim the browser was revealed unless the native window API
+    // confirms success. If unavailable, the challenge remains paused.
+    if (this.visibilityMode==='automatic') await this.#setWindowVisibility('VISIBLE');
+    return {status:'NEEDS_HUMAN',reason,url:this.page.url(),
+      windowVisibility:this.windowVisibility};
   }
   async execute(command) {
     if (!this.page) throw new BrowserGateError('BROWSER_NOT_STARTED');
@@ -77,7 +116,8 @@ export class BrowserSession {
     }
     const op = command.op;
     if (op === 'status') {
-      return {status:this.paused ? 'NEEDS_HUMAN' : 'READY',reason:this.paused ?? null,url:this.page.url()};
+      return {status:this.paused ? 'NEEDS_HUMAN' : 'READY',reason:this.paused ?? null,
+        url:this.page.url(),windowVisibility:this.windowVisibility,visibilityMode:this.visibilityMode};
     }
     if (op === 'human_resolved') {
       if (!this.paused) throw new BrowserGateError('NO_PENDING_CHALLENGE');
@@ -86,10 +126,22 @@ export class BrowserSession {
       approvedUrl(this.page.url(),this.origins);
       const text = await this.page.locator('body').innerText({timeout:5000});
       if (challengeKind(text)) throw new BrowserGateError('CHALLENGE_STILL_PRESENT');
+      // User may have completed a form or navigated. Verify challenge state
+      // before the host can hide the window and relinquish human control.
       this.paused = null;
-      return {status:'RESUMED',url:this.page.url()};
+      if (this.visibilityMode==='automatic') await this.#setWindowVisibility('HIDDEN');
+      return {status:'RESUMED',url:this.page.url(),windowVisibility:this.windowVisibility};
     }
     if (this.paused) throw new BrowserGateError('NEEDS_HUMAN');
+    if (op === 'show_browser') {
+      await this.#setWindowVisibility('VISIBLE');
+      return {status:'VISIBLE',windowVisibility:this.windowVisibility};
+    }
+    if (op === 'hide_browser') {
+      if (this.visibilityMode==='always-visible') throw new BrowserGateError('VISIBILITY_LOCKED_VISIBLE');
+      await this.#setWindowVisibility('HIDDEN');
+      return {status:'HIDDEN',windowVisibility:this.windowVisibility};
+    }
     if (op === 'navigate') {
       const url = approvedUrl(boundedText(command.url,2048),this.origins);
       const response = await this.page.goto(url.href,{waitUntil:'domcontentloaded',timeout:20000});
@@ -97,8 +149,7 @@ export class BrowserSession {
       const text = await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
       const challenge = challengeKind(text);
       if (challenge) {
-        this.paused = challenge;
-        return {status:'NEEDS_HUMAN',reason:challenge,url:this.page.url()};
+        return this.#requestHuman(challenge);
       }
       return {status:'NAVIGATED',url:this.page.url(),httpStatus:response?.status()??null};
     }
@@ -152,8 +203,7 @@ export class BrowserSession {
       const text = await this.page.locator('body').innerText({timeout:5000});
       const challenge=challengeKind(text);
       if (challenge) {
-        this.paused=challenge;
-        return {status:'NEEDS_HUMAN',reason:challenge,url:this.page.url()};
+        return this.#requestHuman(challenge);
       }
       return {status:'READ',url:this.page.url(),text:text.slice(0,131072),truncated:text.length>131072};
     }
@@ -174,7 +224,10 @@ export class BrowserSession {
     }
     throw new BrowserGateError('UNKNOWN_OPERATION');
   }
-  async close() { if (this.context) await this.context.close(); this.context=null;this.page=null; }
+  async close() {
+    if (this.context) await this.context.close();
+    this.context=null;this.page=null;this.windowVisibility='NOT_STARTED';
+  }
 }
 async function main() {
   const config=JSON.parse(process.env.LU_BROWSER_HOST_CONFIG || '{}');
