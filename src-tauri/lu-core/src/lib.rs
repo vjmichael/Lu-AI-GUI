@@ -58,6 +58,7 @@ pub mod model;
 pub mod model_admission;
 pub mod model_import;
 pub mod model_json_boundary;
+pub mod web_research_evidence;
 pub mod model_turn_journal;
 pub mod multimodal_http;
 pub mod multimodal_saved_turn;
