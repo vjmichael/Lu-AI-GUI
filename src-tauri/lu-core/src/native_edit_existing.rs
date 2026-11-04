@@ -787,6 +787,55 @@ mod tests {
     }
 
     #[test]
+    fn durable_receipt_requires_a_matching_successful_typed_edit_not_merely_applied_state() {
+        let id="g-verified-edit-receipt-001";
+        let old=sha(b"{\"a\":1}");
+        let new=sha(b"{\"a\":2}");
+        let encoded=proto::ToolReply {
+            call_id:id.into(), output_type_url:EDIT_RESULT_TYPE.into(),
+            outcome:Some(proto::tool_reply::Outcome::Output(
+                proto::EditExistingResult {
+                    backup_id:id.into(), bytes_written:7,
+                    original_sha256:old.clone(), replacement_sha256:new.clone(),
+                    committed:true,
+                }.encode_to_vec()
+            ))
+        }.encode_to_vec();
+        let mut effect=EffectRecord {
+            call_id:id.into(), tool_id:EDIT_TOOL_ID.into(),
+            fingerprint:"some-authenticated-call-hash".into(),
+            state:EffectState::Applied, receipt:Some(encoded.clone()),
+        };
+        assert!(verified_edit_receipt(&effect,id,&old,&new,7));
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,8));
+        assert!(!verified_edit_receipt(&effect,id,&new,&old,7));
+        effect.state=EffectState::Uncertain;
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+        effect.state=EffectState::Applied;
+        effect.tool_id=ROLLBACK_TOOL_ID.into();
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+        effect.tool_id=EDIT_TOOL_ID.into();
+        effect.receipt=Some(vec![0xff,0xff,0xff]);
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+        let mut wrong_reply=proto::ToolReply::decode(encoded.as_slice()).unwrap();
+        wrong_reply.call_id="g-other-edit-receipt-0001".into();
+        effect.receipt=Some(wrong_reply.encode_to_vec());
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+        let mut wrong_type=proto::ToolReply::decode(encoded.as_slice()).unwrap();
+        wrong_type.output_type_url=ROLLBACK_RESULT_TYPE.into();
+        effect.receipt=Some(wrong_type.encode_to_vec());
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+        let mut denied=proto::ToolReply::decode(encoded.as_slice()).unwrap();
+        denied.outcome=Some(proto::tool_reply::Outcome::Failure(proto::ToolError{
+            code:"DENIED".into(), message:"no".into(), retryable:false,
+        }));
+        effect.receipt=Some(denied.encode_to_vec());
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+        effect.receipt=None;
+        assert!(!verified_edit_receipt(&effect,id,&old,&new,7));
+    }
+
+    #[test]
     fn source_conflict_and_invalid_json_cannot_publish() {
         let path = temp();
         fs::write(path.join("t.json"), b"{\"a\":1}").unwrap();
