@@ -25,7 +25,7 @@ use std::{
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
-    sync::Arc,
+    sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}},
 };
 
 /// Values originate from a host-controlled engine manifest and configuration;
@@ -47,7 +47,7 @@ pub struct PersistentLlamaBackend {
     canonical_executable: PathBuf,
     pinned_model_file: Option<File>,
     pinned_projector_file: Option<File>,
-    process: Option<Child>,
+    process: Option<Arc<Mutex<Child>>>,
     port: Option<u16>,
     #[cfg(windows)]
     job: Option<lu_win_worker_job::Job>,
@@ -141,12 +141,12 @@ impl PersistentLlamaBackend {
         }
     }
     pub fn pid(&self) -> Option<u32> {
-        self.process.as_ref().map(Child::id)
+        self.process.as_ref().and_then(|p| p.lock().ok().map(|child| child.id()))
     }
     pub fn is_running(&mut self) -> bool {
-        self.process
-            .as_mut()
-            .is_some_and(|p| matches!(p.try_wait(), Ok(None)))
+        self.process.as_ref().is_some_and(|p|
+            p.lock().ok().is_some_and(|mut child| matches!(child.try_wait(), Ok(None)))
+        )
     }
     fn active_port(&mut self) -> Result<u16, String> {
         if !self.is_running() {
@@ -154,6 +154,48 @@ impl PersistentLlamaBackend {
         }
         self.port
             .ok_or("persistent inference endpoint missing".into())
+    }
+    /// Independent cancellation watchdog: unlike a cancellation callback
+    /// inside HTTP streaming, this thread can kill a Lu-owned child even if
+    /// the generating thread becomes blocked in the backend.
+    fn run_with_watchdog<T>(
+        &mut self,
+        cancellation: &Cancellation,
+        request: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let child = self.process.as_ref().cloned()
+            .ok_or_else(|| "llama.cpp worker is not loaded".to_owned())?;
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_for_thread = Arc::clone(&completed);
+        let cancellation = cancellation.clone();
+        let watchdog = thread::spawn(move || {
+            while !completed_for_thread.load(Ordering::Acquire) {
+                if cancellation.is_cancelled() {
+                    // Permit the normal HTTP cancellation path to finish,
+                    // then forcibly kill the exact retained child handle.
+                    let deadline = Instant::now() + Duration::from_millis(750);
+                    while Instant::now() < deadline {
+                        if completed_for_thread.load(Ordering::Acquire) {
+                            return;
+                        }
+                        thread::sleep(Duration::from_millis(25));
+                    }
+                    if !completed_for_thread.load(Ordering::Acquire) {
+                        if let Ok(mut owned) = child.lock() {
+                            if matches!(owned.try_wait(), Ok(None)) {
+                                let _ = owned.kill();
+                            }
+                        }
+                    }
+                    return;
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+        });
+        let result = request();
+        completed.store(true, Ordering::Release);
+        let _ = watchdog.join();
+        result
     }
     fn wait_ready(&mut self, deadline: Instant, port: u16) -> Result<(), String> {
         loop {
@@ -328,7 +370,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         {
             self.job = Some(job);
         }
-        self.process = Some(child);
+        self.process = Some(Arc::new(Mutex::new(child)));
         self.observe("engine_spawned", self.pid());
         self.pinned_model_file = Some(file);
         self.pinned_projector_file = projector_file;
@@ -341,9 +383,11 @@ impl InferenceBackend for PersistentLlamaBackend {
         Ok(())
     }
     fn unload(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(child) = self.process.take() {
+            if let Ok(mut child) = child.lock() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
         }
         self.port = None;
         self.pinned_model_file = None;
@@ -376,7 +420,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured image request".to_string())?;
         let mut piece = 0u32;
-        let result = generate_chat_stream_body(
+        let result = self.run_with_watchdog(cancel, || generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -388,7 +432,7 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        );
+        ));
         // A rejected stream is not proof that llama-server has stopped
         // decoding. Fail closed: terminate and reap the Lu-owned engine.
         // A later load is a separate host-authorized, resource-checked step.
@@ -415,7 +459,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut piece = 0u32;
-        let result = generate_chat_stream_body(
+        let result = self.run_with_watchdog(cancel, || generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -427,7 +471,7 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        );
+        ));
         // A rejected stream is not proof that llama-server has stopped
         // decoding. Fail closed: terminate and reap the Lu-owned engine.
         // A later load is a separate host-authorized, resource-checked step.
