@@ -11,7 +11,7 @@ use crate::{
 };
 use serde_json::{json,Value};
 use std::{
-    io::{self,BufRead,BufReader,Read,Write},
+    io::{self,BufRead,BufReader,Write},
     path::PathBuf,
     process::{Child,ChildStdin,Command,Stdio},
     sync::mpsc::{self,Receiver,RecvTimeoutError},
@@ -101,6 +101,34 @@ fn parse_worker_frame(line:&str)->Result<Value,BrowserSupervisorError>{
     if !result.is_object(){return Err(BrowserSupervisorError::Protocol);}
     Ok(result)
 }
+/// Read only a single bounded JSONL frame. Reading through BufRead's
+/// internal buffer permits a strict cap even for a malicious unterminated line.
+fn read_bounded_worker_line<R:BufRead>(reader:&mut R)->io::Result<Option<String>>{
+    let mut bytes=Vec::new();
+    loop {
+        let buf=reader.fill_buf()?;
+        if buf.is_empty(){
+            if bytes.is_empty(){return Ok(None);}
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof,
+                "unterminated browser-worker frame"));
+        }
+        let count=buf.iter().position(|&byte|byte==b'\n')
+            .map_or(buf.len(),|index|index+1);
+        if bytes.len()+count>MAX_FRAME+1 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "browser-worker frame exceeded limit"));
+        }
+        let completed=buf[count-1]==b'\n';
+        bytes.extend_from_slice(&buf[..count]);
+        reader.consume(count);
+        if completed {
+            let line=String::from_utf8(bytes)
+                .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,
+                    "non-UTF8 browser-worker frame"))?;
+            return Ok(Some(line));
+        }
+    }
+}
 pub struct OwnedBrowserWorker {
     child:Child,
     stdin:ChildStdin,
@@ -141,21 +169,10 @@ impl OwnedBrowserWorker {
             loop {
                 // An untrusted worker must not force unbounded allocation
                 // by streaming a line without the framing delimiter.
-                let mut bytes=Vec::new();
-                let result=reader.by_ref().take((MAX_FRAME+2) as u64)
-                    .read_until(b'\n',&mut bytes);
+                let result=read_bounded_worker_line(&mut reader);
                 match result {
-                    Ok(0)=>break,
-                    Ok(_) if bytes.len()<=MAX_FRAME+1&&bytes.last()==Some(&b'\n')=>{
-                        let line=String::from_utf8(bytes).map_err(|_|io::Error::new(
-                            io::ErrorKind::InvalidData,"non-UTF8 worker frame"));
-                        if tx.send(line).is_err(){break;}
-                    },
-                    Ok(_)=>{
-                        let _=tx.send(Err(io::Error::new(
-                            io::ErrorKind::InvalidData,"oversized or unterminated worker frame")));
-                        break;
-                    },
+                    Ok(None)=>break,
+                    Ok(Some(line))=>{if tx.send(Ok(line)).is_err(){break;}},
                     Err(e)=>{let _=tx.send(Err(e));break;}
                 }
             }
