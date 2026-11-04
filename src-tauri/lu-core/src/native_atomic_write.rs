@@ -51,9 +51,8 @@ fn valid_stage_id(id: &str) -> bool {
 ///
 /// The caller guarantees that `trusted_directory` is a host-selected
 /// directory and not substituted by model text, retrieved content or the
-/// WebView. An adversarial parent-directory rename race requires a later
-/// handle-relative publish implementation before enabling arbitrary writable
-/// user directories.
+/// WebView. The directory is opened once and subsequent staging/linking/cleanup are
+/// handle-relative, limiting pathname replacement races.
 pub fn create_new_atomic(
     trusted_directory: &Path,
     target_name: &str,
@@ -115,7 +114,7 @@ pub fn create_new_atomic_in_dir(
         return Err(e);
     }
     if let Err(e) = root.hard_link(&stage_name, root, target_name) {
-        let _ = fs::remove_file(&stage);
+        let _ = root.remove_file(&stage_name);
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             return Err(AtomicWriteError::ExistingTarget);
         }
@@ -123,7 +122,7 @@ pub fn create_new_atomic_in_dir(
     }
     // Publish happened. If cleanup fails the file may be visible along two
     // names; require a durable UNCERTAIN receipt and human reconciliation.
-    fs::remove_file(&stage)
+    root.remove_file(&stage_name)
         .map_err(|_| AtomicWriteError::PublishedNeedsReconciliation)?;
     let sha256 = format!("{:x}", Sha256::digest(content));
     Ok(WriteReceipt {
