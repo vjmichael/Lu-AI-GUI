@@ -162,6 +162,7 @@ struct ActiveBrowserTask {
     task_id:String,
     chat_id:String,
     user_turn_id:String,
+    execution_scope_id:String,
     origins:Vec<String>,
     starting:bool,
 }
@@ -204,7 +205,7 @@ struct DesktopState {
     browser_runtime: Arc<native_browser_host::DesktopBrowserHost>,
     browser_authority: lu_core::conversation_authority::ConversationAuthority,
     browser_task: Mutex<Option<ActiveBrowserTask>>,
-    browser_tools: Mutex<Option<DesktopBrowserTools>>,
+    browser_tools: Mutex<Option<Arc<DesktopBrowserTools>>>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -1509,6 +1510,47 @@ async fn lu_browser_stop(
     }).await.map_err(|e|format!("browser shutdown worker failed: {e}"))?
 }
 
+/// Host-internal model tool dispatch. Called ONLY with a structured,
+/// complete function-call event from the trusted inference engine's admitted
+/// schema list. Neither prompts, web pages, nor WebView callers can provide
+/// an arbitrary native task ID or browser process handle.
+#[allow(dead_code)]
+async fn dispatch_authenticated_browser_model_call(
+    state:Arc<DesktopState>,
+    chat_id:&str,
+    user_turn_id:&str,
+    public_tool:&str,
+    model_call_id:&str,
+    raw_arguments:&str,
+)->Result<serde_json::Value,String>{
+    use std::collections::BTreeSet;
+    let (tools,scope_id)={
+        let active=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        let task=active.as_ref().ok_or("No authorized browser task")?;
+        if task.starting||task.chat_id!=chat_id||task.user_turn_id!=user_turn_id{
+            return Err("Browser model call does not belong to the active user turn".into());
+        }
+        let tools=state.browser_tools.lock()
+            .map_err(|_|"browser registry lock poisoned")?
+            .as_ref().cloned().ok_or("Browser tools not installed")?;
+        (tools,task.execution_scope_id.clone())
+    };
+    // The initial native approval grants NetworkRead only, so the model
+    // cannot obtain interaction just by naming lu_browser_interact.
+    let mut allowed=BTreeSet::new();
+    allowed.insert("lu_browser_read".into());
+    if !allowed.contains(public_tool){
+        return Err("Browser tool not advertised to this authorized turn".into());
+    }
+    let invocation=tools.model_catalog.encode_call(
+        &allowed,public_tool,model_call_id,Some(&scope_id),raw_arguments
+    ).map_err(|e|format!("invalid structured browser function call: {e:?}"))?;
+    let outcome=tools.registry.dispatch(invocation,&BrowserReadOnlyPolicy).await;
+    tools.model_catalog.decode_result(&allowed,public_tool,&outcome)
+        .map_err(|e|format!("invalid browser tool result: {e:?}"))
+}
+
 /// Native user approval is mandatory before any browser session starts.
 /// The trusted host chooses an authenticated USER turn from the journal;
 /// a web page or model cannot forge one with a message string.
@@ -1545,12 +1587,13 @@ async fn lu_browser_start(
     }).await.map_err(|e|format!("browser approval dialog failed: {e}"))?;
     if !approved{return Err("Browser request denied by user".into());}
     let task_id=next_id("browser-task-");
+    let execution_scope_id=next_id("browser-scope-");
     state.browser_authority.open_user_task(
         TaskAuthority {
             conversation_id:chat_id.clone(),
             user_turn_id:user_turn_id.clone(),
             task_id:task_id.clone(),
-            execution_scope_id:next_id("browser-scope-"),
+            execution_scope_id:execution_scope_id.clone(),
             capabilities:vec![AuthorizedCapability{
                 tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead
             }],
@@ -1569,8 +1612,9 @@ async fn lu_browser_start(
         }
         *current=Some(ActiveBrowserTask{
             task_id:task_id.clone(),chat_id:chat_id.clone(),
-            user_turn_id:user_turn_id.clone(),origins:approved_origins.clone(),
-            starting:true
+            user_turn_id:user_turn_id.clone(),
+            execution_scope_id:execution_scope_id.clone(),
+            origins:approved_origins.clone(),starting:true
         });
     }
     let native_state=Arc::clone(&state);
@@ -1623,7 +1667,7 @@ async fn lu_browser_start(
         if let Some(task)=active.as_mut().filter(|task|task.task_id==task_id){
             let mut tools=state.browser_tools.lock()
                 .map_err(|_|"browser tool registration lock poisoned")?;
-            *tools=Some(DesktopBrowserTools{registry,model_catalog});
+            *tools=Some(Arc::new(DesktopBrowserTools{registry,model_catalog}));
             task.starting=false;
             true
         }else{false}
