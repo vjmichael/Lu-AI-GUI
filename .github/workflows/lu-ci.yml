@@ -136,6 +136,12 @@ jobs:
       - name: Windows write approval ledger crash/restart regressions
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test write_approval_ledger
+      - name: Windows user Documents defaults and verified file link regressions
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test document_preferences
+      - name: Windows deterministic preflight for existing text edits
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test edit_safety
       - name: Compile check only (NOT distributable or GPU-tested)
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
