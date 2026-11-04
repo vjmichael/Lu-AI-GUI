@@ -440,6 +440,13 @@ impl InferenceBackend for PersistentLlamaBackend {
             self.unload();
             return Err(error);
         }
+        // A backend without independently observable slot completion cannot
+        // satisfy the v1.0 verified-stop contract. Reject it at load time,
+        // not after silently reusing a potentially still-generating worker.
+        if !Self::slots_idle(port, &self.config.api_key) {
+            self.unload();
+            return Err("llama.cpp backend lacks verified idle-slot capability".into());
+        }
         Ok(())
     }
     fn unload(&mut self) {
