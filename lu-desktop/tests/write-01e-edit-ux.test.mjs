@@ -40,3 +40,13 @@ test('native path authority never comes from proposed model JSON',()=>{
   assert.ok(host.includes('observe_edit(&dir,&call_id)'));
   assert.ok(!host.includes('rollback_on_failure'));
 });
+
+test('undo preview requires recovery inspection and remains read-only',()=>{
+  assert.ok(ui.includes("editObservations[record.proposalId]?.rollbackPreview"));
+  assert.ok(ui.includes('aria-label="Verified original text"'));
+  assert.ok(ui.includes('aria-label="Proposed restore change lines"'));
+  assert.ok(ui.includes('Undo remains disabled pending its own human authorization'));
+  assert.ok(host.includes('inspect_rollback_candidate('));
+  assert.ok(host.includes('record.original_sha256.as_deref()'));
+  assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
+});
