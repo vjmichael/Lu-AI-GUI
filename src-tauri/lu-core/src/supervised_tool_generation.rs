@@ -913,7 +913,7 @@ Rejected model tool envelope (not an executed call): {feedback}
         records.push(NativeTurnRecord::ModelOutput(reply));
         // A successful tool result starts a fresh JSON response stage.
         // Rejection retries cannot spill into a later executed step.
-        if matches!(outcome, ToolTurnOutcome::ToolResult { .. }) {
+        if matches!(&outcome, ToolTurnOutcome::ToolResult { .. }) {
             json_regenerations = 0;
         }
         // The awaited tool may already have made a change. Never label that
