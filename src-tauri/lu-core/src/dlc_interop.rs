@@ -97,6 +97,29 @@ pub fn encode_dlc_frame(frame: &proto::DlcFrame) -> Result<Vec<u8>, DlcInteropEr
     Ok(frame.encode_to_vec())
 }
 
+/// Identical stream framing on Linux AF_UNIX and Windows named pipes:
+/// unsigned 32-bit big-endian byte length followed by one canonical frame.
+/// This is NOT an authentication step; the carrier must establish identity
+/// and Lu must issue a trusted grant before dispatching the decoded request.
+pub fn encode_dlc_packet(frame: &proto::DlcFrame) -> Result<Vec<u8>, DlcInteropError> {
+    let payload = encode_dlc_frame(frame)?;
+    let mut packet = Vec::with_capacity(4 + payload.len());
+    packet.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    packet.extend_from_slice(&payload);
+    Ok(packet)
+}
+
+pub fn decode_dlc_packet(packet: &[u8]) -> Result<proto::DlcFrame, DlcInteropError> {
+    if packet.len() < 4 {
+        return Err(DlcInteropError::EmptyOrOversized);
+    }
+    let size = u32::from_be_bytes([packet[0], packet[1], packet[2], packet[3]]) as usize;
+    if size == 0 || size > MAX_DLC_FRAME_BYTES || packet.len() != size + 4 {
+        return Err(DlcInteropError::InvalidField("packet_length"));
+    }
+    decode_dlc_frame(&packet[4..])
+}
+
 pub fn validate_dlc_frame(frame: &proto::DlcFrame) -> Result<(), DlcInteropError> {
     use proto::dlc_frame::Body;
 
@@ -393,6 +416,27 @@ mod tests {
         assert_eq!(decode_dlc_frame(&[]), Err(DlcInteropError::EmptyOrOversized));
         assert_eq!(decode_dlc_frame(&vec![0; MAX_DLC_FRAME_BYTES + 1]),
             Err(DlcInteropError::EmptyOrOversized));
+    }
+
+    #[test]
+    fn same_be_length_prefixed_packets_reject_partial_and_trailing_bytes() {
+        let value = hello(&[DlcPermission::ObserveStatus]);
+        let packet = encode_dlc_packet(&value).unwrap();
+        let size = u32::from_be_bytes(packet[..4].try_into().unwrap()) as usize;
+        assert_eq!(size + 4, packet.len());
+        assert_eq!(decode_dlc_packet(&packet).unwrap(), value);
+        assert_eq!(decode_dlc_packet(&packet[..3]),
+            Err(DlcInteropError::EmptyOrOversized));
+        assert_eq!(decode_dlc_packet(&packet[..packet.len() - 1]),
+            Err(DlcInteropError::InvalidField("packet_length")));
+        let mut trailing = packet.clone();
+        trailing.push(0);
+        assert_eq!(decode_dlc_packet(&trailing),
+            Err(DlcInteropError::InvalidField("packet_length")));
+        let mut excessive = packet;
+        excessive[..4].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert_eq!(decode_dlc_packet(&excessive),
+            Err(DlcInteropError::InvalidField("packet_length")));
     }
 
     #[test]
