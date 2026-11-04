@@ -1,6 +1,6 @@
 //! SQLite lifetime writer lease for exclusive Lu desktop startup and safe journal recovery.
 //! The lock database is separate from ordinary conversation/effect databases.
-use std::path::Path;
+use std::{path::Path, sync::Mutex};
 use rusqlite::{Connection, ErrorCode, OpenFlags};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,7 +8,7 @@ pub enum OwnerError { AlreadyRunning, Database(String) }
 
 /// Hold for the full lifetime of the desktop. A crashed process releases its
 /// OS-managed SQLite writer lock; do not commit its transaction while running.
-pub struct DesktopOwner { connection: Connection }
+pub struct DesktopOwner { connection: Mutex<Connection> }
 impl DesktopOwner {
     pub fn acquire(path: &Path) -> Result<Self, OwnerError> {
         let connection = Connection::open_with_flags(
@@ -34,9 +34,13 @@ impl DesktopOwner {
             "BEGIN IMMEDIATE;
              UPDATE lu_instance_fence SET token='owner' WHERE id=1;"
         ).map_err(map_error)?;
-        Ok(Self { connection })
+        Ok(Self { connection: Mutex::new(connection) })
     }
 }
 impl Drop for DesktopOwner {
-    fn drop(&mut self) { let _ = self.connection.execute_batch("ROLLBACK"); }
+    fn drop(&mut self) {
+        if let Ok(connection) = self.connection.get_mut() {
+            let _ = connection.execute_batch("ROLLBACK");
+        }
+    }
 }
