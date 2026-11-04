@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "2fd3f2b0d3249c7b6a4f63c37e5a99725e9f282f",
-  "trackedFileCount": 321,
+  "trackedFileCount": 322,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-10-web-research.yml",
-      "blob": "da16bd16b1a51d436f16693c026b5c68d76f794e"
+      "blob": "a397d31f57490a67f96ded82d24a0cbebba116ad"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "5318671ad500579900ab8165d4c4f9b3c0026306"
+      "blob": "6742e0387b5b8445d39c34fb51203d3fb3d94da6"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "a61ac654dd5bc8b0fc835026d24111ed441f2749"
+      "blob": "738cc35943f61aab2e87c08d9dbf630f118c7b30"
     },
     {
       "path": "lu-desktop/tests/browser-staging.test.mjs",
@@ -580,6 +580,10 @@
       "blob": "8be35a1b8c7b0f35c5efff786401707b4aa26b90"
     },
     {
+      "path": "src-tauri/lu-core/src/browser_tool_stream.rs",
+      "blob": "579b461c7bea4a913f79926fc6c3ebc8ce4cfadb"
+    },
+    {
       "path": "src-tauri/lu-core/src/browser_visibility_settings.rs",
       "blob": "54f40d1b9eaf7ee3fbd09af0131949fbeeb07029"
     },
@@ -741,7 +745,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "de06ad1356bc439f14508be179fc578bdc9a0153"
+      "blob": "d86af6ea70025122007f24364debc5cc28a27c56"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
