@@ -159,7 +159,7 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_edit_existing_authority
       - name: Windows by-handle FileId, hardlink and alternate-stream adversarial tests
         shell: pwsh
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib windows_file_guard::tests -- --nocapture
+        run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib file_guard::tests -- --nocapture
       - name: Windows native existing-file edit/restore unsafe-metadata refusal
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_edit_existing::tests::windows_ -- --nocapture
