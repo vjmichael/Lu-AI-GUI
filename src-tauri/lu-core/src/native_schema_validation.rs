@@ -117,73 +117,83 @@ fn safe_regex(pattern: &str) -> Result<(), ToolFailure> {
 /// In particular this prevents schema input from becoming a network fetch or
 /// a covert file read. The jsonschema crate's resolver features are disabled.
 fn schema_policy(value: &Value) -> Result<(), ToolFailure> {
-    fn check(value: &Value, patterns: &mut usize, refs: &mut usize)
+    // Only traverse positions that JSON Schema actually treats as schemas.
+    // "const", "enum", "default" and "examples" contain ordinary user data:
+    // a JSON object there may legitimately contain a "$ref" string that is
+    // NOT a reference. Treating every nested object as a schema is incorrect.
+    fn check(schema: &Value, patterns: &mut usize, refs: &mut usize)
         -> Result<(), ToolFailure>
     {
-        match value {
-            Value::Object(map) => {
-                for (key, val) in map {
-                    match key.as_str() {
-                        "$schema" => {
-                            let permitted = [
-                                "https://json-schema.org/draft/2020-12/schema",
-                                "https://json-schema.org/draft/2020-12/schema#",
-                                "http://json-schema.org/draft/2020-12/schema",
-                                "http://json-schema.org/draft/2020-12/schema#",
-                            ];
-                            if !val.as_str().is_some_and(|s| permitted.contains(&s)) {
-                                return Err(rejected("SCHEMA_DRAFT_UNSUPPORTED",
-                                    "only Draft 2020-12 JSON Schema is admitted"));
-                            }
+        let Value::Object(map) = schema else {
+            return Ok(()); // boolean schemas are valid; other types fail the meta-schema
+        };
+        if let Some(draft) = map.get("$schema") {
+            let permitted = [
+                "https://json-schema.org/draft/2020-12/schema",
+                "https://json-schema.org/draft/2020-12/schema#",
+                "http://json-schema.org/draft/2020-12/schema",
+                "http://json-schema.org/draft/2020-12/schema#",
+            ];
+            if !draft.as_str().is_some_and(|s| permitted.contains(&s)) {
+                return Err(rejected("SCHEMA_DRAFT_UNSUPPORTED",
+                    "only Draft 2020-12 JSON Schema is admitted"));
+            }
+        }
+        for keyword in ["$id", "$anchor", "$dynamicAnchor", "$dynamicRef",
+            "$recursiveRef"] {
+            if map.contains_key(keyword) {
+                return Err(rejected("SCHEMA_EXTERNAL_REF",
+                    "identified/dynamic schema references are not supported"));
+            }
+        }
+        if let Some(reference) = map.get("$ref") {
+            *refs += 1;
+            if *refs > MAX_REFS
+                || !reference.as_str().is_some_and(|s| {
+                    s.len() <= MAX_REF_LENGTH && s.starts_with("#/")
+                        && !s.contains('%')
+                })
+            {
+                return Err(rejected("SCHEMA_EXTERNAL_REF",
+                    "only bounded local JSON Pointer references are admitted"));
+            }
+        }
+        if let Some(pattern) = map.get("pattern") {
+            *patterns += 1;
+            if *patterns > MAX_PATTERNS {
+                return Err(rejected("SCHEMA_PATTERN_LIMIT", "too many schema patterns"));
+            }
+            safe_regex(pattern.as_str().ok_or_else(|| rejected(
+                "SCHEMA_INVALID", "schema pattern must be a string"))?)?;
+        }
+
+        for keyword in ["properties", "patternProperties", "$defs", "dependentSchemas"] {
+            if let Some(Value::Object(definitions)) = map.get(keyword) {
+                for (name, sub_schema) in definitions {
+                    if keyword == "patternProperties" {
+                        *patterns += 1;
+                        if *patterns > MAX_PATTERNS {
+                            return Err(rejected("SCHEMA_PATTERN_LIMIT", "too many schema patterns"));
                         }
-                        "$ref" => {
-                            *refs += 1;
-                            let Some(reference) = val.as_str() else {
-                                return Err(rejected("SCHEMA_EXTERNAL_REF", "schema reference must be local"));
-                            };
-                            if *refs > MAX_REFS
-                                || reference.len() > MAX_REF_LENGTH
-                                || !reference.starts_with("#/")
-                                || reference.contains('%')
-                            {
-                                return Err(rejected("SCHEMA_EXTERNAL_REF",
-                                    "only bounded local JSON Pointer references are admitted"));
-                            }
-                        }
-                        "$dynamicRef" | "$recursiveRef" | "$dynamicAnchor"
-                        | "$anchor" | "$id" => {
-                            return Err(rejected("SCHEMA_EXTERNAL_REF",
-                                "dynamic/identified schemas are not supported by this offline tool"));
-                        }
-                        "pattern" => {
-                            let pattern = val.as_str().ok_or_else(|| rejected(
-                                "SCHEMA_INVALID", "schema pattern must be a string"))?;
-                            *patterns += 1;
-                            if *patterns > MAX_PATTERNS {
-                                return Err(rejected("SCHEMA_PATTERN_LIMIT", "too many schema patterns"));
-                            }
-                            safe_regex(pattern)?;
-                        }
-                        "patternProperties" => {
-                            if let Value::Object(properties) = val {
-                                for pattern in properties.keys() {
-                                    *patterns += 1;
-                                    if *patterns > MAX_PATTERNS {
-                                        return Err(rejected("SCHEMA_PATTERN_LIMIT", "too many schema patterns"));
-                                    }
-                                    safe_regex(pattern)?;
-                                }
-                            }
-                        }
-                        _ => {}
+                        safe_regex(name)?;
                     }
-                    check(val, patterns, refs)?;
+                    check(sub_schema, patterns, refs)?;
                 }
             }
-            Value::Array(items) => {
-                for item in items { check(item, patterns, refs)?; }
+        }
+        for keyword in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+            if let Some(Value::Array(items)) = map.get(keyword) {
+                for item in items {
+                    check(item, patterns, refs)?;
+                }
             }
-            _ => {}
+        }
+        for keyword in ["items", "additionalProperties", "unevaluatedProperties",
+            "unevaluatedItems", "contains", "not", "if", "then", "else",
+            "propertyNames", "contentSchema"] {
+            if let Some(item) = map.get(keyword) {
+                check(item, patterns, refs)?;
+            }
         }
         Ok(())
     }
