@@ -61,6 +61,7 @@ pub mod model_json_boundary;
 pub mod web_research_evidence;
 pub mod web_http_fetch;
 pub mod browser_visibility_settings;
+pub mod browser_process_owner;
 #[cfg(target_os = "linux")]
 pub mod browser_window_x11;
 pub mod web_catalog_crossref;
