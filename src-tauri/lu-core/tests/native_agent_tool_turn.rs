@@ -101,11 +101,9 @@ fn setup() -> (
     )
     .unwrap();
     fs::create_dir(folder.join("subdir")).unwrap();
-    fs::write(folder.join("config.json"), r#"{"kind":"task","retries":3}"#).unwrap();
     let registry = NativeToolRegistry::new();
     let mut catalog = register_bundled_file_tools(&registry, &folder).unwrap();
     register_inspection_tools(&registry, &mut catalog, &folder).unwrap();
-    register_json_inspection_tool(&registry, &mut catalog, &folder).unwrap();
 
     let authority = ConversationAuthority::new();
     let origin = BoundCallOrigin {
@@ -125,7 +123,6 @@ fn setup() -> (
                     "lu.files.list_directory",
                     "lu.inspect.stat",
                     "lu.inspect.search_text",
-                    "lu.json.inspect",
                 ]
                 .into_iter()
                 .map(|tool_id| AuthorizedCapability {
@@ -143,7 +140,6 @@ fn setup() -> (
         "lu_files_list_directory".into(),
         "lu_files_stat".into(),
         "lu_files_search_text".into(),
-        "lu_json_inspect".into(),
     ]);
     (folder, registry, catalog, authority, origin, allowed)
 }
@@ -649,7 +645,31 @@ async fn repaired_syntax_still_requires_schema_validation_and_authority() {
 
 #[tokio::test]
 async fn json_inspection_is_a_real_authorized_model_to_native_tool_turn() {
-    let (folder, registry, catalog, authority, origin, allowed) = setup();
+    // This is a separate fixture: the original four-tool integration tests
+    // must not silently acquire a fifth tool or an extra searchable file.
+    let folder = fresh_workspace();
+    fs::write(folder.join("config.json"), r#"{"kind":"task","retries":3}"#).unwrap();
+    let registry = NativeToolRegistry::new();
+    let mut catalog = ModelToolCatalog::new();
+    register_json_inspection_tool(&registry, &mut catalog, &folder).unwrap();
+    let authority = ConversationAuthority::new();
+    let origin = BoundCallOrigin {
+        conversation_id: "conversation-1".into(),
+        user_turn_id: "user-turn-1".into(),
+        task_id: "task-1".into(),
+    };
+    authority.open_user_task(TaskAuthority {
+        conversation_id: origin.conversation_id.clone(),
+        user_turn_id: origin.user_turn_id.clone(),
+        task_id: origin.task_id.clone(),
+        execution_scope_id: "thread:conversation-1".into(),
+        capabilities: vec![AuthorizedCapability {
+            tool_id: "lu.json.inspect".into(),
+            effect: ToolEffect::ReadWorkspace,
+        }],
+        expires_at: None,
+    }, &Verified).unwrap();
+    let allowed = BTreeSet::from(["lu_json_inspect".to_string()]);
     let mut turn = NativeToolTurn::new_read_only(
         &catalog, &registry, &authority, origin,
         "thread:conversation-1".into(), &allowed,
