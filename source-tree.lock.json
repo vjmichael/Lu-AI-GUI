@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ca6c95956e3e2c32e7dc93bbc3d06a9bb57dfc30",
+  "sourceCommitBeforeLock": "2fd3f2b0d3249c7b6a4f63c37e5a99725e9f282f",
   "trackedFileCount": 284,
   "files": [
     {
@@ -97,7 +97,7 @@
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
-      "blob": "1a078275c899a29c718dafaf9f32b1e9a2415351"
+      "blob": "48f290df54d2a4dbdcdcfd0a73fa8499d434882f"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
