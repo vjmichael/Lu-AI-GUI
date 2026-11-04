@@ -50,11 +50,9 @@ fn refuse(code: &str, message: &str) -> ToolFailure {
 }
 
 fn safe_relative_name(value: &str, archive_member: bool) -> Result<PathBuf, ToolFailure> {
-    if value.is_empty() || value.len() > if archive_member {
-        MAX_MEMBER_NAME_BYTES
-    } else {
-        4096
-    } || value.chars().any(|c| c.is_control() || matches!(c, '\\' | ':')) {
+    let max_len = if archive_member { MAX_MEMBER_NAME_BYTES } else { 4096 };
+    if value.is_empty() || value.len() > max_len
+        || value.chars().any(|c| c.is_control() || matches!(c, '\\' | ':')) {
         return Err(refuse("INVALID_ARCHIVE_PATH", "archive path contains unsafe characters"));
     }
     let value = if archive_member {
@@ -107,6 +105,13 @@ fn inspect(root: &Dir, request: proto::ArchiveListRequest)
     if archive.len() > MAX_ARCHIVE_ENTRIES {
         return Err(refuse("ARCHIVE_TOO_MANY_ENTRIES", "archive member count exceeds hard cap"));
     }
+    if archive.has_overlapping_entries()
+        .map_err(|_| refuse("ARCHIVE_INVALID", "ZIP layout is invalid"))?
+    {
+        return Err(refuse("ARCHIVE_UNSAFE_ENTRY", "archive entries overlap"));
+    }
+    archive.validate_header_consistency()
+        .map_err(|_| refuse("ARCHIVE_INVALID", "ZIP local and central directory metadata differ"))?;
     let mut seen = BTreeSet::new();
     let mut total = 0u64;
     let mut entries = Vec::new();
@@ -114,7 +119,9 @@ fn inspect(root: &Dir, request: proto::ArchiveListRequest)
     for i in 0..archive.len() {
         let member = archive.by_index_raw(i)
             .map_err(|_| refuse("ARCHIVE_INVALID", "ZIP member metadata is invalid"))?;
-        let name = member.name().to_owned();
+        let name = member.name()
+            .map_err(|_| refuse("ARCHIVE_INVALID", "ZIP member name is not decodable"))?
+            .to_owned();
         safe_relative_name(&name, true)?;
         // Fold path case to prevent Windows aliases; normalize trailing slash
         // so "a" and "a/" cannot target the same object in later pipelines.
@@ -124,7 +131,7 @@ fn inspect(root: &Dir, request: proto::ArchiveListRequest)
         }
         let mode = member.unix_mode().unwrap_or(0);
         let file_kind = mode & 0o170000;
-        if file_kind == 0o120000
+        if member.is_symlink() || file_kind == 0o120000
             || (file_kind != 0 && file_kind != 0o100000 && file_kind != 0o040000)
         {
             return Err(refuse("ARCHIVE_UNSAFE_ENTRY", "archive contains a link or special file"));
