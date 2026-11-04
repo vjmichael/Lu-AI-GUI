@@ -38,6 +38,18 @@ pub async fn execute_approved_edit_pinned(
         return Err("reviewed edit snapshot is inconsistent".into());
     }
     let target=selected.directory.join(filename);
+    #[cfg(windows)]
+    {
+        let opened=selected.directory_cap.open(filename)
+            .map_err(|_|"selected Windows file no longer accessible")?.into_std();
+        let live=lu_core::windows_file_guard::inspect_open_file(&opened)
+            .map_err(|_|"selected Windows file is no longer safe")?;
+        if live!=selected.selected_file_identity ||
+            selected.reviewed.host_file_identity.as_deref()!=
+                Some(selected.selected_file_identity.token().as_str()) {
+            return Err("Windows file identity changed after native picker; new review required".into());
+        }
+    }
     // The trusted host creates this persisted human turn only in response to
     // the native confirmation dialog; a model's old generation is no grant.
     chats.append_user_with_turn_id(chat_id,user_turn_id,&format!(
@@ -46,8 +58,12 @@ pub async fn execute_approved_edit_pinned(
         selected.plan.replacement_sha256,selected.proposal.bytes()
     ))?;
     let registry=NativeToolRegistry::new();
-    register_edit_tools_pinned(&registry,selected.directory_cap.clone())
-        .map_err(|e|format!("native edit registry unavailable: {e:?}"))?;
+    #[cfg(windows)]
+    let registered=lu_core::native_edit_existing::register_edit_tools_pinned_selected(
+        &registry,selected.directory_cap.clone(),filename,selected.selected_file_identity);
+    #[cfg(not(windows))]
+    let registered=register_edit_tools_pinned(&registry,selected.directory_cap.clone());
+    registered.map_err(|e|format!("native edit registry unavailable: {e:?}"))?;
     let authority=ConversationAuthority::new();
     let policy=PolicyEngine::new();
     let task=format!("edit-{user_turn_id}");
@@ -168,6 +184,16 @@ pub async fn execute_approved_rollback_pinned(
         &r.expected_current_sha256,p.current_text.len() as u64) {
         return Err("original edit lacks verified exact applied receipt".into());
     }
+    #[cfg(windows)]
+    {
+        let opened=selected.directory_cap.open(&r.filename)
+            .map_err(|_|"restoration target no longer accessible")?.into_std();
+        let live=lu_core::windows_file_guard::inspect_open_file(&opened)
+            .map_err(|_|"restoration target no longer safe")?;
+        if live!=selected.selected_file_identity {
+            return Err("selected rollback file identity changed; request new review".into());
+        }
+    }
     // Re-read both source and original backup on the pinned capability just
     // before granting any effect. The native tool separately revalidates them
     // after the effect's EXECUTING fence.
@@ -183,8 +209,12 @@ pub async fn execute_approved_rollback_pinned(
         r.restore_bytes,rollback_effect_id
     ))?;
     let registry=NativeToolRegistry::new();
-    register_edit_tools_pinned(&registry,selected.directory_cap.clone())
-        .map_err(|e|format!("rollback native registry unavailable: {e:?}"))?;
+    #[cfg(windows)]
+    let registered=lu_core::native_edit_existing::register_edit_tools_pinned_selected(
+        &registry,selected.directory_cap.clone(),&r.filename,selected.selected_file_identity);
+    #[cfg(not(windows))]
+    let registered=register_edit_tools_pinned(&registry,selected.directory_cap.clone());
+    registered.map_err(|e|format!("rollback native registry unavailable: {e:?}"))?;
     let authority=ConversationAuthority::new();
     let policy=PolicyEngine::new();
     let task=format!("rollback-{user_turn_id}");
