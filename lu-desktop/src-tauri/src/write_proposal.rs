@@ -59,6 +59,10 @@ impl WriteProposalQueue {
             || p.purpose.len() > 256 || p.purpose.chars().any(char::is_control) {
             return Err(WriteProposalError::Invalid);
         }
+        // The model proposes both filename and UTF-8 bytes. The host, not
+        // the extension alone, validates supported structured text.
+        lu_core::write_format::identify_text_format(&p.file_name, &p.content)
+            .map_err(|_| WriteProposalError::Invalid)?;
         let mut entries = self.pending.lock().map_err(|_| WriteProposalError::Unavailable)?;
         if entries.contains_key(id) { return Err(WriteProposalError::Duplicate); }
         if entries.len() >= MAX_PENDING { return Err(WriteProposalError::Full); }
