@@ -127,6 +127,9 @@ jobs:
       - name: Verify Windows native file handle identity and reparse refusal
         shell: pwsh
         run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml windows_native_picker -- --nocapture
+      - name: Windows trusted desktop existing-file edit and backup acceptance
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_edit -- --nocapture
       - name: Windows atomic create-new and no-overwrite Rust regressions
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_atomic_write
