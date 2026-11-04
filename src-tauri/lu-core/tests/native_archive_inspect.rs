@@ -116,13 +116,17 @@ async fn malicious_archive_members_fail_closed_without_extraction() {
     write_zip(&root,"duplicates.zip",&[("same.txt","x"),("same.txt","y")]);
     write_zip(&root,"windows-alias.zip",&[("Readme.txt","x"),("README.TXT","y")]);
     write_zip(&root,"evil-slash.zip",&[("folder\\other.txt","x")]);
-    for name in ["traversal.zip","duplicates.zip","windows-alias.zip","evil-slash.zip"] {
+    let mut link_zip = ZipWriter::new(fs::File::create(root.join("symlink.zip")).unwrap());
+    link_zip.add_symlink("shortcut.txt","../../outside.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+    link_zip.finish().unwrap();
+    for name in ["traversal.zip","duplicates.zip","windows-alias.zip","evil-slash.zip","symlink.zip"] {
         let got=inspect_one(&root,name,10).await;
         assert_eq!(got["ok"],false,"must refuse unsafe ZIP {name}: {got}");
         assert_eq!(got["error"]["retryable"],false);
     }
     assert!(!root.join("escape.txt").exists());
-    assert_eq!(fs::read_dir(&root).unwrap().count(),4);
+    assert_eq!(fs::read_dir(&root).unwrap().count(),5);
     fs::remove_dir_all(root).unwrap();
 }
 #[tokio::test]
