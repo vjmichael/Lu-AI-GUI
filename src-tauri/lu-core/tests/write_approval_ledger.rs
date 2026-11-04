@@ -1,9 +1,11 @@
 use lu_core::write_approval_ledger::{WriteApprovalLedger, WriteDecision, WriteLedgerError};
-use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs, sync::atomic::{AtomicU64, Ordering}, time::{SystemTime, UNIX_EPOCH}};
+static SCRATCH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 fn scratch() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
-        "lu-write-approval-{}-{}.sqlite", std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        "lu-write-approval-{}-{}-{}.sqlite", std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        SCRATCH_SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ))
 }
 const SHA: &str="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
