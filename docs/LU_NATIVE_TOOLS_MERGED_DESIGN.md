@@ -154,6 +154,28 @@ The original §3.9 places **Git, linter, debugger and test runner** as
 additional **Code/IDE workspace tools**. Core has a domain registry that
 can **implement** a minimal Git primitive before the IDE exists, but
 the original intent is **not** a Git-centric universal default AI prompt.
+### 5.1 Owner confirmation — Core Git versus IDE GitHub CLI (2026-11-04)
+
+The owner reconfirmed the intended division:
+- **Lu Core** provides basic local Git repository tools (status, bounded history,
+  review diffs, and similarly narrow, read-oriented primitives), without a
+  GitHub account connection or automatic branch/commit/push capability.
+- **Lu IDE DLC** owns development workflows and advanced Git operations
+  (creating/switching branches, staging and committing code, code review,
+  pull requests and repository publishing). Its **optional GitHub CLI
+  `gh` adapter** can authenticate to GitHub and operate on pull requests,
+  issues, repositories, GitHub Actions and releases. See official
+  https://cli.github.com/manual/ and https://cli.github.com/manual/gh_auth_login.
+- **Git and GitHub are distinct:** `git` works with local repositories;
+  `gh` is the GitHub service client. The future IDE must use the **trusted
+  host's GitHub account/credential broker**, never expose OAuth tokens to
+  model output, require explicit authorization for network/API changes and
+  preserve audit/recovery of remote effects. No `gh` model tool,
+  authentication, API request or GitHub permission is in TOOLS-03 Core.
+- Keep the original unified-domain/narrow-facade rule: Core has a local
+  Git domain, while the IDE composes that domain with separately authorized
+  development and GitHub platform workflows.
+
 The later Lu v1.0 mandate for baseline Git support is satisfied by building
 the native primitive in the core; **activation and advertisement must be
 scoped to an explicitly delegated repository/code task or a future IDE
