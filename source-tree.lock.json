@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7cadedd5f4c978d83d9a562c9283673a8ba10a39",
+  "sourceCommitBeforeLock": "d45bb58fb777480442723be4ab05e8f516eae469",
   "trackedFileCount": 281,
   "files": [
     {
@@ -249,7 +249,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_json.rs",
-      "blob": "492269bc81c8d9959850ed1100a2b7b41f866ba3"
+      "blob": "aa7e8702f92c3ab1c7b901b7edbf0819bd4dbe70"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_read.rs",
@@ -281,7 +281,7 @@
     },
     {
       "path": "lu-desktop/tests/json-inspect-ux.test.mjs",
-      "blob": "8a3dfb99f603b784564704d389106f8c877a5356"
+      "blob": "77264bc3885824a41d4174d889a8c5f2d4defe39"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
