@@ -221,7 +221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "6c59687a905096629a30a763c952925721ff6779"
+      "blob": "f0f6c134b125705ea81d6097efa5fdd01ca1a346"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
