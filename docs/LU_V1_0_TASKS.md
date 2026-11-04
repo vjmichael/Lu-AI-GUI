@@ -20,7 +20,7 @@
 | AUTH-01 | P0 | Authenticated user-turn tool scopes and revocation | PARTIAL | Adversarial authorization and live desktop grant/dispatch tests |
 | LIFECYCLE-01 | P0 | Native process lifecycle, cancellation, clean termination and resource safeguards (not mandatory sandboxing) | TODO | Actual Windows start/stop/reap and crash recovery |
 | TOOLS-01 | P0 | First-party native read, search, atomic file writes, git, archives and JSON | TODO | End-to-end authorized Protobuf calls |
-| TOOLS-02 | P0 | **Internal JSON boundary validation**, no user UI or file tool | SOURCE IMPLEMENTED; CI PENDING | Strict model JSON envelope/argument parsing, Protobuf schema check, verified outbound host feedback, duplicate/size/malformed rejection |
+| TOOLS-02 | P0 | **Original MBRL**: model/API JSON strict validation, one normalization, two regenerations, typed rejection | SOURCE EXTENDED; CI PENDING | No user-facing JSON tool; model/proposal/SSE borders, typed Protobuf, scoped authority, no effect replay, structured feedback |
 | TOOLS-03 | P0 | Git inspect (status/log/diff) with host-selected repo and safe subprocess containment | TODO | No shell injection, hostile repo/config tests, Windows/Linux CI and authorized dispatch |
 | TOOLS-04 | P1 | Archive listing/inspection before archive extraction or creation | TODO | Zip-slip, symlink, decompression bomb limits, duplicate members, OS CI |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
@@ -404,3 +404,9 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - The existing `model_json_boundary` now serves as the internal bidirectional gate for **structured protocol JSON**. Direct model tool arguments cannot bypass nested duplicate-key refusal, and outbound host-to-model tool feedback is validated against an exact typed envelope before model continuation.
 - Native registry, capability grants, model authorization and Protobuf tool codecs remain authoritative. JSON repair, where already permitted, only strips known fence/trailing punctuation and cannot create arguments, tool names or permissions.
 - Existing alpha and WRITE-01E baseline preserved. Review `TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md`; exact-commit Linux/Windows CI is required before accepting the source change.
+
+## TOOLS-02 original MBRL completion scope (2026-11-04)
+
+- Owner directed full original `Jan-Mod-Design-Document.md` §§4.6–4.8 behavior, superseding prior broad "advanced JSON repair deferred" wording. No semantics-changing repairs, hallucinated fields or user-facing JSON inspector.
+- Core generation loop now has two bounded pre-dispatch recovery attempts, typed `lu_boundary` refusal feedback for parsed tool-shaped mistakes, and BLOCKED terminal classification; external llama SSE and desktop user-approved file proposal parsers reject malformed/ambiguous JSON. Verify actual native Linux/Windows CI and desktop compiler/tests before completing this row.
+- Separate prerequisite for complete desktop native tool operation: schema-advertised `NativeToolTurn` must be wired to the trusted GUI with current persisted user-turn authority; MBRL code alone does not grant tool powers or establish installed v1.0 acceptance. Track in issue #13.
