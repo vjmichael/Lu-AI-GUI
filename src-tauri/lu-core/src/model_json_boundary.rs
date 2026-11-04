@@ -1,5 +1,8 @@
-//! JSON-to-Protobuf trust boundary for Lu's model-generated tool calls.
-//! Repair syntax only; never infer names, paths, missing values or permissions.
+//! Internal JSON validation at Lu's model/native-tool trust boundary.
+//! No user-facing JSON file inspection or model-advertised validator tool.
+//! Inbound model envelopes may receive bounded punctuation-only repair,
+//! but argument payloads and outbound host feedback never receive repair.
+//! A successful parse validates JSON syntax, not capabilities or execution.
 
 use serde::{
     de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
@@ -25,6 +28,7 @@ pub enum JsonBoundaryError {
     DuplicateKey,
     NonObject,
     Serialization,
+    InvalidEnvelope,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -207,6 +211,104 @@ pub fn parse_model_boundary(raw: &str) -> Result<ParsedModelJson, JsonBoundaryEr
         (false, false) => JsonRepairStatus::Unchanged,
     };
     Ok(ParsedModelJson { object, repair })
+}
+
+
+/**
+ * Validate an inbound JSON object whose bytes are already committed to a
+ * schema-specific operation (for example a model tool's argument object).
+ *
+ * Unlike parse_model_boundary, this function never repairs syntax. The
+ * strict parser rejects duplicate field names at every depth, invalid
+ * escapes, unfinished input and any trailing tokens, before a Protobuf
+ * codec or host dispatcher can receive the object.
+ */
+pub fn parse_exact_boundary_object(
+    raw: &str,
+    limit: usize,
+) -> Result<Map<String, Value>, JsonBoundaryError> {
+    if raw.len() > MAX_BOUNDARY_JSON_BYTES || raw.len() > limit {
+        return Err(JsonBoundaryError::TooLarge);
+    }
+    match strict_parse(raw)? {
+        Value::Object(value) => Ok(value),
+        _ => Err(JsonBoundaryError::NonObject),
+    }
+}
+
+/// Validate a complete tool result about to leave Lu Core toward the model.
+/// The shape, tool identity and success/error alternative are host protocol
+/// fields, not model-supplied claims. A valid result here does not grant
+/// another tool call or approve any filesystem/network effect.
+pub fn parse_host_tool_feedback_boundary(
+    raw: &str,
+    limit: usize,
+) -> Result<Map<String, Value>, JsonBoundaryError> {
+    let root = parse_exact_boundary_object(raw, limit)?;
+    if root.len() != 4
+        || root.get("kind").and_then(Value::as_str) != Some("tool_result")
+    {
+        return Err(JsonBoundaryError::InvalidEnvelope);
+    }
+    let call_id = root.get("call_id").and_then(Value::as_str)
+        .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+    let tool_name = root.get("name").and_then(Value::as_str)
+        .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+    if call_id.trim().is_empty() || call_id.len() > 128
+        || tool_name.is_empty() || tool_name.len() > 64
+        || !tool_name.bytes().enumerate().all(|(i,c)| {
+            c.is_ascii_alphabetic() || (i > 0 && (c.is_ascii_digit() || c == b'_'))
+        })
+    {
+        return Err(JsonBoundaryError::InvalidEnvelope);
+    }
+    let response = root.get("response").and_then(Value::as_object)
+        .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+    if response.len() != 3
+        || response.get("tool").and_then(Value::as_str) != Some(tool_name)
+    {
+        return Err(JsonBoundaryError::InvalidEnvelope);
+    }
+    match response.get("ok").and_then(Value::as_bool) {
+        Some(true) if response.contains_key("result") && !response.contains_key("error") => {}
+        Some(false) if response.contains_key("error") && !response.contains_key("result") => {
+            let error = response.get("error").and_then(Value::as_object)
+                .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+            if error.len() != 3
+                || error.get("code").and_then(Value::as_str)
+                    .is_none_or(|code| code.is_empty() || code.len() > 128)
+                || error.get("message").and_then(Value::as_str)
+                    .is_none_or(|msg| msg.len() > 4096)
+                || error.get("retryable").and_then(Value::as_bool).is_none()
+            {
+                return Err(JsonBoundaryError::InvalidEnvelope);
+            }
+        }
+        _ => return Err(JsonBoundaryError::InvalidEnvelope),
+    }
+    Ok(root)
+}
+
+/// Host-generated tool feedback has a fixed, mutually exclusive success or
+/// failure envelope. Serialize and validate it BEFORE any prompt emission,
+/// audit handoff or further model generation. No auto-repair is performed.
+pub fn serialize_host_tool_feedback_boundary(
+    call_id: &str,
+    tool_name: &str,
+    response: &Value,
+    limit: usize,
+) -> Result<String, JsonBoundaryError> {
+    let raw = serialize_host_boundary(
+        &serde_json::json!({
+            "kind": "tool_result",
+            "call_id": call_id,
+            "name": tool_name,
+            "response": response,
+        }),
+        limit,
+    )?;
+    parse_host_tool_feedback_boundary(&raw, limit)?;
+    Ok(raw)
 }
 
 /// Host-to-model results use serialization, bounds and strict validation.
