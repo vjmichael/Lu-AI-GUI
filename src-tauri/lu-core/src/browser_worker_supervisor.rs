@@ -320,6 +320,12 @@ impl OwnedBrowserWorker {
             return Ok(value);
         }
     }
+    /// Health reflects the real Node and Chromium child processes, not the
+    /// presence of an in-memory session reference.
+    pub fn is_alive(&mut self)->bool {
+        !self.failed && matches!(self.child.try_wait(),Ok(None))
+            &&self.browser.as_mut().is_some_and(|browser|browser.is_alive())
+    }
     pub fn worker_pid(&self)->u32 {self.child.id()}
 }
 impl Drop for OwnedBrowserWorker {
