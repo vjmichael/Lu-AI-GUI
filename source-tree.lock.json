@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5a92fd8cbeeb602b460c53b9062eacbbdebe2266",
+  "sourceCommitBeforeLock": "c28817e2cda8597c64d9d55551619a5212b8bbca",
   "trackedFileCount": 246,
   "files": [
     {
@@ -53,7 +53,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "ace40da58583888f6c832d17935f406f112c1fc6"
+      "blob": "276ce901532a5034ebceb3691df3a79e7afe1f45"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "0e331a5e5620311e10321e5a6d196278bfe3c3d5"
+      "blob": "18270c682944e8a1c493898c9bcbb413437a12fa"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -225,7 +225,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_read.rs",
-      "blob": "163a32644c329d7a41ceec4d7756bdcf3db8200a"
+      "blob": "f20c6b1634a636cdc7b9ae58675f6752065f1bb6"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
@@ -645,7 +645,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_files.rs",
-      "blob": "e3a5b9dc0a769d38afc63aa987b3c657ed9d6763"
+      "blob": "d0210e3e305c5c8fd4ad1d7e4c236f240cdb496f"
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
@@ -889,7 +889,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/model_native_files.rs",
-      "blob": "fb4dc42b546ecd76ca9df2789fbb4f45584fe160"
+      "blob": "69df60e35d5de6eb9f950ccf062ed7535133348e"
     },
     {
       "path": "src-tauri/lu-core/tests/model_turn_journal.rs",
