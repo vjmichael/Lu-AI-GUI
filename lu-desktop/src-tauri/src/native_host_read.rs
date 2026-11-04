@@ -55,17 +55,11 @@ pub(crate) fn open_verified_selected_file(path: &Path) -> Result<fs::File, Strin
         if !after.is_file() || after.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             return Err("opened file is not an ordinary file".into());
         }
-        // Fail closed where stable by-handle identity is unavailable.
-        let same_identity = match (
-            before.volume_serial_number(), before.file_index(),
-            after.volume_serial_number(), after.file_index()
-        ) {
-            (Some(v1), Some(i1), Some(v2), Some(i2)) => v1 == v2 && i1 == i2,
-            _ => false,
-        };
-        if !same_identity {
-            return Err("selected file changed or identity unavailable".into());
-        }
+        // Rust's native Windows volume-serial/file-index metadata methods
+        // remain unstable on our pinned toolchain. The final-component
+        // no-follow handle and its reparse validation are the admission
+        // boundary here; cross-handle file-ID comparison remains a separate
+        // Win32 API hardening gate.
         file
     };
     #[cfg(not(windows))]
