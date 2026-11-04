@@ -1,0 +1,272 @@
+// LU-DLC-API-00: DRAFT first-party Host Services Protobuf contract.
+//
+// THIS FILE IS NOT REGISTERED WITH LU CORE OR THE ACCEPTED WINDOWS ALPHA.
+// Service transport, OS authentication, host policy, Rust implementation,
+// version negotiation and resource/recovery acceptance remain Lu issue #8.
+//
+// Existing lu.v1.InferenceFrame, ToolCall and ToolReply stay internal.
+// No message field (including a grant_ref) is a bearer authorization.
+// Lu host matches it to authenticated transport identity and durable policy.
+syntax = "proto3";
+package lu.dlc.v1;
+
+message HostEnvelope {
+  uint32 protocol_major = 1;       // First proposed major = 1.
+  uint32 protocol_minor = 2;       // Negotiated compatible minor.
+  string correlation_ref = 3;      // Host/transport-correlated, bounded.
+  string task_ref = 4;             // Host-minted task, optional on discovery.
+  oneof payload {
+    HelloRequest hello_request = 10;
+    HelloReply hello_reply = 11;
+    CatalogRequest catalog_request = 12;
+    CatalogReply catalog_reply = 13;
+    ModelStatusRequest model_status_request = 14;
+    ModelStatusReply model_status_reply = 15;
+    ModelAdmissionRequest model_admission_request = 16;
+    ModelAdmissionReply model_admission_reply = 17;
+    ModelSessionAcquire model_session_acquire = 18;
+    ModelSessionLease model_session_lease = 19;
+    InferenceStart inference_start = 20;
+    InferenceEvent inference_event = 21;
+    InferenceCancel inference_cancel = 22;
+    InferenceRecoveryRequest inference_recovery_request = 23;
+    ModelLeaseRelease model_lease_release = 24;
+    ResourceRequest resource_request = 25;
+    ResourceReply resource_reply = 26;
+    MemoryQueryRequest memory_query_request = 27;
+    MemoryQueryReply memory_query_reply = 28;
+    ArtifactResolveRequest artifact_resolve_request = 29;
+    ArtifactResolveReply artifact_resolve_reply = 30;
+    CapabilityInvocation capability_invocation = 31;
+    CapabilityResult capability_result = 32;
+    HostError error = 33;
+  }
+}
+
+// package_id is a claimed identifier only. Trusted host-side enrollment must
+// bind the connection to a pinned first-party package digest and exact user.
+message HelloRequest {
+  string package_id = 1;
+  string workspace_ref = 2;
+  uint32 minimum_major = 3;
+  uint32 maximum_major = 4;
+  repeated string requested_services = 5;
+}
+message HelloReply {
+  uint32 selected_major = 1;
+  uint32 selected_minor = 2;
+  string host_epoch_ref = 3;
+  repeated string available_services = 4;
+  bool approved_host_identity = 5; // Observational ONLY; not a permission.
+}
+
+message CatalogRequest {}
+message ServiceDescriptor {
+  string service_id = 1;
+  string input_type_url = 2;
+  string output_type_url = 3;
+  uint32 service_version = 4;
+  bool requires_explicit_effect_grant = 5;
+}
+message CatalogReply {
+  repeated ServiceDescriptor services = 1;
+}
+
+enum EnginePhase {
+  ENGINE_PHASE_UNSPECIFIED = 0;
+  ENGINE_PHASE_IDLE = 1;
+  ENGINE_PHASE_LOADING = 2;
+  ENGINE_PHASE_READY = 3;
+  ENGINE_PHASE_GENERATING = 4;
+  ENGINE_PHASE_UNLOADING = 5;
+  ENGINE_PHASE_FAILED = 6;
+}
+message ModelStatusRequest {
+  string model_ref = 1; // Lu-issued, not filesystem path or token.
+}
+message ModelState {
+  string model_ref = 1;
+  EnginePhase phase = 2;
+  string backend_id = 3;
+  optional uint64 observed_resident_bytes = 4;
+  optional uint64 observed_gpu_bytes = 5;
+  string measurement_provenance = 6;
+}
+message ModelStatusReply {
+  repeated ModelState models = 1;
+}
+
+message ModelAdmissionRequest {
+  string model_ref = 1;
+  uint32 context_tokens = 2;
+  bool requires_images = 3;
+  string approved_project_context_ref = 4; // Reference, NOT a grant.
+}
+enum AdmissionVerdict {
+  ADMISSION_VERDICT_UNSPECIFIED = 0;
+  ADMISSION_VERDICT_ALLOWED = 1;
+  ADMISSION_VERDICT_QUEUED = 2;
+  ADMISSION_VERDICT_DENIED = 3;
+  ADMISSION_VERDICT_UNKNOWN = 4;
+}
+message ModelAdmissionReply {
+  AdmissionVerdict verdict = 1;
+  string reason_code = 2;
+  optional uint64 reserved_ram_bytes = 3;
+  optional uint64 reserved_commit_bytes = 4;
+  optional uint64 reserved_gpu_bytes = 5;
+  string resource_ticket_ref = 6;
+}
+message ModelSessionAcquire {
+  string model_ref = 1;
+  uint32 context_tokens = 2;
+  bool requires_images = 3;
+  string resource_ticket_ref = 4;
+  string approved_project_context_ref = 5;
+}
+message ModelSessionLease {
+  string session_ref = 1;
+  string lease_ref = 2; // Host owns weights; caller can release own lease.
+  string model_ref = 3;
+  uint32 effective_context_tokens = 4;
+  string effective_backend_id = 5;
+}
+
+message ImageRef {
+  string admitted_image_ref = 1; // Host-issued immutable image identity.
+  string mime_type = 2;
+  bytes sha256 = 3;
+  uint32 size_bytes = 4;
+}
+message ChatTurn {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    ROLE_SYSTEM = 1;
+    ROLE_USER = 2;
+    ROLE_ASSISTANT = 3;
+  }
+  Role role = 1;
+  string text = 2;
+}
+message InferenceStart {
+  string session_ref = 1;
+  string generation_ref = 2;
+  string idempotency_ref = 3;
+  string prompt = 4;
+  uint32 max_new_tokens = 5;
+  repeated ChatTurn history = 6;
+  repeated ImageRef images = 7;
+  string approved_project_context_ref = 8;
+}
+message TextChunk {
+  string text = 1;
+  uint32 chunk_index = 2;
+}
+message ResourceMeasurement {
+  optional uint64 resident_bytes = 1;
+  optional uint64 gpu_bytes = 2;
+  optional uint64 generation_ms = 3;
+  optional uint32 reported_output_tokens = 4;
+  string provenance = 5;
+}
+enum TerminalDisposition {
+  TERMINAL_DISPOSITION_UNSPECIFIED = 0;
+  TERMINAL_DISPOSITION_SUCCEEDED = 1;
+  TERMINAL_DISPOSITION_FAILED = 2;
+  TERMINAL_DISPOSITION_CANCELLED = 3;
+  TERMINAL_DISPOSITION_UNCERTAIN = 4;
+}
+message InferenceTerminal {
+  TerminalDisposition disposition = 1;
+  string receipt_ref = 2;
+  uint64 confirmed_output_bytes = 3;
+  uint32 confirmed_output_pieces = 4;
+}
+message InferenceEvent {
+  string session_ref = 1;
+  string generation_ref = 2;
+  uint64 sequence = 3; // Monotonic per generation; durable resume boundary.
+  oneof detail {
+    EnginePhase phase = 4;
+    TextChunk chunk = 5;
+    ResourceMeasurement measurement = 6;
+    InferenceTerminal terminal = 7;
+    HostError error = 8;
+  }
+}
+message InferenceCancel {
+  string session_ref = 1;
+  string generation_ref = 2;
+}
+message InferenceRecoveryRequest {
+  string session_ref = 1;
+  string generation_ref = 2;
+  uint64 last_confirmed_sequence = 3;
+}
+message ModelLeaseRelease {
+  string lease_ref = 1; // NOT global engine unload.
+}
+
+message ResourceRequest {
+  string project_ref = 1;
+  string task_ref = 2;
+  uint64 expected_peak_ram_bytes = 3;
+  uint64 expected_peak_gpu_bytes = 4;
+  string device_ref = 5;
+}
+message ResourceReply {
+  AdmissionVerdict verdict = 1;
+  string ticket_ref = 2;
+  string reason_code = 3;
+  optional uint64 available_physical_ram_bytes = 4;
+  optional uint64 available_commit_bytes = 5;
+  optional uint64 available_gpu_bytes = 6;
+  string measurement_provenance = 7;
+}
+
+message MemoryQueryRequest {
+  string scope_ref = 1;
+  string query_text = 2;
+  uint32 max_results = 3;
+}
+message MemoryResult {
+  string memory_ref = 1;
+  string excerpt = 2;
+  string provenance_ref = 3;
+}
+message MemoryQueryReply { repeated MemoryResult results = 1; }
+
+message ArtifactResolveRequest {
+  string artifact_ref = 1;
+  string approved_project_context_ref = 2;
+}
+message ArtifactResolveReply {
+  string artifact_ref = 1;
+  bytes sha256 = 2;
+  uint64 size_bytes = 3;
+  string host_read_handle_ref = 4; // Never an unverified path.
+}
+
+// Lu dispatches reviewed CE operations (e.g., Cognitum calc.rational).
+// Canonical typed payload bytes MUST be validated by host registry against
+// exact type URLs and effect declarations. This is NOT arbitrary code exec.
+message CapabilityInvocation {
+  string capability_id = 1;
+  string call_ref = 2;
+  string input_type_url = 3;
+  bytes typed_input = 4;
+  string approved_project_context_ref = 5;
+}
+message CapabilityResult {
+  string capability_id = 1;
+  string call_ref = 2;
+  string output_type_url = 3;
+  bytes typed_output = 4;
+  string assurance_code = 5;
+  string evidence_ref = 6;
+}
+message HostError {
+  string code = 1; // Host-controlled stable category.
+  bool retryable = 2;
+  string receipt_ref = 3;
+}
