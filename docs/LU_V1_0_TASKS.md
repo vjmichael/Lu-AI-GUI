@@ -298,3 +298,12 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 
 ### DOCS-01 Linux directory resolver hardening
 - Resolve the Linux user's XDG Documents path through the OS/Tauri resolver; if the resolver cannot supply one, use the conventional `$HOME/Documents` path rather than failing desktop startup or silently redirecting into Lu's app-data folder. This fallback is never auto-created or written without directory availability checks and the existing exact-file approval. Windows continues using the known-folder resolver, preserving Documents redirection.
+
+## 2026-11-03 — WRITE-01E approval-bound exact edit continuation
+- **Source branch:** `lu/write-01e-approved-edit-gate-20261103`, based on the complete published WRITE-01D / WIN-LOAD branch, *not* default `main`.
+- **WRITE-01D recovered:** `edit_safety.rs`, `write_format.rs`, `write_proposal.rs`, `native_host_write.rs`, document preferences and create-new ledger already exist. Do not create competing authoritative editing modules. A separate prototype `reversible_edit.rs` on `main` is not the integration target.
+- **WRITE-01E:** Existing `edit_safety.rs` extended with `bind_reviewed_edit` and `verify_reviewed_edit`. Cryptographic review digest domain-separates and length-prefixes trusted destination, full original bytes and full replacement bytes. Recomputed planning checks plan-field tampering and syntactic validity. Fresh-source mismatch and replay on other destinations are rejected. Regression tests added in the module.
+- **Evidence:** source commit `86708cfac18131e81c87bc70d75cf6f07eac4280`. Source-lock update `c999e8c607b2a54fa1ecebef49b3430537d00f90`. No local cargo/rustc available. No green CI result verified; tests **pending**.
+- **Boundary:** This is *pure preflight*, not desktop-enabled editing. Trusted host user approval, pinned target handle, crash-safe backup, journaled atomic publish, reconcile, explicit rollback and independent Windows filesystem adversarial tests are **not implemented/accepted**. A model may not fabricate `trusted_approved_sha256`; host must establish that value from a real reviewed user decision.
+- **Next:** Implement host-bound review handoff and durable backup/publish/rollback inside existing trusted native tool path. No blind retry on uncertain outcome. Do not silently change the user Documents-folder default or Advanced Settings override.
+- **REPO-01:** This source-lock verifies tracked source within the branch; it does not resolve the last unpublished local source archive convergence.
