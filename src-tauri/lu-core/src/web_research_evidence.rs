@@ -330,7 +330,8 @@ mod tests {
         let checksum=ledger.store_accessed_text("source-1","Evidence supports a nuanced argument.").unwrap();
         assert_eq!(checksum.len(),64);
         assert!(ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
-        assert!(matches!(ledger.verify_passage("source-1","full-text","This is made up."),Err(EvidenceError::PassageNotFound)));\n        assert!(matches!(ledger.verify_passage("source-1","p. 99","Evidence supports"),Err(EvidenceError::Invalid)));
+        assert!(matches!(ledger.verify_passage("source-1","full-text","This is made up."),Err(EvidenceError::PassageNotFound)));
+        assert!(matches!(ledger.verify_passage("source-1","p. 99","Evidence supports"),Err(EvidenceError::Invalid)));
         ledger.verify_passage("source-1","full-text","Evidence supports").unwrap();
         assert_eq!(ledger.status("source-1").unwrap(),SourceStatus::PassageVerified);
     }
