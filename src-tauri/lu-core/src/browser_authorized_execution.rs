@@ -270,6 +270,75 @@ mod tests {
             &serde_json::json!({})).is_err());
     }
     #[test]
+    fn verified_read_grant_never_authorizes_browser_interaction_or_other_task(){
+        use crate::conversation_authority::{
+            TaskAuthority,AuthorizedCapability,TrustedUserTurnVerifier,
+        };
+        use std::time::{SystemTime,Duration};
+        struct Verifier;
+        impl TrustedUserTurnVerifier for Verifier {
+            fn verify_user_turn(&self,c:&str,u:&str)->bool{
+                c=="verified-chat"&&u=="trusted-user-turn"
+            }
+        }
+        struct HostAllowed;
+        impl ToolAuthorizer for HostAllowed {
+            fn authorize(&self,_:&ToolInvocation,_:&ToolDescriptor)->Result<(),AuthorizationError>{
+                Ok(())
+            }
+        }
+        let authority=ConversationAuthority::new();
+        authority.open_user_task(TaskAuthority{
+            conversation_id:"verified-chat".into(),
+            user_turn_id:"trusted-user-turn".into(),
+            task_id:"approved-browser".into(),
+            execution_scope_id:"scope-read".into(),
+            capabilities:vec![AuthorizedCapability{
+                tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead,
+            }],
+            expires_at:Some(SystemTime::now()+Duration::from_secs(120)),
+        },&Verifier).unwrap();
+        let origin=BoundCallOrigin{
+            conversation_id:"verified-chat".into(),
+            user_turn_id:"trusted-user-turn".into(),
+            task_id:"approved-browser".into(),
+        };
+        let scope=BrowserOriginScope::from_host_grant(
+            vec!["https://papers.example".into()]).unwrap();
+        let read_payload=encode_browser_request(BrowserOperation::Navigate,
+            &serde_json::json!({"url":"https://papers.example/a"})).unwrap();
+        let read=ToolInvocation{
+            call_id:"read1".into(),tool_id:BROWSER_READ_TOOL.into(),
+            workspace_id:Some("scope-read".into()),input:read_payload,
+        };
+        assert!(authorize_browser_operation(
+            &authority,&origin,&read,&HostAllowed,&scope,
+            BrowserOperation::Navigate,&serde_json::json!({"url":"https://papers.example/a"})
+        ).is_ok());
+        let click=ToolInvocation{
+            call_id:"click1".into(),tool_id:BROWSER_INTERACT_TOOL.into(),
+            workspace_id:Some("scope-read".into()),
+            input:encode_browser_request(BrowserOperation::Click,
+                &serde_json::json!({"x":1,"y":2})).unwrap(),
+        };
+        assert!(matches!(authorize_browser_operation(
+            &authority,&origin,&click,&HostAllowed,&scope,BrowserOperation::Click,
+            &serde_json::json!({"x":1,"y":2})),
+            Err(BrowserAuthorizationError::MissingGrant)));
+        let wrong_scope=ToolInvocation{
+            workspace_id:Some("other-scope".into()),..read.clone()
+        };
+        assert!(authorize_browser_operation(
+            &authority,&origin,&wrong_scope,&HostAllowed,&scope,
+            BrowserOperation::Navigate,&serde_json::json!({"url":"https://papers.example/a"})
+        ).is_err());
+        authority.revoke_task("approved-browser").unwrap();
+        assert!(authorize_browser_operation(
+            &authority,&origin,&read,&HostAllowed,&scope,
+            BrowserOperation::Navigate,&serde_json::json!({"url":"https://papers.example/a"})
+        ).is_err());
+    }
+    #[test]
     fn noncanonical_browser_wire_and_json_do_not_reach_worker(){
         let payload=encode_browser_request(BrowserOperation::Read,&serde_json::json!({})).unwrap();
         let mut invocation=ToolInvocation{
