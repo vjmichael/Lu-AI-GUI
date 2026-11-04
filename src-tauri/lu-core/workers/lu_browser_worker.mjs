@@ -113,6 +113,33 @@ export class BrowserSession {
       await this.page.keyboard.type(text,{delay:15});
       return {status:'TYPED',length:text.length};
     }
+    if (op === 'press') {
+      const key=boundedText(command.key,32);
+      const allowed=new Set(['Enter','Tab','Escape','Backspace','ArrowUp','ArrowDown',
+        'ArrowLeft','ArrowRight','PageUp','PageDown','Home','End']);
+      if (!allowed.has(key)) throw new BrowserGateError('UNAPPROVED_KEY');
+      await this.page.keyboard.press(key);
+      return {status:'KEY_PRESSED',key};
+    }
+    if (op === 'click_selector') {
+      const selector=boundedText(command.selector,256);
+      if (/javascript:|:has\(|:visited|\[href\^=/.test(selector)) {
+        throw new BrowserGateError('INVALID_SELECTOR');
+      }
+      await this.page.locator(selector).first().click({timeout:5000});
+      return {status:'CLICKED'};
+    }
+    if (op === 'back' || op === 'forward') {
+      if (op === 'back') await this.page.goBack({waitUntil:'domcontentloaded',timeout:15000});
+      else await this.page.goForward({waitUntil:'domcontentloaded',timeout:15000});
+      approvedUrl(this.page.url(),this.origins);
+      return {status:'NAVIGATED',url:this.page.url()};
+    }
+    if (op === 'accessibility') {
+      const tree=await this.page.locator('body').ariaSnapshot({timeout:5000});
+      return {status:'ACCESSIBILITY',url:this.page.url(),text:tree.slice(0,65536),
+        truncated:tree.length>65536};
+    }
     if (op === 'scroll') {
       const delta=command.delta;
       if (!Number.isInteger(delta) || Math.abs(delta)>3000) throw new BrowserGateError('INVALID_SCROLL');
