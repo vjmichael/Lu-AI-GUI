@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "6cb55326d6e9a7c7e39671376c0eff908413914a",
-  "trackedFileCount": 286,
+  "trackedFileCount": 287,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -38,6 +38,10 @@
     {
       "path": "README.md",
       "blob": "73dcb3730ece8de0565ddef027a6d80fc9b116c4"
+    },
+    {
+      "path": "docs/BACKEND_CTRL_01_CANCELLATION_LIFECYCLE_20261104.md",
+      "blob": "902e407967ad47cdc9771fbd21c603a64165e014"
     },
     {
       "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
@@ -709,11 +713,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_http.rs",
-      "blob": "668f842f2ff1c5abccfe1559a9ad348765fe1830"
+      "blob": "32215395376e0acf573b317dd749fa7a4fd01576"
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
-      "blob": "46d3c4105580551056209132db2bd3c30510726b"
+      "blob": "9ae9bb14f137aa1cbc21fc77de52215431334ae3"
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
