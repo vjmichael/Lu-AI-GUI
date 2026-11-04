@@ -61,7 +61,8 @@ fn validated_path(path: &str) -> Result<(), String> {
     if path.len() > 4096
         || Path::new(path).is_absolute()
         || path.chars().any(|c| c.is_control() || matches!(c, '\\' | ':'))
-        || path.split('/').any(|c| c.is_empty() || c == "." || c == ".." || c == ".git")
+        || path.split('/').any(|c| c.is_empty() || c == "." || c == ".."
+            || c == ".git" || c.starts_with('-'))
     {
         return Err("expected a simple workspace-relative tracked path".into());
     }
@@ -205,6 +206,7 @@ impl ApprovedGit {
         let data = reader.join()
             .map_err(|_| denied("GIT_FAILED", "Git output capture stopped"))?
             .map_err(|_| denied("GIT_FAILED", "cannot read Git output"))?;
+        let capped = capped || exceeded.load(Ordering::Acquire);
         if !exit_ok && !capped {
             return Err(denied("GIT_FAILED", "read-only Git inspection refused or failed"));
         }
