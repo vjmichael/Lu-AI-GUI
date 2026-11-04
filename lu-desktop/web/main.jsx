@@ -488,6 +488,11 @@ function App() {
       await refreshEditRecovery(proposal.chatId).catch(() => {});
     } catch (error) { setError(String(error)); }
   }
+  async function openEditedFolder(proposalId, targetChat = chatId) {
+    try {
+      await invoke('lu_open_edited_folder', {chatId:targetChat,proposalId});
+    } catch (error) { setError(String(error)); }
+  }
   async function openCreatedFolder(proposalId, targetChat = chatId) {
     try {
       await invoke('lu_open_created_folder', {chatId: targetChat, proposalId});
@@ -909,6 +914,15 @@ function App() {
             </div>
           </section>
         )}
+        {latestEdited?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Edited {latestEdited.fileName}</strong>
+          <small>Effect receipt: {latestEdited.effectCallId}</small>
+          <small>Before: {latestEdited.originalSha256} · After: {latestEdited.replacementSha256}</small>
+          <button className="folderLink" type="button"
+            onClick={() => openEditedFolder(latestEdited.proposalId,latestEdited.chatId)}>
+            Open containing folder
+          </button>
+        </section>}
         {latestCreated?.chatId === chatId && <section className="readProposalCard" role="status">
           <strong>Created {latestCreated.fileName}</strong>
           <small>{latestCreated.exactTarget}</small>
@@ -961,6 +975,11 @@ function App() {
                 (matching bytes alone do not prove who published them)</small>
               {record.approval === 'Approved' && <button type="button" className="subtleButton"
                 onClick={() => inspectEditRecovery(record)}>Reselect folder to inspect artifacts</button>}
+              {record.approval === 'Approved' && record.effect === 'Applied' &&
+                <button type="button" className="folderLink"
+                  onClick={() => openEditedFolder(record.proposalId,chatId)}>
+                  Open containing folder
+                </button>}
             </div>
           )}
           <button type="button" className="subtleButton"
