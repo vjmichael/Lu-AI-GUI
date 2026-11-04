@@ -705,3 +705,50 @@ async fn schema_invalid_tool_produces_typed_rejection_before_regeneration() {
     drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
     remove_workspace(root);
 }
+
+#[tokio::test]
+async fn policy_denied_tool_feedback_terminates_without_model_retry() {
+    let root = sandbox();
+    let (registry, catalog, authority, origin) = tools_and_authority(&root);
+    let allowed = BTreeSet::from(["lu_files_read_text".to_owned()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-test".into(), &allowed,
+    ).unwrap();
+    struct AlwaysTool { calls: usize }
+    impl ModelStepGenerator for AlwaysTool {
+        fn generate_step(
+            &mut self, _: &str, _: u32, _: &Cancellation,
+        ) -> Result<String, NativeGenerationError> {
+            self.calls += 1;
+            Ok(r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#.into())
+        }
+    }
+    struct Denied;
+    impl ToolAuthorizer for Denied {
+        fn authorize(
+            &self, _: &ToolInvocation, _: &ToolDescriptor,
+        ) -> Result<(), AuthorizationError> {
+            Err(AuthorizationError::new("host policy denied"))
+        }
+    }
+    let mut model = AlwaysTool { calls: 0 };
+    let journal = ModelTurnJournal::open(&root.join("mbrl-denied.sqlite3")).unwrap();
+    assert_eq!(
+        run_supervised_native_turn_journaled(
+            "Read notes.txt", &mut turn, &mut model,
+            &NativeTurnServices {
+                catalog: &catalog, registry: &registry,
+                authority: &authority, host_policy: &Denied,
+            }, &Cancellation::default(), &journal,
+        ).await,
+        Err(NativeGenerationError::ModelReplyStructure("policy_denied")),
+    );
+    assert_eq!(model.calls, 1, "denial must never regenerate or retry");
+    let audit = journal.events_for("conversation-test", "task-test").unwrap();
+    assert_eq!(audit.iter().filter(|e| e.kind == ModelAuditKind::ToolFeedback).count(), 1);
+    assert!(audit.iter().any(|e| e.kind == ModelAuditKind::ToolFeedback
+        && e.payload.contains("PERMISSION_DENIED")));
+    assert!(audit.last().unwrap().payload.contains("POLICY_DENIED"));
+    drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
+    remove_workspace(root);
+}
