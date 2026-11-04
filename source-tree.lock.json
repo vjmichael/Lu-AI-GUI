@@ -725,7 +725,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
-      "blob": "14dd2db8a7169fa892674c929a17ee6533878253"
+      "blob": "8a90b49a1af32b0348659914db73c9ba7a7fd5b8"
     },
     {
       "path": "src-tauri/lu-core/src/native_files.rs",
