@@ -1461,22 +1461,23 @@ fn lu_browser_runtime_status(
 }
 
 #[tauri::command]
-fn lu_browser_stop(
+async fn lu_browser_stop(
     state: State<'_, Arc<DesktopState>>
 ) -> Result<bool,String> {
-    // Revocation and worker shutdown are both host-only. Never leave a
-    // still-valid network grant after the user stops a research browser.
-    let active=state.browser_task.lock()
-        .map_err(|_|"browser task lock poisoned")?.take();
-    let revoke_result=active.as_ref().map(|task|
-        state.browser_authority.revoke_task(&task.task_id));
-    let stop_result=state.browser_runtime.stop();
-    // Always terminate the owned processes even if task-state bookkeeping
-    // encounters an error; failed revocation is reported after cleanup.
-    if let Some(Err(e))=revoke_result {
-        return Err(format!("browser stopped; grant revocation failed: {e:?}"));
-    }
-    stop_result
+    let state=Arc::clone(state.inner());
+    // Native worker cleanup can block on OS child teardown. Never block the
+    // desktop event loop or let an in-progress launch freeze its controls.
+    tauri::async_runtime::spawn_blocking(move||{
+        let active=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?.take();
+        let revoke_result=active.as_ref().map(|task|
+            state.browser_authority.revoke_task(&task.task_id));
+        let stop_result=state.browser_runtime.stop();
+        if let Some(Err(e))=revoke_result {
+            return Err(format!("browser stopped; grant revocation failed: {e:?}"));
+        }
+        stop_result
+    }).await.map_err(|e|format!("browser shutdown worker failed: {e}"))?
 }
 
 /// Native user approval is mandatory before any browser session starts.
