@@ -84,7 +84,7 @@ fn valid_id(value: &str) -> bool {
 }
 fn filename(name: &str) -> bool {
     !name.is_empty() && name.len() <= 200 &&
-        !name.starts_with(".lu-") && !name.ends_with(['.', ' ']) &&
+        !name.starts_with(".lu-") && !name.ends_with('.') && !name.ends_with(' ') &&
         name != "." && name != ".." &&
         !name.chars().any(|c| c.is_control() || matches!(c, '/' | '\\' | ':')) &&
         !Path::new(name).is_absolute()
