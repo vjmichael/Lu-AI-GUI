@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BrowserSession, BrowserGateError, approvedUrl, challengeKind } from '../src-tauri/lu-core/workers/lu_browser_worker.mjs';
+import { BrowserSession, BrowserGateError, HostVisibilityController, approvedUrl, challengeKind } from '../src-tauri/lu-core/workers/lu_browser_worker.mjs';
 
 const nativeWindow = () => ({
   calls:[],
@@ -162,4 +162,29 @@ test('failed re-hide keeps human takeover active and visible', async () => {
   assert.equal(state.status,'NEEDS_HUMAN');
   assert.equal(state.windowVisibility,'VISIBLE');
   await session.close();
+});
+
+test('visibility handshake is distinct from browser commands and requires native acknowledgement', async () => {
+  const frames=[];
+  const bridge=new HostVisibilityController({write:line=>frames.push(JSON.parse(line)),timeoutMs:100});
+  const hide=bridge.setVisible({visible:false});
+  assert.equal(frames.length,1);
+  assert.equal(frames[0].type,'host_visibility_request');
+  assert.equal(frames[0].visible,false);
+  assert.equal(bridge.acceptHostReply({type:'host_visibility_response',
+    requestId:'unknown',ok:true}),false);
+  assert.equal(bridge.acceptHostReply({type:'host_visibility_response',
+    requestId:frames[0].requestId,ok:true}),true);
+  assert.equal(await hide,true);
+  assert.equal(bridge.acceptHostReply({type:'host_visibility_response',
+    requestId:frames[0].requestId,ok:true}),false);
+  const show=bridge.setVisible({visible:true});
+  assert.equal(frames[1].visible,true);
+  bridge.close();
+  assert.equal(await show,false);
+});
+test('lost native visibility acknowledgement times out closed', async () => {
+  const bridge=new HostVisibilityController({write:()=>{},timeoutMs:5});
+  assert.equal(await bridge.setVisible({visible:false}),false);
+  bridge.close();
 });
