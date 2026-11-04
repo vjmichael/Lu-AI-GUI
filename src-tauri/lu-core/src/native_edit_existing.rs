@@ -112,6 +112,14 @@ fn sync_parent(dir: &Dir) -> Result<(), EditCommitError> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn strict_windows_file_identity(
+    root:&Dir,name:&str
+)->Result<crate::windows_file_guard::WindowsFileIdentity,EditCommitError> {
+    let handle=root.open(name).map_err(io)?.into_std();
+    crate::windows_file_guard::inspect_open_file(&handle)
+        .map_err(|_|EditCommitError::UnsafeTarget)
+}
 fn regular_bytes(
     root: &Dir, name: &str
 ) -> Result<(Vec<u8>, std::fs::Permissions), EditCommitError> {
@@ -125,6 +133,9 @@ fn regular_bytes(
     }
     let mut file = root.open(name).map_err(io)?.into_std();
     let meta = file.metadata().map_err(io)?;
+    #[cfg(windows)]
+    let opened_identity=crate::windows_file_guard::inspect_open_file(&file)
+        .map_err(|_|EditCommitError::UnsafeTarget)?;
     if !meta.is_file() || meta.len() > MAX_EDIT_DOCUMENT_BYTES as u64 {
         return Err(EditCommitError::UnsafeTarget);
     }
@@ -134,13 +145,9 @@ fn regular_bytes(
         // Never silently sever other hardlinks to the original inode.
         if meta.nlink() != 1 { return Err(EditCommitError::UnsafeTarget); }
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes() & 0x400 != 0 {
-            return Err(EditCommitError::UnsafeTarget);
-        }
-    }
+    // The opened-handle guard above also refuses Windows reparse points,
+    // multiple hardlinks, unsupported attributes, named data streams and
+    // missing native file IDs. Do not silently strip these on replacement.
     let perms = meta.permissions();
     let mut bytes = Vec::new();
     (&mut file).take((MAX_EDIT_DOCUMENT_BYTES as u64) + 1)
@@ -151,6 +158,10 @@ fn regular_bytes(
     let after_name_meta=root.symlink_metadata(name).map_err(io)?;
     if !after_name_meta.is_file() || after_name_meta.file_type().is_symlink() {
         return Err(EditCommitError::UnsafeTarget);
+    }
+    #[cfg(windows)]
+    if strict_windows_file_identity(root,name)?!=opened_identity {
+        return Err(EditCommitError::SourceConflict);
     }
     Ok((bytes, perms))
 }
@@ -218,6 +229,8 @@ fn commit_in_dir(
         return Err(EditCommitError::InvalidContent);
     }
     let (original, perms) = regular_bytes(root, target)?;
+    #[cfg(windows)]
+    let original_identity=strict_windows_file_identity(root,target)?;
     if sha(&original) != baseline_sha { return Err(EditCommitError::SourceConflict); }
     plan_text_edit(target, &original, baseline_sha, replacement)
         .map_err(|_| EditCommitError::InvalidContent)?;
@@ -253,6 +266,12 @@ fn commit_in_dir(
     if sha(&latest) != baseline_sha {
         return Err(EditCommitError::SourceConflict);
     }
+    #[cfg(windows)]
+    if strict_windows_file_identity(root,target)? != original_identity {
+        return Err(EditCommitError::SourceConflict);
+    }
+    // This detects identity substitutions even if a different inode has
+    // identical bytes. It is not an OS-atomic cross-process compare-and-swap.
     root.rename(&stage_name, root, target).map_err(io)?;
     if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
     sync_parent(root).map_err(|_| EditCommitError::Uncertain)?;
@@ -529,6 +548,8 @@ fn rollback_with_stop(
         return Err(EditCommitError::InvalidRecoveryRecord);
     }
     let (current, perms) = regular_bytes(root, target)?;
+    #[cfg(windows)]
+    let original_identity=strict_windows_file_identity(root,target)?;
     if sha(&current) != expected_current {
         return Err(EditCommitError::SourceConflict);
     }
@@ -556,6 +577,10 @@ fn rollback_with_stop(
     }
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
     if sha(&regular_bytes(root, target)?.0) != expected_current {
+        return Err(EditCommitError::SourceConflict);
+    }
+    #[cfg(windows)]
+    if strict_windows_file_identity(root,target)?!=original_identity {
         return Err(EditCommitError::SourceConflict);
     }
     root.rename(&stage, root, target).map_err(io)?;
