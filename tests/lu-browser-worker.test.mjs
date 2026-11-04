@@ -135,3 +135,31 @@ test('always-visible setting never silently hides window', async () => {
   await assert.rejects(session.execute({op:'hide_browser'}),e=>e.code==='VISIBILITY_LOCKED_VISIBLE');
   await session.close();
 });
+
+test('failed re-hide keeps human takeover active and visible', async () => {
+  let location='about:blank',body='Complete the CAPTCHA',hiddenCalls=0;
+  const page={
+    url:()=>location,
+    goto:async url=>{location=url;return {status:()=>200};},
+    locator:()=>({innerText:async()=>body})
+  };
+  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const controller={async setVisible({visible}) {
+    if (!visible && ++hiddenCalls>1) return false;
+    return true;
+  }};
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/chosen/profile',
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:controller
+  });
+  await session.start();
+  await session.execute({op:'navigate',url:'https://archive.example/doc'});
+  body='The human verification completed.';
+  await assert.rejects(session.execute({op:'human_resolved'}),
+    e=>e.code==='WINDOW_VISIBILITY_FAILED');
+  const state=await session.execute({op:'status'});
+  assert.equal(state.status,'NEEDS_HUMAN');
+  assert.equal(state.windowVisibility,'VISIBLE');
+  await session.close();
+});
