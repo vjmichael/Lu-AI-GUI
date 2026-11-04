@@ -9,13 +9,17 @@
 //! metadata, and do NOT claim atomic cross-process file-ID compare-and-swap.
 //! The file's last-write timestamp intentionally changes on edit/restore.
 #![cfg(windows)]
-use std::{ffi::c_void,fs::File,io,os::windows::io::AsRawHandle,ptr};
+use std::{ffi::c_void,fs::File,io,
+    os::windows::io::{AsRawHandle,FromRawHandle},ptr};
 
 const SE_FILE_OBJECT:u32=1;
 const OWNER_SECURITY_INFORMATION:u32=0x01;
 const GROUP_SECURITY_INFORMATION:u32=0x02;
 const DACL_SECURITY_INFORMATION:u32=0x04;
 const MAX_SD_BYTES:usize=65536;
+const GENERIC_READ:u32=0x80000000;
+const FILE_SHARE_READ:u32=0x00000001;
+const FILE_SHARE_DELETE:u32=0x00000004;
 #[repr(C)]
 #[derive(Debug,Clone,Copy,Default,PartialEq,Eq)]
 pub struct FileTime { low:u32, high:u32 }
@@ -27,6 +31,7 @@ extern "system" {
     fn SetFileTime(file:*mut c_void,creation:*const FileTime,
         access:*const FileTime,write:*const FileTime)->i32;
     fn LocalFree(mem:*mut c_void)->*mut c_void;
+    fn ReOpenFile(original:*mut c_void,access:u32,sharing:u32,flags:u32)->*mut c_void;
 }
 #[link(name="advapi32")]
 extern "system" {
@@ -88,6 +93,26 @@ fn security_descriptor(file:&File)->io::Result<Vec<u8>>{
     if !freed.is_null(){return Err(deny("native descriptor release failed"));}
     result
 }
+/// Non-owning path-free write-exclusion lease on the already capability-opened
+/// target. Fails closed if an existing writable handle conflicts; blocks new
+/// GENERIC_WRITE opens until the returned File is dropped. SHARE_DELETE stays
+/// set so Lu's own capability-relative rename can publish. A hostile external
+/// rename is NOT prevented by this lease; it is not a name-bound CAS.
+pub fn no_write_lease(opened_target:&File)->io::Result<File>{
+    // SAFETY: ReOpenFile receives a live handle to the previously validated
+    // FILE object. Its returned distinct HANDLE is owned by exactly one
+    // File::from_raw_handle and closed automatically on Drop.
+    let result=unsafe{ReOpenFile(
+        opened_target.as_raw_handle().cast::<c_void>(),
+        GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_DELETE,0
+    )};
+    if result.is_null() || result as isize == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: successful ReOpenFile returns a fresh owning Windows HANDLE.
+    Ok(unsafe{File::from_raw_handle(result.cast())})
+}
+
 /// Snapshot owner, group, DACL, creation and access times from the OPENED
 /// target. Any access-denied/unsupported filesystem response is a refusal.
 pub fn snapshot_metadata(file:&File)->io::Result<SecurityMetadataSnapshot>{
@@ -159,6 +184,32 @@ mod tests {
             snapshot.owner_group_dacl);
         drop(staged);drop(source);fs::remove_dir_all(p).unwrap();
     }
+    #[test]
+    fn no_write_lease_blocks_new_external_writer_until_release() {
+        let p=temp();let path=p.join("source.txt");
+        fs::write(&path,b"original").unwrap();
+        let opened=File::open(&path).unwrap();
+        let lease=no_write_lease(&opened).unwrap();
+        assert!(fs::OpenOptions::new().write(true).open(&path).is_err(),
+            "new writer should not be able to race Lu's final validation");
+        drop(lease);
+        assert!(fs::OpenOptions::new().write(true).open(&path).is_ok());
+        drop(opened);fs::remove_dir_all(p).unwrap();
+    }
+    #[test]
+    fn no_write_lease_refuses_an_existing_external_writer() {
+        let p=temp();let path=p.join("source.txt");
+        fs::write(&path,b"original").unwrap();
+        let writer=fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let opened=File::open(&path).unwrap();
+        assert!(no_write_lease(&opened).is_err(),
+            "an extant writer prevents Lu from claiming a no-write lease");
+        drop(opened);drop(writer);
+        let opened=File::open(&path).unwrap();
+        assert!(no_write_lease(&opened).is_ok());
+        drop(opened);fs::remove_dir_all(p).unwrap();
+    }
+
     #[test]
     fn refuse_stage_security_mismatch_not_publish() {
         let p=temp();let a=p.join("existing.txt"),b=p.join("stage.txt");
