@@ -13,9 +13,10 @@ use serde_json::{json, Map, Number, Value};
 use sha2::{Digest, Sha256};
 use std::{
     fmt,
-    io::Read,
+    fs::File,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use crate::{
@@ -124,31 +125,62 @@ fn classify_json_error(error: &serde_json::Error) -> &'static str {
     }
 }
 
-fn inspect_json(root: &Dir, request: proto::InspectJsonFileRequest) -> Result<ToolOutput, ToolFailure> {
+/// A native OS picker can pin one exact approved file handle. The subsequent
+/// model-visible path never selects an unapproved replacement or sibling.
+struct PinnedJsonFile {
+    name: String,
+    handle: Mutex<File>,
+}
+
+fn inspect_json(
+    root: &Dir,
+    request: proto::InspectJsonFileRequest,
+    pinned: Option<&PinnedJsonFile>,
+) -> Result<ToolOutput, ToolFailure> {
     let max_bytes = request.max_bytes.unwrap_or(MAX_JSON_INSPECTION_BYTES);
     if max_bytes == 0 || max_bytes > MAX_JSON_INSPECTION_BYTES {
         return Err(failure("INVALID_LIMIT", "JSON inspection size outside approved range"));
     }
     let relative = relative_json_path(&request.path)
         .map_err(|message| failure("INVALID_PATH", message))?;
-    let before = root.symlink_metadata(&relative)
-        .map_err(|_| failure("FILE_ACCESS", "JSON target unavailable"))?;
-    if !before.file_type().is_file() || before.file_type().is_symlink() {
-        return Err(failure("NOT_FILE", "JSON target must be a regular file, not a link"));
-    }
-    if before.len() > u64::from(max_bytes) {
-        return Err(failure("TOO_LARGE", "JSON file exceeds approved inspection limit"));
-    }
-    let mut handle = root.open(&relative)
-        .map_err(|_| failure("FILE_ACCESS", "cannot open JSON target"))?;
-    let opened = handle.metadata()
-        .map_err(|_| failure("FILE_ACCESS", "cannot inspect opened JSON handle"))?;
-    if !opened.is_file() || opened.len() > u64::from(max_bytes) {
-        return Err(failure("NOT_FILE", "opened JSON target not approved"));
-    }
     let mut data = Vec::new();
-    handle.by_ref().take(u64::from(max_bytes) + 1).read_to_end(&mut data)
-        .map_err(|_| failure("FILE_ACCESS", "cannot read JSON target"))?;
+    if let Some(pinned) = pinned {
+        if request.path != pinned.name {
+            return Err(failure("TARGET_MISMATCH", "JSON request differs from approved file"));
+        }
+        let mut handle = pinned.handle.lock()
+            .map_err(|_| failure("FILE_ACCESS", "approved JSON handle unavailable"))?;
+        let opened = handle.metadata()
+            .map_err(|_| failure("FILE_ACCESS", "cannot inspect approved JSON handle"))?;
+        if !opened.is_file() {
+            return Err(failure("NOT_FILE", "approved JSON handle is not a file"));
+        }
+        if opened.len() > u64::from(max_bytes) {
+            return Err(failure("TOO_LARGE", "approved JSON file exceeds inspection limit"));
+        }
+        handle.seek(SeekFrom::Start(0))
+            .map_err(|_| failure("FILE_ACCESS", "cannot seek approved JSON handle"))?;
+        (&mut *handle).take(u64::from(max_bytes) + 1).read_to_end(&mut data)
+            .map_err(|_| failure("FILE_ACCESS", "cannot read approved JSON handle"))?;
+    } else {
+        let before = root.symlink_metadata(&relative)
+            .map_err(|_| failure("FILE_ACCESS", "JSON target unavailable"))?;
+        if !before.file_type().is_file() || before.file_type().is_symlink() {
+            return Err(failure("NOT_FILE", "JSON target must be a regular file, not a link"));
+        }
+        if before.len() > u64::from(max_bytes) {
+            return Err(failure("TOO_LARGE", "JSON file exceeds approved inspection limit"));
+        }
+        let mut handle = root.open(&relative)
+            .map_err(|_| failure("FILE_ACCESS", "cannot open JSON target"))?;
+        let opened = handle.metadata()
+            .map_err(|_| failure("FILE_ACCESS", "cannot inspect opened JSON handle"))?;
+        if !opened.is_file() || opened.len() > u64::from(max_bytes) {
+            return Err(failure("NOT_FILE", "opened JSON target not approved"));
+        }
+        handle.by_ref().take(u64::from(max_bytes) + 1).read_to_end(&mut data)
+            .map_err(|_| failure("FILE_ACCESS", "cannot read JSON target"))?;
+    }
     if data.len() > max_bytes as usize {
         return Err(failure("TOO_LARGE", "JSON target grew beyond approved limit"));
     }
@@ -205,6 +237,7 @@ fn inspect_json(root: &Dir, request: proto::InspectJsonFileRequest) -> Result<To
 struct JsonInspectTool {
     descriptor: ToolDescriptor,
     root: Arc<Dir>,
+    pinned: Option<Arc<PinnedJsonFile>>,
 }
 impl NativeTool for JsonInspectTool {
     fn descriptor(&self) -> &ToolDescriptor {
@@ -212,13 +245,14 @@ impl NativeTool for JsonInspectTool {
     }
     fn invoke(&self, call: ToolInvocation) -> ToolFuture<'_> {
         let root = Arc::clone(&self.root);
+        let pinned = self.pinned.clone();
         Box::pin(async move {
             let request = proto::InspectJsonFileRequest::decode(call.input.bytes.as_slice())
                 .map_err(|_| failure("BAD_PROTOBUF", "malformed JSON inspect arguments"))?;
             if request.encode_to_vec() != call.input.bytes {
                 return Err(failure("BAD_PROTOBUF", "noncanonical JSON inspect arguments"));
             }
-            tokio::task::spawn_blocking(move || inspect_json(&root, request))
+            tokio::task::spawn_blocking(move || inspect_json(&root, request, pinned.as_deref()))
                 .await
                 .map_err(|_| failure("WORKER_FAILED", "JSON inspection task failed"))?
         })
@@ -273,6 +307,40 @@ pub fn register_json_inspection_tool(
     catalog: &mut ModelToolCatalog,
     authorized_root: &Path,
 ) -> Result<(), String> {
+    register_json_inspection_tool_inner(registry, catalog, authorized_root, None)
+}
+
+/// Register a picker-bound inspector. The selected handle is opened and
+/// identity-checked by trusted desktop code before this call; model text may
+/// only name the same file, and never chooses the handle itself.
+pub fn register_json_inspection_tool_pinned(
+    registry: &NativeToolRegistry,
+    catalog: &mut ModelToolCatalog,
+    authorized_root: &Path,
+    selected_name: &str,
+    selected_handle: File,
+) -> Result<(), String> {
+    let path = relative_json_path(selected_name).map_err(str::to_owned)?;
+    if path.file_name().and_then(|n| n.to_str()) != Some(selected_name)
+        || !selected_handle.metadata().map_err(|_| "cannot inspect selected JSON file")?.is_file()
+    {
+        return Err("selected JSON handle/name is invalid".into());
+    }
+    register_json_inspection_tool_inner(
+        registry, catalog, authorized_root,
+        Some(Arc::new(PinnedJsonFile {
+            name: selected_name.to_owned(),
+            handle: Mutex::new(selected_handle),
+        })),
+    )
+}
+
+fn register_json_inspection_tool_inner(
+    registry: &NativeToolRegistry,
+    catalog: &mut ModelToolCatalog,
+    authorized_root: &Path,
+    pinned: Option<Arc<PinnedJsonFile>>,
+) -> Result<(), String> {
     let canonical = authorized_root.canonicalize()
         .map_err(|_| "authorized JSON root unavailable")?;
     if !canonical.is_dir() {
@@ -295,7 +363,7 @@ pub fn register_json_inspection_tool(
         tools: vec![descriptor.clone()],
         panels: vec![],
         workflows: vec![],
-    }, vec![Arc::new(JsonInspectTool { descriptor, root })])
+    }, vec![Arc::new(JsonInspectTool { descriptor, root, pinned })])
     .map_err(|_| "JSON native tool registry refused module")?;
 
     catalog.insert(registry, ModelToolDefinition {
@@ -383,6 +451,34 @@ mod tests {
         drop(registry);
         fs::remove_dir_all(root).unwrap();
     }
+    #[tokio::test]
+    async fn pinned_file_matches_approved_handle_not_replaced_path() {
+        let root = temp();
+        fs::write(root.join("first.json"), r#"{"source":"first"}"#).unwrap();
+        fs::write(root.join("other.json"), r#"{"source":"other"}"#).unwrap();
+        let handle = File::open(root.join("first.json")).unwrap();
+        let registry = NativeToolRegistry::new();
+        let mut catalog = ModelToolCatalog::new();
+        register_json_inspection_tool_pinned(
+            &registry, &mut catalog, &root, "first.json", handle,
+        ).unwrap();
+        let wrong = registry.dispatch(
+            call(&catalog, "other.json", r#""max_bytes":512000"#), &Allow,
+        ).await;
+        assert!(wrong.is_err(), "approved handle cannot authorize another filename");
+        let correct = registry.dispatch(
+            call(&catalog, "first.json", r#""max_bytes":512000"#), &Allow,
+        ).await;
+        let data = catalog.decode_result(
+            &BTreeSet::from([MODEL_NAME.into()]), MODEL_NAME, &correct,
+        ).unwrap();
+        assert_eq!(data["result"]["valid"], true);
+        assert_eq!(data["result"]["bytes_read"], 18);
+        drop(catalog);
+        drop(registry);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn path_traversal_excessive_read_and_missing_grant_are_refused() {
         let root = temp();
