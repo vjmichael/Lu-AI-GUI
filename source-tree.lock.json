@@ -665,7 +665,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "3d38347f1f5b52194189f95259712577fea6645a"
+      "blob": "1dd1c835441667d58e4d59277fbf7f491b09e110"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
