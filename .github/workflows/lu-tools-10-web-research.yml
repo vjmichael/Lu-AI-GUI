@@ -56,6 +56,10 @@ jobs:
         run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib browser_window -- --nocapture
       - name: 180-source evidence and CAPTCHA persistence acceptance
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance -- --nocapture
+      - name: Offline reviewed Chromium packaging acceptance
+        run: node --test lu-desktop/tests/browser-staging.test.mjs
+      - name: Browser capability scope and effect admission
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution -- --nocapture
       - name: Desktop browser setting native wiring fixtures
         run: node --test lu-desktop/tests/browser-visibility-settings.test.mjs
       - name: Browser protocol and human takeover fixtures
