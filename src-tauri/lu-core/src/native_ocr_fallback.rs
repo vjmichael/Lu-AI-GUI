@@ -284,7 +284,8 @@ fn run_engine(
     let stderr_reader = std::thread::spawn(move || {
         // Drain without buffering unbounded native diagnostics.
         let mut sink = std::io::sink();
-        let _ = std::io::copy(&mut stderr.take(64 * 1024), &mut sink);
+        let mut stderr = stderr;
+        let _ = std::io::copy(&mut stderr, &mut sink);
     });
     let bytes = pinned.image.image_bytes.clone();
     let writer = std::thread::spawn(move || input.write_all(&bytes));
