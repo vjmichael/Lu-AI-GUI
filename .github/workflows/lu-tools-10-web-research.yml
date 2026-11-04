@@ -40,6 +40,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings -- --nocapture
       - name: Host-authorized visibility bridge tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_host_bridge -- --nocapture
+      - name: Host-owned Chromium launcher and CDP admission tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_chromium_launcher -- --nocapture
       - name: Native browser worker supervisor tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
       - name: Browser child-process ownership tests
