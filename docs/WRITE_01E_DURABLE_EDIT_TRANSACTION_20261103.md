@@ -114,3 +114,9 @@ At confirmed execution, Lu's native desktop host validates the still-opened targ
 A rollback obtains its *own* native selected current-file ID at the new restore review, double-checks it around complete preview reading, and holds it in the single-use host queue. It is independently confirmed and passed to the native rollback transaction, which verifies ID before intent and publish. The rollback ID is not allowed to reuse the original edit's stale FileId.
 
 New test coverage includes different native file IDs with identical bytes between selection and dispatch and direct native effect-entry tests that bypass the earlier host precheck. **Unresolved:** DACL/ACL/timestamps/ADS preservation, true external-writer atomicity, native-directory flush after publication, and power-loss / installed-app Windows acceptance. Source committed; exact CI evidence pending.
+
+
+### WRITE-01E.4C.2 proven CI status
+The exact code commit `2b664fd2b95b6daa7a2d53788006b3e722148afe` passed Lu Desktop CI `41777297445`, REPO-01 `41777297387`, and WIN-LOAD-01 `41777297414`. The Windows runner executed both editor-swap adversarial tests (after native selection and inside the native transaction), passed the trusted edit and separate rollback workflows, and compiled the complete Tauri host. Linux validation also passed. Previous CI errors were limited to an untyped non-Windows `None` in shared picker code and a stale Windows test fixture missing native identity, both corrected in this accepted revision.
+
+This establishes a verifiable *development implementation* of exact Windows selected-object ID continuity; it is NOT an atomic compare-and-swap under adversarial external writers or proof that non-default ACLs, timestamps, alternate streams or other NTFS metadata are preserved. Files with unsupported special attributes or multiple links continue to be refused. Release and physical installed-app acceptance are separate gates.
