@@ -8,7 +8,7 @@ use lu_core::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
         TrustedUserTurnVerifier,
     },
-    model::{ModelToolCatalog, ModelToolError},
+    model::ModelToolCatalog,
     native_git_inspect::register_git_inspection_tools,
     registry::{DispatchError, NativeToolRegistry},
     wire::proto,
@@ -167,7 +167,28 @@ async fn all_three_git_tools_inspect_real_repo_and_are_read_only() {
     let patch = diff["result"]["diff"].as_str().unwrap();
     assert!(patch.contains("-original") && patch.contains("+updated"));
     assert_eq!(diff["result"]["truncated"], false);
-    assert_eq!(turn.step_count(), 3);
+    // Bounded reads report truncation instead of consuming unbounded model
+    // context. They are still normal read-only calls under the SAME grant.
+    let status_limited = turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_git_status","arguments":{"max_entries":1}}"#,
+        &catalog, &registry, &auth, &Allow,
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult { data: status_limited, .. } = status_limited else {
+        panic!("bounded status missing");
+    };
+    assert_eq!(status_limited["result"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(status_limited["result"]["truncated"], true);
+    let diff_limited = turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_git_diff","arguments":{"path":"notes.txt","max_bytes":32}}"#,
+        &catalog, &registry, &auth, &Allow,
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult { data: diff_limited, .. } = diff_limited else {
+        panic!("bounded diff missing");
+    };
+    assert_eq!(diff_limited["ok"], true);
+    assert_eq!(diff_limited["result"]["truncated"], true);
+    assert!(diff_limited["result"]["observed_bytes"].as_u64().unwrap() <= 32);
+    assert_eq!(turn.step_count(), 5);
     assert_eq!(fs::read(root.join(".git/HEAD")).unwrap(), before_head);
     assert_eq!(fs::read(root.join(".git/index")).unwrap(), before_index);
     assert_eq!(fs::read_to_string(root.join("notes.txt")).unwrap(), "updated\n");
@@ -249,7 +270,7 @@ async fn protobuf_unknown_fields_and_registry_type_spoofing_are_rejected() {
 }
 
 #[test]
-fn Git_root_gitdir_and_executable_are_only_host_defined() {
+fn git_root_gitdir_and_executable_are_only_host_defined() {
     let (root, git) = fixture();
     let reg = NativeToolRegistry::new();
     let mut catalog = ModelToolCatalog::new();
