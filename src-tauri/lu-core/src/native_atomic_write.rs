@@ -11,7 +11,8 @@
 //! Failure to remove the staging alias after publication is an UNCERTAIN
 //! effect and must be reconciled, never automatically retried.
 use sha2::{Digest, Sha256};
-use std::{fs, io::Write, path::{Path, PathBuf}};
+use cap_std::{ambient_authority, fs::{Dir, OpenOptions}};
+use std::{fs, io::Write, path::Path};
 
 pub const MAX_ATOMIC_WRITE_BYTES: usize = 1024 * 1024;
 
@@ -74,13 +75,30 @@ pub fn create_new_atomic(
             return Err(AtomicWriteError::RootUnavailable);
         }
     }
-    let root = trusted_directory.canonicalize()
+    // Convert the trusted selected path into an OS directory handle.
+    // The underlying directory remains the same object even if an external
+    // actor subsequently renames its pathname.
+    let root = Dir::open_ambient_dir(trusted_directory, ambient_authority())
         .map_err(|_| AtomicWriteError::RootUnavailable)?;
-    let target = root.join(target_name);
+    create_new_atomic_in_dir(&root, target_name, host_stage_id, content)
+}
+
+/// Handle-relative publication: staging, sync, linking and cleanup are all
+/// relative to the SAME opened directory. This is not a general Lu sandbox;
+/// it is an exact-target host capability for one approved action.
+pub fn create_new_atomic_in_dir(
+    root: &Dir,
+    target_name: &str,
+    host_stage_id: &str,
+    content: &[u8],
+) -> Result<WriteReceipt, AtomicWriteError> {
+    if !simple_filename(target_name) { return Err(AtomicWriteError::InvalidTarget); }
+    if !valid_stage_id(host_stage_id) { return Err(AtomicWriteError::InvalidStage); }
+    if content.len() > MAX_ATOMIC_WRITE_BYTES { return Err(AtomicWriteError::Oversized); }
     let stage_name = format!(".lu-stage-{host_stage_id}.tmp");
-    let stage = root.join(stage_name);
-    let mut handle = fs::OpenOptions::new()
-        .create_new(true).write(true).open(&stage)
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    let mut handle = root.open_with(&stage_name, &options)
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
                 AtomicWriteError::StageCollision
@@ -93,10 +111,10 @@ pub fn create_new_atomic(
     })();
     drop(handle);
     if let Err(e) = write_result {
-        let _ = fs::remove_file(&stage);
+        let _ = root.remove_file(&stage_name);
         return Err(e);
     }
-    if let Err(e) = fs::hard_link(&stage, &target) {
+    if let Err(e) = root.hard_link(&stage_name, root, target_name) {
         let _ = fs::remove_file(&stage);
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             return Err(AtomicWriteError::ExistingTarget);
