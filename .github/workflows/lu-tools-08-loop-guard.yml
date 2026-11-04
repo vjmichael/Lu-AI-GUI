@@ -1,0 +1,54 @@
+name: Lu TOOLS-08 structural loop prevention
+
+on:
+  push:
+    branches:
+      - lu/tools-08-loop-guard-20261104
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux exact repeat, ping-pong, warnings and real native dispatch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original-frozen source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test original Jan loop guard and real native dispatch
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_loop_guard -- --nocapture
+      - name: Preserve independent step limit and JSON/Protobuf scope regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn
+      - name: Preserve supervisor model turn and journal integration
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn
+
+  windows:
+    name: Windows exact repeat, ping-pong, warnings and real native dispatch
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original-frozen source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test original Jan loop guard and real native dispatch
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_loop_guard -- --nocapture
+      - name: Preserve independent step limit and JSON/Protobuf scope regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn
+      - name: Preserve supervisor model turn and journal integration
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn
