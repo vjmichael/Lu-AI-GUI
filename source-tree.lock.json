@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "118c01a698af7d3b044aaecdc15cce5b64f98222",
-  "trackedFileCount": 262,
+  "trackedFileCount": 265,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "1b76f579201bf2833591cf62672609345e61d9a4"
+      "blob": "764386e25e56262309687c42f1401b2eda3e53fb"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
-      "blob": "3788425ab42ab6a586de36dc680621d6f6df280a"
+      "blob": "1ff68d95bad19c5501651973ba53030dae59a63a"
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
@@ -81,11 +81,15 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "aabf6f8cd6eb5ad525c9909ed2e5ad38b504e933"
+      "blob": "6da49e224b8d159ff5f1193daac1a97b9f01123c"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
       "blob": "7c31ec4219a6df1733586e3feb4d34eb9db0fd99"
+    },
+    {
+      "path": "docs/WRITE_01E_DURABLE_EDIT_TRANSACTION_20261103.md",
+      "blob": "0f3301cd72bc44ca21b2424b1604e047772bcae1"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -429,7 +433,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "6495ad09b4403dd8f6c714d3358d31da2a43e63a"
+      "blob": "e4c5bd1abae51ef1a796432e17062b3700d58acf"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -605,7 +609,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "855ffccc580d5be55d622fe2e6613a81ffa848e2"
+      "blob": "f640aabfe7a53be1f7471f06157aba2b0ecc2aaf"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -662,6 +666,10 @@
     {
       "path": "src-tauri/lu-core/src/native_create_new.rs",
       "blob": "95a821874423cd53545c082aab12d74d7a0749a5"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_edit_existing.rs",
+      "blob": "a254866b5f9bd699a1a9123462a5f77162d11c82"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
@@ -958,6 +966,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_dispatch_error_codes.rs",
       "blob": "8e8b79d6a6c1cc51e393622049264c5da8fd953e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_edit_existing_authority.rs",
+      "blob": "ea1aef2f9816ea38ff9492df4953be4b87c51e28"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
