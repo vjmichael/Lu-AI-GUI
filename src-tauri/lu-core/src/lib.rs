@@ -65,6 +65,7 @@ pub mod native_file_extra;
 pub mod native_files;
 pub mod native_atomic_write;
 pub mod native_create_new;
+pub mod native_edit_existing;
 pub mod write_format;
 pub mod write_recovery;
 pub mod document_preferences;
