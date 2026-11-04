@@ -142,6 +142,9 @@ jobs:
       - name: Windows deterministic preflight for existing text edits
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test edit_safety
+      - name: Windows authorized existing-edit commit, rollback and journal regression
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_edit_existing_authority
       - name: Compile check only (NOT distributable or GPU-tested)
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
