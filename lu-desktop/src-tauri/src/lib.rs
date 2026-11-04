@@ -1300,14 +1300,46 @@ fn lu_review_write_destination(
 /// path, byte payload, model origin or permission is accepted here.
 #[tauri::command]
 async fn lu_confirm_write(
+    app: AppHandle,
     state: State<'_, Arc<DesktopState>>,
     chat_id: String,
     proposal_id: String,
-) -> Result<native_host_write::CreatedFile, String> {
+) -> Result<Option<native_host_write::CreatedFile>, String> {
     let state = Arc::clone(state.inner());
+    let (initial_origin, initial_dir, initial_proposal) = state.write_proposals
+        .review_details(&proposal_id, &chat_id)
+        .map_err(|e| format!("write confirmation unavailable: {e:?}"))?;
+    let target_preview = initial_dir.join(&initial_proposal.file_name)
+        .to_string_lossy().into_owned();
+    let sha = initial_proposal.digest();
+    let confirm_text = format!(
+        "Create a new file (existing files will NEVER be overwritten)?\n\nDestination: {}\nSize: {} bytes\nSHA-256: {}\n\nReview the full contents in Lu before approving. This authorization is single-use.",
+        target_preview, initial_proposal.bytes(), sha,
+    );
+    // A WebView callback cannot count as the human's final native approval.
+    // Keep this blocking modal off the main event loop.
+    let user_confirmed = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().message(confirm_text)
+            .title("Lu — Confirm exact new file")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new file".into(), "Cancel".into(),
+            ))
+            .blocking_show()
+    }).await.map_err(|e| format!("native confirmation failed: {e}"))?;
+    if !user_confirmed {
+        state.write_approval_ledger.deny(&proposal_id, &chat_id)
+            .map_err(|e| format!("native denial not recorded: {e:?}"))?;
+        state.write_proposals.dismiss(&proposal_id, &chat_id)
+            .map_err(|e| format!("write request not dismissed: {e:?}"))?;
+        return Ok(None);
+    }
     let (origin, directory, proposal) = state.write_proposals.take_confirmed(
         &proposal_id, &chat_id,
     ).map_err(|e| format!("write confirmation unavailable: {e:?}"))?;
+    if origin != initial_origin || directory != initial_dir
+        || proposal != initial_proposal {
+        return Err("write changed during native confirmation; refused".into());
+    }
     let target = directory.join(&proposal.file_name).to_string_lossy().into_owned();
     let effect_id = next_id("g-");
     state.write_approval_ledger.approve(
@@ -1318,7 +1350,7 @@ async fn lu_confirm_write(
     native_host_write::execute_approved_create(
         &state.chats, &state.effects, &chat_id, &user_turn, &effect_id,
         &directory, &proposal,
-    ).await
+    ).await.map(Some)
 }
 
 #[tauri::command]
