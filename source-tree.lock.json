@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b122f00d2881ff7821d09d18ede0f3f064be9999",
+  "sourceCommitBeforeLock": "5ee11ed06156c52915de60544c575727f16faef5",
   "trackedFileCount": 250,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "0cae9411ca452a35d0b047ca0581e73f483cd7e2"
+      "blob": "386ca17ba3c3839dc6707f18e96d2900af95b738"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "baa6397c6464f743dcf83e9e9890ff2bfa2db97e"
+      "blob": "89e35e2ad4a3e712c6c909f5fc7cde83896580a9"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
