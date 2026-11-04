@@ -19,7 +19,7 @@ function setup(){
   copyFileSync(stageScript,targetScript);
   const names=process.platform==='win32'
     ? ['chrome.exe','node.exe','lu_browser_worker.mjs','node_modules/playwright/index.mjs']
-    : ['chrome','node','lu_browser_worker.mjs','node_modules/playwright/index.mjs'];
+    : ['chrome','node','xdotool','lu_browser_worker.mjs','node_modules/playwright/index.mjs'];
   const files=names.map((path,index)=>{
     const data=Buffer.from('fixture component '+index+' for '+path);
     const file=join(packageDir,...path.split('/'));
