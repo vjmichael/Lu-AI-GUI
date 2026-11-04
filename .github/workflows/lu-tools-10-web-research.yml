@@ -90,6 +90,9 @@ jobs:
         run: npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock --ignore-scripts playwright@1.64.1
       - name: Download full headed Chromium from Playwright
         run: node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+      - name: Install Linux headed Chromium runtime dependencies
+        if: runner.os == 'Linux'
+        run: sudo npx --yes playwright@1.64.1 install-deps chromium
       - name: Provision trusted X11 window helper
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xdotool
@@ -102,6 +105,17 @@ jobs:
           node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
       - name: Verify candidate inventory and deliberate non-release status
         run: node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+      - name: Real candidate headed browser and human handoff (Linux Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node --test lu-desktop/tests/browser-ci-executable.test.mjs
+      - name: Candidate Chromium binary self-identification (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $browser = "out/lu-browser-candidate/chrome.exe"
+          if (-not (Test-Path $browser)) { throw "Candidate Chromium executable missing" }
+          & $browser --version
+          if ($LASTEXITCODE -ne 0) { throw "Candidate Chromium could not start" }
       - name: Upload Chromium Node Playwright candidate with manifest
         uses: actions/upload-artifact@v4
         with:
