@@ -21,7 +21,7 @@ use crate::{
     inference_wire::decode_frame,
     journal::EffectJournal,
     model::{ModelToolCatalog, ModelToolError},
-    model_json_boundary::{parse_model_boundary, serialize_host_boundary, JsonRepairStatus},
+    model_json_boundary::{parse_model_boundary, parse_host_tool_feedback_boundary, serialize_host_boundary, JsonRepairStatus},
     model_turn_journal::{ModelAuditKind, ModelTurnJournal},
     registry::NativeToolRegistry,
     wire::proto,
@@ -606,7 +606,7 @@ async fn run_supervised_native_turn_inner(
             None,
         )?;
         let parsed_feedback = Value::Object(
-            parse_model_boundary(&feedback)
+            parse_host_tool_feedback_boundary(&feedback, MAX_LU_TOOL_FEEDBACK_BYTES)
                 .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?
                 .object,
         );
@@ -805,7 +805,7 @@ Output one compact JSON object without extra fields.
                     return Err(NativeGenerationError::PromptTooLarge);
                 }
                 let data = Value::Object(
-                    parse_model_boundary(&feedback)
+                    parse_host_tool_feedback_boundary(&feedback, MAX_LU_TOOL_FEEDBACK_BYTES)
                         .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?
                         .object,
                 );
