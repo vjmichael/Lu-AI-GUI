@@ -1,0 +1,51 @@
+name: Lu TOOLS-04 archive inspection
+on:
+  push:
+    branches:
+      - lu/tools-04-archive-inspection-20261104
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux ZIP metadata and malicious-archive checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify committed source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Run actual ZIP/Protobuf/authorization tests
+        run: cargo test --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_inspect -- --nocapture
+      - name: Report resolved Cargo lock changes (development only)
+        if: always()
+        shell: bash
+        run: |
+          git diff -- src-tauri/lu-core/Cargo.lock
+          git diff -- lu-desktop/src-tauri/Cargo.lock
+
+  windows:
+    name: Windows ZIP metadata and malicious-archive checks
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify committed source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Run actual ZIP/Protobuf/authorization tests
+        run: cargo test --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_inspect -- --nocapture
