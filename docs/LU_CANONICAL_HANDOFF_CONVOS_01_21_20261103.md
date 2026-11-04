@@ -98,3 +98,7 @@ On branch `lu/write-01e-approved-edit-gate-20261103`, the Windows opened-file ID
 
 ## Accepted source checkpoint — WRITE-01E.4C.2
 On `lu/write-01e-approved-edit-gate-20261103` exact implementation commit `2b664fd2` passed all three CI workflows: Desktop `41777297445`, REPO `41777297387`, WIN-LOAD `41777297414`. The native-picked Windows FileId is bound to the existing persisted reviewed SHA and passes through an identity-fenced edit or newly selected rollback tool after native confirmation. Direct Windows same-content file-swap adversarial tests passed; Tauri compiled. This is not full v1.0 acceptance: external editors, Windows metadata preservation, directory durability, installed-app behavior and local-source convergence are still open. Keep `0.1.0-alpha.2` frozen and draft PR #5 unmerged.
+
+
+## WRITE-01E.4C.3A handoff
+Source on `lu/write-01e-approved-edit-gate-20261103` now has a conservative Windows metadata custody gate. `lu-win-worker-job::metadata_guard` uses GetSecurityInfo to compare owner/group/DACL across original/stage and after publication, GetFileTime/SetFileTime to retain creation and access timestamps, and path-free ReOpenFile no-write lease to refuse concurrent writers during final checks and rename. Native writer/share checks are NOT an atomic name-bound external-rename guard; SACL, EAs, object ID, Windows parent flush, power-loss and installed-app Windows acceptance remain unresolved. CI pending. Preserve the frozen alpha.2, draft PR #5, source lock, and the already accepted 4C.2 FileId-bound approval implementation.
