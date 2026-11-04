@@ -98,7 +98,8 @@ pub fn verified_created_folder(
     if approval.decision != WriteDecision::Approved ||
        approval.effect_call_id.as_deref() != Some(effect.call_id.as_str()) ||
        effect.tool_id != crate::native_create_new::TOOL_ID ||
-       effect.state != EffectState::Applied {
+       effect.state != EffectState::Applied ||
+       effect.receipt.as_ref().is_none_or(|receipt|receipt.is_empty()) {
         return Err(DocumentPreferenceError::InvalidDirectory);
     }
     let selected=Path::new(approval.selected_target.as_deref()
