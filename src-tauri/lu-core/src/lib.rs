@@ -61,6 +61,7 @@ pub mod model_json_boundary;
 pub mod model_turn_journal;
 pub mod multimodal_http;
 pub mod multimodal_saved_turn;
+pub mod native_environment_discovery;
 pub mod native_file_extra;
 pub mod native_files;
 pub mod native_atomic_write;
