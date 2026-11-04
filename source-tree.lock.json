@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d2b753a8850bbdb081a08bf0a0ed7ad11cede168",
+  "sourceCommitBeforeLock": "27cb3c95670e9ce2b68be8ff156b0c9b7c56fb80",
   "trackedFileCount": 278,
   "files": [
     {
@@ -61,7 +61,7 @@
     },
     {
       "path": "docs/LU_DLC_IPC_01_CROSS_PLATFORM_CONTRACT_20261103.md",
-      "blob": "2c1ecafc16d9981197ac2d65890f98e558d1bc02"
+      "blob": "dc4a73fab79338cdc4cf44cb79b3e3262b8ddff0"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -461,7 +461,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "ac567656363627742c31525af3c47f265403bb9d"
+      "blob": "086583f887ea2c4d8d864452740d75b5d74f1d59"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -581,7 +581,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/dlc_interop.rs",
-      "blob": "8c65073d9609ea90f84c2c32784deff9bdd09794"
+      "blob": "73783e1caf19ffe6b110e274c36573598c0bb89a"
     },
     {
       "path": "src-tauri/lu-core/src/document_preferences.rs",
