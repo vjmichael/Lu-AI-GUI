@@ -2,7 +2,7 @@
 //! collector. Pure parsing: it cannot execute browser actions or create
 //! authority. The caller may route completed, allow-listed function calls to
 //! ModelToolCatalog, whose Protobuf and native authorizer remain mandatory.
-use std::{collections::{BTreeMap,BTreeSet},fmt};
+use std::collections::{BTreeMap,BTreeSet};
 use serde_json::Value;
 
 const MAX_SSE_BYTES:usize=64*1024;
@@ -177,7 +177,7 @@ impl BrowserToolCallCollector{
                     let json=crate::model_json_boundary::parse_exact_boundary_object(
                         &part.arguments,MAX_TOOL_ARGUMENT_BYTES
                     ).map_err(|_|ToolStreamError::InvalidArguments)?;
-                    if json.contains_key("type")&&json.contains_key("op"){
+                    if json.contains_key("type")||json.contains_key("op"){
                         return Err(ToolStreamError::InvalidArguments);
                     }
                     result.push(CompletedToolCall{
