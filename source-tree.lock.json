@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f49d5a1bfed0e77b73fd488f1a9e50cf9f5caf5c",
+  "sourceCommitBeforeLock": "dced3f889078f4b80bb11da051621a20b35b0456",
   "trackedFileCount": 286,
   "files": [
     {
@@ -621,7 +621,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/generation_loop_guard.rs",
-      "blob": "39bf69efb278be81f1b2ebcba0aa86574cf6be0e"
+      "blob": "8b60624cfd256d58d890ce83779a11817ee1b9a3"
     },
     {
       "path": "src-tauri/lu-core/src/gguf_preflight.rs",
@@ -681,7 +681,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/loop_guard.rs",
-      "blob": "c77c5b8936dd27ceceaad7f22c371b99fba73ad4"
+      "blob": "9734072cbf14b06d27047d0d5d139b88eff116c8"
     },
     {
       "path": "src-tauri/lu-core/src/mmproj_admission.rs",
@@ -1041,7 +1041,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_loop_guard.rs",
-      "blob": "42987adda6eeb898840e90393a30d6c7ab18ff5d"
+      "blob": "4d638b93e5722cf976898708b76865d94c65c805"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
