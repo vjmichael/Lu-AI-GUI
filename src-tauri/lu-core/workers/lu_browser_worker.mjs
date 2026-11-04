@@ -128,8 +128,12 @@ export class BrowserSession {
       if (challengeKind(text)) throw new BrowserGateError('CHALLENGE_STILL_PRESENT');
       // User may have completed a form or navigated. Verify challenge state
       // before the host can hide the window and relinquish human control.
+      if (this.visibilityMode==='automatic') {
+        // Do not release human ownership until the native host confirms
+        // the window is hidden. A failed hide remains a visible takeover.
+        await this.#setWindowVisibility('HIDDEN');
+      }
       this.paused = null;
-      if (this.visibilityMode==='automatic') await this.#setWindowVisibility('HIDDEN');
       return {status:'RESUMED',url:this.page.url(),windowVisibility:this.windowVisibility};
     }
     if (this.paused) throw new BrowserGateError('NEEDS_HUMAN');
