@@ -224,3 +224,28 @@ test('rejects non-loopback CDP targets and remote-debugging websocket injections
     }),e=>e.code==='UNTRUSTED_CDP_ENDPOINT');
   }
 });
+
+test('browser mouse and keyboard cannot act on a page outside granted origin',async()=>{
+  let location='https://archive.example/record';
+  let clicks=0,types=0;
+  const page={
+    url:()=>location,
+    mouse:{click:async()=>{clicks++;}},
+    keyboard:{type:async()=>{types++;}}
+  };
+  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/profile',
+    visibilityMode:'always-visible',
+    chromiumProvider:{launchPersistentContext:async()=>context}
+  });
+  await session.start();
+  location='https://unapproved.example/redirect';
+  await assert.rejects(session.execute({op:'click',x:1,y:1}),
+    e=>e.code==='ORIGIN_NOT_GRANTED');
+  await assert.rejects(session.execute({op:'type',text:'sensitive'}),
+    e=>e.code==='ORIGIN_NOT_GRANTED');
+  assert.equal(clicks,0);
+  assert.equal(types,0);
+  await session.close();
+});
