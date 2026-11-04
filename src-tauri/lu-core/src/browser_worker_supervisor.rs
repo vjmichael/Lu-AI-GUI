@@ -6,6 +6,7 @@
 use crate::{
     browser_host_bridge::VisibilityBridge,
     browser_process_owner::OwnedBrowserWindow,
+    browser_chromium_launcher::{LaunchedChromium,ChromiumProfileLease},
     browser_visibility_settings::BrowserVisibilityPreference,
 };
 use serde_json::{json,Value};
@@ -107,6 +108,7 @@ pub struct OwnedBrowserWorker {
     reader:Option<thread::JoinHandle<()>>,
     bridge:VisibilityBridge,
     browser:Option<OwnedBrowserWindow>,
+    _profile_lease:Option<ChromiumProfileLease>,
     visibility:BrowserVisibilityPreference,
     timeout:Duration,
     startup_pending:bool,
@@ -160,10 +162,40 @@ impl OwnedBrowserWorker {
         });
         Ok(Self {
             child,stdin,output:rx,reader:Some(reader),
-            bridge:VisibilityBridge::new(),browser,
+            bridge:VisibilityBridge::new(),browser,_profile_lease:None,
             visibility:config.visibility,timeout:config.command_timeout,
             startup_pending:true,
         })
+    }
+    /// Establish matching ownership: same profile, same host-launched
+    /// Chromium Child and loopback CDP endpoint. No second Chromium launch.
+    #[cfg(windows)]
+    pub fn launch_attached(mut config:BrowserLaunchConfig,launched:LaunchedChromium)
+      ->Result<Self,BrowserSupervisorError>{
+        if config.trusted_profile!=launched.profile_dir() {
+            return Err(BrowserSupervisorError::InvalidConfig);
+        }
+        let (child,lease,endpoint)=launched.take_owned_parts();
+        config.cdp_endpoint=Some(endpoint);
+        let owner=OwnedBrowserWindow::new(child)
+            .map_err(|_|BrowserSupervisorError::MissingChromiumCustody)?;
+        let mut worker=Self::launch(config,Some(owner))?;
+        worker._profile_lease=Some(lease);
+        Ok(worker)
+    }
+    #[cfg(target_os="linux")]
+    pub fn launch_attached(mut config:BrowserLaunchConfig,launched:LaunchedChromium,
+      trusted_xdotool:PathBuf)->Result<Self,BrowserSupervisorError>{
+        if config.trusted_profile!=launched.profile_dir() {
+            return Err(BrowserSupervisorError::InvalidConfig);
+        }
+        let (child,lease,endpoint)=launched.take_owned_parts();
+        config.cdp_endpoint=Some(endpoint);
+        let owner=OwnedBrowserWindow::new(child,trusted_xdotool)
+            .map_err(|_|BrowserSupervisorError::MissingChromiumCustody)?;
+        let mut worker=Self::launch(config,Some(owner))?;
+        worker._profile_lease=Some(lease);
+        Ok(worker)
     }
     pub fn execute(&mut self,operation:BrowserOperation,arguments:Value)
         ->Result<Value,BrowserSupervisorError>{
