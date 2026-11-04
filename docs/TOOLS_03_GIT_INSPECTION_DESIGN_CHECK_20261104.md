@@ -1,38 +1,35 @@
-# TOOLS-03 — Git inspection: original tool-design cross-check
+# TOOLS-03 — Git inspection implementation appendix
 
-**Date:** 2026-11-04
-**Status:** Development-source implementation and native CI fixture, not installed GUI acceptance
-**Branch:** `lu/tools-03-git-inspection-20261104`, based on frozen TOOLS-02 MBRL `383a30fa`.
-**No Git mutation or general shell execution.**
+**Date:** 2026-11-04  
+**Status:** Development-source prototype; **no accepted Git tool in the installed Lu GUI**  
+**Precedence:** This document is subordinate to [the preserved original Jan-Mod design](reference/Jan-Mod-Design-Document.md) and [Lu's merged authoritative tool specification](LU_NATIVE_TOOLS_MERGED_DESIGN.md). It contains implementation decisions and test evidence, **not a new tool architecture**.
 
-## Requirement hierarchy: why Git belongs in Lu v1.0
+## Original specification mapping
 
-1. **Historical design source:** Library `Jan-Mod-Design-Document.md`, §3.9 treats Git, linter, debugger and test runner as Code workspace *additional tools*, not the base common-tool registry. §5.2 proposes **unified native implementations** with **small model-facing task-specific JSON schemas** that map into validated Protobuf rather than presenting a single complicated model JSON schema. §4.6 / §5.1 keeps native IPC and effect authority distinct from model output.
-2. **Current owner-approved canonical design:** `docs/LU_CENTRAL_DESIGN.md` §§1 and 3.3 explicitly include **first-party Git and archive tools in the Lu v1.0 native core**. The Code/IDE *workspace* and dedicated development interface remain DLCs after v1.0. `docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md` (V1-06) similarly names Git; `docs/LU_V1_0_TASKS.md` specifically lists TOOLS-03 Git status/log/diff. The current design supersedes the old workspace-only scheduling for a minimal common Git capability, not for an IDE GUI.
-3. **No scope confusion:** Unlike the JSON boundary validator (strictly internal), these are genuine *read-only native tools* that Lu may advertise to the model **only when the trusted host has selected the Git repository and opened an authenticated per-task `ReadWorkspace` authority**. Tool registration/discovery does NOT authorize invocation. The user does not invoke the Git binary manually, and Git itself is not the user's GUI; Lu is not building a developer DLC here.
+| Original requirement | TOOLS-03 adaptation | Important limit |
+| --- | --- | --- |
+| §3.9: Git is an additional **Code workspace** tool | Git support is implemented as a host-only Core primitive for reuse, then advertised **only for an authorized repository/code task** (later IDE DLC can expose it contextually) | Never globally advertise Git to unrelated chats |
+| §5.2: ~15 unified native domains, narrow model-facing tools | One `lu.git.inspect` native domain with small schemas `lu_git_status`, `lu_git_log`, `lu_git_diff` | Do not add a general `git_command` model interface |
+| §§4.6–4.8: JSON model boundary → typed Protobuf, structured feedback | Dedicated typed status/log/diff request/reply messages via `ModelToolCatalog` and `NativeToolRegistry` | JSON alone cannot authorize action; invalid calls never execute |
+| §4.9: durable journal and idempotency | Git inspection is classified `natural` / read-only and must obey task deadlines, cancellation and evidence recording | Git processes may still update repository metadata or spawn helpers; verify rather than assume harmlessness |
+| §7: loop guard before dispatch | Repeated/oscillating Git reads should be subject to the same loop guard as other tools | A successful model JSON response is never permission to bypass the guard |
+| Original workspace tool selection | Only host-approved Git executable and repository, not model-supplied shell command/root/flags | Installed desktop authority integration is a separate gate |
 
-## Exact contract and implemented surface
+## Implemented development source
 
-| Area | Implementation | Design reason |
-|---|---|---|
-| Internal native registry | `lu.git.status`, `lu.git.log`, `lu.git.diff` share a host-selected repository/executable, effect `ReadWorkspace` | First-party native tools; no MCP |
-| Model-facing interface | `lu_git_status(max_entries?)`, `lu_git_log(limit?)`, `lu_git_diff(path?,max_bytes?)` | Narrow, simple model-visible schemas per original §5.2 |
-| Internal transport | `GitStatusRequest`, `GitLogRequest`, `GitDiffRequest` and matching typed Protobuf replies | No untyped shell command JSON |
-| Repository selection | Trusted host supplies canonical root with normal `.git` directory; the model never supplies repo path or Git executable | Model data is not permission |
-| Operations | Read working tree status, bounded recent commit summaries, tracked diff vs `HEAD`; no stage/add/commit/reset/checkout/fetch/push/clone | Minimal v1.0 general-purpose Git |
-| Execution | Fixed Git subcommands and arguments via Rust `Command`, **no shell**; cleared environment; no pager, user hooks, external diff or textconv; bounded output and timeout | Git binary is a trusted, host-selected program, never an arbitrary command runner |
-| Authorization | Registered tool descriptors have `ReadWorkspace`; `NativeToolTurn` and independent host authorizer must admit each call | Git schema is never authority |
-| Tests | Disposable actual Git repo, valid status/log/diff, no changed HEAD/index/working data, bad JSON/paths, Protobuf spoofing and permission denial/revocation | Real effects and failed effects must be distinguishable |
+`src-tauri/lu-core/src/native_git_inspect.rs` registers the three fixed **read-only inspections**, each with a typed Protobuf codec and `ReadWorkspace` descriptor. The Rust host selects the repository and Git program. The Git invocation uses a fixed binary and argv, **not a shell**; model input is limited to bounded counts or an optional safe relative diff path. The implementation attempts to suppress hooks, pagers, diff helpers and optional locks while imposing output and time limits.
 
-## Explicit exclusions and release gates
+A real local repository regression fixture exists at `src-tauri/lu-core/tests/native_git_inspect.rs`: status, log, HEAD diff, no mutations in expected fixture paths, wrong-path/unknown-field refusal and denied/revoked task checks. **Tests are not acceptance evidence until they pass against an exact locked revision on both Linux and Windows**. A future installed GUI must supply a verified real user turn and explicit repository authorization.
 
-- **Not** the Code/IDE workspace, terminal, repository manager UI, autonomous pull-request writer, test runner or Lu self-updater.
-- No generic Git command, arbitrary revision specifier, executable path, `-c` option, configuration/environment argument, host filesystem path or network operation from the model.
-- No automatic assignment to a user or chat. The eventual installed desktop must offer trusted repository selection, tool approval, reporting and revocation under the existing `AUTH-01` model. The isolated Core tests do not constitute GUI integration.
-- Git status/log/diff reveals potentially sensitive repository text and must be treated as untrusted *data* on return. Model instructions embedded in a diff cannot create permission.
-- Windows/Linux Git must be installed or host-provisioned and selected independently; no forced shell workflow and no bundled unverified binary.
-- **Acceptance:** exact source lock, Linux/Windows genuine Git fixture CI, tested Protobuf tool dispatch, denial/revocation, Windows installed-app final acceptance near v1.0. **Do not claim complete v1.0 native tool integration from Core tests.**
+## Unaccepted hardening and release requirements
 
-## Comparison conclusion
+- **Hostile repository/config tests:** malicious `.git/config`, `.gitattributes`, object alternates, worktree indirection, symlink/reparse points, non-UTF8 names and submodules. Git is a subprocess: fixed argv alone does not guarantee absolutely no child process or side effect.
+- **Process lifecycle:** cancellation/timeout must terminate Git and any supervised descendants; Windows Job Object and other host lifecycle safeguards must be reviewed. No false claim of OS sandboxing.
+- **Scope:** explicit repository/code task; no arbitrary Git flags, ref selection, mutation, network, LFS download, editor, shell or system command. Diff text and commit subjects are **untrusted data**, never executable instructions.
+- **Performance/output:** bounded log/status/diff sizes with clear truncation signals and no unbounded worker/resource consumption; Git errors return typed status without leaking secrets.
+- **Authorization:** trusted persisted human origin + per-tool `ReadWorkspace` grant; schema discovery, repo presence and model command text are inert. Revoke and cancellation checks must work.
+- **Delivery:** only actual installed-app acceptance establishes GUI support. The `0.1.0-alpha.2` Windows baseline is unchanged, and no Code/IDE workspace is being built under TOOLS-03.
 
-Implementing **read-only Git inspection in Lu Core** is consistent with the *current* v1.0 design, but its **small model-facing API, typed Protobuf, host-selected scope, effect authorization and absent generic shell** are required by the original implementation design. Earlier Git-on-Code-workspace language is retained for provenance; richer IDE Git tools remain DLC-only.
+## Decision
+
+This is a **small Git inspection capability** using the original two-layer tool design. The original §3.9 retains precedence regarding **workspace-scoped visibility**; the current Lu v1.0 directive to make native Git primitives available is met by implementing their Core plumbing early, not by making Git universal or advancing the IDE DLC.
