@@ -47,9 +47,9 @@ fn committed_jan_shape_import_preserves_exact_json_source_and_roles() {
     // This is a parser regression, NOT acceptance of historical Jan migration.
     let original = concat!(
         r#"{"id":"u-1","thread_id":"1fa772e9-47e5-4a8c-a664-4b1cef37c5aa","role":"user","content":"Please analyze the second data point"}"#,
-        "\\n",
+        "\n",
         r#"{"id":"a-2","thread_id":"1fa772e9-47e5-4a8c-a664-4b1cef37c5aa","role":"assistant","content":"The second data point is retained"}"#,
-        "\\n"
+        "\n"
     );
     let path = temporary("import-fixture");
     let store = make_store(&path, SESSION);
