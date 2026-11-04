@@ -862,6 +862,53 @@ function App() {
             </div>
           </section>
         )}
+
+        {Object.values(editProposals).filter(p => p.chatId === chatId).map(proposal =>
+          <section key={proposal.proposalId} className="readProposalCard editProposalCard"
+            role="group" aria-label="Review proposed existing-file edit">
+            <strong>Lu proposes editing an EXISTING text file</strong>
+            <p>{proposal.purpose}</p>
+            <small>Suggested filename: {proposal.fileName}. Lu cannot select the path;
+              you must choose the matching existing file with a native picker.</small>
+            {!proposal.selected ? <>
+              <small>Proposed replacement (not approved):</small>
+              <pre className="editFullText">{proposal.content}</pre>
+            </> : <>
+              <strong>Exact selected target</strong>
+              <code className="writeTarget">{proposal.selected.exactTarget}</code>
+              <small>Original: {proposal.selected.originalBytes} bytes, SHA-256: {proposal.selected.originalSha256}</small>
+              <small>Replacement: {proposal.selected.replacementBytes} bytes, SHA-256: {proposal.selected.replacementSha256}</small>
+              <small>Review fingerprint: {proposal.selected.approvalSha256} · Scope: {proposal.selected.risk}</small>
+              <strong>Complete line-change view</strong>
+              <small>Every unchanged line is retained; removed lines begin with −, added lines with +.
+                Large change regions are not minimized. No content is truncated.</small>
+              <pre className="editFullText editDiff" aria-label="Complete change lines">{fullEditChangeLines(proposal.selected.original,proposal.selected.replacement)}</pre>
+              <strong>Complete original file</strong>
+              <pre className="editFullText" aria-label="Complete original">{proposal.selected.original}</pre>
+              <strong>Complete proposed replacement</strong>
+              <pre className="editFullText" aria-label="Complete replacement">{proposal.selected.replacement}</pre>
+              <label className="editReviewAck">
+                <input type="checkbox" checked={Boolean(editReviewed[proposal.proposalId])}
+                  onChange={e => setEditReviewed(prev => ({
+                    ...prev,[proposal.proposalId]:e.target.checked
+                  }))}/>
+                I reviewed the complete original, changes, replacement and exact destination.
+              </label>
+              <small>Checking this box is only a UI acknowledgement; an independent native
+                confirmation and host-authorized, journaled operation are still required.</small>
+            </>}
+            <div className="settingsActions">
+              {!proposal.selected ?
+                <button type="button" className="primaryButton"
+                  onClick={() => reviewExistingFile(proposal)}>Choose existing file and compare</button> :
+                <button type="button" className="primaryButton"
+                  disabled={!editReviewed[proposal.proposalId]}
+                  onClick={() => approveExistingEdit(proposal)}>Review native confirmation and edit</button>}
+              <button type="button" className="subtleButton"
+                onClick={() => denyExistingEdit(proposal)}>Deny edit</button>
+            </div>
+          </section>
+        )}
         {latestCreated?.chatId === chatId && <section className="readProposalCard" role="status">
           <strong>Created {latestCreated.fileName}</strong>
           <small>{latestCreated.exactTarget}</small>
@@ -893,6 +940,32 @@ function App() {
           <button type="button" className="subtleButton"
             onClick={() => refreshWriteRecovery().catch(error => setError(String(error)))}>
             Refresh recovery evidence
+          </button>
+        </section>}
+
+        {editRecovery.length > 0 && <section className="readProposalCard"
+          aria-label="Existing file edit recovery records">
+          <strong>Existing-file edit recovery</strong>
+          <small>Read-only approval and effect journal evidence. File bytes are inspected only
+            after you reselect the originally approved containing folder through the native picker.
+            Uncertain edits never resume automatically.</small>
+          {editRecovery.map(record =>
+            <div key={record.proposalId} className="writeRecoveryRow">
+              <strong>{record.fileName}</strong>
+              <small>Review: {record.approval} · Effect: {record.effect}</small>
+              {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
+              <small>Original SHA-256: {record.originalSha256 || 'Not selected'}</small>
+              <small>Replacement SHA-256: {record.replacementSha256}</small>
+              <small>Assessment: {(editObservations[record.proposalId]?.assessment || record.assessment)}</small>
+              <small>Observed bytes: {(editObservations[record.proposalId]?.observation || record.observation)}
+                (matching bytes alone do not prove who published them)</small>
+              {record.approval === 'Approved' && <button type="button" className="subtleButton"
+                onClick={() => inspectEditRecovery(record)}>Reselect folder to inspect artifacts</button>}
+            </div>
+          )}
+          <button type="button" className="subtleButton"
+            onClick={() => refreshEditRecovery().catch(error => setError(String(error)))}>
+            Refresh edit recovery ledger
           </button>
         </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
