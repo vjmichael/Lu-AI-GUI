@@ -10,6 +10,10 @@ mod read_proposal;
 mod write_proposal;
 #[path = "../../../src-tauri/src/native_host_write.rs"]
 mod native_host_write;
+#[path = "../../../src-tauri/src/edit_proposal.rs"]
+mod edit_proposal;
+#[path = "../../../src-tauri/src/native_host_edit.rs"]
+mod native_host_edit;
 
 use chat_store::ChatStore;
 use lu_core::{
@@ -757,5 +761,89 @@ fn host_review_keeps_selected_directory_identity_when_name_is_replaced() {
     assert_eq!(fs::read(moved.join("notes.md")).unwrap(),b"# Notes");
     assert!(!chosen.join("notes.md").exists());
     drop(pinned);
+    fs::remove_dir_all(root).unwrap();
+}
+
+
+#[test]
+fn desktop_edit_model_proposal_is_inert_without_matching_native_selection() {
+    use edit_proposal::{EditProposalQueue, EditProposalError};
+    let root=temp_root();
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("notes.json"),r#"{"value":1}"#).unwrap();
+    fs::write(root.join("other.json"),r#"{"value":1}"#).unwrap();
+    let queue=EditProposalQueue::default();
+    let raw=r#"{"kind":"propose_edit_file","file_name":"notes.json","purpose":"Change a value","content":"{\"value\":2}"}"#;
+    let proposed=queue.stage("pe-1","chat-one","gen-one",raw).unwrap();
+    assert_eq!(proposed.file_name,"notes.json");
+    assert_eq!(queue.stage("pe-1","chat-one","gen-one",raw),
+        Err(EditProposalError::Duplicate));
+    assert!(matches!(queue.choose_file("pe-1","other-chat",&root.join("notes.json")),
+        Err(EditProposalError::WrongConversation)));
+    assert!(matches!(queue.choose_file("pe-1","chat-one",&root.join("other.json")),
+        Err(EditProposalError::Invalid)));
+    let chosen=queue.choose_file("pe-1","chat-one",&root.join("notes.json")).unwrap();
+    let view=chosen.view();
+    assert_eq!(view.original,r#"{"value":1}"#);
+    assert_eq!(view.replacement,r#"{"value":2}"#);
+    assert_eq!(view.original_bytes,r#"{"value":1}"#.len());
+    assert_eq!(view.approval_sha256,chosen.reviewed.approval_sha256);
+    assert!(matches!(queue.take_confirmed("pe-1","wrong-chat"),
+        Err(EditProposalError::WrongConversation)));
+    assert!(queue.take_confirmed("pe-1","chat-one").is_ok());
+    assert!(matches!(queue.take_confirmed("pe-1","chat-one"),
+        Err(EditProposalError::Missing)));
+    drop(chosen);drop(queue);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn desktop_edit_native_host_commits_only_after_persisted_user_turn_and_effect_journal() {
+    use edit_proposal::EditProposalQueue;
+    use lu_core::{edit_approval_ledger::{EditApprovalLedger,EditDecision},
+        journal::{EffectJournal,EffectState},
+        native_edit_existing::{observe_edit,EditObservation}};
+    use sha2::{Digest,Sha256};
+    let root=temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chats=ChatStore::open(&root.join("chat-data")).unwrap();
+    let chat=chats.create_chat().unwrap();
+    let files=root.join("user-selected-documents");
+    fs::create_dir_all(&files).unwrap();
+    let file=files.join("notes.json");
+    let old=r#"{"value":1}"#;
+    fs::write(&file,old).unwrap();
+    let queue=EditProposalQueue::default();
+    let raw=r#"{"kind":"propose_edit_file","file_name":"notes.json","purpose":"Change a value","content":"{\"value\":2}"}"#;
+    let proposal=queue.stage("pe-approved",&chat.chat_id,"gen-model-output",raw).unwrap();
+    let approvals=EditApprovalLedger::open(&root.join("edit-approvals.sqlite")).unwrap();
+    approvals.stage("pe-approved",&chat.chat_id,"gen-model-output",
+        &proposal.file_name,proposal.bytes(),&proposal.digest()).unwrap();
+    let selected=queue.choose_file("pe-approved",&chat.chat_id,&file).unwrap();
+    let view=selected.view();
+    approvals.choose("pe-approved",&chat.chat_id,"gen-model-output",
+        &view.exact_target,&view.original_sha256,&view.approval_sha256).unwrap();
+    let effect_id=format!("g-{}", "8".repeat(32));
+    approvals.approve("pe-approved",&chat.chat_id,"gen-model-output",
+        &proposal.file_name,proposal.bytes(),&proposal.digest(),&view.exact_target,
+        &view.original_sha256,&view.approval_sha256,&effect_id).unwrap();
+    assert_eq!(approvals.get("pe-approved").unwrap().unwrap().decision,EditDecision::Approved);
+    let selected=queue.take_confirmed("pe-approved",&chat.chat_id).unwrap();
+    let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let turn=format!("g-{}", "9".repeat(32));
+    let receipt=native_host_edit::execute_approved_edit_pinned(
+        &chats,&effects,&chat.chat_id,&turn,&effect_id,&selected
+    ).await.unwrap();
+    assert_eq!(receipt.original_sha256,format!("{:x}",Sha256::digest(old.as_bytes())));
+    assert_eq!(receipt.replacement_sha256,proposal.digest());
+    assert_eq!(fs::read_to_string(&file).unwrap(),r#"{"value":2}"#);
+    assert_eq!(fs::read_to_string(files.join(format!(".lu-edit-{}.orig",effect_id))).unwrap(),old);
+    assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Applied);
+    assert_eq!(observe_edit(&selected.directory_cap,&effect_id),
+        EditObservation::ReplacementAndBackupVerified);
+    let history=chats.history(&chat.chat_id).unwrap();
+    assert!(history.iter().any(|e|e.role=="user" && e.text.contains("Approved editing")));
+    assert!(history.iter().any(|e|e.role=="assistant" && e.text.contains("Edited")));
+    drop(selected);drop(effects);drop(approvals);drop(queue);drop(chats);
     fs::remove_dir_all(root).unwrap();
 }
