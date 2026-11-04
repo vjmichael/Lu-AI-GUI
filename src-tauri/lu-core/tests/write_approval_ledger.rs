@@ -19,7 +19,7 @@ fn exact_review_target_and_content_hash_are_required_before_durable_approval() {
         ("chat-b","approved.txt",SHA,"/lu-drafts/approved.txt"),
         ("chat-a","other.txt",SHA,"/lu-drafts/approved.txt"),
         ("chat-a","approved.txt",SHA,"/unapproved/approved.txt"),
-        ("chat-a","approved.txt","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","/lu-drafts/approved.txt")
+        ("chat-a","approved.txt","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","/lu-drafts/approved.txt")
     ] {
         assert_eq!(db.approve("pw-1",chat,"generation-1",name,12,sha,path,
             "g-effect-1"),Err(WriteLedgerError::Transition));
