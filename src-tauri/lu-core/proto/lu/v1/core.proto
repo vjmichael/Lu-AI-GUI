@@ -95,6 +95,25 @@ message SearchTextResult {
   bool truncated = 3;
 }
 
+// TOOLS-02: read-only, bounded JSON file inspection under host-granted
+// workspace directory. It reports syntax and shape, never file content or
+// authority to edit. Caller must separately approve every read.
+message InspectJsonFileRequest {
+  string path = 1;
+  optional uint32 max_bytes = 2;
+}
+message InspectJsonFileResult {
+  bool valid = 1;
+  string root_kind = 2;
+  uint64 bytes_read = 3;
+  string content_sha256 = 4;
+  repeated string top_level_keys = 5;
+  uint32 array_length = 6;
+  string error_kind = 7;
+  uint32 error_line = 8;
+  uint32 error_column = 9;
+}
+
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
 // Every envelope is still length-delimited by the host (u32 big-endian).
 // Fields here carry data only, NEVER a permission token or host path.
