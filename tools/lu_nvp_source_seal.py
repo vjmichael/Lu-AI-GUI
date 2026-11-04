@@ -25,7 +25,10 @@ def verify(root):
         if not source.is_file() or source.is_symlink():
             raise RuntimeError("Lu pinned source missing or unsafe: "+path)
         raw=source.read_bytes()
-        sha=hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\0"+raw).hexdigest()
+        # actions/checkout may convert checked-out text files to CRLF
+        # on native Windows; check the exact canonical Git blob bytes.
+        canonical=raw.replace(b"\r\n",b"\n")
+        sha=hashlib.sha1(b"blob "+str(len(canonical)).encode()+b"\0"+canonical).hexdigest()
         if sha!=expected:raise RuntimeError("Pinned Lu source drift: "+path)
         got[path]=sha
     # The separate jan_alt AF_UNIX crate is not part of independent desktop.
