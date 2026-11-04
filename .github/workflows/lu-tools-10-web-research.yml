@@ -88,11 +88,14 @@ jobs:
         run: node scripts/verify-source-tree.mjs
       - name: Install exact Playwright 1.64.1 package
         run: npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock --ignore-scripts playwright@1.64.1
-      - name: Download full headed Chromium from Playwright
-        run: node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
-      - name: Install Linux headed Chromium runtime dependencies
-        if: runner.os == 'Linux'
-        run: sudo npx --yes playwright@1.64.1 install-deps chromium
+      - name: Download full headed Chromium and Linux dependencies
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --with-deps --no-shell chromium
+          else
+            node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          fi
       - name: Provision trusted X11 window helper
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xdotool
