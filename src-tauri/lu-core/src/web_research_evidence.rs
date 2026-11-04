@@ -282,6 +282,16 @@ impl EvidenceLedger {
         Ok(CitationRecord { id:id.into(), title:record.0, status:SourceStatus::from_code(&record.1)?,
              record_url:record.2, content_sha256:record.3 })
     }
+    /// Proof an exact quotation was checked against the pinned document.
+    /// This does not itself certify the model's interpretation of its meaning.
+    pub fn has_verified_passage(&self,id:&str,quote:&str)->Result<bool,EvidenceError> {
+        if self.status(id)?!=SourceStatus::PassageVerified {return Ok(false);}
+        let stored:Option<i64>=self.connection.query_row(
+            "SELECT 1 FROM research_passages WHERE source_id=?1 AND quote=?2 LIMIT 1",
+            params![id,quote], |row|row.get(0)
+        ).optional()?;
+        Ok(stored.is_some())
+    }
     /// Final report gate: only records with a real corroborated identifier
     /// AND actual accessed text may be listed as reviewed sources.
     pub fn eligible_for_reviewed_bibliography(&self, id: &str) -> Result<bool, EvidenceError> {
