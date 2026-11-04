@@ -873,6 +873,38 @@ mod tests {
     }
 
     #[test]
+    fn restored_version_requires_exact_new_journal_receipt_not_original_edit_receipt(){
+        let rollback_id="g-new-restore-effect-00001";
+        let original_edit_id="g-original-edit-effect-001";
+        let old=sha(b"Original");
+        let payload=proto::EditRollbackResult {
+            original_edit_id:original_edit_id.into(),
+            restored_bytes:8,restored_sha256:old.clone(),committed:true,
+        }.encode_to_vec();
+        let mut row=EffectRecord{
+            call_id:rollback_id.into(),tool_id:ROLLBACK_TOOL_ID.into(),
+            fingerprint:"signed-invocation".into(),state:EffectState::Applied,
+            receipt:Some(proto::ToolReply{
+                call_id:rollback_id.into(),output_type_url:ROLLBACK_RESULT_TYPE.into(),
+                outcome:Some(proto::tool_reply::Outcome::Output(payload))
+            }.encode_to_vec()),
+        };
+        assert!(verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
+        assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,7));
+        assert!(!verified_rollback_receipt(&row,rollback_id,"g-other-original-edit-id",&old,8));
+        row.state=EffectState::Uncertain;
+        assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
+        row.state=EffectState::Applied;
+        row.tool_id=EDIT_TOOL_ID.into();
+        assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
+        row.tool_id=ROLLBACK_TOOL_ID.into();
+        row.receipt=Some(vec![0xFF,0xFF,0xFF]);
+        assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
+        row.receipt=None;
+        assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
+    }
+
+    #[test]
     fn source_conflict_and_invalid_json_cannot_publish() {
         let path = temp();
         fs::write(path.join("t.json"), b"{\"a\":1}").unwrap();
