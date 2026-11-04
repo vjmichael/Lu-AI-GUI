@@ -525,7 +525,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/backend_restart_ledger.rs",
-      "blob": "d179d346d0d923b7b23e3f861422097bcf04bd1f"
+      "blob": "90d16b41324137e93f7af1c71c97a97b593a9286"
     },
     {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
@@ -829,7 +829,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/vllm_process.rs",
-      "blob": "49f4e2088754480094c5877955029ae3af40c4ec"
+      "blob": "b2f83a719d497c3c93d3b1d261767d0e4cc86c2c"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
