@@ -142,6 +142,25 @@ fn rejected_tool_boundary_feedback(
     ).map_err(|_| NativeGenerationError::InvalidInferenceEvent)
 }
 
+fn stop_on_policy_denial(
+    result: &Value,
+    journal: Option<&ModelTurnJournal>,
+    conversation_id: &str,
+    task_id: &str,
+    turn: &mut NativeToolTurn,
+) -> Result<(), NativeGenerationError> {
+    let code = result.pointer("/response/error/code").and_then(Value::as_str);
+    if matches!(code, Some("PERMISSION_DENIED" | "PRIVILEGE_BLOCKED" | "DENIED")) {
+        record_audit(
+            journal, conversation_id, task_id, ModelAuditKind::GenerationFailure,
+            "POLICY_DENIED: no model continuation or automatic retry", None,
+        )?;
+        turn.halt();
+        return Err(NativeGenerationError::ModelReplyStructure("policy_denied"));
+    }
+    Ok(())
+}
+
 /// Content-free terminal class for the trusted host's bounded diagnosis.
 /// Never format the underlying error: it may carry model text or paths.
 pub fn native_generation_failure_class(error: &NativeGenerationError) -> &'static str {
@@ -658,8 +677,11 @@ async fn run_supervised_native_turn_inner(
                 .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?,
         );
         records.push(NativeTurnRecord::HostRouteCall(host_call.clone()));
-        records.push(NativeTurnRecord::ToolFeedback(parsed_feedback));
+        records.push(NativeTurnRecord::ToolFeedback(parsed_feedback.clone()));
         host_routed_calls = 1;
+        stop_on_policy_denial(
+            &parsed_feedback, journal, &conversation_id, &task_id, turn,
+        )?;
         if cancel.is_cancelled() {
             record_audit(
                 journal,
@@ -916,7 +938,10 @@ Rejected model tool envelope (not an executed call): {feedback}
                     &feedback,
                     None,
                 )?;
-                records.push(NativeTurnRecord::ToolFeedback(data));
+                records.push(NativeTurnRecord::ToolFeedback(data.clone()));
+                stop_on_policy_denial(
+                    &data, journal, &conversation_id, &task_id, turn,
+                )?;
                 if cancel.is_cancelled() {
                     record_audit(
                         journal, &conversation_id, &task_id,
