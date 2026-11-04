@@ -804,7 +804,7 @@ async fn desktop_edit_native_host_commits_only_after_persisted_user_turn_and_eff
     use edit_proposal::EditProposalQueue;
     use lu_core::{edit_approval_ledger::{EditApprovalLedger,EditDecision},
         journal::{EffectJournal,EffectState},
-        native_edit_existing::{observe_edit,EditObservation}};
+        native_edit_existing::{observe_edit,inspect_rollback_candidate,EditObservation}};
     use sha2::{Digest,Sha256};
     let root=temp_root();
     fs::create_dir_all(&root).unwrap();
@@ -847,6 +847,11 @@ async fn desktop_edit_native_host_commits_only_after_persisted_user_turn_and_eff
     assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Applied);
     assert_eq!(observe_edit(&selected.directory_cap,&effect_id),
         EditObservation::ReplacementAndBackupVerified);
+    let undo_preview=inspect_rollback_candidate(
+        &selected.directory_cap,"notes.json",&effect_id).unwrap();
+    assert_eq!(undo_preview.restore_text,old);
+    assert_eq!(undo_preview.current_text,r#"{"value":2}"#);
+    assert_eq!(fs::read_to_string(&file).unwrap(),r#"{"value":2}"#);
     let history=chats.history(&chat.chat_id).unwrap();
     assert!(history.iter().any(|e|e.role=="user" && e.text.contains("Approved editing")));
     assert!(history.iter().any(|e|e.role=="assistant" && e.text.contains("Edited")));
