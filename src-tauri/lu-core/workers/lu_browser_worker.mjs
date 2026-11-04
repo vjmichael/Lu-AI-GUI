@@ -1,0 +1,162 @@
+// TOOLS-10B: first-party browser worker protocol. No TCP listener, no shell,
+// no model-supplied JavaScript execution or CAPTCHA solving.
+// The trusted Rust host must authenticate/authorize every incoming command.
+import { pathToFileURL } from 'node:url';
+import readline from 'node:readline';
+
+export class BrowserGateError extends Error {
+  constructor(code) { super(code); this.code = code; }
+}
+export function approvedUrl(value, origins) {
+  let url;
+  try { url = new URL(value); } catch { throw new BrowserGateError('INVALID_URL'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port && url.port !== '443') {
+    throw new BrowserGateError('INVALID_URL');
+  }
+  if (!origins.has(url.origin)) throw new BrowserGateError('ORIGIN_NOT_GRANTED');
+  return url;
+}
+export function challengeKind(text) {
+  const snippet = String(text).slice(0, 120_000).toLowerCase();
+  if (/verify (that )?you are human|complete the captcha|recaptcha|hcaptcha|unusual traffic|checking your browser/.test(snippet)) {
+    return 'CAPTCHA_REQUIRED';
+  }
+  if (/sign in to continue|log in to continue|please sign in|authentication required/.test(snippet)) {
+    return 'LOGIN_REQUIRED';
+  }
+  return null;
+}
+function boundedText(value, max) {
+  if (typeof value !== 'string' || !value.length || value.length > max || /[\x00-\x08\x0b-\x1f]/.test(value)) {
+    throw new BrowserGateError('INVALID_INPUT');
+  }
+  return value;
+}
+export class BrowserSession {
+  constructor({origins, profileDirectory, chromiumProvider} = {}) {
+    if (!Array.isArray(origins) || origins.length === 0 || origins.length > 32) {
+      throw new BrowserGateError('INVALID_ORIGINS');
+    }
+    this.origins = new Set(origins.map(o => {
+      const parsed = new URL(o);
+      if (parsed.protocol !== 'https:' || parsed.origin !== o) throw new BrowserGateError('INVALID_ORIGINS');
+      return o;
+    }));
+    if (typeof profileDirectory !== 'string' || !profileDirectory.length) {
+      throw new BrowserGateError('PROFILE_NOT_SELECTED');
+    }
+    this.profileDirectory = profileDirectory; // host owns path and access control
+    this.chromiumProvider = chromiumProvider;
+    this.context = null;
+    this.page = null;
+    this.paused = null;
+  }
+  async start() {
+    const provider = this.chromiumProvider ?? (await import('playwright').catch(() => {
+      throw new BrowserGateError('BROWSER_BACKEND_UNAVAILABLE');
+    })).chromium;
+    this.context = await provider.launchPersistentContext(this.profileDirectory, {
+      headless: false, acceptDownloads: false, serviceWorkers: 'block',
+      viewport: {width: 1280, height: 900},
+    });
+    await this.context.route('**/*', async route => {
+      try {
+        approvedUrl(route.request().url(), this.origins);
+        await route.continue();
+      } catch { await route.abort(); }
+    });
+    this.page = this.context.pages()[0] ?? await this.context.newPage();
+    return {status:'READY'};
+  }
+  async execute(command) {
+    if (!this.page) throw new BrowserGateError('BROWSER_NOT_STARTED');
+    if (!command || typeof command !== 'object' || Array.isArray(command)) {
+      throw new BrowserGateError('INVALID_COMMAND');
+    }
+    const op = command.op;
+    if (op === 'status') {
+      return {status:this.paused ? 'NEEDS_HUMAN' : 'READY',reason:this.paused ?? null,url:this.page.url()};
+    }
+    if (op === 'human_resolved') {
+      if (!this.paused) throw new BrowserGateError('NO_PENDING_CHALLENGE');
+      // The user interacts with the existing visible browser. Re-check current
+      // page instead of blindly assuming the challenge has been completed.
+      approvedUrl(this.page.url(),this.origins);
+      const text = await this.page.locator('body').innerText({timeout:5000});
+      if (challengeKind(text)) throw new BrowserGateError('CHALLENGE_STILL_PRESENT');
+      this.paused = null;
+      return {status:'RESUMED',url:this.page.url()};
+    }
+    if (this.paused) throw new BrowserGateError('NEEDS_HUMAN');
+    if (op === 'navigate') {
+      const url = approvedUrl(boundedText(command.url,2048),this.origins);
+      const response = await this.page.goto(url.href,{waitUntil:'domcontentloaded',timeout:20000});
+      approvedUrl(this.page.url(),this.origins);
+      const text = await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const challenge = challengeKind(text);
+      if (challenge) {
+        this.paused = challenge;
+        return {status:'NEEDS_HUMAN',reason:challenge,url:this.page.url()};
+      }
+      return {status:'NAVIGATED',url:this.page.url(),httpStatus:response?.status()??null};
+    }
+    if (op === 'click') {
+      const x=command.x,y=command.y;
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x<0 || x>1280 || y<0 || y>900) {
+        throw new BrowserGateError('INVALID_COORDINATES');
+      }
+      await this.page.mouse.click(x,y);
+      return {status:'CLICKED'};
+    }
+    if (op === 'type') {
+      const text=boundedText(command.text,2048);
+      await this.page.keyboard.type(text,{delay:15});
+      return {status:'TYPED',length:text.length};
+    }
+    if (op === 'scroll') {
+      const delta=command.delta;
+      if (!Number.isInteger(delta) || Math.abs(delta)>3000) throw new BrowserGateError('INVALID_SCROLL');
+      await this.page.mouse.wheel(0,delta);
+      return {status:'SCROLLED'};
+    }
+    if (op === 'read') {
+      const text = await this.page.locator('body').innerText({timeout:5000});
+      const challenge=challengeKind(text);
+      if (challenge) {
+        this.paused=challenge;
+        return {status:'NEEDS_HUMAN',reason:challenge,url:this.page.url()};
+      }
+      return {status:'READ',url:this.page.url(),text:text.slice(0,131072),truncated:text.length>131072};
+    }
+    if (op === 'screenshot') {
+      const image=await this.page.screenshot({type:'png',animations:'disabled'});
+      if (image.length>2*1024*1024) throw new BrowserGateError('SCREENSHOT_TOO_LARGE');
+      return {status:'SCREENSHOT',mime:'image/png',base64:image.toString('base64')};
+    }
+    throw new BrowserGateError('UNKNOWN_OPERATION');
+  }
+  async close() { if (this.context) await this.context.close(); this.context=null;this.page=null; }
+}
+async function main() {
+  const config=JSON.parse(process.env.LU_BROWSER_HOST_CONFIG || '{}');
+  const session=new BrowserSession(config);
+  let started=false;
+  const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity});
+  for await (const line of input) {
+    let request;
+    try {
+      if (line.length>8192) throw new BrowserGateError('COMMAND_TOO_LARGE');
+      request=JSON.parse(line);
+      if (!started) { await session.start(); started=true; }
+      const result=await session.execute(request);
+      process.stdout.write(JSON.stringify({ok:true,result})+'\n');
+    } catch(error) {
+      const code=error instanceof BrowserGateError ? error.code : 'BROWSER_FAILED';
+      process.stdout.write(JSON.stringify({ok:false,error:{code}})+'\n');
+    }
+  }
+  await session.close();
+}
+if (process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) {
+  main().catch(() => {process.exitCode=1;});
+}
