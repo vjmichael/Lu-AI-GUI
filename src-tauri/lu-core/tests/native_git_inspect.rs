@@ -2,7 +2,7 @@
 //! No production file writes and no generic model-selected shell execution.
 
 use lu_core::{
-    agent_tool_loop::{NativeToolTurn, ToolTurnError, ToolTurnOutcome},
+    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
     contracts::{AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation},
     conversation_authority::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
@@ -238,9 +238,12 @@ async fn unsafe_model_git_arguments_and_unapproved_dispatch_are_refused() {
         r#"{"kind":"tool","name":"lu_git_log","arguments":{"limit":1}}"#,
         &catalog, &registry, &auth, &Allow,
     ).await.expect("revoked scope is returned as a paired typed denial");
-    assert_eq!(denial.data["ok"], false);
-    assert_eq!(denial.data["error"]["code"], "PERMISSION_DENIED");
-    assert_eq!(denial.data["error"]["retryable"], false);
+    let ToolTurnOutcome::ToolResult { data, .. } = denial else {
+        panic!("revoked grant must produce a structured denied tool result");
+    };
+    assert_eq!(data["ok"], false);
+    assert_eq!(data["error"]["code"], "PERMISSION_DENIED");
+    assert_eq!(data["error"]["retryable"], false);
     assert_eq!(turn.step_count(), 0);
     drop(turn); drop(auth); drop(catalog); drop(registry);
     teardown(root);
