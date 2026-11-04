@@ -388,6 +388,37 @@ function App() {
     }
   }
 
+  async function inspectSelectedJsonFile() {
+    if (working || chatBusy) return;
+    let targetId = chatId;
+    if (!targetId) {
+      try {
+        const newChat = await invoke('lu_new_chat');
+        targetId = newChat.chatId;
+        currentChat.current = targetId;
+        setChatId(targetId);
+        await refreshChats();
+      } catch (error) { setError(String(error)); return; }
+    }
+    setError('');
+    try {
+      // The OS picker and the exact read grant live entirely in Rust.
+      // No filepath or authority token is supplied by the WebView.
+      const result = await invoke('lu_inspect_json_file', {chatId: targetId});
+      if (result && currentChat.current === targetId) {
+        setHistory(await invoke('lu_history', {chatId: targetId}));
+        setActivity(result.valid ? 'JSON inspection: valid' :
+          `JSON inspection: ${result.errorKind || 'invalid JSON'}`);
+      }
+      if (result) await refreshChats();
+    } catch (error) {
+      setError(String(error));
+      await refreshChats().catch(() => {});
+      if (currentChat.current === targetId)
+        setHistory(await invoke('lu_history', {chatId: targetId}).catch(() => []));
+    }
+  }
+
   async function reviewReadProposal(proposal) {
     try {
       const result = await invoke('lu_approve_read_proposal', {
@@ -1126,6 +1157,7 @@ function App() {
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
+            <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedJsonFile} title="Choose a JSON file with the native picker; Lu checks JSON syntax, duplicate keys and structure without modifying it">Inspect JSON</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
