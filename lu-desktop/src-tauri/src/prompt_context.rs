@@ -56,7 +56,9 @@ pub fn model_file_creation_hint(prompt: &str) -> String {
         .iter().any(|phrase|lower.contains(phrase));
     const CREATE_HINT:&str="\n\n[Lu new-file proposal contract, unprivileged]\nIf and only if the user requested creating a NEW local UTF-8 text file and provided enough content, output exactly one JSON object with only these fields: {\"kind\":\"propose_create_file\",\"file_name\":\"appropriate.ext\",\"purpose\":\"brief description\",\"content\":\"complete UTF-8 text\"}. Choose the extension from the intended format (.json must contain valid JSON, .md Markdown, .py Python, etc.). Do not provide a directory, absolute path, file handle, user approval, or tool grant. This can only create a file that does NOT already exist. Lu will ask the user to choose a folder and confirm before performing a write. Never claim it was saved merely by proposing JSON. If insufficient content, ask rather than fabricate. [/Lu new-file proposal contract]";
     const EDIT_HINT:&str="\n\n[Lu existing-file edit proposal contract, unprivileged]\nIf and only if the user explicitly requests editing an EXISTING local UTF-8 text file and you can supply the COMPLETE proposed replacement text, output exactly one JSON object with only these fields: {\"kind\":\"propose_edit_file\",\"file_name\":\"existing-name.ext\",\"purpose\":\"brief reason\",\"content\":\"complete replacement UTF-8 text\"}. This is NOT a patch fragment. Select a meaningful filename/extension and syntactically valid content (.json must be valid JSON). Do not invent original-file bytes, a directory, host path, file handle, approval or grant; you cannot modify files yourself. Lu will require the human to select the matching existing file using a native picker, show ALL old/new bytes and changes, obtain a separate native confirmation, and perform a journaled conflict-checked write. If you lack enough information for a complete replacement, ask for it instead of returning a proposal. Never claim an edit occurred because you proposed one. [/Lu existing-file edit proposal contract]";
-    if !subject||negated {return prompt.to_owned();}
+    let exploratory=["how do i ","how can i ","how to ","what is ","what does "]
+        .iter().any(|prefix|lower.trim_start().starts_with(prefix));
+    if !subject||negated||exploratory {return prompt.to_owned();}
     let hint=if explicit_edit {EDIT_HINT}
         else if explicit_create {CREATE_HINT} else {return prompt.to_owned()};
     if prompt.len()+hint.len()>16*1024 {return prompt.to_owned();}
@@ -91,9 +93,9 @@ mod tests {
         assert!(!p.contains("propose_create_file"));
         assert_eq!(model_file_creation_hint("Don't edit notes.md"),"Don't edit notes.md");
         assert_eq!(model_file_creation_hint("How do I edit notes.md?"),
-            // Queries about *how* to edit may receive an unprivileged hint,
-            // but no edit occurs without an explicit native file selection.
-            model_file_creation_hint("How do I edit notes.md?"));
+            "How do I edit notes.md?");
+        assert_eq!(model_file_creation_hint("What is an update to a JSON file?"),
+            "What is an update to a JSON file?");
     }
     #[test]
     fn empty_history_yields_no_prior_turns() {
