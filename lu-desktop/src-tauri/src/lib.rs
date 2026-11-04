@@ -1452,11 +1452,15 @@ fn lu_browser_stop(
     // still-valid network grant after the user stops a research browser.
     let active=state.browser_task.lock()
         .map_err(|_|"browser task lock poisoned")?.take();
-    if let Some(ref task)=active{
-        state.browser_authority.revoke_task(&task.task_id)
-            .map_err(|e|format!("browser task revocation failed: {e:?}"))?;
+    let revoke_result=active.as_ref().map(|task|
+        state.browser_authority.revoke_task(&task.task_id));
+    let stop_result=state.browser_runtime.stop();
+    // Always terminate the owned processes even if task-state bookkeeping
+    // encounters an error; failed revocation is reported after cleanup.
+    if let Some(Err(e))=revoke_result {
+        return Err(format!("browser stopped; grant revocation failed: {e:?}"));
     }
-    state.browser_runtime.stop()
+    stop_result
 }
 
 /// Native user approval is mandatory before any browser session starts.
