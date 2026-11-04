@@ -8,6 +8,8 @@ mod native_host_read;
 mod read_proposal;
 mod write_proposal;
 mod native_host_write;
+mod edit_proposal;
+mod native_host_edit;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -160,6 +162,8 @@ struct DesktopState {
     read_proposals: read_proposal::ReadApprovalQueue,
     write_proposals: write_proposal::WriteProposalQueue,
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
+    edit_proposals: edit_proposal::EditProposalQueue,
+    edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
@@ -400,6 +404,11 @@ impl DesktopState {
         ).map_err(|e| format!("write approvals unavailable: {e:?}"))?;
         write_approvals.reconcile_pending()
             .map_err(|e| format!("write approval reconciliation failed: {e:?}"))?;
+        let edit_approvals = lu_core::edit_approval_ledger::EditApprovalLedger::open(
+            &root.join("edit-approvals.sqlite")
+        ).map_err(|e| format!("edit approvals unavailable: {e:?}"))?;
+        edit_approvals.reconcile_pending()
+            .map_err(|e| format!("edit approval reconciliation failed: {e:?}"))?;
         // Native OS Documents, never a private Lu app-data folder. Windows
         // honors redirected Known Folder Documents; Linux honors XDG when
         // reported by Tauri's platform path resolver.
@@ -505,6 +514,8 @@ impl DesktopState {
             read_proposals: read_proposal::ReadApprovalQueue::default(),
             write_proposals: write_proposal::WriteProposalQueue::default(),
             write_approval_ledger: write_approvals,
+            edit_proposals: edit_proposal::EditProposalQueue::default(),
+            edit_approval_ledger: edit_approvals,
             documents_os_dir,
             document_preferences,
             _owner: owner,
@@ -1077,6 +1088,28 @@ async fn lu_generate(
                             let _ = state.write_proposals.dismiss(&write_id, &chat_id);
                         }
                     }
+                    // WRITE-01E.3: a completed model turn may only suggest
+                    // replacement UTF-8 bytes and a basename. Selection of an
+                    // existing target and approval remain native host actions.
+                    let edit_id = next_id("pe-");
+                    if let Ok(proposal) = state.edit_proposals.stage(
+                        &edit_id, &chat_id, &gid, &answer
+                    ) {
+                        if state.edit_approval_ledger.stage(
+                            &edit_id, &chat_id, &gid, &proposal.file_name,
+                            proposal.bytes(), &proposal.digest()
+                        ).is_ok() {
+                            let _ = app.emit("lu-edit-proposal", EditProposalEvent {
+                                chat_id: chat_id.clone(),
+                                proposal_id: edit_id,
+                                file_name: proposal.file_name,
+                                purpose: proposal.purpose,
+                                content: proposal.content,
+                            });
+                        } else {
+                            let _ = state.edit_proposals.dismiss(&edit_id, &chat_id);
+                        }
+                    }
                     Ok(answer)
                 }
                 Err(error) => {
@@ -1169,6 +1202,40 @@ struct WriteProposalEvent {
     bytes: usize,
     sha256: String,
     file_format: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditProposalEvent {
+    chat_id: String,
+    proposal_id: String,
+    file_name: String,
+    purpose: String,
+    content: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditRecoveryView {
+    proposal_id: String,
+    file_name: String,
+    exact_target: Option<String>,
+    original_sha256: Option<String>,
+    replacement_sha256: String,
+    approval: String,
+    effect: String,
+    effect_call_id: Option<String>,
+    observation: String,
+    assessment: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditRecoveryObservationView {
+    proposal_id: String,
+    observation: String,
+    effect: String,
+    assessment: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1670,6 +1737,11 @@ pub fn run() {
             lu_confirm_write,
             lu_deny_write,
             lu_write_recovery,
+            lu_review_edit_file,
+            lu_confirm_edit_file,
+            lu_deny_edit_file,
+            lu_edit_recovery,
+            lu_inspect_edit_recovery,
             lu_history,
             lu_chats,
             lu_new_chat,
