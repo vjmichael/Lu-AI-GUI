@@ -265,7 +265,7 @@
     },
     {
       "path": "lu-desktop/tests/native-auth/src/lib.rs",
-      "blob": "ccd0f19f9d7bc3e1993b66ea213eb344ae8bda53"
+      "blob": "2546bf730256f15f1759e56c87cfc2b83535e590"
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
