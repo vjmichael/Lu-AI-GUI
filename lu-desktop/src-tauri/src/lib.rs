@@ -1578,6 +1578,206 @@ fn lu_deny_write(
     Ok(())
 }
 
+/// A WebView request chooses only which inert proposal to review. The target
+/// file comes exclusively from the native OS picker, not a JS pathname.
+#[tauri::command]
+async fn lu_review_edit_file(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<edit_proposal::EditReviewView, String> {
+    let state = Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let chosen = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_file()
+            .map(|f|f.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("native file picker failed: {e}"))??
+        .ok_or("File selection cancelled")?;
+    let selected = state.edit_proposals.choose_file(&proposal_id, &chat_id, &chosen)
+        .map_err(|e|format!("selected existing file cannot be reviewed: {e:?}"))?;
+    let view = selected.view();
+    state.edit_approval_ledger.choose(
+        &proposal_id, &chat_id, &selected.generation_id,
+        &view.exact_target, &view.original_sha256, &view.approval_sha256
+    ).map_err(|e|format!("exact edit review not durable: {e:?}"))?;
+    Ok(view)
+}
+
+/// The native modal, not the model or WebView, decides the consequential
+/// action. The complete old/new text and line-by-line diff must remain
+/// visible in Lu; the native modal binds that review to exact digests.
+#[tauri::command]
+async fn lu_confirm_edit_file(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<Option<native_host_edit::EditedFile>, String> {
+    let state = Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial = state.edit_proposals.review_details(&proposal_id, &chat_id)
+        .map_err(|e|format!("edit selection unavailable: {e:?}"))?;
+    let preview = initial.view();
+    let confirm_text = format!(
+        "Replace this EXISTING file using the EXACT proposed text?\n\nFile: {}\nOriginal: {} bytes\nOriginal SHA-256: {}\nReplacement: {} bytes\nReplacement SHA-256: {}\nReview fingerprint: {}\nChange risk: {}\n\nThe complete before/after and change lines must be inspected in Lu. Lu saves a separate original-byte backup before replacing. This approval is single-use; interrupted edits are NEVER automatically retried.",
+        preview.exact_target,preview.original_bytes,preview.original_sha256,
+        preview.replacement_bytes,preview.replacement_sha256,
+        preview.approval_sha256,preview.risk,
+    );
+    let confirmed = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().message(confirm_text)
+            .title("Lu — Approve exact existing-file edit")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve exact edit".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("native edit confirmation failed: {e}"))?;
+    if !confirmed {
+        state.edit_approval_ledger.deny(&proposal_id,&chat_id)
+            .map_err(|e|format!("edit denial unavailable: {e:?}"))?;
+        state.edit_proposals.dismiss(&proposal_id,&chat_id)
+            .map_err(|e|format!("edit proposal dismissal: {e:?}"))?;
+        return Ok(None);
+    }
+    let selected = state.edit_proposals.take_confirmed(&proposal_id,&chat_id)
+        .map_err(|e|format!("edit no longer available: {e:?}"))?;
+    if selected.generation_id!=initial.generation_id ||
+        selected.proposal!=initial.proposal ||
+        selected.directory!=initial.directory ||
+        selected.original!=initial.original ||
+        selected.plan!=initial.plan ||
+        selected.reviewed!=initial.reviewed ||
+        !Arc::ptr_eq(&selected.directory_cap,&initial.directory_cap) {
+        return Err("selected file or proposed bytes changed during native approval".into());
+    }
+    let effect_call_id=next_id("g-");
+    state.edit_approval_ledger.approve(
+        &proposal_id,&chat_id,&selected.generation_id,
+        &selected.proposal.file_name,selected.proposal.bytes(),
+        &selected.proposal.digest(),&preview.exact_target,
+        &selected.plan.expected_original_sha256,
+        &selected.reviewed.approval_sha256,&effect_call_id
+    ).map_err(|e|format!("exact edit approval not durable: {e:?}"))?;
+    let user_turn_id=next_id("g-");
+    native_host_edit::execute_approved_edit_pinned(
+        &state.chats,&state.effects,&chat_id,&user_turn_id,
+        &effect_call_id,&selected
+    ).await.map(Some)
+}
+
+#[tauri::command]
+fn lu_deny_edit_file(
+    state: State<'_,Arc<DesktopState>>,
+    chat_id:String, proposal_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.edit_approval_ledger.deny(&proposal_id,&chat_id)
+        .map_err(|e|format!("cannot record edit denial: {e:?}"))?;
+    state.edit_proposals.dismiss(&proposal_id,&chat_id)
+        .map_err(|e|format!("cannot dismiss edit proposal: {e:?}"))
+}
+
+/// Durable history is read-only. Reopening an approved effect must NOT return
+/// a cached authority token, resume a model, or rewrite the selected file.
+#[tauri::command]
+fn lu_edit_recovery(
+    state: State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<EditRecoveryView>,String>{
+    state.chats.history(&chat_id)?;
+    let records=state.edit_approval_ledger.recent_for_chat(&chat_id)
+        .map_err(|e|format!("edit recovery ledger unavailable: {e:?}"))?;
+    records.into_iter().map(|record|{
+        let effect_state=record.effect_call_id.as_ref().map(|id|
+            state.effects.get(id)).transpose()
+                .map_err(|e|format!("edit effect journal unavailable: {e:?}"))?
+                .flatten().map(|r|r.state);
+        let effect=effect_state.map(|s|format!("{s:?}"))
+            .unwrap_or_else(||"NOT_STARTED".into());
+        let assessment=match (record.decision,effect_state) {
+            (lu_core::edit_approval_ledger::EditDecision::Interrupted,_) =>
+                "INTERRUPTED_REVIEW_NOT_AUTHORIZED",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,
+                Some(lu_core::journal::EffectState::Applied)) =>
+                "APPLIED_RECEIPT_TARGET_NOT_RECHECKED",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,
+                Some(lu_core::journal::EffectState::Executing |
+                    lu_core::journal::EffectState::Uncertain)) =>
+                "UNCERTAIN_NO_AUTOMATIC_RETRY",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,_) =>
+                "APPROVED_NO_VERIFIED_SUCCESS",
+            _=>"NOT_AUTHORIZED"
+        };
+        Ok(EditRecoveryView {
+            proposal_id:record.proposal_id,
+            file_name:record.filename,
+            exact_target:record.selected_target,
+            original_sha256:record.original_sha256,
+            replacement_sha256:record.replacement_sha256,
+            approval:format!("{:?}",record.decision),
+            effect,effect_call_id:record.effect_call_id,
+            observation:"NOT_RECHECKED_SELECT_FOLDER_FOR_OBSERVATION".into(),
+            assessment:assessment.into(),
+        })
+    }).collect()
+}
+
+/// Native-picked containing folder permits read-only inspection even if the
+/// target vanished. Never follow arbitrary paths from a WebView or replay a
+/// crashed effect. Matched observed bytes are NOT causal proof of publication.
+#[tauri::command]
+async fn lu_inspect_edit_recovery(
+    app: AppHandle,
+    state: State<'_,Arc<DesktopState>>,
+    chat_id:String,proposal_id:String,
+)->Result<EditRecoveryObservationView,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let record=state.edit_approval_ledger.get(&proposal_id)
+        .map_err(|e|format!("edit recovery unavailable: {e:?}"))?
+        .ok_or("unknown edit recovery record")?;
+    if record.chat_id!=chat_id ||
+        record.decision!=lu_core::edit_approval_ledger::EditDecision::Approved {
+        return Err("no approved edit for this conversation".into());
+    }
+    let call_id=record.effect_call_id.ok_or("no effect call recorded")?;
+    let exact_target=record.selected_target.ok_or("no reviewed target recorded")?;
+    let expected_folder=std::path::Path::new(&exact_target)
+        .parent().ok_or("no original containing folder")?;
+    let chosen=tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("recovery picker failed: {e}"))??
+        .ok_or("Recovery inspection cancelled")?;
+    if !is_real_directory(&chosen) {
+        return Err("choose an ordinary containing folder".into());
+    }
+    let chosen=chosen.canonicalize().map_err(|e|format!("invalid folder: {e}"))?;
+    if chosen!=expected_folder {
+        return Err("selected folder is not the exact originally reviewed destination".into());
+    }
+    let dir=cap_std::fs::Dir::open_ambient_dir(&chosen,cap_std::ambient_authority())
+        .map_err(|e|format!("recovery folder cannot be opened: {e}"))?;
+    let observation=lu_core::native_edit_existing::observe_edit(&dir,&call_id);
+    let effect=state.effects.get(&call_id)
+        .map_err(|e|format!("effect journal unavailable: {e:?}"))?
+        .map(|record|format!("{:?}",record.state))
+        .unwrap_or_else(||"NOT_STARTED".into());
+    let assessment=match (effect.as_str(),&observation) {
+        ("Applied",lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified) =>
+            "APPLIED_RECEIPT_AND_OBSERVED_TARGET_BACKUP_MATCH",
+        ("Uncertain"|"Executing",
+            lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified) =>
+            "UNCERTAIN_BYTES_MATCH_NOT_PROOF_NEVER_RETRY",
+        ("Applied",_)=>"APPLIED_RECEIPT_TARGET_DIFFERENT_OR_UNVERIFIED",
+        ("Uncertain"|"Executing",_)=>"UNCERTAIN_EFFECT_RECONCILIATION_REQUIRED",
+        _=>"NO_VERIFIED_SUCCESS_NO_AUTOMATIC_RETRY",
+    };
+    Ok(EditRecoveryObservationView {
+        proposal_id,observation:format!("{observation:?}"),effect,
+        assessment:assessment.into()
+    })
+}
+
 /// A *read-only* recovery screen. It reports durable evidence, never resumes
 /// or reapplies an incomplete write. The effect journal is the source of truth.
 #[tauri::command]
