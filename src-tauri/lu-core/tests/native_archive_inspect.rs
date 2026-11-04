@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use lu_core::{
-    agent_tool_loop::{NativeToolTurn, ToolTurnError, ToolTurnOutcome},
+    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
     contracts::{AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation},
     conversation_authority::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
@@ -177,11 +177,16 @@ async fn invalid_frames_scope_denial_and_missing_zip_are_rejected() {
         &cat,&auth,origin,"archive-scope".into(),&tools
     ).unwrap();
     auth.revoke_task("archive-task").unwrap();
-    assert_eq!(
-        turn.handle_model_reply(
-            r#"{"kind":"tool","name":"lu_archive_list","arguments":{"path":"invalid.zip"}}"#,
-            &cat,&reg,&auth,&Allow
-        ).await,Err(ToolTurnError::Revoked)
-    );
+    let denied=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_archive_list","arguments":{"path":"invalid.zip"}}"#,
+        &cat,&reg,&auth,&Allow
+    ).await.expect("revoked archive scope produces a paired typed tool denial");
+    let ToolTurnOutcome::ToolResult { data, .. } = denied else {
+        panic!("revoked archive tool returned a non-tool answer");
+    };
+    assert_eq!(data["ok"],false);
+    assert_eq!(data["error"]["code"],"PERMISSION_DENIED");
+    assert_eq!(data["error"]["retryable"],false);
+    assert_eq!(turn.step_count(),1);
     fs::remove_dir_all(root).unwrap();
 }
