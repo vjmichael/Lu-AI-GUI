@@ -95,3 +95,29 @@ fn refuses_symlink_directory_root() {
     fs::remove_file(alias).unwrap();
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn pinned_directory_publication_resists_parent_path_replacement() {
+    use cap_std::{ambient_authority, fs::Dir};
+    use lu_core::native_atomic_write::create_new_atomic_in_dir;
+
+    let dir=root();
+    let pinned=Dir::open_ambient_dir(&dir, ambient_authority()).unwrap();
+    let renamed=dir.with_extension("original");
+    fs::rename(&dir,&renamed).unwrap();
+    fs::create_dir(&dir).unwrap();
+    fs::write(dir.join("decoy.txt"), b"attacker-controlled replacement").unwrap();
+    let receipt=create_new_atomic_in_dir(
+        &pinned, "approved.json", STAGE1, br#"{"from":"trusted handle"}"#
+    ).unwrap();
+    assert_eq!(receipt.target,"approved.json");
+    assert_eq!(fs::read(renamed.join("approved.json")).unwrap(),
+        br#"{"from":"trusted handle"}"#);
+    assert!(!dir.join("approved.json").exists(),
+        "path replacement must not redirect an approved write");
+    assert!(!renamed.join(format!(".lu-stage-{STAGE1}.tmp")).exists());
+    drop(pinned);
+    fs::remove_dir_all(renamed).unwrap();
+    fs::remove_dir_all(dir).unwrap();
+}
