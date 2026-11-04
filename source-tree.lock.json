@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "0b03054de67f5882153e014155aa70c01e207335"
+      "blob": "a500cca04bbc5abdcc4e5f4184011499aaedd8f9"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/WRITE_01E_DURABLE_EDIT_TRANSACTION_20261103.md",
-      "blob": "4d50f1cbde0db74520546a2ebf3effcda438fd6b"
+      "blob": "2a71135dd7fa07c0080bc1c9b56042cc0d4517ad"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -221,7 +221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "38cd746c4723dce68e90bf29b05d0810f64c47c6"
+      "blob": "e6caf6fd3261e624a85887965986d443e1fbfcd0"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -345,7 +345,7 @@
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
-      "blob": "462d8e08bc685a3457105b6a77026c2b6f071d05"
+      "blob": "0adf024578fcb4dcdd30e3bf804b4d11dccf2ff1"
     },
     {
       "path": "lu-desktop/web/attachment_drafts.mjs",
@@ -373,7 +373,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "d2d79aa7002df634cd92f6089b78e9e37bb64e58"
+      "blob": "dc5032640db6625366a3f6fa9176d3bf23413a82"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -689,7 +689,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_edit_existing.rs",
-      "blob": "5a817ffb3c5f55d05729b1dd1d78f75f7b87d3fa"
+      "blob": "c5bd789889fef6e6c43432a014daf7de61038b28"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
