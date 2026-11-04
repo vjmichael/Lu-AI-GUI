@@ -13,6 +13,7 @@ use prost::Message;
 
 use crate::inference_wire::{validate_frame as validate_inference_frame, InferenceWireError};
 use crate::wire::proto;
+use crate::workspace::WorkspaceHost;
 
 pub const DLC_PROTOCOL_VERSION: u32 = 1;
 pub const MAX_DLC_FRAME_BYTES: usize = 4 * 1024 * 1024;
@@ -60,6 +61,7 @@ pub enum DlcInteropError {
     AlreadyNegotiated,
     NotHostApproved,
     SessionMismatch,
+    WorkspaceInactive,
     RequestReplay,
     GenerationReplay,
     GenerationNotOwned,
@@ -203,6 +205,7 @@ pub struct DlcAdmission {
     seen_request_ids: BTreeSet<String>,
     seen_generations: BTreeSet<String>,
     active_generation: Option<String>,
+    workspace_owner: Option<WorkspaceHost>,
     revoked: bool,
 }
 
@@ -229,8 +232,28 @@ impl DlcAdmission {
             seen_request_ids: BTreeSet::new(),
             seen_generations: BTreeSet::new(),
             active_generation: None,
+            workspace_owner: None,
             revoked: false,
         })
+    }
+
+    /// In-host DLC variant: bind the actual WorkspaceHost lifetime to this
+    /// protocol admission. A suspended/closed or wrongly owned instance
+    /// immediately loses request admission, including after negotiation.
+    /// Actual inference/tool dispatch must independently recheck its policy.
+    pub fn host_bind_workspace(
+        host: WorkspaceHost,
+        module_id: &str,
+        instance_id: &str,
+        session_id: &str,
+        approved: &[DlcPermission],
+    ) -> Result<Self, DlcInteropError> {
+        if !host.active_instance_belongs_to(module_id, instance_id).unwrap_or(false) {
+            return Err(DlcInteropError::WorkspaceInactive);
+        }
+        let mut gate = Self::host_bind_trusted(module_id, instance_id, session_id, approved)?;
+        gate.workspace_owner = Some(host);
+        Ok(gate)
     }
 
     /// Hello declares *requested* capabilities. A successful exchange is
@@ -343,10 +366,14 @@ impl DlcAdmission {
 
     fn require_live(&self) -> Result<(), DlcInteropError> {
         if self.revoked {
-            Err(DlcInteropError::Revoked)
-        } else {
-            Ok(())
+            return Err(DlcInteropError::Revoked);
         }
+        if let Some(host) = &self.workspace_owner {
+            if !host.active_instance_belongs_to(&self.module_id, &self.instance_id).unwrap_or(false) {
+                return Err(DlcInteropError::WorkspaceInactive);
+            }
+        }
+        Ok(())
     }
 
     fn require_session(&self, actual: &str) -> Result<(), DlcInteropError> {
@@ -529,6 +556,45 @@ mod tests {
             generation.images[0].image_ref="/tmp/unsafe.png".into();
         }
         assert!(encode_dlc_frame(&req).is_err());
+    }
+
+    #[test]
+    fn real_workspace_lifetime_controls_dlc_admission_without_granting_tools() {
+        use crate::contracts::{ModuleKind, ModuleManifest, CORE_CONTRACT_VERSION};
+        let host = WorkspaceHost::default();
+        host.register_workspace(ModuleManifest {
+            id: "nvp.film".into(),
+            display_name: "Film Workspace".into(),
+            contract_version: CORE_CONTRACT_VERSION,
+            kind: ModuleKind::Workspace,
+            tools: vec![],
+            panels: vec![],
+            workflows: vec![],
+        }, vec![]).unwrap();
+        let perms = [DlcPermission::ObserveStatus];
+        assert!(matches!(
+            DlcAdmission::host_bind_workspace(host.clone(), "nvp.film", "nvp-1", "lu-session-1", &perms),
+            Err(DlcInteropError::WorkspaceInactive)
+        ));
+        host.open_instance("nvp.film", "nvp-1").unwrap();
+        assert!(matches!(
+            DlcAdmission::host_bind_workspace(host.clone(), "other.module", "nvp-1", "lu-session-1", &perms),
+            Err(DlcInteropError::WorkspaceInactive)
+        ));
+        let mut gate = DlcAdmission::host_bind_workspace(
+            host.clone(), "nvp.film", "nvp-1", "lu-session-1", &perms
+        ).unwrap();
+        gate.negotiate(&hello(&perms)).unwrap();
+        assert_eq!(gate.admit_request(&status("req-1", "lu-session-1")).unwrap(),
+            DlcAdmittedRequest::ObserveStatus);
+        host.suspend_instance("nvp-1").unwrap();
+        assert_eq!(gate.admit_request(&status("req-2", "lu-session-1")),
+            Err(DlcInteropError::WorkspaceInactive));
+        host.resume_instance("nvp-1").unwrap();
+        assert!(gate.admit_request(&status("req-2", "lu-session-1")).is_ok());
+        host.close_instance("nvp-1").unwrap();
+        assert_eq!(gate.admit_request(&status("req-3", "lu-session-1")),
+            Err(DlcInteropError::WorkspaceInactive));
     }
 
     #[test]
