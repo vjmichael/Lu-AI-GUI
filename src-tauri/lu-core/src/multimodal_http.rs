@@ -3,7 +3,7 @@
 //! Both the images and the prompt must have been reconstructed from the
 //! trusted host-opened saved conversation file before this entrypoint.
 use crate::multimodal_saved_turn::{
-    build_llama_chat_request, parse_chat_sse_frame, ChatEvent, SavedMultimodalTurn,
+    build_llama_chat_request, parse_chat_sse_frame, ChatEvent, ChatFinishReason, SavedMultimodalTurn,
 };
 use std::{
     io::{self, BufReader, Read, Write},
@@ -255,7 +255,18 @@ pub fn generate_chat_stream_body(
                     on_text(text)?;
                 }
                 ChatEvent::Continue => {}
+                ChatEvent::Finished(ChatFinishReason::Stop) => {
+                    complete = true;
+                    break;
+                }
+                ChatEvent::Finished(ChatFinishReason::Length) => {
+                    return Err("llama.cpp output reached token budget; response is truncated".into());
+                }
+                ChatEvent::Finished(ChatFinishReason::ToolCalls) => {
+                    return Err("llama.cpp returned tool calls instead of a terminal chat answer".into());
+                }
                 ChatEvent::Done => {
+                    // Legacy [DONE] closes transport; not a strong EOS witness.
                     complete = true;
                     break;
                 }
@@ -433,6 +444,27 @@ mod tests {
         handle.join().unwrap();
         assert!(err.contains("HTTP 400"));
         assert!(!err.contains("secret-image-content"));
+    }
+    #[test]
+    fn completion_length_is_not_a_successful_final_answer() {
+        let stream=b"data: {\"choices\":[{\"delta\":{\"content\":\"Partial\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n";
+        let (port, handle) = fixture(response(&[stream]), false);
+        let body = crate::multimodal_saved_turn::build_structured_chat_request("Ping", &[], &[], 20).unwrap();
+        let result = generate_chat_stream_body(port, &"ab".repeat(32), &body,
+            Duration::from_secs(5), || false, |_| Ok(()));
+        handle.join().unwrap();
+        assert!(result.unwrap_err().contains("truncated"));
+    }
+    #[test]
+    fn explicit_stop_finishes_without_reading_subsequent_tokens() {
+        let stream=b"data: {\"choices\":[{\"delta\":{\"content\":\"Done\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"SHOULD NOT READ\"},\"finish_reason\":null}]}\n\n";
+        let (port, handle) = fixture(response(&[stream]), false);
+        let body = crate::multimodal_saved_turn::build_structured_chat_request("Ping", &[], &[], 20).unwrap();
+        let mut text = String::new();
+        generate_chat_stream_body(port, &"ab".repeat(32), &body,
+            Duration::from_secs(5), || false, |piece| { text.push_str(&piece); Ok(()) }).unwrap();
+        handle.join().unwrap();
+        assert_eq!(text, "Done");
     }
     #[test]
     fn text_generation_uses_chat_completions_not_raw_completion() {
