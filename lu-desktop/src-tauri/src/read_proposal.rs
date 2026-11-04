@@ -79,8 +79,14 @@ impl ReadApprovalQueue {
         {
             return Err(ProposalError::Invalid);
         }
-        let proposal: ProposedRead =
-            serde_json::from_str(raw).map_err(|_| ProposalError::Invalid)?;
+        // Model-originated proposals are untrusted JSON boundary messages.
+        // Reject nested duplicate keys before filename or byte-limit review.
+        let checked = lu_core::model_json_boundary::parse_exact_boundary_object(
+            raw, MAX_PROPOSAL_BYTES,
+        ).map_err(|_| ProposalError::Invalid)?;
+        let proposal: ProposedRead = serde_json::from_value(
+            serde_json::Value::Object(checked),
+        ).map_err(|_| ProposalError::Invalid)?;
         if proposal.kind != "propose_read_file"
             || !valid_name(&proposal.file_name)
             || proposal.purpose.trim().is_empty()
@@ -197,5 +203,23 @@ impl ReadApprovalQueue {
         let before = entries.len();
         entries.retain(|_, entry| entry.conversation_id != chat);
         Ok(before - entries.len())
+    }
+}
+
+#[cfg(test)]
+mod json_boundary_tests {
+    use super::*;
+    #[test]
+    fn staged_read_rejects_duplicate_fields_and_trailing_comma() {
+        let queue = ReadApprovalQueue::default();
+        let valid = r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"inspect","max_bytes":512}"#;
+        assert!(queue.stage("ok", "chat", "turn", valid).is_ok());
+        for payload in [
+            r#"{"kind":"propose_read_file","file_name":"notes.txt","file_name":"secret.txt","purpose":"inspect","max_bytes":512}"#,
+            r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"inspect","max_bytes":512,}"#,
+            r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"inspect","max_bytes":"#,
+        ] {
+            assert_eq!(queue.stage("bad", "chat", "turn", payload), Err(ProposalError::Invalid));
+        }
     }
 }

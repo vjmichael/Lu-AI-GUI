@@ -176,3 +176,6 @@ jobs:
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
           cargo test --locked --no-run --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute Windows native JSON proposal boundary tests
+        shell: pwsh
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib json_boundary_tests -- --nocapture

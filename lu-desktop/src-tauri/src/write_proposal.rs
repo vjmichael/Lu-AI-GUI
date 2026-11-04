@@ -54,8 +54,14 @@ impl WriteProposalQueue {
             || raw.len() > MAX_WRITE_PREVIEW_BYTES + 4096 {
             return Err(WriteProposalError::Invalid);
         }
-        let p: ProposedWrite = serde_json::from_str(raw)
-            .map_err(|_| WriteProposalError::Invalid)?;
+        // Exact no-repair boundary; neither syntax repair nor duplicate fields
+        // can create a privileged host-side file proposal.
+        let checked = lu_core::model_json_boundary::parse_exact_boundary_object(
+            raw, MAX_WRITE_PREVIEW_BYTES + 4096,
+        ).map_err(|_| WriteProposalError::Invalid)?;
+        let p: ProposedWrite = serde_json::from_value(
+            serde_json::Value::Object(checked),
+        ).map_err(|_| WriteProposalError::Invalid)?;
         if p.kind != "propose_create_file" || !valid_file(&p.file_name)
             || p.content.len() > MAX_WRITE_PREVIEW_BYTES || p.purpose.trim().is_empty()
             || p.purpose.len() > 256 || p.purpose.chars().any(char::is_control) {
@@ -145,5 +151,23 @@ impl WriteProposalQueue {
         let entry = entries.get(id).ok_or(WriteProposalError::Unknown)?;
         if entry.chat_id != chat { return Err(WriteProposalError::WrongConversation); }
         Ok(entries.remove(id).unwrap().generation_id)
+    }
+}
+
+#[cfg(test)]
+mod json_boundary_tests {
+    use super::*;
+    #[test]
+    fn staged_create_refuses_conflicting_model_json_before_host_review() {
+        let q = WriteProposalQueue::default();
+        let good = r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"draft","content":"hello"}"#;
+        assert!(q.stage("ok", "chat", "turn", good).is_ok());
+        for bad in [
+            r#"{"kind":"propose_create_file","file_name":"notes.md","file_name":"other.md","purpose":"draft","content":"hello"}"#,
+            r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"draft","content":"hello","content":"bad"}"#,
+            r#"{"kind":"propose_create_file","file_name":"notes.md","purpose":"draft","content":"hello",}"#,
+        ] {
+            assert_eq!(q.stage("bad", "chat", "turn", bad), Err(WriteProposalError::Invalid));
+        }
     }
 }

@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 use crate::{
     contracts::{ProtoPayload, ToolEffect, ToolInvocation},
     registry::{DispatchError, NativeToolRegistry, ToolResponse},
+    model_json_boundary::parse_exact_boundary_object,
 };
 
 pub const MAX_MODEL_TOOL_ARGS_BYTES: usize = 64 * 1024;
@@ -304,12 +305,14 @@ impl ModelToolCatalog {
             .definitions
             .get(public_name)
             .ok_or_else(|| ModelToolError::UnknownTool(public_name.to_string()))?;
-        let value: Value = serde_json::from_str(raw_json)
-            .map_err(|e| ModelToolError::InvalidArguments(format!("malformed JSON: {e}")))?;
-        let arguments = value
-            .as_object()
-            .ok_or_else(|| ModelToolError::InvalidArguments("expected JSON object".into()))?;
-        let input = definition.codec.encode(arguments)?;
+        // This direct codec entry point is a real model/native boundary too,
+        // not only the outer NativeToolTurn. serde_json::Value would silently
+        // accept duplicate object keys (including nested keys). Refuse them
+        // before a codec can choose a path, operation or Protobuf argument.
+        // No syntax repair is permitted at this second-stage boundary.
+        let arguments = parse_exact_boundary_object(raw_json, MAX_MODEL_TOOL_ARGS_BYTES)
+            .map_err(|e| ModelToolError::InvalidArguments(format!("JSON boundary rejected: {e:?}")))?;
+        let input = definition.codec.encode(&arguments)?;
         if input.type_url != definition.codec.input_type_url() {
             return Err(ModelToolError::TypeMismatch(
                 definition.native_tool_id.clone(),

@@ -7,7 +7,7 @@
 //! GGUF streaming engine or persist a transcript; adapters integrate later.
 //! There is no dependency on Jan Cowork or MCP.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
@@ -17,7 +17,7 @@ use crate::{
     journal::EffectJournal,
     model::{ModelToolCatalog, ModelToolError, MAX_ADVERTISED_TOOLS},
     model_json_boundary::{
-        parse_model_boundary, serialize_host_boundary, JsonBoundaryError, JsonRepairStatus,
+        parse_model_boundary, serialize_host_tool_feedback_boundary, JsonBoundaryError, JsonRepairStatus,
     },
     registry::NativeToolRegistry,
 };
@@ -467,14 +467,9 @@ impl NativeToolTurn {
                 call_id,
                 tool_name,
                 data,
-            } => serialize_host_boundary(
-                &json!({
-                    "kind": "tool_result", "call_id": call_id,
-                    "name": tool_name, "response": data,
-                }),
-                MAX_MODEL_FRAME_BYTES,
-            )
-            .ok(),
+            } => serialize_host_tool_feedback_boundary(
+                call_id, tool_name, data, MAX_MODEL_FRAME_BYTES,
+            ).ok(),
             ToolTurnOutcome::FinalText(_) => None,
         }
     }

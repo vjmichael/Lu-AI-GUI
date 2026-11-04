@@ -100,8 +100,14 @@ impl EditProposalQueue {
         -> Result<ProposedEdit,EditProposalError> {
         if !valid_id(id)||!valid_id(chat)||!valid_id(generation)||
             raw.len()>MAX_EDIT_PROPOSAL_BYTES+4096 { return Err(EditProposalError::Invalid); }
-        let proposal: ProposedEdit=serde_json::from_str(raw)
-            .map_err(|_|EditProposalError::Invalid)?;
+        // Strict JSON must pass before any native file-review proposal is
+        // staged; duplicate/conflicting replacement fields fail closed.
+        let checked=lu_core::model_json_boundary::parse_exact_boundary_object(
+            raw,MAX_EDIT_PROPOSAL_BYTES+4096
+        ).map_err(|_|EditProposalError::Invalid)?;
+        let proposal:ProposedEdit=serde_json::from_value(
+            serde_json::Value::Object(checked)
+        ).map_err(|_|EditProposalError::Invalid)?;
         if proposal.kind!="propose_edit_file"||!valid_file(&proposal.file_name)||
             proposal.content.len()>MAX_EDIT_PROPOSAL_BYTES||
             proposal.purpose.is_empty()||proposal.purpose.len()>256||
@@ -223,5 +229,23 @@ impl EditProposalQueue {
         let item=pending.get(id).ok_or(EditProposalError::Missing)?;
         if item.chat_id!=chat {return Err(EditProposalError::WrongConversation);}
         pending.remove(id);Ok(())
+    }
+}
+
+#[cfg(test)]
+mod json_boundary_tests {
+    use super::*;
+    #[test]
+    fn staged_edit_refuses_conflicting_model_replacement_json() {
+        let q = EditProposalQueue::default();
+        let good = r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello"}"#;
+        assert!(q.stage("ok", "chat", "turn", good).is_ok());
+        for bad in [
+            r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello","content":"secret"}"#,
+            r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello",}"#,
+            r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"correct","content":"hello""#,
+        ] {
+            assert_eq!(q.stage("bad", "chat", "turn", bad), Err(EditProposalError::Invalid));
+        }
     }
 }
