@@ -618,6 +618,76 @@ mod tests {
         fs::remove_dir_all(path).unwrap();
     }
     #[test]
+    fn rollback_crash_barriers_never_erase_original_backup() {
+        for (i, (point, observation, expected)) in [
+            (StopPoint::AfterManifest, RollbackObservation::StillAtReplacement, b"after".as_slice()),
+            (StopPoint::AfterStage, RollbackObservation::StillAtReplacement, b"after".as_slice()),
+            (StopPoint::AfterPublish, RollbackObservation::RestoredFromBackup, b"before".as_slice()),
+        ].into_iter().enumerate() {
+            let path = temp();
+            fs::write(path.join("t.txt"), b"before").unwrap();
+            let root = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
+            let orig_id = format!("g-original-rollback-test-{i:04}");
+            let rollback_id = format!("g-rollback-crash-test-{i:04}");
+            commit_in_dir(&root, "t.txt", &orig_id, &sha(b"before"),
+                b"after", &sha(b"reviewed"), StopPoint::Never).unwrap();
+            assert_eq!(rollback_with_stop(&root, "t.txt", &orig_id, &rollback_id,
+                &sha(b"after"), &sha(b"before"), point),
+                Err(EditCommitError::Uncertain));
+            assert_eq!(observe_rollback(&root, &rollback_id), observation);
+            assert_eq!(fs::read(path.join("t.txt")).unwrap(), expected);
+            assert_eq!(fs::read(path.join(sidecar(&orig_id, "orig"))).unwrap(), b"before");
+            drop(root);
+            fs::remove_dir_all(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn interrupted_id_is_never_reused_and_corrupt_backup_blocks_rollback() {
+        let path = temp();
+        fs::write(path.join("t.txt"), b"old").unwrap();
+        let root = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
+        let id = "g-edit-duplicate-stage-00001";
+        assert_eq!(commit_in_dir(&root, "t.txt", id, &sha(b"old"),
+            b"new", &sha(b"review"), StopPoint::AfterManifest),
+            Err(EditCommitError::Uncertain));
+        assert_eq!(commit_in_dir(&root, "t.txt", id, &sha(b"old"),
+            b"new", &sha(b"review"), StopPoint::Never),
+            Err(EditCommitError::ArtifactCollision));
+        assert_eq!(fs::read(path.join("t.txt")).unwrap(), b"old");
+        let valid = "g-edit-backup-tamper-0001";
+        commit_in_dir(&root, "t.txt", valid, &sha(b"old"),
+            b"new", &sha(b"review"), StopPoint::Never).unwrap();
+        fs::write(path.join(sidecar(valid,"orig")), b"tampered").unwrap();
+        assert_eq!(observe_edit(&root, valid), EditObservation::ChangedOrDamaged);
+        assert_eq!(rollback_in_dir(&root,"t.txt",valid,"g-rollback-tamper-0001",
+            &sha(b"new"), &sha(b"old")), Err(EditCommitError::InvalidRecoveryRecord));
+        assert_eq!(fs::read(path.join("t.txt")).unwrap(), b"new");
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_and_multiple_hardlinks_are_not_treated_as_safe_edits() {
+        use std::os::unix::fs::symlink;
+        let path = temp();
+        fs::write(path.join("real.txt"), b"old").unwrap();
+        symlink("real.txt", path.join("alias.txt")).unwrap();
+        let root = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
+        assert_eq!(commit_in_dir(&root,"alias.txt","g-edit-symlink-denial-0001",
+            &sha(b"old"), b"new", &sha(b"review"), StopPoint::Never),
+            Err(EditCommitError::UnsafeTarget));
+        fs::hard_link(path.join("real.txt"),path.join("second-link.txt")).unwrap();
+        assert_eq!(commit_in_dir(&root,"real.txt","g-edit-hardlink-denial-0001",
+            &sha(b"old"), b"new", &sha(b"review"), StopPoint::Never),
+            Err(EditCommitError::UnsafeTarget));
+        assert_eq!(fs::read(path.join("real.txt")).unwrap(), b"old");
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn approved_rollback_restores_only_when_current_matches_and_backup_is_intact() {
         let path = temp();
         fs::write(path.join("t.txt"), b"old").unwrap();
