@@ -609,6 +609,29 @@ mod tests {
         }
     }
     #[test]
+    fn simultaneous_lu_edits_serialize_and_refuse_the_loser() {
+        let path = temp();
+        fs::write(path.join("t.txt"), b"baseline").unwrap();
+        let root = Arc::new(Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap());
+        let threads: Vec<_> = (0..2).map(|i| {
+            let dir = Arc::clone(&root);
+            std::thread::spawn(move || {
+                let new = if i == 0 { b"first".as_slice() } else { b"second".as_slice() };
+                commit_in_dir(&dir, "t.txt", &format!("g-process-race-edit-{i:04}"),
+                    &sha(b"baseline"), new, &sha(b"review"),
+                    StopPoint::Never)
+            })
+        }).collect();
+        let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+        assert_eq!(results.iter().filter(|r| **r == Err(EditCommitError::SourceConflict)).count(), 1);
+        let final_bytes = fs::read(path.join("t.txt")).unwrap();
+        assert!(final_bytes == b"first" || final_bytes == b"second");
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn source_conflict_and_invalid_json_cannot_publish() {
         let path = temp();
         fs::write(path.join("t.json"), b"{\"a\":1}").unwrap();
