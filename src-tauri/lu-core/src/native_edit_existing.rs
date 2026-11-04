@@ -5,9 +5,10 @@
 //! All filesystem effects run only after DurableDispatcher's EXECUTING fence.
 //! Recovery is observation only: an uncertain effect is NEVER replayed.
 //!
-//! Compatibility caveat: replacement may not preserve ACLs, alternate data
-//! streams, xattrs or hardlink identities. Windows native metadata/directory
-//! flush and hostile cross-process race acceptance remain release gates.
+//! Windows now requires owner/group/DACL equality and explicit creation-time
+//! custody before publishing. This is not comprehensive metadata preservation:
+//! SACLs, EAs, object IDs, directory flush and hostile cross-process races
+//! remain release gates. Named streams and multiple hardlinks are refused.
 use std::{io::{Read, Write}, path::Path, sync::{Arc, Mutex}};
 // Process-local serialization across ALL registrations/roots. This is not an
 // operating-system lock against a non-cooperating external editor.
@@ -255,6 +256,12 @@ fn commit_in_dir_selected(
     }
     let (original, perms) = regular_bytes(root, target)?;
     #[cfg(windows)]
+    let original_metadata={
+        let handle=root.open(target).map_err(io)?.into_std();
+        crate::windows_file_guard::snapshot_metadata(&handle)
+            .map_err(|_|EditCommitError::UnsafeTarget)?
+    };
+    #[cfg(windows)]
     let original_identity=strict_windows_file_identity(root,target)?;
     #[cfg(windows)]
     if picked_identity.is_some_and(|id|id!=original_identity) {
@@ -287,6 +294,19 @@ fn commit_in_dir_selected(
     if sha(&regular_bytes(root, &stage_name)?.0) != manifest.replacement_sha256 {
         return Err(EditCommitError::Uncertain);
     }
+    #[cfg(windows)]
+    {
+        // Refuse if a new stage would discard the original's owner/group/
+        // DACL. Keep original creation/access times; last-write is new.
+        // The Windows FFI is isolated in lu-win-worker-job.
+        let original_file=root.open(target).map_err(io)?.into_std();
+        let mut opts=OpenOptions::new();
+        opts.read(true).write(true);
+        let stage_file=root.open_with(&stage_name,&opts).map_err(io)?.into_std();
+        crate::windows_file_guard::prepare_stage_metadata(
+            &original_file,&stage_file,&original_metadata
+        ).map_err(|_|EditCommitError::Uncertain)?;
+    }
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
 
     // Bounded last recheck. A non-cooperating external writer may still race
@@ -305,8 +325,13 @@ fn commit_in_dir_selected(
         return Err(EditCommitError::SourceConflict);
     }
     #[cfg(windows)]
-    if strict_windows_file_identity(root,target)? != original_identity {
-        return Err(EditCommitError::SourceConflict);
+    {
+        if strict_windows_file_identity(root,target)? != original_identity {
+            return Err(EditCommitError::SourceConflict);
+        }
+        let current=root.open(target).map_err(io)?.into_std();
+        crate::windows_file_guard::check_source_metadata(&current,&original_metadata)
+            .map_err(|_|EditCommitError::SourceConflict)?;
     }
     // This detects identity substitutions even if a different inode has
     // identical bytes. It is not an OS-atomic cross-process compare-and-swap.
@@ -316,6 +341,12 @@ fn commit_in_dir_selected(
     let published = regular_bytes(root, target).map_err(|_| EditCommitError::Uncertain)?.0;
     if sha(&published) != manifest.replacement_sha256 {
         return Err(EditCommitError::Uncertain);
+    }
+    #[cfg(windows)]
+    {
+        let published_file=root.open(target).map_err(|_|EditCommitError::Uncertain)?.into_std();
+        crate::windows_file_guard::check_source_metadata(&published_file,&original_metadata)
+            .map_err(|_|EditCommitError::Uncertain)?;
     }
     Ok(EditReceipt {
         backup_id: operation_id.into(), original_sha256: baseline_sha.into(),
@@ -599,6 +630,12 @@ fn rollback_with_stop_selected(
     }
     let (current, perms) = regular_bytes(root, target)?;
     #[cfg(windows)]
+    let original_metadata={
+        let handle=root.open(target).map_err(io)?.into_std();
+        crate::windows_file_guard::snapshot_metadata(&handle)
+            .map_err(|_|EditCommitError::UnsafeTarget)?
+    };
+    #[cfg(windows)]
     let original_identity=strict_windows_file_identity(root,target)?;
     #[cfg(windows)]
     if picked_identity.is_some_and(|id|id!=original_identity) {
@@ -629,13 +666,27 @@ fn rollback_with_stop_selected(
     if sha(&regular_bytes(root, &stage)?.0) != expected_restored {
         return Err(EditCommitError::Uncertain);
     }
+    #[cfg(windows)]
+    {
+        let current_file=root.open(target).map_err(io)?.into_std();
+        let mut opts=OpenOptions::new();opts.read(true).write(true);
+        let stage_file=root.open_with(&stage,&opts).map_err(io)?.into_std();
+        crate::windows_file_guard::prepare_stage_metadata(
+            &current_file,&stage_file,&original_metadata
+        ).map_err(|_|EditCommitError::Uncertain)?;
+    }
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
     if sha(&regular_bytes(root, target)?.0) != expected_current {
         return Err(EditCommitError::SourceConflict);
     }
     #[cfg(windows)]
-    if strict_windows_file_identity(root,target)?!=original_identity {
-        return Err(EditCommitError::SourceConflict);
+    {
+        if strict_windows_file_identity(root,target)?!=original_identity {
+            return Err(EditCommitError::SourceConflict);
+        }
+        let original=root.open(target).map_err(io)?.into_std();
+        crate::windows_file_guard::check_source_metadata(&original,&original_metadata)
+            .map_err(|_|EditCommitError::SourceConflict)?;
     }
     root.rename(&stage, root, target).map_err(io)?;
     if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
@@ -643,6 +694,12 @@ fn rollback_with_stop_selected(
     if sha(&regular_bytes(root, target).map_err(|_| EditCommitError::Uncertain)?.0)
         != expected_restored {
         return Err(EditCommitError::Uncertain);
+    }
+    #[cfg(windows)]
+    {
+        let current=root.open(target).map_err(|_|EditCommitError::Uncertain)?.into_std();
+        crate::windows_file_guard::check_source_metadata(&current,&original_metadata)
+            .map_err(|_|EditCommitError::Uncertain)?;
     }
     Ok(backup.len() as u64)
 }
