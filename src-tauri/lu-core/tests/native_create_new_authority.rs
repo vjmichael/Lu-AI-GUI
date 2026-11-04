@@ -223,3 +223,53 @@ async fn interrupted_executing_write_stays_uncertain_and_is_not_blindly_replayed
     drop(effects); drop(registry);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn policy_revocation_and_call_identity_conflict_fail_without_reexecution() {
+    let root = scratch();
+    let registry = NativeToolRegistry::new();
+    register_create_new(&registry, &root).unwrap();
+    let journal = EffectJournal::open(&root.join("journal.sqlite")).unwrap();
+    let (authority, policy, origin) = authorized();
+    let first = b"first approved bytes";
+    let first_sha = digest(first);
+    let fence = ExactCreateNewPolicy {
+        host_policy: &policy, expected_target: "one.txt", expected_sha256: &first_sha,
+    };
+    let req = call("g-write-idempotency-01", "one.txt", first, "target-file-approval");
+
+    // No active policy grant means no journal entry and no filesystem effect.
+    policy.revoke_scope("target-file-approval").unwrap();
+    assert!(matches!(
+        authority.dispatch_bound_durable(
+            &registry, &journal, req.clone(), origin.clone(), &fence
+        ).await,
+        Err(DispatchError::Denied(_))
+    ));
+    assert!(journal.get(&req.call_id).unwrap().is_none());
+    assert!(!root.join("one.txt").exists());
+    policy.grant(CapabilityGrant {
+        tool_id: TOOL_ID.into(), effect: ToolEffect::WriteWorkspace,
+        scope_id: "target-file-approval".into(), expires_at: None,
+    }).unwrap();
+
+    authority.dispatch_bound_durable(
+        &registry, &journal, req.clone(), origin.clone(), &fence
+    ).await.unwrap();
+    let second = b"second approved bytes";
+    let second_sha = digest(second);
+    let altered_fence = ExactCreateNewPolicy {
+        host_policy: &policy, expected_target: "one.txt", expected_sha256: &second_sha,
+    };
+    let altered = call("g-write-idempotency-01", "one.txt", second, "target-file-approval");
+    assert!(matches!(
+        authority.dispatch_bound_durable(
+            &registry, &journal, altered, origin.clone(), &altered_fence
+        ).await,
+        Err(DispatchError::Execution(_))
+    ));
+    assert_eq!(fs::read(root.join("one.txt")).unwrap(), first);
+
+    drop(journal); drop(registry);
+    fs::remove_dir_all(root).unwrap();
+}
