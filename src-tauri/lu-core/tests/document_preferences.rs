@@ -72,6 +72,9 @@ fn saved_file_link_requires_approved_record_matching_actual_applied_effect() {
     effect.state=EffectState::Uncertain;
     assert!(verified_created_folder(&approval,&effect).is_err());
     effect.state=EffectState::Applied;
+    effect.receipt=None;
+    assert!(verified_created_folder(&approval,&effect).is_err());
+    effect.receipt=Some(vec![1]);
     effect.call_id="g-other".into();
     assert!(verified_created_folder(&approval,&effect).is_err());
     effect.call_id="g-effect-one".into();
