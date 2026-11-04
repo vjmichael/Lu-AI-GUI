@@ -210,7 +210,11 @@ fn read_manifest(root: &Dir, id: &str) -> Result<EditManifest, EditCommitError> 
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StopPoint { Never, AfterManifest, AfterBackup, AfterStage, AfterPublish }
+enum StopPoint {
+    Never, AfterManifest, AfterBackup, AfterStage, AfterPublish,
+    #[cfg(all(test,windows))]
+    BeforePublishSameBytesIdentitySwap,
+}
 
 /// Actual mutation primitive. Caller MUST have entered EffectJournal::Executing
 /// via dispatch_bound_durable and must supply host-approved exact bytes.
@@ -267,6 +271,15 @@ fn commit_in_dir(
 
     // Bounded last recheck. A non-cooperating external writer may still race
     // between this read and rename; backup custody retains the old bytes.
+    #[cfg(all(test,windows))]
+    if stop==StopPoint::BeforePublishSameBytesIdentitySwap {
+        // Deterministic adversarial fixture: external actor replaces the
+        // original file with an identical-byte *different* native file ID
+        // between the stage barrier and final prepublication checks.
+        let displaced=sidecar(operation_id,"external-displaced");
+        root.rename(target,root,&displaced).map_err(io)?;
+        write_new_synced(root,target,&original,&perms)?;
+    }
     let (latest, _) = regular_bytes(root, target)?;
     if sha(&latest) != baseline_sha {
         return Err(EditCommitError::SourceConflict);
@@ -1095,6 +1108,26 @@ mod tests {
         let mut perms=fs::metadata(&target).unwrap().permissions();
         perms.set_readonly(false);fs::set_permissions(&target,perms).unwrap();
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_same_bytes_different_file_identity_blocks_publication() {
+        let path=temp();
+        fs::write(path.join("document.md"),b"old").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let id="g-windows-same-bytes-race-001";
+        assert_eq!(commit_in_dir(
+            &root,"document.md",id,&sha(b"old"),b"new",
+            &sha(b"review"),StopPoint::BeforePublishSameBytesIdentitySwap
+        ),Err(EditCommitError::SourceConflict));
+        assert_eq!(fs::read(path.join("document.md")).unwrap(),b"old");
+        assert_eq!(fs::read(path.join(sidecar(id,"external-displaced"))).unwrap(),b"old");
+        assert_eq!(fs::read(path.join(sidecar(id,"orig"))).unwrap(),b"old");
+        assert_eq!(fs::read(path.join(sidecar(id,"new"))).unwrap(),b"new");
+        // The guard catches a same-content identity substitution, not just
+        // a changed byte digest. No effect receipt may be issued.
+        drop(root);fs::remove_dir_all(path).unwrap();
     }
 
     #[cfg(windows)]
