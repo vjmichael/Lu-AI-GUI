@@ -1895,6 +1895,11 @@ async fn lu_inspect_edit_recovery(
                 rollback_review_status = "VERIFIED_READ_ONLY_UNDO_CANDIDATE".into();
                 // Native folder picker, verified original receipt and exact
                 // bytes. A separate rollback review is persisted and pinned.
+                let stale_reviews=state.rollback_reviews.clear_for(&chat_id,&proposal_id)
+                    .map_err(|e|format!("rollback review queue unavailable: {e:?}"))?;
+                for stale_id in stale_reviews {
+                    let _=state.rollback_approval_ledger.deny(&stale_id,&chat_id);
+                }
                 let review_id=next_id("rb-");
                 let approval=lu_core::rollback_approval_ledger::RollbackRecord {
                     review_id:review_id.clone(),chat_id:chat_id.clone(),
