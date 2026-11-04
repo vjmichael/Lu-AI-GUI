@@ -64,6 +64,7 @@ pub mod web_catalog_crossref;
 pub mod web_research_planner;
 pub mod web_research_analysis;
 pub mod web_research_sufficiency;
+pub mod web_research_premise;
 pub mod web_search_openalex;
 pub mod native_web_research;
 pub mod model_turn_journal;
