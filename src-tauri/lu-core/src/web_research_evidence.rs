@@ -172,7 +172,7 @@ impl EvidenceLedger {
     }
     pub fn verify_passage(&mut self, id: &str, locator: &str, quotation: &str)
         -> Result<(), EvidenceError> {
-        if !bounded(locator, 128) || !bounded(quotation, 4096) {
+        // Until the retrieval adapter supplies a trusted page/section map,\n        // reject user/model-supplied page numbers instead of fabricating locations.\n        if locator != "full-text" || !bounded(quotation, 4096) {
             return Err(EvidenceError::Invalid);
         }
         let status = self.status(id)?;
@@ -328,8 +328,8 @@ mod tests {
         let checksum=ledger.store_accessed_text("source-1","Evidence supports a nuanced argument.").unwrap();
         assert_eq!(checksum.len(),64);
         assert!(ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
-        assert!(matches!(ledger.verify_passage("source-1","p. 1","This is made up."),Err(EvidenceError::PassageNotFound)));
-        ledger.verify_passage("source-1","section 1","Evidence supports").unwrap();
+        assert!(matches!(ledger.verify_passage("source-1","full-text","This is made up."),Err(EvidenceError::PassageNotFound)));\n        assert!(matches!(ledger.verify_passage("source-1","p. 99","Evidence supports"),Err(EvidenceError::Invalid)));
+        ledger.verify_passage("source-1","full-text","Evidence supports").unwrap();
         assert_eq!(ledger.status("source-1").unwrap(),SourceStatus::PassageVerified);
     }
     #[test]
