@@ -98,6 +98,9 @@ pub fn plan_text_edit(
 pub struct ReviewedEdit {
     pub host_relative_path: String,
     pub approval_sha256: String,
+    /// Native host selected-file identity when Windows requires binding.
+    /// Never sourced from a model, WebView or arbitrary user-written JSON.
+    pub host_file_identity: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewError {
@@ -117,12 +120,21 @@ fn valid_host_path(path: &str) -> bool {
 /// Serialize values with length boundaries and a domain separator. The full
 /// diff has to be rendered by the host from the exact bytes supplied here;
 /// preview excerpts in TextEditPlan are NEVER sufficient for approval.
-fn reviewed_digest(path: &str, old: &[u8], new: &[u8]) -> String {
+fn reviewed_digest(path: &str, old: &[u8], new: &[u8], file_identity:Option<&str>) -> String {
     let mut hash = Sha256::new();
-    hash.update(b"LU-WRITE-01E-REVIEW-v1");
+    // Preserve exact historical v1 hashes for non-Windows approved edits.
+    hash.update(if file_identity.is_some() {
+        b"LU-WRITE-01E-REVIEW-NATIVE-ID-v2".as_slice()
+    } else {
+        b"LU-WRITE-01E-REVIEW-v1".as_slice()
+    });
     for field in [path.as_bytes(), old, new] {
         hash.update((field.len() as u64).to_le_bytes());
         hash.update(field);
+    }
+    if let Some(id)=file_identity {
+        hash.update((id.len() as u64).to_le_bytes());
+        hash.update(id.as_bytes());
     }
     format!("{:x}", hash.finalize())
 }
@@ -136,8 +148,27 @@ pub fn bind_reviewed_edit(
     original: &[u8],
     replacement: &[u8],
 ) -> Result<ReviewedEdit, ReviewError> {
+    bind_reviewed_edit_with_host_identity(plan,host_relative_path,original,replacement,None)
+}
+
+/// The trusted Windows picker supplies a 48-character lowercase native ID
+/// token. Its identity is included in the irreversible reviewed fingerprint
+/// that the existing SQLite approval ledger persists. This is still NOT a
+/// permission grant and is verified again by the native effect executor.
+pub fn bind_reviewed_edit_with_host_identity(
+    plan: &TextEditPlan,
+    host_relative_path: &str,
+    original: &[u8],
+    replacement: &[u8],
+    host_file_identity:Option<&str>,
+) -> Result<ReviewedEdit, ReviewError> {
     if !valid_host_path(host_relative_path)
         || host_relative_path.rsplit('/').next() != Some(plan.filename.as_str()) {
+        return Err(ReviewError::InvalidHostPath);
+    }
+    if host_file_identity.is_some_and(|id|
+        id.len()!=48 || !id.bytes().all(|b|
+            b.is_ascii_digit() || (b'a'..=b'f').contains(&b))) {
         return Err(ReviewError::InvalidHostPath);
     }
     let expected = plan_text_edit(&plan.filename, original, &plan.expected_original_sha256, replacement)
@@ -147,7 +178,8 @@ pub fn bind_reviewed_edit(
     }
     Ok(ReviewedEdit {
         host_relative_path: host_relative_path.into(),
-        approval_sha256: reviewed_digest(host_relative_path, original, replacement),
+        approval_sha256: reviewed_digest(host_relative_path, original, replacement,host_file_identity),
+        host_file_identity:host_file_identity.map(str::to_owned),
     })
 }
 
@@ -174,7 +206,8 @@ pub fn verify_reviewed_edit(
     if regenerated != *plan {
         return Err(ReviewError::MismatchedPlan);
     }
-    let check = reviewed_digest(trusted_host_path, latest_original, replacement);
+    let check = reviewed_digest(trusted_host_path, latest_original, replacement,
+        proof.host_file_identity.as_deref());
     if check != proof.approval_sha256 || check != trusted_approved_sha256 {
         return Err(ReviewError::MismatchedApproval);
     }
@@ -206,6 +239,25 @@ mod reviewed_edit_tests {
         tampered.original_excerpt.push('!');
         assert_eq!(verify_reviewed_edit(&tampered, &proof, "work/x.md", b"a", b"b", &proof.approval_sha256), Err(ReviewError::MismatchedPlan));
         assert_eq!(bind_reviewed_edit(&plan, "../x.md", b"a", b"b"), Err(ReviewError::InvalidHostPath));
+    }
+
+    #[test]
+    fn host_captured_native_file_identity_is_part_of_the_approval_digest() {
+        let old=b"draft";let new=b"revised";
+        let plan=plan_text_edit("notes.md",old,&digest(old),new).unwrap();
+        let first="0123456789abcdef0123456789abcdef0123456789abcdef";
+        let second="0123456789abcdef0123456789abcdef0123456789abcdee";
+        let a=bind_reviewed_edit_with_host_identity(&plan,"notes.md",old,new,Some(first)).unwrap();
+        let b=bind_reviewed_edit_with_host_identity(&plan,"notes.md",old,new,Some(second)).unwrap();
+        let legacy=bind_reviewed_edit(&plan,"notes.md",old,new).unwrap();
+        assert_ne!(a.approval_sha256,b.approval_sha256);
+        assert_ne!(a.approval_sha256,legacy.approval_sha256);
+        assert_eq!(a.host_file_identity.as_deref(),Some(first));
+        assert!(verify_reviewed_edit(&plan,&a,"notes.md",old,new,&a.approval_sha256).is_ok());
+        assert_eq!(verify_reviewed_edit(&plan,&a,"notes.md",old,new,&b.approval_sha256),
+            Err(ReviewError::MismatchedApproval));
+        assert_eq!(bind_reviewed_edit_with_host_identity(&plan,"notes.md",old,new,
+            Some("model-approved")),Err(ReviewError::InvalidHostPath));
     }
 
     #[test]
