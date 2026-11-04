@@ -134,3 +134,48 @@ pub async fn execute_approved_create(
         }
     }
 }
+
+/// Read-only, bounded recovery observation for the app-owned Lu Drafts
+/// directory. Matching bytes are NOT proof of which process published them.
+pub fn inspect_recovery_target(
+    drafts: &Path, approved_name: &str, expected_bytes: u32, expected_sha: &str,
+) -> &'static str {
+    if approved_name.is_empty()
+        || approved_name.len() > 255
+        || approved_name == "." || approved_name == ".."
+        || approved_name.starts_with(".lu-stage-")
+        || approved_name.chars().any(|c| matches!(c, '/' | '\\' | ':' | '\0'))
+        || expected_bytes as usize > crate::write_proposal::MAX_WRITE_PREVIEW_BYTES
+        || expected_sha.len() != 64 {
+        return "INVALID_EVIDENCE";
+    }
+    let path = drafts.join(approved_name);
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return "MISSING",
+        Err(_) => return "NOT_READABLE",
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return "NOT_ORDINARY_FILE";
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 { return "NOT_ORDINARY_FILE"; }
+    }
+    if metadata.len() != u64::from(expected_bytes) {
+        return "DIFFERENT_BYTES";
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(data) => data,
+        Err(_) => return "NOT_READABLE",
+    };
+    if bytes.len() != expected_bytes as usize {
+        return "DIFFERENT_BYTES";
+    }
+    if format!("{:x}", Sha256::digest(&bytes)) == expected_sha {
+        "MATCHES_APPROVED_BYTES"
+    } else {
+        "DIFFERENT_BYTES"
+    }
+}
