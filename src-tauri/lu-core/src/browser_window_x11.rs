@@ -45,19 +45,13 @@ pub fn set_owned_browser_visible(
     }
     let pid=child.id();
     if pid==0{return Err(X11VisibilityError::WindowNotFound);}
-    let search=Command::new(xdotool).args([
-        "search","--onlyvisible","--pid",&pid.to_string()
-    ]).output().map_err(|_|X11VisibilityError::ToolUnavailable)?;
-    // Hidden window lookup cannot use --onlyvisible. Always use PID-scoped
-    // enumeration, and then request map/unmap on that same owned window.
-    let ids=if search.status.success() && visible==false {
-        candidate_window_ids(&search.stdout)?
-    } else {
-        let all=Command::new(xdotool).args(["search","--pid",&pid.to_string()])
-            .output().map_err(|_|X11VisibilityError::ToolUnavailable)?;
-        if !all.status.success(){return Err(X11VisibilityError::WindowNotFound);}
-        candidate_window_ids(&all.stdout)?
-    };
+    // Always search mapped AND unmapped windows of the exact owned PID.
+    // An unmapped window must remain discoverable when human verification
+    // requires re-showing the original Chromium session.
+    let output=Command::new(xdotool).args(["search","--pid",&pid.to_string()])
+        .output().map_err(|_|X11VisibilityError::ToolUnavailable)?;
+    if !output.status.success(){return Err(X11VisibilityError::WindowNotFound);}
+    let ids=candidate_window_ids(&output.stdout)?;
     for id in ids{
         let operation=if visible {"windowmap"} else {"windowunmap"};
         let status=Command::new(xdotool).args([operation,"--sync",&id])
