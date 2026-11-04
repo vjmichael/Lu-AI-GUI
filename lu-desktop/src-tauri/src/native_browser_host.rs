@@ -6,12 +6,14 @@
 //! Runtime status does not authorize navigation.
 use lu_core::{
     browser_preferences::BrowserPreferences,
-    browser_worker_supervisor::OwnedBrowserWorker,
+    browser_worker_supervisor::{OwnedBrowserWorker,BrowserLaunchConfig,BrowserOperation},
+    browser_chromium_launcher::launch_owned_headed_chromium,
 };
 use serde::Serialize;
 use std::{
     path::{Path,PathBuf},
     sync::Mutex,
+    time::Duration,
 };
 
 pub const BROWSER_PACKAGE_SUBDIR:&str="lu-browser";
@@ -55,6 +57,7 @@ pub struct BrowserRuntimeView {
 }
 pub struct DesktopBrowserHost {
     resources:PathBuf,
+    app_data:PathBuf,
     session:Mutex<Option<OwnedBrowserWorker>>,
 }
 fn pin_matches(path:&Path,pin:Option<ComponentPin>)->bool {
@@ -81,8 +84,8 @@ fn pin_matches(path:&Path,pin:Option<ComponentPin>)->bool {
     format!("{:x}",hasher.finalize())==pin.sha256
 }
 impl DesktopBrowserHost {
-    pub fn new(resources:PathBuf)->Self {
-        Self {resources,session:Mutex::new(None)}
+    pub fn new(resources:PathBuf,app_data:PathBuf)->Self {
+        Self {resources,app_data,session:Mutex::new(None)}
     }
     fn package_dir(&self)->PathBuf {self.resources.join(BROWSER_PACKAGE_SUBDIR)}
     fn packaged_components_present(&self)->bool {
@@ -116,6 +119,61 @@ impl DesktopBrowserHost {
             package_available,launch_ready,running,reason
         })
     }
+    /// Host-only entrypoint. The caller must first establish a separate
+    /// trusted per-turn research grant; no WebView/model command maps to this.
+    /// A verified signed browser package is mandatory before spawning.
+    #[allow(dead_code)]
+    pub(crate) fn launch_for_native_grant(
+        &self, approved_origins:Vec<String>,preferences:&BrowserPreferences
+    )->Result<(),String>{
+        self.require_launch_ready()?;
+        let mut owned=self.session.lock()
+            .map_err(|_|"browser supervisor lock poisoned")?;
+        if owned.is_some(){return Err("Research browser is already running".into());}
+        // The browser profile is in Lu app data, never inside installed
+        // resources and never selected by a model response.
+        let profile=self.app_data.join("lu-browser-profile");
+        std::fs::create_dir_all(&profile)
+            .map_err(|e|format!("cannot initialize browser profile: {e}"))?;
+        let metadata=std::fs::symlink_metadata(&profile)
+            .map_err(|e|format!("cannot verify browser profile: {e}"))?;
+        if !metadata.file_type().is_dir()||metadata.file_type().is_symlink(){
+            return Err("Browser profile is not an ordinary directory".into());
+        }
+        let preference=preferences.visibility()
+            .map_err(|e|format!("browser visibility unavailable: {e:?}"))?;
+        let directory=self.package_dir();
+        let launched=launch_owned_headed_chromium(
+            &directory.join(CHROMIUM_NAME),&profile,Duration::from_secs(20)
+        ).map_err(|e|format!("browser process launch refused: {e:?}"))?;
+        let config=BrowserLaunchConfig {
+            trusted_node:directory.join(NODE_NAME),
+            trusted_script:directory.join(BROWSER_WORKER_NAME),
+            trusted_profile:profile,
+            approved_origins,
+            cdp_endpoint:None,
+            visibility:preference,
+            command_timeout:Duration::from_secs(25),
+        };
+        #[cfg(windows)]
+        let worker=OwnedBrowserWorker::launch_attached(config,launched);
+        #[cfg(target_os="linux")]
+        let worker=OwnedBrowserWorker::launch_attached(config,launched,
+            directory.join("xdotool"));
+        #[cfg(not(any(windows,target_os="linux")))]
+        return Err("Native browser host unsupported on this OS".into());
+        #[cfg(any(windows,target_os="linux"))]
+        {
+            let mut worker=worker.map_err(|e|format!("browser worker refused: {e:?}"))?;
+            let status=worker.execute(BrowserOperation::Status,serde_json::json!({}))
+                .map_err(|e|format!("browser startup handshake failed: {e:?}"))?;
+            if status.get("ok").and_then(serde_json::Value::as_bool)!=Some(true){
+                return Err("Browser worker did not acknowledge startup".into());
+            }
+            *owned=Some(worker);
+            Ok(())
+        }
+    }
     pub fn stop(&self)->Result<bool,String>{
         let mut session=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
@@ -140,7 +198,8 @@ mod tests {
     use super::*;
     #[test]
     fn no_unsigned_or_unpinned_package_can_launch(){
-        let host=DesktopBrowserHost::new(PathBuf::from("/not/an/installed/lu/bundle"));
+        let host=DesktopBrowserHost::new(PathBuf::from("/not/an/installed/lu/bundle"),
+            PathBuf::from("/not/an/installed/lu/data"));
         assert!(!host.packaged_components_present());
         assert!(!host.package_verified());
         assert!(host.require_launch_ready().is_err());
