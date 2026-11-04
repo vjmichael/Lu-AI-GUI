@@ -4,7 +4,8 @@
 use std::{
     net::{IpAddr, Ipv4Addr, ToSocketAddrs},
     path::Path,
-    process::Command,
+    io::Read,
+    process::{Command,Stdio},
 };
 use sha2::{Digest, Sha256};
 
@@ -121,16 +122,30 @@ impl SecureHttpFetcher<'_> {
             cmd.arg("--cacert").arg(ca);
         }
         cmd.arg("--").arg(url);
-        let output=cmd.output().map_err(|_| FetchError::TransportFailed)?;
-        if !output.status.success() { return Err(FetchError::TransportFailed); }
-        if output.stdout.len()<3 || output.stdout.len()>MAX_RESPONSE_BYTES+3 {
-            return Err(FetchError::ResponseTooLarge);
+        // curl's --max-filesize may rely on Content-Length. Enforce a
+        // host-side streaming cap too, so chunked/unknown-size responses
+        // cannot exhaust Lu's memory before curl returns.
+        let mut child=cmd.stdout(Stdio::piped()).stderr(Stdio::null())
+            .spawn().map_err(|_| FetchError::TransportFailed)?;
+        let stdout=child.stdout.take().ok_or(FetchError::TransportFailed)?;
+        let mut output=Vec::new();
+        let read_result=stdout.take((MAX_RESPONSE_BYTES+4) as u64)
+            .read_to_end(&mut output);
+        if read_result.is_err() || output.len()>MAX_RESPONSE_BYTES+3 {
+            let _=child.kill();
+            let _=child.wait();
+            return Err(if output.len()>MAX_RESPONSE_BYTES+3 {
+                FetchError::ResponseTooLarge
+            } else {FetchError::TransportFailed});
         }
-        let body_len=output.stdout.len()-3;
-        let http_status=std::str::from_utf8(&output.stdout[body_len..])
+        let status=child.wait().map_err(|_| FetchError::TransportFailed)?;
+        if !status.success() { return Err(FetchError::TransportFailed); }
+        if output.len()<3 {return Err(FetchError::InvalidResponse);}
+        let body_len=output.len()-3;
+        let http_status=std::str::from_utf8(&output[body_len..])
             .ok().and_then(|x|x.parse::<u16>().ok())
             .ok_or(FetchError::InvalidResponse)?;
-        let bytes=output.stdout[..body_len].to_vec();
+        let bytes=output[..body_len].to_vec();
         let sha256=format!("{:x}",Sha256::digest(&bytes));
         Ok(FetchedPage { canonical_url:url.into(),http_status,bytes,sha256 })
     }
