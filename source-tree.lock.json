@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3a60f8aa1cfb1af8829aef9f88f7a5668b79afc0",
+  "sourceCommitBeforeLock": "a67b36e2e84c1cfa02e74ce25ff6e976b2a94576",
   "trackedFileCount": 278,
   "files": [
     {
@@ -61,7 +61,7 @@
     },
     {
       "path": "docs/LU_DLC_IPC_01_CROSS_PLATFORM_CONTRACT_20261103.md",
-      "blob": "3ed4c62dc8bca359e4abe48d231f7aa72b272964"
+      "blob": "17ad73bcb35a2dad6870d9addc025b966dcfd99a"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -581,7 +581,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/dlc_interop.rs",
-      "blob": "057e4fe1f2c151f20949f985e038fd51be229a40"
+      "blob": "212004a4c11ff2e5598c66eb542e1efc1c04f19e"
     },
     {
       "path": "src-tauri/lu-core/src/document_preferences.rs",
@@ -645,7 +645,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "ef006b773c3f4c084aef2cecd5e91abee7d5e109"
+      "blob": "f99e76a05ca92f36358d97fc11ddf2bbcc2659d1"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
