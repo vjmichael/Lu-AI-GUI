@@ -27,13 +27,18 @@ use lu_core::{
     policy::{CapabilityGrant, PolicyEngine},
     registry::{DispatchError, NativeToolRegistry},
 };
-use std::{collections::BTreeSet, fs, time::{SystemTime, UNIX_EPOCH}};
-
+use std::{
+    collections::BTreeSet, fs,
+    sync::atomic::{AtomicU64,Ordering},
+    time::{SystemTime, UNIX_EPOCH}
+};
+static NATIVE_AUTH_TMP_SEQUENCE:AtomicU64=AtomicU64::new(0);
 fn temp_root() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
-        "lu-real-chat-authority-{}-{}",
+        "lu-real-chat-authority-{}-{}-{}",
         std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        NATIVE_AUTH_TMP_SEQUENCE.fetch_add(1,Ordering::Relaxed)
     ))
 }
 
