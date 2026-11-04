@@ -28,7 +28,7 @@ fn write_zip(root: &Path, name: &str, entries: &[(&str, &str)]) {
     let file = fs::File::create(root.join(name)).unwrap();
     let mut z = ZipWriter::new(file);
     for (name, data) in entries {
-        z.start_file(name, SimpleFileOptions::default()
+        z.start_file(*name, SimpleFileOptions::default()
             .compression_method(CompressionMethod::Stored)).unwrap();
         z.write_all(data.as_bytes()).unwrap();
     }
