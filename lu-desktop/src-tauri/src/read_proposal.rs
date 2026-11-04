@@ -79,8 +79,14 @@ impl ReadApprovalQueue {
         {
             return Err(ProposalError::Invalid);
         }
-        let proposal: ProposedRead =
-            serde_json::from_str(raw).map_err(|_| ProposalError::Invalid)?;
+        // Model-originated proposals are untrusted JSON boundary messages.
+        // Reject nested duplicate keys before filename or byte-limit review.
+        let checked = lu_core::model_json_boundary::parse_exact_boundary_object(
+            raw, MAX_PROPOSAL_BYTES,
+        ).map_err(|_| ProposalError::Invalid)?;
+        let proposal: ProposedRead = serde_json::from_value(
+            serde_json::Value::Object(checked),
+        ).map_err(|_| ProposalError::Invalid)?;
         if proposal.kind != "propose_read_file"
             || !valid_name(&proposal.file_name)
             || proposal.purpose.trim().is_empty()
