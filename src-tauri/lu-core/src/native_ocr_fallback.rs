@@ -159,6 +159,22 @@ fn trusted_native_path(path: &Path, expect_dir: bool) -> Result<PathBuf, String>
     {
         return Err("Windows OCR runtime must be a native executable".into());
     }
+    // The file/directory was canonicalized and inspected above. The native
+    // Tesseract CLI on Windows expects ordinary DOS paths, however Rust
+    // returns the verbatim \\?\C:\... representation for canonical paths.
+    // Convert ONLY validated local-disk paths when building command args.
+    #[cfg(windows)]
+    {
+        let raw=canonical.to_str().ok_or("OCR path is not valid Windows Unicode")?;
+        if let Some(local)=raw.strip_prefix(r"\\?\") {
+            let b=local.as_bytes();
+            if b.len()>=3 && b[0].is_ascii_alphabetic()
+                && b[1]==b':' && b[2]==b'\\' {
+                return Ok(PathBuf::from(local));
+            }
+            return Err("non-local verbatim OCR paths are not supported".into());
+        }
+    }
     Ok(canonical)
 }
 
