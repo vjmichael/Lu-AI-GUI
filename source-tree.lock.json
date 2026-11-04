@@ -537,7 +537,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_worker_supervisor.rs",
-      "blob": "f27638f8b0b0c6dbf76aa4cdbc13c171695908db"
+      "blob": "c9211c256cf9bb2286e3db6dda4e91852c455831"
     },
     {
       "path": "src-tauri/lu-core/src/capability_router.rs",
