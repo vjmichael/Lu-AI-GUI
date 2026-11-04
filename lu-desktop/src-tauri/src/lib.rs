@@ -403,9 +403,16 @@ impl DesktopState {
         // Native OS Documents, never a private Lu app-data folder. Windows
         // honors redirected Known Folder Documents; Linux honors XDG when
         // reported by Tauri's platform path resolver.
+        #[cfg(target_os="linux")]
+        let documents_os_dir = app.path().document_dir()
+            .or_else(|_|app.path().home_dir().map(|home|home.join("Documents")))
+            .map_err(|e|format!(
+                "Cannot resolve Linux user Documents folder; choose a folder in Advanced Settings: {e}"
+            ))?;
+        #[cfg(not(target_os="linux"))]
         let documents_os_dir = app.path().document_dir()
             .map_err(|e|format!(
-                "System Documents directory unavailable; configure your user Documents folder: {e}"
+                "System Documents known folder unavailable: {e}"
             ))?;
         let document_preferences = lu_core::document_preferences::DocumentPreferences::open(
             &root.join("documents-preferences.sqlite")
