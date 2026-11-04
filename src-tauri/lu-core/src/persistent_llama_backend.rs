@@ -195,6 +195,67 @@ impl PersistentLlamaBackend {
         let _ = watchdog.join();
         result
     }
+    /// Only for Lu's exclusive --parallel 1 server. A finished SSE stream
+    /// is NOT sufficient evidence that upstream stopped decoding (some
+    /// llama.cpp versions continue after client disconnect). Query the
+    /// independently reported slot state before reusing this worker.
+    fn slots_idle(port: u16, api_key: &str) -> bool {
+        let address=SocketAddr::from((Ipv4Addr::LOCALHOST,port));
+        let Ok(mut socket)=TcpStream::connect_timeout(&address,Duration::from_millis(300))
+            else { return false; };
+        if socket.set_read_timeout(Some(Duration::from_millis(300))).is_err() {
+            return false;
+        }
+        if socket.set_write_timeout(Some(Duration::from_millis(300))).is_err() {
+            return false;
+        }
+        let request=format!(
+            "GET /slots HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {api_key}\r\nConnection: close\r\n\r\n"
+        );
+        if socket.write_all(request.as_bytes()).is_err() {
+            return false;
+        }
+        let mut data=Vec::new();
+        let mut limited=socket.take(64 * 1024 + 1);
+        if limited.read_to_end(&mut data).is_err() || data.len()>64 * 1024 {
+            return false;
+        }
+        let Some(split)=data.windows(4).position(|w|w==b"\r\n\r\n")
+            else { return false; };
+        let header=&data[..split];
+        if !(header.starts_with(b"HTTP/1.1 200 ") ||
+             header.starts_with(b"HTTP/1.0 200 ")) {
+            return false;
+        }
+        // Chunked/ambiguous response encoding is not accepted as a proof.
+        if std::str::from_utf8(header).ok().is_some_and(|h|
+            h.to_ascii_lowercase().contains("transfer-encoding: chunked")) {
+            return false;
+        }
+        let body=&data[split+4..];
+        let Ok(slots)=serde_json::from_slice::<serde_json::Value>(body)
+            else { return false; };
+        let Some(slots)=slots.as_array() else { return false; };
+        slots.len()==1 && slots[0].get("is_processing")
+            .and_then(serde_json::Value::as_bool)==Some(false)
+    }
+    fn ensure_stopped_after_stream(&mut self, port: u16,
+        result: Result<(),String>) -> Result<(),String> {
+        if let Err(error)=result {
+            self.unload();
+            return Err(error);
+        }
+        // Scheduling cleanup can trail the last streamed event by a few
+        // milliseconds. Use bounded probes, never perpetual polling.
+        for _ in 0..20 {
+            if Self::slots_idle(port,&self.config.api_key) {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        self.unload();
+        Err("llama.cpp stream ended without verified idle inference slot; worker ejected".into())
+    }
     fn wait_ready(&mut self, deadline: Instant, port: u16) -> Result<(), String> {
         loop {
             if !self.is_running() {
@@ -304,6 +365,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             .arg(self.config.context_tokens.to_string())
             .arg("--parallel")
             .arg("1")
+            .arg("--slots")
             .arg("--n-gpu-layers")
             .arg(if cfg!(target_os = "windows") {
                 "99"
@@ -432,13 +494,7 @@ impl InferenceBackend for PersistentLlamaBackend {
                 Ok(())
             },
         ));
-        // A rejected stream is not proof that llama-server has stopped
-        // decoding. Fail closed: terminate and reap the Lu-owned engine.
-        // A later load is a separate host-authorized, resource-checked step.
-        if result.is_err() {
-            self.unload();
-        }
-        result
+        self.ensure_stopped_after_stream(port, result)
     }
     fn generate(
         &mut self,
@@ -472,13 +528,7 @@ impl InferenceBackend for PersistentLlamaBackend {
                 Ok(())
             },
         ));
-        // A rejected stream is not proof that llama-server has stopped
-        // decoding. Fail closed: terminate and reap the Lu-owned engine.
-        // A later load is a separate host-authorized, resource-checked step.
-        if result.is_err() {
-            self.unload();
-        }
-        result
+        self.ensure_stopped_after_stream(port, result)
     }
 }
 impl Drop for PersistentLlamaBackend {
