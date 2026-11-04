@@ -499,18 +499,23 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             "lu_files_read_text".into()
         )))
     );
-    for _ in 0..MAX_TOOL_STEPS {
+    // Test the independent hard step budget with legitimate *different*
+    // targets. Repeating the exact same stat now triggers original §7 loop
+    // protection before exhausting MAX_TOOL_STEPS.
+    for index in 0..MAX_TOOL_STEPS {
+        let name = format!("budget-{index}.txt");
+        fs::write(folder.join(&name), b"bounded").unwrap();
+        let frame = format!(
+            r#"{{"kind":"tool","name":"lu_files_stat","arguments":{{"path":"{name}"}}}}"#
+        );
         let out = turn
-            .handle_model_reply(
-                r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"notes.txt"}}"#,
-                &catalog,
-                &registry,
-                &authority,
-                &Permitted,
-            )
+            .handle_model_reply(&frame, &catalog, &registry, &authority, &Permitted)
             .await
             .unwrap();
-        assert!(matches!(out, ToolTurnOutcome::ToolResult { .. }));
+        let ToolTurnOutcome::ToolResult { data, .. } = out else {
+            panic!("expected native status receipt")
+        };
+        assert_eq!(data["ok"], true);
     }
     assert_eq!(
         turn.handle_model_reply(
