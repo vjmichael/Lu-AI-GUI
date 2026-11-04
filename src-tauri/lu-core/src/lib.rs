@@ -60,6 +60,8 @@ pub mod model_import;
 pub mod model_json_boundary;
 pub mod web_research_evidence;
 pub mod web_http_fetch;
+#[cfg(target_os = "linux")]
+pub mod browser_window_x11;
 pub mod web_catalog_crossref;
 pub mod web_research_planner;
 pub mod web_research_analysis;
