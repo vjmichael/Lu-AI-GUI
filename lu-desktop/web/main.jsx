@@ -764,6 +764,7 @@ function App() {
             <div key={record.proposalId} className="writeRecoveryRow">
               <strong>{record.fileName}</strong>
               <small>Approval: {record.approval} · Effect: {record.effect} · {record.bytes} bytes</small>
+              <small>Observed target: {record.observedTarget} (observation only; not execution proof)</small>
               {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
               <small>SHA-256: {record.sha256}</small>
             </div>
