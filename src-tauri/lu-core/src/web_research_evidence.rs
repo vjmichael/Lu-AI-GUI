@@ -102,6 +102,13 @@ impl EvidenceLedger {
              locator TEXT NOT NULL,
              quote TEXT NOT NULL,
              PRIMARY KEY(source_id, locator, quote)
+           );
+           CREATE TABLE IF NOT EXISTS research_frontier(
+             source_id TEXT PRIMARY KEY REFERENCES research_sources(id),
+             target_url TEXT NOT NULL,
+             state TEXT NOT NULL CHECK(state IN ('QUEUED','IN_PROGRESS','NEEDS_HUMAN','RESOLVED','DENIED')),
+             reason TEXT,
+             revision INTEGER NOT NULL DEFAULT 0
            );")?;
         Ok(Self { connection })
     }
@@ -190,6 +197,73 @@ impl EvidenceLedger {
         tx.commit()?;
         Ok(())
     }
+    /// Queue an already-discovered bibliographic lead. The host's network
+    /// safety layer must validate and bind origin/DNS before it opens the URL.
+    pub fn queue_source(&mut self, id: &str, url: &str) -> Result<(), EvidenceError> {
+        self.status(id)?;
+        if !url.starts_with("https://") || !bounded(url, 2048) {
+            return Err(EvidenceError::Invalid);
+        }
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_frontier(source_id,target_url,state)
+             VALUES (?1,?2,'QUEUED')",
+            params![id,url],
+        )?;
+        Ok(())
+    }
+    pub fn frontier_state(&self, id: &str) -> Result<String, EvidenceError> {
+        self.connection.query_row(
+            "SELECT state FROM research_frontier WHERE source_id=?1", [id],
+            |row| row.get(0)
+        ).optional()?.ok_or(EvidenceError::Missing)
+    }
+    /// A CAPTCHA or login challenge is an explicit human-assistance state,
+    /// not a fetch failure that silently drops the research lead.
+    pub fn request_human_assistance(&mut self, id: &str, reason: &str) -> Result<(), EvidenceError> {
+        if reason != "CAPTCHA_REQUIRED" && reason != "LOGIN_REQUIRED" {
+            return Err(EvidenceError::Invalid);
+        }
+        let changed=self.connection.execute(
+            "UPDATE research_frontier SET state='NEEDS_HUMAN', reason=?2, revision=revision+1
+             WHERE source_id=?1 AND state IN ('QUEUED','IN_PROGRESS')",
+            params![id,reason],
+        )?;
+        if changed==0 { return Err(EvidenceError::Invalid); }
+        Ok(())
+    }
+    /// Human completion is asserted by the trusted browser controller after
+    /// rechecking the session; this method never solves or bypasses challenges.
+    pub fn resume_after_human(&mut self, id: &str) -> Result<(), EvidenceError> {
+        let changed=self.connection.execute(
+            "UPDATE research_frontier SET state='QUEUED',reason=NULL,revision=revision+1
+             WHERE source_id=?1 AND state='NEEDS_HUMAN'", [id]
+        )?;
+        if changed==0 { return Err(EvidenceError::Invalid); }
+        Ok(())
+    }
+    pub fn deny_source(&mut self, id: &str) -> Result<(), EvidenceError> {
+        self.connection.execute(
+            "UPDATE research_frontier SET state='DENIED',revision=revision+1 WHERE source_id=?1", [id]
+        )?;
+        self.block_access(id)
+    }
+    /// Dispatchers can continue other permitted work while one branch waits
+    /// for user interaction. Rows are claimed by an atomic SQLite transition.
+    pub fn claim_next_source(&mut self) -> Result<Option<(String,String)>, EvidenceError> {
+        let tx=self.connection.transaction()?;
+        let next: Option<(String,String)> = tx.query_row(
+            "SELECT source_id,target_url FROM research_frontier WHERE state='QUEUED'
+             ORDER BY source_id LIMIT 1", [], |row| Ok((row.get(0)?,row.get(1)?))
+        ).optional()?;
+        if let Some((ref id,_))=next {
+            tx.execute(
+                "UPDATE research_frontier SET state='IN_PROGRESS',revision=revision+1
+                 WHERE source_id=?1 AND state='QUEUED'", [id]
+            )?;
+        }
+        tx.commit()?;
+        Ok(next)
+    }
     pub fn block_access(&mut self, id: &str) -> Result<(), EvidenceError> {
         if self.status(id)? == SourceStatus::Discovered
             || self.status(id)? == SourceStatus::MetadataCorroborated {
@@ -266,4 +340,33 @@ mod tests {
         assert_eq!(ledger.status("source-1").unwrap(),SourceStatus::Inaccessible);
         assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
     }
+    #[test]
+    fn captcha_pauses_one_branch_without_losing_other_sources() {
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        ledger.discover(&candidate()).unwrap();
+        let mut second=candidate(); second.id="source-2".into();
+        ledger.discover(&second).unwrap();
+        ledger.queue_source("source-1","https://archive.example/first").unwrap();
+        ledger.queue_source("source-2","https://archive.example/second").unwrap();
+        assert_eq!(ledger.claim_next_source().unwrap().unwrap().0,"source-1");
+        ledger.request_human_assistance("source-1","CAPTCHA_REQUIRED").unwrap();
+        assert_eq!(ledger.frontier_state("source-1").unwrap(),"NEEDS_HUMAN");
+        assert_eq!(ledger.claim_next_source().unwrap().unwrap().0,"source-2");
+        assert!(ledger.claim_next_source().unwrap().is_none());
+        assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
+        ledger.resume_after_human("source-1").unwrap();
+        assert_eq!(ledger.claim_next_source().unwrap().unwrap().0,"source-1");
+    }
+    #[test]
+    fn denied_source_cannot_be_resumed_as_captcha() {
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        ledger.discover(&candidate()).unwrap();
+        ledger.queue_source("source-1","https://archive.example/first").unwrap();
+        ledger.deny_source("source-1").unwrap();
+        assert_eq!(ledger.frontier_state("source-1").unwrap(),"DENIED");
+        assert!(ledger.resume_after_human("source-1").is_err());
+        assert!(ledger.claim_next_source().unwrap().is_none());
+        assert_eq!(ledger.status("source-1").unwrap(),SourceStatus::Inaccessible);
+    }
+
 }
