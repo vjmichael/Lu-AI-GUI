@@ -66,7 +66,7 @@ impl NativeTool for WebTool {
                         let text=String::from_utf8(page.bytes)
                             .map_err(|_|fail("CONTENT_NOT_TEXT","response is not UTF-8 text"))?;
                         let result=proto::WebFetchResult {
-                            source_url:page.canonical_url,http_status:page.http_status,
+                            source_url:page.canonical_url,http_status:u32::from(page.http_status),
                             content:text,content_sha256:page.sha256,truncated:false,
                         };
                         Ok(ToolOutput{payload:ProtoPayload{
