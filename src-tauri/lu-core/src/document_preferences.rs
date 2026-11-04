@@ -87,3 +87,28 @@ impl DocumentPreferences {
         Ok(self.override_path()?.is_some())
     }
 }
+
+/// Validate a durable, independently recorded created-file link. The UI
+/// supplies only a proposal ID and chat ID; never a pathname.
+pub fn verified_created_folder(
+    approval: &crate::write_approval_ledger::WriteDecisionRecord,
+    effect: &crate::journal::EffectRecord,
+) -> Result<PathBuf, DocumentPreferenceError> {
+    use crate::{journal::EffectState, write_approval_ledger::WriteDecision};
+    if approval.decision != WriteDecision::Approved ||
+       approval.effect_call_id.as_deref() != Some(effect.call_id.as_str()) ||
+       effect.tool_id != crate::native_create_new::TOOL_ID ||
+       effect.state != EffectState::Applied {
+        return Err(DocumentPreferenceError::InvalidDirectory);
+    }
+    let selected=Path::new(approval.selected_target.as_deref()
+        .ok_or(DocumentPreferenceError::InvalidDirectory)?);
+    if selected.file_name().and_then(|name|name.to_str()) != Some(&approval.file_name) {
+        return Err(DocumentPreferenceError::InvalidDirectory);
+    }
+    let parent=selected.parent().ok_or(DocumentPreferenceError::InvalidDirectory)?;
+    if !ordinary_directory(parent) {
+        return Err(DocumentPreferenceError::InvalidDirectory);
+    }
+    Ok(parent.to_path_buf())
+}
