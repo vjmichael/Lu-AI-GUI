@@ -311,6 +311,23 @@ mod tests {
         assert!(parse_worker_frame(&"x".repeat(MAX_FRAME+1)).is_err());
     }
     #[test]
+    fn worker_framing_accepts_valid_lines_and_refuses_truncated_frames(){
+        let mut reader=std::io::BufReader::new(b"{\"ok\":true}\n{\"ok\":false}\n".as_slice());
+        assert_eq!(read_bounded_worker_line(&mut reader).unwrap().as_deref(),Some("{\"ok\":true}\n"));
+        assert_eq!(read_bounded_worker_line(&mut reader).unwrap().as_deref(),Some("{\"ok\":false}\n"));
+        assert_eq!(read_bounded_worker_line(&mut reader).unwrap(),None);
+        let mut truncated=std::io::BufReader::new(b"{\"ok\":true}".as_slice());
+        assert_eq!(read_bounded_worker_line(&mut truncated).unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof);
+    }
+    #[test]
+    fn oversized_worker_lines_are_rejected_before_allocation(){
+        let oversized=vec![b'x';MAX_FRAME+200];
+        let mut reader=std::io::BufReader::new(oversized.as_slice());
+        assert_eq!(read_bounded_worker_line(&mut reader).unwrap_err().kind(),
+            io::ErrorKind::InvalidData);
+    }
+    #[test]
     fn model_does_not_choose_executable_or_native_window(){
         let _method:fn(&mut OwnedBrowserWorker,BrowserOperation,Value)
             ->Result<Value,BrowserSupervisorError>=OwnedBrowserWorker::execute;
