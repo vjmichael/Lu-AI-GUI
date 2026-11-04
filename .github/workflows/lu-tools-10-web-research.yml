@@ -42,3 +42,23 @@ jobs:
         run: node --test tests/lu-browser-worker.test.mjs
       - name: Source identity
         run: git rev-parse HEAD
+
+  real-chromium:
+    name: Linux real Chromium headed smoke (Xvfb)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source
+        run: node scripts/verify-source-tree.mjs
+      - name: Provision pinned Playwright in isolated worker directory
+        run: npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock playwright@1.64.1
+      - name: Provision real Chromium (not Docker)
+        run: cd src-tauri/lu-core/workers && npx playwright install --with-deps chromium
+      - name: Headed Chromium lifecycle and screenshot acceptance
+        run: xvfb-run -a node --test tests/lu-browser-real.test.mjs
