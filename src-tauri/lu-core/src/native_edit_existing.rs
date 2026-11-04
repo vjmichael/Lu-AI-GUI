@@ -320,6 +320,15 @@ fn commit_in_dir_selected(
         root.rename(target,root,&displaced).map_err(io)?;
         write_new_synced(root,target,&original,&perms)?;
     }
+    #[cfg(windows)]
+    let _no_write_lease={
+        let source=root.open(target).map_err(io)?.into_std();
+        crate::windows_file_guard::no_write_lease(&source)
+            .map_err(|_|EditCommitError::Uncertain)?
+    };
+    // The lease remains live until after rename and post-publish checks.
+    // SHARE_DELETE is necessary for Lu's own rename: this is not a
+    // cross-process name-bound atomic compare-and-swap.
     let (latest, _) = regular_bytes(root, target)?;
     if sha(&latest) != baseline_sha {
         return Err(EditCommitError::SourceConflict);
@@ -676,6 +685,12 @@ fn rollback_with_stop_selected(
         ).map_err(|_|EditCommitError::Uncertain)?;
     }
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
+    #[cfg(windows)]
+    let _no_write_lease={
+        let source=root.open(target).map_err(io)?.into_std();
+        crate::windows_file_guard::no_write_lease(&source)
+            .map_err(|_|EditCommitError::Uncertain)?
+    };
     if sha(&regular_bytes(root, target)?.0) != expected_current {
         return Err(EditCommitError::SourceConflict);
     }
