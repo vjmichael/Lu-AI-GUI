@@ -504,7 +504,7 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
     // actual typed results, not how often a tool name or file target appears.
     for index in 0..40 {
         let name = format!("budget-{index}.txt");
-        fs::write(folder.join(&name), format!("new-info-{index}")).unwrap();
+        fs::write(folder.join(&name), "x".repeat(index + 1)).unwrap();
         let frame = format!(
             r#"{{"kind":"tool","name":"lu_files_stat","arguments":{{"path":"{name}"}}}}"#
         );
