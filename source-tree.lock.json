@@ -5,7 +5,7 @@
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "a905bee49a0f1ac1658924dcdb13525f3f51e632"
+      "blob": "ecc4f107b1a6ffd438cd5ff9403fd535f3eeb776"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
-      "blob": "d659327d4ca4036d13e58541faf5d9505e155151"
+      "blob": "d490f6259dceff4028f7e6ea57dc260ff05ef2c6"
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "49cd49d8a5293a88f9cf685c305e5139f935b6c7"
+      "blob": "0329d792e33d2a632cb5a995593d171a0a8f547b"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/WRITE_01E_DURABLE_EDIT_TRANSACTION_20261103.md",
-      "blob": "ecd2d471055db768e9b4fd0f86dd84afd277c606"
+      "blob": "d19332f1641421d5803610a200cdb440e1b24eec"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -213,7 +213,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
-      "blob": "3fba5a6df6e573a91a8b66611fffde35701e415e"
+      "blob": "7a731688668e9f6cdcd8503a7ec65aed9a25b18f"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
@@ -221,7 +221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "ecfe846afd907137b6e8e6bb519451a57e65f449"
+      "blob": "0fae7f96cb46b3fc59cc02450d0836c334496b3b"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -233,7 +233,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
-      "blob": "9858fe2c45170f4b6e41c462d764737fdc881071"
+      "blob": "89f01bf68d556b6534d0141b5cd79d478e5c9397"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_read.rs",
@@ -253,7 +253,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
-      "blob": "b61f94cb0fffaa726823f25f3dd09af3182ee1cd"
+      "blob": "5936bebd94754c80b029cf2b6cad95628c659740"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/tests/native-auth/src/lib.rs",
-      "blob": "06a04eb7dc64353191b4c060577489ba499ef42d"
+      "blob": "c1a31ae7fca173eb19985dd16aa43748c525669d"
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
@@ -585,7 +585,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/edit_safety.rs",
-      "blob": "b4fbdb7332c9df8d0a58e68e683ee2c2390c4353"
+      "blob": "51a53350f2530861fbed8c2067e7c248237dbf86"
     },
     {
       "path": "src-tauri/lu-core/src/export_contract.rs",
@@ -633,7 +633,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "2bf8a3c8dd2498e3a923f3f74833468db7410bde"
+      "blob": "e583742ea9e1f64a5b470513300fdd951a03fcc3"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -693,7 +693,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_edit_existing.rs",
-      "blob": "0d0a04a629ffa8c1d509f5d3785c98d7cb548c9e"
+      "blob": "051be3d5eed5a196a2f1bd3b92382eea06412c5e"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
@@ -769,7 +769,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
-      "blob": "1ddeaeee28b1787f05119dc1fbf157ca4f15c156"
+      "blob": "094475f225b5b5a38db34f1d050eabe4e829bb23"
     },
     {
       "path": "src-tauri/lu-core/src/wire.rs",
@@ -1001,7 +1001,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_edit_existing_authority.rs",
-      "blob": "d18f3c63ebd0a45cfa58d8578c63bc88ab0f4d16"
+      "blob": "12c6a4a3743b27bf742565ffcacea55efeb100b9"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
@@ -1089,7 +1089,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/file_guard.rs",
-      "blob": "36c92bccf9569840bdfa35a37daddc1e61ee6fee"
+      "blob": "f453b68467f3b28f633b8454c1b26504a044a30c"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
