@@ -801,7 +801,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_research_evidence.rs",
-      "blob": "93b48e76b2368dd0d2bf012b7d00b8862b7dfa1e"
+      "blob": "e42cd646ca6b134c83930285e81a56a79fdcfd77"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
