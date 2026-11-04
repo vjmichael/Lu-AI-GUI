@@ -189,7 +189,7 @@
     },
     {
       "path": "lu-desktop/scripts/assemble-browser-ci-candidate.mjs",
-      "blob": "e22aec973879f51f2d73ff89c480cddfc439e9c3"
+      "blob": "125a76e8ed4ca31e8d3945cd28d4b3b11fa502c9"
     },
     {
       "path": "lu-desktop/scripts/build-r14-manifest-eval.sh",
@@ -217,7 +217,7 @@
     },
     {
       "path": "lu-desktop/scripts/stage-browser-runtime.mjs",
-      "blob": "d9970ec0ae14ebf19b64011dd1891ce5cd0d7101"
+      "blob": "e1dbcead6b9b23bea850767da7de270be0ca7960"
     },
     {
       "path": "lu-desktop/scripts/stage-engine.mjs",
@@ -281,7 +281,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "8ce04551d85d64d43f6b19c2f5ca12fde681de45"
+      "blob": "ba9e42ea241d92a7eb09fc80579d595930d1808b"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -317,7 +317,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-ci-candidate.test.mjs",
-      "blob": "652dc7fc9e3b75de6139139d9a2fd392286d6050"
+      "blob": "5b1babd2fb3f8009c71c16dc4cb535ef67587040"
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
