@@ -14,9 +14,11 @@ pub struct SelectedRollback {
     pub directory:PathBuf,
     pub directory_cap:Arc<Dir>,
     pub preview:VerifiedRollbackPreview,
+    #[cfg(windows)]
+    pub selected_file_identity:lu_core::windows_file_guard::WindowsFileIdentity,
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
-pub enum RollbackReviewError { Invalid, Full, Duplicate, Missing, WrongChat, Poisoned }
+pub enum RollbackReviewError { Invalid, Full, Duplicate, Missing, WrongChat, Changed, Poisoned }
 #[derive(Default)]
 pub struct RollbackReviewQueue { pending:Mutex<HashMap<String,SelectedRollback>> }
 impl RollbackReviewQueue {
@@ -31,6 +33,16 @@ impl RollbackReviewQueue {
             selected.directory.join(&r.filename).to_string_lossy()!=r.target||
             r.review_id.is_empty() {
             return Err(RollbackReviewError::Invalid);
+        }
+        #[cfg(windows)]
+        {
+            let file=selected.directory_cap.open(&r.filename)
+                .map_err(|_|RollbackReviewError::Changed)?.into_std();
+            let now=lu_core::windows_file_guard::inspect_open_file(&file)
+                .map_err(|_|RollbackReviewError::Changed)?;
+            if now!=selected.selected_file_identity {
+                return Err(RollbackReviewError::Changed);
+            }
         }
         let mut entries=self.pending.lock().map_err(|_|RollbackReviewError::Poisoned)?;
         if entries.contains_key(&r.review_id) {return Err(RollbackReviewError::Duplicate);}
