@@ -414,6 +414,10 @@ fn commit_in_dir_selected(
             &original_file,&stage_file,&original_metadata
         ).map_err(|_|EditCommitError::Uncertain)?;
     }
+    #[cfg(windows)]
+    write_publish_seal(root,operation_id,target,&stage_name,
+        &manifest.replacement_sha256,
+        manifest.native_metadata_sha256.as_deref().unwrap_or(""),&perms)?;
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
     #[cfg(windows)]
     let staged_identity=strict_windows_file_identity(root,&stage_name)?;
@@ -472,7 +476,10 @@ fn commit_in_dir_selected(
     #[cfg(windows)]
     {
         if strict_windows_file_identity(root,target)
-            .map_err(|_|EditCommitError::Uncertain)?!=staged_identity {
+            .map_err(|_|EditCommitError::Uncertain)?!=staged_identity ||
+            !matches_publish_seal(root,operation_id,target,
+                &manifest.replacement_sha256,
+                manifest.native_metadata_sha256.as_deref().unwrap_or("")) {
             return Err(EditCommitError::Uncertain);
         }
         let published_file=root.open(target).map_err(|_|EditCommitError::Uncertain)?.into_std();
@@ -574,6 +581,15 @@ pub fn observe_edit(root: &Dir, operation_id: &str) -> EditObservation {
     ) {
         return EditObservation::ChangedOrDamaged;
     }
+    #[cfg(windows)]
+    if let Ok((bytes,_))=&target_result {
+        if sha(bytes)==manifest.replacement_sha256 &&
+            !matches_publish_seal(root,operation_id,&manifest.target,
+                &manifest.replacement_sha256,
+                manifest.native_metadata_sha256.as_deref().unwrap_or("")) {
+            return EditObservation::ChangedOrDamaged;
+        }
+    }
     match target_result {
         Ok((bytes, _)) if sha(&bytes) == manifest.replacement_sha256 =>
             EditObservation::ReplacementAndBackupVerified,
@@ -672,6 +688,14 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
     ){
         return RollbackObservation::ChangedOrDamaged;
     }
+    #[cfg(windows)]
+    if let Ok((bytes,_))=&target_result {
+        if sha(bytes)==m.restore_sha256 &&
+            !matches_publish_seal(root,id,&m.target,&m.restore_sha256,
+                m.native_metadata_sha256.as_deref().unwrap_or("")) {
+            return RollbackObservation::ChangedOrDamaged;
+        }
+    }
     match target_result {
         Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 && prior =>
             RollbackObservation::RestoredFromBackup,
@@ -727,6 +751,12 @@ pub fn inspect_rollback_candidate(
     }
     if sha(&current) != manifest.replacement_sha256 {
         return Err(EditCommitError::SourceConflict);
+    }
+    #[cfg(windows)]
+    if !matches_publish_seal(root,original_edit_id,target,
+        &manifest.replacement_sha256,
+        manifest.native_metadata_sha256.as_deref().unwrap_or("")) {
+        return Err(EditCommitError::InvalidRecoveryRecord);
     }
     if current.len() > MAX_ROLLBACK_REVIEW_BYTES {
         return Err(EditCommitError::InvalidContent);
@@ -842,6 +872,9 @@ fn rollback_with_stop_selected(
             &current_file,&stage_file,&original_metadata
         ).map_err(|_|EditCommitError::Uncertain)?;
     }
+    #[cfg(windows)]
+    write_publish_seal(root,rollback_id,target,&stage,expected_restored,
+        rollback_meta.native_metadata_sha256.as_deref().unwrap_or(""),&perms)?;
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
     #[cfg(windows)]
     let staged_identity=strict_windows_file_identity(root,&stage)?;
@@ -879,7 +912,9 @@ fn rollback_with_stop_selected(
     #[cfg(windows)]
     {
         if strict_windows_file_identity(root,target)
-            .map_err(|_|EditCommitError::Uncertain)?!=staged_identity {
+            .map_err(|_|EditCommitError::Uncertain)?!=staged_identity ||
+            !matches_publish_seal(root,rollback_id,target,expected_restored,
+                rollback_meta.native_metadata_sha256.as_deref().unwrap_or("")) {
             return Err(EditCommitError::Uncertain);
         }
         let current=root.open(target).map_err(|_|EditCommitError::Uncertain)?.into_std();
