@@ -72,19 +72,33 @@ impl ReadApprovalLedger {
                 SELECT RAISE(ABORT,'approval audit rows are immutable records');
             END;"
         )?;
-        // Upgrade an early pre-release journal without dropping historical rows.
-        let has_effect_id = {
+        // Upgrade all observed pre-release schemas without destroying the
+        // original approval decisions or granting previously pending effects.
+        // SQLite ALTER TABLE forbids nonconstant CURRENT_TIMESTAMP defaults:
+        // add nullable columns, then backfill original rows in place.
+        let columns = {
             let mut stmt = connection.prepare("PRAGMA table_info(lu_read_approvals)")?;
             let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
-            let mut found = false;
-            for name in names { if name? == "effect_call_id" { found = true; } }
-            found
+            let mut values = std::collections::BTreeSet::new();
+            for name in names { values.insert(name?); }
+            values
         };
-        if !has_effect_id {
-            connection.execute("ALTER TABLE lu_read_approvals ADD COLUMN effect_call_id TEXT", [])?;
+        for (name, declaration) in [
+            ("effect_call_id", "effect_call_id TEXT"),
+            ("created_at", "created_at TEXT"),
+            ("updated_at", "updated_at TEXT"),
+        ] {
+            if !columns.contains(name) {
+                connection.execute_batch(&format!(
+                    "ALTER TABLE lu_read_approvals ADD COLUMN {declaration};"
+                ))?;
+            }
         }
         connection.execute_batch(
-            "CREATE UNIQUE INDEX IF NOT EXISTS lu_read_approvals_effect_call_id
+            "UPDATE lu_read_approvals
+             SET created_at=COALESCE(created_at, CURRENT_TIMESTAMP),
+                 updated_at=COALESCE(updated_at, CURRENT_TIMESTAMP);
+             CREATE UNIQUE INDEX IF NOT EXISTS lu_read_approvals_effect_call_id
              ON lu_read_approvals(effect_call_id);"
         )?;
         Ok(Self { connection: Mutex::new(connection) })
