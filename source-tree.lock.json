@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a67b36e2e84c1cfa02e74ce25ff6e976b2a94576",
+  "sourceCommitBeforeLock": "d2b753a8850bbdb081a08bf0a0ed7ad11cede168",
   "trackedFileCount": 278,
   "files": [
     {
@@ -61,7 +61,7 @@
     },
     {
       "path": "docs/LU_DLC_IPC_01_CROSS_PLATFORM_CONTRACT_20261103.md",
-      "blob": "17ad73bcb35a2dad6870d9addc025b966dcfd99a"
+      "blob": "2c1ecafc16d9981197ac2d65890f98e558d1bc02"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -581,7 +581,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/dlc_interop.rs",
-      "blob": "212004a4c11ff2e5598c66eb542e1efc1c04f19e"
+      "blob": "8c65073d9609ea90f84c2c32784deff9bdd09794"
     },
     {
       "path": "src-tauri/lu-core/src/document_preferences.rs",
@@ -789,7 +789,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace.rs",
-      "blob": "317c326c8e3975ab87d8f69f42079e0471e708c0"
+      "blob": "4a1db6a2724dd9ba3071e7fbe154d4747f5cb3c6"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
