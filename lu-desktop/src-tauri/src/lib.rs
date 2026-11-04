@@ -1441,7 +1441,18 @@ fn lu_dismiss_read_proposal(
 fn lu_browser_runtime_status(
     state: State<'_, Arc<DesktopState>>
 ) -> Result<native_browser_host::BrowserRuntimeView,String> {
-    state.browser_runtime.status(&state.browser_preferences)
+    let status=state.browser_runtime.status(&state.browser_preferences)?;
+    if !status.running{
+        // A crashed browser must not strand an active grant that prevents
+        // the next user-authorized session from starting.
+        let stale=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?.take();
+        if let Some(task)=stale{
+            state.browser_authority.revoke_task(&task.task_id)
+                .map_err(|e|format!("browser crash revocation failed: {e:?}"))?;
+        }
+    }
+    Ok(status)
 }
 
 #[tauri::command]
