@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/tests/native-auth/src/lib.rs",
-      "blob": "fc1279cc0474d3e4133727eb19494df813e23e0a"
+      "blob": "06a04eb7dc64353191b4c060577489ba499ef42d"
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
