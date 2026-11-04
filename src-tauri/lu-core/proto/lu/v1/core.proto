@@ -435,3 +435,35 @@ message DiagnosticTrace {
   uint32 dropped_events = 3; // Recorded loss: a missing stage is not proof.
   repeated DiagnosticEvent events = 4;
 }
+
+// TOOLS-10: first-party host-authorized NetworkRead capabilities.
+// A result's search lead has no bibliographic verification authority.
+message WebFetchRequest {
+  string url = 1;
+}
+message WebFetchResult {
+  string source_url = 1;
+  uint32 http_status = 2;
+  string content = 3;
+  string content_sha256 = 4;
+  bool truncated = 5;
+}
+message WebAcademicSearchRequest {
+  string query = 1;
+  uint32 page = 2;
+}
+message WebAcademicSearchLead {
+  string provider = 1;
+  string provider_id = 2;
+  string doi = 3;
+  string title = 4;
+  string authors = 5;
+  string catalog_url = 6;
+}
+message WebAcademicSearchResult {
+  repeated WebAcademicSearchLead leads = 1;
+  uint32 page = 2;
+  optional uint32 next_page = 3;
+  string observed_sha256 = 4;
+  bool leads_verified = 5; // Must remain false: discovery != verification.
+}
