@@ -741,7 +741,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_web_research.rs",
-      "blob": "ee39dc3b63cd815e04a5a3c56d0382bda839a4ff"
+      "blob": "0a56a62932935e202da2a0820c48dd9d12d52c21"
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
@@ -825,7 +825,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_research_planner.rs",
-      "blob": "ffc8d643d2181aa31466f9de4b686112463cf0d8"
+      "blob": "36a8f7355c6f7ad1df315de6e759c9a0eb547846"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_sufficiency.rs",
