@@ -62,6 +62,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution -- --nocapture
       - name: Browser model schemas and Protobuf operation parity
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_model_codec -- --nocapture
+      - name: Scoped native browser registry and per-call revocation tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_browser_tool -- --nocapture
       - name: Desktop browser setting native wiring fixtures
         run: node --test lu-desktop/tests/browser-visibility-settings.test.mjs
       - name: Native desktop browser permission and package lifecycle tests
