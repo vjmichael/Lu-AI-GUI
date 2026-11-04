@@ -42,6 +42,9 @@ impl OwnedBrowserWindow {
         Err(WindowOperationError::UnsupportedPlatform)
     }
     pub fn child_id(&self)->u32 {self.browser.id()}
+    pub fn is_alive(&mut self)->bool {
+        matches!(self.browser.try_wait(),Ok(None))
+    }
     pub fn set_visible(&mut self,visible:bool)->Result<(),WindowOperationError>{
         if self.browser.try_wait().map_err(|_|WindowOperationError::NativeFailure)?
            .is_some(){return Err(WindowOperationError::ChildNotOwned);}
