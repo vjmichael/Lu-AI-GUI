@@ -183,14 +183,12 @@ impl EditProposalQueue {
         let sha=format!("{:x}",Sha256::digest(&original));
         let plan=plan_text_edit(&proposal.file_name,&original,&sha,
             proposal.content.as_bytes()).map_err(|_|EditProposalError::Invalid)?;
+        #[cfg(windows)]
+        let host_identity_token:Option<String>=Some(selected_file_identity.token());
+        #[cfg(not(windows))]
+        let host_identity_token:Option<String>=None;
         let reviewed=bind_reviewed_edit_with_host_identity(&plan,&proposal.file_name,
-            &original,proposal.content.as_bytes(),
-            {
-                #[cfg(windows)]
-                {Some(selected_file_identity.token())}
-                #[cfg(not(windows))]
-                {None}
-            }.as_deref()
+            &original,proposal.content.as_bytes(),host_identity_token.as_deref()
         ).map_err(|_|EditProposalError::Invalid)?;
         let selection=SelectedEdit {
             generation_id:generation,proposal, directory:canonical,
