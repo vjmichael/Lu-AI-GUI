@@ -47,9 +47,14 @@ fn public_ipv4(v: Ipv4Addr) -> bool {
 fn public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v) => public_ipv4(v),
-        // Initial adapter is IPv4-only. Reject v6 rather than risking
-        // mapped, link-local, ULA or IPv6 literal SSRF bypasses.
-        IpAddr::V6(_) => false,
+        IpAddr::V6(v) => {
+            let seg = v.segments();
+            !v.is_unspecified() && !v.is_loopback() && !v.is_multicast()
+                && (seg[0] & 0xfe00) != 0xfc00
+                && (seg[0] & 0xffc0) != 0xfe80
+                && !(seg[0] == 0x2001 && seg[1] == 0xdb8)
+                && v.to_ipv4_mapped().is_none()
+        },
     }
 }
 fn validated_host(url: &str) -> Result<(String,String),FetchError> {
@@ -59,7 +64,7 @@ fn validated_host(url: &str) -> Result<(String,String),FetchError> {
     let remainder=&url[8..];
     let end=remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
     let authority=&remainder[..end];
-    if authority.is_empty() || authority.len()>MAX_HOST_LEN || authority.contains([':', '@', '[', ']', '%', '\\']) {
+    if authority.is_empty() || authority.len()>MAX_HOST_LEN || authority.chars().any(|c| matches!(c, ':' | '@' | '[' | ']' | '%' | '\\\\')) {
         return Err(FetchError::InvalidUrl);
     }
     let host=authority.to_ascii_lowercase();
