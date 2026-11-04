@@ -1,0 +1,54 @@
+name: Lu TOOLS-03 native Git inspection
+
+on:
+  push:
+    branches:
+      - lu/tools-03-git-inspection-20261104
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux real read-only Git fixtures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source tree
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Bind the trusted system Git executable
+        shell: bash
+        run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+      - name: Real Git registry, Protobuf, model scope and denial tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect -- --nocapture
+
+  windows:
+    name: Windows real read-only Git fixtures
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source tree
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Bind the trusted system Git executable
+        shell: pwsh
+        run: |
+          $git = (Get-Command git.exe -ErrorAction Stop).Source
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
+      - name: Real Git registry, Protobuf, model scope and denial tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect -- --nocapture
