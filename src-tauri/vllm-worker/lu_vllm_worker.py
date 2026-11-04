@@ -80,7 +80,7 @@ class Worker:
         if command == "generate":
             prompt = message.get("prompt")
             max_tokens = message.get("max_new_tokens")
-            if (rid in self.tasks or not isinstance(prompt, str)
+            if (self.tasks or not isinstance(prompt, str)
                     or not prompt.strip() or len(prompt.encode("utf8")) > 16384
                     or type(max_tokens) is not int or not 1 <= max_tokens <= 32768):
                 await self.output({"id": rid, "event": "rejected"})
@@ -96,10 +96,20 @@ class Worker:
             except Exception:
                 await self.output({"id": rid, "event": "abort_failed"})
                 return True
-            # ACK means the engine abort method returned, NOT that a shared
-            # scheduler or GPU has independently confirmed a released slot.
-            await self.output({"id": rid, "event": "abort_ack_unverified"})
+            # Only an empty single-request engine *after awaiting the V1
+            # EngineCore abort* qualifies for verified request stop. This
+            # worker refuses concurrent generate requests above.
+            count = getattr(self.engine, "get_num_unfinished_requests", None)
+            try:
+                empty = callable(count) and count() == 0
+            except Exception:
+                empty = False
+            if empty:
+                await self.output({"id": rid, "event": "abort_verified_empty_engine"})
+            else:
+                await self.output({"id": rid, "event": "abort_ack_unverified"})
         elif command == "status":
+            # Reader task is NOT an independent engine scheduler witness.
             await self.output({"id": rid, "event": "status",
                                "reader_active": rid in self.tasks,
                                "independent_scheduler_verified": False})
