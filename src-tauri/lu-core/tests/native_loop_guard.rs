@@ -322,6 +322,7 @@ async fn real_native_read_of_a_changing_file_can_repeat_more_than_eight_times(){
     }
     assert_eq!(turn.step_count(),24);
     assert_eq!(turn.loop_attempt_count(),24);
+    drop(turn);drop(authority);drop(catalog);drop(registry);
     remove_workspace(root);
 }
 
