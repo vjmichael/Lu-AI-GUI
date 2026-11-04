@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "2fd3f2b0d3249c7b6a4f63c37e5a99725e9f282f",
-  "trackedFileCount": 299,
+  "trackedFileCount": 300,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -1176,12 +1176,16 @@
       "blob": "6b13f31db384ca06d403a58f4c1235e44e57e746"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/browser_window.rs",
+      "blob": "e3b756c6ce7e6e8b1d089c5f1bf294ce034c6086"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/file_guard.rs",
       "blob": "f453b68467f3b28f633b8454c1b26504a044a30c"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "5eac4d785d25a723a486e5eb39ce925e95c9d759"
+      "blob": "c7d6265d6c2ac722fd9f2d26b934916e2b8e3e46"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
