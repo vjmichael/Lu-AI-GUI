@@ -1,8 +1,12 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "6cb55326d6e9a7c7e39671376c0eff908413914a",
-  "trackedFileCount": 287,
+  "trackedFileCount": 288,
   "files": [
+    {
+      "path": ".github/workflows/lu-backend-control-01.yml",
+      "blob": "0c0e7f278bfce8225cab8a4b9e831d48c2b1bdb3"
+    },
     {
       "path": ".github/workflows/lu-ci.yml",
       "blob": "82cde3c64c3bdb171c03ed01f6385b1be0abea93"
@@ -649,7 +653,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_host.rs",
-      "blob": "a381b88da46ae22be9c5c309c8b4734fc24fbc04"
+      "blob": "9b6531ff8e26f113af3f952e693b3445e11552f0"
     },
     {
       "path": "src-tauri/lu-core/src/inference_image_refs.rs",
@@ -761,7 +765,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "e291965aaf12b46d8b9495591534fbf04e390cd4"
+      "blob": "4a58bae78348cd967c3bb7f1e86e5ed8aae3a522"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
