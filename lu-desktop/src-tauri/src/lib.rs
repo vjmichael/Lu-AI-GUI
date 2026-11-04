@@ -1227,6 +1227,7 @@ struct EditRecoveryView {
     effect_call_id: Option<String>,
     observation: String,
     assessment: String,
+    receipt_verified: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -1699,23 +1700,32 @@ fn lu_edit_recovery(
     let records=state.edit_approval_ledger.recent_for_chat(&chat_id)
         .map_err(|e|format!("edit recovery ledger unavailable: {e:?}"))?;
     records.into_iter().map(|record|{
-        let effect_state=record.effect_call_id.as_ref().map(|id|
+        let effect_record=record.effect_call_id.as_ref().map(|id|
             state.effects.get(id)).transpose()
                 .map_err(|e|format!("edit effect journal unavailable: {e:?}"))?
-                .flatten().map(|r|r.state);
+                .flatten();
+        let effect_state=effect_record.as_ref().map(|r|r.state);
+        let receipt_verified=effect_record.as_ref().zip(record.effect_call_id.as_deref())
+            .is_some_and(|(effect,id)| record.original_sha256.as_deref()
+                .is_some_and(|old|lu_core::native_edit_existing::verified_edit_receipt(
+                    effect,id,old,&record.replacement_sha256,record.bytes as u64
+                )));
         let effect=effect_state.map(|s|format!("{s:?}"))
             .unwrap_or_else(||"NOT_STARTED".into());
-        let assessment=match (record.decision,effect_state) {
-            (lu_core::edit_approval_ledger::EditDecision::Interrupted,_) =>
+        let assessment=match (record.decision,effect_state,receipt_verified) {
+            (lu_core::edit_approval_ledger::EditDecision::Interrupted,_,_) =>
                 "INTERRUPTED_REVIEW_NOT_AUTHORIZED",
             (lu_core::edit_approval_ledger::EditDecision::Approved,
-                Some(lu_core::journal::EffectState::Applied)) =>
-                "APPLIED_RECEIPT_TARGET_NOT_RECHECKED",
+                Some(lu_core::journal::EffectState::Applied),true) =>
+                "VERIFIED_APPLIED_RECEIPT_TARGET_NOT_RECHECKED",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,
+                Some(lu_core::journal::EffectState::Applied),false) =>
+                "APPLIED_ROW_BUT_RECEIPT_INVALID",
             (lu_core::edit_approval_ledger::EditDecision::Approved,
                 Some(lu_core::journal::EffectState::Executing |
-                    lu_core::journal::EffectState::Uncertain)) =>
+                    lu_core::journal::EffectState::Uncertain),_) =>
                 "UNCERTAIN_NO_AUTOMATIC_RETRY",
-            (lu_core::edit_approval_ledger::EditDecision::Approved,_) =>
+            (lu_core::edit_approval_ledger::EditDecision::Approved,_,_) =>
                 "APPROVED_NO_VERIFIED_SUCCESS",
             _=>"NOT_AUTHORIZED"
         };
@@ -1728,7 +1738,7 @@ fn lu_edit_recovery(
             approval:format!("{:?}",record.decision),
             effect,effect_call_id:record.effect_call_id,
             observation:"NOT_RECHECKED_SELECT_FOLDER_FOR_OBSERVATION".into(),
-            assessment:assessment.into(),
+            assessment:assessment.into(),receipt_verified,
         })
     }).collect()
 }
@@ -1751,10 +1761,11 @@ fn lu_open_edited_folder(
     let effect=state.effects.get(&effect_id)
         .map_err(|e|format!("edit journal unavailable: {e:?}"))?
         .ok_or("no edit effect receipt")?;
-    if effect.tool_id!=lu_core::native_edit_existing::EDIT_TOOL_ID ||
-        effect.state!=lu_core::journal::EffectState::Applied ||
-        effect.receipt.as_ref().is_none_or(|r|r.is_empty()) {
-        return Err("edit did not have a verified applied receipt".into());
+    if !record.original_sha256.as_deref().is_some_and(|old|
+        lu_core::native_edit_existing::verified_edit_receipt(
+            &effect,&effect_id,old,&record.replacement_sha256,record.bytes as u64
+        )) {
+        return Err("edit did not have a verified exact applied receipt".into());
     }
     let target=std::path::PathBuf::from(record.selected_target.ok_or("missing approved file path")?);
     if target.file_name().and_then(|s|s.to_str())!=Some(record.filename.as_str()) {
@@ -1817,25 +1828,34 @@ async fn lu_inspect_edit_recovery(
     let dir=cap_std::fs::Dir::open_ambient_dir(&chosen,cap_std::ambient_authority())
         .map_err(|e|format!("recovery folder cannot be opened: {e}"))?;
     let observation=lu_core::native_edit_existing::observe_edit(&dir,&call_id);
-    let effect=state.effects.get(&call_id)
-        .map_err(|e|format!("effect journal unavailable: {e:?}"))?
-        .map(|record|format!("{:?}",record.state))
+    let effect_record=state.effects.get(&call_id)
+        .map_err(|e|format!("effect journal unavailable: {e:?}"))?;
+    let effect=effect_record.as_ref()
+        .map(|row|format!("{:?}",row.state))
         .unwrap_or_else(||"NOT_STARTED".into());
-    let assessment=match (effect.as_str(),&observation) {
-        ("Applied",lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified) =>
-            "APPLIED_RECEIPT_AND_OBSERVED_TARGET_BACKUP_MATCH",
+    let receipt_verified=effect_record.as_ref().is_some_and(|row|
+        record.original_sha256.as_deref().is_some_and(|old|
+            lu_core::native_edit_existing::verified_edit_receipt(
+                row,&call_id,old,&record.replacement_sha256,record.bytes as u64
+            )
+        )
+    );
+    let assessment=match (effect.as_str(),&observation,receipt_verified) {
+        ("Applied",lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified,true) =>
+            "VERIFIED_APPLIED_RECEIPT_AND_OBSERVED_TARGET_BACKUP_MATCH",
+        ("Applied",_,false)=>"APPLIED_ROW_BUT_RECEIPT_INVALID",
         ("Uncertain"|"Executing",
-            lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified) =>
+            lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified,_) =>
             "UNCERTAIN_BYTES_MATCH_NOT_PROOF_NEVER_RETRY",
-        ("Applied",_)=>"APPLIED_RECEIPT_TARGET_DIFFERENT_OR_UNVERIFIED",
-        ("Uncertain"|"Executing",_)=>"UNCERTAIN_EFFECT_RECONCILIATION_REQUIRED",
+        ("Applied",_,true)=>"VERIFIED_APPLIED_RECEIPT_TARGET_DIFFERENT_OR_UNVERIFIED",
+        ("Uncertain"|"Executing",_,_)=>"UNCERTAIN_EFFECT_RECONCILIATION_REQUIRED",
         _=>"NO_VERIFIED_SUCCESS_NO_AUTOMATIC_RETRY",
     };
     // Only a positively APPLIED journal entry, verified on-disk backup
     // and edited target, plus exact agreement with the trusted approval
     // record, may display an undo candidate. Display never grants rollback.
     let mut rollback_review_status = "NO_VERIFIED_APPLIED_EDIT".to_string();
-    let rollback_preview = if effect == "Applied" &&
+    let rollback_preview = if receipt_verified &&
         observation == lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified {
         match lu_core::native_edit_existing::inspect_rollback_candidate(
             &dir, &record.filename, &call_id
