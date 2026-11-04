@@ -65,6 +65,7 @@ pub mod native_file_extra;
 pub mod native_files;
 pub mod native_atomic_write;
 pub mod native_create_new;
+pub mod write_format;
 pub mod ownership_store;
 pub mod passive_diagnostics;
 pub mod passive_localization;
