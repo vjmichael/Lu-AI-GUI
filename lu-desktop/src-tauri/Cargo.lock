@@ -1967,6 +1967,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "base64 0.22.1",
  "lu-core",
+ "prost",
  "rand",
  "serde",
  "serde_json",
