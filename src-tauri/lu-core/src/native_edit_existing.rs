@@ -122,6 +122,15 @@ fn regular_bytes(
     if !name_meta.is_file() || name_meta.file_type().is_symlink() {
         return Err(EditCommitError::UnsafeTarget);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // Reject file-backed reparse points BEFORE opening: the opened
+        // target's metadata alone might not retain the link attribute.
+        if name_meta.file_attributes() & 0x400 != 0 {
+            return Err(EditCommitError::UnsafeTarget);
+        }
+    }
     let mut file = root.open(name).map_err(io)?.into_std();
     let meta = file.metadata().map_err(io)?;
     if !meta.is_file() || meta.len() > MAX_EDIT_DOCUMENT_BYTES as u64 {
@@ -147,8 +156,16 @@ fn regular_bytes(
     if bytes.len() > MAX_EDIT_DOCUMENT_BYTES {
         return Err(EditCommitError::InvalidContent);
     }
-    if root.symlink_metadata(name).map_err(io)?.file_type().is_symlink() {
+    let after_name_meta=root.symlink_metadata(name).map_err(io)?;
+    if !after_name_meta.is_file() || after_name_meta.file_type().is_symlink() {
         return Err(EditCommitError::UnsafeTarget);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if after_name_meta.file_attributes() & 0x400 != 0 {
+            return Err(EditCommitError::UnsafeTarget);
+        }
     }
     Ok((bytes, perms))
 }
