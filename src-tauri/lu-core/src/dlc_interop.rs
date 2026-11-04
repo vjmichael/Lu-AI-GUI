@@ -23,7 +23,7 @@ pub const MAX_DLC_REQUEST_IDS: usize = 4096;
 pub enum DlcPermission {
     ObserveStatus,
     GenerateText,
-    GenerateImages,
+    ImageInput,
     CancelOwnGeneration,
 }
 
@@ -32,7 +32,7 @@ impl DlcPermission {
         match self {
             Self::ObserveStatus => 1,
             Self::GenerateText => 2,
-            Self::GenerateImages => 3,
+            Self::ImageInput => 3,
             Self::CancelOwnGeneration => 4,
         }
     }
@@ -41,7 +41,7 @@ impl DlcPermission {
         match value {
             1 => Some(Self::ObserveStatus),
             2 => Some(Self::GenerateText),
-            3 => Some(Self::GenerateImages),
+            3 => Some(Self::ImageInput),
             4 => Some(Self::CancelOwnGeneration),
             _ => None,
         }
@@ -314,7 +314,7 @@ impl DlcAdmission {
             Some(Body::Generate(generate)) => {
                 if !negotiated.contains(&DlcPermission::GenerateText)
                     || (!generate.images.is_empty()
-                        && !negotiated.contains(&DlcPermission::GenerateImages))
+                        && !negotiated.contains(&DlcPermission::ImageInput))
                 {
                     return Err(DlcInteropError::NotHostApproved);
                 }
@@ -548,7 +548,7 @@ mod tests {
         let mut g=grant(&[DlcPermission::GenerateText]);
         g.negotiate(&hello(&[DlcPermission::GenerateText])).unwrap();
         assert_eq!(g.admit_request(&req), Err(DlcInteropError::NotHostApproved));
-        let ops=[DlcPermission::GenerateText,DlcPermission::GenerateImages];
+        let ops=[DlcPermission::GenerateText,DlcPermission::ImageInput];
         let mut g=grant(&ops);
         g.negotiate(&hello(&ops)).unwrap();
         assert!(g.admit_request(&req).is_ok());
