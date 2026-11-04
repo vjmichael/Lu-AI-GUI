@@ -421,3 +421,50 @@ fn pending_read_approval_is_interrupted_after_restart_never_automatically_grante
     drop(reopened);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn native_picker_pins_regular_file_and_rejects_nonfiles() {
+    use std::io::Read;
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let file = root.join("selected.txt");
+    fs::write(&file, "user selected this exact content").unwrap();
+    let mut pinned = native_host_read::open_verified_selected_file(&file).unwrap();
+    assert!(native_host_read::open_verified_selected_file(&root).is_err());
+    let mut bytes = String::new();
+    pinned.read_to_string(&mut bytes).unwrap();
+    assert_eq!(bytes, "user selected this exact content");
+    drop(pinned);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn native_picker_rejects_symlink_to_normal_file() {
+    use std::os::unix::fs::symlink;
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("original.txt"), "original").unwrap();
+    symlink(root.join("original.txt"), root.join("replacement.txt")).unwrap();
+    assert!(native_host_read::open_verified_selected_file(&root.join("replacement.txt")).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_native_picker_denies_reparse_file_and_prevents_renaming_open_handle() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let file = root.join("normal.txt");
+    fs::write(&file, "original").unwrap();
+    let pinned = native_host_read::open_verified_selected_file(&file).unwrap();
+    // The current Windows handle permits other readers but denies FILE_SHARE_DELETE.
+    assert!(fs::rename(&file, root.join("other.txt")).is_err());
+    drop(pinned);
+    // Test symlink rejection when the Windows runner grants symlink privilege.
+    let link = root.join("link.txt");
+    if std::os::windows::fs::symlink_file(&file, &link).is_ok() {
+        assert!(native_host_read::open_verified_selected_file(&link).is_err());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
