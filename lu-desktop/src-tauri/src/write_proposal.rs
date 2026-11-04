@@ -90,6 +90,18 @@ impl WriteProposalQueue {
         Ok((canonical.join(&entry.proposal.file_name).to_string_lossy().into_owned(),
             entry.generation_id.clone(), entry.proposal.clone()))
     }
+    /// Host-only immutable snapshot used to construct the final native OS
+    /// confirmation dialog before any grant is opened or proposal consumed.
+    pub fn review_details(
+        &self, id: &str, chat: &str
+    ) -> Result<(String, PathBuf, ProposedWrite), WriteProposalError> {
+        let entries = self.pending.lock().map_err(|_| WriteProposalError::Unavailable)?;
+        let entry = entries.get(id).ok_or(WriteProposalError::Unknown)?;
+        if entry.chat_id != chat { return Err(WriteProposalError::WrongConversation); }
+        let directory = entry.directory.clone().ok_or(WriteProposalError::NotSelected)?;
+        Ok((entry.generation_id.clone(), directory, entry.proposal.clone()))
+    }
+
     /// Take exactly once only after host-bound directory selection. The
     /// ledger/effect journal must still admit the approval independently.
     pub fn take_confirmed(
