@@ -1,0 +1,74 @@
+name: Lu TOOLS-07 vision-first OCR fallback
+
+on:
+  push:
+    branches:
+      - lu/tools-07-ocr-fallback-20261104
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux native OCR and real Tesseract 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked source lock
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Install official Ubuntu Tesseract and English traineddata
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-eng
+          exe=$(readlink -f "$(command -v tesseract)")
+          data=$(dpkg -L tesseract-ocr-eng | grep '/eng.traineddata$' | head -1)
+          test -f "$exe" && test -f "$data"
+          echo "LU_OCR_TEST_TESSERACT=$exe" >> "$GITHUB_ENV"
+          echo "LU_OCR_TEST_TESSDATA=$(dirname "$data")" >> "$GITHUB_ENV"
+          "$exe" --version
+      - name: Run real image/Protobuf/permission/Tesseract suite (locked)
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_ocr_fallback -- --nocapture
+
+  windows:
+    name: Windows native OCR and real Tesseract 5
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked source lock
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Provision trusted Tesseract (no model-controlled install)
+        shell: pwsh
+        run: |
+          $tool = Get-Command tesseract.exe -ErrorAction SilentlyContinue
+          if (-not $tool) {
+            choco install tesseract --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw "Tesseract installation failed" }
+          }
+          $exe = "C:\Program Files\Tesseract-OCR\tesseract.exe"
+          if ($tool -and (Test-Path $tool.Source)) { $exe = $tool.Source }
+          $tess = Join-Path (Split-Path $exe) "tessdata"
+          if (-not (Test-Path $exe) -or -not (Test-Path (Join-Path $tess "eng.traineddata"))) {
+            throw "Trusted Tesseract executable or eng traineddata missing"
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_OCR_TEST_TESSERACT=$exe"
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_OCR_TEST_TESSDATA=$tess"
+          & $exe --version
+      - name: Run real image/Protobuf/permission/Tesseract suite (locked)
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_ocr_fallback -- --nocapture
