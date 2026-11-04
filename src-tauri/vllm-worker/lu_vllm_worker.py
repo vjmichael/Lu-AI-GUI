@@ -20,7 +20,8 @@ MAX_CONTROL_LINE = 64 * 1024
 
 
 class Worker:
-    def __init__(self, engine: Any, sampling_type: Any):
+    def __init__(self, engine: Any, sampling_type: Any, channel=None):
+        self.channel = channel if channel is not None else sys.stdout
         self.engine = engine
         self.sampling_type = sampling_type
         self.tasks: dict[str, asyncio.Task[None]] = {}
@@ -30,8 +31,8 @@ class Worker:
     async def output(self, payload: dict[str, Any]) -> None:
         # stdout is reserved for the Lu control channel.
         async with self.output_lock:
-            sys.stdout.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n")
-            sys.stdout.flush()
+            self.channel.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n")
+            self.channel.flush()
 
     async def generation(self, rid: str, prompt: str, max_tokens: int) -> None:
         last = ""
@@ -146,6 +147,10 @@ def main() -> None:
     args = parser.parse_args()
     if not 256 <= args.max_model_len <= 262144:
         parser.error("invalid maximum context")
+    # Keep all third-party runtime banners/logs off the bounded stdout
+    # control pipe; preserve only the original host-owned channel writer.
+    control_output = sys.stdout
+    sys.stdout = sys.stderr
     # Keep vLLM import out of module import time, enabling CI protocol tests
     # without CUDA, a GPU or the optional vLLM installation.
     from vllm import AsyncEngineArgs, SamplingParams
@@ -153,7 +158,7 @@ def main() -> None:
 
     engine = AsyncLLM.from_engine_args(
         AsyncEngineArgs(model=args.model, max_model_len=args.max_model_len))
-    asyncio.run(serve(Worker(engine, SamplingParams)))
+    asyncio.run(serve(Worker(engine, SamplingParams, control_output)))
 
 
 if __name__ == "__main__":
