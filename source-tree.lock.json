@@ -557,7 +557,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/edit_safety.rs",
-      "blob": "5883edd2235311d7130cb6e4146e276078574cf6"
+      "blob": "b4fbdb7332c9df8d0a58e68e683ee2c2390c4353"
     },
     {
       "path": "src-tauri/lu-core/src/export_contract.rs",
