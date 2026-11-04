@@ -969,7 +969,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_edit_existing_authority.rs",
-      "blob": "ea1aef2f9816ea38ff9492df4953be4b87c51e28"
+      "blob": "d18f3c63ebd0a45cfa58d8578c63bc88ab0f4d16"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
