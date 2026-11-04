@@ -830,6 +830,10 @@ async fn desktop_edit_native_host_commits_only_after_persisted_user_turn_and_eff
         &proposal.file_name,proposal.bytes(),&proposal.digest(),&view.exact_target,
         &view.original_sha256,&view.approval_sha256,&effect_id).unwrap();
     assert_eq!(approvals.get("pe-approved").unwrap().unwrap().decision,EditDecision::Approved);
+    // The initial review clone holds an open Windows directory handle.
+    // Release it before taking the single-use pending selection, otherwise
+    // RemoveDirectory on the test fixture may fail with ERROR_SHARING_VIOLATION.
+    drop(selected);
     let selected=queue.take_confirmed("pe-approved",&chat.chat_id).unwrap();
     let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
     let turn=format!("g-{}", "9".repeat(32));
