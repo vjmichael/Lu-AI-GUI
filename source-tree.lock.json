@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7cdf0c4cd7bfffb2f5ee16857205fb4f343feecc",
+  "sourceCommitBeforeLock": "77fdc8c25c5e28f905f2759418da2b0449c09435",
   "trackedFileCount": 278,
   "files": [
     {
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
-      "blob": "7d5abd6b1d00993117023005b04649ba8d9d095f"
+      "blob": "1e61281d885cfd9364f44b8d58581e69b525ba19"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -57,7 +57,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "c278ec4c1be6f1613e616e4085ad0ebad13288ea"
+      "blob": "ca0592cb3f1623b800af00cd471f846aac6b204b"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -69,7 +69,7 @@
     },
     {
       "path": "docs/LU_R22_STRUCTURED_CHAT_AND_ALPHA_V1_ROADMAP.md",
-      "blob": "b7b146ba193bf68df29d99d4bcf0e5556c2e82cf"
+      "blob": "653f3f11ba20b234130b11b539dc1ec62a3e0079"
     },
     {
       "path": "docs/LU_V1_01_WINDOWS_ICON_IMPORT_DEV_20261103.md",
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "2dc590196f3bc7c1958412e7584636858e7a1c7f"
+      "blob": "f22c500cb7eaa91a2b29c130774da0161d459b4c"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -93,7 +93,7 @@
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
-      "blob": "42c274c96f169a999172caa4f980a0d4c2a4b912"
+      "blob": "d7b167786941064a6d72baeb1fb3e107e72dd5ef"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -225,7 +225,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
-      "blob": "be13c798ee8c0fc5c4dbeda8a9f5236d1087ba65"
+      "blob": "cd43312fff8784a870ff1f60c408f52ada739bb7"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
@@ -261,7 +261,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/read_proposal.rs",
-      "blob": "1d146a61c5c60d0d4caf2ccea78dc67837465b4d"
+      "blob": "56737c40451dfeb7e8838098310c124326654e31"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
-      "blob": "77860abb069f95585198308cd5a7758a1aac10b8"
+      "blob": "f8852a420675f36694282b4413292987f4c7daf1"
     },
     {
       "path": "lu-desktop/src-tauri/tauri.conf.json",
@@ -689,7 +689,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
-      "blob": "9ae01f6c7083b1cd1d7898dc248dacd668254d87"
+      "blob": "46d3c4105580551056209132db2bd3c30510726b"
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
@@ -773,7 +773,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "4c66500babc05fb1498417aa16fa1a6877fed8b8"
+      "blob": "97397b2772ad93dcd18198be87d70867a42ca13e"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
@@ -1069,7 +1069,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/supervised_native_turn.rs",
-      "blob": "7f6734c840dd6a27e6b520760d7aa5bfaf1b7c38"
+      "blob": "9890e9fef6b1e820522c73458ece5ffde2aed4dd"
     },
     {
       "path": "src-tauri/lu-core/tests/supervisor_dynamic_catalog.rs",
