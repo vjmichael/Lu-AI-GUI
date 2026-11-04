@@ -375,7 +375,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured image request".to_string())?;
         let mut piece = 0u32;
-        generate_chat_stream_body(
+        let result = generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -387,7 +387,14 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        )
+        );
+        // A rejected stream is not proof that llama-server has stopped
+        // decoding. Fail closed: terminate and reap the Lu-owned engine.
+        // A later load is a separate host-authorized, resource-checked step.
+        if result.is_err() {
+            self.unload();
+        }
+        result
     }
     fn generate(
         &mut self,
@@ -407,7 +414,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut piece = 0u32;
-        generate_chat_stream_body(
+        let result = generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -419,7 +426,14 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        )
+        );
+        // A rejected stream is not proof that llama-server has stopped
+        // decoding. Fail closed: terminate and reap the Lu-owned engine.
+        // A later load is a separate host-authorized, resource-checked step.
+        if result.is_err() {
+            self.unload();
+        }
+        result
     }
 }
 impl Drop for PersistentLlamaBackend {
