@@ -3,8 +3,10 @@
 //! path, directory, user grant, file handle or approval. Only a native picker
 //! may select and pin the real file. Full old/new bytes are shown to the user.
 use cap_std::{ambient_authority, fs::Dir};
-use lu_core::edit_safety::{bind_reviewed_edit, plan_text_edit, ReviewedEdit,
+use lu_core::edit_safety::{bind_reviewed_edit_with_host_identity, plan_text_edit, ReviewedEdit,
     TextEditPlan};
+#[cfg(windows)]
+use lu_core::windows_file_guard::{inspect_open_file,WindowsFileIdentity};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, fs, io::Read, path::Path, sync::{Arc,Mutex}};
@@ -55,6 +57,8 @@ pub struct SelectedEdit {
     pub original: Vec<u8>,
     pub plan: TextEditPlan,
     pub reviewed: ReviewedEdit,
+    #[cfg(windows)]
+    pub selected_file_identity: WindowsFileIdentity,
 }
 impl SelectedEdit {
     pub fn view(&self) -> EditReviewView {
@@ -158,16 +162,41 @@ impl EditProposalQueue {
         if original_text.contains('\0') {
             return Err(EditProposalError::Invalid);
         }
+        let pinned=Arc::new(Dir::open_ambient_dir(&canonical,ambient_authority())
+            .map_err(|_|EditProposalError::Invalid)?);
+        #[cfg(windows)]
+        let selected_file_identity={
+            // The actual native-picked HANDLE is the authority source;
+            // compare the entry opened relative to the pinned directory
+            // before releasing the picker handle. Same bytes are not enough.
+            let picked_identity=inspect_open_file(&file)
+                .map_err(|_|EditProposalError::Invalid)?;
+            let pinned_file=pinned.open(&proposal.file_name)
+                .map_err(|_|EditProposalError::Changed)?.into_std();
+            let current_identity=inspect_open_file(&pinned_file)
+                .map_err(|_|EditProposalError::Changed)?;
+            if picked_identity!=current_identity {
+                return Err(EditProposalError::Changed);
+            }
+            picked_identity
+        };
         let sha=format!("{:x}",Sha256::digest(&original));
         let plan=plan_text_edit(&proposal.file_name,&original,&sha,
             proposal.content.as_bytes()).map_err(|_|EditProposalError::Invalid)?;
-        let reviewed=bind_reviewed_edit(&plan,&proposal.file_name,
-            &original,proposal.content.as_bytes()).map_err(|_|EditProposalError::Invalid)?;
-        let pinned=Arc::new(Dir::open_ambient_dir(&canonical,ambient_authority())
-            .map_err(|_|EditProposalError::Invalid)?);
+        let reviewed=bind_reviewed_edit_with_host_identity(&plan,&proposal.file_name,
+            &original,proposal.content.as_bytes(),
+            {
+                #[cfg(windows)]
+                {Some(selected_file_identity.token())}
+                #[cfg(not(windows))]
+                {None}
+            }.as_deref()
+        ).map_err(|_|EditProposalError::Invalid)?;
         let selection=SelectedEdit {
             generation_id:generation,proposal, directory:canonical,
             directory_cap:pinned,original,plan,reviewed,
+            #[cfg(windows)]
+            selected_file_identity,
         };
         let mut pending=self.pending.lock().map_err(|_|EditProposalError::Unavailable)?;
         let item=pending.get_mut(id).ok_or(EditProposalError::Missing)?;
