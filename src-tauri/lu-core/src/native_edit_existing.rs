@@ -372,6 +372,68 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
     }
 }
 
+/// Read-only, byte-exact rollback review. A correct backup is not sufficient:
+/// the current target must also be exactly the replacement recorded by the
+/// original edit intent. This function never authorizes or performs rollback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedRollbackPreview {
+    pub original_edit_id: String,
+    pub file_name: String,
+    pub original_sha256: String,
+    pub replacement_sha256: String,
+    /// Complete UTF-8 text, not a truncated excerpt.
+    pub current_text: String,
+    /// Complete verified original UTF-8 text, not a truncated excerpt.
+    pub restore_text: String,
+}
+/// Small review ceiling keeps the UI bounded. It does not change the
+/// separately authorized transaction limit or automatically restore anything.
+pub const MAX_ROLLBACK_REVIEW_BYTES: usize = 64 * 1024;
+
+pub fn inspect_rollback_candidate(
+    root: &Dir, target: &str, original_edit_id: &str,
+) -> Result<VerifiedRollbackPreview, EditCommitError> {
+    if !filename(target) { return Err(EditCommitError::InvalidTarget); }
+    if !valid_id(original_edit_id) {
+        return Err(EditCommitError::InvalidOperationId);
+    }
+    let manifest = read_manifest(root, original_edit_id)?;
+    if manifest.target != target {
+        return Err(EditCommitError::InvalidRecoveryRecord);
+    }
+    let (restore, _) = regular_bytes(root, &sidecar(original_edit_id, "orig"))?;
+    if restore.len() > MAX_ROLLBACK_REVIEW_BYTES
+        || sha(&restore) != manifest.original_sha256 {
+        return Err(EditCommitError::InvalidRecoveryRecord);
+    }
+    let (current, _) = regular_bytes(root, target)?;
+    if sha(&current) != manifest.replacement_sha256 {
+        return Err(EditCommitError::SourceConflict);
+    }
+    if current.len() > MAX_ROLLBACK_REVIEW_BYTES {
+        return Err(EditCommitError::InvalidContent);
+    }
+    // Validate the *restored* file as though it were a fresh edit, so
+    // a damaged JSON backup, missing UTF-8 or a no-op cannot be offered.
+    plan_text_edit(target, &current, &manifest.replacement_sha256, &restore)
+        .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
+    let current_text = std::str::from_utf8(&current)
+        .map_err(|_| EditCommitError::InvalidContent)?;
+    let restore_text = std::str::from_utf8(&restore)
+        .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
+    if current_text.contains('\0') || restore_text.contains('\0') {
+        return Err(EditCommitError::InvalidRecoveryRecord);
+    }
+    Ok(VerifiedRollbackPreview {
+        original_edit_id: original_edit_id.into(),
+        file_name: target.into(),
+        original_sha256: manifest.original_sha256,
+        replacement_sha256: manifest.replacement_sha256,
+        current_text: current_text.into(),
+        restore_text: restore_text.into(),
+    })
+}
+
 fn rollback_with_stop(
     root: &Dir, target: &str, original_edit_id: &str, rollback_id: &str,
     expected_current: &str, expected_restored: &str, stop: StopPoint
