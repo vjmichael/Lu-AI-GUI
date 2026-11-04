@@ -10,14 +10,14 @@ use crate::{
 };
 use serde_json::{json,Value};
 use std::{
-    io::{self,BufRead,BufReader,Write},
+    io::{self,BufRead,BufReader,Read,Write},
     path::PathBuf,
     process::{Child,ChildStdin,Command,Stdio},
     sync::mpsc::{self,Receiver,RecvTimeoutError},
     thread,
     time::Duration,
 };
-const MAX_FRAME:usize=2_200_000;
+const MAX_FRAME:usize=3_000_000;
 #[derive(Debug)]
 pub enum BrowserSupervisorError {
     InvalidConfig,
@@ -124,16 +124,26 @@ impl OwnedBrowserWorker {
             .map_err(BrowserSupervisorError::Spawn)?;
         let stdin=child.stdin.take().ok_or(BrowserSupervisorError::Protocol)?;
         let stdout=child.stdout.take().ok_or(BrowserSupervisorError::Protocol)?;
-        let (tx,rx)=mpsc::sync_channel(4);
+        let (tx,rx)=mpsc::channel();
         let reader=thread::spawn(move||{
             let mut reader=BufReader::new(stdout);
             loop {
-                let mut line=String::new();
-                let result=reader.read_line(&mut line);
+                // An untrusted worker must not force unbounded allocation
+                // by streaming a line without the framing delimiter.
+                let mut bytes=Vec::new();
+                let result=reader.by_ref().take((MAX_FRAME+2) as u64)
+                    .read_until(b'\n',&mut bytes);
                 match result {
                     Ok(0)=>break,
+                    Ok(_) if bytes.len()<=MAX_FRAME+1&&bytes.last()==Some(&b'\n')=>{
+                        let line=String::from_utf8(bytes).map_err(|_|io::Error::new(
+                            io::ErrorKind::InvalidData,"non-UTF8 worker frame"));
+                        if tx.send(line).is_err(){break;}
+                    },
                     Ok(_)=>{
-                        if tx.send(Ok(line)).is_err(){break;}
+                        let _=tx.send(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,"oversized or unterminated worker frame")));
+                        break;
                     },
                     Err(e)=>{let _=tx.send(Err(e));break;}
                 }
@@ -201,7 +211,7 @@ impl OwnedBrowserWorker {
                 first_visibility_done=true;
                 continue;
             }
-            if !value.get("ok").and_then(Value::as_bool).is_some(){
+            if value.get("ok").and_then(Value::as_bool).is_none(){
                 return Err(BrowserSupervisorError::Protocol);
             }
             return Ok(value);
