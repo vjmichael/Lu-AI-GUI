@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5a980e4fe0d8010c676d702f349dc1d7fb2e745d",
+  "sourceCommitBeforeLock": "89276485a43e9f2a65fd837a4c64a90568951fbd",
   "trackedFileCount": 254,
   "files": [
     {
@@ -81,7 +81,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "066f69fdef4fbe61224bb29fa081482c1748e05f"
+      "blob": "045174543c06a4d02743b6ab609bb401befdd126"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -181,7 +181,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "a80991f0c29c3576f17510c2ac76e6fa4908f9f7"
+      "blob": "dec77b2ae4dfad9e8cc47b964b847963d7df33a4"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
