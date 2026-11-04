@@ -90,3 +90,128 @@ pub fn plan_text_edit(
         automatic_repair_attempts_allowed:0,
     })
 }
+
+
+/// Host-bound approval for the precise target and bytes. This value is only
+/// evidence that a review matched; it does not create a tool grant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewedEdit {
+    pub host_relative_path: String,
+    pub approval_sha256: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewError {
+    InvalidHostPath,
+    ChangedSource,
+    InvalidPlan(EditPreflightError),
+    MismatchedPlan,
+    MismatchedApproval,
+}
+
+fn valid_host_path(path: &str) -> bool {
+    !path.is_empty() && path.len() <= 4096 && !path.starts_with('/')
+        && !path.chars().any(|c| c == '\\' || c == ':' || c.is_control())
+        && path.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+/// Serialize values with length boundaries and a domain separator. The full
+/// diff has to be rendered by the host from the exact bytes supplied here;
+/// preview excerpts in TextEditPlan are NEVER sufficient for approval.
+fn reviewed_digest(path: &str, old: &[u8], new: &[u8]) -> String {
+    let mut hash = Sha256::new();
+    hash.update(b"LU-WRITE-01E-REVIEW-v1");
+    for field in [path.as_bytes(), old, new] {
+        hash.update((field.len() as u64).to_le_bytes());
+        hash.update(field);
+    }
+    format!("{:x}", hash.finalize())
+}
+
+/// To be called ONLY by the trusted desktop host after independently
+/// rendering the entire original and replacement and obtaining user approval.
+/// A model-supplied fingerprint is never an approval source.
+pub fn bind_reviewed_edit(
+    plan: &TextEditPlan,
+    host_relative_path: &str,
+    original: &[u8],
+    replacement: &[u8],
+) -> Result<ReviewedEdit, ReviewError> {
+    if !valid_host_path(host_relative_path)
+        || host_relative_path.rsplit('/').next() != Some(plan.filename.as_str()) {
+        return Err(ReviewError::InvalidHostPath);
+    }
+    let expected = plan_text_edit(&plan.filename, original, &plan.expected_original_sha256, replacement)
+        .map_err(ReviewError::InvalidPlan)?;
+    if &expected != plan {
+        return Err(ReviewError::MismatchedPlan);
+    }
+    Ok(ReviewedEdit {
+        host_relative_path: host_relative_path.into(),
+        approval_sha256: reviewed_digest(host_relative_path, original, replacement),
+    })
+}
+
+/// Fresh-read check immediately before a future exclusive, journaled commit.
+/// This is a pure check and not a filesystem lock or an effect authorization.
+pub fn verify_reviewed_edit(
+    plan: &TextEditPlan,
+    proof: &ReviewedEdit,
+    trusted_host_path: &str,
+    latest_original: &[u8],
+    replacement: &[u8],
+    trusted_approved_sha256: &str,
+) -> Result<(), ReviewError> {
+    if !valid_host_path(trusted_host_path)
+        || proof.host_relative_path != trusted_host_path
+        || trusted_host_path.rsplit('/').next() != Some(plan.filename.as_str()) {
+        return Err(ReviewError::InvalidHostPath);
+    }
+    if digest(latest_original) != plan.expected_original_sha256 {
+        return Err(ReviewError::ChangedSource);
+    }
+    let regenerated = plan_text_edit(&plan.filename, latest_original, &plan.expected_original_sha256, replacement)
+        .map_err(ReviewError::InvalidPlan)?;
+    if regenerated != *plan {
+        return Err(ReviewError::MismatchedPlan);
+    }
+    let check = reviewed_digest(trusted_host_path, latest_original, replacement);
+    if check != proof.approval_sha256 || check != trusted_approved_sha256 {
+        return Err(ReviewError::MismatchedApproval);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod reviewed_edit_tests {
+    use super::*;
+
+    #[test]
+    fn reviewed_bytes_are_exact_and_source_is_not_silently_overwritten() {
+        let old = b"{\"enabled\":false}\n";
+        let new = b"{\"enabled\":true}\n";
+        let plan = plan_text_edit("preferences.json", old, &digest(old), new).unwrap();
+        let proof = bind_reviewed_edit(&plan, "Documents/preferences.json", old, new).unwrap();
+        assert!(verify_reviewed_edit(&plan, &proof, "Documents/preferences.json", old, new, &proof.approval_sha256).is_ok());
+        assert_eq!(verify_reviewed_edit(&plan, &proof, "Documents/preferences.json", b"{\"enabled\":false} \n", new, &proof.approval_sha256), Err(ReviewError::ChangedSource));
+        assert_eq!(verify_reviewed_edit(&plan, &proof, "Documents/preferences.json", old, b"{\"enabled\":null}\n", &proof.approval_sha256), Err(ReviewError::MismatchedPlan));
+    }
+
+    #[test]
+    fn approval_cannot_be_reused_for_another_target_or_mutated_plan() {
+        let plan = plan_text_edit("x.md", b"a", &digest(b"a"), b"b").unwrap();
+        let proof = bind_reviewed_edit(&plan, "work/x.md", b"a", b"b").unwrap();
+        assert_eq!(verify_reviewed_edit(&plan, &proof, "other/x.md", b"a", b"b", &proof.approval_sha256), Err(ReviewError::InvalidHostPath));
+        assert_eq!(verify_reviewed_edit(&plan, &proof, "work/x.md", b"a", b"b", "model-approved"), Err(ReviewError::MismatchedApproval));
+        let mut tampered = plan.clone();
+        tampered.original_excerpt.push('!');
+        assert_eq!(verify_reviewed_edit(&tampered, &proof, "work/x.md", b"a", b"b", &proof.approval_sha256), Err(ReviewError::MismatchedPlan));
+        assert_eq!(bind_reviewed_edit(&plan, "../x.md", b"a", b"b"), Err(ReviewError::InvalidHostPath));
+    }
+
+    #[test]
+    fn invalid_json_and_changed_binary_are_never_approved() {
+        let original = b"{\"ok\":true}";
+        let plan = plan_text_edit("x.json", original, &digest(original), b"{\"ok\":false}").unwrap();
+        assert_eq!(bind_reviewed_edit(&plan, "x.json", original, b"{bad"), Err(ReviewError::InvalidPlan(EditPreflightError::InvalidFormat(FormatError::InvalidJson))));
+    }
+}
