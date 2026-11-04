@@ -65,6 +65,7 @@ pub mod browser_preferences;
 pub mod browser_process_owner;
 pub mod browser_host_bridge;
 pub mod browser_authorized_execution;
+pub mod browser_model_codec;
 pub mod browser_worker_supervisor;
 pub mod browser_chromium_launcher;
 #[cfg(target_os = "linux")]
