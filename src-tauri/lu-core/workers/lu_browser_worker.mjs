@@ -33,7 +33,7 @@ function boundedText(value, max) {
   return value;
 }
 export class BrowserSession {
-  constructor({origins, profileDirectory, chromiumProvider} = {}) {
+  constructor({origins, profileDirectory, chromiumProvider, softwareRendering = false} = {}) {
     if (!Array.isArray(origins) || origins.length === 0 || origins.length > 32) {
       throw new BrowserGateError('INVALID_ORIGINS');
     }
@@ -47,6 +47,7 @@ export class BrowserSession {
     }
     this.profileDirectory = profileDirectory; // host owns path and access control
     this.chromiumProvider = chromiumProvider;
+    this.softwareRendering = softwareRendering === true;
     this.context = null;
     this.page = null;
     this.paused = null;
@@ -58,6 +59,7 @@ export class BrowserSession {
     this.context = await provider.launchPersistentContext(this.profileDirectory, {
       headless: false, acceptDownloads: false, serviceWorkers: 'block',
       viewport: {width: 1280, height: 900},
+      args: this.softwareRendering ? ['--disable-gpu'] : [],
     });
     await this.context.route('**/*', async route => {
       try {
@@ -156,7 +158,17 @@ export class BrowserSession {
       return {status:'READ',url:this.page.url(),text:text.slice(0,131072),truncated:text.length>131072};
     }
     if (op === 'screenshot') {
-      const image=await this.page.screenshot({type:'png',animations:'disabled'});
+      let image;
+      try {
+        await this.page.bringToFront();
+        image=await this.page.screenshot({type:'png',animations:'disabled',timeout:10000});
+      } catch {
+        // Some Linux Xvfb GPU stacks need a second frame after focus.
+        await this.page.waitForTimeout(200);
+        try {
+          image=await this.page.screenshot({type:'png',animations:'allow',timeout:10000});
+        } catch { throw new BrowserGateError('SCREENSHOT_UNAVAILABLE'); }
+      }
       if (image.length>2*1024*1024) throw new BrowserGateError('SCREENSHOT_TOO_LARGE');
       return {status:'SCREENSHOT',mime:'image/png',base64:image.toString('base64')};
     }
