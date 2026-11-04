@@ -124,6 +124,9 @@ jobs:
         run: |
           if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
           npm run build
+      - name: Verify Windows native file handle identity and reparse refusal
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml windows_native_picker -- --nocapture
       - name: Compile check only (NOT distributable or GPU-tested)
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
