@@ -1690,6 +1690,10 @@ async fn lu_confirm_edit_file(
         !Arc::ptr_eq(&selected.directory_cap,&initial.directory_cap) {
         return Err("selected file or proposed bytes changed during native approval".into());
     }
+    #[cfg(windows)]
+    if selected.selected_file_identity!=initial.selected_file_identity {
+        return Err("native-selected Windows file identity changed during confirmation".into());
+    }
     let effect_call_id=next_id("g-");
     state.edit_approval_ledger.approve(
         &proposal_id,&chat_id,&selected.generation_id,
@@ -1912,9 +1916,17 @@ async fn lu_inspect_edit_recovery(
                     decision:lu_core::rollback_approval_ledger::RollbackDecision::Reviewed,
                     rollback_effect_id:None,
                 };
+                #[cfg(windows)]
+                let selected_file_identity={
+                    let file=dir.open(&record.filename)
+                        .map_err(|_|"native reselected file is unavailable")?.into_std();
+                    lu_core::windows_file_guard::inspect_open_file(&file)
+                        .map_err(|_|"native reselected file identity is not safe")?
+                };
                 let selected=rollback_review::SelectedRollback {
                     record:approval.clone(),directory:chosen.clone(),
-                    directory_cap:Arc::clone(&dir),preview:preview.clone()
+                    directory_cap:Arc::clone(&dir),preview:preview.clone(),
+                    #[cfg(windows)] selected_file_identity,
                 };
                 match state.rollback_approval_ledger.stage(&approval) {
                     Ok(())=>match state.rollback_reviews.stage(selected) {
@@ -2018,6 +2030,10 @@ async fn lu_confirm_rollback(
         selected.directory!=initial.directory ||
         !Arc::ptr_eq(&selected.directory_cap,&initial.directory_cap) {
         return Err("selected rollback changed during native confirmation".into());
+    }
+    #[cfg(windows)]
+    if selected.selected_file_identity!=initial.selected_file_identity {
+        return Err("native-selected Windows restore target changed during confirmation".into());
     }
     let effect_id=next_id("g-");
     state.rollback_approval_ledger.approve(&selected.record,&effect_id)
