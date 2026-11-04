@@ -254,6 +254,20 @@ pub fn generate_chat_stream_body(
                     }
                     on_text(text)?;
                 }
+                ChatEvent::TextAndFinished(text, reason) => {
+                    emitted = emitted.saturating_add(text.len());
+                    if emitted > MAX_STREAM_BYTES {
+                        return Err("multimodal text output limit exceeded".into());
+                    }
+                    on_text(text)?;
+                    match reason {
+                        ChatFinishReason::Stop => { complete = true; break; }
+                        ChatFinishReason::Length =>
+                            return Err("llama.cpp output reached token budget; response is truncated".into()),
+                        ChatFinishReason::ToolCalls =>
+                            return Err("llama.cpp returned tool calls instead of a terminal chat answer".into()),
+                    }
+                }
                 ChatEvent::Continue => {}
                 ChatEvent::Finished(ChatFinishReason::Stop) => {
                     complete = true;
@@ -453,6 +467,21 @@ mod tests {
         let result = generate_chat_stream_body(port, &"ab".repeat(32), &body,
             Duration::from_secs(5), || false, |_| Ok(()));
         handle.join().unwrap();
+        assert!(result.unwrap_err().contains("truncated"));
+    }
+    #[test]
+    fn combined_last_text_and_token_limit_are_not_a_finished_answer() {
+        let stream=b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n";
+        let (port, handler)=fixture(response(&[stream]),false);
+        let body=crate::multimodal_saved_turn::build_structured_chat_request(
+            "Ping",&[],&[],20).unwrap();
+        let mut observed=String::new();
+        let result=generate_chat_stream_body(port,&"ab".repeat(32),&body,
+            Duration::from_secs(5),||false,|chunk| {
+                observed.push_str(&chunk);Ok(())
+            });
+        handler.join().unwrap();
+        assert_eq!(observed,"partial");
         assert!(result.unwrap_err().contains("truncated"));
     }
     #[test]
