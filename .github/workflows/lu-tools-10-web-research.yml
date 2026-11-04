@@ -66,6 +66,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_browser_tool -- --nocapture
       - name: Streamed llama.cpp browser function-call assembly and denial
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_tool_stream -- --nocapture
+      - name: Read-only llama.cpp model tool request admission
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_model_request -- --nocapture
       - name: Desktop browser setting native wiring fixtures
         run: node --test lu-desktop/tests/browser-visibility-settings.test.mjs
       - name: Native desktop browser permission and package lifecycle tests
