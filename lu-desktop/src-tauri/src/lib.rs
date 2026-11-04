@@ -1439,9 +1439,11 @@ fn lu_dismiss_read_proposal(
 /// User-facing browser visibility preference. The browser remains headed
 /// in both modes; this setting confers no navigation or network authority.
 #[tauri::command]
-fn lu_browser_runtime_status(
+async fn lu_browser_runtime_status(
     state: State<'_, Arc<DesktopState>>
 ) -> Result<native_browser_host::BrowserRuntimeView,String> {
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
     let status=state.browser_runtime.status(&state.browser_preferences)?;
     if !status.running{
         // A crashed browser must not strand a grant. An in-progress launch
@@ -1458,6 +1460,7 @@ fn lu_browser_runtime_status(
         }
     }
     Ok(status)
+    }).await.map_err(|e|format!("browser status worker failed: {e}"))?
 }
 
 #[tauri::command]
