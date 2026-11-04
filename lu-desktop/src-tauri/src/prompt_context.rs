@@ -36,6 +36,28 @@ pub fn typed_history(
     out
 }
 
+/// Plain-language bridge until the typed native tool catalog is carried by
+/// the model inference request. Applied ONLY to explicit create/save-file
+/// instructions, never to ordinary chat. The journal retains the real user
+/// words; this is an unprivileged model hint, NOT authority.
+pub fn model_file_creation_hint(prompt: &str) -> String {
+    let lower = prompt.to_ascii_lowercase();
+    let intent = ["create", "write", "save", "export", "generate"]
+        .iter().any(|verb| lower.contains(verb));
+    let file_subject = ["file", "document", ".json", ".jsonl", ".md",
+        ".txt", ".py", ".rs", ".toml", ".yaml", ".yml", ".csv", ".ts",
+        ".js", ".html", ".css", "markdown", "script", "source code"]
+        .iter().any(|word| lower.contains(word));
+    let negated = ["do not create", "don't create", "do not save",
+        "don't save", "do not write", "don't write"]
+        .iter().any(|phrase| lower.contains(phrase));
+    const HINT: &str = "\n\n[Lu file creation proposal contract, unprivileged]\nIf the user requested creating a NEW local text file and provided enough content, propose exactly one JSON object with only these fields: {\"kind\":\"propose_create_file\",\"file_name\":\"appropriate.ext\",\"purpose\":\"brief description\",\"content\":\"complete UTF-8 text\"}. Choose an appropriate extension and content syntax (.json valid JSON, .md Markdown, .py Python, .rs Rust, .toml TOML, .yaml YAML, .csv CSV, etc.). Do not include a directory, raw filesystem path, grants, or arbitrary executable commands. The user independently chooses the folder and reviews every byte before Lu can write. This proposal only creates a file that does NOT already exist. For editing an existing file, explain the needed review rather than claiming to have modified it. If no file is requested, answer normally. Do not claim a file was saved merely because you proposed this object. [/Lu file creation proposal contract]";
+    if !intent || !file_subject || negated || prompt.len()+HINT.len()>16*1024 {
+        return prompt.to_owned();
+    }
+    format!("{prompt}{HINT}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,6 +68,15 @@ mod tests {
             interrupted,
             cancelled: interrupted,
         }
+    }
+    #[test]
+    fn file_tool_hint_only_on_explicit_create_save_requests() {
+        assert_eq!(model_file_creation_hint("What is a file?"), "What is a file?");
+        assert_eq!(model_file_creation_hint("Do not create a file"), "Do not create a file");
+        let prompt=model_file_creation_hint("Save the report to a Markdown file");
+        assert!(prompt.contains("propose_create_file"));
+        assert!(prompt.contains("does NOT already exist"));
+        assert!(prompt.contains("user independently chooses the folder"));
     }
     #[test]
     fn empty_history_yields_no_prior_turns() {
