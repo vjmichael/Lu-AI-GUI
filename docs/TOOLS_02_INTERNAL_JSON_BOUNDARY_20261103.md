@@ -37,3 +37,14 @@ The canonical native tool execution path stays: **untrusted model output → str
 - Content inside a JSON **string** remains opaque text; it is not recursively treated as protocol commands. Required or forbidden **semantic fields** are checked by typed codecs or explicit envelope validators, not guessed from generic JSON syntax.
 - Only harmless, deterministic syntax cleanup is in scope; no LLM-generated JSON repair loops, invented values, authorization replay, model-visible repair tool or unlimited retry. Deeper repair might be a later separately measured task.
 - Next native tools (Git inspection, archive listing, etc.) are separate from this internal boundary infrastructure. No further WRITE-01E edge-case push is required for TOOLS-02.
+
+## Original MBRL completion extension (2026-11-04, owner-directed)
+
+The original Library design `Jan-Mod-Design-Document.md` §§4.6–4.8 calls for **one deterministic normalization → up to two model regenerations → typed rejection/BLOCKED**, and §5.2 distinguishes internal `json_repair` from `validate_schema`. The phrase "advanced JSON repair" came from later reconciled roadmap shorthand, not a separate owner-specified advanced algorithm. The owner explicitly requests original bounded recovery now; semantic reconstruction and guessed values remain forbidden.
+
+Development source updates:
+- `supervised_tool_generation.rs`: up to **two corrective model generations per pre-dispatch rejection**, bounded total generations; no retry after an effect, cancellation, revocation, oversized frame or a host-selected routed call. Records an audit `BOUNDARY_BLOCKED` terminal reason after exhaustion.
+- Valid parsed tool attempts that cannot be dispatched receive a host-generated, synthetic, typed `lu_boundary` rejection result with a correlation ID, error code and fixed message. This **is not evidence that any native tool executed**. Malformed/unparseable text cannot be falsely turned into a tool-call record.
+- The trusted desktop **proposal staging** paths (read/create/edit) now use `parse_exact_boundary_object`; duplicate model-supplied paths/content/limits cannot be silently overwritten by deserialization. They are still inert until exact native user approval.
+- External authenticated llama.cpp SSE event JSON now passes strict bounded parsing and nested duplicate-key refusal. Incomplete streaming frames are assembled before parsing; partial/rejected SSE events never become successful engine JSON. Normal user-facing prose is not a tool protocol.
+- Dedicated Linux/Windows CI, supervisor regeneration/rejection tests, desktop proposal tests and SSE tests are required before accepting development branch. Installed desktop native tool orchestration (schema advertisement plus exact real UI authority) is a separate host integration gate; no claim of complete installed-v1 product before it is done.
