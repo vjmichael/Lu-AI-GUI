@@ -234,13 +234,16 @@ async fn unsafe_model_git_arguments_and_unapproved_dispatch_are_refused() {
         &catalog, &auth, origin, "git-scope".into(), &permitted,
     ).unwrap();
     auth.revoke_task("git-task").unwrap();
-    assert_eq!(
-        turn.handle_model_reply(
-            r#"{"kind":"tool","name":"lu_git_log","arguments":{"limit":1}}"#,
-            &catalog, &registry, &auth, &Allow,
-        ).await,
-        Err(ToolTurnError::Revoked),
-    );
+    // The model-facing tool-turn adapter intentionally returns a paired
+    // typed permission-denied tool result instead of exposing a raw dispatch
+    // error or leaving the transcript with an unanswered tool call.
+    let denial = turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_git_log","arguments":{"limit":1}}"#,
+        &catalog, &registry, &auth, &Allow,
+    ).await.expect("revoked authority must yield a structured denial");
+    assert_eq!(denial.data["ok"], false);
+    assert_eq!(denial.data["error"]["code"], "PERMISSION_DENIED");
+    assert_eq!(denial.data["error"]["retryable"], false);
     assert_eq!(turn.step_count(), 0);
     drop(turn); drop(auth); drop(catalog); drop(registry);
     teardown(root);
