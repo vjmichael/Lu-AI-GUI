@@ -122,3 +122,39 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   display: grid;
   gap: 4px;
 }
+
+/* DOCS-01: advanced preferences and OS-owned containing-folder action. */
+.advancedDocumentSettings {
+  margin: 12px 0 18px;
+  border: 1px solid #526b83;
+  border-radius: 10px;
+  padding: 13px;
+  background: rgba(76, 115, 150, .08);
+  display: grid;
+  gap: 9px;
+}
+.advancedDocumentSettings h3,.advancedDocumentSettings p { margin: 0; }
+.advancedDocumentSettings small,.advancedDocumentSettings code { overflow-wrap: anywhere; }
+.advancedDocumentSettings .writeTarget {
+  display: block;
+  font: 12px ui-monospace,Consolas,monospace;
+  padding: 8px;
+  border-radius: 5px;
+  background: rgba(0,0,0,.18);
+  user-select: text;
+}
+.folderLink {
+  width: fit-content;
+  border: none;
+  padding: 2px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #9ad5ff;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.folderLink:hover { color: #d0edff; }
+.folderLink:focus-visible { outline: 2px solid #96ceff; outline-offset: 3px; }
