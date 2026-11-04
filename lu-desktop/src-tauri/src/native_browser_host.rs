@@ -31,19 +31,28 @@ pub const CHROMIUM_NAME:&str="unsupported-chromium";
 #[cfg(not(any(windows,target_os="linux")))]
 pub const NODE_NAME:&str="unsupported-node";
 
-// These are deliberately absent pending a reviewed, reproducible browser
-// package. Adding binaries to app resources alone does NOT authorize launch.
-// Release engineering must pin the exact length and SHA-256 for every binary,
-// the JS worker and its Playwright runtime before enabling the launcher.
-#[derive(Debug,Clone,Copy)]
-struct ComponentPin {
-    sha256:&'static str,
-    len:u64,
+// The manifest is compiled into Lu's native binary. The bundled on-disk
+// manifest and EVERY runtime component must match these baked bytes/digests.
+// The checked-in manifest intentionally has status=not-packaged; staging a
+// reviewed package before building produces a separately pinned app binary.
+const EMBEDDED_BROWSER_MANIFEST:&str=include_str!("../resources/lu-browser/manifest.json");
+#[derive(Debug,serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BrowserManifest {
+    schema:u32,
+    runtime:String,
+    status:String,
+    #[serde(rename="playwrightVersion")]
+    playwright_version:String,
+    files:Vec<BrowserManifestEntry>,
 }
-const CHROMIUM_PIN:Option<ComponentPin>=None;
-const NODE_PIN:Option<ComponentPin>=None;
-const WORKER_PIN:Option<ComponentPin>=None;
-const PLAYWRIGHT_PIN:Option<ComponentPin>=None;
+#[derive(Debug,serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BrowserManifestEntry {
+    path:String,
+    sha256:String,
+    bytes:u64,
+}
 const PLAYWRIGHT_ENTRY:&str="node_modules/playwright/index.mjs";
 
 #[derive(Debug,Serialize,Clone,PartialEq,Eq)]
@@ -60,12 +69,18 @@ pub struct DesktopBrowserHost {
     app_data:PathBuf,
     session:Mutex<Option<OwnedBrowserWorker>>,
 }
-fn pin_matches(path:&Path,pin:Option<ComponentPin>)->bool {
+fn safe_manifest_path(path:&str)->bool{
+    !path.is_empty()&&path.len()<240&&!path.starts_with('/')
+      &&path.split('/').all(|part|!part.is_empty()&&part!="."&&part!=".."
+        &&part.bytes().all(|c|c.is_ascii_alphanumeric()
+          ||matches!(c,b'.'|b'_'|b'-')))
+}
+fn pin_matches(path:&Path,expected_sha:&str,expected_len:u64)->bool {
     use sha2::{Digest,Sha256};
     use std::{fs::File,io::Read};
-    let Some(pin)=pin else {return false;};
     let Ok(meta)=std::fs::symlink_metadata(path) else{return false;};
-    if !meta.file_type().is_file()||meta.len()!=pin.len||pin.sha256.len()!=64 {
+    if !meta.file_type().is_file()||meta.len()!=expected_len
+       ||expected_sha.len()!=64||!expected_sha.bytes().all(|b|b.is_ascii_hexdigit()){
         return false;
     }
     #[cfg(windows)]
@@ -81,7 +96,27 @@ fn pin_matches(path:&Path,pin:Option<ComponentPin>)->bool {
         if n==0 {break;}
         hasher.update(&buf[..n]);
     }
-    format!("{:x}",hasher.finalize())==pin.sha256
+    format!("{:x}",hasher.finalize())==expected_sha
+}
+fn enumerate_package_files(dir:&Path,base:&Path,out:&mut Vec<String>)->bool {
+    let Ok(entries)=std::fs::read_dir(dir) else{return false;};
+    for entry in entries {
+        let Ok(entry)=entry else{return false;};
+        let path=entry.path();
+        let Ok(meta)=std::fs::symlink_metadata(&path) else{return false;};
+        if meta.file_type().is_symlink(){return false;}
+        if meta.is_dir(){
+            if !enumerate_package_files(&path,base,out){return false;}
+        }else if meta.is_file(){
+            let Ok(relative)=path.strip_prefix(base) else{return false;};
+            let Some(name)=relative.to_str() else{return false;};
+            let name=name.replace('\\',"/");
+            if !safe_manifest_path(&name){return false;}
+            out.push(name);
+        }else{return false;}
+        if out.len()>10000{return false;}
+    }
+    true
 }
 impl DesktopBrowserHost {
     pub fn new(resources:PathBuf,app_data:PathBuf)->Self {
@@ -94,11 +129,31 @@ impl DesktopBrowserHost {
             .iter().all(|name|dir.join(name).is_file())
     }
     fn package_verified(&self)->bool {
+        use std::collections::BTreeSet;
+        let Ok(manifest)=serde_json::from_str::<BrowserManifest>(EMBEDDED_BROWSER_MANIFEST)
+            else{return false;};
+        if manifest.schema!=1||manifest.runtime!="lu-browser"
+          ||manifest.status!="reviewed"||manifest.playwright_version!="1.64.1"
+          ||manifest.files.len()<4||manifest.files.len()>10000{
+            return false;
+        }
         let dir=self.package_dir();
-        pin_matches(&dir.join(CHROMIUM_NAME),CHROMIUM_PIN)
-            &&pin_matches(&dir.join(NODE_NAME),NODE_PIN)
-            &&pin_matches(&dir.join(BROWSER_WORKER_NAME),WORKER_PIN)
-            &&pin_matches(&dir.join(PLAYWRIGHT_ENTRY),PLAYWRIGHT_PIN)
+        if std::fs::read_to_string(dir.join("manifest.json")).ok().as_deref()
+            !=Some(EMBEDDED_BROWSER_MANIFEST){return false;}
+        let mut expected=BTreeSet::new();
+        for file in &manifest.files{
+            if !safe_manifest_path(&file.path)||!expected.insert(file.path.clone())
+               ||!pin_matches(&dir.join(&file.path),&file.sha256,file.bytes){
+                return false;
+            }
+        }
+        for required in [CHROMIUM_NAME,NODE_NAME,BROWSER_WORKER_NAME,PLAYWRIGHT_ENTRY]{
+            if !expected.contains(required){return false;}
+        }
+        let mut actual=Vec::new();
+        if !enumerate_package_files(&dir,&dir,&mut actual){return false;}
+        actual.into_iter().collect::<BTreeSet<_>>()
+            ==expected.into_iter().chain(std::iter::once("manifest.json".into())).collect()
     }
     pub fn status(&self,preferences:&BrowserPreferences)->Result<BrowserRuntimeView,String>{
         let mode=preferences.visibility()
