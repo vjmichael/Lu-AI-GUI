@@ -34,7 +34,7 @@ if(manifest.schema!==1||manifest.runtime!=='lu-browser'||
   throw Error('Unsupported or incomplete browser package manifest');
 const required=process.platform==='win32'
   ? ['chrome.exe','node.exe','lu_browser_worker.mjs','node_modules/playwright/index.mjs']
-  : ['chrome','node','lu_browser_worker.mjs','node_modules/playwright/index.mjs'];
+  : ['chrome','node','xdotool','lu_browser_worker.mjs','node_modules/playwright/index.mjs'];
 const paths=new Set();
 for(const f of manifest.files){
   if(!f||typeof f.path!=='string'||typeof f.sha256!=='string'||
