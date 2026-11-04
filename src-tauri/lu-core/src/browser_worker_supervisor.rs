@@ -16,7 +16,7 @@ use std::{
     process::{Child,ChildStdin,Command,Stdio},
     sync::mpsc::{self,Receiver,RecvTimeoutError},
     thread,
-    time::Duration,
+    time::{Duration,Instant},
 };
 const MAX_FRAME:usize=3_000_000;
 #[derive(Debug)]
@@ -181,7 +181,9 @@ impl OwnedBrowserWorker {
         }
         let stdin=child.stdin.take().ok_or(BrowserSupervisorError::Protocol)?;
         let stdout=child.stdout.take().ok_or(BrowserSupervisorError::Protocol)?;
-        let (tx,rx)=mpsc::channel();
+        // Bound worker output even when Node floods frames faster than the host
+        // can process them. Backpressure stops untrusted memory growth.
+        let (tx,rx)=mpsc::sync_channel(32);
         let reader=thread::spawn(move||{
             let mut reader=BufReader::new(stdout);
             loop {
@@ -279,8 +281,13 @@ impl OwnedBrowserWorker {
             }
         }
         let mut operation_visibility_used=false;
+        // One whole-command deadline, including host visibility handshakes:
+        // repeated worker events must not refresh the time budget.
+        let deadline=Instant::now()+self.timeout;
         loop {
-            let frame=self.output.recv_timeout(self.timeout).map_err(|e|match e {
+            let remaining=deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero(){return Err(BrowserSupervisorError::Deadline);}
+            let frame=self.output.recv_timeout(remaining).map_err(|e|match e {
                 RecvTimeoutError::Timeout=>BrowserSupervisorError::Deadline,
                 RecvTimeoutError::Disconnected=>BrowserSupervisorError::WorkerExited
             })?.map_err(|_|BrowserSupervisorError::WorkerExited)?;
