@@ -65,7 +65,7 @@ export class HostVisibilityController {
 
 export class BrowserSession {
   constructor({origins, profileDirectory, chromiumProvider, softwareRendering = false,
-    visibilityMode = 'automatic', windowController = null} = {}) {
+    visibilityMode = 'automatic', windowController = null, cdpEndpoint = null} = {}) {
     if (!Array.isArray(origins) || origins.length === 0 || origins.length > 32) {
       throw new BrowserGateError('INVALID_ORIGINS');
     }
@@ -87,6 +87,11 @@ export class BrowserSession {
     // Only a host-owned native window controller may manipulate Chromium's window.
     // Playwright Page/Browser APIs must not pretend a window was hidden.
     this.windowController = windowController;
+    if(cdpEndpoint !== null && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(cdpEndpoint)) {
+      throw new BrowserGateError('UNTRUSTED_CDP_ENDPOINT');
+    }
+    this.cdpEndpoint=cdpEndpoint;
+    this.connectedBrowser=null;
     this.windowVisibility = 'NOT_STARTED';
     this.context = null;
     this.page = null;
@@ -96,11 +101,22 @@ export class BrowserSession {
     const provider = this.chromiumProvider ?? (await import('playwright').catch(() => {
       throw new BrowserGateError('BROWSER_BACKEND_UNAVAILABLE');
     })).chromium;
-    this.context = await provider.launchPersistentContext(this.profileDirectory, {
-      headless: false, acceptDownloads: false, serviceWorkers: 'block',
-      viewport: {width: 1280, height: 900},
-      args: this.softwareRendering ? ['--disable-gpu'] : [],
-    });
+    if(this.cdpEndpoint !== null) {
+      // Chromium was launched as a directly owned Child by the native Lu host.
+      // Playwright attaches to that same headed process; it must not spawn
+      // another browser whose window the host would not own.
+      this.connectedBrowser=await provider.connectOverCDP(this.cdpEndpoint,{timeout:10000});
+      this.context=this.connectedBrowser.contexts()[0];
+      if(!this.context)throw new BrowserGateError('NO_OWNED_BROWSER_CONTEXT');
+    } else {
+      // Standalone/fixture mode. Automatic hiding requires a separately
+      // authenticated native window controller; otherwise start fails closed.
+      this.context = await provider.launchPersistentContext(this.profileDirectory, {
+        headless: false, acceptDownloads: false, serviceWorkers: 'block',
+        viewport: {width: 1280, height: 900},
+        args: this.softwareRendering ? ['--disable-gpu'] : [],
+      });
+    }
     await this.context.route('**/*', async route => {
       try {
         approvedUrl(route.request().url(), this.origins);
@@ -260,7 +276,13 @@ export class BrowserSession {
     throw new BrowserGateError('UNKNOWN_OPERATION');
   }
   async close() {
-    if (this.context) await this.context.close();
+    if (this.connectedBrowser) {
+      // CDP detach is not a native process shutdown. Rust owns termination.
+      await this.connectedBrowser.close();
+      this.connectedBrowser=null;
+    } else if (this.context) {
+      await this.context.close();
+    }
     this.context=null;this.page=null;this.windowVisibility='NOT_STARTED';
   }
 }
