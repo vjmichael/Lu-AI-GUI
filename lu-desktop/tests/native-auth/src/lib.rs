@@ -14,6 +14,8 @@ mod native_host_write;
 mod edit_proposal;
 #[path = "../../../src-tauri/src/native_host_edit.rs"]
 mod native_host_edit;
+#[path = "../../../src-tauri/src/prompt_context.rs"]
+mod prompt_context;
 
 use chat_store::ChatStore;
 use lu_core::{
