@@ -115,6 +115,15 @@ jobs:
           foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
             Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
           }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build actual React frontend for Tauri macro validation
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
       - name: Compile check only (NOT distributable or GPU-tested)
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
