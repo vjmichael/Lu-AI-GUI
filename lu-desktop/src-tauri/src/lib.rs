@@ -169,6 +169,7 @@ struct DesktopState {
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
+    browser_preferences: lu_core::browser_preferences::BrowserPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -434,6 +435,9 @@ impl DesktopState {
         let document_preferences = lu_core::document_preferences::DocumentPreferences::open(
             &root.join("documents-preferences.sqlite")
         ).map_err(|e|format!("document preferences unavailable: {e:?}"))?;
+        let browser_preferences=lu_core::browser_preferences::BrowserPreferences::open(
+            &root.join("browser-preferences.sqlite")
+        ).map_err(|e|format!("browser preferences unavailable: {e:?}"))?;
         // All old owners are excluded. Interrupted actions are never retried;
         // these remain auditable, not executable grants.
         effects.reconcile_interrupted()
@@ -528,6 +532,7 @@ impl DesktopState {
             rollback_approval_ledger: rollback_approvals,
             documents_os_dir,
             document_preferences,
+            browser_preferences,
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1413,6 +1418,32 @@ fn lu_dismiss_read_proposal(
 
 /// A read-only Settings view. Neither model output nor WebView contents
 /// may supply an arbitrary filesystem path.
+/// User-facing browser visibility preference. The browser remains headed
+/// in both modes; this setting confers no navigation or network authority.
+#[tauri::command]
+fn lu_browser_settings(state: State<'_, Arc<DesktopState>>) -> Result<String, String> {
+    let value=state.browser_preferences.visibility()
+        .map_err(|e|format!("browser preferences unavailable: {e:?}"))?;
+    Ok(value.worker_mode().to_string())
+}
+/// This command is intended for a direct user settings event. It is not a
+/// per-turn tool and never starts, navigates, or authorizes a browser.
+#[tauri::command]
+fn lu_set_browser_visibility(
+    state: State<'_, Arc<DesktopState>>,
+    mode: String
+) -> Result<String,String> {
+    use lu_core::browser_visibility_settings::BrowserVisibilityPreference as P;
+    let preference=match mode.as_str() {
+        "automatic"=>P::AutomaticHidden,
+        "always-visible"=>P::AlwaysVisible,
+        _=>return Err("Unsupported browser visibility mode".into()),
+    };
+    state.browser_preferences.set_visibility(preference)
+        .map_err(|e|format!("cannot persist browser visibility: {e:?}"))?;
+    Ok(preference.worker_mode().into())
+}
+
 #[tauri::command]
 fn lu_document_settings(state: State<'_, Arc<DesktopState>>)
     -> Result<DocumentSettingsView, String> {
@@ -2262,6 +2293,8 @@ pub fn run() {
             lu_approve_read_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,
+            lu_browser_settings,
+            lu_set_browser_visibility,
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
