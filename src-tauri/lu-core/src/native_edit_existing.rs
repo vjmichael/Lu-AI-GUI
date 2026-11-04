@@ -1055,6 +1055,30 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_named_stream_must_not_be_discarded_by_edit_or_restore() {
+        let path=temp();
+        let target=path.join("stream.txt");
+        fs::write(&target,b"old").unwrap();
+        let ads=std::path::PathBuf::from(format!("{}:LuMetadata",target.display()));
+        match fs::write(&ads,b"must preserve") {
+            Ok(())=>{
+                let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+                let id="g-windows-stream-reject-0001";
+                assert_eq!(commit_in_dir(&root,"stream.txt",id,&sha(b"old"),
+                    b"new",&sha(b"review"),StopPoint::Never),
+                    Err(EditCommitError::UnsafeTarget));
+                assert!(!path.join(sidecar(id,"meta")).exists());
+                assert_eq!(fs::read(&target).unwrap(),b"old");
+                assert_eq!(fs::read(&ads).unwrap(),b"must preserve");
+                drop(root);
+            }
+            Err(e)=>eprintln!("ADS unavailable on this volume: {e}; no ADS acceptance"),
+        }
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_preflight_blocks_readonly_file_before_creating_a_manifest() {
         let path=temp();
         let target=path.join("readonly.md");
