@@ -124,9 +124,9 @@ fn reviewed_digest(path: &str, old: &[u8], new: &[u8], file_identity:Option<&str
     let mut hash = Sha256::new();
     // Preserve exact historical v1 hashes for non-Windows approved edits.
     hash.update(if file_identity.is_some() {
-        b"LU-WRITE-01E-REVIEW-NATIVE-ID-v2".as_slice()
+        &b"LU-WRITE-01E-REVIEW-NATIVE-ID-v2"[..]
     } else {
-        b"LU-WRITE-01E-REVIEW-v1".as_slice()
+        &b"LU-WRITE-01E-REVIEW-v1"[..]
     });
     for field in [path.as_bytes(), old, new] {
         hash.update((field.len() as u64).to_le_bytes());
