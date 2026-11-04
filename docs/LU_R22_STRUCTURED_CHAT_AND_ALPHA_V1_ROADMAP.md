@@ -68,3 +68,7 @@ No individual unit-test result is an automatic alpha PASS for its end-to-end gat
 3. Ask a second question about the **same image without reattaching**. For now, mark expected behavior **not supported**: image blobs are not yet durable chat context. This is a tracked v1 feature, not a successful answer.
 4. Start a fresh text-only chat: ask about Arkansas, then a follow-up, and verify there are no artificial `User:`/`Assistant:` loops. Repeat with different conversations queued.
 5. Confirm cancellation preserves interrupted text; run shutdown/reinstall/restore and native-tool denial tests before alpha gate sign-off.
+
+## Owner supersession (2026-11-04): JSON boundary reliability
+
+The earlier **JSON-repair deferred** wording referred to a future broad repair feature, not a prohibition on the *original design's* bounded internal Model Boundary Reliability Layer. The owner explicitly requested completion of the original bounded MBRL now: strict syntax/schema checks; one deterministic punctuation normalization; up to two model regenerations before any effect; typed errors and transcript evidence; Protobuf and host authorization remain mandatory. Semantic repair, invented parameters and permission escalation are still forbidden. See `LU_CENTRAL_DESIGN.md` and `TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md`.
