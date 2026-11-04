@@ -1383,6 +1383,14 @@ fn lu_write_recovery(
                 .map(|r| format!("{:?}", r.state))
                 .unwrap_or_else(|| "NOT_STARTED".into())
         } else { "NOT_STARTED".into() };
+        let observed_target = match record.selected_target.as_deref() {
+            Some(t) if state.drafts_dir.join(&record.file_name)
+                .to_string_lossy().as_ref() == t =>
+                native_host_write::inspect_recovery_target(
+                    &state.drafts_dir, &record.file_name, record.bytes, &record.sha256
+                ).into(),
+            _ => "NOT_SELECTED_OR_UNTRUSTED_PATH".into(),
+        };
         Ok(WriteRecoveryView {
             proposal_id: record.proposal_id,
             file_name: record.file_name,
@@ -1392,15 +1400,7 @@ fn lu_write_recovery(
             approval: format!("{:?}", record.decision),
             effect,
             effect_call_id: record.effect_call_id,
-            observed_target: match record.selected_target.as_deref() {
-                Some(t) if state.drafts_dir.join(&record.file_name)
-                    .to_string_lossy().as_ref() == t =>
-                    native_host_write::inspect_recovery_target(
-                        &state.drafts_dir, &record.file_name,
-                        record.bytes, &record.sha256
-                    ).into(),
-                _ => "NOT_SELECTED_OR_UNTRUSTED_PATH".into(),
-            },
+            observed_target,
         })
     }).collect()
 }
