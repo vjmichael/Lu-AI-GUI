@@ -40,7 +40,8 @@ test('every candidate byte is covered by SHA256 and manifest has independent dig
   assert.equal(await digest(manifestPath),readFileSync(digestPath,'utf8').trim());
   const expected=new Set(['manifest.json','manifest.sha256','candidate-summary.json']);
   for(const f of m.files){
-    assert.match(f.path,/^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)*$/);
+    assert.match(f.path,/^[a-zA-Z0-9._ -]+(?:\/[a-zA-Z0-9._ -]+)*$/);
+    assert.ok(f.path.split('/').every(part=>part===part.trim()));
     const p=join(out,...f.path.split('/'));
     const stat=lstatSync(p);
     assert.ok(stat.isFile()&&!stat.isSymbolicLink(),f.path);
