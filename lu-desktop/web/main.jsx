@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
@@ -33,6 +34,11 @@ function App() {
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
+  const [editProposals, setEditProposals] = useState({});
+  const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
+  const [editRecovery, setEditRecovery] = useState([]);
+  const [editObservations, setEditObservations] = useState({});
+  const [latestEdited, setLatestEdited] = useState(null);
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
@@ -158,7 +164,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -190,7 +196,12 @@ function App() {
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
       setWriteProposals(prev => ({...prev, [proposal.proposalId]: proposal}));
     }).then(fn => { if (alive) stopWriteProposal = fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); };
+    listen('lu-edit-proposal', e => {
+      const proposal = e.payload;
+      if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
+      setEditProposals(prev => ({...prev, [proposal.proposalId]:proposal}));
+    }).then(fn => { if (alive) stopEditProposal = fn; else fn(); });
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -411,10 +422,72 @@ function App() {
     if (currentChat.current === targetChat) setWriteRecovery(records);
   }
   useEffect(() => {
-    if (chatId) refreshWriteRecovery(chatId).catch(() => setWriteRecovery([]));
-    else setWriteRecovery([]);
+    if (chatId) {
+      refreshWriteRecovery(chatId).catch(() => setWriteRecovery([]));
+      refreshEditRecovery(chatId).catch(() => setEditRecovery([]));
+      setEditObservations({});
+    } else {
+      setWriteRecovery([]); setEditRecovery([]); setEditObservations({});
+    }
   }, [chatId]);
 
+
+  async function refreshEditRecovery(targetChat = chatId) {
+    if (!targetChat) { setEditRecovery([]); return; }
+    const records = await invoke('lu_edit_recovery',{chatId:targetChat});
+    if (currentChat.current === targetChat) setEditRecovery(records);
+  }
+  async function inspectEditRecovery(record) {
+    try {
+      const result = await invoke('lu_inspect_edit_recovery',{
+        chatId,proposalId:record.proposalId
+      });
+      setEditObservations(prev => ({...prev,[record.proposalId]:result}));
+    } catch (error) { setError(String(error)); }
+  }
+  async function reviewExistingFile(proposal) {
+    setError('');
+    try {
+      const selected = await invoke('lu_review_edit_file',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId
+      });
+      setEditProposals(prev => ({
+        ...prev,[proposal.proposalId]:{...prev[proposal.proposalId],selected}
+      }));
+      setEditReviewed(prev => ({...prev,[proposal.proposalId]:false}));
+    } catch (error) { setError(String(error)); }
+  }
+  async function approveExistingEdit(proposal) {
+    if (!proposal.selected || !editReviewed[proposal.proposalId]) return;
+    setError('');
+    try {
+      const edited = await invoke('lu_confirm_edit_file',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId
+      });
+      if (edited) {
+        await refreshChats();
+        if (currentChat.current === proposal.chatId)
+          setHistory(await invoke('lu_history',{chatId:proposal.chatId}));
+        setActivity('Edited existing file: '+edited.fileName);
+        setLatestEdited({...edited,proposalId:proposal.proposalId,chatId:proposal.chatId});
+      } else setActivity('Edit denied in native confirmation');
+    } catch (error) { setError(String(error)); }
+    finally {
+      setEditProposals(prev => {const next={...prev};delete next[proposal.proposalId];return next;});
+      setEditReviewed(prev => ({...prev,[proposal.proposalId]:false}));
+      await refreshEditRecovery(proposal.chatId).catch(() => {});
+    }
+  }
+  async function denyExistingEdit(proposal) {
+    try {
+      await invoke('lu_deny_edit_file',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId
+      });
+      setEditProposals(prev => {const next={...prev};delete next[proposal.proposalId];return next;});
+      setEditReviewed(prev => ({...prev,[proposal.proposalId]:false}));
+      await refreshEditRecovery(proposal.chatId).catch(() => {});
+    } catch (error) { setError(String(error)); }
+  }
   async function openCreatedFolder(proposalId, targetChat = chatId) {
     try {
       await invoke('lu_open_created_folder', {chatId: targetChat, proposalId});
