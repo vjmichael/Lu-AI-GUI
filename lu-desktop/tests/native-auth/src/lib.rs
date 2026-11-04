@@ -468,3 +468,97 @@ fn windows_native_picker_denies_reparse_file_and_prevents_renaming_open_handle()
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn real_desktop_user_journal_fences_durable_atomic_create_new() {
+    use lu_core::{
+        contracts::{ProtoPayload, ToolEffect, ToolInvocation},
+        conversation_authority::{
+            AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority
+        },
+        journal::{EffectJournal, EffectState},
+        native_create_new::{register_create_new, ExactCreateNewPolicy, REQUEST_TYPE, TOOL_ID},
+        policy::{CapabilityGrant, PolicyEngine},
+        registry::{DispatchError, NativeToolRegistry},
+        wire::proto,
+    };
+    use prost::Message;
+    use sha2::{Digest, Sha256};
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let current = chats.create_chat().unwrap();
+    let unrelated = chats.create_chat().unwrap();
+    let turn = format!("g-{}", "4".repeat(32));
+    chats.append_user_with_turn_id(
+        &current.chat_id, &turn, "Create the explicitly approved report.txt"
+    ).unwrap();
+    let effects = EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let target_root = root.join("trusted-output");
+    fs::create_dir(&target_root).unwrap();
+    let registry = NativeToolRegistry::new();
+    register_create_new(&registry, &target_root).unwrap();
+    let authority = ConversationAuthority::new();
+    let policy = PolicyEngine::new();
+    let task_id = "desktop-write-task-001".to_string();
+    let scope_id = "desktop-write-scope-001".to_string();
+    authority.open_user_task(TaskAuthority {
+        conversation_id: current.chat_id.clone(),
+        user_turn_id: turn.clone(),
+        task_id: task_id.clone(),
+        execution_scope_id: scope_id.clone(),
+        capabilities: vec![AuthorizedCapability {
+            tool_id: TOOL_ID.into(), effect: ToolEffect::WriteWorkspace
+        }],
+        expires_at: None,
+    }, &chats).unwrap();
+    policy.grant(CapabilityGrant {
+        tool_id: TOOL_ID.into(), effect: ToolEffect::WriteWorkspace,
+        scope_id: scope_id.clone(), expires_at: None,
+    }).unwrap();
+    let contents = b"authorized desktop document".to_vec();
+    let sha = format!("{:x}", Sha256::digest(&contents));
+    let fence = ExactCreateNewPolicy {
+        host_policy: &policy, expected_target: "report.txt", expected_sha256: &sha,
+    };
+    let request = ToolInvocation {
+        call_id: format!("g-{}", "5".repeat(32)),
+        tool_id: TOOL_ID.into(),
+        workspace_id: Some(scope_id.clone()),
+        input: ProtoPayload {
+            type_url: REQUEST_TYPE.into(),
+            bytes: proto::CeWriteRequest {
+                relative_path: "report.txt".into(), data: contents.clone(),
+            }.encode_to_vec(),
+        },
+    };
+    let denied_origin = BoundCallOrigin {
+        conversation_id: unrelated.chat_id.clone(),
+        user_turn_id: turn.clone(), task_id: task_id.clone(),
+    };
+    assert!(matches!(
+        authority.dispatch_bound_durable(
+            &registry, &effects, request.clone(), denied_origin, &fence
+        ).await,
+        Err(DispatchError::Denied(_))
+    ));
+    assert!(!target_root.join("report.txt").exists());
+    let origin = BoundCallOrigin {
+        conversation_id: current.chat_id.clone(),
+        user_turn_id: turn.clone(), task_id: task_id.clone(),
+    };
+    authority.dispatch_bound_durable(
+        &registry, &effects, request.clone(), origin.clone(), &fence,
+    ).await.unwrap();
+    assert_eq!(fs::read(target_root.join("report.txt")).unwrap(), contents);
+    assert_eq!(effects.get(&request.call_id).unwrap().unwrap().state, EffectState::Applied);
+    authority.revoke_task(&task_id).unwrap();
+    assert!(matches!(
+        authority.dispatch_bound_durable(
+            &registry, &effects, request, origin, &fence
+        ).await,
+        Err(DispatchError::Denied(_))
+    ));
+    drop(effects); drop(chats); drop(registry);
+    fs::remove_dir_all(root).unwrap();
+}
