@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "6cb55326d6e9a7c7e39671376c0eff908413914a",
-  "trackedFileCount": 294,
+  "trackedFileCount": 295,
   "files": [
     {
       "path": ".github/workflows/lu-backend-control-01.yml",
@@ -46,6 +46,10 @@
     {
       "path": "docs/BACKEND_CTRL_01_CANCELLATION_LIFECYCLE_20261104.md",
       "blob": "902e407967ad47cdc9771fbd21c603a64165e014"
+    },
+    {
+      "path": "docs/BACKEND_CTRL_01_CI_RECHECK_20261104.md",
+      "blob": "dcd4c0736234750172ac6a78572ae8cd339f569d"
     },
     {
       "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
