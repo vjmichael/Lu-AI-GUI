@@ -669,7 +669,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_edit_existing.rs",
-      "blob": "b50faa4f62925c885e50cdc1af2480d8ce4baae8"
+      "blob": "248c64575b7ac049d685a270030c73f7c5213aca"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
