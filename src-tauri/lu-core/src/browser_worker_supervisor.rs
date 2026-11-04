@@ -146,6 +146,10 @@ pub struct OwnedBrowserWorker {
     timeout:Duration,
     startup_pending:bool,
     failed:bool,
+    #[cfg(windows)]
+    _node_job:Option<lu_win_worker_job::Job>,
+    #[cfg(windows)]
+    _chromium_job:Option<lu_win_worker_job::Job>,
 }
 impl OwnedBrowserWorker {
     pub fn launch(config:BrowserLaunchConfig,browser:Option<OwnedBrowserWindow>)
@@ -161,12 +165,20 @@ impl OwnedBrowserWorker {
             "visibilityMode":config.visibility.worker_mode(),
             "cdpEndpoint":config.cdp_endpoint,
         });
+        #[cfg(windows)]
+        let node_job=lu_win_worker_job::Job::new()
+            .map_err(BrowserSupervisorError::Spawn)?;
         let mut child=Command::new(&config.trusted_node)
             .arg(&config.trusted_script)
             .env("LU_BROWSER_HOST_CONFIG",settings.to_string())
             .stdin(Stdio::piped()).stdout(Stdio::piped())
             .stderr(Stdio::null()).spawn()
             .map_err(BrowserSupervisorError::Spawn)?;
+        #[cfg(windows)]
+        if let Err(error)=node_job.assign(&child){
+            let _=child.kill();let _=child.wait();
+            return Err(BrowserSupervisorError::Spawn(error));
+        }
         let stdin=child.stdin.take().ok_or(BrowserSupervisorError::Protocol)?;
         let stdout=child.stdout.take().ok_or(BrowserSupervisorError::Protocol)?;
         let (tx,rx)=mpsc::channel();
@@ -188,22 +200,29 @@ impl OwnedBrowserWorker {
             bridge:VisibilityBridge::new(),browser,_profile_lease:None,
             visibility:config.visibility,timeout:config.command_timeout,
             startup_pending:true,failed:false,
+            #[cfg(windows)]
+            _node_job:Some(node_job),
+            #[cfg(windows)]
+            _chromium_job:None,
         })
     }
     /// Establish matching ownership: same profile, same host-launched
     /// Chromium Child and loopback CDP endpoint. No second Chromium launch.
     #[cfg(windows)]
-    pub fn launch_attached(mut config:BrowserLaunchConfig,launched:LaunchedChromium)
+    pub fn launch_attached(mut config:BrowserLaunchConfig,mut launched:LaunchedChromium)
       ->Result<Self,BrowserSupervisorError>{
         if config.trusted_profile!=launched.profile_dir() {
             return Err(BrowserSupervisorError::InvalidConfig);
         }
+        let chromium_job=launched.take_windows_job()
+            .ok_or(BrowserSupervisorError::MissingChromiumCustody)?;
         let (child,lease,endpoint)=launched.take_owned_parts();
         config.cdp_endpoint=Some(endpoint);
         let owner=OwnedBrowserWindow::new(child)
             .map_err(|_|BrowserSupervisorError::MissingChromiumCustody)?;
         let mut worker=Self::launch(config,Some(owner))?;
         worker._profile_lease=Some(lease);
+        worker._chromium_job=Some(chromium_job);
         Ok(worker)
     }
     #[cfg(target_os="linux")]
