@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "6cb55326d6e9a7c7e39671376c0eff908413914a",
-  "trackedFileCount": 288,
+  "trackedFileCount": 291,
   "files": [
     {
       "path": ".github/workflows/lu-backend-control-01.yml",
-      "blob": "0c0e7f278bfce8225cab8a4b9e831d48c2b1bdb3"
+      "blob": "51668820d7d742a2632eb6d725f093ef0d78297b"
     },
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -516,6 +516,10 @@
       "blob": "0565564828be47cea9f4732ac84601ab5c3f375d"
     },
     {
+      "path": "src-tauri/lu-core/src/backend_control.rs",
+      "blob": "d47a059333abfeae1641e956659e3f17765bc353"
+    },
+    {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
       "blob": "fee5732d8233f7e995c874ec122cbebc34e85c7f"
     },
@@ -673,7 +677,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "fb628471c2786944d570bd7a9ac923da146a942d"
+      "blob": "ffa961f7d988bcf220d43a47db619d03c5f6feef"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -765,7 +769,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "4a58bae78348cd967c3bb7f1e86e5ed8aae3a522"
+      "blob": "5524428dfc338ed1ff53826f51a195311ab241dc"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
@@ -1150,6 +1154,14 @@
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
       "blob": "d1dab79d3f892ec74911c88a293d2f121c0d39c0"
+    },
+    {
+      "path": "src-tauri/vllm-worker/lu_vllm_worker.py",
+      "blob": "a89b14218d3e98b20427e66006dd1d50b52f5c76"
+    },
+    {
+      "path": "src-tauri/vllm-worker/test_lu_vllm_worker.py",
+      "blob": "480ede357bd882230224a5ea0d6593cccadcfffc"
     },
     {
       "path": "tests/source-identity.test.mjs",
