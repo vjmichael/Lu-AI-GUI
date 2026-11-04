@@ -1954,6 +1954,130 @@ async fn lu_inspect_edit_recovery(
     })
 }
 
+/// Only an ephemeral, native-picked restoration review may request this
+/// dialog. The original edit approval NEVER authorizes undo. The WebView
+/// supplies only opaque chat/review IDs, never bytes, path, or permission.
+#[tauri::command]
+async fn lu_confirm_rollback(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String
+)->Result<Option<native_host_edit::RestoredFile>,String> {
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.rollback_reviews.inspect(&review_id,&chat_id)
+        .map_err(|e|format!("rollback review unavailable: {e:?}"))?;
+    let pending=state.rollback_approval_ledger.get(&review_id)
+        .map_err(|e|format!("rollback review ledger unavailable: {e:?}"))?
+        .ok_or("missing durable rollback review")?;
+    if pending!=initial.record ||
+        pending.decision!=lu_core::rollback_approval_ledger::RollbackDecision::Reviewed {
+        return Err("rollback review is not an unspent durable approval candidate".into());
+    }
+    let original=state.edit_approval_ledger.get(&pending.original_proposal_id)
+        .map_err(|e|format!("original edit history unavailable: {e:?}"))?
+        .ok_or("original edit review not found")?;
+    if original.chat_id!=chat_id ||
+        original.decision!=lu_core::edit_approval_ledger::EditDecision::Approved ||
+        original.effect_call_id.as_deref()!=Some(pending.original_edit_id.as_str()) ||
+        original.selected_target.as_deref()!=Some(pending.target.as_str()) ||
+        original.original_sha256.as_deref()!=Some(pending.restored_sha256.as_str()) ||
+        original.replacement_sha256!=pending.expected_current_sha256 ||
+        original.filename!=pending.filename {
+        return Err("rollback candidate no longer matches trusted original approval".into());
+    }
+    let msg=format!(
+        "RESTORE THE ORIGINAL TEXT? This changes an EXISTING file.\n\nFile: {}\nOriginal edit: {}\nCurrent file: {} bytes\nCurrent SHA-256: {}\nRestore: {} bytes\nRestore SHA-256: {}\n\nYou must have reviewed the complete before/after and change lines in Lu. Lu will journal this as a NEW effect and preserve another backup of the edited version. If the file changes meanwhile, restoration is refused. An interrupted restore is NEVER repeated automatically.",
+        pending.target,pending.original_edit_id,
+        initial.preview.current_text.len(),pending.expected_current_sha256,
+        pending.restore_bytes,pending.restored_sha256
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().message(msg)
+            .title("Lu — Separately authorize restoring original")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Restore verified original".into(),"Keep current version".into()
+            )).blocking_show()
+    }).await.map_err(|e|format!("native rollback confirmation failed: {e}"))?;
+    if !confirmed {
+        state.rollback_approval_ledger.deny(&review_id,&chat_id)
+            .map_err(|e|format!("rollback denial not durable: {e:?}"))?;
+        state.rollback_reviews.dismiss(&review_id,&chat_id)
+            .map_err(|e|format!("rollback review dismissal failed: {e:?}"))?;
+        return Ok(None);
+    }
+    let selected=state.rollback_reviews.take(&review_id,&chat_id)
+        .map_err(|e|format!("selected rollback no longer available: {e:?}"))?;
+    if selected.record!=initial.record ||
+        selected.preview!=initial.preview ||
+        selected.directory!=initial.directory ||
+        !Arc::ptr_eq(&selected.directory_cap,&initial.directory_cap) {
+        return Err("selected rollback changed during native confirmation".into());
+    }
+    let effect_id=next_id("g-");
+    state.rollback_approval_ledger.approve(&selected.record,&effect_id)
+        .map_err(|e|format!("rollback approval not durable: {e:?}"))?;
+    let user_turn_id=next_id("g-");
+    native_host_edit::execute_approved_rollback_pinned(
+        &state.chats,&state.effects,&chat_id,&user_turn_id,
+        &effect_id,&selected
+    ).await.map(Some)
+}
+
+#[tauri::command]
+fn lu_deny_rollback(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.rollback_approval_ledger.deny(&review_id,&chat_id)
+        .map_err(|e|format!("rollback denial unavailable: {e:?}"))?;
+    state.rollback_reviews.dismiss(&review_id,&chat_id)
+        .map_err(|e|format!("rollback review dismissal failed: {e:?}"))
+}
+
+/// Approvals and effect receipts remain visible after restart, even when a
+/// prior reviewed capability was lost or an effect is UNCERTAIN. No replay.
+#[tauri::command]
+fn lu_rollback_history(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<RollbackHistoryView>,String>{
+    state.chats.history(&chat_id)?;
+    let records=state.rollback_approval_ledger.recent_for_chat(&chat_id)
+        .map_err(|e|format!("rollback history unavailable: {e:?}"))?;
+    records.into_iter().map(|r|{
+        let effect_record=r.rollback_effect_id.as_ref().map(|id|state.effects.get(id))
+            .transpose().map_err(|e|format!("rollback effect journal unavailable: {e:?}"))?
+            .flatten();
+        let effect=effect_record.as_ref().map(|v|format!("{:?}",v.state))
+            .unwrap_or_else(||"NOT_STARTED".into());
+        let receipt_verified=effect_record.as_ref().zip(r.rollback_effect_id.as_deref())
+            .is_some_and(|(row,id)|lu_core::native_edit_existing::verified_rollback_receipt(
+                row,id,&r.original_edit_id,&r.restored_sha256,r.restore_bytes
+            ));
+        let assessment=match (r.decision,receipt_verified,effect.as_str()){
+            (lu_core::rollback_approval_ledger::RollbackDecision::Interrupted,_,_)=>
+                "INTERRUPTED_REVIEW_NO_AUTHORITY",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,true,_)=>
+                "VERIFIED_RESTORE_RECEIPT_TARGET_NOT_RECHECKED",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,false,"Applied")=>
+                "APPLIED_ROW_WITHOUT_VALID_ROLLBACK_RECEIPT",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,false,
+                "Uncertain"|"Executing")=>"UNCERTAIN_ROLLBACK_NO_AUTOMATIC_RETRY",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,_,_)=>
+                "APPROVED_RESTORE_NOT_CONFIRMED",
+            _=>"NOT_AUTHORIZED",
+        };
+        Ok(RollbackHistoryView{
+            review_id:r.review_id,original_proposal_id:r.original_proposal_id,
+            original_edit_id:r.original_edit_id,file_name:r.filename,
+            exact_target:r.target,decision:format!("{:?}",r.decision),
+            effect,effect_call_id:r.rollback_effect_id,restored_sha256:r.restored_sha256,
+            receipt_verified,assessment:assessment.into()
+        })
+    }).collect()
+}
+
 /// A *read-only* recovery screen. It reports durable evidence, never resumes
 /// or reapplies an incomplete write. The effect journal is the source of truth.
 #[tauri::command]
