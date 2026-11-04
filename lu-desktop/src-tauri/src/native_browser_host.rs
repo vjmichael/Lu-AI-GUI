@@ -42,6 +42,8 @@ struct BrowserManifest {
     schema:u32,
     runtime:String,
     status:String,
+    platform:String,
+    arch:String,
     #[serde(rename="playwrightVersion")]
     playwright_version:String,
     files:Vec<BrowserManifestEntry>,
@@ -132,8 +134,11 @@ impl DesktopBrowserHost {
         use std::collections::BTreeSet;
         let Ok(manifest)=serde_json::from_str::<BrowserManifest>(EMBEDDED_BROWSER_MANIFEST)
             else{return false;};
+        let platform=if cfg!(windows){"win32"}else if cfg!(target_os="linux"){"linux"}else{"unsupported"};
+        let arch=if cfg!(target_arch="x86_64"){"x64"}else{"unsupported"};
         if manifest.schema!=1||manifest.runtime!="lu-browser"
-          ||manifest.status!="reviewed"||manifest.playwright_version!="1.64.1"
+          ||manifest.status!="reviewed"||manifest.platform!=platform
+          ||manifest.arch!=arch||manifest.playwright_version!="1.64.1"
           ||manifest.files.len()<4||manifest.files.len()>10000{
             return false;
         }
