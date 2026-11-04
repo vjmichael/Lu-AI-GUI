@@ -209,10 +209,10 @@ async fn unsafe_model_git_arguments_and_unapproved_dispatch_are_refused() {
         registry.dispatch(call, &Deny).await, Err(DispatchError::Denied(_))
     ));
     let (auth, origin) = scope();
-    auth.revoke_task("git-task").unwrap();
     let mut turn = NativeToolTurn::new(
         &catalog, &auth, origin, "git-scope".into(), &permitted,
     ).unwrap();
+    auth.revoke_task("git-task").unwrap();
     assert_eq!(
         turn.handle_model_reply(
             r#"{"kind":"tool","name":"lu_git_log","arguments":{"limit":1}}"#,
