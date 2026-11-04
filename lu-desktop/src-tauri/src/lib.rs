@@ -1054,6 +1054,10 @@ async fn lu_generate(
                                 content: proposal.content.clone(),
                                 bytes: proposal.bytes(),
                                 sha256: proposal.digest(),
+                                file_format: lu_core::write_format::identify_text_format(
+                                    &proposal.file_name, &proposal.content
+                                ).map(lu_core::write_format::format_label)
+                                 .unwrap_or("UNVERIFIED_FORMAT").into(),
                             });
                         } else {
                             let _ = state.write_proposals.dismiss(&write_id, &chat_id);
@@ -1150,6 +1154,7 @@ struct WriteProposalEvent {
     content: String,
     bytes: usize,
     sha256: String,
+    file_format: String,
 }
 
 #[derive(Clone, Serialize)]
