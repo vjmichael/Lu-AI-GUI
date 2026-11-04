@@ -103,7 +103,7 @@ pub fn verified_created_folder(
     }
     let selected=Path::new(approval.selected_target.as_deref()
         .ok_or(DocumentPreferenceError::InvalidDirectory)?);
-    if selected.file_name().and_then(|name|name.to_str()) != Some(&approval.file_name) {
+    if selected.file_name().and_then(|name|name.to_str()) != Some(approval.file_name.as_str()) {
         return Err(DocumentPreferenceError::InvalidDirectory);
     }
     let parent=selected.parent().ok_or(DocumentPreferenceError::InvalidDirectory)?;
