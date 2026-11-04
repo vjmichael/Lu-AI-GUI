@@ -1512,22 +1512,46 @@ async fn lu_browser_start(
         },
         &state.chats
     ).map_err(|e|format!("browser authority refused: {e:?}"))?;
-    // The launch is blocking and may wait for Chromium and Playwright. Run
-    // off the Tauri event loop, retaining host-only path and origin authority.
+    // Reserve the active task BEFORE the potentially blocking launch. Stop
+    // can revoke this exact task even if a launch is still in progress.
+    {
+        let mut current=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        if current.is_some(){
+            let _=state.browser_authority.revoke_task(&task_id);
+            return Err("A research browser task is already active".into());
+        }
+        *current=Some(ActiveBrowserTask{
+            task_id:task_id.clone(),chat_id:chat_id.clone(),
+            user_turn_id:user_turn_id.clone(),origins:approved_origins.clone()
+        });
+    }
     let native_state=Arc::clone(&state);
     let allowed=approved_origins.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         native_state.browser_runtime.launch_for_native_grant(
             allowed,&native_state.browser_preferences)
-    ).await.map_err(|e|format!("browser supervisor panicked: {e}"))?;
+    ).await.map_err(|e|format!("browser supervisor panicked: {e}"))
+        .and_then(|x|x);
     if let Err(error)=result{
+        let mut current=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        if current.as_ref().is_some_and(|task|task.task_id==task_id){
+            current.take();
+        }
         let _=state.browser_authority.revoke_task(&task_id);
+        let _=state.browser_runtime.stop();
         return Err(error);
     }
-    *state.browser_task.lock().map_err(|_|"browser task lock poisoned")?=
-        Some(ActiveBrowserTask{
-            task_id,chat_id,user_turn_id,origins:approved_origins
-        });
+    // Stop may have revoked the task during browser startup. Do not leave
+    // an approved process alive after that revocation races completion.
+    let still_authorized=state.browser_task.lock()
+        .map_err(|_|"browser task lock poisoned")?
+        .as_ref().is_some_and(|task|task.task_id==task_id);
+    if !still_authorized{
+        let _=state.browser_runtime.stop();
+        return Err("Browser startup was cancelled by user".into());
+    }
     state.browser_runtime.status(&state.browser_preferences)
 }
 
