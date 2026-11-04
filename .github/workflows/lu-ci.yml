@@ -1,7 +1,7 @@
 name: Lu Desktop CI
 on:
   push:
-    paths: ['lu-desktop/**', 'src-tauri/**', '.github/workflows/lu-ci.yml']
+    paths: ['lu-desktop/**', 'src-tauri/**', 'source-tree.lock.json', '.github/workflows/lu-ci.yml']
   pull_request:
   workflow_dispatch:
 permissions:
