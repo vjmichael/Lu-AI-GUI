@@ -1302,6 +1302,29 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_external_writer_forces_uncertain_but_never_publishes() {
+        let path=temp();
+        let target=path.join("notes.txt");
+        fs::write(&target,b"old").unwrap();
+        // The writer has a genuine writable Windows FILE handle. The
+        // original file can be read, but Lu's no-write ReOpenFile lease
+        // must not be granted until this handle is closed.
+        let external=fs::OpenOptions::new().write(true).open(&target).unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let id="g-windows-no-write-lease-refuse-001";
+        let result=commit_in_dir(&root,"notes.txt",id,&sha(b"old"),
+            b"new",&sha(b"review"),StopPoint::Never);
+        assert_eq!(result,Err(EditCommitError::Uncertain));
+        assert_eq!(fs::read(&target).unwrap(),b"old");
+        assert!(path.join(sidecar(id,"meta")).exists());
+        assert!(path.join(sidecar(id,"orig")).exists());
+        assert!(path.join(sidecar(id,"new")).exists());
+        drop(external);drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_explicit_acl_refuses_instead_of_silently_replacing_custom_security() {
         use std::process::Command;
         let path=temp();
