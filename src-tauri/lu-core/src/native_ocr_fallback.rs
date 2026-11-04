@@ -309,8 +309,13 @@ fn run_engine(
     if too_large.load(Ordering::Acquire) || result.len() > MAX_TSV_BYTES {
         return Err(error("OCR_OUTPUT_LIMIT","OCR output exceeded the configured byte budget"));
     }
-    if !exit_ok || input_ok.is_err() {
-        return Err(error("OCR_FAILED","OCR engine rejected the approved image"));
+    if !exit_ok {
+        return Err(error("OCR_ENGINE_EXIT_FAILED",
+            "approved OCR engine exited without successful completion"));
+    }
+    if input_ok.is_err() {
+        return Err(error("OCR_STDIN_FAILED",
+            "approved OCR input could not be fully delivered"));
     }
     let mut parsed=parse_tesseract_tsv(&result,max_chars as usize)?;
     parsed.image_ref=pinned.image.image_ref.clone();
