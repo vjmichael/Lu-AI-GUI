@@ -76,6 +76,28 @@ struct ApprovedGit {
     executable: PathBuf,
 }
 
+/// Git for Windows does not consistently accept Rust's verbatim Win32
+/// \\?\C:\... canonical paths as --git-dir / --work-tree arguments.
+/// This strips the *local disk* extended-length prefix for CLI transport
+/// only; the stored approved canonical path and reparse-point checks remain.
+fn git_argument_path(path: &Path) -> Result<PathBuf, ToolFailure> {
+    #[cfg(windows)]
+    {
+        let raw=path.to_str().ok_or_else(||
+            denied("REPOSITORY_CHANGED","Git path is not valid Windows Unicode"))?;
+        if let Some(drive)=raw.strip_prefix(r"\\?\") {
+            let b=drive.as_bytes();
+            if b.len() >= 3 && b[0].is_ascii_alphabetic()
+                && b[1]==b':' && b[2]==b'\\' {
+                return Ok(PathBuf::from(drive));
+            }
+            return Err(denied("REPOSITORY_CHANGED",
+                "non-local verbatim Git paths are not supported"));
+        }
+    }
+    Ok(path.to_path_buf())
+}
+
 impl ApprovedGit {
     fn open(root: &Path, executable: &Path) -> Result<Self, String> {
         // Host-owned paths; never taken from a model, JSON argument, tool
@@ -128,12 +150,14 @@ impl ApprovedGit {
         if !git_meta.is_dir() || git_meta.file_type().is_symlink() {
             return Err(denied("REPOSITORY_CHANGED", "approved .git directory changed"));
         }
+        let cli_gitdir=git_argument_path(&self.git_dir)?;
+        let cli_worktree=git_argument_path(&self.root)?;
         let mut command = Command::new(&self.executable);
         command
             .arg("--no-optional-locks")
             .arg("--no-pager")
-            .arg(format!("--git-dir={}", self.git_dir.display()))
-            .arg(format!("--work-tree={}", self.root.display()))
+            .arg(format!("--git-dir={}", cli_gitdir.display()))
+            .arg(format!("--work-tree={}", cli_worktree.display()))
             .arg("-c").arg("core.fsmonitor=false")
             .arg("-c").arg("core.hooksPath=/dev/null")
             .arg("-c").arg("core.pager=cat")
