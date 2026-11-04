@@ -141,9 +141,7 @@ test note under this specification**, not a competing source of requirements.
 - A batch operation should be represented as **one validated manifest**
   executed with per-item journaling, not hundreds of isolated hallucinated
   LLM commands.
-- Original §7 loop guard watches recent call names + canonical argument
-  hashes, repeated identical calls, same-tool overuse, ping-pong cycles,
-  total budget, with graduated **allow → warn → block → kill**.
+- Original §7 loop guard is updated by the owner's 2026-11-04 decision: **no fixed total tool-call count**. The dispatcher checks **actual native progress evidence** (changed result or committed before/after state witness), not merely repeated names, paths, arguments or alternating tools. Stagnation still uses **allow → warn → block → kill**, with separate streaming generation repetition detection. See `TOOLS_08_ORIGINAL_LOOP_GUARD_DESIGN_20261104.md`.
   Must not block legitimate progress merely because the same operation
   is used with meaningfully different inputs. The guard acts **before**
   native dispatch and preserves typed error feedback.
