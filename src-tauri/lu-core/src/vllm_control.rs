@@ -81,6 +81,13 @@ impl<T: VllmControlTransport> VllmRequestController<T> {
                 self.state.cancel_acknowledged(id)?;
                 Ok(())
             }
+            Some("abort_verified_empty_engine") => {
+                // Version-pinned Lu worker awaited native AsyncLLM.abort and
+                // independently observed zero unfinished engine requests.
+                // Only a single request is admitted to this managed worker.
+                self.state.verify_stopped(id,false)?;
+                Ok(())
+            }
             // This is a terminal event for a *normally finishing* request.
             // During cancellation, a final message may race the abort; it
             // cannot independently verify the scheduler has released it.
@@ -193,6 +200,18 @@ mod tests {
         c.replace_after_recovery(Owned(Arc::clone(&flag)),
             now+std::time::Duration::from_secs(2),true).unwrap();
         c.generate("req_2","fresh user request",10).unwrap();
+    }
+    #[test]
+    fn vllm_native_abort_with_zero_unfinished_requests_preserves_model() {
+        let mut c=VllmRequestController::new(Capturing(vec![]));
+        let now=Instant::now();
+        c.generate("req_1","hello",16).unwrap();
+        c.abort("req_1",now).unwrap();
+        c.observe_feedback(&json!({"id":"req_1",
+            "event":"abort_verified_empty_engine"})).unwrap();
+        assert_eq!(c.state(),StopState::StopVerified);
+        assert!(!c.check_escalation(now+std::time::Duration::from_secs(3)).unwrap());
+        c.generate("req_2","next",16).unwrap();
     }
     #[test]
     fn normal_finish_releases_exact_request_for_next_generation() {
