@@ -53,6 +53,15 @@ pub struct WindowsFileIdentity {
     volume_serial:u64,
     file_id:[u8;16],
 }
+impl WindowsFileIdentity {
+    /// Stable, host-captured token: native volume serial (16 hex) and 128-bit
+    /// file ID (32 hex). Not a user authorization grant or a filesystem path.
+    pub fn token(self)->String {
+        let mut result=format!("{:016x}",self.volume_serial);
+        for b in self.file_id {result.push_str(&format!("{b:02x}"));}
+        result
+    }
+}
 fn unsafe_target(reason:&str)->io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied,format!(
         "existing-file replacement refused: {reason}"
