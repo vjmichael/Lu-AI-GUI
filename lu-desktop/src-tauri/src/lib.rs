@@ -12,6 +12,7 @@ mod edit_proposal;
 mod native_host_edit;
 mod rollback_review;
 mod prompt_context;
+mod native_browser_host;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
@@ -170,6 +171,7 @@ struct DesktopState {
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     browser_preferences: lu_core::browser_preferences::BrowserPreferences,
+    browser_runtime: native_browser_host::DesktopBrowserHost,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -533,6 +535,9 @@ impl DesktopState {
             documents_os_dir,
             document_preferences,
             browser_preferences,
+            browser_runtime: native_browser_host::DesktopBrowserHost::new(
+                app.path().resource_dir().map_err(|e|format!("browser resource root unavailable: {e}"))?
+            ),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1421,6 +1426,20 @@ fn lu_dismiss_read_proposal(
 /// User-facing browser visibility preference. The browser remains headed
 /// in both modes; this setting confers no navigation or network authority.
 #[tauri::command]
+fn lu_browser_runtime_status(
+    state: State<'_, Arc<DesktopState>>
+) -> Result<native_browser_host::BrowserRuntimeView,String> {
+    state.browser_runtime.status(&state.browser_preferences)
+}
+
+#[tauri::command]
+fn lu_browser_stop(
+    state: State<'_, Arc<DesktopState>>
+) -> Result<bool,String> {
+    state.browser_runtime.stop()
+}
+
+#[tauri::command]
 fn lu_browser_settings(state: State<'_, Arc<DesktopState>>) -> Result<String, String> {
     let value=state.browser_preferences.visibility()
         .map_err(|e|format!("browser preferences unavailable: {e:?}"))?;
@@ -2294,6 +2313,8 @@ pub fn run() {
             lu_dismiss_read_proposal,
             lu_document_settings,
             lu_browser_settings,
+            lu_browser_runtime_status,
+            lu_browser_stop,
             lu_set_browser_visibility,
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
