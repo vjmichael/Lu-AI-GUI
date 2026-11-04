@@ -666,6 +666,10 @@ impl ToolAuthorizer for ExactEditPolicy<'_> {
         }
         let req = proto::EditExistingRequest::decode(call.input.bytes.as_slice())
             .map_err(|_| AuthorizationError::new("malformed edit protobuf"))?;
+        #[cfg(windows)]
+        if self.reviewed.host_file_identity.is_none() {
+            return Err(AuthorizationError::new("Windows review missing native picked FileId"));
+        }
         if !filename(&req.relative_path) || req.relative_path != self.plan.filename ||
             req.relative_path != self.reviewed.host_relative_path.rsplit('/').next().unwrap_or("") ||
             req.expected_original_sha256 != self.plan.expected_original_sha256 ||
@@ -716,20 +720,38 @@ impl ToolAuthorizer for ExactRollbackPolicy<'_> {
     }
 }
 
-struct EditTool { descriptor: ToolDescriptor, root: Arc<Dir>, rollback: bool }
+struct EditTool {
+    descriptor: ToolDescriptor, root: Arc<Dir>, rollback: bool,
+    #[cfg(windows)]
+    selected_target_identity:Option<(String,crate::windows_file_guard::WindowsFileIdentity)>,
+}
 impl NativeTool for EditTool {
     fn descriptor(&self) -> &ToolDescriptor { &self.descriptor }
     fn invoke(&self, call: ToolInvocation) -> ToolFuture<'_> {
         let root = Arc::clone(&self.root);
         let rollback = self.rollback;
+        #[cfg(windows)]
+        let selected_target_identity=self.selected_target_identity.clone();
         Box::pin(async move {
             tokio::task::spawn_blocking(move || -> Result<ToolOutput, ToolFailure> {
                 let (type_url, reply) = if rollback {
                     let req = proto::EditRollbackRequest::decode(call.input.bytes.as_slice())
                         .map_err(|_| tool_failure("BAD_PROTOBUF"))?;
-                    let len = rollback_in_dir(&root, &req.relative_path, &req.original_edit_id,
-                        &call.call_id, &req.expected_current_sha256, &req.expected_restored_sha256)
-                        .map_err(|_| tool_failure("ROLLBACK_UNCERTAIN"))?;
+                    #[cfg(windows)]
+                    let approved_id={
+                        let (name,id)=selected_target_identity.as_ref()
+                            .ok_or_else(||tool_failure("WIN_SELECTED_FILE_ID_REQUIRED"))?;
+                        if name!=&req.relative_path {
+                            return Err(tool_failure("WIN_SELECTED_TARGET_MISMATCH"));
+                        }
+                        *id
+                    };
+                    let len = rollback_with_stop_selected(
+                        &root, &req.relative_path, &req.original_edit_id,
+                        &call.call_id, &req.expected_current_sha256,
+                        &req.expected_restored_sha256,StopPoint::Never,
+                        #[cfg(windows)] Some(approved_id)
+                    ).map_err(|_| tool_failure("ROLLBACK_UNCERTAIN"))?;
                     let result = proto::EditRollbackResult {
                         original_edit_id: req.original_edit_id, restored_bytes: len,
                         restored_sha256: req.expected_restored_sha256, committed: true
@@ -738,10 +760,21 @@ impl NativeTool for EditTool {
                 } else {
                     let req = proto::EditExistingRequest::decode(call.input.bytes.as_slice())
                         .map_err(|_| tool_failure("BAD_PROTOBUF"))?;
-                    let receipt = commit_in_dir(&root, &req.relative_path, &call.call_id,
+                    #[cfg(windows)]
+                    let approved_id={
+                        let (name,id)=selected_target_identity.as_ref()
+                            .ok_or_else(||tool_failure("WIN_SELECTED_FILE_ID_REQUIRED"))?;
+                        if name!=&req.relative_path {
+                            return Err(tool_failure("WIN_SELECTED_TARGET_MISMATCH"));
+                        }
+                        *id
+                    };
+                    let receipt = commit_in_dir_selected(
+                        &root, &req.relative_path, &call.call_id,
                         &req.expected_original_sha256, &req.replacement,
-                        &req.reviewed_approval_sha256, StopPoint::Never)
-                        .map_err(|_| tool_failure("EDIT_UNCERTAIN"))?;
+                        &req.reviewed_approval_sha256, StopPoint::Never,
+                        #[cfg(windows)] Some(approved_id)
+                    ).map_err(|_| tool_failure("EDIT_UNCERTAIN"))?;
                     let result = proto::EditExistingResult {
                         backup_id: receipt.backup_id,
                         bytes_written: receipt.bytes_written,
@@ -767,6 +800,27 @@ fn tool_failure(code: &str) -> ToolFailure {
 pub fn register_edit_tools_pinned(
     registry: &NativeToolRegistry, root: Arc<Dir>
 ) -> Result<(), RegistryError> {
+    register_edit_tools_pinned_internal(registry,root,
+        #[cfg(windows)]
+        None,
+    )
+}
+/// Only the trusted native picker may supply this identity. On Windows the
+/// legacy unbound registrar can discover tools but they refuse to execute.
+#[cfg(windows)]
+pub fn register_edit_tools_pinned_selected(
+    registry:&NativeToolRegistry,root:Arc<Dir>,
+    selected_name:&str,
+    selected_identity:crate::windows_file_guard::WindowsFileIdentity
+)->Result<(),RegistryError>{
+    register_edit_tools_pinned_internal(registry,root,Some((selected_name.into(),selected_identity)))
+}
+fn register_edit_tools_pinned_internal(
+    registry:&NativeToolRegistry,root:Arc<Dir>,
+    #[cfg(windows)] selected_target_identity:Option<(
+        String,crate::windows_file_guard::WindowsFileIdentity
+    )>,
+)->Result<(),RegistryError>{
     let descriptor = |id: &str, name: &str, input: &str, output: &str| ToolDescriptor {
         id: id.into(), display_name: name.into(),
         effect: ToolEffect::WriteWorkspace,
@@ -783,8 +837,10 @@ pub fn register_edit_tools_pinned(
             tools: vec![edit.clone(), rollback.clone()], panels: vec![], workflows: vec![],
         },
         vec![
-            Arc::new(EditTool { descriptor: edit, root: Arc::clone(&root), rollback: false }),
-            Arc::new(EditTool { descriptor: rollback, root, rollback: true }),
+            Arc::new(EditTool { descriptor: edit, root: Arc::clone(&root), rollback: false,
+                #[cfg(windows)] selected_target_identity:selected_target_identity.clone() }),
+            Arc::new(EditTool { descriptor: rollback, root, rollback: true,
+                #[cfg(windows)] selected_target_identity }),
         ]
     )
 }
