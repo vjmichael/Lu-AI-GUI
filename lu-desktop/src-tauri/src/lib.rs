@@ -6,6 +6,8 @@ mod generation_queue;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
+mod write_proposal;
+mod native_host_write;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -156,6 +158,9 @@ struct DesktopState {
     catalog_path: PathBuf,
     chats: ChatStore,
     read_proposals: read_proposal::ReadApprovalQueue,
+    write_proposals: write_proposal::WriteProposalQueue,
+    write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
+    drafts_dir: PathBuf,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -389,6 +394,16 @@ impl DesktopState {
         let approvals = lu_core::read_approval_ledger::ReadApprovalLedger::open(
             &root.join("read-approvals.sqlite")
         ).map_err(|e| format!("approval journal unavailable: {e:?}"))?;
+        let write_approvals = lu_core::write_approval_ledger::WriteApprovalLedger::open(
+            &root.join("write-approvals.sqlite")
+        ).map_err(|e| format!("write approvals unavailable: {e:?}"))?;
+        write_approvals.reconcile_pending()
+            .map_err(|e| format!("write approval reconciliation failed: {e:?}"))?;
+        let drafts_dir = root.join("lu-drafts");
+        fs::create_dir_all(&drafts_dir).map_err(|e| e.to_string())?;
+        if !is_real_directory(&drafts_dir) {
+            return Err("Lu Drafts directory must be an ordinary directory".into());
+        }
         // All old owners are excluded. Interrupted actions are never retried;
         // these remain auditable, not executable grants.
         effects.reconcile_interrupted()
@@ -475,6 +490,9 @@ impl DesktopState {
             catalog_path,
             chats: ChatStore::open(&root)?,
             read_proposals: read_proposal::ReadApprovalQueue::default(),
+            write_proposals: write_proposal::WriteProposalQueue::default(),
+            write_approval_ledger: write_approvals,
+            drafts_dir,
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1017,6 +1035,30 @@ async fn lu_generate(
                             );
                         }
                     }
+                    // A completed assistant message may *propose* writing
+                    // text, but this is inert until a user reviews content,
+                    // the exact Lu Drafts destination and confirms twice.
+                    let write_id = next_id("pw-");
+                    if let Ok(proposal) = state.write_proposals.stage(
+                        &write_id, &chat_id, &gid, &answer
+                    ) {
+                        if state.write_approval_ledger.stage(
+                            &write_id, &chat_id, &gid, &proposal.file_name,
+                            proposal.bytes(), &proposal.digest(),
+                        ).is_ok() {
+                            let _ = app.emit("lu-write-proposal", WriteProposalEvent {
+                                chat_id: chat_id.clone(),
+                                proposal_id: write_id,
+                                file_name: proposal.file_name.clone(),
+                                purpose: proposal.purpose.clone(),
+                                content: proposal.content.clone(),
+                                bytes: proposal.bytes(),
+                                sha256: proposal.digest(),
+                            });
+                        } else {
+                            let _ = state.write_proposals.dismiss(&write_id, &chat_id);
+                        }
+                    }
                     Ok(answer)
                 }
                 Err(error) => {
@@ -1096,6 +1138,39 @@ async fn lu_inspect_text_file(
         Some(&state.effects),
     ).await?;
     Ok(Some(result))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteProposalEvent {
+    chat_id: String,
+    proposal_id: String,
+    file_name: String,
+    purpose: String,
+    content: String,
+    bytes: usize,
+    sha256: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteDestinationView {
+    exact_target: String,
+    sha256: String,
+    bytes: usize,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteRecoveryView {
+    proposal_id: String,
+    file_name: String,
+    exact_target: Option<String>,
+    sha256: String,
+    bytes: u32,
+    approval: String,
+    effect: String,
+    effect_call_id: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1199,6 +1274,95 @@ fn lu_dismiss_read_proposal(
         .map_err(|e| format!("proposal dismissal: {e:?}"))
 }
 
+/// User's first review action: the destination is selected by the host,
+/// NOT the model or a path supplied by the WebView.
+#[tauri::command]
+fn lu_review_write_destination(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<WriteDestinationView, String> {
+    let (target, origin, proposal) = state.write_proposals.choose_directory(
+        &proposal_id, &chat_id, &state.drafts_dir,
+    ).map_err(|e| format!("write review unavailable: {e:?}"))?;
+    state.write_approval_ledger.choose_target(
+        &proposal_id, &chat_id, &origin, &target,
+    ).map_err(|e| format!("write destination review could not be recorded: {e:?}"))?;
+    Ok(WriteDestinationView {
+        exact_target: target,
+        sha256: proposal.digest(),
+        bytes: proposal.bytes(),
+    })
+}
+
+/// Confirm only the currently host-selected destination. No WebView-provided
+/// path, byte payload, model origin or permission is accepted here.
+#[tauri::command]
+async fn lu_confirm_write(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<native_host_write::CreatedFile, String> {
+    let state = Arc::clone(state.inner());
+    let (origin, directory, proposal) = state.write_proposals.take_confirmed(
+        &proposal_id, &chat_id,
+    ).map_err(|e| format!("write confirmation unavailable: {e:?}"))?;
+    let target = directory.join(&proposal.file_name).to_string_lossy().into_owned();
+    let effect_id = next_id("g-");
+    state.write_approval_ledger.approve(
+        &proposal_id, &chat_id, &origin, &proposal.file_name,
+        proposal.bytes(), &proposal.digest(), &target, &effect_id,
+    ).map_err(|e| format!("write approval not committed: {e:?}"))?;
+    let user_turn = next_id("g-");
+    native_host_write::execute_approved_create(
+        &state.chats, &state.effects, &chat_id, &user_turn, &effect_id,
+        &directory, &proposal,
+    ).await
+}
+
+#[tauri::command]
+fn lu_deny_write(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<(), String> {
+    state.write_approval_ledger.deny(&proposal_id, &chat_id)
+        .map_err(|e| format!("write denial could not be recorded: {e:?}"))?;
+    state.write_proposals.dismiss(&proposal_id, &chat_id)
+        .map_err(|e| format!("write request not dismissed: {e:?}"))?;
+    Ok(())
+}
+
+/// A *read-only* recovery screen. It reports durable evidence, never resumes
+/// or reapplies an incomplete write. The effect journal is the source of truth.
+#[tauri::command]
+fn lu_write_recovery(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+) -> Result<Vec<WriteRecoveryView>, String> {
+    state.chats.history(&chat_id)?; // authenticated local desktop chat identity
+    let records = state.write_approval_ledger.recent_for_chat(&chat_id)
+        .map_err(|e| format!("write recovery unavailable: {e:?}"))?;
+    records.into_iter().map(|record| {
+        let effect = if let Some(ref call_id) = record.effect_call_id {
+            state.effects.get(call_id)
+                .map_err(|e| format!("effect receipt unavailable: {e:?}"))?
+                .map(|r| format!("{:?}", r.state))
+                .unwrap_or_else(|| "NOT_STARTED".into())
+        } else { "NOT_STARTED".into() };
+        Ok(WriteRecoveryView {
+            proposal_id: record.proposal_id,
+            file_name: record.file_name,
+            exact_target: record.selected_target,
+            sha256: record.sha256,
+            bytes: record.bytes,
+            approval: format!("{:?}", record.decision),
+            effect,
+            effect_call_id: record.effect_call_id,
+        })
+    }).collect()
+}
+
 #[tauri::command]
 fn lu_chats(state: State<'_, Arc<DesktopState>>) -> Result<ChatListView, String> {
     let (chats, folders) = state.chats.list()?;
@@ -1294,6 +1458,10 @@ pub fn run() {
             lu_inspect_text_file,
             lu_approve_read_proposal,
             lu_dismiss_read_proposal,
+            lu_review_write_destination,
+            lu_confirm_write,
+            lu_deny_write,
+            lu_write_recovery,
             lu_history,
             lu_chats,
             lu_new_chat,
