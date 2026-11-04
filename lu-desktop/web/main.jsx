@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
@@ -33,6 +34,14 @@ function App() {
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
+  const [editProposals, setEditProposals] = useState({});
+  const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
+  const [editRecovery, setEditRecovery] = useState([]);
+  const [editObservations, setEditObservations] = useState({});
+  const [rollbackReviewed, setRollbackReviewed] = useState({});
+  const [rollbackHistory, setRollbackHistory] = useState([]);
+  const [latestRestored, setLatestRestored] = useState(null);
+  const [latestEdited, setLatestEdited] = useState(null);
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
@@ -158,7 +167,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -190,7 +199,12 @@ function App() {
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
       setWriteProposals(prev => ({...prev, [proposal.proposalId]: proposal}));
     }).then(fn => { if (alive) stopWriteProposal = fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); };
+    listen('lu-edit-proposal', e => {
+      const proposal = e.payload;
+      if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
+      setEditProposals(prev => ({...prev, [proposal.proposalId]:proposal}));
+    }).then(fn => { if (alive) stopEditProposal = fn; else fn(); });
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -411,10 +425,118 @@ function App() {
     if (currentChat.current === targetChat) setWriteRecovery(records);
   }
   useEffect(() => {
-    if (chatId) refreshWriteRecovery(chatId).catch(() => setWriteRecovery([]));
-    else setWriteRecovery([]);
+    if (chatId) {
+      refreshWriteRecovery(chatId).catch(() => setWriteRecovery([]));
+      refreshEditRecovery(chatId).catch(() => setEditRecovery([]));
+      refreshRollbackHistory(chatId).catch(() => setRollbackHistory([]));
+      setEditObservations({}); setRollbackReviewed({});
+    } else {
+      setWriteRecovery([]); setEditRecovery([]);
+      setEditObservations({}); setRollbackHistory([]); setRollbackReviewed({});
+    }
   }, [chatId]);
 
+
+  async function refreshEditRecovery(targetChat = chatId) {
+    if (!targetChat) { setEditRecovery([]); return; }
+    const records = await invoke('lu_edit_recovery',{chatId:targetChat});
+    if (currentChat.current === targetChat) setEditRecovery(records);
+  }
+  async function refreshRollbackHistory(targetChat = chatId) {
+    if (!targetChat) { setRollbackHistory([]); return; }
+    const records = await invoke('lu_rollback_history',{chatId:targetChat});
+    if (currentChat.current === targetChat) setRollbackHistory(records);
+  }
+  async function inspectEditRecovery(record) {
+    try {
+      const result = await invoke('lu_inspect_edit_recovery',{
+        chatId,proposalId:record.proposalId
+      });
+      setEditObservations(prev => ({...prev,[record.proposalId]:result}));
+      setRollbackReviewed({});
+    } catch (error) { setError(String(error)); }
+  }
+  async function confirmRollback(record) {
+    const observation = editObservations[record.proposalId];
+    const reviewId = observation?.rollbackReviewId;
+    if (!reviewId || !rollbackReviewed[reviewId]) return;
+    setError('');
+    try {
+      const restored = await invoke('lu_confirm_rollback',{chatId,reviewId});
+      if (restored) {
+        setActivity('Restored previous version: '+restored.fileName);
+        setLatestRestored({...restored,chatId});
+        await refreshChats();
+        if (currentChat.current === chatId)
+          setHistory(await invoke('lu_history',{chatId}));
+      } else setActivity('Kept current file; restoration denied');
+    } catch (error) { setError(String(error)); }
+    finally {
+      setEditObservations(prev => {const next={...prev};delete next[record.proposalId];return next;});
+      setRollbackReviewed(prev => ({...prev,[reviewId]:false}));
+      await refreshRollbackHistory(chatId).catch(() => {});
+      await refreshEditRecovery(chatId).catch(() => {});
+    }
+  }
+  async function denyRollback(record) {
+    const reviewId = editObservations[record.proposalId]?.rollbackReviewId;
+    if (!reviewId) return;
+    try {
+      await invoke('lu_deny_rollback',{chatId,reviewId});
+      setActivity('Kept current file; restoration not approved');
+      setEditObservations(prev => {const next={...prev};delete next[record.proposalId];return next;});
+      setRollbackReviewed(prev => ({...prev,[reviewId]:false}));
+      await refreshRollbackHistory(chatId).catch(() => {});
+    } catch (error) { setError(String(error)); }
+  }
+  async function reviewExistingFile(proposal) {
+    setError('');
+    try {
+      const selected = await invoke('lu_review_edit_file',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId
+      });
+      setEditProposals(prev => ({
+        ...prev,[proposal.proposalId]:{...prev[proposal.proposalId],selected}
+      }));
+      setEditReviewed(prev => ({...prev,[proposal.proposalId]:false}));
+    } catch (error) { setError(String(error)); }
+  }
+  async function approveExistingEdit(proposal) {
+    if (!proposal.selected || !editReviewed[proposal.proposalId]) return;
+    setError('');
+    try {
+      const edited = await invoke('lu_confirm_edit_file',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId
+      });
+      if (edited) {
+        await refreshChats();
+        if (currentChat.current === proposal.chatId)
+          setHistory(await invoke('lu_history',{chatId:proposal.chatId}));
+        setActivity('Edited existing file: '+edited.fileName);
+        setLatestEdited({...edited,proposalId:proposal.proposalId,chatId:proposal.chatId});
+      } else setActivity('Edit denied in native confirmation');
+    } catch (error) { setError(String(error)); }
+    finally {
+      setEditProposals(prev => {const next={...prev};delete next[proposal.proposalId];return next;});
+      setEditReviewed(prev => ({...prev,[proposal.proposalId]:false}));
+      await refreshEditRecovery(proposal.chatId).catch(() => {});
+    }
+  }
+  async function denyExistingEdit(proposal) {
+    try {
+      await invoke('lu_deny_edit_file',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId
+      });
+      setEditProposals(prev => {const next={...prev};delete next[proposal.proposalId];return next;});
+      setEditReviewed(prev => ({...prev,[proposal.proposalId]:false}));
+      await refreshEditRecovery(proposal.chatId).catch(() => {});
+    } catch (error) { setError(String(error)); }
+  }
+  async function openEditedFolder(proposalId, targetChat = chatId) {
+    try {
+      await invoke('lu_open_edited_folder', {chatId:targetChat,proposalId});
+    } catch (error) { setError(String(error)); }
+  }
   async function openCreatedFolder(proposalId, targetChat = chatId) {
     try {
       await invoke('lu_open_created_folder', {chatId: targetChat, proposalId});
@@ -789,6 +911,62 @@ function App() {
             </div>
           </section>
         )}
+
+        {Object.values(editProposals).filter(p => p.chatId === chatId).map(proposal =>
+          <section key={proposal.proposalId} className="readProposalCard editProposalCard"
+            role="group" aria-label="Review proposed existing-file edit">
+            <strong>Lu proposes editing an EXISTING text file</strong>
+            <p>{proposal.purpose}</p>
+            <small>Suggested filename: {proposal.fileName}. Lu cannot select the path;
+              you must choose the matching existing file with a native picker.</small>
+            {!proposal.selected ? <>
+              <small>Proposed replacement (not approved):</small>
+              <pre className="editFullText">{proposal.content}</pre>
+            </> : <>
+              <strong>Exact selected target</strong>
+              <code className="writeTarget">{proposal.selected.exactTarget}</code>
+              <small>Original: {proposal.selected.originalBytes} bytes, SHA-256: {proposal.selected.originalSha256}</small>
+              <small>Replacement: {proposal.selected.replacementBytes} bytes, SHA-256: {proposal.selected.replacementSha256}</small>
+              <small>Review fingerprint: {proposal.selected.approvalSha256} · Scope: {proposal.selected.risk}</small>
+              <strong>Complete line-change view</strong>
+              <small>Every unchanged line is retained; removed lines begin with −, added lines with +.
+                Large change regions are not minimized. No content is truncated.</small>
+              <pre className="editFullText editDiff" aria-label="Complete change lines">{fullEditChangeLines(proposal.selected.original,proposal.selected.replacement)}</pre>
+              <strong>Complete original file</strong>
+              <pre className="editFullText" aria-label="Complete original">{proposal.selected.original}</pre>
+              <strong>Complete proposed replacement</strong>
+              <pre className="editFullText" aria-label="Complete replacement">{proposal.selected.replacement}</pre>
+              <label className="editReviewAck">
+                <input type="checkbox" checked={Boolean(editReviewed[proposal.proposalId])}
+                  onChange={e => setEditReviewed(prev => ({
+                    ...prev,[proposal.proposalId]:e.target.checked
+                  }))}/>
+                I reviewed the complete original, changes, replacement and exact destination.
+              </label>
+              <small>Checking this box is only a UI acknowledgement; an independent native
+                confirmation and host-authorized, journaled operation are still required.</small>
+            </>}
+            <div className="settingsActions">
+              {!proposal.selected ?
+                <button type="button" className="primaryButton"
+                  onClick={() => reviewExistingFile(proposal)}>Choose existing file and compare</button> :
+                <button type="button" className="primaryButton"
+                  disabled={!editReviewed[proposal.proposalId]}
+                  onClick={() => approveExistingEdit(proposal)}>Review native confirmation and edit</button>}
+              <button type="button" className="subtleButton"
+                onClick={() => denyExistingEdit(proposal)}>Deny edit</button>
+            </div>
+          </section>
+        )}
+        {latestEdited?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Edited {latestEdited.fileName}</strong>
+          <small>Effect receipt: {latestEdited.effectCallId}</small>
+          <small>Before: {latestEdited.originalSha256} · After: {latestEdited.replacementSha256}</small>
+          <button className="folderLink" type="button"
+            onClick={() => openEditedFolder(latestEdited.proposalId,latestEdited.chatId)}>
+            Open containing folder
+          </button>
+        </section>}
         {latestCreated?.chatId === chatId && <section className="readProposalCard" role="status">
           <strong>Created {latestCreated.fileName}</strong>
           <small>{latestCreated.exactTarget}</small>
@@ -821,6 +999,112 @@ function App() {
             onClick={() => refreshWriteRecovery().catch(error => setError(String(error)))}>
             Refresh recovery evidence
           </button>
+        </section>}
+
+        {editRecovery.length > 0 && <section className="readProposalCard"
+          aria-label="Existing file edit recovery records">
+          <strong>Existing-file edit recovery</strong>
+          <small>Read-only approval and effect journal evidence. File bytes are inspected only
+            after you reselect the originally approved containing folder through the native picker.
+            Uncertain edits never resume automatically.</small>
+          {editRecovery.map(record =>
+            <div key={record.proposalId} className="writeRecoveryRow">
+              <strong>{record.fileName}</strong>
+              <small>Review: {record.approval} · Effect: {record.effect}</small>
+              <small>Exact applied edit receipt: {record.receiptVerified ? 'Verified' : 'Not verified'}</small>
+              {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
+              <small>Original SHA-256: {record.originalSha256 || 'Not selected'}</small>
+              <small>Replacement SHA-256: {record.replacementSha256}</small>
+              <small>Assessment: {(editObservations[record.proposalId]?.assessment || record.assessment)}</small>
+              <small>Observed bytes: {(editObservations[record.proposalId]?.observation || record.observation)}
+                (matching bytes alone do not prove who published them)</small>
+              {editObservations[record.proposalId] && <small>
+                Undo preflight: {editObservations[record.proposalId].rollbackReviewStatus}
+              </small>}
+              {editObservations[record.proposalId]?.rollbackPreview && <details
+                className="editUndoPreview" aria-label="Read-only undo preview">
+                <summary>Review verified original for a possible future restore (read-only)</summary>
+                <small>No restore command is issued. This preview requires the exact
+                  decoded APPLIED edit receipt, retained original backup and current file.</small>
+                <small>Edited SHA-256: {editObservations[record.proposalId].rollbackPreview.replacementSha256}</small>
+                <small>Original SHA-256: {editObservations[record.proposalId].rollbackPreview.originalSha256}</small>
+                <strong>Complete changes if original were restored</strong>
+                <pre className="editFullText editDiff" aria-label="Proposed restore change lines">{
+                  fullEditChangeLines(editObservations[record.proposalId].rollbackPreview.currentText,
+                    editObservations[record.proposalId].rollbackPreview.restoreText)
+                }</pre>
+                <strong>Complete current text</strong>
+                <pre className="editFullText" aria-label="Current text for possible restore">{
+                  editObservations[record.proposalId].rollbackPreview.currentText
+                }</pre>
+                <strong>Complete verified original text</strong>
+                <pre className="editFullText" aria-label="Verified original text">{
+                  editObservations[record.proposalId].rollbackPreview.restoreText
+                }</pre>
+                <small>This restoration has its own authorization. A native confirmation
+                  will ask again before any filesystem operation. The edited version is separately
+                  backed up. Changes made by another program will block the restore.</small>
+                {editObservations[record.proposalId].rollbackReviewId && <>
+                  <label className="editReviewAck">
+                    <input type="checkbox"
+                      checked={Boolean(rollbackReviewed[editObservations[record.proposalId].rollbackReviewId])}
+                      onChange={e => setRollbackReviewed(prev => ({
+                        ...prev,
+                        [editObservations[record.proposalId].rollbackReviewId]:e.target.checked
+                      }))}/>
+                    I reviewed the complete current file, original version and restoration changes.
+                  </label>
+                  <div className="settingsActions">
+                    <button className="primaryButton" type="button"
+                      disabled={!rollbackReviewed[editObservations[record.proposalId].rollbackReviewId]}
+                      onClick={() => confirmRollback(record)}>
+                      Confirm original restore in native dialog
+                    </button>
+                    <button className="subtleButton" type="button"
+                      onClick={() => denyRollback(record)}>Keep current version</button>
+                  </div>
+                </>}
+              </details>}
+              {record.approval === 'Approved' && <button type="button" className="subtleButton"
+                onClick={() => inspectEditRecovery(record)}>Reselect folder to inspect artifacts</button>}
+              {record.approval === 'Approved' && record.receiptVerified &&
+                <button type="button" className="folderLink"
+                  onClick={() => openEditedFolder(record.proposalId,chatId)}>
+                  Open containing folder
+                </button>}
+            </div>
+          )}
+          <button type="button" className="subtleButton"
+            onClick={() => refreshEditRecovery().catch(error => setError(String(error)))}>
+            Refresh edit recovery ledger
+          </button>
+        </section>}
+        {rollbackHistory.length > 0 && <section className="readProposalCard"
+          aria-label="Restoration authorization and recovery history">
+          <strong>Restoration history and recovery</strong>
+          <small>Separate user approval, journal effect, and verified receipt. A failed or
+            uncertain restore is never automatically repeated, even after a restart.</small>
+          {rollbackHistory.map(record =>
+            <div key={record.reviewId} className="writeRecoveryRow">
+              <strong>{record.fileName}</strong>
+              <small>Review: {record.decision} · Restore effect: {record.effect}</small>
+              <small>Verified restoration receipt: {record.receiptVerified ? 'Yes' : 'No'}</small>
+              <small>Assessment: {record.assessment}</small>
+              <small>Original edit effect: {record.originalEditId}</small>
+              <small>Restore SHA-256: {record.restoredSha256}</small>
+              <code className="writeTarget">{record.exactTarget}</code>
+            </div>
+          )}
+          <button type="button" className="subtleButton"
+            onClick={() => refreshRollbackHistory().catch(error => setError(String(error)))}>
+            Refresh restoration history
+          </button>
+        </section>}
+        {latestRestored?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Original version restored: {latestRestored.fileName}</strong>
+          <small>Restored {latestRestored.restoredBytes} bytes · SHA-256: {latestRestored.restoredSha256}</small>
+          <small>New rollback effect: {latestRestored.rollbackEffectId}</small>
+          <small>The prior edited bytes were retained as a separate rollback backup.</small>
         </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">

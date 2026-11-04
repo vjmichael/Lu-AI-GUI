@@ -8,6 +8,11 @@
 //! this is defense-in-depth, NOT proof of fully race-free process containment.
 #![cfg(windows)]
 
+/// Audited opened-handle filesystem admission; all Win32 FFI stays here.
+pub mod file_guard;
+/// Audited security descriptor and time custody; all FFI remains native.
+pub mod metadata_guard;
+
 use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, ptr};
 
 type Handle = *mut c_void;

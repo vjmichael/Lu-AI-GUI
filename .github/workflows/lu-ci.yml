@@ -127,6 +127,15 @@ jobs:
       - name: Verify Windows native file handle identity and reparse refusal
         shell: pwsh
         run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml windows_native_picker -- --nocapture
+      - name: Windows trusted desktop existing-file edit and backup acceptance
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_edit -- --nocapture
+      - name: Windows separately authorized desktop restore with prior-byte custody
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_rollback -- --nocapture
+      - name: Windows rollback approval ledger one-shot and restart denial
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib rollback_approval_ledger::tests
       - name: Windows atomic create-new and no-overwrite Rust regressions
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_atomic_write
@@ -142,6 +151,27 @@ jobs:
       - name: Windows deterministic preflight for existing text edits
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test edit_safety
+      - name: Windows durable edit review ledger and restart invalidation
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib edit_approval_ledger::tests
+      - name: Windows authorized existing-edit commit, rollback and journal regression
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_edit_existing_authority
+      - name: Windows by-handle FileId, hardlink and alternate-stream adversarial tests
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib file_guard::tests -- --nocapture
+      - name: Windows ACL, creation-time and no-write-lease native FFI acceptance
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib metadata_guard::tests -- --nocapture
+      - name: Windows native edit recovery, publication seal and competing-rename evidence
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_edit_existing::tests::windows_ -- --nocapture
+      - name: Windows picker-to-authorized-effect same-byte FileId swap refusal
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml windows_selected_same_byte_identity_swap -- --nocapture
+      - name: Windows native transaction-entry selected identity refusal
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_edit_existing::tests::native_ -- --nocapture
       - name: Compile check only (NOT distributable or GPU-tested)
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml

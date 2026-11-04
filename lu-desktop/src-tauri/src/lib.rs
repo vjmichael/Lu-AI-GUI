@@ -8,6 +8,9 @@ mod native_host_read;
 mod read_proposal;
 mod write_proposal;
 mod native_host_write;
+mod edit_proposal;
+mod native_host_edit;
+mod rollback_review;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -160,6 +163,10 @@ struct DesktopState {
     read_proposals: read_proposal::ReadApprovalQueue,
     write_proposals: write_proposal::WriteProposalQueue,
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
+    edit_proposals: edit_proposal::EditProposalQueue,
+    edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
+    rollback_reviews: rollback_review::RollbackReviewQueue,
+    rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
@@ -400,6 +407,16 @@ impl DesktopState {
         ).map_err(|e| format!("write approvals unavailable: {e:?}"))?;
         write_approvals.reconcile_pending()
             .map_err(|e| format!("write approval reconciliation failed: {e:?}"))?;
+        let edit_approvals = lu_core::edit_approval_ledger::EditApprovalLedger::open(
+            &root.join("edit-approvals.sqlite")
+        ).map_err(|e| format!("edit approvals unavailable: {e:?}"))?;
+        edit_approvals.reconcile_pending()
+            .map_err(|e| format!("edit approval reconciliation failed: {e:?}"))?;
+        let rollback_approvals=lu_core::rollback_approval_ledger::RollbackApprovalLedger::open(
+            &root.join("rollback-approvals.sqlite")
+        ).map_err(|e|format!("rollback approvals unavailable: {e:?}"))?;
+        rollback_approvals.reconcile_pending()
+            .map_err(|e|format!("rollback review reconciliation failed: {e:?}"))?;
         // Native OS Documents, never a private Lu app-data folder. Windows
         // honors redirected Known Folder Documents; Linux honors XDG when
         // reported by Tauri's platform path resolver.
@@ -505,6 +522,10 @@ impl DesktopState {
             read_proposals: read_proposal::ReadApprovalQueue::default(),
             write_proposals: write_proposal::WriteProposalQueue::default(),
             write_approval_ledger: write_approvals,
+            edit_proposals: edit_proposal::EditProposalQueue::default(),
+            edit_approval_ledger: edit_approvals,
+            rollback_reviews: rollback_review::RollbackReviewQueue::default(),
+            rollback_approval_ledger: rollback_approvals,
             documents_os_dir,
             document_preferences,
             _owner: owner,
@@ -1077,6 +1098,28 @@ async fn lu_generate(
                             let _ = state.write_proposals.dismiss(&write_id, &chat_id);
                         }
                     }
+                    // WRITE-01E.3: a completed model turn may only suggest
+                    // replacement UTF-8 bytes and a basename. Selection of an
+                    // existing target and approval remain native host actions.
+                    let edit_id = next_id("pe-");
+                    if let Ok(proposal) = state.edit_proposals.stage(
+                        &edit_id, &chat_id, &gid, &answer
+                    ) {
+                        if state.edit_approval_ledger.stage(
+                            &edit_id, &chat_id, &gid, &proposal.file_name,
+                            proposal.bytes(), &proposal.digest()
+                        ).is_ok() {
+                            let _ = app.emit("lu-edit-proposal", EditProposalEvent {
+                                chat_id: chat_id.clone(),
+                                proposal_id: edit_id,
+                                file_name: proposal.file_name,
+                                purpose: proposal.purpose,
+                                content: proposal.content,
+                            });
+                        } else {
+                            let _ = state.edit_proposals.dismiss(&edit_id, &chat_id);
+                        }
+                    }
                     Ok(answer)
                 }
                 Err(error) => {
@@ -1169,6 +1212,70 @@ struct WriteProposalEvent {
     bytes: usize,
     sha256: String,
     file_format: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditProposalEvent {
+    chat_id: String,
+    proposal_id: String,
+    file_name: String,
+    purpose: String,
+    content: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditRecoveryView {
+    proposal_id: String,
+    file_name: String,
+    exact_target: Option<String>,
+    original_sha256: Option<String>,
+    replacement_sha256: String,
+    approval: String,
+    effect: String,
+    effect_call_id: Option<String>,
+    observation: String,
+    assessment: String,
+    receipt_verified: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RollbackPreviewView {
+    file_name: String,
+    original_sha256: String,
+    replacement_sha256: String,
+    current_text: String,
+    restore_text: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditRecoveryObservationView {
+    proposal_id: String,
+    observation: String,
+    effect: String,
+    assessment: String,
+    rollback_preview: Option<RollbackPreviewView>,
+    rollback_review_status: String,
+    rollback_review_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all="camelCase")]
+struct RollbackHistoryView {
+    review_id:String,
+    original_proposal_id:String,
+    original_edit_id:String,
+    file_name:String,
+    exact_target:String,
+    decision:String,
+    effect:String,
+    effect_call_id:Option<String>,
+    restored_sha256:String,
+    receipt_verified:bool,
+    assessment:String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1511,6 +1618,498 @@ fn lu_deny_write(
     Ok(())
 }
 
+/// A WebView request chooses only which inert proposal to review. The target
+/// file comes exclusively from the native OS picker, not a JS pathname.
+#[tauri::command]
+async fn lu_review_edit_file(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<edit_proposal::EditReviewView, String> {
+    let state = Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let chosen = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_file()
+            .map(|f|f.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("native file picker failed: {e}"))??
+        .ok_or("File selection cancelled")?;
+    let selected = state.edit_proposals.choose_file(&proposal_id, &chat_id, &chosen)
+        .map_err(|e|format!("selected existing file cannot be reviewed: {e:?}"))?;
+    let view = selected.view();
+    state.edit_approval_ledger.choose(
+        &proposal_id, &chat_id, &selected.generation_id,
+        &view.exact_target, &view.original_sha256, &view.approval_sha256
+    ).map_err(|e|format!("exact edit review not durable: {e:?}"))?;
+    Ok(view)
+}
+
+/// The native modal, not the model or WebView, decides the consequential
+/// action. The complete old/new text and line-by-line diff must remain
+/// visible in Lu; the native modal binds that review to exact digests.
+#[tauri::command]
+async fn lu_confirm_edit_file(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<Option<native_host_edit::EditedFile>, String> {
+    let state = Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial = state.edit_proposals.review_details(&proposal_id, &chat_id)
+        .map_err(|e|format!("edit selection unavailable: {e:?}"))?;
+    let preview = initial.view();
+    let confirm_text = format!(
+        "Replace this EXISTING file using the EXACT proposed text?\n\nFile: {}\nOriginal: {} bytes\nOriginal SHA-256: {}\nReplacement: {} bytes\nReplacement SHA-256: {}\nReview fingerprint: {}\nChange risk: {}\n\nThe complete before/after and change lines must be inspected in Lu. Lu saves a separate original-byte backup before replacing. This approval is single-use; interrupted edits are NEVER automatically retried.",
+        preview.exact_target,preview.original_bytes,preview.original_sha256,
+        preview.replacement_bytes,preview.replacement_sha256,
+        preview.approval_sha256,preview.risk,
+    );
+    let confirmed = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().message(confirm_text)
+            .title("Lu — Approve exact existing-file edit")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve exact edit".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("native edit confirmation failed: {e}"))?;
+    if !confirmed {
+        state.edit_approval_ledger.deny(&proposal_id,&chat_id)
+            .map_err(|e|format!("edit denial unavailable: {e:?}"))?;
+        state.edit_proposals.dismiss(&proposal_id,&chat_id)
+            .map_err(|e|format!("edit proposal dismissal: {e:?}"))?;
+        return Ok(None);
+    }
+    let selected = state.edit_proposals.take_confirmed(&proposal_id,&chat_id)
+        .map_err(|e|format!("edit no longer available: {e:?}"))?;
+    if selected.generation_id!=initial.generation_id ||
+        selected.proposal!=initial.proposal ||
+        selected.directory!=initial.directory ||
+        selected.original!=initial.original ||
+        selected.plan!=initial.plan ||
+        selected.reviewed!=initial.reviewed ||
+        !Arc::ptr_eq(&selected.directory_cap,&initial.directory_cap) {
+        return Err("selected file or proposed bytes changed during native approval".into());
+    }
+    #[cfg(windows)]
+    if selected.selected_file_identity!=initial.selected_file_identity {
+        return Err("native-selected Windows file identity changed during confirmation".into());
+    }
+    let effect_call_id=next_id("g-");
+    state.edit_approval_ledger.approve(
+        &proposal_id,&chat_id,&selected.generation_id,
+        &selected.proposal.file_name,selected.proposal.bytes(),
+        &selected.proposal.digest(),&preview.exact_target,
+        &selected.plan.expected_original_sha256,
+        &selected.reviewed.approval_sha256,&effect_call_id
+    ).map_err(|e|format!("exact edit approval not durable: {e:?}"))?;
+    let user_turn_id=next_id("g-");
+    native_host_edit::execute_approved_edit_pinned(
+        &state.chats,&state.effects,&chat_id,&user_turn_id,
+        &effect_call_id,&selected
+    ).await.map(Some)
+}
+
+#[tauri::command]
+fn lu_deny_edit_file(
+    state: State<'_,Arc<DesktopState>>,
+    chat_id:String, proposal_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.edit_approval_ledger.deny(&proposal_id,&chat_id)
+        .map_err(|e|format!("cannot record edit denial: {e:?}"))?;
+    state.edit_proposals.dismiss(&proposal_id,&chat_id)
+        .map_err(|e|format!("cannot dismiss edit proposal: {e:?}"))
+}
+
+/// Durable history is read-only. Reopening an approved effect must NOT return
+/// a cached authority token, resume a model, or rewrite the selected file.
+#[tauri::command]
+fn lu_edit_recovery(
+    state: State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<EditRecoveryView>,String>{
+    state.chats.history(&chat_id)?;
+    let records=state.edit_approval_ledger.recent_for_chat(&chat_id)
+        .map_err(|e|format!("edit recovery ledger unavailable: {e:?}"))?;
+    records.into_iter().map(|record|{
+        let effect_record=record.effect_call_id.as_ref().map(|id|
+            state.effects.get(id)).transpose()
+                .map_err(|e|format!("edit effect journal unavailable: {e:?}"))?
+                .flatten();
+        let effect_state=effect_record.as_ref().map(|r|r.state);
+        let receipt_verified=effect_record.as_ref().zip(record.effect_call_id.as_deref())
+            .is_some_and(|(effect,id)| record.original_sha256.as_deref()
+                .is_some_and(|old|lu_core::native_edit_existing::verified_edit_receipt(
+                    effect,id,old,&record.replacement_sha256,record.bytes as u64
+                )));
+        let effect=effect_state.map(|s|format!("{s:?}"))
+            .unwrap_or_else(||"NOT_STARTED".into());
+        let assessment=match (record.decision,effect_state,receipt_verified) {
+            (lu_core::edit_approval_ledger::EditDecision::Interrupted,_,_) =>
+                "INTERRUPTED_REVIEW_NOT_AUTHORIZED",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,
+                Some(lu_core::journal::EffectState::Applied),true) =>
+                "VERIFIED_APPLIED_RECEIPT_TARGET_NOT_RECHECKED",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,
+                Some(lu_core::journal::EffectState::Applied),false) =>
+                "APPLIED_ROW_BUT_RECEIPT_INVALID",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,
+                Some(lu_core::journal::EffectState::Executing |
+                    lu_core::journal::EffectState::Uncertain),_) =>
+                "UNCERTAIN_NO_AUTOMATIC_RETRY",
+            (lu_core::edit_approval_ledger::EditDecision::Approved,_,_) =>
+                "APPROVED_NO_VERIFIED_SUCCESS",
+            _=>"NOT_AUTHORIZED"
+        };
+        Ok(EditRecoveryView {
+            proposal_id:record.proposal_id,
+            file_name:record.filename,
+            exact_target:record.selected_target,
+            original_sha256:record.original_sha256,
+            replacement_sha256:record.replacement_sha256,
+            approval:format!("{:?}",record.decision),
+            effect,effect_call_id:record.effect_call_id,
+            observation:"NOT_RECHECKED_SELECT_FOLDER_FOR_OBSERVATION".into(),
+            assessment:assessment.into(),receipt_verified,
+        })
+    }).collect()
+}
+
+/// Open only the containing folder of a host-reviewed, APPLIED edit. Never
+/// accept a path from JavaScript, a model suggestion or retrieved text.
+#[tauri::command]
+fn lu_open_edited_folder(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,proposal_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    let record=state.edit_approval_ledger.get(&proposal_id)
+        .map_err(|e|format!("edit history unavailable: {e:?}"))?
+        .ok_or("no edit record")?;
+    if record.chat_id!=chat_id ||
+        record.decision!=lu_core::edit_approval_ledger::EditDecision::Approved {
+        return Err("no approved edit in this conversation".into());
+    }
+    let effect_id=record.effect_call_id.ok_or("no edit effect recorded")?;
+    let effect=state.effects.get(&effect_id)
+        .map_err(|e|format!("edit journal unavailable: {e:?}"))?
+        .ok_or("no edit effect receipt")?;
+    if !record.original_sha256.as_deref().is_some_and(|old|
+        lu_core::native_edit_existing::verified_edit_receipt(
+            &effect,&effect_id,old,&record.replacement_sha256,record.bytes as u64
+        )) {
+        return Err("edit did not have a verified exact applied receipt".into());
+    }
+    let target=std::path::PathBuf::from(record.selected_target.ok_or("missing approved file path")?);
+    if target.file_name().and_then(|s|s.to_str())!=Some(record.filename.as_str()) {
+        return Err("edit target mismatches approved filename".into());
+    }
+    let folder=target.parent().ok_or("no containing folder")?;
+    if !is_real_directory(folder) {
+        return Err("original containing folder unavailable".into());
+    }
+    #[cfg(windows)]
+    let executable="explorer.exe";
+    #[cfg(target_os="linux")]
+    let executable="xdg-open";
+    #[cfg(target_os="macos")]
+    let executable="open";
+    #[cfg(not(any(windows,target_os="linux",target_os="macos")))]
+    return Err("opening containing folders unsupported".into());
+    #[cfg(any(windows,target_os="linux",target_os="macos"))]
+    {
+        std::process::Command::new(executable).arg(folder)
+            .spawn().map_err(|e|format!("cannot open edited file folder: {e}"))?;
+        Ok(())
+    }
+}
+
+/// Native-picked containing folder permits read-only inspection even if the
+/// target vanished. Never follow arbitrary paths from a WebView or replay a
+/// crashed effect. Matched observed bytes are NOT causal proof of publication.
+#[tauri::command]
+async fn lu_inspect_edit_recovery(
+    app: AppHandle,
+    state: State<'_,Arc<DesktopState>>,
+    chat_id:String,proposal_id:String,
+)->Result<EditRecoveryObservationView,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let record=state.edit_approval_ledger.get(&proposal_id)
+        .map_err(|e|format!("edit recovery unavailable: {e:?}"))?
+        .ok_or("unknown edit recovery record")?;
+    if record.chat_id!=chat_id ||
+        record.decision!=lu_core::edit_approval_ledger::EditDecision::Approved {
+        return Err("no approved edit for this conversation".into());
+    }
+    let call_id=record.effect_call_id.clone().ok_or("no effect call recorded")?;
+    let exact_target=record.selected_target.clone().ok_or("no reviewed target recorded")?;
+    let expected_folder=std::path::Path::new(&exact_target)
+        .parent().ok_or("no original containing folder")?;
+    let chosen=tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("recovery picker failed: {e}"))??
+        .ok_or("Recovery inspection cancelled")?;
+    if !is_real_directory(&chosen) {
+        return Err("choose an ordinary containing folder".into());
+    }
+    let chosen=chosen.canonicalize().map_err(|e|format!("invalid folder: {e}"))?;
+    if chosen!=expected_folder {
+        return Err("selected folder is not the exact originally reviewed destination".into());
+    }
+    let dir=Arc::new(cap_std::fs::Dir::open_ambient_dir(&chosen,cap_std::ambient_authority())
+        .map_err(|e|format!("recovery folder cannot be opened: {e}"))?);
+    let observation=lu_core::native_edit_existing::observe_edit(&dir,&call_id);
+    let effect_record=state.effects.get(&call_id)
+        .map_err(|e|format!("effect journal unavailable: {e:?}"))?;
+    let effect=effect_record.as_ref()
+        .map(|row|format!("{:?}",row.state))
+        .unwrap_or_else(||"NOT_STARTED".into());
+    let receipt_verified=effect_record.as_ref().is_some_and(|row|
+        record.original_sha256.as_deref().is_some_and(|old|
+            lu_core::native_edit_existing::verified_edit_receipt(
+                row,&call_id,old,&record.replacement_sha256,record.bytes as u64
+            )
+        )
+    );
+    let assessment=match (effect.as_str(),&observation,receipt_verified) {
+        ("Applied",lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified,true) =>
+            "VERIFIED_APPLIED_RECEIPT_AND_OBSERVED_TARGET_BACKUP_MATCH",
+        ("Applied",_,false)=>"APPLIED_ROW_BUT_RECEIPT_INVALID",
+        ("Uncertain"|"Executing",
+            lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified,_) =>
+            "UNCERTAIN_BYTES_MATCH_NOT_PROOF_NEVER_RETRY",
+        ("Applied",_,true)=>"VERIFIED_APPLIED_RECEIPT_TARGET_DIFFERENT_OR_UNVERIFIED",
+        ("Uncertain"|"Executing",_,_)=>"UNCERTAIN_EFFECT_RECONCILIATION_REQUIRED",
+        _=>"NO_VERIFIED_SUCCESS_NO_AUTOMATIC_RETRY",
+    };
+    // Only a positively APPLIED journal entry, verified on-disk backup
+    // and edited target, plus exact agreement with the trusted approval
+    // record, may display an undo candidate. Display never grants rollback.
+    let mut rollback_review_status = "NO_VERIFIED_APPLIED_EDIT".to_string();
+    let mut rollback_review_id=None;
+    let rollback_preview = if receipt_verified &&
+        observation == lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified {
+        #[cfg(windows)]
+        let identity_before_preview={
+            let opened=dir.open(&record.filename)
+                .map_err(|_|"native-selected rollback target unavailable")?.into_std();
+            lu_core::windows_file_guard::inspect_open_file(&opened)
+                .map_err(|_|"native-selected rollback target unsafe")?
+        };
+        match lu_core::native_edit_existing::inspect_rollback_candidate(
+            &dir, &record.filename, &call_id
+        ) {
+            Ok(preview) if record.original_sha256.as_deref()
+                == Some(preview.original_sha256.as_str()) &&
+                record.replacement_sha256 == preview.replacement_sha256 &&
+                record.filename == preview.file_name => {
+                rollback_review_status = "VERIFIED_READ_ONLY_UNDO_CANDIDATE".into();
+                // Native folder picker, verified original receipt and exact
+                // bytes. A separate rollback review is persisted and pinned.
+                let stale_reviews=state.rollback_reviews.clear_for(&chat_id,&proposal_id)
+                    .map_err(|e|format!("rollback review queue unavailable: {e:?}"))?;
+                for stale_id in stale_reviews {
+                    let _=state.rollback_approval_ledger.deny(&stale_id,&chat_id);
+                }
+                let review_id=next_id("rb-");
+                let approval=lu_core::rollback_approval_ledger::RollbackRecord {
+                    review_id:review_id.clone(),chat_id:chat_id.clone(),
+                    original_proposal_id:proposal_id.clone(),
+                    original_edit_id:call_id.clone(),target:exact_target.clone(),
+                    filename:record.filename.clone(),
+                    expected_current_sha256:preview.replacement_sha256.clone(),
+                    restored_sha256:preview.original_sha256.clone(),
+                    restore_bytes:preview.restore_text.len() as u64,
+                    decision:lu_core::rollback_approval_ledger::RollbackDecision::Reviewed,
+                    rollback_effect_id:None,
+                };
+                #[cfg(windows)]
+                let selected_file_identity={
+                    let file=dir.open(&record.filename)
+                        .map_err(|_|"native reselected file is unavailable")?.into_std();
+                    let after=lu_core::windows_file_guard::inspect_open_file(&file)
+                        .map_err(|_|"native reselected file identity is not safe")?;
+                    if after!=identity_before_preview {
+                        return Err("file ID changed while reviewing rollback; select again".into());
+                    }
+                    after
+                };
+                let selected=rollback_review::SelectedRollback {
+                    record:approval.clone(),directory:chosen.clone(),
+                    directory_cap:Arc::clone(&dir),preview:preview.clone(),
+                    #[cfg(windows)] selected_file_identity,
+                };
+                match state.rollback_approval_ledger.stage(&approval) {
+                    Ok(())=>match state.rollback_reviews.stage(selected) {
+                        Ok(())=>rollback_review_id=Some(review_id),
+                        Err(error)=>{
+                            let _=state.rollback_approval_ledger.deny(
+                                &approval.review_id,&chat_id
+                            );
+                            rollback_review_status=format!(
+                                "UNDO_REVIEW_NOT_STAGED_{error:?}"
+                            );
+                        }
+                    },
+                    Err(error)=>rollback_review_status=format!(
+                        "UNDO_REVIEW_LEDGER_UNAVAILABLE_{error:?}"
+                    ),
+                }
+                Some(RollbackPreviewView {
+                    file_name: preview.file_name,
+                    original_sha256: preview.original_sha256,
+                    replacement_sha256: preview.replacement_sha256,
+                    current_text: preview.current_text,
+                    restore_text: preview.restore_text,
+                })
+            }
+            Ok(_) => {
+                rollback_review_status = "APPROVAL_AND_ARTIFACT_MISMATCH".into();
+                None
+            }
+            Err(error) => {
+                rollback_review_status = format!("UNDO_PREVIEW_REFUSED_{error:?}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    Ok(EditRecoveryObservationView {
+        proposal_id,observation:format!("{observation:?}"),effect,
+        assessment:assessment.into(),rollback_preview,rollback_review_status,
+        rollback_review_id
+    })
+}
+
+/// Only an ephemeral, native-picked restoration review may request this
+/// dialog. The original edit approval NEVER authorizes undo. The WebView
+/// supplies only opaque chat/review IDs, never bytes, path, or permission.
+#[tauri::command]
+async fn lu_confirm_rollback(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String
+)->Result<Option<native_host_edit::RestoredFile>,String> {
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.rollback_reviews.inspect(&review_id,&chat_id)
+        .map_err(|e|format!("rollback review unavailable: {e:?}"))?;
+    let pending=state.rollback_approval_ledger.get(&review_id)
+        .map_err(|e|format!("rollback review ledger unavailable: {e:?}"))?
+        .ok_or("missing durable rollback review")?;
+    if pending!=initial.record ||
+        pending.decision!=lu_core::rollback_approval_ledger::RollbackDecision::Reviewed {
+        return Err("rollback review is not an unspent durable approval candidate".into());
+    }
+    let original=state.edit_approval_ledger.get(&pending.original_proposal_id)
+        .map_err(|e|format!("original edit history unavailable: {e:?}"))?
+        .ok_or("original edit review not found")?;
+    if original.chat_id!=chat_id ||
+        original.decision!=lu_core::edit_approval_ledger::EditDecision::Approved ||
+        original.effect_call_id.as_deref()!=Some(pending.original_edit_id.as_str()) ||
+        original.selected_target.as_deref()!=Some(pending.target.as_str()) ||
+        original.original_sha256.as_deref()!=Some(pending.restored_sha256.as_str()) ||
+        original.replacement_sha256!=pending.expected_current_sha256 ||
+        original.filename!=pending.filename {
+        return Err("rollback candidate no longer matches trusted original approval".into());
+    }
+    let msg=format!(
+        "RESTORE THE ORIGINAL TEXT? This changes an EXISTING file.\n\nFile: {}\nOriginal edit: {}\nCurrent file: {} bytes\nCurrent SHA-256: {}\nRestore: {} bytes\nRestore SHA-256: {}\n\nYou must have reviewed the complete before/after and change lines in Lu. Lu will journal this as a NEW effect and preserve another backup of the edited version. If the file changes meanwhile, restoration is refused. An interrupted restore is NEVER repeated automatically.",
+        pending.target,pending.original_edit_id,
+        initial.preview.current_text.len(),pending.expected_current_sha256,
+        pending.restore_bytes,pending.restored_sha256
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().message(msg)
+            .title("Lu — Separately authorize restoring original")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Restore verified original".into(),"Keep current version".into()
+            )).blocking_show()
+    }).await.map_err(|e|format!("native rollback confirmation failed: {e}"))?;
+    if !confirmed {
+        state.rollback_approval_ledger.deny(&review_id,&chat_id)
+            .map_err(|e|format!("rollback denial not durable: {e:?}"))?;
+        state.rollback_reviews.dismiss(&review_id,&chat_id)
+            .map_err(|e|format!("rollback review dismissal failed: {e:?}"))?;
+        return Ok(None);
+    }
+    let selected=state.rollback_reviews.take(&review_id,&chat_id)
+        .map_err(|e|format!("selected rollback no longer available: {e:?}"))?;
+    if selected.record!=initial.record ||
+        selected.preview!=initial.preview ||
+        selected.directory!=initial.directory ||
+        !Arc::ptr_eq(&selected.directory_cap,&initial.directory_cap) {
+        return Err("selected rollback changed during native confirmation".into());
+    }
+    #[cfg(windows)]
+    if selected.selected_file_identity!=initial.selected_file_identity {
+        return Err("native-selected Windows restore target changed during confirmation".into());
+    }
+    let effect_id=next_id("g-");
+    state.rollback_approval_ledger.approve(&selected.record,&effect_id)
+        .map_err(|e|format!("rollback approval not durable: {e:?}"))?;
+    let user_turn_id=next_id("g-");
+    native_host_edit::execute_approved_rollback_pinned(
+        &state.chats,&state.effects,&chat_id,&user_turn_id,
+        &effect_id,&selected
+    ).await.map(Some)
+}
+
+#[tauri::command]
+fn lu_deny_rollback(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.rollback_approval_ledger.deny(&review_id,&chat_id)
+        .map_err(|e|format!("rollback denial unavailable: {e:?}"))?;
+    state.rollback_reviews.dismiss(&review_id,&chat_id)
+        .map_err(|e|format!("rollback review dismissal failed: {e:?}"))
+}
+
+/// Approvals and effect receipts remain visible after restart, even when a
+/// prior reviewed capability was lost or an effect is UNCERTAIN. No replay.
+#[tauri::command]
+fn lu_rollback_history(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<RollbackHistoryView>,String>{
+    state.chats.history(&chat_id)?;
+    let records=state.rollback_approval_ledger.recent_for_chat(&chat_id)
+        .map_err(|e|format!("rollback history unavailable: {e:?}"))?;
+    records.into_iter().map(|r|{
+        let effect_record=r.rollback_effect_id.as_ref().map(|id|state.effects.get(id))
+            .transpose().map_err(|e|format!("rollback effect journal unavailable: {e:?}"))?
+            .flatten();
+        let effect=effect_record.as_ref().map(|v|format!("{:?}",v.state))
+            .unwrap_or_else(||"NOT_STARTED".into());
+        let receipt_verified=effect_record.as_ref().zip(r.rollback_effect_id.as_deref())
+            .is_some_and(|(row,id)|lu_core::native_edit_existing::verified_rollback_receipt(
+                row,id,&r.original_edit_id,&r.restored_sha256,r.restore_bytes
+            ));
+        let assessment=match (r.decision,receipt_verified,effect.as_str()){
+            (lu_core::rollback_approval_ledger::RollbackDecision::Interrupted,_,_)=>
+                "INTERRUPTED_REVIEW_NO_AUTHORITY",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,true,_)=>
+                "VERIFIED_RESTORE_RECEIPT_TARGET_NOT_RECHECKED",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,false,"Applied")=>
+                "APPLIED_ROW_WITHOUT_VALID_ROLLBACK_RECEIPT",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,false,
+                "Uncertain"|"Executing")=>"UNCERTAIN_ROLLBACK_NO_AUTOMATIC_RETRY",
+            (lu_core::rollback_approval_ledger::RollbackDecision::Approved,_,_)=>
+                "APPROVED_RESTORE_NOT_CONFIRMED",
+            _=>"NOT_AUTHORIZED",
+        };
+        Ok(RollbackHistoryView{
+            review_id:r.review_id,original_proposal_id:r.original_proposal_id,
+            original_edit_id:r.original_edit_id,file_name:r.filename,
+            exact_target:r.target,decision:format!("{:?}",r.decision),
+            effect,effect_call_id:r.rollback_effect_id,restored_sha256:r.restored_sha256,
+            receipt_verified,assessment:assessment.into()
+        })
+    }).collect()
+}
+
 /// A *read-only* recovery screen. It reports durable evidence, never resumes
 /// or reapplies an incomplete write. The effect journal is the source of truth.
 #[tauri::command]
@@ -1532,7 +2131,7 @@ fn lu_write_recovery(
         let effect = effect_state
             .map(|state|format!("{:?}",state))
             .unwrap_or_else(|| "NOT_STARTED".into());
-        let observed_target = match record.selected_target.as_deref() {
+        let observed_target: String = match record.selected_target.as_deref() {
             Some(t) if current_documents.as_ref().is_some_and(|folder|
                 folder.join(&record.file_name).to_string_lossy().as_ref() == t) =>
                 native_host_write::inspect_recovery_target(
@@ -1670,6 +2269,15 @@ pub fn run() {
             lu_confirm_write,
             lu_deny_write,
             lu_write_recovery,
+            lu_review_edit_file,
+            lu_confirm_edit_file,
+            lu_deny_edit_file,
+            lu_edit_recovery,
+            lu_inspect_edit_recovery,
+            lu_confirm_rollback,
+            lu_deny_rollback,
+            lu_rollback_history,
+            lu_open_edited_folder,
             lu_history,
             lu_chats,
             lu_new_chat,
