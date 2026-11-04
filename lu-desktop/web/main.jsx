@@ -973,6 +973,32 @@ function App() {
               <small>Assessment: {(editObservations[record.proposalId]?.assessment || record.assessment)}</small>
               <small>Observed bytes: {(editObservations[record.proposalId]?.observation || record.observation)}
                 (matching bytes alone do not prove who published them)</small>
+              {editObservations[record.proposalId] && <small>
+                Undo preflight: {editObservations[record.proposalId].rollbackReviewStatus}
+              </small>}
+              {editObservations[record.proposalId]?.rollbackPreview && <details
+                className="editUndoPreview" aria-label="Read-only undo preview">
+                <summary>Review verified original for a possible future restore (read-only)</summary>
+                <small>No restore command is issued. This preview was checked against the
+                  retained original backup, the current file and the APPLIED journal record.</small>
+                <small>Edited SHA-256: {editObservations[record.proposalId].rollbackPreview.replacementSha256}</small>
+                <small>Original SHA-256: {editObservations[record.proposalId].rollbackPreview.originalSha256}</small>
+                <strong>Complete changes if original were restored</strong>
+                <pre className="editFullText editDiff" aria-label="Proposed restore change lines">{
+                  fullEditChangeLines(editObservations[record.proposalId].rollbackPreview.currentText,
+                    editObservations[record.proposalId].rollbackPreview.restoreText)
+                }</pre>
+                <strong>Complete current text</strong>
+                <pre className="editFullText" aria-label="Current text for possible restore">{
+                  editObservations[record.proposalId].rollbackPreview.currentText
+                }</pre>
+                <strong>Complete verified original text</strong>
+                <pre className="editFullText" aria-label="Verified original text">{
+                  editObservations[record.proposalId].rollbackPreview.restoreText
+                }</pre>
+                <small>Undo remains disabled pending its own human authorization, metadata
+                  safeguards and independent Windows acceptance.</small>
+              </details>}
               {record.approval === 'Approved' && <button type="button" className="subtleButton"
                 onClick={() => inspectEditRecovery(record)}>Reselect folder to inspect artifacts</button>}
               {record.approval === 'Approved' && record.effect === 'Applied' &&
