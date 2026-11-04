@@ -1,0 +1,46 @@
+name: Lu first-party DLC API RFC schema consistency
+
+on:
+  push:
+    branches:
+      - lu/dlc-api-first-party-host-contract-20261103
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-schema:
+    name: Linux DLC host Protobuf RFC descriptor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Protobuf compiler
+        run: python -m pip install grpcio-tools==1.76.0
+      - name: Compile proposed Protobuf descriptor without shipping runtime
+        run: |
+          python -m grpc_tools.protoc --proto_path=docs/contracts --descriptor_set_out=lu-dlc-host-rfc.desc docs/contracts/lu-dlc-host-v1.proposed.proto
+          python tools/check_dlc_host_contract.py lu-dlc-host-rfc.desc
+
+  windows-schema:
+    name: Windows DLC host Protobuf RFC descriptor
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Protobuf compiler
+        run: python -m pip install grpcio-tools==1.76.0
+      - name: Compile proposed Protobuf descriptor without shipping runtime
+        run: |
+          python -m grpc_tools.protoc --proto_path=docs/contracts --descriptor_set_out=lu-dlc-host-rfc.desc docs/contracts/lu-dlc-host-v1.proposed.proto
+          python tools/check_dlc_host_contract.py lu-dlc-host-rfc.desc
