@@ -129,6 +129,12 @@ impl VllmWorkerProcess {
     }
 }
 impl VllmControlTransport for VllmWorkerProcess {
+    fn terminate_owned_worker(&mut self) -> Result<(), ()> {
+        self.force_terminate_owned_group().map_err(|_| ())
+    }
+    fn read_host_event(&mut self) -> Result<Value, ()> {
+        self.read_event().map_err(|_| ())
+    }
     fn send_host_control(&mut self, message: &Value) -> Result<(), ()> {
         let data = serde_json::to_vec(message).map_err(|_| ())?;
         if data.is_empty() || data.len() + 1 > MAX_CONTROL { return Err(()); }
