@@ -608,6 +608,9 @@ async fn real_two_step_write_review_creates_exact_file_and_survives_restart() {
     assert_eq!(created.file_name,"report.txt");
     assert_eq!(created.exact_target,target);
     assert_eq!(fs::read(drafts.join("report.txt")).unwrap(),proposal.content.as_bytes());
+    assert_eq!(native_host_write::inspect_recovery_target(
+        &drafts, "report.txt", proposal.bytes() as u32, &proposal.digest()
+    ), "MATCHES_APPROVED_BYTES");
     assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Applied);
     assert_eq!(approvals.get("pw-one").unwrap().unwrap().decision,WriteDecision::Approved);
     assert!(queue.take_confirmed("pw-one",&chat.chat_id).is_err(),
@@ -681,5 +684,33 @@ async fn failed_create_of_existing_lu_draft_is_auditable_but_never_overwrites() 
     assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Uncertain);
     assert_eq!(approvals.get("pw-existing").unwrap().unwrap().decision,WriteDecision::Approved);
     drop(chats);drop(effects);drop(approvals);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recovery_observation_reports_missing_mismatched_and_untrusted_objects_without_writing() {
+    use sha2::{Digest, Sha256};
+    let root=temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let approved=b"approved";
+    let expected=format!("{:x}",Sha256::digest(approved));
+    assert_eq!(native_host_write::inspect_recovery_target(
+        &root,"missing.txt",approved.len() as u32,&expected
+    ),"MISSING");
+    fs::write(root.join("draft.txt"),b"changed!").unwrap();
+    assert_eq!(native_host_write::inspect_recovery_target(
+        &root,"draft.txt",approved.len() as u32,&expected
+    ),"DIFFERENT_BYTES");
+    assert_eq!(native_host_write::inspect_recovery_target(
+        &root,"../secret",approved.len() as u32,&expected
+    ),"INVALID_EVIDENCE");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        symlink(root.join("draft.txt"),root.join("link.txt")).unwrap();
+        assert_eq!(native_host_write::inspect_recovery_target(
+            &root,"link.txt",approved.len() as u32,&expected
+        ),"NOT_ORDINARY_FILE");
+    }
     fs::remove_dir_all(root).unwrap();
 }
