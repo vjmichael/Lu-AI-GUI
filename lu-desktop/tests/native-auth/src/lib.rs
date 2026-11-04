@@ -1036,3 +1036,95 @@ async fn desktop_rollback_refuses_external_edit_before_authorizing_a_new_effect(
     drop(selected);drop(chosen);drop(queue);drop(effects);drop(chats);
     fs::remove_dir_all(root).unwrap();
 }
+
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_selected_same_byte_identity_swap_refuses_edit_before_journaling() {
+    use edit_proposal::EditProposalQueue;
+    use lu_core::journal::EffectJournal;
+    let folder=temp_root();fs::create_dir_all(&folder).unwrap();
+    let chats=ChatStore::open(&folder.join("chats")).unwrap();
+    let chat=chats.create_chat().unwrap();
+    let docs=folder.join("docs");fs::create_dir_all(&docs).unwrap();
+    let target=docs.join("notes.md");fs::write(&target,b"old").unwrap();
+    let q=EditProposalQueue::default();
+    q.stage("pe-same-bytes",&chat.chat_id,"gen-a",
+        r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"fix","content":"new"}"#).unwrap();
+    let selected=q.choose_file("pe-same-bytes",&chat.chat_id,&target).unwrap();
+    let selected_id=selected.selected_file_identity;
+    // A separate editor replaces the selected entry with a new inode/FID,
+    // preserving exact bytes, after review but before native confirmation.
+    fs::rename(&target,docs.join("moved-original.md")).unwrap();
+    fs::write(&target,b"old").unwrap();
+    assert_ne!(selected_id,picked_windows_file_identity(&selected.directory_cap,"notes.md"));
+    let effects=EffectJournal::open(&folder.join("effects.sqlite")).unwrap();
+    let effect_id=format!("g-{}","7".repeat(32));
+    assert!(native_host_edit::execute_approved_edit_pinned(
+        &chats,&effects,&chat.chat_id,&format!("g-{}","8".repeat(32)),
+        &effect_id,&selected
+    ).await.is_err());
+    assert_eq!(fs::read(&target).unwrap(),b"old");
+    assert!(effects.get(&effect_id).unwrap().is_none());
+    assert!(!docs.join(format!(".lu-edit-{effect_id}.meta")).exists());
+    drop(selected);drop(q);drop(effects);drop(chats);
+    fs::remove_dir_all(folder).unwrap();
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_selected_same_byte_identity_swap_refuses_restore_before_journaling() {
+    use edit_proposal::EditProposalQueue;
+    use rollback_review::SelectedRollback;
+    use lu_core::{
+        journal::EffectJournal,
+        native_edit_existing::inspect_rollback_candidate,
+        rollback_approval_ledger::{RollbackRecord,RollbackDecision},
+    };
+    let folder=temp_root();fs::create_dir_all(&folder).unwrap();
+    let chats=ChatStore::open(&folder.join("chats")).unwrap();
+    let chat=chats.create_chat().unwrap();
+    let docs=folder.join("docs");fs::create_dir_all(&docs).unwrap();
+    let target=docs.join("notes.md");fs::write(&target,b"original").unwrap();
+    let q=EditProposalQueue::default();
+    q.stage("pe-original",&chat.chat_id,"gen-a",
+        r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"edit","content":"edited"}"#).unwrap();
+    let first=q.choose_file("pe-original",&chat.chat_id,&target).unwrap();
+    let effects=EffectJournal::open(&folder.join("effects.sqlite")).unwrap();
+    let edit_id=format!("g-{}","9".repeat(32));
+    native_host_edit::execute_approved_edit_pinned(
+        &chats,&effects,&chat.chat_id,&format!("g-{}","a".repeat(32)),
+        &edit_id,&first).await.unwrap();
+    let preview=inspect_rollback_candidate(&first.directory_cap,"notes.md",&edit_id).unwrap();
+    let selected=SelectedRollback {
+        record:RollbackRecord {
+            review_id:"rb-win-samebytes-1".into(),
+            chat_id:chat.chat_id.clone(),original_proposal_id:"pe-original".into(),
+            original_edit_id:edit_id,
+            target:target.to_string_lossy().into_owned(),
+            filename:"notes.md".into(),
+            expected_current_sha256:preview.replacement_sha256.clone(),
+            restored_sha256:preview.original_sha256.clone(),
+            restore_bytes:preview.restore_text.len() as u64,
+            decision:RollbackDecision::Reviewed,rollback_effect_id:None,
+        },
+        directory:first.directory.clone(),
+        directory_cap:first.directory_cap.clone(),
+        preview,
+        selected_file_identity:picked_windows_file_identity(&first.directory_cap,"notes.md"),
+    };
+    fs::rename(&target,docs.join("moved-edited.md")).unwrap();
+    fs::write(&target,b"edited").unwrap();
+    assert_ne!(selected.selected_file_identity,
+        picked_windows_file_identity(&first.directory_cap,"notes.md"));
+    let rollback_id=format!("g-{}","b".repeat(32));
+    assert!(native_host_edit::execute_approved_rollback_pinned(
+        &chats,&effects,&chat.chat_id,&format!("g-{}","c".repeat(32)),
+        &rollback_id,&selected
+    ).await.is_err());
+    assert_eq!(fs::read(&target).unwrap(),b"edited");
+    assert!(effects.get(&rollback_id).unwrap().is_none());
+    assert!(!docs.join(format!(".lu-edit-{rollback_id}.rollback-meta")).exists());
+    drop(selected);drop(first);drop(q);drop(effects);drop(chats);
+    fs::remove_dir_all(folder).unwrap();
+}
