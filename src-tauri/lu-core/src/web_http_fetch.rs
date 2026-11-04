@@ -34,11 +34,10 @@ fn public_ipv4(v: Ipv4Addr) -> bool {
         || (a == 100 && (64..=127).contains(&b))
         || (a == 169 && b == 254)
         || (a == 172 && (16..=31).contains(&b))
-        || (a == 192 && (b == 0 || b == 168))
-        || (a == 198 && (b == 18 || b == 19))
+        || (a == 192 && (b == 0 || b == 2 || b == 168))
+        || (a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100)))
         || (a == 192 && b == 88 && c == 99)
         || (a == 192 && b == 0 && c == 0)
-        || (a == 198 && b == 51 && c == 100)
         || (a == 203 && b == 0 && c == 113)
         || (a == 255 && b == 255 && c == 255 && d == 255)
     { return false; }
@@ -162,6 +161,14 @@ mod tests {
             assert!(validated_host(url).is_err(), "{url}");
         }
         assert!(validated_host("https://example.org/path?q=1").is_ok());
+    }
+    #[test]
+    fn reject_reserved_documentation_and_local_network_addresses() {
+        for address in ["192.0.2.5","198.51.100.8","203.0.113.24","169.254.3.1",
+                        "172.19.1.2","192.168.1.9","127.0.0.1"] {
+            let address=address.parse::<IpAddr>().unwrap();
+            assert_eq!(trusted_resolution([address]),Err(FetchError::UnsafeAddress));
+        }
     }
     #[test]
     fn reject_private_and_mixed_dns() {
