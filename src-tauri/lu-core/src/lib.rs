@@ -68,6 +68,7 @@ pub mod browser_authorized_execution;
 pub mod browser_model_codec;
 pub mod native_browser_tool;
 pub mod browser_tool_stream;
+pub mod browser_model_request;
 pub mod browser_worker_supervisor;
 pub mod browser_chromium_launcher;
 #[cfg(target_os = "linux")]
