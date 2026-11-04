@@ -243,3 +243,8 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 
 ### WIN-FILE-01 stable API correction
 - During review, `std::os::windows::fs::MetadataExt::file_index` and `volume_serial_number` were identified as unstable on the pinned toolchain. Removed those calls rather than enabling unstable features or claiming Windows file-ID comparison was complete. The file is still opened with stable `OpenOptionsExt` no-follow/sharing flags, checked for reparse attributes and held through the native read. Full Win32 by-handle ID equivalence testing remains open.
+
+### CI-01 Windows esbuild portability repair (2026-11-03)
+- Windows CI runs `41747199414` and `41747199442` reached the frontend build but failed at `spawnSync esbuild ENOENT`: the old bundler spawned a bare `esbuild` executable, whereas Windows npm installs platform-specific command wrappers.
+- Replaced `lu-desktop/scripts/build.mjs` CLI process spawning (and its Linux-only path fallback) with esbuild's programmatic Node API, preserving the browser/ES2020/ESM/automatic-JSX/minified bundle and the copied HTML/CSS assets. This makes Windows and Linux use the same implementation and avoids synthetic frontend placeholders.
+- The exact locked revision requires fresh Windows CI verification. Neither passing Linux UI tests nor staging a CI-only engine binary substitutes for installed-app acceptance.
