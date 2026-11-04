@@ -168,6 +168,33 @@ mod tests {
         assert_eq!(c.state(),StopState::FailedStop);
     }
     #[test]
+    fn owned_abort_escalation_requires_confirmed_worker_exit_then_replacement() {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        struct Owned(Arc<AtomicBool>);
+        impl VllmControlTransport for Owned {
+            fn send_host_control(&mut self, _:&Value)->Result<(),()> { Ok(()) }
+            fn terminate_owned_worker(&mut self)->Result<(),()> {
+                self.0.store(true,Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let flag=Arc::new(AtomicBool::new(false));
+        let mut c=VllmRequestController::new(Owned(Arc::clone(&flag)));
+        let now=Instant::now();
+        c.generate("req_1","hello",10).unwrap();
+        c.abort("req_1",now).unwrap();
+        assert!(c.escalate_owned_if_stalled(
+            now+std::time::Duration::from_secs(1)).unwrap());
+        assert!(flag.load(Ordering::SeqCst));
+        assert_eq!(c.state(),StopState::WorkerTerminated);
+        assert_eq!(c.replace_after_recovery(Owned(Arc::clone(&flag)),
+            now+std::time::Duration::from_secs(2),false),
+            Err(VllmControlError::State(ControlError::InvalidTransition)));
+        c.replace_after_recovery(Owned(Arc::clone(&flag)),
+            now+std::time::Duration::from_secs(2),true).unwrap();
+        c.generate("req_2","fresh user request",10).unwrap();
+    }
+    #[test]
     fn normal_finish_releases_exact_request_for_next_generation() {
         let mut c=VllmRequestController::new(Capturing(vec![]));
         c.generate("req_1","hello",32).unwrap();
