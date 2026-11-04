@@ -59,6 +59,11 @@ fn valid_origin(raw:&str)->bool{
       &&!host.contains('\\')&&host.bytes().all(|b|
           b.is_ascii_alphanumeric()||b==b'.'||b==b'-')
       &&!host.starts_with('.')&&!host.ends_with('.')
+      &&host.contains('.')&&!host.ends_with(".local")
+      &&!host.ends_with(".internal")&&!host.ends_with(".localhost")
+      &&!host.bytes().any(|b|b.is_ascii_uppercase())
+      &&host.rsplit('.').next().is_some_and(|tld|
+          tld.len()>=2&&tld.bytes().all(|b|b.is_ascii_lowercase()))
 }
 /// A model input cannot add origins. Navigation is confined to a trusted
 /// immutable origin list; browser redirects are separately checked by Node.
@@ -138,6 +143,12 @@ mod tests {
     fn navigation_scope_is_exact_origin_and_https(){
         let s=BrowserOriginScope::from_host_grant(vec!["https://papers.example".into()]).unwrap();
         assert!(s.allows("https://papers.example/article?q=a"));
+        for unsafe_grant in ["https://127.0.0.1","https://localhost",
+            "https://printer.local","https://server.internal","https://PAPERS.example"] {
+            assert!(BrowserOriginScope::from_host_grant(
+                vec![unsafe_grant.into()]).is_err(),"{unsafe_grant}");
+        }
+
         for url in ["http://papers.example/a","https://papers.example.evil.test/",
             "https://papers.example:8443/","https://user@papers.example",
             "https://127.0.0.1/private","https://papers.example@evil.test/"] {
