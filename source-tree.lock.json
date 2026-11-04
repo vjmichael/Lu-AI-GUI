@@ -769,7 +769,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "5524428dfc338ed1ff53826f51a195311ab241dc"
+      "blob": "c5528757d3b0086828f76c4926d950639c7a3666"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
