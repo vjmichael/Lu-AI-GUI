@@ -52,6 +52,7 @@ function App() {
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [browserMode, setBrowserMode] = useState(null);
+  const [browserRuntime, setBrowserRuntime] = useState(null);
   const [savingBrowserMode, setSavingBrowserMode] = useState(false);
   const [latestCreated, setLatestCreated] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -179,6 +180,9 @@ function App() {
           .catch(error => {if (alive) setError(String(error));});
         if (alive) invoke('lu_browser_settings')
           .then(mode => {if (alive) setBrowserMode(mode);})
+          .catch(error => {if (alive) setError(String(error));});
+        if (alive) invoke('lu_browser_runtime_status')
+          .then(info => {if (alive) setBrowserRuntime(info);})
           .catch(error => {if (alive) setError(String(error));});
       } catch (error) { if (alive) setError(String(error)); }
     })();
@@ -560,6 +564,14 @@ function App() {
       setDocumentSettings(result);
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
+  }
+  async function stopResearchBrowser() {
+    setError('');
+    try {
+      await invoke('lu_browser_stop');
+      setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+      setActivity('Research browser stopped');
+    } catch (error) {setError(String(error));}
   }
   async function saveBrowserVisibility(mode) {
     if (savingBrowserMode || (mode !== 'automatic' && mode !== 'always-visible')) return;
@@ -1201,8 +1213,17 @@ function App() {
                 <small>Watch Lu browse automatically without taking your mouse or keyboard.</small></span>
             </label>
           </fieldset>
+          <p role="status" className="settingsNotice">
+            {browserRuntime?.reason || 'Checking research browser installation…'}
+          </p>
           <p className="settingsNotice">This preference applies to the next browser session.
             Native window visibility and human takeover are under development.</p>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              onClick={stopResearchBrowser} disabled={!browserRuntime?.running}>
+              Stop research browser
+            </button>
+          </div>
         </section>}
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
