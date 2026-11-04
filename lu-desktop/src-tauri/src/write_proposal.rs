@@ -2,7 +2,8 @@
 //! never selects the destination directory or issues an effect grant.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, fs, path::{Path, PathBuf}, sync::Mutex};
+use std::{collections::HashMap, fs, path::{Path, PathBuf}, sync::{Arc, Mutex}};
+use cap_std::{ambient_authority, fs::Dir};
 
 pub const MAX_WRITE_PREVIEW_BYTES: usize = 16 * 1024;
 const MAX_PENDING: usize = 8;
@@ -31,6 +32,7 @@ struct PendingWrite {
     generation_id: String,
     proposal: ProposedWrite,
     directory: Option<PathBuf>,
+    directory_cap: Option<Arc<Dir>>,
 }
 #[derive(Default)]
 pub struct WriteProposalQueue { pending: Mutex<HashMap<String, PendingWrite>> }
@@ -68,7 +70,7 @@ impl WriteProposalQueue {
         if entries.len() >= MAX_PENDING { return Err(WriteProposalError::Full); }
         entries.insert(id.into(), PendingWrite {
             chat_id: chat.into(), generation_id: generation.into(),
-            proposal: p.clone(), directory: None,
+            proposal: p.clone(), directory: None, directory_cap: None,
         });
         Ok(p)
     }
@@ -87,10 +89,13 @@ impl WriteProposalQueue {
             }
         }
         let canonical = path.canonicalize().map_err(|_| WriteProposalError::Invalid)?;
+        let pinned = Arc::new(Dir::open_ambient_dir(&canonical, ambient_authority())
+            .map_err(|_| WriteProposalError::Invalid)?);
         let mut entries = self.pending.lock().map_err(|_| WriteProposalError::Unavailable)?;
         let entry = entries.get_mut(id).ok_or(WriteProposalError::Unknown)?;
         if entry.chat_id != chat { return Err(WriteProposalError::WrongConversation); }
         entry.directory = Some(canonical.clone());
+        entry.directory_cap = Some(pinned);
         Ok((canonical.join(&entry.proposal.file_name).to_string_lossy().into_owned(),
             entry.generation_id.clone(), entry.proposal.clone()))
     }
@@ -118,6 +123,23 @@ impl WriteProposalQueue {
         let taken = entries.remove(id).ok_or(WriteProposalError::Unknown)?;
         Ok((taken.generation_id, taken.directory.unwrap(), taken.proposal))
     }
+    /// Consume a fully reviewed proposal and its already-opened destination
+    /// directory capability. The host must retain this Arc through the
+    /// durable effect, never reopening an untrusted pathname.
+    pub fn take_confirmed_pinned(
+        &self, id: &str, chat: &str
+    ) -> Result<(String, PathBuf, Arc<Dir>, ProposedWrite), WriteProposalError> {
+        let mut entries = self.pending.lock().map_err(|_|WriteProposalError::Unavailable)?;
+        let entry = entries.get(id).ok_or(WriteProposalError::Unknown)?;
+        if entry.chat_id != chat { return Err(WriteProposalError::WrongConversation); }
+        if entry.directory.is_none() || entry.directory_cap.is_none() {
+            return Err(WriteProposalError::NotSelected);
+        }
+        let taken = entries.remove(id).ok_or(WriteProposalError::Unknown)?;
+        Ok((taken.generation_id, taken.directory.unwrap(),
+            taken.directory_cap.unwrap(), taken.proposal))
+    }
+
     pub fn dismiss(&self, id: &str, chat: &str) -> Result<String, WriteProposalError> {
         let mut entries = self.pending.lock().map_err(|_| WriteProposalError::Unavailable)?;
         let entry = entries.get(id).ok_or(WriteProposalError::Unknown)?;
