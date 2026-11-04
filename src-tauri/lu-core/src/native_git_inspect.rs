@@ -33,7 +33,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const MODULE: &str = "lu.git.inspect";
+const MODULE: &str = "lu.git";
 const STATUS: &str = "lu.git.status";
 const LOG: &str = "lu.git.log";
 const DIFF: &str = "lu.git.diff";
@@ -145,6 +145,7 @@ impl ApprovedGit {
             .env("GIT_CONFIG_GLOBAL", if cfg!(windows) { "NUL" } else { "/dev/null" })
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_NO_REPLACE_OBJECTS", "1")
+            .env("GIT_NO_LAZY_FETCH", "1")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_PAGER", "cat")
             .env("GIT_EXTERNAL_DIFF", "")
