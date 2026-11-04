@@ -336,7 +336,7 @@ mod tests {
         ledger.discover(&candidate()).unwrap();
         ledger.corroborate("source-1",&record()).unwrap();
         assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
-        assert!(matches!(ledger.verify_passage("source-1","p. 1","quoted"),Err(EvidenceError::NoDocument)));
+        assert!(matches!(ledger.verify_passage("source-1","full-text","quoted"),Err(EvidenceError::NoDocument)));
         let checksum=ledger.store_accessed_text("source-1","Evidence supports a nuanced argument.").unwrap();
         assert_eq!(checksum.len(),64);
         assert!(ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
