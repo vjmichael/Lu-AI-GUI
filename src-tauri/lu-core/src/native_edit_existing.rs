@@ -1030,6 +1030,55 @@ mod tests {
         fs::remove_dir_all(path).unwrap();
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_admission_refuses_hardlinked_existing_file_before_transaction_intent() {
+        let path=temp();
+        fs::write(path.join("notes.txt"),b"old").unwrap();
+        fs::hard_link(path.join("notes.txt"),path.join("alias.txt")).unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let operation="g-windows-hardlink-reject-00001";
+        assert_eq!(commit_in_dir(&root,"notes.txt",operation,&sha(b"old"),
+            b"new",&sha(b"review"),StopPoint::Never),
+            Err(EditCommitError::UnsafeTarget));
+        assert_eq!(fs::read(path.join("notes.txt")).unwrap(),b"old");
+        assert_eq!(fs::read(path.join("alias.txt")).unwrap(),b"old");
+        assert!(!path.join(sidecar(operation,"meta")).exists());
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_preflight_blocks_readonly_file_before_creating_a_manifest() {
+        let path=temp();
+        let target=path.join("readonly.md");
+        fs::write(&target,b"old").unwrap();
+        let mut perms=fs::metadata(&target).unwrap().permissions();
+        perms.set_readonly(true);fs::set_permissions(&target,perms).unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let operation="g-windows-readonly-reject-0001";
+        assert_eq!(commit_in_dir(&root,"readonly.md",operation,&sha(b"old"),
+            b"new",&sha(b"review"),StopPoint::Never),
+            Err(EditCommitError::UnsafeTarget));
+        assert!(!path.join(sidecar(operation,"meta")).exists());
+        drop(root);
+        let mut perms=fs::metadata(&target).unwrap().permissions();
+        perms.set_readonly(false);fs::set_permissions(&target,perms).unwrap();
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_native_identity_distinguishes_identical_bytes_at_different_file_ids() {
+        let path=temp();
+        fs::write(path.join("a.txt"),b"identical").unwrap();
+        fs::write(path.join("b.txt"),b"identical").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        assert_ne!(strict_windows_file_identity(&root,"a.txt").unwrap(),
+            strict_windows_file_identity(&root,"b.txt").unwrap());
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinks_and_multiple_hardlinks_are_not_treated_as_safe_edits() {
