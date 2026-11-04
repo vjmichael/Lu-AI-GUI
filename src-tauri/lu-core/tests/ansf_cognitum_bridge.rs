@@ -2,6 +2,13 @@ use lu_core::ansf::{AnsfError, AnsfStore, EntryRole};
 use lu_core::ansf_cognitum_bridge::AnsfReadAuthorizer;
 use lu_core::ansf_revisions::RevisionOrigin;
 
+fn temporary_store() -> (AnsfStore, std::path::PathBuf) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("lu-c06-{}-{ns}.sqlite", std::process::id()));
+    (AnsfStore::open(&path).unwrap(), path)
+}
+
 struct Allow;
 impl AnsfReadAuthorizer for Allow {
     fn may_read(&self, workspace_id: &str, session_id: &str) -> bool {
@@ -15,7 +22,7 @@ impl AnsfReadAuthorizer for Deny {
 
 #[test]
 fn rust_fts5_returns_current_revisions_with_host_scope() {
-    let store = AnsfStore::in_memory().unwrap();
+    let (store, _path) = temporary_store();
     store.create_session("chat", "workspace", "Memory").unwrap();
     store.start_chapter("chat", "Topic").unwrap();
     store.create_session("other", "different", "Other").unwrap();
@@ -42,7 +49,7 @@ fn rust_fts5_returns_current_revisions_with_host_scope() {
     assert!(hits[0].citation_handle.starts_with("ansf:chat:"));
     assert_eq!(store.search_cognitum_evidence(
         "different", "chat", "jet", 10, &Allow
-    ).unwrap(), Vec::new());
+    ), Err(AnsfError::InvalidInput));
     assert_eq!(store.search_cognitum_evidence(
         "workspace", "chat", "jet", 10, &Deny
     ), Err(AnsfError::InvalidInput));
@@ -50,7 +57,7 @@ fn rust_fts5_returns_current_revisions_with_host_scope() {
 
 #[test]
 fn rust_fts5_treats_operators_as_literal_tokens() {
-    let store = AnsfStore::in_memory().unwrap();
+    let (store, _path) = temporary_store();
     store.create_session("chat", "workspace", "Memory").unwrap();
     store.start_chapter("chat", "Topic").unwrap();
     store.append_entry("chat", "msg", EntryRole::User,
