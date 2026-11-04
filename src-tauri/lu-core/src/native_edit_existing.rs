@@ -301,6 +301,35 @@ pub fn verified_edit_receipt(
         result.bytes_written == replacement_bytes
 }
 
+/// Verify an independently journaled restore receipt; an APPLIED state
+/// without a typed success result never proves a restoration completed.
+pub fn verified_rollback_receipt(
+    effect: &EffectRecord, rollback_id: &str, original_edit_id: &str,
+    restored_sha: &str, restored_bytes: u64,
+) -> bool {
+    if effect.state != EffectState::Applied ||
+        effect.tool_id != ROLLBACK_TOOL_ID ||
+        effect.call_id != rollback_id ||
+        !valid_id(rollback_id) || !valid_id(original_edit_id) ||
+        !valid_sha(restored_sha) {
+        return false;
+    }
+    let Some(bytes) = effect.receipt.as_deref() else { return false; };
+    let Ok(reply) = crate::wire::decode_reply(bytes) else { return false; };
+    if reply.call_id != rollback_id || reply.output_type_url != ROLLBACK_RESULT_TYPE {
+        return false;
+    }
+    let Some(proto::tool_reply::Outcome::Output(payload)) = reply.outcome else {
+        return false;
+    };
+    let Ok(result) = proto::EditRollbackResult::decode(payload.as_slice()) else {
+        return false;
+    };
+    result.committed && result.original_edit_id == original_edit_id &&
+        result.restored_sha256 == restored_sha &&
+        result.restored_bytes == restored_bytes
+}
+
 /// READ-ONLY observation for recovery. This does not update the effect journal
 /// or classify a successful publication as an authorized completed effect.
 pub fn observe_edit(root: &Dir, operation_id: &str) -> EditObservation {
@@ -502,6 +531,14 @@ fn rollback_with_stop(
         .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
     write_new_synced(root, &sidecar(rollback_id, "rollback-meta"), &meta_bytes, &perms)?;
     if stop == StopPoint::AfterManifest { return Err(EditCommitError::Uncertain); }
+    // Independently preserve the currently edited bytes as well, so an
+    // interrupted/complete restore never destroys the just-replaced version.
+    let prior_name=sidecar(rollback_id, "prior");
+    write_new_synced(root, &prior_name, &current, &perms)?;
+    if sha(&regular_bytes(root, &prior_name)?.0) != expected_current {
+        return Err(EditCommitError::Uncertain);
+    }
+    if stop == StopPoint::AfterBackup { return Err(EditCommitError::Uncertain); }
     let stage = sidecar(rollback_id, "rollback");
     write_new_synced(root, &stage, &backup, &perms)?;
     if sha(&regular_bytes(root, &stage)?.0) != expected_restored {
@@ -858,6 +895,7 @@ mod tests {
     fn rollback_crash_barriers_never_erase_original_backup() {
         for (i, (point, observation, expected)) in [
             (StopPoint::AfterManifest, RollbackObservation::StillAtReplacement, b"after".as_slice()),
+            (StopPoint::AfterBackup, RollbackObservation::StillAtReplacement, b"after".as_slice()),
             (StopPoint::AfterStage, RollbackObservation::StillAtReplacement, b"after".as_slice()),
             (StopPoint::AfterPublish, RollbackObservation::RestoredFromBackup, b"before".as_slice()),
         ].into_iter().enumerate() {
@@ -874,6 +912,9 @@ mod tests {
             assert_eq!(observe_rollback(&root, &rollback_id), observation);
             assert_eq!(fs::read(path.join("t.txt")).unwrap(), expected);
             assert_eq!(fs::read(path.join(sidecar(&orig_id, "orig"))).unwrap(), b"before");
+            if point != StopPoint::AfterManifest {
+                assert_eq!(fs::read(path.join(sidecar(&rollback_id, "prior"))).unwrap(), b"after");
+            }
             drop(root);
             fs::remove_dir_all(path).unwrap();
         }
