@@ -172,7 +172,7 @@ mod tests {
     }
     #[test]
     fn stage_inherits_exact_security_and_preserves_original_creation() {
-        let p=temp();let a=p.join("existing.txt"),b=p.join("stage.txt");
+        let p=temp();let a=p.join("existing.txt");let b=p.join("stage.txt");
         fs::write(&a,b"before").unwrap();
         fs::write(&b,b"after").unwrap();
         let source=File::open(&a).unwrap();
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn refuse_stage_security_mismatch_not_publish() {
-        let p=temp();let a=p.join("existing.txt"),b=p.join("stage.txt");
+        let p=temp();let a=p.join("existing.txt");let b=p.join("stage.txt");
         fs::write(&a,b"before").unwrap();fs::write(&b,b"after").unwrap();
         let source=File::open(&a).unwrap();
         let mut snap=snapshot_metadata(&source).unwrap();
