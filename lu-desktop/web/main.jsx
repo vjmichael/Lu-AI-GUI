@@ -409,11 +409,11 @@ function App() {
     else setWriteRecovery([]);
   }, [chatId]);
 
-  async function reviewWriteDestination(proposal) {
+  async function reviewWriteDestination(proposal, destinationMode = 'lu_drafts') {
     setError('');
     try {
       const destination = await invoke('lu_review_write_destination', {
-        chatId: proposal.chatId, proposalId: proposal.proposalId
+        chatId: proposal.chatId, proposalId: proposal.proposalId, destinationMode
       });
       setWriteProposals(prev => ({
         ...prev,
@@ -746,12 +746,14 @@ function App() {
               <code className="writeTarget">{proposal.destination.exactTarget}</code>
               <small>Only this destination and these exact bytes may be created.
                 This approval is single-use and will not survive an interrupted attempt.</small>
-            </> : <small>Files are created only in Lu Drafts. Select Review destination to
-              display the exact local path before confirming. Nothing has been written.</small>}
+            </> : <small>Choose Lu Drafts or select any local folder through the native operating-system picker. Lu cannot pick the folder for you; nothing has been written.</small>}
             <div className="settingsActions">
-              {!proposal.destination ?
+              {!proposal.destination ? <>
+                <button type="button" className="subtleButton"
+                  onClick={() => reviewWriteDestination(proposal, 'lu_drafts')}>Save to Lu Drafts</button>
                 <button type="button" className="primaryButton"
-                  onClick={() => reviewWriteDestination(proposal)}>Review exact destination</button> :
+                  onClick={() => reviewWriteDestination(proposal, 'choose_folder')}>Choose another folder</button>
+              </> :
                 <button type="button" className="primaryButton"
                   onClick={() => confirmWrite(proposal)}>Confirm create-new file</button>}
               <button type="button" className="subtleButton"
