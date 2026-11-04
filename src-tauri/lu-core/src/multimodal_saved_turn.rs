@@ -407,7 +407,17 @@ pub fn build_llama_chat_request(
 pub enum ChatEvent {
     Text(String),
     Continue,
+    /// Terminal transport marker, not independently a proof of semantic EOS.
     Done,
+    /// Explicit backend finish status. Token limit is not a completed answer.
+    Finished(ChatFinishReason),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatFinishReason {
+    Stop,
+    Length,
+    ToolCalls,
 }
 
 /// Parse ONLY the OpenAI-compatible llama.cpp chat-completion SSE payload.
@@ -456,8 +466,14 @@ pub fn parse_chat_sse_frame(frame: &[u8]) -> Result<ChatEvent, MultimodalError> 
             return Ok(ChatEvent::Text(text.into()));
         }
     }
-    if choice.get("finish_reason").is_some_and(|v| !v.is_null()) {
-        return Ok(ChatEvent::Done);
+    if let Some(reason) = choice.get("finish_reason").filter(|v| !v.is_null()) {
+        let reason = match reason.as_str().ok_or(MultimodalError::InvalidChatEvent)? {
+            "stop" => ChatFinishReason::Stop,
+            "length" => ChatFinishReason::Length,
+            "tool_calls" | "function_call" => ChatFinishReason::ToolCalls,
+            _ => return Err(MultimodalError::InvalidChatEvent),
+        };
+        return Ok(ChatEvent::Finished(reason));
     }
     Ok(ChatEvent::Continue)
 }
