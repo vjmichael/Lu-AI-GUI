@@ -1231,11 +1231,23 @@ struct EditRecoveryView {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RollbackPreviewView {
+    file_name: String,
+    original_sha256: String,
+    replacement_sha256: String,
+    current_text: String,
+    restore_text: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct EditRecoveryObservationView {
     proposal_id: String,
     observation: String,
     effect: String,
     assessment: String,
+    rollback_preview: Option<RollbackPreviewView>,
+    rollback_review_status: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1819,9 +1831,43 @@ async fn lu_inspect_edit_recovery(
         ("Uncertain"|"Executing",_)=>"UNCERTAIN_EFFECT_RECONCILIATION_REQUIRED",
         _=>"NO_VERIFIED_SUCCESS_NO_AUTOMATIC_RETRY",
     };
+    // Only a positively APPLIED journal entry, verified on-disk backup
+    // and edited target, plus exact agreement with the trusted approval
+    // record, may display an undo candidate. Display never grants rollback.
+    let mut rollback_review_status = "NO_VERIFIED_APPLIED_EDIT".to_string();
+    let rollback_preview = if effect == "Applied" &&
+        observation == lu_core::native_edit_existing::EditObservation::ReplacementAndBackupVerified {
+        match lu_core::native_edit_existing::inspect_rollback_candidate(
+            &dir, &record.filename, &call_id
+        ) {
+            Ok(preview) if record.original_sha256.as_deref()
+                == Some(preview.original_sha256.as_str()) &&
+                record.replacement_sha256 == preview.replacement_sha256 &&
+                record.filename == preview.file_name => {
+                rollback_review_status = "VERIFIED_READ_ONLY_UNDO_CANDIDATE".into();
+                Some(RollbackPreviewView {
+                    file_name: preview.file_name,
+                    original_sha256: preview.original_sha256,
+                    replacement_sha256: preview.replacement_sha256,
+                    current_text: preview.current_text,
+                    restore_text: preview.restore_text,
+                })
+            }
+            Ok(_) => {
+                rollback_review_status = "APPROVAL_AND_ARTIFACT_MISMATCH".into();
+                None
+            }
+            Err(error) => {
+                rollback_review_status = format!("UNDO_PREVIEW_REFUSED_{error:?}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     Ok(EditRecoveryObservationView {
         proposal_id,observation:format!("{observation:?}"),effect,
-        assessment:assessment.into()
+        assessment:assessment.into(),rollback_preview,rollback_review_status
     })
 }
 
