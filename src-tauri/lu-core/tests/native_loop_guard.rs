@@ -177,6 +177,22 @@ fn many_distinct_edits_of_one_file_are_progress_when_receipts_prove_change(){
 }
 
 #[test]
+fn changing_only_echoed_input_or_timing_is_not_verified_information(){
+    let mut guard=LoopGuard::default();
+    let args=arg(json!({"path":"a.txt","query":"search-one"}));
+    assert_eq!(guard.observe_feedback("search",&args,
+        &feedback(json!({"path":"a.txt","query":"search-one",
+            "offset":0,"duration_ms":2})),ToolEffect::ReadWorkspace),
+        ProgressEvidence::Unverified);
+    let args2=arg(json!({"path":"b.txt","query":"search-two"}));
+    assert_eq!(guard.observe_feedback("search",&args2,
+        &feedback(json!({"path":"b.txt","query":"search-two",
+            "offset":5,"duration_ms":30})),ToolEffect::ReadWorkspace),
+        ProgressEvidence::Unverified);
+    assert_eq!(guard.no_progress_streak(),2);
+}
+
+#[test]
 fn an_edit_that_changes_no_bytes_is_not_progress(){
     let mut guard=LoopGuard::default();
     let args=arg(json!({"path":"work.txt","operation":"replace"}));
@@ -296,6 +312,16 @@ fn streamed_large_repeated_text_is_stopped_across_chunk_boundaries(){
         assert_eq!(ordinary.observe_chunk(&value),StreamLoopVerdict::Continue);
     }
 }
+#[test]
+fn infinite_empty_inference_chunks_are_a_nonprogress_stream(){
+    let mut guard=StreamLoopGuard::default();
+    for _ in 0..63 {
+        assert_eq!(guard.observe_chunk(""),StreamLoopVerdict::Continue);
+    }
+    assert_eq!(guard.observe_chunk(""),StreamLoopVerdict::RepeatedOutput);
+    assert_eq!(guard.total_bytes(),0);
+}
+
 #[test]
 fn short_repetition_is_not_automatically_infinite_token_output(){
     let mut guard=StreamLoopGuard::default();
