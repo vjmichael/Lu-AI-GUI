@@ -15,6 +15,7 @@ use crate::{
     contracts::{ToolAuthorizer, ToolEffect},
     conversation_authority::{AuthorityError, BoundCallOrigin, ConversationAuthority},
     journal::EffectJournal,
+    loop_guard::{LoopGuard, LoopVerdict, LoopReason},
     model::{ModelToolCatalog, ModelToolError, MAX_ADVERTISED_TOOLS},
     model_json_boundary::{
         parse_model_boundary, serialize_host_tool_feedback_boundary, JsonBoundaryError, JsonRepairStatus,
@@ -55,6 +56,7 @@ pub enum ToolTurnError {
     TooLarge,
     NoAuthorizedTools,
     StepLimit,
+    LoopTerminated,
     AlreadyFinished,
     Revoked,
     ReadOnlyTurnViolation,
@@ -71,6 +73,7 @@ pub struct NativeToolTurn {
     done: bool,
     last_repair: JsonRepairStatus,
     read_only: bool,
+    loop_guard: LoopGuard,
 }
 
 impl NativeToolTurn {
@@ -112,6 +115,7 @@ impl NativeToolTurn {
             done: false,
             last_repair: JsonRepairStatus::Unchanged,
             read_only: false,
+            loop_guard: LoopGuard::default(),
         })
     }
 
@@ -162,6 +166,11 @@ impl NativeToolTurn {
 
     pub fn step_count(&self) -> u32 {
         self.steps
+    }
+
+    /// Host-only structural loop diagnostics. No tool arguments are exposed.
+    pub fn loop_attempt_count(&self) -> u32 {
+        self.loop_guard.attempted()
     }
 
     /// Host-only: forbid any further model response/dispatch after a task
@@ -424,6 +433,40 @@ impl NativeToolTurn {
             }
         }
 
+        // Original Jan §7: protect the authoritative native dispatcher,
+        // not only model text. This check happens AFTER full JSON + typed
+        // codec validation and BEFORE the effect journal, auth dispatch or
+        // registered tool executes. Block/kill cannot cause an effect.
+        // A blocked attempt still consumes the strict per-turn step budget.
+        let guard_verdict = self.loop_guard.check(name, args);
+        match guard_verdict {
+            LoopVerdict::Kill(_) => {
+                self.halt();
+                return Err(ToolTurnError::LoopTerminated);
+            }
+            LoopVerdict::Block(reason) => {
+                self.steps += 1;
+                return Ok(ToolTurnOutcome::ToolResult {
+                    call_id,
+                    tool_name: name.into(),
+                    data: serde_json::json!({
+                        "ok":false,
+                        "tool":name,
+                        "error":{
+                            "code":"LOOP_DETECTED",
+                            "message":reason.message(),
+                            "retryable":false
+                        }
+                    }),
+                });
+            }
+            LoopVerdict::Allow | LoopVerdict::Warn(_) => {}
+        }
+        let warning: Option<LoopReason> = match guard_verdict {
+            LoopVerdict::Warn(reason) => Some(reason),
+            _ => None,
+        };
+
         // A tool can be advertised earlier, then revoked. Host checks exact
         // origin, tool effect and workspace scope again at dispatch time.
         self.steps += 1;
@@ -451,9 +494,16 @@ impl NativeToolTurn {
             self.halt();
             return Err(ToolTurnError::DurableDispatchFailed);
         }
-        let data = catalog
+        let mut data = catalog
             .decode_result(&self.advertised, name, &response)
             .map_err(ToolTurnError::Catalog)?;
+        if let Some(reason) = warning {
+            // Fixed host language only; never echo user content/arguments.
+            // Keep outer tool feedback schema unchanged (ok/tool/result).
+            if let Some(result) = data.get_mut("result").and_then(Value::as_object_mut) {
+                result.insert("_lu_loop_warning".into(), Value::String(reason.message().into()));
+            }
+        }
         Ok(ToolTurnOutcome::ToolResult {
             call_id,
             tool_name: name.into(),
