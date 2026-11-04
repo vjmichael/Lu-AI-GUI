@@ -476,7 +476,14 @@ pub fn observe_edit(root: &Dir, operation_id: &str) -> EditObservation {
     if sha(&backup) != manifest.original_sha256 {
         return EditObservation::ChangedOrDamaged;
     }
-    match regular_bytes(root, &manifest.target) {
+    let target_result=regular_bytes(root,&manifest.target);
+    #[cfg(windows)]
+    if target_result.is_ok() && !matches_native_metadata(
+        root,&manifest.target,manifest.native_metadata_sha256.as_deref().unwrap_or("")
+    ) {
+        return EditObservation::ChangedOrDamaged;
+    }
+    match target_result {
         Ok((bytes, _)) if sha(&bytes) == manifest.replacement_sha256 =>
             EditObservation::ReplacementAndBackupVerified,
         Ok((bytes, _)) if sha(&bytes) == manifest.original_sha256 =>
@@ -549,7 +556,8 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
     };
     if original_manifest.target != m.target ||
         original_manifest.original_sha256 != m.restore_sha256 ||
-        original_manifest.replacement_sha256 != m.prior_sha256 {
+        original_manifest.replacement_sha256 != m.prior_sha256 ||
+        original_manifest.native_metadata_sha256!=m.native_metadata_sha256 {
         return RollbackObservation::ChangedOrDamaged;
     }
     let Ok((backup,_)) = regular_bytes(root, &sidecar(&m.original_edit_id, "orig")) else {
@@ -566,7 +574,14 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
         Err(EditCommitError::MissingTarget)=>false,
         _=>return RollbackObservation::ChangedOrDamaged,
     };
-    match regular_bytes(root, &m.target) {
+    let target_result=regular_bytes(root,&m.target);
+    #[cfg(windows)]
+    if target_result.is_ok() && !matches_native_metadata(
+        root,&m.target,m.native_metadata_sha256.as_deref().unwrap_or("")
+    ){
+        return RollbackObservation::ChangedOrDamaged;
+    }
+    match target_result {
         Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 && prior =>
             RollbackObservation::RestoredFromBackup,
         Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 =>
@@ -613,6 +628,12 @@ pub fn inspect_rollback_candidate(
         return Err(EditCommitError::InvalidRecoveryRecord);
     }
     let (current, _) = regular_bytes(root, target)?;
+    #[cfg(windows)]
+    if !matches_native_metadata(
+        root,target,manifest.native_metadata_sha256.as_deref().unwrap_or("")
+    ){
+        return Err(EditCommitError::InvalidRecoveryRecord);
+    }
     if sha(&current) != manifest.replacement_sha256 {
         return Err(EditCommitError::SourceConflict);
     }
@@ -678,6 +699,12 @@ fn rollback_with_stop_selected(
         crate::windows_file_guard::snapshot_metadata(&handle)
             .map_err(|_|EditCommitError::UnsafeTarget)?
     };
+    #[cfg(windows)]
+    if !matches_native_metadata(
+        root,target,manifest.native_metadata_sha256.as_deref().unwrap_or("")
+    ){
+        return Err(EditCommitError::SourceConflict);
+    }
     #[cfg(windows)]
     let original_identity=strict_windows_file_identity(root,target)?;
     #[cfg(windows)]
