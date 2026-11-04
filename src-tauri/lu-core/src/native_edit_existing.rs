@@ -191,9 +191,14 @@ fn read_manifest(root: &Dir, id: &str) -> Result<EditManifest, EditCommitError> 
     if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > MAX_MANIFEST_BYTES {
         return Err(EditCommitError::InvalidRecoveryRecord);
     }
-    let mut data = Vec::new();
-    root.open(&path).map_err(io)?.take(MAX_MANIFEST_BYTES + 1)
-        .read_to_end(&mut data).map_err(io)?;
+    // Treat sidecars as untrusted filesystem entries too. Plain open/read
+    // could otherwise follow an unsupported Windows reparse point or ignore
+    // a modified stream/link state on a previously journaled artifact.
+    let (data, _)=regular_bytes(root,&path)
+        .map_err(|_|EditCommitError::InvalidRecoveryRecord)?;
+    if data.len()>MAX_MANIFEST_BYTES as usize {
+        return Err(EditCommitError::InvalidRecoveryRecord);
+    }
     let manifest: EditManifest = serde_json::from_slice(&data)
         .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
     if manifest.schema != 1 || manifest.edit_id != id ||
@@ -418,10 +423,11 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
             meta.len() > MAX_MANIFEST_BYTES => return RollbackObservation::ChangedOrDamaged,
         Ok(_) => {}
     };
-    let mut data = Vec::new();
-    let Ok(file) = root.open(&path) else { return RollbackObservation::Unavailable };
-    if file.take(MAX_MANIFEST_BYTES + 1).read_to_end(&mut data).is_err() {
-        return RollbackObservation::Unavailable;
+    let Ok((data,_))=regular_bytes(root,&path) else {
+        return RollbackObservation::ChangedOrDamaged;
+    };
+    if data.len()>MAX_MANIFEST_BYTES as usize {
+        return RollbackObservation::ChangedOrDamaged;
     }
     let Ok(m) = serde_json::from_slice::<RollbackManifest>(&data) else {
         return RollbackObservation::ChangedOrDamaged;
