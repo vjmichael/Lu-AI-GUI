@@ -40,7 +40,8 @@ for(const f of manifest.files){
   if(!f||typeof f.path!=='string'||typeof f.sha256!=='string'||
     !/^[a-f0-9]{64}$/.test(f.sha256)||!Number.isSafeInteger(f.bytes)||
     f.bytes<0||f.bytes>2_000_000_000||
-    !/^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)*$/.test(f.path)||
+    !/^[a-zA-Z0-9._ -]+(?:\/[a-zA-Z0-9._ -]+)*$/.test(f.path)||
+    f.path.split('/').some(part=>part.trim()!==part)||
     f.path.split('/').some(part=>part==='.'||part==='..')||
     paths.has(f.path)) throw Error('Untrusted browser package path, hash or size');
   paths.add(f.path);
