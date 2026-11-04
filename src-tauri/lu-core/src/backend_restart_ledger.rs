@@ -2,7 +2,7 @@
 //! Count restart *attempts before spawn*, not just successful restarts. This
 //! avoids an endless crash→relaunch cycle across desktop process restarts.
 //! This ledger is not a tool permission and must not use model-generated keys.
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, TransactionBehavior};
 use std::{path::Path, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 
 pub const RESTART_WINDOW_MS: i64 = 300_000;
