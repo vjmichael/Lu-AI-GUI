@@ -26,6 +26,65 @@ pub struct InspectedFile {
     pub truncated: bool,
 }
 
+/// Open a native-picked file with OS-level identity validation before
+/// authorizing a read. This handle stays alive until Protobuf dispatch ends.
+pub(crate) fn open_verified_selected_file(path: &Path) -> Result<fs::File, String> {
+    let before = fs::symlink_metadata(path)
+        .map_err(|_| "selected file unavailable")?;
+    if !before.file_type().is_file() {
+        return Err("select an ordinary file, not a link or directory".into());
+    }
+    #[cfg(windows)]
+    let file = {
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if before.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err("selected reparse point refused".into());
+        }
+        // No final-component traversal of junctions/symlinks, and no
+        // competing writer/delete sharing while this pinned read runs.
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|e| format!("approved file open failed: {e}"))?;
+        let after = file.metadata().map_err(|e| format!("approved file metadata: {e}"))?;
+        if !after.is_file() || after.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err("opened file is not an ordinary file".into());
+        }
+        // Fail closed where stable by-handle identity is unavailable.
+        let same_identity = match (
+            before.volume_serial_number(), before.file_index(),
+            after.volume_serial_number(), after.file_index()
+        ) {
+            (Some(v1), Some(i1), Some(v2), Some(i2)) => v1 == v2 && i1 == i2,
+            _ => false,
+        };
+        if !same_identity {
+            return Err("selected file changed or identity unavailable".into());
+        }
+        file
+    };
+    #[cfg(not(windows))]
+    let file = fs::File::open(path)
+        .map_err(|e| format!("approved file open failed: {e}"))?;
+    let after = file.metadata().map_err(|e| format!("approved file metadata: {e}"))?;
+    if !after.is_file() {
+        return Err("approved file handle is not a regular file".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if before.dev() != after.dev() || before.ino() != after.ino() {
+            return Err("selected file changed before handle acquisition".into());
+        }
+    }
+    Ok(file)
+}
+
 /// The caller obtains `path` from the native file picker and `turn_id`
 /// from host-generated randomness. Neither may originate from a WebView
 /// argument or an LLM tool call.
@@ -63,41 +122,17 @@ pub async fn inspect_selected_file_with_receipt(
     if max_bytes == 0 || max_bytes > MAX_INSPECTION_BYTES {
         return Err("invalid approved read limit".into());
     }
-    let metadata = fs::symlink_metadata(path).map_err(|_| "selected file unavailable")?;
-    if !metadata.file_type().is_file() {
-        return Err("select an ordinary text file (not a link or directory)".into());
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if metadata.file_attributes() & 0x400 != 0 {
-            return Err("reparse-point file selection is refused".into());
-        }
-    }
+    // Host pins the selected file before any model-controlled dispatch.
+    // Windows uses OPEN_REPARSE_POINT to inspect the final object itself,
+    // not the target of a last-moment symlink substitution.
+    let pinned = open_verified_selected_file(path)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or("invalid selected filename")?
         .to_owned();
-    // The current small native file tool takes simple UTF-8 relative names;
-    // a file-picker result does not waive its validated argument contract.
     if file_name.is_empty() || file_name.chars().any(|c| matches!(c, '\\' | ':' | '/' | '\0')) {
         return Err("selected filename is not supported by this tool".into());
-    }
-    // Open once and retain the native OS handle for the entire Protobuf
-    // dispatch. An attacker replacing the pathname after this point cannot
-    // change which file Lu reads.
-    let pinned = fs::File::open(path).map_err(|e| format!("approved file open failed: {e}"))?;
-    let pinned_metadata = pinned.metadata().map_err(|e| format!("approved file metadata: {e}"))?;
-    if !pinned_metadata.is_file() {
-        return Err("approved file handle is not a regular file".into());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if pinned_metadata.dev() != metadata.dev() || pinned_metadata.ino() != metadata.ino() {
-            return Err("selected file changed before handle acquisition".into());
-        }
     }
     let root = path.parent().ok_or("selected file has no parent folder")?;
     let registry = NativeToolRegistry::new();
