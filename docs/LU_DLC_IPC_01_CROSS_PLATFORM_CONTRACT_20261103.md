@@ -16,7 +16,7 @@ These are two adapters to **one semantic contract**, not two proprietary version
 | Layer | Linux | Windows | Invariant |
 | --- | --- | --- | --- |
 | Local carrier (future) | `AF_UNIX` stream, private per-profile runtime directory, peer credentials | Named pipe with per-profile security descriptor, OS client identity verification | A path, name, PID or socket access is not an authorization grant |
-| Framing | Bounded Protobuf `DlcFrame` | Identical bounded Protobuf `DlcFrame` | Canonical decode, exact version, no JSON/unknown-field fallback |
+| Framing | u32 big-endian length + bounded Protobuf `DlcFrame` | Identical u32 big-endian length + bounded Protobuf `DlcFrame` | One canonical message per packet; reject truncation, trailing bytes, version drift, no JSON/unknown-field fallback |
 | Instance enrollment | Trusted Lu host approves a registered module/active instance | Same | Separate explicit user/project/conversation scope and revocable lease |
 | Inference | Lu-owned `InferenceHost` / scheduler | Same | No remote load/unload, private engine port/key never exported |
 | Worker lifetime | Existing Linux supervisor/cgroup where claimed | Correct Windows Job + suspended/race-free launch must be proven | No uncontained fallback; never claim process safety based on frame validation |
@@ -26,7 +26,7 @@ The Windows Job Object source issue is independent and blocking: [Lu issue #7](h
 ## Stage implemented here — real checked-in Rust contract, not a live listener
 
 * Added `DlcCapability`, `DlcHello`, `DlcFrame` messages in the canonical `lu.v1` Protobuf schema, reusing the existing validated `InferenceStatusRequest`, `InferenceGenerateRequest`, `InferenceCancelRequest` and `InferenceEvent` messages. There is intentionally **no DLC model-load/unload operation**.
-* Added `src-tauri/lu-core/src/dlc_interop.rs` with canonical version-1 bounded decode, strict unknown/duplicated-field refusal and validated typed inference bodies. Invalid version, references, capabilities, image references, prompt or history are rejected.
+* Added `src-tauri/lu-core/src/dlc_interop.rs` with canonical version-1 bounded decode, exact u32 big-endian length-prefixed packets (one frame per packet), strict truncated/extra-byte/unknown/duplicated-field refusal and validated typed inference bodies. Invalid version, references, capabilities, image references, prompt or history are rejected.
 * Added non-serializable host-held `DlcAdmission` gate: exact module, workspace and Lu session IDs; host-approved capability subset, one-time hello; reject cross-session traffic, unauthorized status/inference/images, request and generation replay, concurrent generation, cancellation of a generation the instance does not own, and post-revocation calls. A cancel request is not terminal proof; only host completion ends an active generation.
 * Added Linux and Windows native Rust CI jobs exercising this module and existing `WorkspaceHost` / `inference_wire` contracts. **A source-level test cannot substitute for OS peer authentication, a GUI approval, a real GGUF run, or a compiled installed app.**
 
