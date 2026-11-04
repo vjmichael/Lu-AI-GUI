@@ -83,6 +83,8 @@ message SearchTextRequest {
   string query = 2; // Literal, case-sensitive UTF-8 substring.
   optional uint32 max_files = 3;
   optional uint32 max_matches = 4;
+  optional bool recursive = 5;
+  optional string file_suffix = 6;
 }
 message SearchTextHit {
   string path = 1;
@@ -93,6 +95,7 @@ message SearchTextResult {
   repeated SearchTextHit hits = 1;
   uint32 scanned_files = 2;
   bool truncated = 3;
+  uint32 scanned_directories = 4;
 }
 
 // TOOLS-03: host-authorized native Git inspection. The model supplies only
