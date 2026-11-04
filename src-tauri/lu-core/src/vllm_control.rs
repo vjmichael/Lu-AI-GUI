@@ -3,6 +3,7 @@
 //! only emits bounded host-issued requests and never treats abort ACKs as
 //! verified scheduler/worker cessation. Model text cannot choose request IDs.
 use crate::backend_control::{BackendController, BackendCapabilities, ControlError, RecoveryPolicy, StopState};
+use crate::backend_restart_ledger::{BackendRestartLedger, RestartAdmission, RestartLedgerError};
 use serde_json::{json, Value};
 use std::time::Instant;
 
@@ -12,9 +13,13 @@ pub enum VllmControlError {
     InvalidFeedback,
     Transport,
     State(ControlError),
+    Ledger(RestartLedgerError),
 }
 impl From<ControlError> for VllmControlError {
     fn from(value: ControlError) -> Self { Self::State(value) }
+}
+impl From<RestartLedgerError> for VllmControlError {
+    fn from(value: RestartLedgerError) -> Self { Self::Ledger(value) }
 }
 
 /// Implemented only by a host-supervised transport bound to the exact vLLM
@@ -128,14 +133,19 @@ impl<T: VllmControlTransport> VllmRequestController<T> {
     /// admission before supplying a new Lu-owned worker. This does not replay
     /// the original generation or reset the restart history.
     pub fn replace_after_recovery(&mut self, transport: T, now: Instant,
-        reconciled: bool) -> Result<(), VllmControlError> {
+        reconciled: bool, restart_ledger: &BackendRestartLedger,
+        trusted_backend_key: &str, wall_clock_ms: i64) -> Result<(), VllmControlError> {
+        if self.state.state()!=StopState::WorkerTerminated || !reconciled {
+            return Err(VllmControlError::State(ControlError::InvalidTransition));
+        }
+        // Persist the restart attempt before a new managed process is
+        // admitted; an app crash cannot reset the five-minute circuit.
+        if restart_ledger.admit_at(trusted_backend_key,wall_clock_ms)?
+            == RestartAdmission::CircuitOpen {
+            return Err(VllmControlError::State(ControlError::RecoveryCircuitOpen));
+        }
         self.state.permit_restart(now,reconciled)?;
         self.transport=transport;
-        Ok(())
-    }
-    pub fn permit_restart(&mut self, now: Instant, reconciled: bool)
-        -> Result<(), VllmControlError> {
-        self.state.permit_restart(now,reconciled)?;
         Ok(())
     }
 }
@@ -185,6 +195,10 @@ mod tests {
                 Ok(())
             }
         }
+        let path=std::env::temp_dir().join(format!(
+            "lu-vllm-restart-{}-{:?}.sqlite",std::process::id(),
+            std::thread::current().id()));
+        let ledger=BackendRestartLedger::open(&path).unwrap();
         let flag=Arc::new(AtomicBool::new(false));
         let mut c=VllmRequestController::new(Owned(Arc::clone(&flag)));
         let now=Instant::now();
@@ -195,10 +209,12 @@ mod tests {
         assert!(flag.load(Ordering::SeqCst));
         assert_eq!(c.state(),StopState::WorkerTerminated);
         assert_eq!(c.replace_after_recovery(Owned(Arc::clone(&flag)),
-            now+std::time::Duration::from_secs(2),false),
+            now+std::time::Duration::from_secs(2),false,
+            &ledger,"vllm.model-a",2000),
             Err(VllmControlError::State(ControlError::InvalidTransition)));
         c.replace_after_recovery(Owned(Arc::clone(&flag)),
-            now+std::time::Duration::from_secs(2),true).unwrap();
+            now+std::time::Duration::from_secs(2),true,
+            &ledger,"vllm.model-a",2000).unwrap();
         c.generate("req_2","fresh user request",10).unwrap();
     }
     #[test]
