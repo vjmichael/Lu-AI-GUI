@@ -1203,6 +1203,51 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn native_transaction_rejects_picker_identity_swap_before_manifest_or_backup() {
+        let path=temp();
+        fs::write(path.join("original.md"),b"reviewed bytes").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let picked=strict_windows_file_identity(&root,"original.md").unwrap();
+        root.rename("original.md",&root,"displaced.md").unwrap();
+        fs::write(path.join("original.md"),b"reviewed bytes").unwrap();
+        assert_ne!(picked,strict_windows_file_identity(&root,"original.md").unwrap());
+        let id="g-windows-picked-identity-swap-0001";
+        assert_eq!(commit_in_dir_selected(
+            &root,"original.md",id,&sha(b"reviewed bytes"),b"replacement",
+            &sha(b"review"),
+            StopPoint::Never,Some(picked)
+        ),Err(EditCommitError::SourceConflict));
+        assert!(!path.join(sidecar(id,"meta")).exists());
+        assert_eq!(fs::read(path.join("original.md")).unwrap(),b"reviewed bytes");
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_rollback_rejects_picker_identity_swap_before_manifest_or_prior_backup() {
+        let path=temp();
+        fs::write(path.join("original.md"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let edit_id="g-windows-rollback-idbind-edit-001";
+        commit_in_dir(&root,"original.md",edit_id,&sha(b"before"),b"after",
+            &sha(b"review"),StopPoint::Never).unwrap();
+        let picked=strict_windows_file_identity(&root,"original.md").unwrap();
+        root.rename("original.md",&root,"moved-after.md").unwrap();
+        fs::write(path.join("original.md"),b"after").unwrap();
+        assert_ne!(picked,strict_windows_file_identity(&root,"original.md").unwrap());
+        let rollback_id="g-windows-rollback-idbind-000001";
+        assert_eq!(rollback_with_stop_selected(
+            &root,"original.md",edit_id,rollback_id,
+            &sha(b"after"),&sha(b"before"),StopPoint::Never,Some(picked)
+        ),Err(EditCommitError::SourceConflict));
+        assert!(!path.join(sidecar(rollback_id,"rollback-meta")).exists());
+        assert!(!path.join(sidecar(rollback_id,"prior")).exists());
+        assert_eq!(fs::read(path.join("original.md")).unwrap(),b"after");
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_same_bytes_different_file_identity_blocks_publication() {
         let path=temp();
         fs::write(path.join("document.md"),b"old").unwrap();
