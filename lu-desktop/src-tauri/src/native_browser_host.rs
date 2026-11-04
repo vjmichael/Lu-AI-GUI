@@ -282,6 +282,23 @@ impl DesktopBrowserHost {
         Ok(())
     }
 }
+/// The only bridge used by the scoped native tool. Browser authorization,
+/// typed operation/argument parity and origin grants are validated by
+/// native_browser_tool immediately before entering this runner.
+impl lu_core::native_browser_tool::BrowserTaskRunner for DesktopBrowserHost {
+    fn run(&self,operation:BrowserOperation,arguments:serde_json::Value)
+      ->Result<serde_json::Value,String>{
+        let mut session=self.session.lock()
+            .map_err(|_|"browser supervisor lock poisoned")?;
+        let worker=session.as_mut().ok_or("Browser session is not running")?;
+        if !worker.is_alive(){
+            session.take();
+            return Err("Browser worker or Chromium has terminated".into());
+        }
+        worker.execute(operation,arguments)
+            .map_err(|e|format!("Browser supervisor declined operation: {e:?}"))
+    }
+}
 impl Drop for DesktopBrowserHost {
     fn drop(&mut self) {
         if let Ok(mut guard)=self.session.lock() {guard.take();}
