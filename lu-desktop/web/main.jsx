@@ -739,6 +739,8 @@ function App() {
             <strong>Lu proposes creating a NEW file (no overwrite)</strong>
             <p>{proposal.purpose}</p>
             <small>Filename: {proposal.fileName} · {proposal.bytes} bytes · SHA-256: {proposal.sha256}</small>
+            <small>Model-selected text format: {proposal.fileFormat || 'UTF-8 text'}.
+              JSON/JSONL receive syntax validation; source-code syntax needs its relevant parser or compiler.</small>
             <small>Review all proposed content before allowing creation:</small>
             <pre className="writePreview">{proposal.content}</pre>
             {proposal.destination ? <>
