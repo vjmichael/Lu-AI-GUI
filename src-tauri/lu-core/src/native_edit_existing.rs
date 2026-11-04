@@ -426,9 +426,19 @@ pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
     if sha(&backup) != m.restore_sha256 {
         return RollbackObservation::ChangedOrDamaged;
     }
+    // A rollback must preserve the displaced edited version. It may not
+    // exist if a crash occurred immediately after the intent record, but it
+    // must be present and verified when the target is already restored.
+    let prior=match regular_bytes(root,&sidecar(id,"prior")) {
+        Ok((bytes,_)) if sha(&bytes)==m.prior_sha256=>true,
+        Err(EditCommitError::MissingTarget)=>false,
+        _=>return RollbackObservation::ChangedOrDamaged,
+    };
     match regular_bytes(root, &m.target) {
-        Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 =>
+        Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 && prior =>
             RollbackObservation::RestoredFromBackup,
+        Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 =>
+            RollbackObservation::ChangedOrDamaged,
         Ok((bytes,_)) if sha(&bytes) == m.prior_sha256 =>
             RollbackObservation::StillAtReplacement,
         Ok(_) => RollbackObservation::ChangedOrDamaged,
@@ -902,6 +912,24 @@ mod tests {
         assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
         row.receipt=None;
         assert!(!verified_rollback_receipt(&row,rollback_id,original_edit_id,&old,8));
+    }
+
+    #[test]
+    fn a_rollback_with_damaged_displaced_version_cannot_be_accepted_as_recovered() {
+        let path=temp();
+        fs::write(path.join("memo.md"),b"Earlier").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let edit_id="g-edit-prior-check-0001";
+        let rollback_id="g-rollback-prior-check-001";
+        commit_in_dir(&root,"memo.md",edit_id,&sha(b"Earlier"),b"Later",
+            &sha(b"approved"),StopPoint::Never).unwrap();
+        rollback_in_dir(&root,"memo.md",edit_id,rollback_id,
+            &sha(b"Later"),&sha(b"Earlier")).unwrap();
+        assert_eq!(observe_rollback(&root,rollback_id),RollbackObservation::RestoredFromBackup);
+        fs::write(path.join(sidecar(rollback_id,"prior")),b"corrupted").unwrap();
+        assert_eq!(observe_rollback(&root,rollback_id),RollbackObservation::ChangedOrDamaged);
+        assert_eq!(fs::read(path.join("memo.md")).unwrap(),b"Earlier");
+        drop(root);fs::remove_dir_all(path).unwrap();
     }
 
     #[test]
