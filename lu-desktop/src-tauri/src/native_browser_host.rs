@@ -6,7 +6,6 @@
 //! Runtime status does not authorize navigation.
 use lu_core::{
     browser_preferences::BrowserPreferences,
-    browser_visibility_settings::BrowserVisibilityPreference,
     browser_worker_supervisor::OwnedBrowserWorker,
 };
 use serde::Serialize;
@@ -42,6 +41,8 @@ struct ComponentPin {
 const CHROMIUM_PIN:Option<ComponentPin>=None;
 const NODE_PIN:Option<ComponentPin>=None;
 const WORKER_PIN:Option<ComponentPin>=None;
+const PLAYWRIGHT_PIN:Option<ComponentPin>=None;
+const PLAYWRIGHT_ENTRY:&str="node_modules/playwright/index.mjs";
 
 #[derive(Debug,Serialize,Clone,PartialEq,Eq)]
 #[serde(rename_all="camelCase")]
@@ -86,7 +87,7 @@ impl DesktopBrowserHost {
     fn package_dir(&self)->PathBuf {self.resources.join(BROWSER_PACKAGE_SUBDIR)}
     fn packaged_components_present(&self)->bool {
         let dir=self.package_dir();
-        [CHROMIUM_NAME,NODE_NAME,BROWSER_WORKER_NAME]
+        [CHROMIUM_NAME,NODE_NAME,BROWSER_WORKER_NAME,PLAYWRIGHT_ENTRY]
             .iter().all(|name|dir.join(name).is_file())
     }
     fn package_verified(&self)->bool {
@@ -94,9 +95,7 @@ impl DesktopBrowserHost {
         pin_matches(&dir.join(CHROMIUM_NAME),CHROMIUM_PIN)
             &&pin_matches(&dir.join(NODE_NAME),NODE_PIN)
             &&pin_matches(&dir.join(BROWSER_WORKER_NAME),WORKER_PIN)
-            // The Playwright runtime must also be pinned and shipped. Do not
-            // confuse three verified entrypoint files with a complete package.
-            &&false
+            &&pin_matches(&dir.join(PLAYWRIGHT_ENTRY),PLAYWRIGHT_PIN)
     }
     pub fn status(&self,preferences:&BrowserPreferences)->Result<BrowserRuntimeView,String>{
         let mode=preferences.visibility()
@@ -148,7 +147,7 @@ mod tests {
     }
     #[test]
     fn preferences_and_process_ownership_are_separate_authorities(){
-        let _mode=BrowserVisibilityPreference::default();
+        let _mode=lu_core::browser_visibility_settings::BrowserVisibilityPreference::default();
         let _status:fn(&DesktopBrowserHost,&BrowserPreferences)
             ->Result<BrowserRuntimeView,String>=DesktopBrowserHost::status;
         let _stop:fn(&DesktopBrowserHost)->Result<bool,String>=DesktopBrowserHost::stop;
