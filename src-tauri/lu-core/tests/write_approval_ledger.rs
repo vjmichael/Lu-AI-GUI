@@ -6,7 +6,7 @@ fn scratch() -> std::path::PathBuf {
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
     ))
 }
-const SHA: &str="26c1a27202916dd84ea5322e4bd32f7bef59c432f1a851b7789c871f0413e7d";
+const SHA: &str="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 #[test]
 fn exact_review_target_and_content_hash_are_required_before_durable_approval() {
     let path=scratch();
