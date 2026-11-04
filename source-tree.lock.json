@@ -717,7 +717,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_inspect.rs",
-      "blob": "b1f872d9d42161f6506b7b7c579a20be4e69aacf"
+      "blob": "21ca367d72f5b0c147977404e3fb124d24db53c0"
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
