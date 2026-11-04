@@ -848,9 +848,13 @@ keys and correct types. Never invent arguments or permissions.
                             // tool call in the conversation.
                             let correction_status = rejection_to_model
                                 .as_ref()
-                                .map(|feedback| format!(
-                                    "\\n<|im_end|>\\n<|im_start|>system\\n                                     Rejected model tool envelope (not an executed call): {feedback}\\n                                     <|im_end|>\\n<|im_start|>assistant\\n"
-                                ))
+                                .map(|feedback| format!(r#"
+<|im_end|>
+<|im_start|>system
+Rejected model tool envelope (not an executed call): {feedback}
+<|im_end|>
+<|im_start|>assistant
+"#))
                                 .unwrap_or_default();
                             if prompt.len() + correction_status.len() + reminder.len()
                                 > MAX_LU_TURN_PROMPT_BYTES {
