@@ -30,6 +30,16 @@ fn model_dir()->PathBuf {
     fs::write(root.join("tiny.gguf"),gguf).unwrap();
     root
 }
+fn remove_model_dir(root:PathBuf){
+    for attempt in 0..10 {
+        match fs::remove_dir_all(&root) {
+            Ok(())=>return,
+            Err(error) if error.raw_os_error()==Some(32) && attempt < 9 =>
+                std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(error)=>panic!("stream test cleanup failed: {error}"),
+        }
+    }
+}
 struct RepeatingFakeBackend {
     emitted:Arc<AtomicUsize>,
     repeat:bool,
@@ -74,7 +84,7 @@ fn actual_protobuf_supervisor_cuts_repeated_stream_before_exhaustion(){
     assert!(emitted.load(Ordering::SeqCst) < 150,
         "the real streaming adapter must interrupt before hundreds of repeated chunks");
     drop(model);drop(supervisor);drop(manager);
-    fs::remove_dir_all(root).unwrap();
+    remove_model_dir(root);
 }
 #[test]
 fn actual_protobuf_supervisor_allows_diverse_stream(){
@@ -95,5 +105,5 @@ fn actual_protobuf_supervisor_allows_diverse_stream(){
     assert!(result.contains("Chunk 29"));
     assert_eq!(emitted.load(Ordering::SeqCst),30);
     drop(model);drop(supervisor);drop(manager);
-    fs::remove_dir_all(root).unwrap();
+    remove_model_dir(root);
 }
