@@ -39,10 +39,17 @@ fn make_store(path: &Path, session: &str) -> AnsfStore {
 use std::path::Path;
 
 #[test]
-fn real_jan_fixture_import_preserves_original_json_source_and_roles() {
+fn committed_jan_shape_import_preserves_exact_json_source_and_roles() {
     const SESSION: &str = "1fa772e9-47e5-4a8c-a664-4b1cef37c5aa";
-    let original = include_str!(
-        "../../tests/fixtures/upgrade/0.8.3/threads/1fa772e9-47e5-4a8c-a664-4b1cef37c5aa/messages.jsonl"
+    // The original Jan upgrade-fixture archive was not included in Lu's
+    // published development tree. Exercise the actual importer using a
+    // committed, minimal Jan-shaped two-record JSONL fixture instead.
+    // This is a parser regression, NOT acceptance of historical Jan migration.
+    let original = concat!(
+        r#"{"id":"u-1","thread_id":"1fa772e9-47e5-4a8c-a664-4b1cef37c5aa","role":"user","content":"Please analyze the second data point"}"#,
+        "\\n",
+        r#"{"id":"a-2","thread_id":"1fa772e9-47e5-4a8c-a664-4b1cef37c5aa","role":"assistant","content":"The second data point is retained"}"#,
+        "\\n"
     );
     let path = temporary("import-fixture");
     let store = make_store(&path, SESSION);
