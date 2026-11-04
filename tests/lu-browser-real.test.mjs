@@ -7,7 +7,7 @@ import {BrowserSession} from '../src-tauri/lu-core/workers/lu_browser_worker.mjs
 
 test('real visible Chromium worker starts, observes, screenshots and terminates', async () => {
   const profile=await mkdtemp(join(tmpdir(),'lu-chromium-ci-'));
-  const browser=new BrowserSession({origins:['https://example.com'],profileDirectory:profile});
+  const browser=new BrowserSession({origins:['https://example.com'],profileDirectory:profile,softwareRendering:true});
   try {
     const started=await browser.start();
     assert.equal(started.status,'READY');
