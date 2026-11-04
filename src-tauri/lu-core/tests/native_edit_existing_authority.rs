@@ -160,8 +160,8 @@ async fn one_approved_edit_durable_receipt_replay_revocation_and_newly_approved_
 #[tokio::test]
 async fn rejected_arguments_have_no_effect_and_stale_source_is_uncertain_not_retried() {
     let folder = scratch();
-    let old = b"first";
-    let new = b"second";
+    let old = br#"{"value":"first"}"#;
+    let new = br#"{"value":"second"}"#;
     fs::write(folder.join("notes.json"), old).unwrap();
     let root = Arc::new(Dir::open_ambient_dir(&folder, ambient_authority()).unwrap());
     let registry = NativeToolRegistry::new();
