@@ -21,6 +21,10 @@ impl From<ControlError> for VllmControlError {
 /// worker. Do not implement this for arbitrary OpenAI-compatible servers.
 pub trait VllmControlTransport {
     fn send_host_control(&mut self, request: &Value) -> Result<(), ()>;
+    /// Only implemented by the process supervisor retaining a real owned OS
+    /// child handle. Never use this for an externally managed vLLM server.
+    fn terminate_owned_worker(&mut self) -> Result<(), ()> { Err(()) }
+    fn read_host_event(&mut self) -> Result<Value, ()> { Err(()) }
 }
 
 pub struct VllmRequestController<T: VllmControlTransport> {
@@ -37,6 +41,12 @@ impl<T: VllmControlTransport> VllmRequestController<T> {
         Self { transport, state }
     }
     pub fn state(&self) -> StopState { self.state.state() }
+    pub fn next_event(&mut self) -> Result<Value, VllmControlError> {
+        let event=self.transport.read_host_event()
+            .map_err(|_| VllmControlError::Transport)?;
+        self.observe_feedback(&event)?;
+        Ok(event)
+    }
     pub fn generate(&mut self, host_request_id: &str, prompt: &str, max_tokens: u32)
         -> Result<(), VllmControlError> {
         if prompt.trim().is_empty() || prompt.len() > 16 * 1024
@@ -98,6 +108,24 @@ impl<T: VllmControlTransport> VllmRequestController<T> {
         self.state.mark_worker_terminated(confirmed)?;
         Ok(())
     }
+    /// Host watchdog calls this on its own thread after the native abort grace
+    /// expires; a failing kill is not treated as a verified stopped worker.
+    pub fn escalate_owned_if_stalled(&mut self, now: Instant)
+        -> Result<bool, VllmControlError> {
+        if !self.state.check_escalation(now)? { return Ok(false); }
+        let confirmed=self.transport.terminate_owned_worker().is_ok();
+        self.state.mark_worker_terminated(confirmed)?;
+        Ok(confirmed)
+    }
+    /// The caller must independently reconcile the effect journal and resource
+    /// admission before supplying a new Lu-owned worker. This does not replay
+    /// the original generation or reset the restart history.
+    pub fn replace_after_recovery(&mut self, transport: T, now: Instant,
+        reconciled: bool) -> Result<(), VllmControlError> {
+        self.state.permit_restart(now,reconciled)?;
+        self.transport=transport;
+        Ok(())
+    }
     pub fn permit_restart(&mut self, now: Instant, reconciled: bool)
         -> Result<(), VllmControlError> {
         self.state.permit_restart(now,reconciled)?;
@@ -127,6 +155,17 @@ mod tests {
         assert_eq!(c.verify_host_observed_stop("req_1",false),
             Err(VllmControlError::State(ControlError::UnsupportedVerification)));
         assert!(c.check_escalation(now+std::time::Duration::from_secs(1)).unwrap());
+    }
+    #[test]
+    fn killing_unowned_transport_is_never_marked_verified() {
+        let mut c=VllmRequestController::new(Capturing(vec![]));
+        let now=Instant::now();
+        c.generate("req_1","hello",16).unwrap();
+        c.abort("req_1",now).unwrap();
+        assert!(!c.escalate_owned_if_stalled(now).unwrap());
+        assert!(!c.escalate_owned_if_stalled(
+            now+std::time::Duration::from_secs(1)).unwrap());
+        assert_eq!(c.state(),StopState::FailedStop);
     }
     #[test]
     fn normal_finish_releases_exact_request_for_next_generation() {
