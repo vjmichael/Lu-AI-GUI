@@ -205,3 +205,21 @@ impl ReadApprovalQueue {
         Ok(before - entries.len())
     }
 }
+
+#[cfg(test)]
+mod json_boundary_tests {
+    use super::*;
+    #[test]
+    fn staged_read_rejects_duplicate_fields_and_trailing_comma() {
+        let queue = ReadApprovalQueue::default();
+        let valid = r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"inspect","max_bytes":512}"#;
+        assert!(queue.stage("ok", "chat", "turn", valid).is_ok());
+        for payload in [
+            r#"{"kind":"propose_read_file","file_name":"notes.txt","file_name":"secret.txt","purpose":"inspect","max_bytes":512}"#,
+            r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"inspect","max_bytes":512,}"#,
+            r#"{"kind":"propose_read_file","file_name":"notes.txt","purpose":"inspect","max_bytes":"#,
+        ] {
+            assert_eq!(queue.stage("bad", "chat", "turn", payload), Err(ProposalError::Invalid));
+        }
+    }
+}
