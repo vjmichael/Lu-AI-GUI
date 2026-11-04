@@ -38,6 +38,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_ -- --nocapture
       - name: Browser visibility state and platform adapter tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings -- --nocapture
+      - name: Host-authorized visibility bridge tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_host_bridge -- --nocapture
       - name: Browser child-process ownership tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_process_owner -- --nocapture
       - name: Linux X11 adapter parser tests
