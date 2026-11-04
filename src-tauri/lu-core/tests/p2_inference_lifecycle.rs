@@ -70,6 +70,7 @@ fn callback_cancellation_fails_closed_and_host_can_unload() {
     let mut received = 0;
     let result = host.generate(
         GenerationRequest {
+            history: Vec::new(),
             prompt: "say hello".into(),
             max_new_tokens: 8,
         },
