@@ -53,6 +53,8 @@ function App() {
   const [documentSettings, setDocumentSettings] = useState(null);
   const [browserMode, setBrowserMode] = useState(null);
   const [browserRuntime, setBrowserRuntime] = useState(null);
+  const [browserOrigin, setBrowserOrigin] = useState('');
+  const [startingBrowser, setStartingBrowser] = useState(false);
   const [savingBrowserMode, setSavingBrowserMode] = useState(false);
   const [latestCreated, setLatestCreated] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -564,6 +566,19 @@ function App() {
       setDocumentSettings(result);
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
+  }
+  async function startResearchBrowser() {
+    if (!chatId || startingBrowser || !browserRuntime?.launchReady) return;
+    setError('');
+    setStartingBrowser(true);
+    try {
+      const view = await invoke('lu_browser_start', {
+        chatId, origin:browserOrigin.trim()
+      });
+      setBrowserRuntime(view);
+      setActivity('Research browser authorized for this conversation');
+    } catch (error) {setError(String(error));}
+    finally {setStartingBrowser(false);}
   }
   async function stopResearchBrowser() {
     setError('');
@@ -1218,7 +1233,21 @@ function App() {
           </p>
           <p className="settingsNotice">This preference applies to the next browser session.
             Native window visibility and human takeover are under development.</p>
+          <label className="browserOriginLabel" htmlFor="luBrowserOrigin">
+            Authorized website (HTTPS origin)
+          </label>
+          <input id="luBrowserOrigin" className="browserOriginInput"
+            type="url" placeholder="https://example.com"
+            value={browserOrigin} maxLength={256}
+            onChange={event => setBrowserOrigin(event.target.value)}
+            disabled={browserRuntime?.running || startingBrowser}/>
           <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={!browserRuntime?.launchReady || !chatId ||
+                !browserOrigin.trim() || startingBrowser || browserRuntime?.running}
+              onClick={startResearchBrowser}>
+              {startingBrowser ? 'Starting browser…' : 'Authorize and start browser'}
+            </button>
             <button type="button" className="subtleButton"
               onClick={stopResearchBrowser} disabled={!browserRuntime?.running}>
               Stop research browser
