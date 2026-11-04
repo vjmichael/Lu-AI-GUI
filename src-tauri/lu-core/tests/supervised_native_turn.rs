@@ -619,3 +619,89 @@ async fn invented_tool_twice_fails_closed_without_native_dispatch() {
     drop(authority);
     remove_workspace(root);
 }
+
+#[tokio::test]
+async fn json_syntax_and_nested_duplicates_recover_after_two_generations_only() {
+    let root = sandbox();
+    let (registry, catalog, authority, origin) = tools_and_authority(&root);
+    let allowed = BTreeSet::from(["lu_files_read_text".to_owned()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-test".into(), &allowed,
+    ).unwrap();
+    struct BrokenThenFinal { calls: usize, prompts: Vec<String> }
+    impl ModelStepGenerator for BrokenThenFinal {
+        fn generate_step(
+            &mut self, prompt: &str, _: u32, _: &Cancellation,
+        ) -> Result<String, NativeGenerationError> {
+            self.calls += 1;
+            self.prompts.push(prompt.to_owned());
+            Ok(match self.calls {
+                1 => r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt",}"#.into(),
+                2 => r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt","path":"secret.txt"}}"#.into(),
+                _ => r#"{"kind":"final","text":"JSON recovered without executing a tool"}"#.into(),
+            })
+        }
+    }
+    let mut model = BrokenThenFinal { calls: 0, prompts: Vec::new() };
+    let journal = ModelTurnJournal::open(&root.join("mbrl-recover.sqlite3")).unwrap();
+    let result = run_supervised_native_turn_journaled(
+        "Reply with a final answer.", &mut turn, &mut model,
+        &NativeTurnServices {
+            catalog: &catalog, registry: &registry, authority: &authority,
+            host_policy: &Permitted,
+        }, &Cancellation::default(), &journal,
+    ).await.unwrap();
+    assert_eq!(result.model_generations, 3);
+    assert_eq!(result.tool_calls, 0);
+    assert_eq!(turn.step_count(), 0);
+    assert_eq!(model.calls, 3);
+    assert!(model.prompts[2].contains("NOT executed"));
+    assert!(!model.prompts[2].contains("secret.txt"));
+    let audit = journal.events_for("conversation-test", "task-test").unwrap();
+    assert_eq!(audit.iter().filter(|e| e.kind == ModelAuditKind::Rejected).count(), 2);
+    assert_eq!(audit.iter().filter(|e| e.kind == ModelAuditKind::FinalAnswer).count(), 1);
+    assert!(!audit.iter().any(|e| e.kind == ModelAuditKind::ToolFeedback));
+    drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
+    remove_workspace(root);
+}
+
+#[tokio::test]
+async fn schema_invalid_tool_produces_typed_rejection_before_regeneration() {
+    let root = sandbox();
+    let (registry, catalog, authority, origin) = tools_and_authority(&root);
+    let allowed = BTreeSet::from(["lu_files_read_text".to_owned()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-test".into(), &allowed,
+    ).unwrap();
+    struct WrongArgumentThenFinal { calls: usize }
+    impl ModelStepGenerator for WrongArgumentThenFinal {
+        fn generate_step(
+            &mut self, _: &str, _: u32, _: &Cancellation,
+        ) -> Result<String, NativeGenerationError> {
+            self.calls += 1;
+            if self.calls == 1 {
+                Ok(r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt","max_bytes":"many"}}"#.into())
+            } else {
+                Ok(r#"{"kind":"final","text":"I can answer without the tool."}"#.into())
+            }
+        }
+    }
+    let mut model = WrongArgumentThenFinal { calls: 0 };
+    let journal = ModelTurnJournal::open(&root.join("mbrl-type-error.sqlite3")).unwrap();
+    let result = run_supervised_native_turn_journaled(
+        "Reply without using a tool.", &mut turn, &mut model,
+        &NativeTurnServices {
+            catalog: &catalog, registry: &registry, authority: &authority,
+            host_policy: &Permitted,
+        }, &Cancellation::default(), &journal,
+    ).await.unwrap();
+    assert_eq!(result.model_generations, 2);
+    assert_eq!(turn.step_count(), 0);
+    let audit = journal.events_for("conversation-test", "task-test").unwrap();
+    let feedback = audit.iter().find(|e| e.kind == ModelAuditKind::ToolFeedback).unwrap();
+    assert!(feedback.payload.contains("TOOL_SCHEMA_INVALID"));
+    assert!(feedback.payload.contains("boundary-"));
+    assert!(!feedback.payload.contains("notes.txt"));
+    drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
+    remove_workspace(root);
+}
