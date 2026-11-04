@@ -52,6 +52,18 @@ impl RollbackReviewQueue {
         if item.record.chat_id!=chat_id {return Err(RollbackReviewError::WrongChat);}
         entries.remove(review_id).ok_or(RollbackReviewError::Missing)
     }
+    /// Reinspection invalidates earlier unspent previews of this edit.
+    /// Caller must also deny their corresponding durable REVIEWED entries.
+    pub fn clear_for(&self,chat_id:&str,original_proposal_id:&str)
+        ->Result<Vec<String>,RollbackReviewError> {
+        let mut entries=self.pending.lock().map_err(|_|RollbackReviewError::Poisoned)?;
+        let old:Vec<String>=entries.iter()
+            .filter(|(_,s)|s.record.chat_id==chat_id &&
+                s.record.original_proposal_id==original_proposal_id)
+            .map(|(key,_)|key.clone()).collect();
+        for key in &old {entries.remove(key);}
+        Ok(old)
+    }
     pub fn dismiss(&self,review_id:&str,chat_id:&str)->Result<(),RollbackReviewError>{
         self.take(review_id,chat_id).map(|_|())
     }
