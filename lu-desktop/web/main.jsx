@@ -40,6 +40,9 @@ function App() {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const [documentSettings, setDocumentSettings] = useState(null);
+  const [latestCreated, setLatestCreated] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -160,6 +163,9 @@ function App() {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
         if (alive && list.length) await switchChat(list[0].chatId);
+        if (alive) invoke('lu_document_settings')
+          .then(value => {if (alive) setDocumentSettings(value);})
+          .catch(error => {if (alive) setError(String(error));});
       } catch (error) { if (alive) setError(String(error)); }
     })();
     listen('lu-generation-queued', e => {
@@ -409,7 +415,26 @@ function App() {
     else setWriteRecovery([]);
   }, [chatId]);
 
-  async function reviewWriteDestination(proposal, destinationMode = 'lu_drafts') {
+  async function openCreatedFolder(proposalId, targetChat = chatId) {
+    try {
+      await invoke('lu_open_created_folder', {chatId: targetChat, proposalId});
+    } catch (error) { setError(String(error)); }
+  }
+  async function chooseDefaultDocumentsFolder() {
+    try {
+      const result = await invoke('lu_choose_default_document_folder');
+      setDocumentSettings(result);
+      setActivity('Default document folder updated');
+    } catch (error) { setError(String(error)); }
+  }
+  async function resetDefaultDocumentsFolder() {
+    try {
+      const result = await invoke('lu_reset_default_document_folder');
+      setDocumentSettings(result);
+      setActivity('Default restored to system Documents');
+    } catch (error) { setError(String(error)); }
+  }
+  async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
       const destination = await invoke('lu_review_write_destination', {
@@ -432,6 +457,7 @@ function App() {
         if (currentChat.current === proposal.chatId)
           setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
         setActivity('Created new file: ' + written.fileName);
+        setLatestCreated({...written, proposalId: proposal.proposalId, chatId: proposal.chatId});
       } else {
         setActivity('File creation denied in native confirmation');
       }
@@ -748,11 +774,11 @@ function App() {
               <code className="writeTarget">{proposal.destination.exactTarget}</code>
               <small>Only this destination and these exact bytes may be created.
                 This approval is single-use and will not survive an interrupted attempt.</small>
-            </> : <small>Choose Lu Drafts or select any local folder through the native operating-system picker. Lu cannot pick the folder for you; nothing has been written.</small>}
+            </> : <small>By default, save in your Documents folder. You can change the default under Settings → Advanced, or choose another folder for this file. Lu never chooses a destination without your approval.</small>}
             <div className="settingsActions">
               {!proposal.destination ? <>
                 <button type="button" className="subtleButton"
-                  onClick={() => reviewWriteDestination(proposal, 'lu_drafts')}>Save to Lu Drafts</button>
+                  onClick={() => reviewWriteDestination(proposal, 'user_documents')}>Use Documents folder</button>
                 <button type="button" className="primaryButton"
                   onClick={() => reviewWriteDestination(proposal, 'choose_folder')}>Choose another folder</button>
               </> :
@@ -763,6 +789,14 @@ function App() {
             </div>
           </section>
         )}
+        {latestCreated?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Created {latestCreated.fileName}</strong>
+          <small>{latestCreated.exactTarget}</small>
+          <button className="folderLink" type="button"
+            onClick={() => openCreatedFolder(latestCreated.proposalId, latestCreated.chatId)}>
+            Open containing folder
+          </button>
+        </section>}
         {writeRecovery.length > 0 && <section className="readProposalCard"
           aria-label="Write recovery records">
           <strong>Write recovery and audit</strong>
@@ -774,6 +808,11 @@ function App() {
               <small>Approval: {record.approval} · Effect: {record.effect} · {record.bytes} bytes</small>
               <small>Observed target: {record.observedTarget} (observation only; not execution proof)</small>
               <small>Reconciliation: {record.assessment} — no automatic retry or reauthorization</small>
+              {record.effect === 'Applied' && record.approval === 'Approved' &&
+                <button type="button" className="folderLink"
+                  onClick={() => openCreatedFolder(record.proposalId, chatId)}>
+                  Open containing folder
+                </button>}
               {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
               <small>SHA-256: {record.sha256}</small>
             </div>
@@ -814,6 +853,31 @@ function App() {
     {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <header><div><h2>Settings</h2><small>Local model management</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
+        <button type="button" className="subtleButton full"
+          aria-expanded={advancedSettingsOpen} onClick={() => setAdvancedSettingsOpen(v => !v)}>
+          {advancedSettingsOpen ? 'Hide advanced settings' : 'Advanced settings'}
+        </button>
+        {advancedSettingsOpen && <section className="advancedDocumentSettings"
+          aria-label="Default document folder settings">
+          <h3>Documents and saved files</h3>
+          <p>New text documents save to your user Documents folder by default.
+            You may choose a different default folder with the native folder picker.</p>
+          <small>System Documents: {documentSettings?.systemDocumentsFolder || 'Unavailable'}</small>
+          <code className="writeTarget">{documentSettings?.defaultFolder || 'No default directory resolved'}</code>
+          {!documentSettings?.isAvailable &&
+            <small role="alert">The default folder is missing or unavailable. Select a valid folder before saving.</small>}
+          <div className="settingsActions">
+            <button type="button" className="subtleButton" onClick={chooseDefaultDocumentsFolder}>
+              Choose default folder
+            </button>
+            <button type="button" className="subtleButton" onClick={resetDefaultDocumentsFolder}
+              disabled={!documentSettings?.isCustom}>
+              Reset to system Documents
+            </button>
+          </div>
+          <p className="settingsNotice">Lu saves only after reviewing the exact file contents and destination.
+            Modifying existing files requires a separate validated edit/backup pipeline.</p>
+        </section>}
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
         <button className="subtleButton full" onClick={importModel} disabled={busy}>Import GGUF from another location</button>
