@@ -466,6 +466,16 @@ fn commit_in_dir_selected(
         let displaced=sidecar(operation_id,"published-displaced");
         root.rename(target,root,&displaced).map_err(io)?;
         write_new_synced(root,target,replacement,&perms)?;
+        // Give the impostor identical bytes AND identical security and
+        // creation metadata. The persisted staged FileId seal, not ACL or
+        // byte comparison, must detect the wrong published object.
+        let published=root.open(&displaced).map_err(io)?.into_std();
+        let snapshot=crate::windows_file_guard::snapshot_metadata(&published)
+            .map_err(|_|EditCommitError::Uncertain)?;
+        let mut opts=OpenOptions::new();opts.read(true).write(true);
+        let impostor=root.open_with(target,&opts).map_err(io)?.into_std();
+        crate::windows_file_guard::prepare_stage_metadata(
+            &published,&impostor,&snapshot).map_err(|_|EditCommitError::Uncertain)?;
     }
     if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
     sync_parent(root).map_err(|_| EditCommitError::Uncertain)?;
@@ -902,6 +912,13 @@ fn rollback_with_stop_selected(
         let displaced=sidecar(rollback_id,"published-displaced");
         root.rename(target,root,&displaced).map_err(io)?;
         write_new_synced(root,target,&backup,&perms)?;
+        let published=root.open(&displaced).map_err(io)?.into_std();
+        let snapshot=crate::windows_file_guard::snapshot_metadata(&published)
+            .map_err(|_|EditCommitError::Uncertain)?;
+        let mut opts=OpenOptions::new();opts.read(true).write(true);
+        let impostor=root.open_with(target,&opts).map_err(io)?.into_std();
+        crate::windows_file_guard::prepare_stage_metadata(
+            &published,&impostor,&snapshot).map_err(|_|EditCommitError::Uncertain)?;
     }
     if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
     sync_parent(root).map_err(|_| EditCommitError::Uncertain)?;
@@ -1518,7 +1535,17 @@ mod tests {
         assert_eq!(fs::read(path.join("notes.md")).unwrap(),b"after");
         assert_eq!(fs::read(path.join(sidecar(id,"orig"))).unwrap(),b"before");
         assert_eq!(fs::read(path.join(sidecar(id,"published-displaced"))).unwrap(),b"after");
+        let fake=root.open("notes.md").unwrap().into_std();
+        let displaced=root.open(&sidecar(id,"published-displaced")).unwrap().into_std();
+        assert_eq!(native_metadata_sha(&fake).unwrap(),native_metadata_sha(&displaced).unwrap());
+        assert_ne!(
+            crate::windows_file_guard::inspect_open_file(&fake).unwrap(),
+            crate::windows_file_guard::inspect_open_file(&displaced).unwrap()
+        );
+        drop(fake);drop(displaced);
         assert_eq!(observe_edit(&root,id),EditObservation::ChangedOrDamaged);
+        assert_eq!(inspect_rollback_candidate(&root,"notes.md",id),
+            Err(EditCommitError::InvalidRecoveryRecord));
         drop(root);fs::remove_dir_all(path).unwrap();
     }
 
