@@ -27,7 +27,7 @@ The Windows Job Object source issue is independent and blocking: [Lu issue #7](h
 
 * Added `DlcCapability`, `DlcHello`, `DlcFrame` messages in the canonical `lu.v1` Protobuf schema, reusing the existing validated `InferenceStatusRequest`, `InferenceGenerateRequest`, `InferenceCancelRequest` and `InferenceEvent` messages. There is intentionally **no DLC model-load/unload operation**.
 * Added `src-tauri/lu-core/src/dlc_interop.rs` with canonical version-1 bounded decode, exact u32 big-endian length-prefixed packets (one frame per packet), strict truncated/extra-byte/unknown/duplicated-field refusal and validated typed inference bodies. Invalid version, references, capabilities, image references, prompt or history are rejected.
-* Added non-serializable host-held `DlcAdmission` gate: exact module, workspace and Lu session IDs; host-approved capability subset, one-time hello; reject cross-session traffic, unauthorized status/inference/images, request and generation replay, concurrent generation, cancellation of a generation the instance does not own, and post-revocation calls. A cancel request is not terminal proof; only host completion ends an active generation.
+* Added non-serializable host-held `DlcAdmission` gate: exact module, workspace and Lu session IDs; host-approved capability subset, one-time hello; reject cross-session traffic, unauthorized status/inference/images, request and generation replay, concurrent generation, cancellation of a generation the instance does not own, and post-revocation calls. A cancel request is not terminal proof; only host completion ends an active generation. The `host_bind_workspace` path now reads the **real** `WorkspaceHost` active module/instance ownership at bind and every request; suspended, closed, or wrong-owner workspaces are denied. An external app path still requires separate verified OS peer and approval wiring.
 * Added Linux and Windows native Rust CI jobs exercising this module and existing `WorkspaceHost` / `inference_wire` contracts. **A source-level test cannot substitute for OS peer authentication, a GUI approval, a real GGUF run, or a compiled installed app.**
 
 **Important trust boundary:** `DlcAdmission::host_bind_trusted` is an API solely for a trusted host adapter, not a public IPC command. Its constructor does not authenticate a peer, obtain user consent, verify active `WorkspaceHost` ownership, grant a model, or execute generation. Those are explicit integration gates. No socket/pipe server is opened by this change; all existing Lu inference commands remain internal.
@@ -52,7 +52,7 @@ The Windows Job Object source issue is independent and blocking: [Lu issue #7](h
 
 | Gate | Current evidence | Status |
 | --- | --- | --- |
-| Protobuf schema + deterministic Lu Core admission | Committed source and cross-OS CI workflow in this branch | **PENDING CI** |
+| Protobuf schema + deterministic Lu Core admission | Initial frozen revision passed Windows/Linux CI run 41784832110; ownership-check continuation requires fresh exact-revision run | **INITIAL PASS; LATEST PENDING** |
 | Linux live authenticated AF_UNIX inference | No live Lu carrier wired here | **NOT IMPLEMENTED** |
 | Windows native pipe / checked-in safe suspended worker | Missing host adapter; separate source blocker issue #7 | **BLOCKED** |
 | NVP live Lu provider with GGUF | NVP PR #33 only has source probe and read-only status boundary | **NOT IMPLEMENTED** |
