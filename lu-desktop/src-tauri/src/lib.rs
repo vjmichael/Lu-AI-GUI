@@ -1278,13 +1278,30 @@ fn lu_dismiss_read_proposal(
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
-fn lu_review_write_destination(
+async fn lu_review_write_destination(
+    app: AppHandle,
     state: State<'_, Arc<DesktopState>>,
     chat_id: String,
     proposal_id: String,
+    destination_mode: Option<String>,
 ) -> Result<WriteDestinationView, String> {
+    let state = Arc::clone(state.inner());
+    // Destination is selected only by the trusted host. A model or WebView
+    // string can pick a workflow, NEVER supply a writable filesystem path.
+    let selected = match destination_mode.as_deref() {
+        None | Some("lu_drafts") => state.drafts_dir.clone(),
+        Some("choose_folder") => {
+            let selected = tauri::async_runtime::spawn_blocking(move || {
+                app.dialog().file().blocking_pick_folder()
+                    .map(|p| p.into_path().map_err(|e| e.to_string()))
+                    .transpose()
+            }).await.map_err(|e| format!("directory picker failed: {e}"))??;
+            selected.ok_or("folder selection cancelled")?
+        }
+        _ => return Err("unsupported write destination workflow".into()),
+    };
     let (target, origin, proposal) = state.write_proposals.choose_directory(
-        &proposal_id, &chat_id, &state.drafts_dir,
+        &proposal_id, &chat_id, &selected,
     ).map_err(|e| format!("write review unavailable: {e:?}"))?;
     state.write_approval_ledger.choose_target(
         &proposal_id, &chat_id, &origin, &target,
@@ -1333,7 +1350,7 @@ async fn lu_confirm_write(
             .map_err(|e| format!("write request not dismissed: {e:?}"))?;
         return Ok(None);
     }
-    let (origin, directory, proposal) = state.write_proposals.take_confirmed(
+    let (origin, directory, pinned_directory, proposal) = state.write_proposals.take_confirmed_pinned(
         &proposal_id, &chat_id,
     ).map_err(|e| format!("write confirmation unavailable: {e:?}"))?;
     if origin != initial_origin || directory != initial_dir
@@ -1347,9 +1364,9 @@ async fn lu_confirm_write(
         proposal.bytes(), &proposal.digest(), &target, &effect_id,
     ).map_err(|e| format!("write approval not committed: {e:?}"))?;
     let user_turn = next_id("g-");
-    native_host_write::execute_approved_create(
+    native_host_write::execute_approved_create_pinned(
         &state.chats, &state.effects, &chat_id, &user_turn, &effect_id,
-        &directory, &proposal,
+        &directory, pinned_directory, &proposal,
     ).await.map(Some)
 }
 
