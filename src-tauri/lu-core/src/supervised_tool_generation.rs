@@ -607,8 +607,7 @@ async fn run_supervised_native_turn_inner(
         )?;
         let parsed_feedback = Value::Object(
             parse_host_tool_feedback_boundary(&feedback, MAX_LU_TOOL_FEEDBACK_BYTES)
-                .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?
-                .object,
+                .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?,
         );
         records.push(NativeTurnRecord::HostRouteCall(host_call.clone()));
         records.push(NativeTurnRecord::ToolFeedback(parsed_feedback));
@@ -806,8 +805,7 @@ Output one compact JSON object without extra fields.
                 }
                 let data = Value::Object(
                     parse_host_tool_feedback_boundary(&feedback, MAX_LU_TOOL_FEEDBACK_BYTES)
-                        .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?
-                        .object,
+                        .map_err(|_| NativeGenerationError::InvalidInferenceEvent)?,
                 );
                 record_audit(
                     journal,
