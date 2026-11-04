@@ -536,7 +536,8 @@ impl DesktopState {
             document_preferences,
             browser_preferences,
             browser_runtime: native_browser_host::DesktopBrowserHost::new(
-                app.path().resource_dir().map_err(|e|format!("browser resource root unavailable: {e}"))?
+                app.path().resource_dir().map_err(|e|format!("browser resource root unavailable: {e}"))?,
+                root.clone()
             ),
             _owner: owner,
             effects,
