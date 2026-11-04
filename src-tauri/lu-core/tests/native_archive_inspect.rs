@@ -113,7 +113,22 @@ async fn real_zip_metadata_only_with_strict_output_budget() {
 async fn malicious_archive_members_fail_closed_without_extraction() {
     let root=sandbox();
     write_zip(&root,"traversal.zip",&[("../escape.txt","x")]);
-    write_zip(&root,"duplicates.zip",&[("same.txt","x"),("same.txt","y")]);
+    // Construct a valid ZIP first, then mutate *equal-length* local+central
+    // header names to make a malicious duplicate. ZipWriter may itself refuse
+    // duplicate names (as a safe writer should), so this fixture must not
+    // depend on writer support for deliberately malformed directory entries.
+    write_zip(&root,"duplicates.zip",&[("same.txt","x"),("sane.txt","y")]);
+    let dup = root.join("duplicates.zip");
+    let mut bytes = fs::read(&dup).unwrap();
+    let mut replaced=0;
+    for i in 0..bytes.len().saturating_sub(7) {
+        if &bytes[i..i+8] == b"sane.txt" {
+            bytes[i..i+8].copy_from_slice(b"same.txt");
+            replaced+=1;
+        }
+    }
+    assert_eq!(replaced,2,"expected local and central duplicate-name rewrite");
+    fs::write(&dup,bytes).unwrap();
     write_zip(&root,"windows-alias.zip",&[("Readme.txt","x"),("README.TXT","y")]);
     write_zip(&root,"evil-slash.zip",&[("folder\\other.txt","x")]);
     let mut link_zip = ZipWriter::new(fs::File::create(root.join("symlink.zip")).unwrap());
