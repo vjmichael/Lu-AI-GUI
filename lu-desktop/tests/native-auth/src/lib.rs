@@ -14,6 +14,8 @@ mod native_host_write;
 mod edit_proposal;
 #[path = "../../../src-tauri/src/native_host_edit.rs"]
 mod native_host_edit;
+#[path = "../../../src-tauri/src/rollback_review.rs"]
+mod rollback_review;
 #[path = "../../../src-tauri/src/prompt_context.rs"]
 mod prompt_context;
 
@@ -856,5 +858,165 @@ async fn desktop_edit_native_host_commits_only_after_persisted_user_turn_and_eff
     assert!(history.iter().any(|e|e.role=="user" && e.text.contains("Approved editing")));
     assert!(history.iter().any(|e|e.role=="assistant" && e.text.contains("Edited")));
     drop(selected);drop(effects);drop(approvals);drop(queue);drop(chats);
+    fs::remove_dir_all(root).unwrap();
+}
+
+
+#[tokio::test]
+async fn desktop_rollback_separate_approval_restores_verified_original_and_preserves_edited_bytes() {
+    use edit_proposal::EditProposalQueue;
+    use rollback_review::{RollbackReviewQueue,SelectedRollback,RollbackReviewError};
+    use lu_core::{
+        edit_approval_ledger::EditApprovalLedger,
+        journal::{EffectJournal,EffectState},
+        native_edit_existing::{inspect_rollback_candidate,observe_rollback,
+            verified_rollback_receipt,RollbackObservation},
+        rollback_approval_ledger::{RollbackApprovalLedger,RollbackRecord,RollbackDecision}
+    };
+    let root=temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let chats=ChatStore::open(&root.join("chat-data")).unwrap();
+    let chat=chats.create_chat().unwrap();
+    let folder=root.join("chosen-documents"); fs::create_dir_all(&folder).unwrap();
+    let target=folder.join("settings.json");
+    let original=r#"{"enabled":false}"#;
+    let modified=r#"{"enabled":true}"#;
+    fs::write(&target,original).unwrap();
+    let queue=EditProposalQueue::default();
+    let raw=r#"{"kind":"propose_edit_file","file_name":"settings.json","purpose":"enable option","content":"{\"enabled\":true}"}"#;
+    let proposal=queue.stage("pe-first","chat-wrong","gen-one",raw).unwrap();
+    assert_eq!(proposal.content,modified);
+    queue.dismiss("pe-first","chat-wrong").unwrap();
+    let proposal=queue.stage("pe-first",&chat.chat_id,"gen-one",raw).unwrap();
+    let edit_approvals=EditApprovalLedger::open(&root.join("edit-approvals.sqlite")).unwrap();
+    edit_approvals.stage("pe-first",&chat.chat_id,"gen-one",&proposal.file_name,
+        proposal.bytes(),&proposal.digest()).unwrap();
+    let initial=queue.choose_file("pe-first",&chat.chat_id,&target).unwrap();
+    let view=initial.view();
+    edit_approvals.choose("pe-first",&chat.chat_id,"gen-one",&view.exact_target,
+        &view.original_sha256,&view.approval_sha256).unwrap();
+    let first_effect=format!("g-{}", "a".repeat(32));
+    edit_approvals.approve("pe-first",&chat.chat_id,"gen-one",&proposal.file_name,
+        proposal.bytes(),&proposal.digest(),&view.exact_target,
+        &view.original_sha256,&view.approval_sha256,&first_effect).unwrap();
+    drop(initial);
+    let initial=queue.take_confirmed("pe-first",&chat.chat_id).unwrap();
+    let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    native_host_edit::execute_approved_edit_pinned(
+        &chats,&effects,&chat.chat_id,&format!("g-{}", "b".repeat(32)),
+        &first_effect,&initial
+    ).await.unwrap();
+    assert_eq!(fs::read_to_string(&target).unwrap(),modified);
+
+    let preview=inspect_rollback_candidate(
+        &initial.directory_cap,"settings.json",&first_effect).unwrap();
+    let reviewed=RollbackRecord {
+        review_id:"rb-picked-new-001".into(),chat_id:chat.chat_id.clone(),
+        original_proposal_id:"pe-first".into(),
+        original_edit_id:first_effect.clone(),target:view.exact_target.clone(),
+        filename:"settings.json".into(),
+        expected_current_sha256:preview.replacement_sha256.clone(),
+        restored_sha256:preview.original_sha256.clone(),
+        restore_bytes:preview.restore_text.len() as u64,
+        decision:RollbackDecision::Reviewed,rollback_effect_id:None,
+    };
+    let ledger=RollbackApprovalLedger::open(&root.join("rollback-approvals.sqlite")).unwrap();
+    ledger.stage(&reviewed).unwrap();
+    let reviews=RollbackReviewQueue::default();
+    let selected=SelectedRollback{
+        record:reviewed.clone(),directory:initial.directory.clone(),
+        directory_cap:initial.directory_cap.clone(),preview:preview.clone()
+    };
+    reviews.stage(selected).unwrap();
+    assert!(matches!(reviews.take(&reviewed.review_id,"other-chat"),
+        Err(RollbackReviewError::WrongChat)));
+    assert!(matches!(reviews.take("rb-fabricated",&chat.chat_id),
+        Err(RollbackReviewError::Missing)));
+    assert!(ledger.approve(&RollbackRecord{
+        restored_sha256:"f".repeat(64),..reviewed.clone()
+    },"g-wrong-restore-001").is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(),modified);
+    let rollback_id=format!("g-{}", "c".repeat(32));
+    ledger.approve(&reviewed,&rollback_id).unwrap();
+    let selected=reviews.take(&reviewed.review_id,&chat.chat_id).unwrap();
+    let turn_id=format!("g-{}", "d".repeat(32));
+    let result=native_host_edit::execute_approved_rollback_pinned(
+        &chats,&effects,&chat.chat_id,&turn_id,&rollback_id,&selected
+    ).await.unwrap();
+    assert_eq!(result.restored_sha256,preview.original_sha256);
+    assert_eq!(result.rollback_effect_id,rollback_id);
+    assert_eq!(fs::read_to_string(&target).unwrap(),original);
+    assert_eq!(fs::read_to_string(
+        folder.join(format!(".lu-edit-{rollback_id}.prior"))).unwrap(),modified);
+    assert_eq!(fs::read_to_string(
+        folder.join(format!(".lu-edit-{first_effect}.orig"))).unwrap(),original);
+    assert_eq!(observe_rollback(&selected.directory_cap,&rollback_id),
+        RollbackObservation::RestoredFromBackup);
+    let applied=effects.get(&rollback_id).unwrap().unwrap();
+    assert_eq!(applied.state,EffectState::Applied);
+    assert!(verified_rollback_receipt(
+        &applied,&rollback_id,&first_effect,&preview.original_sha256,
+        preview.restore_text.len() as u64
+    ));
+    assert!(!verified_rollback_receipt(
+        &applied,&rollback_id,&first_effect,&preview.replacement_sha256,
+        preview.restore_text.len() as u64
+    ));
+    assert_eq!(ledger.get(&reviewed.review_id).unwrap().unwrap().decision,
+        RollbackDecision::Approved);
+    assert!(ledger.approve(&reviewed,"g-another-effect-001").is_err());
+    assert!(matches!(reviews.take(&reviewed.review_id,&chat.chat_id),
+        Err(RollbackReviewError::Missing)));
+    let history=chats.history(&chat.chat_id).unwrap();
+    assert!(history.iter().any(|m|m.role=="user" && m.text.contains("Approved separately restoring")));
+    assert!(history.iter().any(|m|m.role=="assistant" && m.text.contains("Restored original")));
+    drop(selected);drop(initial);drop(reviews);drop(queue);
+    drop(ledger);drop(edit_approvals);drop(effects);drop(chats);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn desktop_rollback_refuses_external_edit_before_authorizing_a_new_effect() {
+    use edit_proposal::EditProposalQueue;
+    use rollback_review::SelectedRollback;
+    use lu_core::{journal::EffectJournal,native_edit_existing::inspect_rollback_candidate,
+        rollback_approval_ledger::{RollbackRecord,RollbackDecision}};
+    let root=temp_root();fs::create_dir_all(&root).unwrap();
+    let chats=ChatStore::open(&root.join("chat-data")).unwrap();
+    let chat=chats.create_chat().unwrap();
+    let folder=root.join("docs");fs::create_dir_all(&folder).unwrap();
+    let target=folder.join("notes.md");
+    fs::write(&target,b"First\n").unwrap();
+    let queue=EditProposalQueue::default();
+    queue.stage("pe-old",&chat.chat_id,"gen-old",
+        r#"{"kind":"propose_edit_file","file_name":"notes.md","purpose":"edit","content":"Second\n"}"#).unwrap();
+    let chosen=queue.choose_file("pe-old",&chat.chat_id,&target).unwrap();
+    let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let first_id=format!("g-{}","e".repeat(32));
+    native_host_edit::execute_approved_edit_pinned(
+        &chats,&effects,&chat.chat_id,&format!("g-{}","f".repeat(32)),
+        &first_id,&chosen).await.unwrap();
+    let preview=inspect_rollback_candidate(&chosen.directory_cap,"notes.md",&first_id).unwrap();
+    let selected=SelectedRollback{
+        record:RollbackRecord{
+            review_id:"rb-stale-001".into(),chat_id:chat.chat_id.clone(),
+            original_proposal_id:"pe-old".into(),original_edit_id:first_id,
+            target:chosen.directory.join("notes.md").to_string_lossy().into_owned(),
+            filename:"notes.md".into(),expected_current_sha256:preview.replacement_sha256.clone(),
+            restored_sha256:preview.original_sha256.clone(),restore_bytes:preview.restore_text.len() as u64,
+            decision:RollbackDecision::Reviewed,rollback_effect_id:None,
+        },
+        directory:chosen.directory.clone(),directory_cap:chosen.directory_cap.clone(),preview
+    };
+    fs::write(&target,b"Edited outside Lu\n").unwrap();
+    let rollback_id=format!("g-{}","1".repeat(32));
+    let turn=format!("g-{}","2".repeat(32));
+    assert!(native_host_edit::execute_approved_rollback_pinned(
+        &chats,&effects,&chat.chat_id,&turn,&rollback_id,&selected
+    ).await.is_err());
+    assert!(effects.get(&rollback_id).unwrap().is_none());
+    assert_eq!(fs::read(&target).unwrap(),b"Edited outside Lu\n");
+    assert!(!folder.join(format!(".lu-edit-{rollback_id}.rollback-meta")).exists());
+    drop(selected);drop(chosen);drop(queue);drop(effects);drop(chats);
     fs::remove_dir_all(root).unwrap();
 }
