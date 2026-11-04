@@ -6,7 +6,7 @@
 
 **Tool loops:** A validated tool request is compared with **host-observed results and verified mutation receipts** from previous calls. Lu must distinguish success/changed data from unchanged results, repeated errors, no-op edits and unverified effects. The model cannot declare its own progress.
 
-**Generation/text loops:** The token stream needs its own host-side repetition guard. A stream can loop on the same words without making any tool call. The detector accumulates text across arbitrary chunk boundaries and interrupts only a **large exact repeated suffix** (at least 1 KiB and six copies of a period of at most 512 bytes); ordinary short repeated words are permitted. Existing per-generation max-new-token, bounded output, backend request deadline and cancellation remain separate protections. In Lu's current supervised GGUF adapter the detector runs **while chunks are emitted**, not after a giant response is assembled.
+**Generation/text loops:** The token stream needs its own host-side repetition guard. A stream can loop on the same words without making any tool call. The detector accumulates text across arbitrary chunk boundaries and interrupts a **large exact repeated suffix** (at least 1 KiB and six copies of a period of at most 512 bytes), or **64 consecutive empty text chunks**; ordinary short repeated words are permitted. Existing per-generation max-new-token, bounded output, backend request deadline and cancellation remain separate protections. In Lu's current supervised GGUF adapter the detector runs **while chunks are emitted**, not after a giant response is assembled.
 
 ## 2. Unlimited *productive* native calls, bounded resource exposure
 
@@ -28,7 +28,7 @@
 | Successful write without a verifiable state-change receipt | `Unverified` (never automatically assume progress) |
 | Executable, elevated, and other unsupported effects | `Unverified` pending effect-specific host receipts |
 
-Read result fingerprints are bounded, **host-supplied** semantic JSON (unstable metadata removed) and tracked in a capped 512-entry ring. That catches duplicate content even when the model changes a search query or reads a different file. A read result's novelty is not proof that the overall user goal is finished; it is evidence the task learned something new.
+Read result fingerprints only include **reviewed data-bearing fields from host-decoded typed results**, not echo-only request paths/pages/queries or unstable metadata, and are tracked in a capped 512-entry ring. Unrecognized result structures are `Unverified`, not progress. That catches duplicate content even when the model changes a search query or reads a different file. A read result's novelty is not proof that the overall user goal is finished; it is evidence the task learned something new.
 
 A write receipt **must** come from the native trusted worker and existing durable effect authorization; model text, output from retrieved files or a fabricated JSON field cannot mint a state change. Current `native_edit_existing` already has typed before/after hashes; create-new has a separate create-only postcondition. **More effect-specific receipt adapters** are still needed for every model-facing write and DLC tool.
 
