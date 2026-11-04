@@ -235,6 +235,80 @@ fn read_manifest(root: &Dir, id: &str) -> Result<EditManifest, EditCommitError> 
     Ok(manifest)
 }
 
+/// A separate prepublication witness ties the final native FileId to the
+/// exact bytes/metadata that were staged. This is written and synced BEFORE
+/// rename, so read-only recovery can reject same-byte identity substitutions.
+#[cfg(windows)]
+#[derive(Debug,Clone,Serialize,Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativePublishSeal {
+    schema:u32,
+    operation_id:String,
+    target:String,
+    target_sha256:String,
+    native_file_id:String,
+    native_metadata_sha256:String,
+}
+#[cfg(windows)]
+fn valid_file_id_token(value:&str)->bool {
+    value.len()==48 && value.bytes().all(|b|
+        b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+#[cfg(windows)]
+fn write_publish_seal(
+    root:&Dir,operation_id:&str,target:&str,stage:&str,
+    expected_sha:&str,expected_metadata_sha:&str,
+    perms:&std::fs::Permissions
+)->Result<(),EditCommitError>{
+    let file=root.open(stage).map_err(io)?.into_std();
+    let id=crate::windows_file_guard::inspect_open_file(&file)
+        .map_err(|_|EditCommitError::UnsafeTarget)?.token();
+    if native_metadata_sha(&file)?!=expected_metadata_sha ||
+        sha(&regular_bytes(root,stage)?.0)!=expected_sha {
+        return Err(EditCommitError::Uncertain);
+    }
+    let record=NativePublishSeal{
+        schema:1,operation_id:operation_id.into(),target:target.into(),
+        target_sha256:expected_sha.into(),native_file_id:id,
+        native_metadata_sha256:expected_metadata_sha.into(),
+    };
+    let bytes=serde_json::to_vec(&record)
+        .map_err(|_|EditCommitError::InvalidRecoveryRecord)?;
+    write_new_synced(root,&sidecar(operation_id,"seal"),&bytes,perms)?;
+    Ok(())
+}
+#[cfg(windows)]
+fn matches_publish_seal(
+    root:&Dir,operation_id:&str,target:&str,expected_sha:&str,
+    expected_metadata_sha:&str
+)->bool{
+    let Ok((bytes,_))=regular_bytes(root,&sidecar(operation_id,"seal")) else {
+        return false;
+    };
+    if bytes.len()>MAX_MANIFEST_BYTES as usize {return false;}
+    let Ok(seal)=serde_json::from_slice::<NativePublishSeal>(&bytes) else {
+        return false;
+    };
+    if seal.schema!=1 ||seal.operation_id!=operation_id ||
+        seal.target!=target ||seal.target_sha256!=expected_sha ||
+        seal.native_metadata_sha256!=expected_metadata_sha ||
+        !valid_file_id_token(&seal.native_file_id) ||
+        !valid_sha(&seal.target_sha256) ||
+        !valid_sha(&seal.native_metadata_sha256) {
+        return false;
+    }
+    let Ok(file)=root.open(target) else {return false;};
+    let file=file.into_std();
+    let Ok(id)=crate::windows_file_guard::inspect_open_file(&file) else{
+        return false;
+    };
+    if id.token()!=seal.native_file_id {
+        return false;
+    }
+    native_metadata_sha(&file)
+        .is_ok_and(|sha|sha==expected_metadata_sha)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StopPoint {
     Never, AfterManifest, AfterBackup, AfterStage, AfterPublish,
