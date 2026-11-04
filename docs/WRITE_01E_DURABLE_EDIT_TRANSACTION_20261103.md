@@ -44,3 +44,18 @@ The original backup and manifest are deliberately retained for rollback/history.
 5. **Test result:** source and tests committed, **not yet proven green** by Rust/Windows CI in this conversation. No installed-app acceptance. Do not enable GUI edit existing until these gates pass.
 
 This is intentional incremental engineering of the existing Lu Core transaction path, not a replacement architecture or claim that v1.0 file editing is finished.
+
+
+## WRITE-01E.3 — Trusted desktop integration (development-only)
+
+**Implementation source:**
+- `edit_approval_ledger.rs`: separate host-only SQLite WAL/FULL edit review evidence. Stage → Selected → Approved, Denied, or Interrupted. Pending and Selected are interrupted after owner restart, and Approved has a unique effect call ID. This record is *not* authority.
+- `lu-desktop/src-tauri/src/edit_proposal.rs`: parses a completed model turn's bounded strict JSON `{"kind":"propose_edit_file","file_name":"notes.md","purpose":"...","content":"replacement text"}`. Model proposals are inert until the user selects an existing matching file with the **native file picker**. Source is read from a verified handle; old and replacement text are checked without guessing binary formats, capped at 64 KiB original preview and 16 KiB model replacement; no truncation.
+- `lu-desktop/src-tauri/src/native_host_edit.rs`: after an independent **native confirmation dialog**, emits a host-generated persisted User turn, opens precise `ConversationAuthority` / `PolicyEngine` WriteWorkspace scope, dispatches exact requested Protobuf bytes into pinned directory via `ExactEditPolicy` and the existing `EffectJournal`, then revokes task and scope.
+- `lu-desktop/src-tauri/src/lib.rs`: new `lu_review_edit_file`, `lu_confirm_edit_file`, `lu_deny_edit_file`, `lu_edit_recovery` and `lu_inspect_edit_recovery` commands. No UI-provided path, byte payload, or approval token accepted by the effectful command. A **native containing-folder picker** is required to inspect crashed edit artifacts for an externally selected file; this includes missing target scenarios and is read-only.
+- `lu-desktop/web/edit_diff.mjs` + React UI: full original and full replacement text, all original/addition/removal lines (not a minimal diff), exact target/digests, explicit full-review UI acknowledgement and a *separate native confirmation*. Recovery shows both durable approval and effect state, plus observations only after native folder re-selection.
+- Tests: Lu Core edit-approval ledger restart/identity tests, Windows ledger CI step, frontend change/review contract tests; GitHub CI must compile the desktop Tauri command registry.
+
+**Do not claim production acceptance:** This is source-committed; exact full Linux/Windows CI outcomes, native modal UX, Windows NTFS hardlink/ACL/ADS and externally concurrent replacement races must be verified before enabling as an accepted v1.0 capability. A WebView acknowledgement is *not* the authorization; native OS confirmation and host-bound task scope are. Do not auto-restart or auto-retry ambiguous edits.
+
+**Source convergence caution:** REPO-01 source-tree lock verifies the branch contents only; the earlier unpublished complete local development archive remains a separate unresolved comparison.
