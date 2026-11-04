@@ -8,7 +8,7 @@ use lu_core::{
     contracts::{ProtoPayload, ToolEffect, ToolInvocation},
     conversation_authority::{AuthorizedCapability, BoundCallOrigin,
         ConversationAuthority, TaskAuthority, TrustedUserTurnVerifier},
-    edit_safety::{bind_reviewed_edit, plan_text_edit},
+    edit_safety::{bind_reviewed_edit, bind_reviewed_edit_with_host_identity, plan_text_edit},
     journal::{EffectJournal, EffectState},
     native_edit_existing::{register_edit_tools_pinned, observe_edit,
         EditObservation, ExactEditPolicy, ExactRollbackPolicy,
@@ -30,6 +30,40 @@ fn scratch() -> PathBuf {
     path
 }
 fn sha(b: &[u8]) -> String { format!("{:x}", Sha256::digest(b)) }
+fn register_test_selected(
+    registry:&NativeToolRegistry,dir:Arc<Dir>,file_name:&str
+) {
+    #[cfg(windows)]
+    {
+        let file=dir.open(file_name).unwrap().into_std();
+        let id=lu_core::windows_file_guard::inspect_open_file(&file).unwrap();
+        lu_core::native_edit_existing::register_edit_tools_pinned_selected(
+            registry,dir,file_name,id
+        ).unwrap();
+    }
+    #[cfg(not(windows))]
+    {
+        let _=file_name;
+        register_edit_tools_pinned(registry,dir).unwrap();
+    }
+}
+fn review_test_selected(
+    plan:&lu_core::edit_safety::TextEditPlan,dir:&Dir,
+    old:&[u8],new:&[u8]
+)->lu_core::edit_safety::ReviewedEdit{
+    #[cfg(windows)]
+    {
+        let file=dir.open("notes.json").unwrap().into_std();
+        let id=lu_core::windows_file_guard::inspect_open_file(&file).unwrap();
+        bind_reviewed_edit_with_host_identity(plan,"notes.json",old,new,Some(&id.token())).unwrap()
+    }
+    #[cfg(not(windows))]
+    {
+        let _=dir;
+        bind_reviewed_edit(plan,"notes.json",old,new).unwrap()
+    }
+}
+
 struct PersistedHuman;
 impl TrustedUserTurnVerifier for PersistedHuman {
     fn verify_user_turn(&self, chat: &str, user_turn: &str) -> bool {
@@ -101,13 +135,13 @@ async fn one_approved_edit_durable_receipt_replay_revocation_and_newly_approved_
     fs::write(folder.join("notes.json"), old).unwrap();
     let root = Arc::new(Dir::open_ambient_dir(&folder, ambient_authority()).unwrap());
     let registry = NativeToolRegistry::new();
-    register_edit_tools_pinned(&registry, Arc::clone(&root)).unwrap();
+    register_test_selected(&registry, Arc::clone(&root), "notes.json");
     let journal = EffectJournal::open(&folder.join("effects.sqlite")).unwrap();
     let authority = ConversationAuthority::new();
     let policy = PolicyEngine::new();
     let origin = open_task(&authority, &policy, "approved-edit-turn", "scope-edit-01", EDIT_TOOL_ID);
     let plan = plan_text_edit("notes.json", old, &sha(old), new).unwrap();
-    let review = bind_reviewed_edit(&plan, "notes.json", old, new).unwrap();
+    let review = review_test_selected(&plan,&root,old,new);
     let fence = ExactEditPolicy {
         host_policy: &policy, plan: &plan, reviewed: &review,
         approved_original: old, approved_replacement: new,
@@ -137,6 +171,8 @@ async fn one_approved_edit_durable_receipt_replay_revocation_and_newly_approved_
         authority.dispatch_bound_durable(&registry, &journal, call.clone(), origin, &fence).await,
         Err(DispatchError::Denied(_))
     ));
+    let rollback_registry=NativeToolRegistry::new();
+    register_test_selected(&rollback_registry,Arc::clone(&root),"notes.json");
     let rollback_origin = open_task(&authority, &policy,
         "approved-rollback-turn", "scope-rollback-01", ROLLBACK_TOOL_ID);
     let rollback_fence = ExactRollbackPolicy {
@@ -147,7 +183,7 @@ async fn one_approved_edit_durable_receipt_replay_revocation_and_newly_approved_
     };
     let rollback = rollback_call("g-explicit-rollback-00001", &call.call_id, &sha(new), &sha(old));
     let restored = authority.dispatch_bound_durable(
-        &registry, &journal, rollback.clone(), rollback_origin, &rollback_fence
+        &rollback_registry, &journal, rollback.clone(), rollback_origin, &rollback_fence
     ).await.unwrap();
     assert_eq!(restored.payload.type_url, ROLLBACK_RESULT_TYPE);
     assert!(proto::EditRollbackResult::decode(restored.payload.bytes.as_slice()).unwrap().committed);
