@@ -70,6 +70,7 @@ pub mod write_format;
 pub mod write_recovery;
 pub mod document_preferences;
 pub mod edit_safety;
+pub mod edit_approval_ledger;
 pub mod ownership_store;
 pub mod passive_diagnostics;
 pub mod passive_localization;
