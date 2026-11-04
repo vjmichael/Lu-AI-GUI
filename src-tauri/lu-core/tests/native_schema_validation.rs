@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use lu_core::{
-    agent_tool_loop::{NativeToolTurn, ToolTurnError, ToolTurnOutcome},
+    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
     contracts::{
         AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation,
     },
@@ -176,12 +176,17 @@ async fn rejects_ambiguous_model_frames_and_noncanonical_native_proto() {
         &c,&r,&a,origin,"validate-scope".into(),&allowed,
     ).unwrap();
     a.revoke_task("validate-task").unwrap();
-    assert_eq!(turn.handle_model_reply(
+    // NativeToolTurn returns a *typed model-visible denial* on a rejected
+    // invocation; it does not treat an attempted call as if it never happened.
+    let rejected=turn.handle_model_reply(
         r#"{"kind":"tool","name":"lu_validate_schema",
             "arguments":{"schema":{"type":"integer"},"data":42}}"#,
         &c,&r,&a,&Allow,
-    ).await,Err(ToolTurnError::Revoked));
-    assert_eq!(turn.step_count(),0);
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult {data,..}=rejected else {panic!("missing denial")};
+    assert_eq!(data["ok"],false);
+    assert_eq!(data["error"]["code"],"PERMISSION_DENIED");
+    assert_eq!(turn.step_count(),1);
 }
 
 #[test]
