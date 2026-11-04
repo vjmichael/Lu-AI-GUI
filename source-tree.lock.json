@@ -1097,7 +1097,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
-      "blob": "075ec3fcb0f12256b242e18af779bac99a0b118f"
+      "blob": "d9e11bd134561d8dfe2cb8376d71060ebbf5c51b"
     },
     {
       "path": "tests/source-identity.test.mjs",
