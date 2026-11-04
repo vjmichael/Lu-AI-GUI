@@ -1721,6 +1721,53 @@ fn lu_edit_recovery(
     }).collect()
 }
 
+/// Open only the containing folder of a host-reviewed, APPLIED edit. Never
+/// accept a path from JavaScript, a model suggestion or retrieved text.
+#[tauri::command]
+fn lu_open_edited_folder(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,proposal_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    let record=state.edit_approval_ledger.get(&proposal_id)
+        .map_err(|e|format!("edit history unavailable: {e:?}"))?
+        .ok_or("no edit record")?;
+    if record.chat_id!=chat_id ||
+        record.decision!=lu_core::edit_approval_ledger::EditDecision::Approved {
+        return Err("no approved edit in this conversation".into());
+    }
+    let effect_id=record.effect_call_id.ok_or("no edit effect recorded")?;
+    let effect=state.effects.get(&effect_id)
+        .map_err(|e|format!("edit journal unavailable: {e:?}"))?
+        .ok_or("no edit effect receipt")?;
+    if effect.tool_id!=lu_core::native_edit_existing::EDIT_TOOL_ID ||
+        effect.state!=lu_core::journal::EffectState::Applied ||
+        effect.receipt.as_ref().is_none_or(|r|r.is_empty()) {
+        return Err("edit did not have a verified applied receipt".into());
+    }
+    let target=std::path::PathBuf::from(record.selected_target.ok_or("missing approved file path")?);
+    if target.file_name().and_then(|s|s.to_str())!=Some(record.filename.as_str()) {
+        return Err("edit target mismatches approved filename".into());
+    }
+    let folder=target.parent().ok_or("no containing folder")?;
+    if !is_real_directory(folder) {
+        return Err("original containing folder unavailable".into());
+    }
+    #[cfg(windows)]
+    let executable="explorer.exe";
+    #[cfg(target_os="linux")]
+    let executable="xdg-open";
+    #[cfg(target_os="macos")]
+    let executable="open";
+    #[cfg(not(any(windows,target_os="linux",target_os="macos")))]
+    return Err("opening containing folders unsupported".into());
+    #[cfg(any(windows,target_os="linux",target_os="macos"))]
+    {
+        std::process::Command::new(executable).arg(folder)
+            .spawn().map_err(|e|format!("cannot open edited file folder: {e}"))?;
+        Ok(())
+    }
+}
+
 /// Native-picked containing folder permits read-only inspection even if the
 /// target vanished. Never follow arbitrary paths from a WebView or replay a
 /// crashed effect. Matched observed bytes are NOT causal proof of publication.
@@ -1942,6 +1989,7 @@ pub fn run() {
             lu_deny_edit_file,
             lu_edit_recovery,
             lu_inspect_edit_recovery,
+            lu_open_edited_folder,
             lu_history,
             lu_chats,
             lu_new_chat,
