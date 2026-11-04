@@ -50,3 +50,22 @@ test('model-controlled script operations are refused', async () => {
   await assert.rejects(session.execute({op:'evaluate',javascript:'alert(1)'}),e=>e.code==='UNKNOWN_OPERATION');
   await session.close();
 });
+
+test('bounded keyboard and accessibility operations require known actions', async () => {
+  const pressed=[];
+  const page={
+    url:()=> 'https://archive.example',
+    keyboard:{press:async key=>pressed.push(key)},
+    locator:()=>({ariaSnapshot:async()=>'- heading "A source"'}),
+  };
+  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const session=new BrowserSession({origins:['https://archive.example'],
+    profileDirectory:'/host/chosen/profile',
+    chromiumProvider:{launchPersistentContext:async()=>context}});
+  await session.start();
+  assert.equal((await session.execute({op:'press',key:'Enter'})).status,'KEY_PRESSED');
+  assert.deepEqual(pressed,['Enter']);
+  await assert.rejects(session.execute({op:'press',key:'Control+L'}),e=>e.code==='UNAPPROVED_KEY');
+  assert.equal((await session.execute({op:'accessibility'})).status,'ACCESSIBILITY');
+  await session.close();
+});
