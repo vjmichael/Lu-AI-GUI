@@ -75,7 +75,7 @@ fn validated_host(url: &str) -> Result<(String,String),FetchError> {
             || !label.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-')
         )
     { return Err(FetchError::InvalidUrl); }
-    Ok((host,format!("https://{}{}",authority,&remainder[end..])))
+    Ok((host.clone(),format!("https://{}{}",host,&remainder[end..])))
 }
 fn trusted_resolution(addresses: impl IntoIterator<Item=IpAddr>) -> Result<Ipv4Addr,FetchError> {
     let addresses:Vec<_>=addresses.into_iter().collect();
@@ -107,7 +107,8 @@ impl SecureHttpFetcher<'_> {
             return Err(FetchError::BinaryUnavailable);
         }
         let mut cmd=Command::new(self.curl_binary);
-        cmd.args(["--silent","--show-error","--no-progress-meter","--ipv4",
+        // -q must be the first curl argument: ignore ambient .curlrc flags.
+        cmd.args(["-q","--globoff","--silent","--show-error","--no-progress-meter","--ipv4",
             "--proto","=https","--proto-redir","=https","--max-redirs","0",
             "--noproxy","*","--connect-timeout","8","--max-time","25",
             "--max-filesize","1048576","--request","GET","--output","-",
