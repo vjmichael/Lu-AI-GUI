@@ -30,6 +30,18 @@ A real local repository regression fixture exists at `src-tauri/lu-core/tests/na
 - **Authorization:** trusted persisted human origin + per-tool `ReadWorkspace` grant; schema discovery, repo presence and model command text are inert. Revoke and cancellation checks must work.
 - **Delivery:** only actual installed-app acceptance establishes GUI support. The `0.1.0-alpha.2` Windows baseline is unchanged, and no Code/IDE workspace is being built under TOOLS-03.
 
+## Owner's confirmed Core/IDE split (2026-11-04)
+
+Basic **local** Git inspection remains a general-purpose Lu Core primitive.
+Advanced Git for developing code (branch management, staging, commits,
+collaboration and publishing) belongs to the future **IDE DLC**. GitHub
+integration through the official `gh` CLI is **IDE-specific**: login,
+repositories, pull requests, issues, Actions, releases and API operations
+require a separate trusted account/credential and network permission model,
+not the Core Git `ReadWorkspace` grant. Reference:
+https://cli.github.com/manual/ and https://cli.github.com/manual/gh_auth_login.
+Nothing in TOOLS-03 launches `gh` or authenticates to GitHub.
+
 ## Decision
 
 This is a **small Git inspection capability** using the original two-layer tool design. The original §3.9 retains precedence regarding **workspace-scoped visibility**; the current Lu v1.0 directive to make native Git primitives available is met by implementing their Core plumbing early, not by making Git universal or advancing the IDE DLC.
