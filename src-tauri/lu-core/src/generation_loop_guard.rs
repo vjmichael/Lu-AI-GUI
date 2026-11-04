@@ -12,6 +12,7 @@ const MIN_CYCLE_BYTES: usize = 1024;
 const MIN_REPETITIONS: usize = 6;
 const MAX_CYCLE_PERIOD: usize = 512;
 const CHECK_EVERY_BYTES: usize = 64;
+const MAX_CONSECUTIVE_EMPTY_CHUNKS: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamLoopVerdict {
@@ -23,10 +24,11 @@ pub struct StreamLoopGuard {
     tail: Vec<u8>,
     since_check: usize,
     total_bytes: u64,
+    empty_chunks: usize,
 }
 impl Default for StreamLoopGuard {
     fn default() -> Self {
-        Self { tail: Vec::new(), since_check: 0, total_bytes: 0 }
+        Self { tail: Vec::new(), since_check: 0, total_bytes: 0, empty_chunks: 0 }
     }
 }
 impl StreamLoopGuard {
@@ -34,8 +36,14 @@ impl StreamLoopGuard {
 
     pub fn observe_chunk(&mut self, chunk: &str) -> StreamLoopVerdict {
         if chunk.is_empty() {
-            return StreamLoopVerdict::Continue;
+            self.empty_chunks = self.empty_chunks.saturating_add(1);
+            return if self.empty_chunks >= MAX_CONSECUTIVE_EMPTY_CHUNKS {
+                StreamLoopVerdict::RepeatedOutput
+            } else {
+                StreamLoopVerdict::Continue
+            };
         }
+        self.empty_chunks = 0;
         self.total_bytes = self.total_bytes.saturating_add(chunk.len() as u64);
         self.since_check = self.since_check.saturating_add(chunk.len());
         self.tail.extend_from_slice(chunk.as_bytes());
