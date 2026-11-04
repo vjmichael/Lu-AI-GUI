@@ -52,6 +52,7 @@ pub struct VisibilityBridge {
 }
 impl VisibilityBridge {
     pub fn new()->Self{Self{expected:None,last_request_id:None}}
+    pub fn is_transition_authorized(&self)->bool {self.expected.is_some()}
     pub fn authorize_next_transition(&mut self,visible:bool) {
         self.expected=Some(visible);
     }
