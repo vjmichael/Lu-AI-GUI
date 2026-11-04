@@ -195,3 +195,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .browserVisibilityChoices strong{font-size:13px;font-weight:650}
 .browserVisibilityChoices small{font-size:12px;line-height:1.5;color:#99adc4}
 .browserVisibilityChoices:disabled{opacity:.6}
+
+/* TOOLS-10C: exact research origin selection never grants authority by itself. */
+.browserOriginLabel{display:block;margin:12px 0 5px;color:#c7d6e6;font-size:12px}
+.browserOriginInput{width:100%;box-sizing:border-box;padding:10px 12px;background:#111c2c;border:1px solid #405b77;border-radius:7px;color:#e3f1fa;font-size:13px}
+.browserOriginInput:focus-visible{outline:2px solid #84bdf4;outline-offset:2px}
+.browserOriginInput:disabled{opacity:.6}
