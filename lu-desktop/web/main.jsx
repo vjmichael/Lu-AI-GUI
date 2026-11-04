@@ -427,10 +427,14 @@ function App() {
       const written = await invoke('lu_confirm_write', {
         chatId: proposal.chatId, proposalId: proposal.proposalId
       });
-      await refreshChats();
-      if (currentChat.current === proposal.chatId)
-        setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
-      setActivity('Created new file: ' + written.fileName);
+      if (written) {
+        await refreshChats();
+        if (currentChat.current === proposal.chatId)
+          setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+        setActivity('Created new file: ' + written.fileName);
+      } else {
+        setActivity('File creation denied in native confirmation');
+      }
     } catch (error) { setError(String(error)); }
     finally {
       // The trusted host consumes the proposal exactly once, including on
