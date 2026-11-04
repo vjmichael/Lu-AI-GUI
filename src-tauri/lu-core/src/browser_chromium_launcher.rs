@@ -33,9 +33,15 @@ pub struct LaunchedChromium {
     child:Option<Child>,
     lease:Option<ChromiumProfileLease>,
     endpoint:String,
+    #[cfg(windows)]
+    job:Option<lu_win_worker_job::Job>,
 }
 impl LaunchedChromium {
     pub fn endpoint(&self)->&str{&self.endpoint}
+    #[cfg(windows)]
+    pub fn take_windows_job(&mut self)->Option<lu_win_worker_job::Job>{
+        self.job.take()
+    }
     pub fn profile_dir(&self)->&Path{
         self.lease.as_ref().and_then(|l|l.lock_path.parent())
             .expect("owned Chromium always has a profile lock")
@@ -102,6 +108,8 @@ pub fn launch_owned_headed_chromium(
     if port_file.exists(){
         return Err(BrowserLaunchError::InvalidConfig);
     }
+    #[cfg(windows)]
+    let job=lu_win_worker_job::Job::new().map_err(BrowserLaunchError::Spawn)?;
     let mut child=Command::new(browser_executable)
         .arg("--remote-debugging-port=0")
         .arg("--remote-debugging-address=127.0.0.1")
@@ -111,6 +119,12 @@ pub fn launch_owned_headed_chromium(
         .arg("about:blank")
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
         .spawn().map_err(BrowserLaunchError::Spawn)?;
+    #[cfg(windows)]
+    if let Err(error)=job.assign(&child){
+        let _=child.kill();
+        let _=child.wait();
+        return Err(BrowserLaunchError::Spawn(error));
+    }
     let start=Instant::now();
     loop {
         if child.try_wait().map_err(BrowserLaunchError::Spawn)?.is_some(){
@@ -120,7 +134,9 @@ pub fn launch_owned_headed_chromium(
             Ok(Some(port))=>{
                 return Ok(LaunchedChromium{
                     child:Some(child),lease:Some(lease),
-                    endpoint:format!("http://127.0.0.1:{port}")
+                    endpoint:format!("http://127.0.0.1:{port}"),
+                    #[cfg(windows)]
+                    job:Some(job)
                 });
             },
             Ok(None)=>{},
