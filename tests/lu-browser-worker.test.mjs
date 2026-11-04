@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserSession, BrowserGateError, approvedUrl, challengeKind } from '../src-tauri/lu-core/workers/lu_browser_worker.mjs';
 
+const nativeWindow = () => ({
+  calls:[],
+  async setVisible({context,visible}) {
+    this.calls.push({context,visible});
+    return true;
+  }
+});
+
 test('only approved HTTPS origins are navigable', () => {
   const allowed=new Set(['https://archive.example']);
   assert.equal(approvedUrl('https://archive.example/page',allowed).hostname,'archive.example');
@@ -28,7 +36,7 @@ test('a real browser session can be paused then user-resumed without auto-solvin
   const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
   const chromiumProvider={launchPersistentContext:async()=>context};
   const session=new BrowserSession({origins:['https://archive.example'],
-    profileDirectory:'/host/chosen/profile',chromiumProvider});
+    profileDirectory:'/host/chosen/profile',chromiumProvider,windowController:nativeWindow()});
   await session.start();
   const challenge=await session.execute({op:'navigate',url:'https://archive.example/article'});
   assert.equal(challenge.status,'NEEDS_HUMAN');
@@ -45,7 +53,7 @@ test('model-controlled script operations are refused', async () => {
   const page={url:()=> 'https://archive.example',locator:()=>({innerText:async()=> 'hello'})};
   const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({origins:['https://archive.example'],
-    profileDirectory:'/host/chosen/profile',chromiumProvider:{launchPersistentContext:async()=>context}});
+    profileDirectory:'/host/chosen/profile',chromiumProvider:{launchPersistentContext:async()=>context},windowController:nativeWindow()});
   await session.start();
   await assert.rejects(session.execute({op:'evaluate',javascript:'alert(1)'}),e=>e.code==='UNKNOWN_OPERATION');
   await session.close();
@@ -67,5 +75,63 @@ test('bounded keyboard and accessibility operations require known actions', asyn
   assert.deepEqual(pressed,['Enter']);
   await assert.rejects(session.execute({op:'press',key:'Control+L'}),e=>e.code==='UNAPPROVED_KEY');
   assert.equal((await session.execute({op:'accessibility'})).status,'ACCESSIBILITY');
+  await session.close();
+});
+
+test('automatic mode starts headed-but-hidden, reveals same session for challenge, and re-hides on resume', async () => {
+  let current='about:blank',body='Normal page';
+  const context={
+    route:async()=>{},pages:()=>[page],close:async()=>{}
+  };
+  const page={
+    url:()=>current,
+    goto:async url=>{current=url;body='Please complete the CAPTCHA';return {status:()=>200};},
+    locator:()=>({innerText:async()=>body})
+  };
+  let launches=0,headless;
+  const native=nativeWindow();
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/chosen/profile',
+    chromiumProvider:{launchPersistentContext:async(_,opts)=>{
+      launches++;headless=opts.headless;return context;
+    }},
+    windowController:native
+  });
+  const ready=await session.start();
+  assert.equal(headless,false);
+  assert.equal(ready.windowVisibility,'HIDDEN');
+  assert.deepEqual(native.calls.map(x=>x.visible),[false]);
+  const challenge=await session.execute({op:'navigate',url:'https://archive.example/item'});
+  assert.equal(challenge.status,'NEEDS_HUMAN');
+  assert.equal(challenge.windowVisibility,'VISIBLE');
+  assert.deepEqual(native.calls.map(x=>x.visible),[false,true]);
+  await assert.rejects(session.execute({op:'hide_browser'}),e=>e.code==='NEEDS_HUMAN');
+  body='Full source content';
+  const done=await session.execute({op:'human_resolved'});
+  assert.equal(done.windowVisibility,'HIDDEN');
+  assert.equal(launches,1);
+  assert.deepEqual(native.calls.map(x=>x.visible),[false,true,false]);
+  await session.close();
+});
+test('automatic mode fails closed without native window controller', async () => {
+  let closed=false;
+  const context={route:async()=>{},pages:()=>[],newPage:async()=>({}),close:async()=>{closed=true}};
+  const session=new BrowserSession({origins:['https://archive.example'],
+    profileDirectory:'/host/chosen/profile',
+    chromiumProvider:{launchPersistentContext:async()=>context}});
+  await assert.rejects(session.start(),e=>e.code==='NATIVE_WINDOW_CONTROLLER_UNAVAILABLE');
+  assert.equal(closed,true);
+});
+test('always-visible setting never silently hides window', async () => {
+  const page={url:()=> 'https://archive.example'};
+  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/chosen/profile',
+    visibilityMode:'always-visible',
+    chromiumProvider:{launchPersistentContext:async()=>context}
+  });
+  const ready=await session.start();
+  assert.equal(ready.windowVisibility,'VISIBLE');
+  await assert.rejects(session.execute({op:'hide_browser'}),e=>e.code==='VISIBILITY_LOCKED_VISIBLE');
   await session.close();
 });
