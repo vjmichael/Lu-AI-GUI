@@ -59,3 +59,9 @@ This is intentional incremental engineering of the existing Lu Core transaction 
 **Do not claim production acceptance:** This is source-committed; exact full Linux/Windows CI outcomes, native modal UX, Windows NTFS hardlink/ACL/ADS and externally concurrent replacement races must be verified before enabling as an accepted v1.0 capability. A WebView acknowledgement is *not* the authorization; native OS confirmation and host-bound task scope are. Do not auto-restart or auto-retry ambiguous edits.
 
 **Source convergence caution:** REPO-01 source-tree lock verifies the branch contents only; the earlier unpublished complete local development archive remains a separate unresolved comparison.
+
+
+### Follow-up integration and Windows API boundary
+- Corrected `model_file_creation_hint` so **explicit existing-file edit requests** can produce `propose_edit_file` rather than being told to explain edits only; exploratory how-to questions and negated requests do not trigger the new proposal contract. Neither prompt augmentation nor a model proposal grants authority.
+- The portable `native-auth` harness now executes the **real** desktop `EditProposalQueue` and `execute_approved_edit_pinned`, including host-selected existing file, wrong-chat/filename refusal, authenticated persisted user turn, journal, original-byte backup, and observed applied receipt. A separate Windows CI step exercises those same tests.
+- Windows reparse-point handling: `cap_std::fs::Dir::symlink_metadata` returns `cap_std::fs::Metadata`, **not** `std::fs::Metadata`; the standard Windows `MetadataExt::file_attributes` methods cannot be applied to it. The code retains proven symlink/type refusal and opened-std-file reparse checks. A Windows-specific handle-identity and reparse-safe adapter with independently verified file IDs remains required before a broad safety claim. We did **not** introduce unsafe FFI into `lu-core` or enable edits without that acceptance.
