@@ -810,6 +810,7 @@ async fn run_supervised_native_turn_inner(
                         // Rejected, *parsed* tool requests receive a correlated
                         // typed error in the transcript. This is a synthetic
                         // lu_boundary notice, NOT a native execution receipt.
+                        let mut rejection_to_model = None;
                         if parsed_candidate.as_ref().is_some_and(|candidate| {
                             candidate.object.get("kind").and_then(Value::as_str) == Some("tool")
                         }) {
@@ -824,6 +825,7 @@ async fn run_supervised_native_turn_inner(
                             )?;
                             records.push(NativeTurnRecord::ModelOutput(reply.clone()));
                             records.push(NativeTurnRecord::ToolFeedback(Value::Object(checked)));
+                            rejection_to_model = Some(feedback);
                         }
                         if json_regenerations < MAX_JSON_REGENERATIONS {
                             // Only host-authored correction reaches the model.
@@ -840,10 +842,22 @@ keys and correct types. Never invent arguments or permissions.
 <|im_end|>
 <|im_start|>assistant
 "#;
-                            if prompt.len() + reminder.len() > MAX_LU_TURN_PROMPT_BYTES {
+                            // Expose only a host-generated, strictly valid
+                            // structured error to the model. Use a SYSTEM
+                            // message rather than invent an unmatched native
+                            // tool call in the conversation.
+                            let correction_status = rejection_to_model
+                                .as_ref()
+                                .map(|feedback| format!(
+                                    "\\n<|im_end|>\\n<|im_start|>system\\n                                     Rejected model tool envelope (not an executed call): {feedback}\\n                                     <|im_end|>\\n<|im_start|>assistant\\n"
+                                ))
+                                .unwrap_or_default();
+                            if prompt.len() + correction_status.len() + reminder.len()
+                                > MAX_LU_TURN_PROMPT_BYTES {
                                 turn.halt();
                                 return Err(NativeGenerationError::PromptTooLarge);
                             }
+                            prompt.push_str(&correction_status);
                             prompt.push_str(reminder);
                             json_regenerations += 1;
                             continue;
