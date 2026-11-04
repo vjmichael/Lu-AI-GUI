@@ -45,7 +45,7 @@ export class HostVisibilityController {
     return new Promise(resolve=>{
       const timer=setTimeout(()=>{this.pending.delete(requestId);resolve(false);},this.timeoutMs);
       this.pending.set(requestId,{timer,resolve});
-      try {this.write(JSON.stringify({type:'host_visibility_request',requestId,visible})+'\\n');}
+      try {this.write(JSON.stringify({type:'host_visibility_request',requestId,visible})+'\n');}
       catch {clearTimeout(timer);this.pending.delete(requestId);resolve(false);}
     });
   }
@@ -277,7 +277,7 @@ async function main() {
       if(line.length>8192)throw new BrowserGateError('COMMAND_TOO_LARGE');
       request=JSON.parse(line);
     } catch {
-      process.stdout.write(JSON.stringify({ok:false,error:{code:'INVALID_COMMAND'}})+'\\n');
+      process.stdout.write(JSON.stringify({ok:false,error:{code:'INVALID_COMMAND'}})+'\n');
       return;
     }
     if(request?.type==='host_visibility_response'){
@@ -290,10 +290,10 @@ async function main() {
       try {
         if(!started){await session.start();started=true;}
         const result=await session.execute(request);
-        process.stdout.write(JSON.stringify({ok:true,result})+'\\n');
+        process.stdout.write(JSON.stringify({ok:true,result})+'\n');
       }catch(error){
         const code=error instanceof BrowserGateError?error.code:'BROWSER_FAILED';
-        process.stdout.write(JSON.stringify({ok:false,error:{code}})+'\\n');
+        process.stdout.write(JSON.stringify({ok:false,error:{code}})+'\n');
       }
     });
   });
