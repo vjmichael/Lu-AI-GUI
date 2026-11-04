@@ -809,7 +809,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_http_fetch.rs",
-      "blob": "21f0692fb907d6b82474c0fc77ed2d5b9a7eab68"
+      "blob": "79443f2f133d9b719308dd66a6d30039806fe1fc"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_analysis.rs",
