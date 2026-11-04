@@ -1,0 +1,46 @@
+name: Lu TOOLS-06 host environment discovery
+
+on:
+  push:
+    branches:
+      - lu/tools-06-environment-discovery-20261104
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux host program inventory and authorization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test native preflight, typed Protobuf and no execution
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_environment_discovery -- --nocapture
+
+  windows:
+    name: Windows host program inventory and authorization
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked source inventory
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test native preflight, typed Protobuf and no execution
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_environment_discovery -- --nocapture

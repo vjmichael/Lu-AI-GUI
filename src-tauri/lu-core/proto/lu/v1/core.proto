@@ -95,6 +95,19 @@ message SearchTextResult {
   bool truncated = 3;
 }
 
+// TOOLS-06: read-only, host-owned program availability facts.
+// The model cannot choose an executable path or spawn a process.
+message EnvironmentCheckRequest {
+  string program_id = 1;
+}
+message EnvironmentCheckResult {
+  string program_id = 1;
+  bool candidate_present = 2;
+  string evidence = 3; // "file_present_only" or "not_found", never runtime proof
+  string operating_system = 4;
+  string architecture = 5;
+}
+
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
 // Every envelope is still length-delimited by the host (u32 big-endian).
 // Fields here carry data only, NEVER a permission token or host path.
