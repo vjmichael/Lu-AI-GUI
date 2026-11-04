@@ -967,6 +967,7 @@ function App() {
             <div key={record.proposalId} className="writeRecoveryRow">
               <strong>{record.fileName}</strong>
               <small>Review: {record.approval} · Effect: {record.effect}</small>
+              <small>Exact applied edit receipt: {record.receiptVerified ? 'Verified' : 'Not verified'}</small>
               {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
               <small>Original SHA-256: {record.originalSha256 || 'Not selected'}</small>
               <small>Replacement SHA-256: {record.replacementSha256}</small>
@@ -979,8 +980,8 @@ function App() {
               {editObservations[record.proposalId]?.rollbackPreview && <details
                 className="editUndoPreview" aria-label="Read-only undo preview">
                 <summary>Review verified original for a possible future restore (read-only)</summary>
-                <small>No restore command is issued. This preview was checked against the
-                  retained original backup, the current file and the APPLIED journal record.</small>
+                <small>No restore command is issued. This preview requires the exact
+                  decoded APPLIED edit receipt, retained original backup and current file.</small>
                 <small>Edited SHA-256: {editObservations[record.proposalId].rollbackPreview.replacementSha256}</small>
                 <small>Original SHA-256: {editObservations[record.proposalId].rollbackPreview.originalSha256}</small>
                 <strong>Complete changes if original were restored</strong>
@@ -1001,7 +1002,7 @@ function App() {
               </details>}
               {record.approval === 'Approved' && <button type="button" className="subtleButton"
                 onClick={() => inspectEditRecovery(record)}>Reselect folder to inspect artifacts</button>}
-              {record.approval === 'Approved' && record.effect === 'Applied' &&
+              {record.approval === 'Approved' && record.receiptVerified &&
                 <button type="button" className="folderLink"
                   onClick={() => openEditedFolder(record.proposalId,chatId)}>
                   Open containing folder
