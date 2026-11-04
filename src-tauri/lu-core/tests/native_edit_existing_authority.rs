@@ -189,7 +189,7 @@ async fn one_approved_edit_durable_receipt_replay_revocation_and_newly_approved_
     assert!(proto::EditRollbackResult::decode(restored.payload.bytes.as_slice()).unwrap().committed);
     assert_eq!(fs::read(folder.join("notes.json")).unwrap(), old);
     assert_eq!(journal.get(&rollback.call_id).unwrap().unwrap().state, EffectState::Applied);
-    drop(root); drop(registry); drop(journal);
+    drop(rollback_registry); drop(root); drop(registry); drop(journal);
     fs::remove_dir_all(folder).unwrap();
 }
 
