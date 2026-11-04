@@ -817,11 +817,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/vllm_control.rs",
-      "blob": "671d08de050b5fff2fecbcc04636b7dc038df5af"
+      "blob": "591cd22564effcfdcb4afe4550761b3634bdadb4"
     },
     {
       "path": "src-tauri/lu-core/src/vllm_process.rs",
-      "blob": "80b7b5efa27f220e023e45124bc7c2d0c1003527"
+      "blob": "49f4e2088754480094c5877955029ae3af40c4ec"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
