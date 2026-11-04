@@ -31,6 +31,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn
       - name: Preserve supervisor model turn and journal integration
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn
+      - name: Interrupt repeated streaming output in real Protobuf supervisor
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_stream_loop -- --nocapture
 
   windows:
     name: Windows exact repeat, ping-pong, warnings and real native dispatch
@@ -52,3 +54,5 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn
       - name: Preserve supervisor model turn and journal integration
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn
+      - name: Interrupt repeated streaming output in real Protobuf supervisor
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_stream_loop -- --nocapture
