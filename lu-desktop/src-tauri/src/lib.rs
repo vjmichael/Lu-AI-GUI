@@ -1174,6 +1174,15 @@ struct WriteDestinationView {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct DocumentSettingsView {
+    default_folder: String,
+    system_documents_folder: String,
+    is_custom: bool,
+    is_available: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WriteRecoveryView {
     proposal_id: String,
     file_name: String,
@@ -1286,6 +1295,111 @@ fn lu_dismiss_read_proposal(
     state.read_proposals
         .dismiss_for_conversation(&proposal_id, &chat_id)
         .map_err(|e| format!("proposal dismissal: {e:?}"))
+}
+
+/// A read-only Settings view. Neither model output nor WebView contents
+/// may supply an arbitrary filesystem path.
+#[tauri::command]
+fn lu_document_settings(state: State<'_, Arc<DesktopState>>)
+    -> Result<DocumentSettingsView, String> {
+    let chosen = state.document_preferences.selected(&state.documents_os_dir);
+    let is_custom = state.document_preferences.is_custom()
+        .map_err(|e|format!("document preference state unavailable: {e:?}"))?;
+    let folder = chosen.as_ref().unwrap_or(&state.documents_os_dir);
+    Ok(DocumentSettingsView {
+        default_folder: folder.to_string_lossy().into_owned(),
+        system_documents_folder: state.documents_os_dir.to_string_lossy().into_owned(),
+        is_custom,
+        is_available: chosen.is_ok(),
+    })
+}
+
+/// Only a native OS folder picker can replace the default Documents folder.
+/// It is not an authorization for arbitrary future model edits.
+#[tauri::command]
+async fn lu_choose_default_document_folder(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+) -> Result<DocumentSettingsView, String> {
+    let state = Arc::clone(state.inner());
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("native folder picker failed: {e}"))??
+        .ok_or("Folder selection cancelled")?;
+    state.document_preferences.set_from_native_picker(&selected)
+        .map_err(|e|format!("cannot set document folder: {e:?}"))?;
+    let chosen = state.document_preferences.selected(&state.documents_os_dir)
+        .map_err(|e|format!("document folder unavailable: {e:?}"))?;
+    Ok(DocumentSettingsView {
+        default_folder: chosen.to_string_lossy().into_owned(),
+        system_documents_folder: state.documents_os_dir.to_string_lossy().into_owned(),
+        is_custom: true,
+        is_available: true,
+    })
+}
+
+#[tauri::command]
+fn lu_reset_default_document_folder(state: State<'_, Arc<DesktopState>>)
+    -> Result<DocumentSettingsView, String> {
+    let chosen = state.document_preferences
+        .reset_to_system_documents(&state.documents_os_dir)
+        .map_err(|e|format!("system Documents folder unavailable: {e:?}"))?;
+    Ok(DocumentSettingsView {
+        default_folder: chosen.to_string_lossy().into_owned(),
+        system_documents_folder: chosen.to_string_lossy().into_owned(),
+        is_custom: false,
+        is_available: true,
+    })
+}
+
+/// An Open Folder action is authorized by a *recorded, APPLIED* write receipt
+/// bound to this chat, never a WebView-provided path. The file manager is
+/// launched directly with a single argument, not via a shell.
+#[tauri::command]
+fn lu_open_created_folder(
+    state: State<'_, Arc<DesktopState>>,
+    chat_id: String,
+    proposal_id: String,
+) -> Result<(), String> {
+    state.chats.history(&chat_id)?;
+    let record = state.write_approval_ledger.get(&proposal_id)
+        .map_err(|e|format!("document receipt unavailable: {e:?}"))?
+        .ok_or("Unknown created file")?;
+    if record.chat_id != chat_id ||
+        record.decision != lu_core::write_approval_ledger::WriteDecision::Approved {
+        return Err("No approved file in this conversation".into());
+    }
+    let call_id = record.effect_call_id.ok_or("Missing effect receipt")?;
+    let effect = state.effects.get(&call_id)
+        .map_err(|e|format!("effect receipt unavailable: {e:?}"))?
+        .ok_or("No verified file creation")?;
+    if effect.state != lu_core::journal::EffectState::Applied ||
+        effect.tool_id != lu_core::native_create_new::TOOL_ID {
+        return Err("File creation has not been verified".into());
+    }
+    let target = PathBuf::from(record.selected_target.ok_or("No approved destination")?);
+    if target.file_name().and_then(|x|x.to_str()) != Some(record.file_name.as_str()) {
+        return Err("Stored destination conflicts with approved file".into());
+    }
+    let folder = target.parent().ok_or("Stored destination has no folder")?;
+    if !lu_core::document_preferences::ordinary_directory(folder) {
+        return Err("Containing folder no longer exists or was replaced".into());
+    }
+    #[cfg(windows)]
+    let executable = "explorer.exe";
+    #[cfg(target_os="linux")]
+    let executable = "xdg-open";
+    #[cfg(target_os="macos")]
+    let executable = "open";
+    #[cfg(not(any(windows,target_os="linux",target_os="macos")))]
+    return Err("Opening containing folders unsupported on this platform".into());
+    #[cfg(any(windows,target_os="linux",target_os="macos"))]
+    {
+        std::process::Command::new(executable).arg(folder)
+            .spawn().map_err(|e|format!("Could not open containing folder: {e}"))?;
+        Ok(())
+    }
 }
 
 /// User's first review action: the destination is selected by the host,
@@ -1408,6 +1522,8 @@ fn lu_write_recovery(
     chat_id: String,
 ) -> Result<Vec<WriteRecoveryView>, String> {
     state.chats.history(&chat_id)?; // authenticated local desktop chat identity
+    let current_documents = state.document_preferences
+        .selected(&state.documents_os_dir).ok();
     let records = state.write_approval_ledger.recent_for_chat(&chat_id)
         .map_err(|e| format!("write recovery unavailable: {e:?}"))?;
     records.into_iter().map(|record| {
@@ -1420,10 +1536,11 @@ fn lu_write_recovery(
             .map(|state|format!("{:?}",state))
             .unwrap_or_else(|| "NOT_STARTED".into());
         let observed_target = match record.selected_target.as_deref() {
-            Some(t) if state.drafts_dir.join(&record.file_name)
-                .to_string_lossy().as_ref() == t =>
+            Some(t) if current_documents.as_ref().is_some_and(|folder|
+                folder.join(&record.file_name).to_string_lossy().as_ref() == t) =>
                 native_host_write::inspect_recovery_target(
-                    &state.drafts_dir, &record.file_name, record.bytes, &record.sha256
+                    current_documents.as_ref().unwrap(),
+                    &record.file_name, record.bytes, &record.sha256
                 ).into(),
             _ => "EXTERNAL_TARGET_NOT_AUTOMATICALLY_INSPECTED".into(),
         };
@@ -1548,6 +1665,10 @@ pub fn run() {
             lu_inspect_text_file,
             lu_approve_read_proposal,
             lu_dismiss_read_proposal,
+            lu_document_settings,
+            lu_choose_default_document_folder,
+            lu_reset_default_document_folder,
+            lu_open_created_folder,
             lu_review_write_destination,
             lu_confirm_write,
             lu_deny_write,
