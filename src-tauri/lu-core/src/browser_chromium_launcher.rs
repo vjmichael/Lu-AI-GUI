@@ -36,6 +36,10 @@ pub struct LaunchedChromium {
 }
 impl LaunchedChromium {
     pub fn endpoint(&self)->&str{&self.endpoint}
+    pub fn profile_dir(&self)->&Path{
+        self.lease.as_ref().and_then(|l|l.lock_path.parent())
+            .expect("owned Chromium always has a profile lock")
+    }
     pub fn take_owned_parts(mut self)
       ->(Child,ChromiumProfileLease,String){
         (self.child.take().expect("owned launched child"),
