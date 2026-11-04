@@ -173,7 +173,10 @@ impl<B: InferenceBackend> InferenceHost<B> {
             if cancel.is_cancelled() {
                 return Err(EngineError::Cancelled);
             }
-            emit(chunk)
+            match emit(chunk) {
+                Ok(()) => Ok(()),
+                Err(error) => { cancel.cancel(); Err(error) }
+            }
         });
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
@@ -211,7 +214,10 @@ impl<B: InferenceBackend> InferenceHost<B> {
                 if cancel.is_cancelled() {
                     return Err(EngineError::Cancelled);
                 }
-                emit(chunk)
+                match emit(chunk) {
+                    Ok(()) => Ok(()),
+                    Err(error) => { cancel.cancel(); Err(error) }
+                }
             });
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
