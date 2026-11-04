@@ -363,6 +363,8 @@ mod tests {
         assert_eq!(value["result"]["top_level_keys"], json!(["assets","private","shot"]));
         assert_eq!(value["result"]["content_sha256"].as_str().unwrap().len(), 64);
         assert!(!value.to_string().contains("SECRET_VALUE"));
+        drop(catalog);
+        drop(registry);
         fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
@@ -377,6 +379,8 @@ mod tests {
             assert_eq!(data["result"]["valid"], false);
             assert_eq!(data["result"]["error_kind"],kind);
         }
+        drop(catalog);
+        drop(registry);
         fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
@@ -396,6 +400,8 @@ mod tests {
         assert!(denied.is_err());
         let oversized=registry.dispatch(call(&catalog,"large.json",r#""max_bytes":100"#),&Allow).await;
         assert!(oversized.is_err());
+        drop(catalog);
+        drop(registry);
         fs::remove_dir_all(root).unwrap();
     }
 }
