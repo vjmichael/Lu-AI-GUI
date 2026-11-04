@@ -2,14 +2,15 @@
 //! policy and existing durable Protobuf dispatcher. NOT desktop-enabled.
 //! Host selects an already validated private directory and issues a trusted
 //! USER-turn authority; neither model text nor tool discovery can grant it.
-use std::{path::{Path, PathBuf}, sync::Arc};
+use std::{path::Path, sync::Arc};
+use cap_std::{ambient_authority, fs::Dir};
 use prost::Message;
 use sha2::{Digest, Sha256};
 use crate::{
     contracts::{AuthorizationError, ModuleKind, ModuleManifest, NativeTool, ProtoPayload,
         ToolAuthorizer, ToolDescriptor, ToolEffect, ToolFailure, ToolFuture, ToolInvocation,
         ToolOutput, CORE_CONTRACT_VERSION},
-    native_atomic_write::{create_new_atomic, AtomicWriteError, MAX_ATOMIC_WRITE_BYTES},
+    native_atomic_write::{create_new_atomic_in_dir, AtomicWriteError, MAX_ATOMIC_WRITE_BYTES},
     registry::{NativeToolRegistry, RegistryError},
     wire::proto,
 };
@@ -73,7 +74,7 @@ fn write_failure(error: AtomicWriteError) -> ToolFailure {
 
 pub struct CreateNewTool {
     descriptor: ToolDescriptor,
-    trusted_root: Arc<PathBuf>,
+    trusted_root: Arc<Dir>,
 }
 
 impl NativeTool for CreateNewTool {
@@ -102,7 +103,7 @@ impl NativeTool for CreateNewTool {
                 ))?;
             let call_id = invocation.call_id;
             tokio::task::spawn_blocking(move || {
-                let receipt = create_new_atomic(
+                let receipt = create_new_atomic_in_dir(
                     &root, &request.relative_path, &call_id, &request.data
                 ).map_err(write_failure)?;
                 let result = proto::CeWriteResult {
@@ -128,11 +129,17 @@ pub fn register_create_new(
     registry: &NativeToolRegistry,
     trusted_directory: &Path,
 ) -> Result<(), RegistryError> {
-    let root = trusted_directory.canonicalize()
+    let root = Dir::open_ambient_dir(trusted_directory, ambient_authority())
         .map_err(|_| RegistryError::InvalidDescriptor(TOOL_ID.into()))?;
-    if !root.is_dir() {
-        return Err(RegistryError::InvalidDescriptor(TOOL_ID.into()));
-    }
+    register_create_new_pinned(registry, Arc::new(root))
+}
+
+/// Register an already-opened host-selected directory. The host retains
+/// this capability through approval and dispatch, preventing path retargeting.
+pub fn register_create_new_pinned(
+    registry: &NativeToolRegistry,
+    root: Arc<Dir>,
+) -> Result<(), RegistryError> {
     let descriptor = ToolDescriptor {
         id: TOOL_ID.into(),
         display_name: "Create a new file without overwriting".into(),
@@ -150,6 +157,6 @@ pub fn register_create_new(
             panels: vec![],
             workflows: vec![],
         },
-        vec![Arc::new(CreateNewTool { descriptor, trusted_root: Arc::new(root) })],
+        vec![Arc::new(CreateNewTool { descriptor, trusted_root: root })],
     )
 }
