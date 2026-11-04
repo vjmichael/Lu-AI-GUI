@@ -71,7 +71,12 @@ fn valid_origin(input:&str)->bool{
     }
     let host=&input[8..];
     !host.is_empty()&&!host.contains('/')&&!host.contains(':')
-        && !host.starts_with('.')&&!host.ends_with('.')
+        && !host.starts_with('.')&&!host.ends_with('.')&&host.contains('.')
+        &&!host.ends_with(".local")&&!host.ends_with(".internal")
+        &&!host.ends_with(".localhost")
+        &&!host.bytes().any(|b|b.is_ascii_uppercase())
+        &&host.rsplit('.').next().is_some_and(|tld|
+            tld.len()>=2&&tld.bytes().all(|c|c.is_ascii_lowercase()))
         && host.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'.'||c==b'-')
 }
 fn valid_loopback_cdp(input:&str)->bool {
@@ -320,7 +325,8 @@ mod tests {
         assert!(!valid_loopback_cdp("http://localhost:41007"));
         for candidate in ["http://archive.example","https://x/y",
             "https://foo@bar","https://127.0.0.1:8443",
-            "https://evil.example?q=1","https://foo\\bar"] {
+            "https://evil.example?q=1","https://foo\\bar",
+            "https://127.0.0.1","https://printer.local","https://LOCAL.Example"] {
             assert!(!valid_origin(candidate),"{candidate}");
         }
     }
