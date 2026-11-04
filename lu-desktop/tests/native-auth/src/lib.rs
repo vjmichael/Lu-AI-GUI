@@ -6,6 +6,10 @@ mod chat_store;
 mod native_host_read;
 #[path = "../../../src-tauri/src/read_proposal.rs"]
 mod read_proposal;
+#[path = "../../../src-tauri/src/write_proposal.rs"]
+mod write_proposal;
+#[path = "../../../src-tauri/src/native_host_write.rs"]
+mod native_host_write;
 
 use chat_store::ChatStore;
 use lu_core::{
@@ -560,5 +564,122 @@ async fn real_desktop_user_journal_fences_durable_atomic_create_new() {
         Err(DispatchError::Denied(_))
     ));
     drop(effects); drop(chats); drop(registry);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn real_two_step_write_review_creates_exact_file_and_survives_restart() {
+    use lu_core::{journal::{EffectJournal, EffectState},
+        write_approval_ledger::{WriteApprovalLedger, WriteDecision}};
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let drafts = root.join("lu-drafts");
+    fs::create_dir_all(&drafts).unwrap();
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let chat = chats.create_chat().unwrap();
+    let other = chats.create_chat().unwrap();
+    let approvals = WriteApprovalLedger::open(&root.join("write-approvals.sqlite")).unwrap();
+    let effects = EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let queue = write_proposal::WriteProposalQueue::default();
+    let raw = r#"{"kind":"propose_create_file","file_name":"report.txt","purpose":"Save the summary","content":"Original approved contents\n"}"#;
+    let pending = queue.stage("pw-one",&chat.chat_id,"g-model-turn",raw).unwrap();
+    approvals.stage("pw-one",&chat.chat_id,"g-model-turn",
+        &pending.file_name,pending.bytes(),&pending.digest()).unwrap();
+    assert!(queue.take_confirmed("pw-one",&chat.chat_id).is_err(),
+        "writing without destination review must not work");
+    assert!(queue.choose_directory("pw-one",&other.chat_id,&drafts).is_err(),
+        "cross-chat selection must fail");
+    let (target, generation, chosen) = queue.choose_directory(
+        "pw-one", &chat.chat_id, &drafts).unwrap();
+    assert_eq!(generation, "g-model-turn");
+    assert_eq!(chosen, pending);
+    approvals.choose_target("pw-one",&chat.chat_id,&generation,&target).unwrap();
+    assert!(approvals.approve("pw-one",&other.chat_id,&generation,
+        &chosen.file_name,chosen.bytes(),&chosen.digest(),&target,"g-effect-one").is_err());
+    let (generation, directory, proposal) = queue.take_confirmed(
+        "pw-one",&chat.chat_id).unwrap();
+    let effect_id = format!("g-{}", "7".repeat(32));
+    approvals.approve("pw-one",&chat.chat_id,&generation,&proposal.file_name,
+        proposal.bytes(),&proposal.digest(),&target,&effect_id).unwrap();
+    let turn = format!("g-{}", "8".repeat(32));
+    let created = native_host_write::execute_approved_create(
+        &chats, &effects, &chat.chat_id,&turn,&effect_id,&directory,&proposal
+    ).await.unwrap();
+    assert_eq!(created.file_name,"report.txt");
+    assert_eq!(created.exact_target,target);
+    assert_eq!(fs::read(drafts.join("report.txt")).unwrap(),proposal.content.as_bytes());
+    assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Applied);
+    assert_eq!(approvals.get("pw-one").unwrap().unwrap().decision,WriteDecision::Approved);
+    assert!(queue.take_confirmed("pw-one",&chat.chat_id).is_err(),
+        "proposal must not be approved a second time");
+    drop(chats);drop(effects);drop(approvals);
+    let chats = ChatStore::open(&root.join("chats")).unwrap();
+    let approvals = WriteApprovalLedger::open(&root.join("write-approvals.sqlite")).unwrap();
+    let effects = EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    assert!(chats.history(&chat.chat_id).unwrap().iter().any(|m| m.text.contains("Created new file")));
+    assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Applied);
+    assert_eq!(approvals.reconcile_pending().unwrap(),0);
+    assert!(chats.history(&other.chat_id).unwrap().is_empty());
+    drop(chats);drop(effects);drop(approvals);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn untrusted_write_json_cannot_choose_paths_or_bypass_content_review() {
+    use write_proposal::WriteProposalQueue;
+    let q=WriteProposalQueue::default();
+    for (i,raw) in [
+        r#"{"kind":"propose_create_file","file_name":"../escape","purpose":"x","content":"hi"}"#,
+        r#"{"kind":"propose_create_file","file_name":"draft.txt","purpose":"x","content":"hi","directory":"C:/"}"#,
+        r#"{"kind":"write_file","file_name":"draft.txt","purpose":"x","content":"hi"}"#,
+        r#"{"kind":"propose_create_file","file_name":"draft.txt","purpose":"","content":"hi"}"#,
+        r#"{"kind":"propose_create_file","file_name":"draft.txt","purpose":"x","content":"hi","content":"other"}"#,
+    ].iter().enumerate() {
+        assert!(q.stage(&format!("pw-{i}"),"chat-a","generation-a",raw).is_err(),
+            "unsafe model proposal should not be staged: {raw}");
+    }
+    assert!(q.stage("pw-big","chat-a","generation-a",&format!(
+        "{{\"kind\":\"propose_create_file\",\"file_name\":\"large.txt\",\"purpose\":\"x\",\"content\":\"{}\"}}",
+        "z".repeat(16385)
+    )).is_err());
+    let good=r#"{"kind":"propose_create_file","file_name":"draft.txt","purpose":"x","content":"hi"}"#;
+    q.stage("pw-ok","chat-a","generation-a",good).unwrap();
+    assert!(q.dismiss("pw-ok","other-chat").is_err());
+    q.dismiss("pw-ok","chat-a").unwrap();
+    assert!(q.take_confirmed("pw-ok","chat-a").is_err());
+}
+
+#[tokio::test]
+async fn failed_create_of_existing_lu_draft_is_auditable_but_never_overwrites() {
+    use lu_core::{journal::{EffectJournal, EffectState},
+        write_approval_ledger::{WriteApprovalLedger, WriteDecision}};
+    let root=temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let drafts=root.join("lu-drafts");
+    fs::create_dir_all(&drafts).unwrap();
+    fs::write(drafts.join("report.txt"),b"existing user's data").unwrap();
+    let chats=ChatStore::open(&root.join("chats")).unwrap();
+    let chat=chats.create_chat().unwrap();
+    let approvals=WriteApprovalLedger::open(&root.join("write-approvals.sqlite")).unwrap();
+    let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let queue=write_proposal::WriteProposalQueue::default();
+    let raw=r#"{"kind":"propose_create_file","file_name":"report.txt","purpose":"new version","content":"new content"}"#;
+    let p=queue.stage("pw-existing",&chat.chat_id,"model-turn-existing",raw).unwrap();
+    approvals.stage("pw-existing",&chat.chat_id,"model-turn-existing",
+        &p.file_name,p.bytes(),&p.digest()).unwrap();
+    let (target,generation,p)=queue.choose_directory("pw-existing",&chat.chat_id,&drafts).unwrap();
+    approvals.choose_target("pw-existing",&chat.chat_id,&generation,&target).unwrap();
+    let (origin,dir,p)=queue.take_confirmed("pw-existing",&chat.chat_id).unwrap();
+    let effect_id=format!("g-{}", "9".repeat(32));
+    approvals.approve("pw-existing",&chat.chat_id,&origin,&p.file_name,
+        p.bytes(),&p.digest(),&target,&effect_id).unwrap();
+    assert!(native_host_write::execute_approved_create(
+        &chats,&effects,&chat.chat_id,&format!("g-{}", "a".repeat(32)),
+        &effect_id,&dir,&p
+    ).await.is_err());
+    assert_eq!(fs::read(drafts.join("report.txt")).unwrap(),b"existing user's data");
+    assert_eq!(effects.get(&effect_id).unwrap().unwrap().state,EffectState::Uncertain);
+    assert_eq!(approvals.get("pw-existing").unwrap().unwrap().decision,WriteDecision::Approved);
+    drop(chats);drop(effects);drop(approvals);
     fs::remove_dir_all(root).unwrap();
 }
