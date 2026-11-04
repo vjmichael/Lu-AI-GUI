@@ -130,6 +130,12 @@ jobs:
       - name: Windows trusted desktop existing-file edit and backup acceptance
         shell: pwsh
         run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_edit -- --nocapture
+      - name: Windows separately authorized desktop restore with prior-byte custody
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_rollback -- --nocapture
+      - name: Windows rollback approval ledger one-shot and restart denial
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib rollback_approval_ledger::tests
       - name: Windows atomic create-new and no-overwrite Rust regressions
         shell: pwsh
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_atomic_write
