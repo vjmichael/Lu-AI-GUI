@@ -47,7 +47,7 @@ impl ResearchPlanner {
             provider TEXT NOT NULL,
             query TEXT NOT NULL,
             page_token TEXT NOT NULL,
-            state TEXT NOT NULL CHECK(state IN ('QUEUED','IN_PROGRESS','BLOCKED','DONE')),
+            state TEXT NOT NULL CHECK(state IN ('QUEUED','IN_PROGRESS','BLOCKED','DONE','SKIPPED_TOO_DIFFICULT')),
             blocked_reason TEXT,
             UNIQUE(provider,query,page_token)
           );
@@ -115,6 +115,24 @@ impl ResearchPlanner {
         if affected==0 {return Err(PlanningError::NotFound);}
         Ok(())
     }
+    /// Gracefully abandon a difficult web source after bounded safe attempts.
+    /// The reason remains durable and visible, and other queries can advance.
+    pub fn skip_too_difficult(&mut self,id:i64,reason:&str)->Result<(),PlanningError>{
+        if !matches!(reason,"CAPTCHA_UNRESOLVED"|"PAYWALL"|"UNSUPPORTED_WEBSITE"
+            |"RENDERING_FAILED"|"REPEATED_TIMEOUT"|"NAVIGATION_TOO_COMPLEX"
+            |"ACCESS_DENIED") {return Err(PlanningError::Invalid);}
+        let updated=self.db.execute("UPDATE web_research_queries
+            SET state='SKIPPED_TOO_DIFFICULT',blocked_reason=?2 WHERE id=?1
+            AND state IN ('IN_PROGRESS','BLOCKED')",params![id,reason])?;
+        if updated==0 {return Err(PlanningError::NotFound);}
+        Ok(())
+    }
+    pub fn skipped_reasons(&self)->Result<Vec<(i64,String)>,PlanningError>{
+        let mut statement=self.db.prepare("SELECT id,blocked_reason FROM web_research_queries
+            WHERE state='SKIPPED_TOO_DIFFICULT' ORDER BY id")?;
+        let rows=statement.query_map([],|row|Ok((row.get(0)?,row.get(1)?)))?;
+        Ok(rows.collect::<Result<_,_>>()?)
+    }
     pub fn resume(&mut self,id:i64) -> Result<(),PlanningError> {
         let affected=self.db.execute("UPDATE web_research_queries
             SET state='QUEUED',blocked_reason=NULL WHERE id=?1
@@ -179,6 +197,19 @@ mod tests {
         assert_eq!(planner.pending_count().unwrap(),2);
         assert_eq!(planner.claim().unwrap().unwrap().id,a.id);
         assert_eq!(planner.recover_read_only_queries().unwrap(),1);
+    }
+    #[test]
+    fn hard_source_is_skipped_with_reason_and_other_searches_continue() {
+        let mut planner=ResearchPlanner::open(Path::new(":memory:")).unwrap();
+        planner.enqueue("challenging-site","source text","").unwrap();
+        planner.enqueue("open-catalog","alternative evidence","").unwrap();
+        let difficult=planner.claim().unwrap().unwrap();
+        planner.block(difficult.id,"CAPTCHA_REQUIRED").unwrap();
+        planner.skip_too_difficult(difficult.id,"CAPTCHA_UNRESOLVED").unwrap();
+        assert_eq!(planner.skipped_reasons().unwrap(),
+            vec![(difficult.id,"CAPTCHA_UNRESOLVED".into())]);
+        assert!(planner.resume(difficult.id).is_err());
+        assert_eq!(planner.claim().unwrap().unwrap().provider,"open-catalog");
     }
     #[test]
     fn malformed_doi_is_not_catalog_evidence() {
