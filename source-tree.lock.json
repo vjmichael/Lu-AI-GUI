@@ -1041,7 +1041,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/write_approval_ledger.rs",
-      "blob": "d23ac7cda0d73cc5baaeefc17ab471f484251bb3"
+      "blob": "a6beba7070e1b9e247dc9224001b706b8f4397ff"
     },
     {
       "path": "src-tauri/lu-core/tests/write_format.rs",
