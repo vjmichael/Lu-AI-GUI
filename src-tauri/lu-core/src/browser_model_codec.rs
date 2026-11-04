@@ -3,7 +3,7 @@
 //! The host advertises these only for a live authorized task, and native
 //! dispatch rechecks the typed payload plus NetworkRead/NetworkWrite effect.
 use crate::{
-    browser_authorized_execution::{encode_browser_request,decode_browser_request},
+    browser_authorized_execution::encode_browser_request,
     browser_worker_supervisor::BrowserOperation,
     contracts::ProtoPayload,
     model::{ModelToolCodec,ModelToolError},
@@ -127,6 +127,7 @@ impl ModelToolCodec for BrowserModelCodec {
 mod tests{
     use super::*;
     use crate::contracts::ToolInvocation;
+    use crate::browser_authorized_execution::decode_browser_request;
     #[test]
     fn read_codec_emits_single_typed_bound_operation(){
         let codec=BrowserModelCodec(BrowserModelKind::Read);
