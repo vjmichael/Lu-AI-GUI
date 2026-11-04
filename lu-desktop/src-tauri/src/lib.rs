@@ -5,7 +5,6 @@ mod chat_store;
 mod generation_queue;
 mod load_trace;
 mod native_host_read;
-mod native_host_json;
 mod read_proposal;
 mod write_proposal;
 mod native_host_write;
@@ -1202,35 +1201,6 @@ async fn lu_inspect_text_file(
     Ok(Some(result))
 }
 
-/// Explicit user-initiated JSON inspection. The native picker selects the
-/// exact file; no model or JavaScript pathname enters the host read boundary.
-#[tauri::command]
-async fn lu_inspect_json_file(
-    app: AppHandle,
-    state: State<'_, Arc<DesktopState>>,
-    chat_id: String,
-) -> Result<Option<native_host_json::InspectedJsonFile>, String> {
-    let state = Arc::clone(state.inner());
-    // Reject an unknown conversation before displaying the trusted picker.
-    state.chats.history(&chat_id)?;
-    let selected = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .add_filter("JSON data", &["json"])
-            .blocking_pick_file()
-            .map(|file| file.into_path().map_err(|e| e.to_string()))
-            .transpose()
-    })
-    .await
-    .map_err(|e| format!("JSON picker failed: {e}"))??;
-    let Some(selected) = selected else { return Ok(None) };
-    let turn_id = next_id("g-");
-    let result = native_host_json::inspect_selected_json_with_receipt(
-        &state.chats, &state.effects, &chat_id, &turn_id, &selected,
-    ).await?;
-    Ok(Some(result))
-}
-
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WriteProposalEvent {
@@ -2289,7 +2259,6 @@ pub fn run() {
             lu_cancel,
             lu_generate,
             lu_inspect_text_file,
-            lu_inspect_json_file,
             lu_approve_read_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,
