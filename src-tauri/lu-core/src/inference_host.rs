@@ -57,6 +57,9 @@ impl Cancellation {
 /// The backend must pin or import immutable bytes after admission. Never
 /// trust only metadata recheck as a race-free model identity guarantee.
 pub trait InferenceBackend {
+    /// Native worker can become unloaded after fail-closed stream recovery.
+    /// Backends retaining weights after an ordinary error may use the default.
+    fn has_loaded_model(&self) -> bool { true }
     fn process_id(&self) -> Option<u32> {
         None
     }
@@ -179,7 +182,11 @@ impl<B: InferenceBackend> InferenceHost<B> {
             }
         });
         self.cancellation = None;
-        self.phase = EnginePhase::Ready;
+        self.phase = if self.backend.has_loaded_model() {
+            EnginePhase::Ready
+        } else {
+            EnginePhase::Idle
+        };
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled);
         }
@@ -220,7 +227,11 @@ impl<B: InferenceBackend> InferenceHost<B> {
                 }
             });
         self.cancellation = None;
-        self.phase = EnginePhase::Ready;
+        self.phase = if self.backend.has_loaded_model() {
+            EnginePhase::Ready
+        } else {
+            EnginePhase::Idle
+        };
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled);
         }
@@ -355,6 +366,47 @@ mod tests {
         host.unload().unwrap();
         assert_eq!(host.phase(), EnginePhase::Idle);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn rejected_output_cancels_producer_and_tracks_ejected_backend() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct EjectingBackend {
+            loaded: bool,
+            saw_cancel: Arc<AtomicBool>,
+        }
+        impl InferenceBackend for EjectingBackend {
+            fn has_loaded_model(&self) -> bool { self.loaded }
+            fn load(&mut self, _: &AdmittedModel) -> Result<(), String> {
+                self.loaded = true;
+                Ok(())
+            }
+            fn unload(&mut self) { self.loaded = false; }
+            fn generate(&mut self, _: &GenerationRequest, cancel: &Cancellation,
+                emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>) -> Result<(), String> {
+                if emit(TokenChunk { text: "loop".into(), index: 0 }).is_err() {
+                    self.saw_cancel.store(cancel.is_cancelled(), Ordering::SeqCst);
+                    self.unload();
+                    return Err("stream rejected; backend ejected".into());
+                }
+                Ok(())
+            }
+        }
+        let saw = Arc::new(AtomicBool::new(false));
+        let mut host = InferenceHost {
+            backend: EjectingBackend { loaded: true, saw_cancel: Arc::clone(&saw) },
+            phase: EnginePhase::Ready,
+            cancellation: None,
+        };
+        let cancellation = Cancellation::default();
+        let reply = host.generate(
+            GenerationRequest { history: vec![], prompt: "test".into(), max_new_tokens: 10 },
+            cancellation.clone(),
+            |_| Err(EngineError::Cancelled),
+        );
+        assert_eq!(reply, Err(EngineError::Cancelled));
+        assert!(saw.load(Ordering::SeqCst));
+        assert!(cancellation.is_cancelled());
+        assert_eq!(host.phase(), EnginePhase::Idle);
     }
     #[test]
     fn pre_cancelled_generation_does_not_enter_backend() {
