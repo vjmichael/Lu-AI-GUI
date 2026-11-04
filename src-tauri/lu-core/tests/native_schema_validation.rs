@@ -109,6 +109,13 @@ async fn supports_nested_local_refs_and_safe_regex() {
     assert_eq!(call(s,json!({"name":"a1"})).await["result"]["valid"],false);
     assert_eq!(call(json!(false),json!(null)).await["result"]["valid"],false);
     assert_eq!(call(json!(true),json!(null)).await["result"]["valid"],true);
+    // A "$ref" string under JSON Schema "const" is literal *data*, not an
+    // instruction to fetch a remote schema: the policy must distinguish them.
+    let literal=json!({"const":{"$ref":"https://example.invalid/just-data"}});
+    assert_eq!(call(literal.clone(),json!({"$ref":"https://example.invalid/just-data"}))
+        .await["result"]["valid"],true);
+    assert_eq!(call(literal,json!({"$ref":"https://another.invalid"}))
+        .await["result"]["valid"],false);
 }
 
 #[tokio::test]
@@ -120,6 +127,7 @@ async fn no_network_filesystem_schema_fetch_or_unsafe_regex() {
         json!({"$id":"https://attacker.example.invalid/schema.json", "type":"string"}),
         json!({"$dynamicRef":"#name"}),
         json!({"type":"string","pattern":"(?=a)a"}),
+        json!({"patternProperties":{"(?=malicious)": {"type":"string"}}}),
         json!({"$schema":"http://json-schema.org/draft-07/schema#","type":"string"}),
         json!({"type":"made-up-type"}),
     ] {
@@ -174,6 +182,18 @@ async fn rejects_ambiguous_model_frames_and_noncanonical_native_proto() {
         &c,&r,&a,&Allow,
     ).await,Err(ToolTurnError::Revoked));
     assert_eq!(turn.step_count(),0);
+}
+
+#[test]
+fn model_tool_rejects_unbounded_schema_and_instance_before_native_dispatch() {
+    let (_r,c)=setup();
+    let allowed: BTreeSet<String>=["lu_validate_schema".into()].into_iter().collect();
+    let big_schema=json!({"description":"x".repeat(17000)});
+    let oversized=json!({"schema":big_schema,"data":1}).to_string();
+    assert!(c.encode_call(&allowed,"lu_validate_schema","schema-large",None,&oversized).is_err());
+    let big_data="d".repeat(33000);
+    let oversized=json!({"schema":{"type":"string"},"data":big_data}).to_string();
+    assert!(c.encode_call(&allowed,"lu_validate_schema","data-large",None,&oversized).is_err());
 }
 
 #[tokio::test]
