@@ -227,6 +227,22 @@ fn commit_in_dir(
     approval_sha: &str,
     stop: StopPoint,
 ) -> Result<EditReceipt, EditCommitError> {
+    commit_in_dir_selected(root,target,operation_id,baseline_sha,replacement,
+        approval_sha,stop,
+        #[cfg(windows)]
+        None,
+    )
+}
+fn commit_in_dir_selected(
+    root: &Dir,
+    target: &str,
+    operation_id: &str,
+    baseline_sha: &str,
+    replacement: &[u8],
+    approval_sha: &str,
+    stop: StopPoint,
+    #[cfg(windows)] picked_identity:Option<crate::windows_file_guard::WindowsFileIdentity>,
+) -> Result<EditReceipt, EditCommitError> {
     let _serialization = EDIT_TRANSACTION_GATE.lock()
         .map_err(|_| EditCommitError::Uncertain)?;
     if !filename(target) { return Err(EditCommitError::InvalidTarget); }
@@ -240,6 +256,10 @@ fn commit_in_dir(
     let (original, perms) = regular_bytes(root, target)?;
     #[cfg(windows)]
     let original_identity=strict_windows_file_identity(root,target)?;
+    #[cfg(windows)]
+    if picked_identity.is_some_and(|id|id!=original_identity) {
+        return Err(EditCommitError::SourceConflict);
+    }
     if sha(&original) != baseline_sha { return Err(EditCommitError::SourceConflict); }
     plan_text_edit(target, &original, baseline_sha, replacement)
         .map_err(|_| EditCommitError::InvalidContent)?;
@@ -550,6 +570,17 @@ fn rollback_with_stop(
     root: &Dir, target: &str, original_edit_id: &str, rollback_id: &str,
     expected_current: &str, expected_restored: &str, stop: StopPoint
 ) -> Result<u64, EditCommitError> {
+    rollback_with_stop_selected(root,target,original_edit_id,rollback_id,
+        expected_current,expected_restored,stop,
+        #[cfg(windows)]
+        None,
+    )
+}
+fn rollback_with_stop_selected(
+    root: &Dir, target: &str, original_edit_id: &str, rollback_id: &str,
+    expected_current: &str, expected_restored: &str, stop: StopPoint,
+    #[cfg(windows)] picked_identity:Option<crate::windows_file_guard::WindowsFileIdentity>,
+) -> Result<u64, EditCommitError> {
     let _serialization = EDIT_TRANSACTION_GATE.lock()
         .map_err(|_| EditCommitError::Uncertain)?;
     if !filename(target) || !valid_id(original_edit_id) || !valid_id(rollback_id) ||
@@ -569,6 +600,10 @@ fn rollback_with_stop(
     let (current, perms) = regular_bytes(root, target)?;
     #[cfg(windows)]
     let original_identity=strict_windows_file_identity(root,target)?;
+    #[cfg(windows)]
+    if picked_identity.is_some_and(|id|id!=original_identity) {
+        return Err(EditCommitError::SourceConflict);
+    }
     if sha(&current) != expected_current {
         return Err(EditCommitError::SourceConflict);
     }
