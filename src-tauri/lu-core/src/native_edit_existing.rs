@@ -290,6 +290,83 @@ fn rollback_in_dir(
     root: &Dir, target: &str, original_edit_id: &str, rollback_id: &str,
     expected_current: &str, expected_restored: &str
 ) -> Result<u64, EditCommitError> {
+    rollback_with_stop(root, target, original_edit_id, rollback_id,
+        expected_current, expected_restored, StopPoint::Never)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RollbackManifest {
+    schema: u32,
+    rollback_id: String,
+    original_edit_id: String,
+    target: String,
+    prior_sha256: String,
+    restore_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RollbackObservation {
+    NoManifest,
+    StillAtReplacement,
+    RestoredFromBackup,
+    ChangedOrDamaged,
+    Unavailable,
+}
+
+/// An observation alone never changes a journal state or authorizes replay.
+pub fn observe_rollback(root: &Dir, id: &str) -> RollbackObservation {
+    if !valid_id(id) { return RollbackObservation::Unavailable; }
+    let path = sidecar(id, "rollback-meta");
+    match root.symlink_metadata(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound =>
+            return RollbackObservation::NoManifest,
+        Err(_) => return RollbackObservation::Unavailable,
+        Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() ||
+            meta.len() > MAX_MANIFEST_BYTES => return RollbackObservation::ChangedOrDamaged,
+        Ok(_) => {}
+    };
+    let mut data = Vec::new();
+    let Ok(file) = root.open(&path) else { return RollbackObservation::Unavailable };
+    if file.take(MAX_MANIFEST_BYTES + 1).read_to_end(&mut data).is_err() {
+        return RollbackObservation::Unavailable;
+    }
+    let Ok(m) = serde_json::from_slice::<RollbackManifest>(&data) else {
+        return RollbackObservation::ChangedOrDamaged;
+    };
+    if m.schema != 1 || m.rollback_id != id || !valid_id(&m.original_edit_id) ||
+        !filename(&m.target) || !valid_sha(&m.prior_sha256) ||
+        !valid_sha(&m.restore_sha256) {
+        return RollbackObservation::ChangedOrDamaged;
+    }
+    let Ok(original_manifest) = read_manifest(root, &m.original_edit_id) else {
+        return RollbackObservation::ChangedOrDamaged;
+    };
+    if original_manifest.target != m.target ||
+        original_manifest.original_sha256 != m.restore_sha256 ||
+        original_manifest.replacement_sha256 != m.prior_sha256 {
+        return RollbackObservation::ChangedOrDamaged;
+    }
+    let Ok((backup,_)) = regular_bytes(root, &sidecar(&m.original_edit_id, "orig")) else {
+        return RollbackObservation::ChangedOrDamaged;
+    };
+    if sha(&backup) != m.restore_sha256 {
+        return RollbackObservation::ChangedOrDamaged;
+    }
+    match regular_bytes(root, &m.target) {
+        Ok((bytes,_)) if sha(&bytes) == m.restore_sha256 =>
+            RollbackObservation::RestoredFromBackup,
+        Ok((bytes,_)) if sha(&bytes) == m.prior_sha256 =>
+            RollbackObservation::StillAtReplacement,
+        Ok(_) => RollbackObservation::ChangedOrDamaged,
+        Err(_) => RollbackObservation::Unavailable,
+    }
+}
+
+fn rollback_with_stop(
+    root: &Dir, target: &str, original_edit_id: &str, rollback_id: &str,
+    expected_current: &str, expected_restored: &str, stop: StopPoint
+) -> Result<u64, EditCommitError> {
     if !filename(target) || !valid_id(original_edit_id) || !valid_id(rollback_id) ||
         !valid_sha(expected_current) || !valid_sha(expected_restored) ||
         original_edit_id == rollback_id {
@@ -308,15 +385,26 @@ fn rollback_in_dir(
     if sha(&current) != expected_current {
         return Err(EditCommitError::SourceConflict);
     }
+    let rollback_meta = RollbackManifest {
+        schema: 1, rollback_id: rollback_id.into(),
+        original_edit_id: original_edit_id.into(), target: target.into(),
+        prior_sha256: expected_current.into(), restore_sha256: expected_restored.into(),
+    };
+    let meta_bytes = serde_json::to_vec(&rollback_meta)
+        .map_err(|_| EditCommitError::InvalidRecoveryRecord)?;
+    write_new_synced(root, &sidecar(rollback_id, "rollback-meta"), &meta_bytes, &perms)?;
+    if stop == StopPoint::AfterManifest { return Err(EditCommitError::Uncertain); }
     let stage = sidecar(rollback_id, "rollback");
     write_new_synced(root, &stage, &backup, &perms)?;
     if sha(&regular_bytes(root, &stage)?.0) != expected_restored {
         return Err(EditCommitError::Uncertain);
     }
+    if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
     if sha(&regular_bytes(root, target)?.0) != expected_current {
         return Err(EditCommitError::SourceConflict);
     }
     root.rename(&stage, root, target).map_err(io)?;
+    if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
     sync_parent(root).map_err(|_| EditCommitError::Uncertain)?;
     if sha(&regular_bytes(root, target).map_err(|_| EditCommitError::Uncertain)?.0)
         != expected_restored {
