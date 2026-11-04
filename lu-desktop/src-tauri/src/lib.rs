@@ -1171,6 +1171,7 @@ struct WriteRecoveryView {
     approval: String,
     effect: String,
     effect_call_id: Option<String>,
+    observed_target: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1359,6 +1360,15 @@ fn lu_write_recovery(
             approval: format!("{:?}", record.decision),
             effect,
             effect_call_id: record.effect_call_id,
+            observed_target: match record.selected_target.as_deref() {
+                Some(t) if state.drafts_dir.join(&record.file_name)
+                    .to_string_lossy().as_ref() == t =>
+                    native_host_write::inspect_recovery_target(
+                        &state.drafts_dir, &record.file_name,
+                        record.bytes, &record.sha256
+                    ).into(),
+                _ => "NOT_SELECTED_OR_UNTRUSTED_PATH".into(),
+            },
         })
     }).collect()
 }
