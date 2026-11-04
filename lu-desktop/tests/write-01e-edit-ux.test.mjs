@@ -50,3 +50,13 @@ test('undo preview requires recovery inspection and remains read-only',()=>{
   assert.ok(host.includes('record.original_sha256.as_deref()'));
   assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
 });
+
+test('verified edit receipts are required for recovery undo preview and folder links',()=>{
+  assert.ok(host.includes('verified_edit_receipt('));
+  assert.ok(host.includes('let receipt_verified=effect_record.as_ref()'));
+  assert.ok(host.includes('let rollback_preview = if receipt_verified &&'));
+  assert.ok(ui.includes("record.receiptVerified ? 'Verified' : 'Not verified'"));
+  assert.ok(ui.includes("record.approval === 'Approved' && record.receiptVerified"));
+  assert.ok(ui.includes('Undo remains disabled pending its own human authorization'));
+  assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
+});
