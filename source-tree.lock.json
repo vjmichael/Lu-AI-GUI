@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "c79fed84b61f1683070f81a1d67b68feb32dd962"
+      "blob": "5318671ad500579900ab8165d4c4f9b3c0026306"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -281,7 +281,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "ba9e42ea241d92a7eb09fc80579d595930d1808b"
+      "blob": "3b77cb904c4c008b1b8214f817ef726cc261871e"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "07db8fb48358a8da54be48e5c866d14cc66f291d"
+      "blob": "a61ac654dd5bc8b0fc835026d24111ed441f2749"
     },
     {
       "path": "lu-desktop/tests/browser-staging.test.mjs",
