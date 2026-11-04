@@ -1370,7 +1370,7 @@ fn lu_open_created_folder(
         record.decision != lu_core::write_approval_ledger::WriteDecision::Approved {
         return Err("No approved file in this conversation".into());
     }
-    let call_id = record.effect_call_id.ok_or("Missing effect receipt")?;
+    let call_id = record.effect_call_id.as_deref().ok_or("Missing effect receipt")?;
     let effect = state.effects.get(&call_id)
         .map_err(|e|format!("effect receipt unavailable: {e:?}"))?
         .ok_or("No verified file creation")?;
