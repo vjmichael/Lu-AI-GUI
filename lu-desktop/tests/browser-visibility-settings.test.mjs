@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const css=readFileSync(new URL('../web/styles.css',import.meta.url),'utf8');
+const browserHost=readFileSync(new URL('../src-tauri/src/native_browser_host.rs',import.meta.url),'utf8');
 
 test('browser visibility setting is read from native SQLite and not invented in the UI',()=>{
   assert.ok(ui.includes("invoke('lu_browser_settings')"));
@@ -28,4 +29,18 @@ test('setting is disclosed as next-session preference and requires native host a
   assert.ok(ui.includes('Native window visibility and human takeover are under development.'));
   assert.ok(css.includes('.browserVisibilityChoices'));
   assert.ok(ui.includes('disabled={savingBrowserMode || browserMode === null}'));
+});
+
+test('runtime status and stop are host-owned, and no unpinned Chromium launches',()=>{
+  assert.ok(host.includes('native_browser_host::DesktopBrowserHost::new('));
+  assert.ok(host.includes('fn lu_browser_runtime_status('));
+  assert.ok(host.includes('fn lu_browser_stop('));
+  assert.ok(ui.includes("invoke('lu_browser_runtime_status')"));
+  assert.ok(ui.includes("invoke('lu_browser_stop')"));
+  assert.ok(ui.includes('disabled={!browserRuntime?.running}'));
+  assert.ok(browserHost.includes('CHROMIUM_PIN:Option<ComponentPin>=None'));
+  assert.ok(browserHost.includes('NODE_PIN:Option<ComponentPin>=None'));
+  assert.ok(browserHost.includes('PLAYWRIGHT_PIN:Option<ComponentPin>=None'));
+  assert.ok(browserHost.includes('Lu browser runtime unavailable: missing reviewed, pinned package'));
+  assert.ok(!host.includes('fn lu_browser_navigate('));
 });
