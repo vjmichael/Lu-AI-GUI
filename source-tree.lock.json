@@ -813,7 +813,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_research_analysis.rs",
-      "blob": "e9f03bbe9579e989413344e39d83b9c381201988"
+      "blob": "779d23d81b052be852cd126cffec0254d82d62d3"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_evidence.rs",
