@@ -60,7 +60,7 @@ test('verified edit receipts are required for recovery undo preview and folder l
   assert.ok(host.includes('let rollback_preview = if receipt_verified &&'));
   assert.ok(ui.includes("record.receiptVerified ? 'Verified' : 'Not verified'"));
   assert.ok(ui.includes("record.approval === 'Approved' && record.receiptVerified"));
-  assert.ok(ui.includes('Undo remains disabled pending its own human authorization'));
+  assert.ok(ui.includes('This restoration has its own authorization. A native confirmation'));
   assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
 });
 
