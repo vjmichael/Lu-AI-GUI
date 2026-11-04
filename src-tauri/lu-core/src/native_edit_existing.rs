@@ -240,6 +240,8 @@ enum StopPoint {
     Never, AfterManifest, AfterBackup, AfterStage, AfterPublish,
     #[cfg(all(test,windows))]
     BeforePublishSameBytesIdentitySwap,
+    #[cfg(all(test,windows))]
+    AfterPublishSameBytesIdentitySwap,
 }
 
 /// Actual mutation primitive. Caller MUST have entered EffectJournal::Executing
@@ -339,6 +341,8 @@ fn commit_in_dir_selected(
         ).map_err(|_|EditCommitError::Uncertain)?;
     }
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
+    #[cfg(windows)]
+    let staged_identity=strict_windows_file_identity(root,&stage_name)?;
 
     // Bounded last recheck. A non-cooperating external writer may still race
     // between this read and rename; backup custody retains the old bytes.
@@ -376,6 +380,15 @@ fn commit_in_dir_selected(
     // This detects identity substitutions even if a different inode has
     // identical bytes. It is not an OS-atomic cross-process compare-and-swap.
     root.rename(&stage_name, root, target).map_err(io)?;
+    #[cfg(all(test,windows))]
+    if stop==StopPoint::AfterPublishSameBytesIdentitySwap {
+        // External writer moves Lu's published version and supplies a
+        // different object whose bytes are identical to the approved output.
+        // No new journal effect is authorized; success must be REFUSED.
+        let displaced=sidecar(operation_id,"published-displaced");
+        root.rename(target,root,&displaced).map_err(io)?;
+        write_new_synced(root,target,replacement,&perms)?;
+    }
     if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
     sync_parent(root).map_err(|_| EditCommitError::Uncertain)?;
     let published = regular_bytes(root, target).map_err(|_| EditCommitError::Uncertain)?.0;
@@ -384,6 +397,10 @@ fn commit_in_dir_selected(
     }
     #[cfg(windows)]
     {
+        if strict_windows_file_identity(root,target)
+            .map_err(|_|EditCommitError::Uncertain)?!=staged_identity {
+            return Err(EditCommitError::Uncertain);
+        }
         let published_file=root.open(target).map_err(|_|EditCommitError::Uncertain)?.into_std();
         crate::windows_file_guard::check_source_metadata(&published_file,&original_metadata)
             .map_err(|_|EditCommitError::Uncertain)?;
@@ -753,6 +770,8 @@ fn rollback_with_stop_selected(
     }
     if stop == StopPoint::AfterStage { return Err(EditCommitError::Uncertain); }
     #[cfg(windows)]
+    let staged_identity=strict_windows_file_identity(root,&stage)?;
+    #[cfg(windows)]
     let _no_write_lease={
         let source=root.open(target).map_err(io)?.into_std();
         crate::windows_file_guard::no_write_lease(&source)
@@ -771,6 +790,12 @@ fn rollback_with_stop_selected(
             .map_err(|_|EditCommitError::SourceConflict)?;
     }
     root.rename(&stage, root, target).map_err(io)?;
+    #[cfg(all(test,windows))]
+    if stop==StopPoint::AfterPublishSameBytesIdentitySwap {
+        let displaced=sidecar(rollback_id,"published-displaced");
+        root.rename(target,root,&displaced).map_err(io)?;
+        write_new_synced(root,target,&backup,&perms)?;
+    }
     if stop == StopPoint::AfterPublish { return Err(EditCommitError::Uncertain); }
     sync_parent(root).map_err(|_| EditCommitError::Uncertain)?;
     if sha(&regular_bytes(root, target).map_err(|_| EditCommitError::Uncertain)?.0)
@@ -779,6 +804,10 @@ fn rollback_with_stop_selected(
     }
     #[cfg(windows)]
     {
+        if strict_windows_file_identity(root,target)
+            .map_err(|_|EditCommitError::Uncertain)?!=staged_identity {
+            return Err(EditCommitError::Uncertain);
+        }
         let current=root.open(target).map_err(|_|EditCommitError::Uncertain)?.into_std();
         crate::windows_file_guard::check_source_metadata(&current,&original_metadata)
             .map_err(|_|EditCommitError::Uncertain)?;
