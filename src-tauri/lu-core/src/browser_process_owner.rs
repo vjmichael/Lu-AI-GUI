@@ -20,17 +20,21 @@ pub struct OwnedBrowserWindow {
 }
 impl OwnedBrowserWindow {
     #[cfg(target_os="linux")]
-    pub fn new(browser:Child,trusted_xdotool:PathBuf)
+    pub fn new(mut browser:Child,trusted_xdotool:PathBuf)
         ->Result<Self,WindowOperationError>{
         if browser.id()==0 || !trusted_xdotool.is_absolute()
           || !trusted_xdotool.is_file(){
+            let _=browser.kill();let _=browser.wait();
             return Err(WindowOperationError::ChildNotOwned);
         }
         Ok(Self{browser,trusted_xdotool})
     }
     #[cfg(windows)]
-    pub fn new(browser:Child)->Result<Self,WindowOperationError>{
-        if browser.id()==0 {return Err(WindowOperationError::ChildNotOwned);}
+    pub fn new(mut browser:Child)->Result<Self,WindowOperationError>{
+        if browser.id()==0 {
+            let _=browser.kill();let _=browser.wait();
+            return Err(WindowOperationError::ChildNotOwned);
+        }
         Ok(Self{browser})
     }
     #[cfg(not(any(windows,target_os="linux")))]
