@@ -48,6 +48,7 @@ struct Active {
 struct SessionControl {
     active: Option<Active>,
     closing: bool,
+    backend_ready: bool,
 }
 struct Session<B: InferenceBackend> {
     session_id: String,
@@ -64,6 +65,12 @@ struct GenerationCleanup<B: InferenceBackend> {
 }
 impl<B: InferenceBackend> Drop for GenerationCleanup<B> {
     fn drop(&mut self) {
+        // The backend may have ejected its own worker in response to an
+        // unverified streaming failure. Observe the real engine phase before
+        // releasing the reservation; otherwise status would falsely say Ready.
+        let ready = self.session.engine.lock()
+            .map(|engine| engine.phase() == EnginePhase::Ready)
+            .unwrap_or(false);
         if let Ok(mut control) = self.session.control.lock() {
             if control
                 .active
@@ -71,6 +78,7 @@ impl<B: InferenceBackend> Drop for GenerationCleanup<B> {
                 .is_some_and(|a| a.generation_id == self.generation_id)
             {
                 control.active = None;
+                control.backend_ready = ready;
             }
         }
     }
@@ -280,6 +288,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             control: Mutex::new(SessionControl {
                 active: None,
                 closing: false,
+                backend_ready: true,
             }),
         }));
         Ok(frame)
@@ -329,6 +338,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             .control
             .lock()
             .map_err(|_| SupervisorError::Poisoned)?;
+        if !control.backend_ready {
+            return Err(SupervisorError::Unavailable);
+        }
         if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
@@ -423,6 +435,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             .control
             .lock()
             .map_err(|_| SupervisorError::Poisoned)?;
+        if !control.backend_ready {
+            return Err(SupervisorError::Unavailable);
+        }
         if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
@@ -683,10 +698,16 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: control.active.as_ref().map(|a| a.generation_id.clone()),
             phase: if control.active.is_some() {
                 EnginePhase::Generating
-            } else {
+            } else if control.backend_ready {
                 EnginePhase::Ready
+            } else {
+                EnginePhase::Idle
             },
-            pid: session.pid,
+            pid: if control.backend_ready || control.active.is_some() {
+                session.pid
+            } else {
+                None
+            },
         })
     }
 }
@@ -722,6 +743,60 @@ mod tests {
             }
             Ok(())
         }
+    }
+    #[test]
+    fn ejected_backend_is_not_reported_as_ready_or_allowed_to_generate() {
+        struct EjectingBackend { loaded: bool }
+        impl InferenceBackend for EjectingBackend {
+            fn has_loaded_model(&self) -> bool { self.loaded }
+            fn load(&mut self, _: &AdmittedModel) -> Result<(), String> {
+                self.loaded = true; Ok(())
+            }
+            fn unload(&mut self) { self.loaded = false; }
+            fn generate(&mut self, _: &GenerationRequest,
+                _: &Cancellation,
+                emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
+            ) -> Result<(), String> {
+                let result = emit(TokenChunk { text:"token".into(), index:0 });
+                if result.is_err() {
+                    self.unload();
+                    return Err("worker ejected after rejected stream".into());
+                }
+                Ok(())
+            }
+        }
+        let root=std::env::temp_dir().join(format!(
+            "lu-ejected-backend-{}-{:?}",std::process::id(),
+            std::thread::current().id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut file=fs::File::create(root.join("model.gguf")).unwrap();
+        file.write_all(b"GGUF").unwrap();
+        file.write_all(&3u32.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(file);
+        let mut admission=ModelAdmissionManager::new();
+        let model=admission.admit(&root,"model.gguf").unwrap().clone();
+        let supervisor=TrustedInferenceSupervisor::new("eject-test".into(),512,
+            vec![("model".into(),model)],
+            || Ok(EjectingBackend { loaded:false })).unwrap();
+        supervisor.load("model","session".into(),"load").unwrap();
+        let failed=supervisor.generate("session","g-1".into(),"req-1",
+            "hello".into(),16,|frame| {
+                let parsed=crate::inference_wire::decode_frame(&frame).unwrap();
+                if let Some(proto::inference_frame::Body::Event(event))=parsed.body {
+                    if matches!(event.kind,Some(proto::inference_event::Kind::TextChunk(_))) {
+                        return Err(BridgeError::Consumer);
+                    }
+                }
+                Ok(())
+            });
+        assert!(failed.is_err());
+        assert_eq!(supervisor.status().unwrap().phase,EnginePhase::Idle);
+        assert_eq!(supervisor.reserve_generation("session","g-2","req-2",
+            "hello",16),Err(SupervisorError::Unavailable));
+        supervisor.unload("session","unload").unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn authorized_model_and_cancellation_without_deadlock() {

@@ -25,7 +25,7 @@ use std::{
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
-    sync::Arc,
+    sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}},
 };
 
 /// Values originate from a host-controlled engine manifest and configuration;
@@ -47,7 +47,7 @@ pub struct PersistentLlamaBackend {
     canonical_executable: PathBuf,
     pinned_model_file: Option<File>,
     pinned_projector_file: Option<File>,
-    process: Option<Child>,
+    process: Option<Arc<Mutex<Child>>>,
     port: Option<u16>,
     #[cfg(windows)]
     job: Option<lu_win_worker_job::Job>,
@@ -141,12 +141,12 @@ impl PersistentLlamaBackend {
         }
     }
     pub fn pid(&self) -> Option<u32> {
-        self.process.as_ref().map(Child::id)
+        self.process.as_ref().and_then(|p| p.lock().ok().map(|child| child.id()))
     }
     pub fn is_running(&mut self) -> bool {
-        self.process
-            .as_mut()
-            .is_some_and(|p| matches!(p.try_wait(), Ok(None)))
+        self.process.as_ref().is_some_and(|p|
+            p.lock().ok().is_some_and(|mut child| matches!(child.try_wait(), Ok(None)))
+        )
     }
     fn active_port(&mut self) -> Result<u16, String> {
         if !self.is_running() {
@@ -154,6 +154,107 @@ impl PersistentLlamaBackend {
         }
         self.port
             .ok_or("persistent inference endpoint missing".into())
+    }
+    /// Independent cancellation watchdog: unlike a cancellation callback
+    /// inside HTTP streaming, this thread can kill a Lu-owned child even if
+    /// the generating thread becomes blocked in the backend.
+    fn run_with_watchdog<T>(
+        child: Arc<Mutex<Child>>,
+        cancellation: &Cancellation,
+        request: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_for_thread = Arc::clone(&completed);
+        let cancellation = cancellation.clone();
+        let watchdog = thread::spawn(move || {
+            while !completed_for_thread.load(Ordering::Acquire) {
+                if cancellation.is_cancelled() {
+                    // Permit the normal HTTP cancellation path to finish,
+                    // then forcibly kill the exact retained child handle.
+                    let deadline = Instant::now() + Duration::from_millis(750);
+                    while Instant::now() < deadline {
+                        if completed_for_thread.load(Ordering::Acquire) {
+                            return;
+                        }
+                        thread::sleep(Duration::from_millis(25));
+                    }
+                    if !completed_for_thread.load(Ordering::Acquire) {
+                        if let Ok(mut owned) = child.lock() {
+                            if matches!(owned.try_wait(), Ok(None)) {
+                                let _ = owned.kill();
+                            }
+                        }
+                    }
+                    return;
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+        });
+        let result = request();
+        completed.store(true, Ordering::Release);
+        let _ = watchdog.join();
+        result
+    }
+    /// Only for Lu's exclusive --parallel 1 server. A finished SSE stream
+    /// is NOT sufficient evidence that upstream stopped decoding (some
+    /// llama.cpp versions continue after client disconnect). Query the
+    /// independently reported slot state before reusing this worker.
+    fn slots_idle(port: u16, api_key: &str) -> bool {
+        let address=SocketAddr::from((Ipv4Addr::LOCALHOST,port));
+        let Ok(mut socket)=TcpStream::connect_timeout(&address,Duration::from_millis(300))
+            else { return false; };
+        if socket.set_read_timeout(Some(Duration::from_millis(300))).is_err() {
+            return false;
+        }
+        if socket.set_write_timeout(Some(Duration::from_millis(300))).is_err() {
+            return false;
+        }
+        let request=format!(
+            "GET /slots HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {api_key}\r\nConnection: close\r\n\r\n"
+        );
+        if socket.write_all(request.as_bytes()).is_err() {
+            return false;
+        }
+        let mut data=Vec::new();
+        let mut limited=socket.take(64 * 1024 + 1);
+        if limited.read_to_end(&mut data).is_err() || data.len()>64 * 1024 {
+            return false;
+        }
+        let Some(split)=data.windows(4).position(|w|w==b"\r\n\r\n")
+            else { return false; };
+        let header=&data[..split];
+        if !(header.starts_with(b"HTTP/1.1 200 ") ||
+             header.starts_with(b"HTTP/1.0 200 ")) {
+            return false;
+        }
+        // Chunked/ambiguous response encoding is not accepted as a proof.
+        if std::str::from_utf8(header).ok().is_some_and(|h|
+            h.to_ascii_lowercase().contains("transfer-encoding: chunked")) {
+            return false;
+        }
+        let body=&data[split+4..];
+        let Ok(slots)=serde_json::from_slice::<serde_json::Value>(body)
+            else { return false; };
+        let Some(slots)=slots.as_array() else { return false; };
+        slots.len()==1 && slots[0].get("is_processing")
+            .and_then(serde_json::Value::as_bool)==Some(false)
+    }
+    fn ensure_stopped_after_stream(&mut self, port: u16,
+        result: Result<(),String>) -> Result<(),String> {
+        if let Err(error)=result {
+            self.unload();
+            return Err(error);
+        }
+        // Scheduling cleanup can trail the last streamed event by a few
+        // milliseconds. Use bounded probes, never perpetual polling.
+        for _ in 0..20 {
+            if Self::slots_idle(port,&self.config.api_key) {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        self.unload();
+        Err("llama.cpp stream ended without verified idle inference slot; worker ejected".into())
     }
     fn wait_ready(&mut self, deadline: Instant, port: u16) -> Result<(), String> {
         loop {
@@ -189,6 +290,7 @@ impl PersistentLlamaBackend {
     }
 }
 impl InferenceBackend for PersistentLlamaBackend {
+    fn has_loaded_model(&self) -> bool { self.process.is_some() }
     fn process_id(&self) -> Option<u32> {
         self.pid()
     }
@@ -263,6 +365,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             .arg(self.config.context_tokens.to_string())
             .arg("--parallel")
             .arg("1")
+            .arg("--slots")
             .arg("--n-gpu-layers")
             .arg(if cfg!(target_os = "windows") {
                 "99"
@@ -327,7 +430,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         {
             self.job = Some(job);
         }
-        self.process = Some(child);
+        self.process = Some(Arc::new(Mutex::new(child)));
         self.observe("engine_spawned", self.pid());
         self.pinned_model_file = Some(file);
         self.pinned_projector_file = projector_file;
@@ -337,12 +440,21 @@ impl InferenceBackend for PersistentLlamaBackend {
             self.unload();
             return Err(error);
         }
+        // A backend without independently observable slot completion cannot
+        // satisfy the v1.0 verified-stop contract. Reject it at load time,
+        // not after silently reusing a potentially still-generating worker.
+        if !Self::slots_idle(port, &self.config.api_key) {
+            self.unload();
+            return Err("llama.cpp backend lacks verified idle-slot capability".into());
+        }
         Ok(())
     }
     fn unload(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(child) = self.process.take() {
+            if let Ok(mut child) = child.lock() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
         }
         self.port = None;
         self.pinned_model_file = None;
@@ -375,7 +487,8 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured image request".to_string())?;
         let mut piece = 0u32;
-        generate_chat_stream_body(
+        let child = self.process.as_ref().cloned().ok_or("llama.cpp worker is not loaded")?;
+        let result = Self::run_with_watchdog(child, cancel, || generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -387,7 +500,8 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        )
+        ));
+        self.ensure_stopped_after_stream(port, result)
     }
     fn generate(
         &mut self,
@@ -407,7 +521,8 @@ impl InferenceBackend for PersistentLlamaBackend {
         )
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut piece = 0u32;
-        generate_chat_stream_body(
+        let child = self.process.as_ref().cloned().ok_or("llama.cpp worker is not loaded")?;
+        let result = Self::run_with_watchdog(child, cancel, || generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -419,7 +534,8 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        )
+        ));
+        self.ensure_stopped_after_stream(port, result)
     }
 }
 impl Drop for PersistentLlamaBackend {
@@ -430,6 +546,73 @@ impl Drop for PersistentLlamaBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn independent_watchdog_terminates_a_real_owned_stuck_child() {
+        // This test requires no GPU or llama weights. It exercises the
+        // OS child handle independently of the blocked HTTP/client thread.
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "ping -n 30 127.0.0.1 > NUL"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = Command::new("sleep");
+            command.arg("30");
+            command
+        };
+        let child = Arc::new(Mutex::new(command.stdin(Stdio::null())
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()));
+        let cancellation = Cancellation::default();
+        let cancellation_for_thread = cancellation.clone();
+        let stopper = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            cancellation_for_thread.cancel();
+        });
+        let owned = Arc::clone(&child);
+        let start = Instant::now();
+        let outcome = PersistentLlamaBackend::run_with_watchdog(
+            Arc::clone(&child), &cancellation, move || {
+                while start.elapsed() < Duration::from_secs(8) {
+                    if owned.lock().unwrap().try_wait().unwrap().is_some() {
+                        return Ok(());
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err("watchdog failed to interrupt owned child".into())
+            },
+        );
+        stopper.join().unwrap();
+        assert!(outcome.is_ok(), "{outcome:?}");
+        let mut owned = child.lock().unwrap();
+        assert!(owned.try_wait().unwrap().is_some());
+        let _ = owned.wait();
+    }
+    #[test]
+    fn slot_verification_requires_one_real_idle_slot() {
+        for (json, expected) in [
+            (r#"[{"id":0,"is_processing":false}]"#,true),
+            (r#"[{"id":0,"is_processing":true}]"#,false),
+            (r#"[{"id":0,"is_processing":false},{"id":1,"is_processing":false}]"#,false),
+            (r#"[{"id":0,"is_processing":"false"}]"#,false),
+        ] {
+            let listener=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();
+            let port=listener.local_addr().unwrap().port();
+            let payload=json.to_string();
+            let handler=thread::spawn(move || {
+                let (mut conn,_) = listener.accept().unwrap();
+                conn.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                let mut buf=[0u8;1024];
+                let n=conn.read(&mut buf).unwrap();
+                assert!(buf[..n].starts_with(b"GET /slots HTTP/1.1"));
+                let response=format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",payload.len(),payload);
+                conn.write_all(response.as_bytes()).unwrap();
+            });
+            assert_eq!(PersistentLlamaBackend::slots_idle(port,&"ab".repeat(32)),expected);
+            handler.join().unwrap();
+        }
+    }
     #[test]
     fn api_key_requires_full_host_entropy() {
         assert!(!valid_api_key("1234"));

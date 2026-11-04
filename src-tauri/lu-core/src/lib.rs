@@ -13,6 +13,11 @@
 pub mod agent_tool_loop;
 pub mod loop_guard;
 pub mod generation_loop_guard;
+pub mod backend_control;
+pub mod backend_restart_ledger;
+pub mod vllm_control;
+#[cfg(target_os = "linux")]
+pub mod vllm_process;
 pub mod ansf;
 pub mod ansf_import;
 pub mod ansf_library;
