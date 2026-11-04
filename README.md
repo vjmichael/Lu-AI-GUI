@@ -4,6 +4,8 @@ Lu is a standalone, locally hosted AI desktop application built with Tauri 2, Re
 
 **Status (2026-11-03):** Lu `0.1.0-alpha.2` accepted by the project owner as the **functional Windows alpha development baseline**, following physical GGUF/MMProj, streaming, chat history, image/doc persistence, FIFO cancellation and Retry tests. It is **not** a production-stable or fully secured v1.0 release. Windows model-load `Not Responding`, missing taskbar icon, import feedback, signing and thumbnail timing remain tracked defects.
 
+**First-party DLC host-interface design (2026-11-03):** [Lu generic bidirectional host RFC](docs/LU_FIRST_PARTY_DLC_HOST_API_RFC_20261103.md), [draft typed Protobuf service schema](docs/contracts/lu-dlc-host-v1.proposed.proto) and [Lu issue #8](https://github.com/vjmichael/Lu-AI-GUI/issues/8). Cognitum supplies reviewed native CE operations; NVP/IDE Workspaces consume host inference/model/session/resources and approved memory/artifact services through a shared logical API. Proposal only; not present in the accepted alpha.
+
 **Current project documents:** [Alpha baseline and observed defects](docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md) · [v1.0 design reconciliation and engineering gates](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md). The historical Jan-mod design is subordinate to later Lu architecture and security decisions.
 
 ## Code map
