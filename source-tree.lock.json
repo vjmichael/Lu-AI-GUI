@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c210aef9e0610c1d1a313665e80dff6417407fea",
+  "sourceCommitBeforeLock": "6cb55326d6e9a7c7e39671376c0eff908413914a",
   "trackedFileCount": 286,
   "files": [
     {
@@ -681,7 +681,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/loop_guard.rs",
-      "blob": "9734072cbf14b06d27047d0d5d139b88eff116c8"
+      "blob": "a226f648ea9ad04298b0834f955d1ea52728ed4d"
     },
     {
       "path": "src-tauri/lu-core/src/mmproj_admission.rs",
