@@ -130,7 +130,8 @@ pub use conversation_authority::{
 };
 pub use core_extension::{CoreExtensionError, CoreExtensionHost};
 pub use dlc_interop::{
-    decode_dlc_frame, encode_dlc_frame, validate_dlc_frame, DlcAdmission,
+    decode_dlc_frame, decode_dlc_packet, encode_dlc_frame, encode_dlc_packet,
+    validate_dlc_frame, DlcAdmission,
     DlcAdmittedRequest, DlcInteropError, DlcPermission, DLC_PROTOCOL_VERSION,
 };
 pub use durable::DurableDispatcher;
