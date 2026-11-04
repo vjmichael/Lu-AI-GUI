@@ -11,7 +11,7 @@
 //! Unverified writes require additional host evidence for long workflows.
 //! Block/Kill never reaches the effect journal or native registry.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -84,7 +84,7 @@ impl LoopPolicy {
     pub fn validate(self) -> Result<Self, &'static str> {
         if !(4..=32).contains(&self.window_size)
             || self.warn_after_stalled == 0
-            || self.block_after_stalled < self.warn_after_stalled + 1
+            || self.block_after_stalled <= self.warn_after_stalled
             || self.block_after_stalled > 128
             || self.kill_after_blocks == 0
             || self.kill_after_blocks > 10
@@ -108,7 +108,6 @@ pub struct LoopGuard {
     no_progress: u32,
     consecutive_blocks: u32,
     recovery_attempted: bool,
-    blocked_last: bool,
 }
 
 impl Default for LoopGuard {
@@ -126,7 +125,6 @@ impl LoopGuard {
             no_progress: 0,
             consecutive_blocks: 0,
             recovery_attempted: false,
-            blocked_last: false,
         })
     }
     pub fn attempted(&self) -> u64 { self.attempts }
@@ -168,14 +166,12 @@ impl LoopGuard {
             else if pingpong { Some(LoopReason::OutputCycle) }
             else { None };
         if let Some(reason) = reason {
-            self.blocked_last = true;
             self.consecutive_blocks = self.consecutive_blocks.saturating_add(1);
             if self.consecutive_blocks >= self.policy.kill_after_blocks {
                 return LoopVerdict::Kill(reason);
             }
             return LoopVerdict::Block(reason);
         }
-        self.blocked_last = false;
         if self.no_progress >= self.policy.block_after_stalled && is_new_approach {
             self.recovery_attempted = true;
         }
@@ -212,7 +208,6 @@ impl LoopGuard {
         while self.recent.len() > self.policy.window_size {
             self.recent.pop_front();
         }
-        self.blocked_last = false;
         if matches!(result, ProgressEvidence::NewInformation | ProgressEvidence::StateChanged) {
             self.no_progress = 0;
             self.consecutive_blocks = 0;
@@ -270,12 +265,12 @@ impl LoopGuard {
                 let after = obj.and_then(|m|m.get("replacement_sha256"))
                     .and_then(Value::as_str);
                 if committed && matches!((before, after), (Some(a), Some(b))
-                    if valid_sha(a) && valid_sha(b) && a != b)
+                    if valid_sha(a) && valid_sha(b) && !a.eq_ignore_ascii_case(b))
                 {
                     return ProgressEvidence::StateChanged;
                 }
                 if committed && matches!((before, after), (Some(a), Some(b))
-                    if valid_sha(a) && valid_sha(b) && a == b)
+                    if valid_sha(a) && valid_sha(b) && a.eq_ignore_ascii_case(b))
                 {
                     return ProgressEvidence::NoProgress;
                 }
