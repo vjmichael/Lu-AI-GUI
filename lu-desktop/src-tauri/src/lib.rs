@@ -904,7 +904,7 @@ async fn lu_generate(
                 return Err("conversation changed during queued generation".into());
             }
             let history = prompt_context::typed_history(&events[..events.len() - 1], &prompt);
-            let model_prompt = prompt.clone();
+            let model_prompt = prompt_context::model_file_creation_hint(&prompt);
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
