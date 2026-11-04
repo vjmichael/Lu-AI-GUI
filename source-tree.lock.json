@@ -481,7 +481,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "c0860d862cea52dca108a9a85d1c89114a726740"
+      "blob": "983335a6f6c2149dd878da7c4190ca80d523f07c"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -725,7 +725,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
-      "blob": "6cbf5935fc3374ff1358fd9d9c1d78cb946835bd"
+      "blob": "14dd2db8a7169fa892674c929a17ee6533878253"
     },
     {
       "path": "src-tauri/lu-core/src/native_files.rs",
