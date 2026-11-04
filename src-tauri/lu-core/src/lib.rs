@@ -63,6 +63,7 @@ pub mod web_http_fetch;
 pub mod browser_visibility_settings;
 pub mod browser_process_owner;
 pub mod browser_host_bridge;
+pub mod browser_worker_supervisor;
 #[cfg(target_os = "linux")]
 pub mod browser_window_x11;
 pub mod web_catalog_crossref;
