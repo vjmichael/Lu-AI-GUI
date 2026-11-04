@@ -152,8 +152,11 @@ impl DesktopBrowserHost {
                 return false;
             }
         }
-        for required in [CHROMIUM_NAME,NODE_NAME,BROWSER_WORKER_NAME,PLAYWRIGHT_ENTRY]{
-            if !expected.contains(required){return false;}
+        let mut required=vec![CHROMIUM_NAME,NODE_NAME,BROWSER_WORKER_NAME,PLAYWRIGHT_ENTRY];
+        #[cfg(target_os="linux")]
+        required.push("xdotool");
+        for file in required{
+            if !expected.contains(file){return false;}
         }
         let mut actual=Vec::new();
         if !enumerate_package_files(&dir,&dir,&mut actual){return false;}
