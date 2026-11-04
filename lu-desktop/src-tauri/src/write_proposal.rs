@@ -54,8 +54,14 @@ impl WriteProposalQueue {
             || raw.len() > MAX_WRITE_PREVIEW_BYTES + 4096 {
             return Err(WriteProposalError::Invalid);
         }
-        let p: ProposedWrite = serde_json::from_str(raw)
-            .map_err(|_| WriteProposalError::Invalid)?;
+        // Exact no-repair boundary; neither syntax repair nor duplicate fields
+        // can create a privileged host-side file proposal.
+        let checked = lu_core::model_json_boundary::parse_exact_boundary_object(
+            raw, MAX_WRITE_PREVIEW_BYTES + 4096,
+        ).map_err(|_| WriteProposalError::Invalid)?;
+        let p: ProposedWrite = serde_json::from_value(
+            serde_json::Value::Object(checked),
+        ).map_err(|_| WriteProposalError::Invalid)?;
         if p.kind != "propose_create_file" || !valid_file(&p.file_name)
             || p.content.len() > MAX_WRITE_PREVIEW_BYTES || p.purpose.trim().is_empty()
             || p.purpose.len() > 256 || p.purpose.chars().any(char::is_control) {
