@@ -448,7 +448,7 @@ async fn model_cannot_provide_its_own_host_session_identifier() {
         )
         .await,
         Err(NativeGenerationError::ModelReplyStructure(
-            "model_tool_fields_rejected",
+            "json_regeneration_exhausted",
         )),
     );
     assert_eq!(turn.step_count(), 0);
@@ -457,10 +457,13 @@ async fn model_cannot_provide_its_own_host_session_identifier() {
     let evidence = persisted
         .events_for("conversation-test", "task-test")
         .unwrap();
-    assert_eq!(evidence.len(), 4);
+    assert_eq!(evidence.len(), 14);
     assert_eq!(evidence[1].kind, ModelAuditKind::ModelOutput);
     assert_eq!(evidence[3].kind, ModelAuditKind::Rejected);
     assert!(evidence[3].payload.contains("UnexpectedFields"));
+    assert_eq!(evidence.iter().filter(|e| e.kind == ModelAuditKind::Rejected).count(), 3);
+    assert_eq!(evidence.iter().filter(|e| e.kind == ModelAuditKind::ToolFeedback).count(), 3);
+    assert!(evidence.last().unwrap().payload.contains("BOUNDARY_BLOCKED"));
     drop(persisted);
     drop(turn);
     drop(registry);
@@ -531,10 +534,12 @@ async fn invented_tool_is_rejected_then_corrected_without_native_dispatch() {
     let audit = journal
         .events_for("conversation-test", "task-test")
         .unwrap();
-    assert_eq!(audit.len(), 7);
+    assert_eq!(audit.len(), 8);
     assert_eq!(audit[3].kind, ModelAuditKind::Rejected);
-    assert_eq!(audit[6].kind, ModelAuditKind::FinalAnswer);
-    assert!(!audit.iter().any(|r| r.kind == ModelAuditKind::ToolFeedback));
+    assert_eq!(audit[4].kind, ModelAuditKind::ToolFeedback);
+    assert_eq!(audit[7].kind, ModelAuditKind::FinalAnswer);
+    assert!(audit[4].payload.contains("UNKNOWN_TOOL"));
+    assert!(audit[4].payload.contains("lu_boundary"));
     drop(journal);
     drop(turn);
     drop(catalog);
@@ -589,13 +594,11 @@ async fn invented_tool_twice_fails_closed_without_native_dispatch() {
     .await;
     assert!(matches!(
         outcome,
-        Err(NativeGenerationError::ModelReply(
-            lu_core::agent_tool_loop::ToolTurnError::Catalog(
-                lu_core::model::ModelToolError::UnknownTool(_)
-            )
+        Err(NativeGenerationError::ModelReplyStructure(
+            "json_regeneration_exhausted"
         ))
     ));
-    assert_eq!(model.calls, 2);
+    assert_eq!(model.calls, 3);
     assert_eq!(turn.step_count(), 0);
     let audit = journal
         .events_for("conversation-test", "task-test")
@@ -605,9 +608,10 @@ async fn invented_tool_twice_fails_closed_without_native_dispatch() {
             .iter()
             .filter(|row| row.kind == ModelAuditKind::Rejected)
             .count(),
-        2
+        3
     );
-    assert!(!audit.iter().any(|r| r.kind == ModelAuditKind::ToolFeedback));
+    assert_eq!(audit.iter().filter(|r| r.kind == ModelAuditKind::ToolFeedback).count(), 3);
+    assert!(audit.last().unwrap().payload.contains("BOUNDARY_BLOCKED"));
     drop(journal);
     drop(turn);
     drop(catalog);
