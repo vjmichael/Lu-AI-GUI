@@ -149,27 +149,28 @@ pub fn inspect_recovery_target(
         || expected_sha.len() != 64 {
         return "INVALID_EVIDENCE";
     }
+    use std::io::Read;
     let path = drafts.join(approved_name);
-    let metadata = match std::fs::symlink_metadata(&path) {
-        Ok(m) => m,
+    match std::fs::symlink_metadata(&path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return "MISSING",
         Err(_) => return "NOT_READABLE",
+        Ok(_) => {}
+    }
+    let mut file = match crate::native_host_read::open_verified_selected_file(&path) {
+        Ok(file) => file,
+        Err(_) => return "NOT_ORDINARY_FILE",
     };
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return "NOT_ORDINARY_FILE";
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if metadata.file_attributes() & 0x400 != 0 { return "NOT_ORDINARY_FILE"; }
-    }
+    let metadata = match file.metadata() {
+        Ok(metadata) => metadata,
+        Err(_) => return "NOT_READABLE",
+    };
     if metadata.len() != u64::from(expected_bytes) {
         return "DIFFERENT_BYTES";
     }
-    let bytes = match std::fs::read(&path) {
-        Ok(data) => data,
-        Err(_) => return "NOT_READABLE",
-    };
+    let mut bytes = Vec::with_capacity(expected_bytes as usize + 1);
+    if (&mut file).take(u64::from(expected_bytes) + 1).read_to_end(&mut bytes).is_err() {
+        return "NOT_READABLE";
+    }
     if bytes.len() != expected_bytes as usize {
         return "DIFFERENT_BYTES";
     }
