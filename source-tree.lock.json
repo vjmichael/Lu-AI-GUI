@@ -1,11 +1,15 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "118c01a698af7d3b044aaecdc15cce5b64f98222",
-  "trackedFileCount": 275,
+  "sourceCommitBeforeLock": "27cb3c95670e9ce2b68be8ff156b0c9b7c56fb80",
+  "trackedFileCount": 278,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
       "blob": "562e643854b51cba9618ebe53b23fc0ca5b4abc0"
+    },
+    {
+      "path": ".github/workflows/lu-dlc-interop-01.yml",
+      "blob": "33da1770f1109028fb58bc48559600191cf03fab"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -56,6 +60,10 @@
       "blob": "5a2d7c1188145034b828a00a558751f9b5142246"
     },
     {
+      "path": "docs/LU_DLC_IPC_01_CROSS_PLATFORM_CONTRACT_20261103.md",
+      "blob": "dc4a73fab79338cdc4cf44cb79b3e3262b8ddff0"
+    },
+    {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
       "blob": "d575a68dd9530e0773cf5821d2cf1920eb428595"
     },
@@ -81,7 +89,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "07d18120c38b4a76973e6ad9f949f1d09936691e"
+      "blob": "d947e61e10c75415cd7008708b3d5f3694cae960"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -453,7 +461,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "e4c5bd1abae51ef1a796432e17062b3700d58acf"
+      "blob": "086583f887ea2c4d8d864452740d75b5d74f1d59"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -572,6 +580,10 @@
       "blob": "278757596e16647e7d2dee5f55251dd44259d1e8"
     },
     {
+      "path": "src-tauri/lu-core/src/dlc_interop.rs",
+      "blob": "73783e1caf19ffe6b110e274c36573598c0bb89a"
+    },
+    {
       "path": "src-tauri/lu-core/src/document_preferences.rs",
       "blob": "bed1563cdc08bf6304b94712751998e4a3f4738a"
     },
@@ -633,7 +645,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "e583742ea9e1f64a5b470513300fdd951a03fcc3"
+      "blob": "f99e76a05ca92f36358d97fc11ddf2bbcc2659d1"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -777,7 +789,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace.rs",
-      "blob": "317c326c8e3975ab87d8f69f42079e0471e708c0"
+      "blob": "4a1db6a2724dd9ba3071e7fbe154d4747f5cb3c6"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",

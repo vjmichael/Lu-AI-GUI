@@ -399,3 +399,33 @@ message DiagnosticTrace {
   uint32 dropped_events = 3; // Recorded loss: a missing stage is not proof.
   repeated DiagnosticEvent events = 4;
 }
+
+// DLC-IPC-01: transport-neutral external Workspace inference contract.
+// Linux AF_UNIX and Windows named-pipe transports MUST authenticate peers
+// separately. These messages carry no authority, worker handles, paths,
+// engine API key, model load/unload command, or executable selection.
+// The Lu host owns the conversation/session and approves every operation.
+// Not exposed as a listening service in the accepted alpha.
+enum DlcCapability {
+  DLC_CAPABILITY_UNSPECIFIED = 0;
+  DLC_CAPABILITY_OBSERVE_STATUS = 1;
+  DLC_CAPABILITY_GENERATE_TEXT = 2;
+  DLC_CAPABILITY_IMAGE_INPUT = 3;
+  DLC_CAPABILITY_CANCEL_OWN_GENERATION = 4;
+}
+message DlcHello {
+  string module_id = 1;
+  string instance_id = 2;
+  repeated DlcCapability requested_capabilities = 3;
+}
+message DlcFrame {
+  uint32 protocol_version = 1;
+  string request_id = 2;
+  oneof body {
+    DlcHello hello = 3;
+    InferenceStatusRequest status = 4;
+    InferenceGenerateRequest generate = 5;
+    InferenceCancelRequest cancel = 6;
+    InferenceEvent event = 7;
+  }
+}

@@ -174,6 +174,17 @@ impl WorkspaceHost {
             .is_some_and(|x| x.module_id == module_id && x.state == WorkspaceState::Active))
     }
 
+    /// Read-only ownership observation for trusted host adapters such as a
+    /// DLC local IPC bridge. This is NOT an operation grant: the host must
+    /// revalidate active instance and normal effect policy at dispatch time.
+    pub fn active_instance_belongs_to(
+        &self,
+        module_id: &str,
+        instance_id: &str,
+    ) -> Result<bool, WorkspaceError> {
+        self.instance_owns(instance_id, module_id)
+    }
+
     /// The workspace package identifier and the running instance identifier
     /// are distinct. A tool call may run only from an active instance of the
     /// module that registered it, AND the host policy must allow the action.
