@@ -1260,6 +1260,60 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_replacement_retains_creation_time_owner_group_and_dacl_across_undo() {
+        let path=temp();
+        fs::write(path.join("notes.txt"),b"before").unwrap();
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let native=|name:&str|{
+            let f=root.open(name).unwrap().into_std();
+            crate::windows_file_guard::snapshot_metadata(&f).unwrap()
+        };
+        let original=native("notes.txt");
+        let edit_id="g-windows-security-and-time-edit-001";
+        commit_in_dir(&root,"notes.txt",edit_id,&sha(b"before"),b"after",
+            &sha(b"review"),StopPoint::Never).unwrap();
+        let edited=native("notes.txt");
+        assert_eq!(original.creation,edited.creation,
+            "creation timestamp must not reset on replacement");
+        let undo_id="g-windows-security-and-time-undo-001";
+        rollback_in_dir(&root,"notes.txt",edit_id,undo_id,
+            &sha(b"after"),&sha(b"before")).unwrap();
+        let restored=native("notes.txt");
+        assert_eq!(original.creation,restored.creation,
+            "creation timestamp must survive separately authorized undo");
+        assert_eq!(fs::read(path.join("notes.txt")).unwrap(),b"before");
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_explicit_acl_refuses_instead_of_silently_replacing_custom_security() {
+        use std::process::Command;
+        let path=temp();
+        let target=path.join("acl-notes.txt");
+        fs::write(&target,b"old").unwrap();
+        // Windows icacls copies inherited ACEs into explicit ACEs: this
+        // changes the security descriptor, not the default stream's bytes.
+        // An ordinarily inherited stage must not silently replace it.
+        let status=Command::new("icacls").arg(&target)
+            .arg("/inheritance:d").status().expect("Windows icacls missing");
+        assert!(status.success(),"cannot establish custom ACL acceptance fixture");
+        let root=Dir::open_ambient_dir(&path,cap_std::ambient_authority()).unwrap();
+        let effect="g-windows-explicit-acl-refusal-001";
+        let result=commit_in_dir(&root,"acl-notes.txt",effect,
+            &sha(b"old"),b"new",&sha(b"review"),StopPoint::Never);
+        assert_eq!(result,Err(EditCommitError::Uncertain),
+            "unsupported custom ACL must be refused before publication");
+        assert_eq!(fs::read(&target).unwrap(),b"old");
+        assert!(path.join(sidecar(effect,"orig")).exists(),
+            "custody must survive uncertain metadata refusal");
+        assert!(path.join(sidecar(effect,"new")).exists(),
+            "staged data must stay available for manual recovery");
+        drop(root);fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn native_transaction_rejects_picker_identity_swap_before_manifest_or_backup() {
         let path=temp();
         fs::write(path.join("original.md"),b"reviewed bytes").unwrap();
