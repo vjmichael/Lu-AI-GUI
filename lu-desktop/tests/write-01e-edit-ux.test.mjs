@@ -45,7 +45,10 @@ test('undo preview requires recovery inspection and remains read-only',()=>{
   assert.ok(ui.includes("editObservations[record.proposalId]?.rollbackPreview"));
   assert.ok(ui.includes('aria-label="Verified original text"'));
   assert.ok(ui.includes('aria-label="Proposed restore change lines"'));
-  assert.ok(ui.includes('Undo remains disabled pending its own human authorization'));
+  assert.ok(ui.includes('A native confirmation'));
+  assert.ok(ui.includes("invoke('lu_confirm_rollback'"));
+  assert.ok(ui.includes("invoke('lu_deny_rollback'"));
+  assert.ok(ui.includes("invoke('lu_rollback_history'"));
   assert.ok(host.includes('inspect_rollback_candidate('));
   assert.ok(host.includes('record.original_sha256.as_deref()'));
   assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
@@ -58,5 +61,19 @@ test('verified edit receipts are required for recovery undo preview and folder l
   assert.ok(ui.includes("record.receiptVerified ? 'Verified' : 'Not verified'"));
   assert.ok(ui.includes("record.approval === 'Approved' && record.receiptVerified"));
   assert.ok(ui.includes('Undo remains disabled pending its own human authorization'));
+  assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
+});
+
+test('separate durable rollback authorization and native confirmation are mandatory',()=>{
+  assert.ok(host.includes('state.rollback_approval_ledger.stage(&approval)'));
+  assert.ok(host.includes('state.rollback_approval_ledger.approve(&selected.record,&effect_id)'));
+  assert.ok(host.includes("app.dialog().message(msg)"));
+  assert.ok(host.includes('execute_approved_rollback_pinned('));
+  assert.ok(host.includes('state.rollback_reviews.take(&review_id,&chat_id)'));
+  assert.ok(ui.includes('I reviewed the complete current file, original version and restoration changes.'));
+  assert.ok(ui.includes('disabled={!rollbackReviewed[editObservations[record.proposalId].rollbackReviewId]}'));
+  assert.ok(ui.includes('onClick={() => confirmRollback(record)}'));
+  assert.ok(ui.includes('onClick={() => denyRollback(record)}'));
+  assert.ok(ui.includes('Restoration history and recovery'));
   assert.ok(!ui.includes("invoke('lu_execute_rollback'"));
 });
