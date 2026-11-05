@@ -11,7 +11,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{browser::BrowserError, IdeWorkspaceRegistry};
+use crate::{browser::{validate_relative, BrowserError}, IdeWorkspaceRegistry};
 
 const MAX_LEDGER_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 40;
@@ -58,6 +58,7 @@ pub struct DevelopmentEvent {
     pub operation: String,
     pub outcome: String,
     pub source_revision: Option<String>,
+    pub source_path: Option<String>,
     pub summary: String,
 }
 
@@ -146,6 +147,7 @@ impl DevelopmentLedger {
     pub fn record(
         &self, project_id: &str, operation: &str, summary: &str,
         source_revision: Option<&str>,
+        source_path: Option<&str>,
     ) -> Result<(), ContinuityError> {
         const ALLOWED: [&str; 5] = [
             "project.register", "project.open", "project.close",
@@ -156,6 +158,7 @@ impl DevelopmentLedger {
             || !ALLOWED.contains(&operation)
             || summary.chars().count() > MAX_NOTE_CHARS
             || summary.chars().any(char::is_control)
+            || source_path.is_some_and(|p| validate_relative(p, false).is_err())
             || source_revision.is_some_and(|s| {
                 s.len() != 64 || !s.bytes().all(|c| c.is_ascii_hexdigit())
             })
@@ -172,6 +175,7 @@ impl DevelopmentLedger {
             operation: operation.to_owned(),
             outcome: "observed_host_success".to_owned(),
             source_revision: source_revision.map(ToOwned::to_owned),
+            source_path: source_path.map(ToOwned::to_owned),
             summary: summary.to_owned(),
         };
         let mut bytes = serde_json::to_vec(&event).map_err(|_| ContinuityError::Unavailable)?;
