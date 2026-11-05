@@ -174,16 +174,13 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed);
         }
-        let progress_reader=if plan.progress_protocol{
-            let pipe=child.stdout.take().ok_or(BackgroundProcessError::SpawnFailed)?;
-            let store=Arc::clone(&self.store);
-            let task_id=plan.task_id.clone();
-            Some(std::thread::spawn(move||read_worker_progress(pipe,&store,&task_id)))
-        }else{None};
+        // Delay progress consumption until the SQLite RUNNING transition.
+        // A fast worker must not lose its first checkpoint to a startup race.
+        let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
         let owner=OwnedWorker{
             workspace_id:plan.workspace_id,
             child,
-            progress_reader,
+            progress_reader:None,
             #[cfg(windows)]
             job,
         };
@@ -193,6 +190,16 @@ impl BackgroundProcessSupervisor {
             let _=terminate_owned(&mut owner);
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::StoreUnavailable);
+        }
+        if let Some(pipe)=progress_pipe{
+            let store=Arc::clone(&self.store);
+            let task_id=plan.task_id.clone();
+            let reader=std::thread::spawn(move||
+                read_worker_progress(pipe,&store,&task_id)
+            );
+            workers.get_mut(&plan.task_id)
+                .expect("just registered running worker")
+                .progress_reader=Some(reader);
         }
         Ok(())
     }
