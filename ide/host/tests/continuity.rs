@@ -141,3 +141,34 @@ fn artifact_scanning_skips_symlink_escape() {
     assert!(snapshot.inventory.files.iter().all(|file| file.relative_path != "Delivered/out.exe"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn local_git_refs_show_tracking_difference_without_claiming_live_remote() {
+    let (root, registry, id, ledger) = fixture();
+    let git = root.join("project/.git");
+    fs::create_dir_all(git.join("refs/heads")).unwrap();
+    fs::create_dir_all(git.join("refs/remotes/origin")).unwrap();
+    fs::write(git.join("HEAD"), b"ref: refs/heads/main\n").unwrap();
+    fs::write(git.join("refs/heads/main"), format!("{}\n", "a".repeat(40))).unwrap();
+    fs::write(git.join("refs/remotes/origin/main"), format!("{}\n", "b".repeat(40))).unwrap();
+    let snapshot = ledger.context(&registry, &id).unwrap();
+    assert_eq!(snapshot.inventory.git.branch.as_deref(), Some("main"));
+    assert_eq!(snapshot.inventory.git.tracking_comparison, "local_tracking_differs");
+    assert_eq!(snapshot.inventory.git.live_remote, "not_queried");
+    assert_eq!(snapshot.inventory.git.working_tree, "not_verified");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn toolchain_candidates_are_found_but_never_certified_usable() {
+    let (root, registry, id, ledger) = fixture();
+    let path = root.join("project/tools");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("compiler.exe"), b"metadata-only fixture").unwrap();
+    let result = ledger.context(&registry, &id).unwrap();
+    assert_eq!(result.inventory.toolchain_readiness, "present_unverified");
+    assert!(result.inventory.files.iter().any(|file|
+        file.category == "toolchain_candidate"));
+    assert!(!result.inventory.execution_performed);
+    fs::remove_dir_all(root).unwrap();
+}
