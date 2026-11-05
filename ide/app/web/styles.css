@@ -179,3 +179,6 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .capabilitySchemaDetails{margin-top:12px;color:#b8d6eb;font-size:11px}
 .capabilitySchemaDetails summary{cursor:pointer;padding:7px;border:1px solid #42617c;border-radius:5px}
 .capabilitySchemaDetails pre{max-height:250px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0d1a2a;border-radius:5px;padding:10px}
+
+/* Evidence values are selectable text, not runnable file links. */
+.continuityEvent code{user-select:text;overflow-wrap:anywhere}
