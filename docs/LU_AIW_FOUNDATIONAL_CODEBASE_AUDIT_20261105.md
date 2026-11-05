@@ -217,35 +217,39 @@ Priority labels: **P0** = release/platform or architectural integration blocker;
 | `passive_diagnostics`, `ModelTurnJournal`, `BenchmarkRun` | Replayable, redacted traces + golden tasks | No sensitive raw prompt logging by default |
 | Desktop chat storage, per-chat FIFO, app state | Host preflight/context + human work-state panel | Don't put task authority, history retrieval or background jobs inside WebView |
 
-## 6. Proposed implementation sequence
+## 6. Approved implementation sequence — tool-first, memory integration second (2026-11-05)
 
-### Gate AIW-F0 — Establish one reconciled integration baseline (P0)
-Own PR/branch integration matrix; choose an exact tested Core/desktop head; resolve Windows Job API mismatch; preserve accepted 0.1.0-alpha.2. Merge or port existing tool and Reader work in dependency order after validating Protobuf/lockfile/source identities. **Do not freeze v1 work behind a giant refactor**, but do not declare 20 draft branches one deployable application either.
+**Owner sequencing decision (supersedes the earlier F1-before-tools proposal):** First finish the remaining **general-purpose Lu Core native tools**, including actual native host/desktop integration and verification. After the toolset is accepted, connect the memory architecture (ANSF, task continuity, operational resources and retrieval/orientation). Do **not** rewrite finished tools when doing memory work. This changes implementation order, **not** the LU-AIW-01 architecture or v1.0 memory requirement.
 
-**Exit:** exact SHA, known module owners, full native Windows/Linux compile gates (or explicit independent blockers), no unreviewed contract conflicts, documented accepted installed baseline.
+### Gate AIW-F0 — Reconcile the existing tool integration baseline
+Create an exact-SHA PR/feature/contract matrix and choose a tested integration head. Reconcile the shared Protobuf, module exports, desktop host, tool catalog, worker containment and effect journal interfaces. Repair the existing Windows Job API mismatch without downgrading containment. Preserve the accepted alpha baseline. Continue implementation on narrow verified branches; do not call parallel draft implementations one shippable program.
 
-### Gate AIW-F1 — Cross-chat work continuity (highest foundational leverage)
-Bring PR #28 operational ledger and PR #17 environment probes behind one trusted desktop interface; attach ANSF FTS/revisions and `ContinuityStore`; implement bounded orientation before each relevant human task and at restart. Expose state as historical/present/verified/changed/denied and cite exact sources.
+**Exit:** Current feature ownership/heads are known; source and compiled binaries are distinguishable; full Windows/Linux build blockers are explicitly recorded; tool backlogs do not have duplicate implementations.
 
-**Exit:** NSIS and Cognitum fresh-conversation rediscovery tests reuse *currently verified* resources; no cross-project data leaks and no previous grant reuse.
+### Gate AIW-F1 — Finish remaining native tools and desktop acceptance FIRST
+Complete or reconcile the original Core domain map (not automatic new features): authorized file read/create/edit/copy/move/rename/trash/restore, Reader, scoped content search, basic local Git inspection, safe archive inspection/operations, internal JSON repair plus standalone schema validation, environment discovery, capability-selected browser/research, loop guard, and supervised background status/cancel/recovery. Domain-specific `exec` requires explicit host authority; generic arbitrary shell is not default. Reuse PR #5/#12/#14–#20/#22/#24/#26/#27 rather than introducing new implementations. For each tool: typed Protobuf/schema, human-turn authorization, bounded effects, structured failure, cancellation, provenance, actual native Windows/Linux tests, and desktop reachability. Do not require advanced IDE GitHub management or Film/NVP full video/audio as Core v1.0 tools.
 
-### Gate AIW-F2 — Make source and actions precise for AI and human
-Versioned `SourceRef/SourceSpan`; Reader anchors and document index; visible source viewer; existing edit proposal/apply/diff/undo workflow; bounded capability subset and next-action-aware errors. Avoid broad arbitrary workflow manifests in v1.
+**Contract discipline while building tools:** Add minimal stable revision/source identifiers, machine-readable result/evidence IDs and actionable errors at boundaries *now*, but avoid implementing the full cross-chat memory pipeline in the middle of the tool closeout. This prevents costly later rewrites while honoring tool-first priority.
 
-**Exit:** line/scene/cell/page precision; safe stale-source handling; one consistent approved edit card; deterministic errors and effect receipts.
+**Exit:** A published inventory marks each Core tool `source only` / `compiled` / `host integrated` / `real-model exercised` / `installed accepted`. Relevant model tool calls are authorized and actually dispatch through the desktop; failures/cancel/recovery are tested. No tool gets a completion mark for source-only work.
 
-### Gate AIW-F3 — Reliable structured local-model tool use
-Backend-supported constrained JSON for tool decisions; short worked descriptor examples; keep schema/auth checks; tune Qwen profile/template and compare unstructured versus constrained actual local-model task outcomes. Build replayable redacted tool traces.
+### Gate AIW-F2 — Incorporate the memory structure AFTER the toolset
+Connect ANSF/SQLite searchable originals and approved decisions; `ContinuityStore` checkpoints, current task/effect receipts, PR #28 operational memory and PR #17 live resource discovery. Build trusted task preflight/context assembly that consults authorized current project records, source revisions, existing resource locations/dependencies, recent verified recipes and task checkpoints before asking a model to rediscover them. Use compact orientation and available tool descriptors with independent per-turn authorization. Historical presence and historical success never confer live executable authority.
 
-**Exit:** documented measured improvements in real tool/task completion, not just parser success; real GGUF + Vulkan/Windows acceptance for tool invocation.
+**Exit:** New conversation reuses prior NSIS/Cognitum tool and workflow evidence after current verification, shows stale/missing/changed results, retrieves the correct project decision and task state, and never leaks another project's data or reuses an old grant.
 
-### Gate AIW-F4 — Integrated end-to-end assistance and launch quality
-Exercise whole lifecycle: intent → context → verified inventory → tool → independent evidence → restart/undo/recovery → reuse; compare with host orientation disabled and identical model/hardware/fixtures; verify installed NSIS application, multimodal model, cancellation, source persistence and privacy boundaries.
+### Gate AIW-F3 — Local-model tool reliability and trace benchmarks
+Add backend-supported constrained JSON tool-decision envelopes (not forced JSON for natural chat), bounded examples/feedback and source-reference resolution over the now-integrated tools. Compare real Qwen tasks with/without structured decoding and/or orientation using fixed model, quantization, backend, hardware, context policy and fixtures. Keep existing Protobuf, permission and effect-journal guards mandatory.
 
-**Exit:** complete reproducible LU-AIW golden suite, full tested provenance and human-visible completion state. Failing or skipped gates are called out explicitly.
+**Exit:** Better *whole-task* success with evidence, not merely syntactically valid JSON; no increase in unsafe or repeated effects; actionable errors recover correctly.
+
+### Gate AIW-F4 — End-to-end v1.0 and installed Windows acceptance
+Exercise intent → source/context → verified inventory → authorized native tools → independent evidence → restart/undo/recovery → reuse. Real NSIS install/launch/uninstall, GGUF/MMProj and Vulkan, background workers, model cancellation, persisted prompts/docs/ANSF and failed worker recovery are tested separately from source compilation.
+
+**Exit:** Full golden-task matrix with exact SHAs, passed/failed/skipped evidence and no unacknowledged critical release gaps.
 
 ### Later: common workflow/DLC layer (post-v1)
-Declarative profiles, user-pinnable modes, common semantic verbs, LSP/tree-sitter code symbols, Film/NVP scene/shot/frame/timecode, Writing and Research workspaces, skill folders and advanced multi-workspace orchestration. Define compatible contracts now; do not make a future DLC capability a blocking requirement for core v1.0.
+Declarative profiles, advanced IDE/GitHub tools, Film/NVP production workflows, LSP/tree-sitter symbol intelligence, user-pinnable workflow profiles, Skills ingestion and complex multi-workspace orchestration. Define interfaces ahead of time if needed; do not make them blockers for completing general-purpose Core tools or Lu v1.0.
 
 ## 7. Minimum golden-task fixtures (new work)
 
