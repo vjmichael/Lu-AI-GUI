@@ -100,6 +100,10 @@ The historical eight-stage checklist remains the official acceptance accounting.
 
 **A3 — Project continuity read model:** represent current state, source and artifact provenance as host-owned read-only objects and define stable export. Probe and reconcile local worktrees and Git read-only. Never assume GitHub contains uncommitted local work. For the first slice, file-based ledger readback and validation can precede SQLite storage; avoid two competing canonical truths.
 
+## A3 read-only Git status refinement
+
+Added native libgit2 worktree inspection in the standalone host for modified/staged/untracked file state, local branch and locally stored upstream comparisons. The trusted host rejects a repo discovered above the exact selected project root. This is read-only metadata inspection, not an authorized Git mutation, Git CLI execution or live GitHub comparison. Source implementation is committed, while Linux/Windows acceptance awaits CI.
+
 ## Acceptance experiments
 
 1. Restart the conversation without its chat history: project orientation reaches the correct branch, next task and last true verified artifact.
