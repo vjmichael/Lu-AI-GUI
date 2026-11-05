@@ -70,6 +70,16 @@ pub struct TaskRecord {
     pub last_heartbeat: Option<String>,
 }
 
+/// Host-generated event. A model consumes a durable notification from Lu,
+/// never polls the worker or decides if its heartbeat is healthy.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TaskEvent {
+    pub sequence:i64,
+    pub task_id:String,
+    pub event:String,
+    pub progress:u8,
+    pub detail:String,
+}
 pub struct TaskStore {
     connection: Mutex<Connection>,
 }
@@ -166,18 +176,23 @@ impl TaskStore {
     }
 
     fn transition(&self, task_id: &str, from: &str, to: TaskState) -> Result<(), TaskStoreError> {
-        let connection = self
+        let mut connection = self
             .connection
             .lock()
             .map_err(|_| TaskStoreError::Poisoned)?;
-        let changed = connection.execute(
+        let tx=connection.transaction()?;
+        let changed=tx.execute(
             "UPDATE lu_tasks SET state=?1, updated_at=CURRENT_TIMESTAMP
              WHERE task_id=?2 AND state=?3",
-            params![to.as_str(), task_id, from],
+            params![to.as_str(),task_id,from],
         )?;
-        if changed == 0 {
-            return Err(TaskStoreError::InvalidTransition);
-        }
+        if changed!=1{return Err(TaskStoreError::InvalidTransition);}
+        tx.execute(
+            "INSERT INTO lu_task_events(task_id,event,progress,detail)
+             SELECT task_id,?1,progress,detail FROM lu_tasks WHERE task_id=?2",
+            params![to.as_str(),task_id],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -249,6 +264,37 @@ impl TaskStore {
              WHERE state='RUNNING'",
             [],
         )?)
+    }
+
+    /// Cursor-based events are delivered by the native host. A caller must
+    /// already have a trusted task/workspace binding: this method rejects
+    /// cross-workspace reads and never leaks checkpoints or output paths.
+    pub fn events_after(
+        &self, task_id:&str, workspace_id:&str, after:i64, limit:usize
+    )->Result<Vec<TaskEvent>,TaskStoreError>{
+        if after<0||limit==0||limit>128||workspace_id.is_empty()
+           ||workspace_id.len()>128{
+            return Err(TaskStoreError::InvalidProgress);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let owned:bool=connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM lu_tasks
+             WHERE task_id=?1 AND workspace_id=?2)",
+            params![task_id,workspace_id],|row|row.get(0)
+        )?;
+        if !owned{return Ok(Vec::new());}
+        let mut statement=connection.prepare(
+            "SELECT sequence,task_id,event,progress,detail FROM lu_task_events
+             WHERE task_id=?1 AND sequence>?2 ORDER BY sequence ASC LIMIT ?3"
+        )?;
+        let rows=statement.query_map(params![task_id,after,limit as i64],|row|{
+            Ok(TaskEvent{sequence:row.get(0)?,task_id:row.get(1)?,
+                event:row.get(2)?,progress:row.get(3)?,
+                detail:row.get::<_,String>(4)?.chars().take(2048).collect()})
+        })?;
+        let mut events=Vec::new();
+        for row in rows{events.push(row?);}
+        Ok(events)
     }
 
     pub fn get(&self, task_id: &str) -> Result<Option<TaskRecord>, TaskStoreError> {
