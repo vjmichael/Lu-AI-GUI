@@ -28,11 +28,9 @@ impl TrustedUserTurnVerifier for PersistedTurnVerifier<'_>{
     fn verify_user_turn(&self,conversation_id:&str,user_turn_id:&str)->bool{
         conversation_id==self.conversation_id &&
         user_turn_id==self.user_turn_id &&
-        self.chats.history(conversation_id).ok()
-            .and_then(|messages|messages.last().cloned())
-            .is_some_and(|last|
-                last.role=="user" && last.text==self.expected_prompt
-                && !last.interrupted)
+        self.chats.reader_user_turn_matches(
+            conversation_id,user_turn_id,self.expected_prompt,
+        ).unwrap_or(false)
     }
 }
 /// Shared OS-picker admission, usable by normal attachment and experimental
@@ -121,7 +119,7 @@ pub(crate) async fn lu_reader_ask_document(
     let (ticket,position)=state.generation_queue
         .enqueue(&session_id,&chat_id,&generation_id)?;
     // Persist the real human message before making a capability available.
-    state.chats.append_user(&chat_id,&prompt)?;
+    state.chats.append_reader_user(&chat_id,&generation_id,&prompt)?;
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     state.reader_generations.lock()
@@ -226,18 +224,33 @@ mod tests{
         let root=std::env::temp_dir().join(next_id("lu-reader-turn-verifier-"));
         let store=ChatStore::open(&root).unwrap();
         let chat=store.create_chat().unwrap();
+        let gid=next_id("g-");
+        let other_gid=next_id("g-");
         let verifier=PersistedTurnVerifier{
             chats:&store,conversation_id:&chat.chat_id,
-            user_turn_id:"g-verified",expected_prompt:"Review this document",
+            user_turn_id:&gid,expected_prompt:"Review this document",
         };
-        assert!(!verifier.verify_user_turn(&chat.chat_id,"g-verified"));
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&gid));
+        // A legacy user event or another ID with matching text is not a
+        // durable authorization for this Reader generation.
         store.append_user(&chat.chat_id,"Review this document").unwrap();
-        assert!(verifier.verify_user_turn(&chat.chat_id,"g-verified"));
-        assert!(!verifier.verify_user_turn(&chat.chat_id,"g-other"));
-        assert!(!verifier.verify_user_turn("c-different","g-verified"));
+        store.append_reader_user(&chat.chat_id,&other_gid,"Review this document").unwrap();
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&gid));
+        store.append_reader_user(&chat.chat_id,&gid,"Review this document").unwrap();
+        assert!(verifier.verify_user_turn(&chat.chat_id,&gid));
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&other_gid));
+        assert!(!verifier.verify_user_turn("c-different",&gid));
+        // Queued turns remain anchored after later conversation messages.
         store.append_user(&chat.chat_id,"Different question").unwrap();
-        assert!(!verifier.verify_user_turn(&chat.chat_id,"g-verified"));
+        assert!(verifier.verify_user_turn(&chat.chat_id,&gid));
         drop(store);
+        let restored=ChatStore::open(&root).unwrap();
+        let verifier=PersistedTurnVerifier{
+            chats:&restored,conversation_id:&chat.chat_id,
+            user_turn_id:&gid,expected_prompt:"Review this document",
+        };
+        assert!(verifier.verify_user_turn(&chat.chat_id,&gid));
+        drop(restored);
         let _=fs::remove_dir_all(root);
     }
     #[test]
