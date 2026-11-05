@@ -1,0 +1,99 @@
+# TOOLS-11 — Lu-owned background supervision and model notifications
+
+**Decision (2026-11-04):** The AI model must not poll or monitor background
+processes. Lu Core is the authoritative supervisor and event publisher. Model
+inference is invoked only for a real question or a meaningful, host-admitted
+notification that warrants reasoning. Idle progress must never burn model tokens.
+
+Original Jan tool domain: `background` in §5.2 (start/status/stop). This
+extension retains the per-task authority, native typed Protobuf, durable
+journal, cancellation, and resource supervision already required by Lu.
+
+## Execution model
+
+1. User/model proposes a job. The **trusted host**, not the model, validates
+   task authorization, backend capabilities, resource limits, and ownership.
+2. The host mints the task ID; records an intent; then starts an *owned*
+   worker through the existing OS process manager. No arbitrary shell.
+3. The worker reports progress, checkpoint, liveness, and outputs through
+   authenticated worker IPC. Lu persists the receipts in SQLite before
+   presenting status as durable.
+4. The UI receives host-created progress cards. No live AI generation is
+   needed to display progress or detect an unhealthy worker.
+5. The host durably queues **completion, failure, interruption, or explicit
+   human-decision-needed** notices for the task's owning conversation.
+6. When a model turn is eligible to consume an event, the host injects a
+   bounded, trusted *notification envelope* as contextual input. It is **not**
+   a model-authored tool result or permission grant. The user may instead
+   receive UI-only delivery without waking or loading an LLM.
+7. Delivery acknowledgements must be persisted. A crash cannot silently
+   discard an unacknowledged event; replay may re-notify but cannot repeat
+   a possibly applied tool effect. Every event has a monotonic sequence.
+
+## Timeouts: media jobs are not model turns
+
+A two-hour video or audio analysis job must not inherit a 60–120 second model
+generation timeout. Three distinct limits apply:
+
+- **Worker operation timeout:** bounded per decode/infer/encode operation,
+  with cancellation and reaping of only the worker owned by Lu.
+- **Liveness/heartbeats:** measured independently. A missed heartbeat may
+  initiate probe/recovery; no fixed inactivity threshold should claim an
+  operation failed without checking its phase and expected progress.
+- **Overall task deadline:** configurable by job class or explicit user
+  constraints, potentially hours; deadline expiry is a host policy decision.
+
+Long media processing splits inputs into bounded segments (timestamps, frame
+ranges or audio windows) with atomic, persisted output. The worker writes
+intermediate artifacts to host-selected paths, not to LLM context. Lu uses
+a resource guardian for GPU/VRAM, RAM, disk and CPU budgets. A model can be
+unloaded or working in another chat during the job. If a worker crashes, Lu
+reconciles the last checkpoint and effect state before deciding if a segment
+may safely resume. **No automatic replay of UNCERTAIN effects.**
+
+A live stream can use a bounded ingest queue and backpressure with explicit
+drop/skip policy if real-time throughput is lower than input rate. Segment
+results are indexed and optionally summarized for the model, never retained
+indefinitely in a giant prompt.
+
+## Notification policy
+
+| Native event | UI progress | Model notification |
+| --- | --- | --- |
+| Started, running, heartbeat | Yes, coalesced | No |
+| Ordinary checkpoint | Yes, throttled | No |
+| Completed | Yes | Once, after durable acceptance |
+| Failed / interrupted | Yes | Once with actionable reason, when eligible |
+| Needs user decision | Yes | May request guidance; never grant itself authority |
+| Resource warning | Yes | Only if a model action is actually useful |
+
+**Safety boundary:** task ownership is checked at the task store and tool
+registry. Model cannot create task IDs, alter event history, obtain raw
+checkpoint bytes, expand workspace grants, or demand a worker kill.
+
+## Implementation status
+
+- Implemented (source): SQLite lifecycle events and sequence cursor in
+  `tasks.rs`; read-only `native_background_status.rs`; host-filtered
+  terminal event projection. Checkpoint notifications are deliberately
+  suppressed for the model.
+- Not yet implemented: actual background spawn/stop/kill, authenticated
+  worker event intake, Tauri UI push, durable notification delivery/ack,
+  model continuation injection, media segment jobs, full Windows process
+  acceptance. Source-level status must not be reported as end-to-end complete.
+- CI: native Rust unit tests must pass on Windows and Linux, plus real
+  installed-app testing later in release acceptance.
+
+## Acceptance scenarios
+
+1. 40-minute synthetic media task progresses with LLM unloaded; zero model
+   inference calls for progress updates.
+2. Restart after checkpoint: host reports INTERRUPTED and preserves outputs,
+   then explicitly reconciles effect state; no blind replay.
+3. Cancel task: OS-owned worker tree terminates, no orphans, no other task
+   receives its cancellation.
+4. Two workspaces: neither sees or receives the other's task or notices.
+5. A burst of 10,000 checkpoints does not cause 10,000 model turns, UI
+   freezes, prompt growth, or unbounded event delivery.
+6. Worker blocked in a long but legitimate operation is not killed because
+   it exceeds a short model token-generation timeout.
