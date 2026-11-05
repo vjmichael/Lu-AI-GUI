@@ -106,7 +106,7 @@ test('browser research enters the same queued durable turn as ordinary chat',()=
   assert.ok(host.includes('supervisor.run_reserved_with_history('));
   assert.ok(host.includes('state.chats.complete(&chat_id,&gid)?'));
   assert.ok(host.includes('state.browser_authority.revoke_task(&grant.task_id)'));
-  assert.ok(host.includes('if !collected_read{'));
+  assert.ok(host.includes('if distinct_urls.len()<2{'));
   assert.ok(ui.includes("invoke('lu_generate_browser'"));
 });
 test('queued browser CAPTCHA recovery requires real human takeover',()=>{
@@ -136,4 +136,25 @@ test('browser research is progress-driven rather than capped at four rounds or e
   assert.ok(host.includes('if !seen.insert(fingerprint)'));
   assert.ok(!host.includes('for round in 0..4usize'));
   assert.ok(!host.includes('Browser observation count exceeded'));
+});
+
+test('multi-page research requires distinct browser-confirmed source URLs',()=>{
+  assert.ok(host.includes('let mut verified_pages:std::collections::BTreeMap<String,String>'));
+  assert.ok(host.includes('let identity=format!("{page}#{digest}")'));
+  assert.ok(host.includes('result.pointer("/result/browser_result/result/url")'));
+  assert.ok(host.includes('result.pointer("/result/browser_result/result/text")'));
+  assert.ok(host.includes('if matches!(actual_status,Some("READ"|"ACCESSIBILITY"))'));
+  assert.ok(host.includes('Browser read escaped approved HTTPS origin'));
+  assert.ok(host.includes('if unique_urls.len()>=2{break;}'));
+  assert.ok(host.includes('if distinct_urls.len()<2{'));
+  assert.ok(host.includes('source_records:Vec<String>=verified_pages.into_values().collect()'));
+  assert.ok(!host.includes('if collected_read{break;}'));
+});
+test('source summaries do not turn navigation into evidence or consume unbounded model context',()=>{
+  assert.ok(host.includes('if calls.is_empty(){'));
+  assert.ok(host.includes('Browser research stopped before two distinct verified pages'));
+  assert.ok(host.includes('if !verified_pages.contains_key(&identity){'));
+  assert.ok(host.includes('if text.len().saturating_add(fragment.len())>14*1024'));
+  assert.ok(host.includes('Do not cite or claim to have assessed their contents.'));
+  assert.ok(host.includes('state.chats.append_browser_observation('));
 });
