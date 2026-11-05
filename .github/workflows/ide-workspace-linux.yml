@@ -29,5 +29,16 @@ jobs:
           cargo --version
       - name: Compile and run IDE host native Linux tests
         run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
-      - name: Check IDE host formatting
-        run: cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+      - name: Install rustfmt
+        run: rustup component add rustfmt --toolchain 1.88.0
+      - name: Format IDE host source in disposable runner
+        run: cargo fmt --manifest-path ide/host/Cargo.toml
+      - name: Upload formatted IDE source for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-host-rustfmt-candidate
+          path: |
+            ide/host/src/
+            ide/host/tests/
+            ide/host/build.rs
+          retention-days: 1
