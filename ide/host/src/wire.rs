@@ -53,6 +53,7 @@ fn validate_request(msg: &proto::WorkspaceRequest) -> Result<(), WireError> {
         Operation::List(_) | Operation::Select(_) => {}
         Operation::Reopen(op) if valid_project_id(&op.project_id) => {}
         Operation::Close(op) if valid_project_id(&op.project_id) => {}
+        Operation::Unregister(op) if valid_project_id(&op.project_id) => {}
         _ => return Err(WireError::Invalid("project ID")),
     }
     Ok(())
