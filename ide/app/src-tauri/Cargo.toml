@@ -1,0 +1,23 @@
+[package]
+name = "lu-ide-desktop"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Standalone desktop IDE, optionally interoperable with Lu"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "2.7.1"
+lu-ide-workspace = { path = "../../host" }
+serde = { version = "1", features = ["derive"] }
+
+[profile.dev]
+debug = 0
+[profile.release]
+lto = "thin"
+strip = true
