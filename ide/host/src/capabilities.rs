@@ -55,6 +55,10 @@ fn metadata() -> Vec<CapabilityMeta> {
                 "Read-only comparison of latest bounded project evidence with saved baseline.",
                 "read", "open project; baseline optional",
                 "matched/changed/missing/new/unverifiable observed bytes"),
+            capability!("git.status", "ide_read_git_status", "Inspect source control",
+                "Read local Git modified, staged and untracked paths with trusted native libgit2.",
+                "read", "registered open project; no network or Git write",
+                "bounded local worktree status and stored upstream comparison"),
             capability!("continuity.read", "ide_read_project_context", "Read project continuity",
                 "Read bounded host observations and revisioned untrusted project notes.",
                 "read", "registered and active project",
@@ -163,7 +167,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 19);
+        assert_eq!(catalog.capabilities.len(), 20);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
