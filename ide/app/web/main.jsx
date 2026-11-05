@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
+import { CodeEditor, createEditorState } from './code_editor.jsx';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -9,6 +10,9 @@ const sections = [
   { id: 'source', title: 'Source control', glyph: '⑂', pending: true },
   { id: 'tasks', title: 'Build & tests', glyph: '▶', pending: true },
 ];
+
+const keyFor = (projectId, path) => projectId + ':' + path;
+const leafFor = path => path.split('/').pop() || path;
 
 function App() {
   const [section, setSection] = useState('projects');
@@ -19,8 +23,18 @@ function App() {
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
-  const [preview, setPreview] = useState(null);
   const [explorerPending, setExplorerPending] = useState(false);
+  const [tabs, setTabs] = useState([]);
+  const [activeTabKey, setActiveTabKey] = useState(null);
+  const [savingKey, setSavingKey] = useState(null);
+  // CodeMirror EditorState is retained for each tab, including its undo stack.
+  const editorStates = useRef(new Map());
+
+  const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
+  const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
+  const anyDirty = tabs.some(tab => tab.dirty);
+  const isExplorer = section === 'explorer';
+  const parentPath = directory.split('/').slice(0, -1).join('/');
 
   async function refresh() {
     setPending(true);
@@ -32,16 +46,29 @@ function App() {
         project.projectId === activeProject.projectId && project.active)) {
         setActiveProject(null);
         setListing(null);
-        setPreview(null);
         setSection('projects');
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
   }
+
   useEffect(() => { void refresh(); }, []);
 
+  function discardProjectTabs(projectId) {
+    const affected = tabs.filter(tab => tab.projectId === projectId);
+    if (affected.some(tab => tab.dirty) &&
+      !window.confirm('Discard unsaved changes in this project?')) return false;
+    affected.forEach(tab => editorStates.current.delete(tab.key));
+    setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
+    if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
+      setActiveTabKey(null);
+    }
+    return true;
+  }
+
   async function operation(command, args) {
-    if (pending) return;
+    if (pending || savingKey) return;
+    if (command === 'ide_close_project' && !discardProjectTabs(args.projectId)) return;
     setPending(true);
     setProblem('');
     setHint('');
@@ -53,7 +80,6 @@ function App() {
       }
       if (command === 'ide_close_project' && activeProject?.projectId === args?.projectId) {
         setActiveProject(null);
-        setPreview(null);
         setListing(null);
         setSection('projects');
       }
@@ -62,19 +88,29 @@ function App() {
   }
 
   async function openDirectory(project, path) {
+    if (explorerPending) return;
     setExplorerPending(true);
     setProblem('');
     try {
       const result = await invoke('ide_list_source_directory', {
         projectId: project.projectId, relativeDir: path
       });
+      if (activeProject?.projectId !== project.projectId) {
+        const previous = tabs.filter(tab => tab.projectId === project.projectId);
+        setActiveTabKey(previous.length ? previous[previous.length - 1].key : null);
+      }
       setActiveProject(project);
       setDirectory(path);
       setListing(result);
-      setPreview(null);
       setSection('explorer');
     } catch (error) { setProblem(String(error)); }
     finally { setExplorerPending(false); }
+  }
+
+  function onEditorChange(key, state, draft) {
+    editorStates.current.set(key, state);
+    setTabs(previous => previous.map(tab =>
+      tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText } : tab));
   }
 
   async function selectEntry(entry) {
@@ -82,34 +118,127 @@ function App() {
     if (entry.kind === 'directory') {
       await openDirectory(activeProject, entry.relativePath);
     } else if (entry.kind === 'file') {
+      const key = keyFor(activeProject.projectId, entry.relativePath);
+      if (tabs.some(tab => tab.key === key)) {
+        setActiveTabKey(key);
+        return;
+      }
       setExplorerPending(true);
       setProblem('');
       try {
-        const result = await invoke('ide_preview_source_file', {
+        const opened = await invoke('ide_preview_source_file', {
           projectId: activeProject.projectId,
           relativePath: entry.relativePath,
         });
-        setPreview(result);
-      } catch (error) {
-        setPreview(null);
-        setProblem(String(error));
-      } finally { setExplorerPending(false); }
+        const newTab = {
+          key, projectId: opened.projectId,
+          relativePath: opened.relativePath, revision: opened.revision,
+          savedText: opened.text, draft: opened.text,
+          dirty: false, generation: 0,
+        };
+        editorStates.current.set(key, createEditorState(
+          opened.text, opened.relativePath,
+          (state, draft) => onEditorChange(key, state, draft)
+        ));
+        setTabs(previous => [...previous, newTab]);
+        setActiveTabKey(key);
+      } catch (error) { setProblem(String(error)); }
+      finally { setExplorerPending(false); }
     }
+  }
+
+  function closeTab(key) {
+    const selected = tabs.find(tab => tab.key === key);
+    if (!selected) return;
+    if (savingKey === key) return;
+    if (selected.dirty && !window.confirm(
+      'Discard unsaved changes in ' + selected.relativePath + '?')) return;
+    editorStates.current.delete(key);
+    const other = tabs.filter(tab => tab.key !== key);
+    setTabs(other);
+    if (activeTabKey === key) {
+      const candidates = other.filter(tab => tab.projectId === selected.projectId);
+      setActiveTabKey(candidates.length ? candidates[candidates.length - 1].key : null);
+    }
+  }
+
+  async function reloadTab(tab) {
+    if (!tab || savingKey) return;
+    if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
+    setExplorerPending(true);
+    setProblem('');
+    try {
+      const opened = await invoke('ide_preview_source_file', {
+        projectId: tab.projectId, relativePath: tab.relativePath,
+      });
+      editorStates.current.set(tab.key, createEditorState(
+        opened.text, opened.relativePath,
+        (state, draft) => onEditorChange(tab.key, state, draft)
+      ));
+      setTabs(previous => previous.map(item => item.key === tab.key ? {
+        ...item, revision: opened.revision, savedText: opened.text,
+        draft: opened.text, dirty: false, generation: item.generation + 1,
+      } : item));
+      setHint('Reloaded ' + tab.relativePath + ' from disk.');
+    } catch (error) { setProblem(String(error)); }
+    finally { setExplorerPending(false); }
+  }
+
+  async function saveTab(tab) {
+    if (!tab || !tab.dirty || savingKey || explorerPending) return;
+    const content = tab.draft;
+    const base = tab.revision;
+    setSavingKey(tab.key);
+    setProblem('');
+    setHint('');
+    try {
+      const saved = await invoke('ide_save_source_file', {
+        projectId: tab.projectId,
+        relativePath: tab.relativePath,
+        expectedRevision: base,
+        text: content,
+      });
+      // If typing continued during the save, the newer draft is kept dirty.
+      setTabs(previous => previous.map(item => item.key === tab.key ? {
+        ...item, revision: saved.revision, savedText: content,
+        dirty: item.draft !== content,
+      } : item));
+      setHint('Saved ' + tab.relativePath + ' to disk.');
+    } catch (error) {
+      if (String(error).includes('FILE_CHANGED_ON_DISK')) {
+        setProblem('FILE_CHANGED_ON_DISK: This file changed outside Lu IDE. ' +
+          'Your unsaved edits are preserved in the tab. Compare them before reloading.');
+      } else {
+        setProblem(String(error));
+      }
+    } finally { setSavingKey(null); }
   }
 
   useEffect(() => {
     const shortcut = event => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === 'o') {
         event.preventDefault();
-        if (!pending && !explorerPending) void operation('ide_choose_project');
+        if (!pending && !explorerPending && !savingKey) void operation('ide_choose_project');
+      } else if (key === 's') {
+        event.preventDefault();
+        if (activeTab) void saveTab(activeTab);
       }
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [pending, explorerPending]);
+  }, [pending, explorerPending, savingKey, activeTab, tabs]);
 
-  const isExplorer = section === 'explorer';
-  const parentPath = directory.split('/').slice(0, -1).join('/');
+  useEffect(() => {
+    const warn = event => {
+      if (!anyDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [anyDirty]);
 
   return <div className="ideShell">
     <aside className="ideRail">
@@ -137,16 +266,17 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isExplorer ? (activeProject?.displayName || 'Source explorer') : 'Workspace projects'}</h1>
-          <p>{isExplorer ? 'Read-only project browsing · No executable workers' : 'Choose projects without executing their code.'}</p>
+          <h1>{isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
+            'Choose projects without executing their code.'}</p>
         </div>
         <div className="ideControls">
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
-          <button className="ghostBtn" disabled={pending || explorerPending}
+          <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
-          <button className="primaryBtn" disabled={pending || explorerPending}
+          <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
         </div>
       </header>
@@ -170,70 +300,109 @@ function App() {
                   <div className="projectIcon" aria-hidden="true">▤</div>
                   <div className="projectDetails">
                     <h3>{project.displayName}</h3>
-                    <p>{project.available ? (project.active ? 'Open · read-only browsing available' : 'Closed · ready to reopen') : 'Directory unavailable'}</p>
+                    <p>{project.available ? (project.active ? 'Open · editor available' :
+                      'Closed · ready to reopen') : 'Directory unavailable'}</p>
                     <small>{project.projectId.slice(0, 12)}…</small>
                   </div>
                   <div className="projectActions">
                     {project.active && <button className="primaryBtn"
                       disabled={explorerPending || pending}
-                      onClick={() => openDirectory(project, '')}>Explore</button>}
+                      onClick={() => openDirectory(project, '')}>Edit</button>}
                     {project.active
-                      ? <button className="ghostBtn" disabled={pending}
-                          onClick={() => operation('ide_close_project', {projectId: project.projectId})}>Close</button>
+                      ? <button className="ghostBtn" disabled={pending || !!savingKey}
+                          onClick={() => operation('ide_close_project',
+                            {projectId: project.projectId})}>Close</button>
                       : <button className="ghostBtn" disabled={pending || !project.available}
-                          onClick={() => operation('ide_open_project', {projectId: project.projectId})}>Reopen</button>}
+                          onClick={() => operation('ide_open_project',
+                            {projectId: project.projectId})}>Reopen</button>}
                   </div>
                 </article>)}
               </div>}
-          <div className="infoNotice"><strong>Execution restricted.</strong>
-            This alpha supports scoped read-only source previews only. It has no terminal,
-            debugger, package installer or executable extension loader.</div>
+          <div className="infoNotice"><strong>Human-owned editing only.</strong>
+            Saving is explicit and revision-checked. This alpha does not execute scripts,
+            install packages, or run a language server.</div>
         </section>
-        : <section className="sourceWorkspace" aria-label="Read-only source explorer">
-            <div className="sourceTree">
-              <div className="sourceTreeHeader">
-                <strong>Files</strong><span>Read-only</span>
-              </div>
-              <div className="sourcePath" title={directory || '/'}>
-                <button type="button" className="pathLink" disabled={explorerPending}
-                  onClick={() => activeProject && openDirectory(activeProject, '')}>
-                  {activeProject?.displayName}
+        : <section className="sourceWorkspace" aria-label="Source explorer and editor">
+          <div className="sourceTree">
+            <div className="sourceTreeHeader">
+              <strong>Files</strong><span>Project</span>
+            </div>
+            <div className="sourcePath" title={directory || '/'}>
+              <button type="button" className="pathLink" disabled={explorerPending}
+                onClick={() => activeProject && openDirectory(activeProject, '')}>
+                {activeProject?.displayName}
+              </button>
+              {directory && <span> / {directory}</span>}
+            </div>
+            {directory && <button type="button" className="fileRow backRow"
+              disabled={explorerPending} onClick={() => openDirectory(activeProject, parentPath)}>↰ ..</button>}
+            {listing?.entries.map(entry =>
+              <button type="button" key={entry.relativePath}
+                className={'fileRow' + (activeTab?.relativePath === entry.relativePath ? ' active' : '')}
+                disabled={explorerPending || (entry.kind !== 'directory' && entry.kind !== 'file')}
+                title={entry.relativePath}
+                onClick={() => selectEntry(entry)}>
+                <span aria-hidden="true" className="fileGlyph">{entry.kind === 'directory' ? '▸' :
+                  entry.kind === 'file' ? '▤' : '⤷'}</span>
+                <span className="fileName">{entry.name}</span>
+              </button>)}
+            {listing?.truncated && <p className="treeCaution">Large directory: showing first 400 entries.</p>}
+            {!explorerPending && listing && listing.entries.length === 0 &&
+              <p className="treeCaution">Empty directory.</p>}
+          </div>
+          <div className="sourcePreview" role="region" aria-label="Source code editor">
+            <div className="editorTabs" role="tablist" aria-label="Open source files">
+              {projectTabs.map(tab => <div className={'editorTab' +
+                (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
+                <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
+                  className="editorTabSelect" title={tab.relativePath}
+                  onClick={() => setActiveTabKey(tab.key)}>
+                  <span>{leafFor(tab.relativePath)}</span>
+                  {tab.dirty && <span className="unsavedDot" title="Unsaved changes">●</span>}
                 </button>
-                {directory && <span> / {directory}</span>}
+                <button type="button" className="editorTabClose"
+                  disabled={savingKey === tab.key} title={'Close ' + tab.relativePath}
+                  aria-label={'Close ' + tab.relativePath} onClick={() => closeTab(tab.key)}>×</button>
+              </div>)}
+            </div>
+            {activeTab && activeTab.projectId === activeProject?.projectId ? <>
+              <div className="sourcePreviewHeader">
+                <strong>{activeTab.relativePath}</strong>
+                <span className="editorToolbar">
+                  <span>{activeTab.draft.length.toLocaleString()} chars ·
+                    {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                  <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
+                    onClick={() => reloadTab(activeTab)}>Reload</button>
+                  <button className="primaryBtn editorToolButton"
+                    disabled={!activeTab.dirty || explorerPending || !!savingKey}
+                    onClick={() => saveTab(activeTab)}>
+                    {savingKey === activeTab.key ? 'Saving…' : 'Save · Ctrl+S'}
+                  </button>
+                </span>
               </div>
-              {directory && <button type="button" className="fileRow backRow"
-                disabled={explorerPending} onClick={() => openDirectory(activeProject, parentPath)}>↰ ..</button>}
-              {listing?.entries.map(entry =>
-                <button type="button" key={entry.relativePath}
-                  className={'fileRow' + (preview?.relativePath === entry.relativePath ? ' active' : '')}
-                  disabled={explorerPending || (entry.kind !== 'directory' && entry.kind !== 'file')}
-                  title={entry.relativePath}
-                  onClick={() => selectEntry(entry)}>
-                  <span aria-hidden="true" className="fileGlyph">{entry.kind === 'directory' ? '▸' : entry.kind === 'file' ? '▤' : '⤷'}</span>
-                  <span className="fileName">{entry.name}</span>
-                </button>)}
-              {listing?.truncated && <p className="treeCaution">Large directory: showing first 400 entries.</p>}
-              {!explorerPending && listing && listing.entries.length === 0 &&
-                <p className="treeCaution">Empty directory.</p>}
-            </div>
-            <div className="sourcePreview" role="region" aria-label="Source file preview">
-              {preview ? <>
-                <div className="sourcePreviewHeader"><strong>{preview.relativePath}</strong>
-                  <span>{preview.byteLength.toLocaleString()} bytes · Preview only</span></div>
-                <pre className="sourceCode"><code>{preview.text}</code></pre>
-              </> : <div className="sourcePreviewEmpty">
-                <div className="emptySymbol">⌘</div>
-                <h3>Select a source file</h3>
-                <p>Browse folders on the left. Files open as escaped, read-only text;
-                  nothing is executed, indexed by an external worker or sent to Lu.</p>
-                {explorerPending && <p role="status">Loading…</p>}
-              </div>}
-            </div>
-          </section>}
+              <CodeEditor
+                key={activeTab.key + ':' + activeTab.generation}
+                tabIdentity={activeTab.key + ':' + activeTab.generation}
+                editorState={editorStates.current.get(activeTab.key)}
+              />
+              <div className="editorInfoBar">Edits stay in memory until Save.
+                External changes cause a conflict instead of silently overwriting them.
+              </div>
+            </> : <div className="sourcePreviewEmpty">
+              <div className="emptySymbol">⌘</div>
+              <h3>Select a source file</h3>
+              <p>Open a file from the Explorer to edit it. Each tab keeps its own undo/redo history.
+                The editor never executes code or sends your files to Lu.</p>
+              {explorerPending && <p role="status">Loading…</p>}
+            </div>}
+          </div>
+        </section>}
       <footer className="ideStatusBar"><span>● Local standalone application</span>
-        <span>{pending || explorerPending ? 'Working…' : 'Ready'} · Ctrl+O to select a folder</span>
+        <span>{savingKey ? 'Saving…' : pending || explorerPending ? 'Working…' :
+          anyDirty ? '● Unsaved changes' : 'Ready'} · Ctrl+O folder · Ctrl+S save</span>
       </footer>
     </main>
   </div>;
 }
+
 createRoot(document.getElementById('root')).render(<App />);
