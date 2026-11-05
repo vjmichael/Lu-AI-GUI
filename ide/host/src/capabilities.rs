@@ -188,7 +188,7 @@ mod tests {
             assert!(matches!(item.effect,
                 "read" | "session_write" | "catalog_write" | "file_write"));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 20);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 23);
     }
 
     #[test]
