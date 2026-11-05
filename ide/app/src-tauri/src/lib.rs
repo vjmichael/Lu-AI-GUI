@@ -70,6 +70,21 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// Read-only Git source control status of an already selected workspace.
+/// No subprocess, model bridge, network operation, or repository mutation.
+#[tauri::command]
+async fn ide_read_git_status(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_status::GitWorktreeInspection, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(registry.inspect_git_worktree(&project_id))
+    })
+    .await
+    .map_err(|_| "GIT_STATUS_UNAVAILABLE".to_owned())?
+}
+
 /// Bounded, source-revisioned continuity from the trusted local IDE profile.
 #[tauri::command]
 async fn ide_read_project_context(
@@ -423,6 +438,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
             ide_read_project_context,
+            ide_read_git_status,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
             ide_list_projects,
