@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "69b48cb17e5d9797a5bbe996f2b036c6ca74f283",
-  "trackedFileCount": 315,
+  "sourceCommitBeforeLock": "de5a6843652b1667cf9324bee0cbdbcd425028f7",
+  "trackedFileCount": 316,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -741,7 +741,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/model.rs",
-      "blob": "21f74f35f32106b69df61b2d2ba6155fa6244527"
+      "blob": "826ff87f5456d90999eb81e550efac7ff7ed2273"
     },
     {
       "path": "src-tauri/lu-core/src/model_admission.rs",
@@ -1226,6 +1226,10 @@
     {
       "path": "src-tauri/lu-core/tests/task_checkpoints.rs",
       "blob": "c6ad146785f59abac417e92d117c9dc9d0a825a4"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/unified_native_catalog.rs",
+      "blob": "cddced18c5db2503dee7a4ddd67deb25b0943c54"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_quarantine.rs",
