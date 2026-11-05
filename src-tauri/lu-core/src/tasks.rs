@@ -80,6 +80,19 @@ pub struct TaskEvent {
     pub progress:u8,
     pub detail:String,
 }
+/// Sanitized native operator view. Never includes checkpoints, raw worker
+/// output, files, or executable paths. Only Lu's trusted desktop host should
+/// expose this to the local user; model-facing tools remain workspace scoped.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TaskDashboardEntry{
+    pub task_id:String,
+    pub workspace_id:Option<String>,
+    pub state:TaskState,
+    pub progress:u8,
+    pub detail:String,
+    pub last_heartbeat:Option<String>,
+    pub updated_at:String,
+}
 pub struct TaskStore {
     connection: Mutex<Connection>,
 }
@@ -302,6 +315,39 @@ impl TaskStore {
         let mut events=Vec::new();
         for row in rows{events.push(row?);}
         Ok(events)
+    }
+
+    /// Host-local overview: active tasks first, followed by recent history.
+    /// This query is read-only; no model authorization is inferred from it.
+    pub fn dashboard(&self,limit:usize)->Result<Vec<TaskDashboardEntry>,TaskStoreError>{
+        if limit==0||limit>200{return Err(TaskStoreError::InvalidProgress);}
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT task_id,workspace_id,state,progress,detail,last_heartbeat,updated_at
+             FROM lu_tasks
+             ORDER BY CASE state
+               WHEN 'RUNNING' THEN 0 WHEN 'PENDING' THEN 1
+               WHEN 'PAUSED' THEN 2 WHEN 'INTERRUPTED' THEN 3
+               WHEN 'FAILED' THEN 4 ELSE 5 END,
+               updated_at DESC,task_id ASC LIMIT ?1"
+        )?;
+        let rows=stmt.query_map(params![limit as i64],|row|{
+            Ok((row.get::<_,String>(0)?,row.get::<_,Option<String>>(1)?,
+                row.get::<_,String>(2)?,row.get::<_,u8>(3)?,
+                row.get::<_,String>(4)?,row.get::<_,Option<String>>(5)?,
+                row.get::<_,String>(6)?))
+        })?;
+        let mut result=Vec::new();
+        for row in rows{
+            let (task_id,workspace_id,state,progress,detail,last_heartbeat,updated_at)=row?;
+            result.push(TaskDashboardEntry{
+                task_id,workspace_id,
+                state:TaskState::parse(&state).ok_or(TaskStoreError::InvalidStoredState)?,
+                progress,detail:detail.chars().take(2048).collect(),
+                last_heartbeat,updated_at,
+            });
+        }
+        Ok(result)
     }
 
     pub fn get(&self, task_id: &str) -> Result<Option<TaskRecord>, TaskStoreError> {
