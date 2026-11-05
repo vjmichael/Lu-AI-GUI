@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "69a63e75903bd3cbe57b997b2a683eaf28e05b74",
+  "sourceCommitBeforeLock": "28fc483338039ff0a890b04223fe84d4b5850c46",
   "trackedFileCount": 318,
   "files": [
     {
@@ -809,7 +809,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
-      "blob": "17a48a73b1a0ffc2ad63c925778c0ac5824d7627"
+      "blob": "11a685d2fb677e85eb609cd8e254118116516a4e"
     },
     {
       "path": "src-tauri/lu-core/src/native_files.rs",
@@ -1165,7 +1165,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_file_transfer.rs",
-      "blob": "2f1057fb108176feef97afb66bfb49e6e4d74749"
+      "blob": "c6af7d679231d02bd71d177f1caa74f060bfb70e"
     },
     {
       "path": "src-tauri/lu-core/tests/native_git_inspect.rs",
