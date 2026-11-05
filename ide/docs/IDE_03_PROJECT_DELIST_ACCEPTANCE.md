@@ -31,7 +31,13 @@ Native Rust tests in `ide/host/tests/lifecycle.rs` verify:
 
 Frontend `ide/app/tests/standalone.test.mjs` asserts the command is allowlisted, the UI uses an explicit confirmation, and the native unregister code has no project-directory delete API.
 
-**CI status:** Consult the exact revision in [standalone IDE workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml); do not inherit results from R3.1.
+**CI passed:**
+- Standalone native matrix https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41977486463 — Linux native Rust including removal tests, frontend tests, Rust formatting and Windows Tauri compile succeeded.
+- Windows R3.2 optimized release https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41977607288 — successful unsigned executable build at source SHA `8579a630b91a94ce7338123dfccb47855678106b`.
+- Verified executable: 10,420,736 bytes, Windows PE `MZ` header, SHA-256 `a1689f68757229f2a0b2c1e027182b516f0e272fed79bab6f5db58022bf04707`.
+- User-facing package `Lu-IDE-Standalone-R3.2-Remove-Project.zip`: ZIP integrity passed, SHA-256 `f75cc87eb808ee5e150a8f1e9275d109cf036bcc2f2d0c14e62fa63c63605a91`. It includes a disposable project with `DO_NOT_DELETE.txt` and a test guide.
+
+**Actual Windows user interaction for R3.2 removal is not yet accepted.** R3.1 gutter/syntax smoke acceptance is separately confirmed by user screenshots.
 
 ## Manual Windows checks for R3.2
 
