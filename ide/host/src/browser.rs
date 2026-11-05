@@ -45,7 +45,9 @@ impl BrowserError {
     }
 }
 impl From<io::Error> for BrowserError {
-    fn from(error: io::Error) -> Self { Self::Io(error) }
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -76,10 +78,13 @@ pub struct TextPreview {
 }
 
 fn validate_relative(path: &str, allow_root: bool) -> Result<Vec<String>, BrowserError> {
-    if path.len() > MAX_RELATIVE_BYTES || path.contains('\\') || path.chars().any(char::is_control) {
+    if path.len() > MAX_RELATIVE_BYTES || path.contains('\\') || path.chars().any(char::is_control)
+    {
         return Err(BrowserError::InvalidPath);
     }
-    if path.is_empty() && allow_root { return Ok(Vec::new()); }
+    if path.is_empty() && allow_root {
+        return Ok(Vec::new());
+    }
     if path.is_empty() || path.starts_with('/') || path.ends_with('/') || path.contains("//") {
         return Err(BrowserError::InvalidPath);
     }
@@ -89,13 +94,18 @@ fn validate_relative(path: &str, allow_root: bool) -> Result<Vec<String>, Browse
             return Err(BrowserError::InvalidPath);
         }
         if Path::new(item).components().count() != 1
-            || !matches!(Path::new(item).components().next(), Some(Component::Normal(_)))
+            || !matches!(
+                Path::new(item).components().next(),
+                Some(Component::Normal(_))
+            )
         {
             return Err(BrowserError::InvalidPath);
         }
         parts.push(item.to_string());
     }
-    if parts.len() > MAX_DEPTH { return Err(BrowserError::InvalidPath); }
+    if parts.len() > MAX_DEPTH {
+        return Err(BrowserError::InvalidPath);
+    }
     Ok(parts)
 }
 
@@ -116,13 +126,27 @@ impl IdeWorkspaceRegistry {
     /// of the picked root is revalidated on each call. All subsequent lookup
     /// happens within the cap-std Dir (never ambient absolute path joins).
     fn source_capability(&self, project_id: &str) -> Result<Dir, BrowserError> {
-        if !wire::valid_project_id(project_id) { return Err(BrowserError::InvalidProject); }
-        let records = self.records.lock().map_err(|_| BrowserError::HostUnavailable)?;
-        let active = self.active.lock().map_err(|_| BrowserError::HostUnavailable)?;
-        if !active.contains(project_id) { return Err(BrowserError::NotOpen); }
-        let record = records.get(project_id).ok_or(BrowserError::InvalidProject)?;
+        if !wire::valid_project_id(project_id) {
+            return Err(BrowserError::InvalidProject);
+        }
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| BrowserError::HostUnavailable)?;
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| BrowserError::HostUnavailable)?;
+        if !active.contains(project_id) {
+            return Err(BrowserError::NotOpen);
+        }
+        let record = records
+            .get(project_id)
+            .ok_or(BrowserError::InvalidProject)?;
         let root = safe_root(&record.root).map_err(|_| BrowserError::InvalidProject)?;
-        if root != record.root { return Err(BrowserError::InvalidProject); }
+        if root != record.root {
+            return Err(BrowserError::InvalidProject);
+        }
         let dir = Dir::open_ambient_dir(&root, ambient_authority())?;
         Ok(dir)
     }
@@ -142,31 +166,62 @@ impl IdeWorkspaceRegistry {
         for entry in folder.entries()? {
             let entry = entry?;
             let os_name = entry.file_name();
-            let Some(name) = os_name.to_str() else { continue; };
-            if name == "." || name == ".." || name.contains('\\') || name.chars().any(char::is_control) {
+            let Some(name) = os_name.to_str() else {
+                continue;
+            };
+            if name == "."
+                || name == ".."
+                || name.contains('\\')
+                || name.chars().any(char::is_control)
+            {
                 continue;
             }
             let ty = entry.file_type()?;
-            let kind = if ty.is_symlink() { "symlink" }
-                else if ty.is_dir() { "directory" }
-                else if ty.is_file() { "file" }
-                else { "other" };
+            let kind = if ty.is_symlink() {
+                "symlink"
+            } else if ty.is_dir() {
+                "directory"
+            } else if ty.is_file() {
+                "file"
+            } else {
+                "other"
+            };
             // Entries beyond this limit are never sent to the UI.
-            if entries.len() == MAX_ENTRY_COUNT { truncated = true; break; }
-            let size = if kind == "file" { entry.metadata()?.len() } else { 0 };
-            let relative_path = if relative_dir.is_empty() { name.to_owned() }
-                else { format!("{relative_dir}/{name}") };
-            if validate_relative(&relative_path, false).is_err() { continue; }
+            if entries.len() == MAX_ENTRY_COUNT {
+                truncated = true;
+                break;
+            }
+            let size = if kind == "file" {
+                entry.metadata()?.len()
+            } else {
+                0
+            };
+            let relative_path = if relative_dir.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{relative_dir}/{name}")
+            };
+            if validate_relative(&relative_path, false).is_err() {
+                continue;
+            }
             entries.push(ProjectEntry {
-                name: name.to_string(), relative_path, kind, size,
+                name: name.to_string(),
+                relative_path,
+                kind,
+                size,
             });
         }
         entries.sort_by(|a, b| {
             let rank = |e: &ProjectEntry| if e.kind == "directory" { 0 } else { 1 };
-            rank(a).cmp(&rank(b)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            rank(a)
+                .cmp(&rank(b))
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
         Ok(DirectoryListing {
-            project_id: project_id.into(), relative_dir: relative_dir.into(), entries, truncated,
+            project_id: project_id.into(),
+            relative_dir: relative_dir.into(),
+            entries,
+            truncated,
         })
     }
 
@@ -186,18 +241,32 @@ impl IdeWorkspaceRegistry {
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             return Err(BrowserError::NotFile);
         }
-        if metadata.len() > MAX_TEXT_BYTES { return Err(BrowserError::TooLarge); }
+        if metadata.len() > MAX_TEXT_BYTES {
+            return Err(BrowserError::TooLarge);
+        }
         let mut file = parent.open(&leaf)?;
         let actual = file.metadata()?;
-        if !actual.is_file() { return Err(BrowserError::NotFile); }
-        if actual.len() > MAX_TEXT_BYTES { return Err(BrowserError::TooLarge); }
+        if !actual.is_file() {
+            return Err(BrowserError::NotFile);
+        }
+        if actual.len() > MAX_TEXT_BYTES {
+            return Err(BrowserError::TooLarge);
+        }
         let mut bytes = Vec::with_capacity(actual.len() as usize);
         file.take(MAX_TEXT_BYTES + 1).read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > MAX_TEXT_BYTES { return Err(BrowserError::TooLarge); }
-        if bytes.iter().any(|b| *b == 0) { return Err(BrowserError::NotText); }
+        if bytes.len() as u64 > MAX_TEXT_BYTES {
+            return Err(BrowserError::TooLarge);
+        }
+        if bytes.iter().any(|b| *b == 0) {
+            return Err(BrowserError::NotText);
+        }
         let text = String::from_utf8(bytes).map_err(|_| BrowserError::NotText)?;
-        Ok(TextPreview { project_id: project_id.into(), relative_path: relative_path.into(),
-            byte_length: text.len() as u64, text })
+        Ok(TextPreview {
+            project_id: project_id.into(),
+            relative_path: relative_path.into(),
+            byte_length: text.len() as u64,
+            text,
+        })
     }
 }
 
@@ -206,11 +275,25 @@ mod tests {
     use super::*;
     #[test]
     fn path_validation_blocks_traversal_and_ambient_paths() {
-        for path in ["../secret", "a/../../secret", "/etc/passwd", "C:/Windows", "a\\b",
-            "./file", "a//b", "a/", "a/..", "x:\\etc", "file\0bad"] {
+        for path in [
+            "../secret",
+            "a/../../secret",
+            "/etc/passwd",
+            "C:/Windows",
+            "a\\b",
+            "./file",
+            "a//b",
+            "a/",
+            "a/..",
+            "x:\\etc",
+            "file\0bad",
+        ] {
             assert!(validate_relative(path, false).is_err(), "{path:?}");
         }
         assert!(validate_relative("", true).unwrap().is_empty());
-        assert_eq!(validate_relative("src/main.rs", false).unwrap(), ["src", "main.rs"]);
+        assert_eq!(
+            validate_relative("src/main.rs", false).unwrap(),
+            ["src", "main.rs"]
+        );
     }
 }
