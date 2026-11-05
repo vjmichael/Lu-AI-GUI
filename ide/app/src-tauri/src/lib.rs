@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 use std::{path::PathBuf, sync::Arc};
 
-use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use lu_ide_workspace::{inbox::{IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -209,6 +209,74 @@ async fn ide_save_source_file(
     .map_err(|_| "SAVE_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// Data-only import to the IDE's volatile proposal inbox. No model bridge,
+/// filesystem changes or execution authority are available to the payload.
+#[tauri::command]
+async fn ide_import_proposal(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    inbox: State<'_, Arc<IdeProposalInbox>>,
+    proposal_json: String,
+) -> Result<ProposalSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let inbox = Arc::clone(inbox.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        inbox.import(&registry, &proposal_json).map_err(|error| error.code().to_string())
+    }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_list_proposals(
+    inbox: State<'_, Arc<IdeProposalInbox>>,
+) -> Result<Vec<ProposalSummary>, String> {
+    let inbox = Arc::clone(inbox.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        inbox.list().map_err(|error| error.code().to_string())
+    }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_review_proposal(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    inbox: State<'_, Arc<IdeProposalInbox>>,
+    inbox_id: String,
+) -> Result<ProposalDetail, String> {
+    let registry = Arc::clone(registry.inner());
+    let inbox = Arc::clone(inbox.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        inbox.detail(&registry, &inbox_id).map_err(|error| error.code().to_string())
+    }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Records only an IDE-owned human decision. Approve-for-staging does not
+/// apply edits, persist credentials, grant write rights, or run workers.
+#[tauri::command]
+async fn ide_decide_proposal(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    inbox: State<'_, Arc<IdeProposalInbox>>,
+    inbox_id: String,
+    expected_digest: String,
+    approve_for_staging: bool,
+) -> Result<ProposalSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let inbox = Arc::clone(inbox.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        inbox.decide(&registry, &inbox_id, &expected_digest, approve_for_staging)
+            .map_err(|error| error.code().to_string())
+    }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_discard_proposal(
+    inbox: State<'_, Arc<IdeProposalInbox>>,
+    inbox_id: String,
+) -> Result<Vec<ProposalSummary>, String> {
+    let inbox = Arc::clone(inbox.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        inbox.discard(&inbox_id).map_err(|error| error.code().to_string())?;
+        inbox.list().map_err(|error| error.code().to_string())
+    }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -218,6 +286,7 @@ pub fn run() {
             let registry = IdeWorkspaceRegistry::open(data.join("projects.json"))
                 .map_err(|_| std::io::Error::other("standalone IDE registry failed to open"))?;
             app.manage(Arc::new(registry));
+            app.manage(Arc::new(IdeProposalInbox::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -229,7 +298,12 @@ pub fn run() {
             ide_list_source_directory,
             ide_preview_source_file,
             ide_review_source_change,
-            ide_save_source_file
+            ide_save_source_file,
+            ide_import_proposal,
+            ide_list_proposals,
+            ide_review_proposal,
+            ide_decide_proposal,
+            ide_discard_proposal
         ])
         .run(tauri::generate_context!())
         .expect("standalone Lu IDE failed to initialize");
