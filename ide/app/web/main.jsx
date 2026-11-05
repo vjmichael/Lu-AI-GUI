@@ -64,7 +64,7 @@ function App() {
   }
 
   async function operation(command, args) {
-    if (pending || savingKey) return;
+    if (pending || savingKey || explorerPending) return;
     if (command === 'ide_close_project' &&
       tabs.some(tab => tab.projectId === args.projectId && tab.dirty) &&
       !window.confirm('Discard unsaved changes in this project?')) return;
@@ -75,17 +75,35 @@ function App() {
       const next = await invoke(command, args);
       setProjects(next);
       // Do not discard unsaved buffers until the native close succeeds.
-      if (command === 'ide_close_project') discardProjectTabs(args.projectId);
+      if (command === 'ide_close_project' || command === 'ide_unregister_project') {
+        discardProjectTabs(args.projectId);
+      }
       if (command === 'ide_choose_project') {
         setHint('Project selection complete. No scripts or project tools were executed.');
       }
-      if (command === 'ide_close_project' && activeProject?.projectId === args?.projectId) {
+      if ((command === 'ide_close_project' || command === 'ide_unregister_project') &&
+        activeProject?.projectId === args?.projectId) {
         setActiveProject(null);
         setListing(null);
         setSection('projects');
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  // This operation only removes the IDE's registration. It never issues a
+  // filesystem deletion; the native host cannot accept an OS path from here.
+  function confirmUnregister(project) {
+    if (pending || savingKey || explorerPending) return;
+    const hasDirty = tabs.some(tab => tab.projectId === project.projectId && tab.dirty);
+    const message = 'Remove "' + project.displayName + '" from Lu IDE?\\n\\n' +
+      'The original project folder and ALL files on disk will be kept. ' +
+      'Only the IDE registration will be removed.\\n\\n' +
+      'You can add the folder again using Open folder.' +
+      (hasDirty ? '\\n\\nWARNING: Unsaved edits in its open tabs will be discarded.' : '');
+    if (window.confirm(message)) {
+      void operation('ide_unregister_project', { projectId: project.projectId });
+    }
   }
 
   async function openDirectory(project, path) {
@@ -316,6 +334,10 @@ function App() {
                       : <button className="ghostBtn" disabled={pending || !project.available}
                           onClick={() => operation('ide_open_project',
                             {projectId: project.projectId})}>Reopen</button>}
+                    <button className="removeProjectBtn"
+                      disabled={pending || explorerPending || !!savingKey}
+                      aria-label={'Remove ' + project.displayName + ' from IDE registration'}
+                      onClick={() => confirmUnregister(project)}>Remove from IDE</button>
                   </div>
                 </article>)}
               </div>}
