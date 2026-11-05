@@ -10,7 +10,7 @@ const sections = [
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
-  { id: 'source', title: 'Source control', glyph: '⑂', pending: true },
+  { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Build & tests', glyph: '▶', pending: true },
 ];
 
@@ -46,6 +46,8 @@ function App() {
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
   const [contextBusy, setContextBusy] = useState(false);
+  const [gitStatus, setGitStatus] = useState(null);
+  const [gitBusy, setGitBusy] = useState(false);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
@@ -58,6 +60,7 @@ function App() {
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
   const isContinuity = section === 'continuity';
+  const isSource = section === 'source';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Search is local to the active unsaved editor buffer, never the filesystem.
   const matches = [];
@@ -119,6 +122,21 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  async function refreshGitStatus() {
+    if (!activeProject?.projectId) {
+      setGitStatus(null);
+      return;
+    }
+    setGitBusy(true);
+    setProblem('');
+    try {
+      setGitStatus(await invoke('ide_read_git_status', { projectId: activeProject.projectId }));
+    } catch (error) {
+      setGitStatus(null);
+      setProblem('Could not inspect source control: ' + String(error));
+    } finally { setGitBusy(false); }
   }
 
   async function refreshContext() {
@@ -605,7 +623,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -620,8 +638,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
+          <h1>{isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
+            isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
             isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
             isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
@@ -631,7 +650,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -707,6 +726,45 @@ function App() {
             </div>
           </div>
         </section>
+        : isSource
+        ? <section className="workspaceContent continuityWorkspace" aria-label="Read-only source control">
+            <div className="sectionHeading">
+              <h2>Local Git worktree</h2>
+              <span>{gitStatus ? gitStatus.worktree.replaceAll('_', ' ') : 'Not inspected'}</span>
+            </div>
+            <p className="capabilityNotice">
+              Local status is read directly from the registered project.
+              The IDE does not run Git, stage changes, fetch from GitHub, or modify files.
+              Tracking information is locally stored and may be stale.
+            </p>
+            {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {gitBusy && <p role="status">Inspecting local Git state…</p>}
+            {!gitBusy && gitStatus && <div className="continuityBody">
+              <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
+                {' · '} Branch: <code>{gitStatus.branch || 'Unknown or detached'}</code>
+              </p>
+              {gitStatus.localHead && <p>Local commit: <code>{gitStatus.localHead}</code></p>}
+              <p>Stored upstream: <strong>{gitStatus.upstreamComparison.replaceAll('_', ' ')}</strong>
+                {' · '} Live GitHub: <strong>Not queried</strong></p>
+              {gitStatus.commitsAhead !== null && <p>
+                Ahead of stored upstream: {gitStatus.commitsAhead}
+                {' · '} Behind: {gitStatus.commitsBehind}</p>}
+              <p>Modified or staged files: <strong>{gitStatus.modifiedOrStagedCount}</strong>
+                {' · '} Untracked files: <strong>{gitStatus.untrackedCount}</strong></p>
+              {gitStatus.displayedChanges.length === 0 && gitStatus.worktree === 'clean' &&
+                <p>No local modifications detected in this worktree.</p>}
+              <div className="continuityEvents">
+                {gitStatus.displayedChanges.map((item, index) =>
+                  <article className="continuityEvent" key={item.relativePath + item.stage + index}>
+                    <strong>{item.relativePath}</strong>
+                    <span>{item.kind.replaceAll('_', ' ')}</span>
+                    <p>{item.stage.replaceAll('_', ' ')}</p>
+                  </article>)}
+              </div>
+              {gitStatus.truncated && <p role="status">
+                More than 120 changed files were found. The visible list is truncated.</p>}
+            </div>}
+          </section>
         : isContinuity
         ? <section className="workspaceContent continuityWorkspace" aria-label="Project continuity">
             <div className="sectionHeading">
