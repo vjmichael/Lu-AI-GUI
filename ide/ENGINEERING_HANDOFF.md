@@ -19,6 +19,10 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## A3 Git worktree baseline transitions
+
+Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
+
 ## A3 Git status host reader (new source, unverified)
 
 `host/src/git_status.rs` uses read-only libgit2 for real local dirty/staged/untracked changes, restricted to exact registered project root and separately labeled locally stored upstream. It neither calls Git CLI nor contacts GitHub. The Continuity UI and JSON Schema now carry the local status; native Git fixture tests exist. CI [42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending; no execution/installer/user GUI gate passed for this change.
