@@ -725,11 +725,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_bridge.rs",
-      "blob": "c91ed750e9be19c99744d9ae4b9ae3d9fde8510c"
+      "blob": "72c5ea96f7cee4a772e527218d6de62273de675e"
     },
     {
       "path": "src-tauri/lu-core/src/inference_host.rs",
-      "blob": "a381b88da46ae22be9c5c309c8b4734fc24fbc04"
+      "blob": "3fbd9cd79ff68deccc98cda39ddd79177214475e"
     },
     {
       "path": "src-tauri/lu-core/src/inference_image_refs.rs",
@@ -737,7 +737,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "3d38347f1f5b52194189f95259712577fea6645a"
+      "blob": "e1a3a567de01e0f9389c28a45b5f3dd1d208504f"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
@@ -789,7 +789,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_http.rs",
-      "blob": "668f842f2ff1c5abccfe1559a9ad348765fe1830"
+      "blob": "f20b63ddb99492c24fffc2bca311240f083b46d2"
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
@@ -849,7 +849,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "e291965aaf12b46d8b9495591534fbf04e390cd4"
+      "blob": "e537d41b42fab35caf6e078327e5fa5d45ae9536"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
