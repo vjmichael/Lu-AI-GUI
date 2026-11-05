@@ -256,6 +256,10 @@ fn text_stream(bytes:&[u8])->Result<String,ReaderFailure>{
     Ok(out)
 }
 pub fn read_pdf_text(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
+    read_pdf_page(bytes,max_chars,None)
+}
+pub fn read_pdf_page(bytes:&[u8],max_chars:usize,selected:Option<usize>)
+    ->Result<ReaderText,ReaderFailure>{
     if max_chars==0||max_chars>MAX_READER_OUTPUT_CHARS{
         return Err(ReaderFailure::TooLarge)
     }
@@ -270,7 +274,10 @@ pub fn read_pdf_text(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailu
     if roots.len()!=1{return Err(unsupported())}
     let page_ids=parse_page_ids(roots[0])?;
     let mut text=String::new();
+    let mut found=false;
     for (index,id) in page_ids.iter().enumerate(){
+        if selected.is_some_and(|page|page!=index+1){continue}
+        found=true;
         let page=objects.get(id).ok_or_else(bad)?;
         if !page.dictionary.windows(12).any(|w|w==b"/Type /Page "){
             return Err(unsupported())
@@ -289,6 +296,7 @@ pub fn read_pdf_text(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailu
             return Err(ReaderFailure::TooLarge)
         }
     }
+    if !found{return Err(ReaderFailure::SelectorNotFound)}
     let truncated=text.chars().count()>max_chars;
     Ok(ReaderText{format:ReaderFormat::Pdf,
         text:if truncated{text.chars().take(max_chars).collect()}else{text},
@@ -343,6 +351,13 @@ mod tests{
             Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Pdf))));
         assert!(matches!(read_pdf_text(&fixture(b"BT (\\200) Tj ET",false),1000),
             Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Pdf))));
+    }
+    #[test]
+    fn page_selector_refuses_page_outside_catalog(){
+        let input=fixture(b"BT (Some page text) Tj ET",false);
+        assert_eq!(read_pdf_page(&input,100,Some(2)),
+            Err(ReaderFailure::SelectorNotFound));
+        assert!(read_pdf_page(&input,100,Some(1)).unwrap().text.contains("[Page 1]"));
     }
     #[test]
     fn rejects_fake_pdf_and_bounded_output(){
