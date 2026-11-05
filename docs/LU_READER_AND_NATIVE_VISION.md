@@ -149,11 +149,16 @@ as automatically detected.
    parser and robust page selection/render/OCR remain open.
 7. Progressive Reader: one typed tool now supports bounded
    `inspect_only` preflight and `offset_chars` / `max_chars` paging,
-   with explicit `next_offset_chars`, source truncation and total
-   extracted character count. Desktop picker supports document attachments.
+   with explicit `next_offset_chars`, source truncation and total extracted
+   character count. Requests can use `sheet:Name`, `slide:N` or `page:N`
+   to extract only a selected part of XLSX/PPTX/PDF. Every response carries
+   `source_sha256`; subsequent reads can supply `expected_source_sha256`
+   so edits between pages fail closed rather than mixing document revisions.
+   Desktop picker supports document attachments.
    **Implemented in source; latest CI pending.** Per-turn model tool
-   registration in actual desktop inference, true page/range selection
-   and long-document streaming beyond the 200K extraction cap remain open.
+   registration in actual desktop inference, proper spreadsheet *cell-range*
+   selection and long-document streaming beyond the 200K extraction cap
+   remain open.
 8. Vision session probe and backend capability attestation, per-model
    invalidation and native-vision-first routing integration.
 9. Cross-format fixture tests, malicious/oversized documents, Windows/Linux
