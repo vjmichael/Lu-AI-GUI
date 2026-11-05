@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
 import { MarkdownView } from './markdown_view.jsx';
+import { IdeWorkspacePanel } from './ide_workspace.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
@@ -35,6 +36,7 @@ function App() {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ideOpen, setIdeOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -500,6 +502,7 @@ function App() {
       <div className="sidebarFooter">
         <div className="runtimeStatus"><span className="statusDot" data-ready={loaded}></span><strong>{loaded ? 'Model loaded' : working && activity.startsWith('Loading') ? 'Loading model…' : 'No model loaded'}</strong></div>
         <small>{loaded ? loadedModel?.filename : 'Select a model from the chat header'}</small>
+        <button className="settingsButton" onClick={() => { setSettingsOpen(false); setIdeOpen(true); }}>⌘ IDE Workspace</button>
         <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </div>
     </aside>
@@ -584,6 +587,7 @@ function App() {
       </div>
     </main>
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
+    <IdeWorkspacePanel open={ideOpen} onClose={() => setIdeOpen(false)}/>
     {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <header><div><h2>Settings</h2><small>Local model management</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
