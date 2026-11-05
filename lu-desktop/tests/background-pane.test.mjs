@@ -14,7 +14,7 @@ test('background pane uses local persistent host task query, not model monitorin
   assert.ok(host.includes('lu_background_tasks,'));
   assert.ok(ui.includes("await invoke('lu_background_tasks')"));
   assert.ok(ui.includes('setInterval(refresh,2500)'));
-  assert.ok(!ui.includes("invoke('lu_background_cancel'"));
+  assert.ok(ui.includes("await invoke('lu_background_cancel', {taskId})"));
 });
 test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(ui.includes('Background Tasks'));
@@ -25,6 +25,12 @@ test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(ui.includes('aria-valuenow={task.progress}'));
   assert.ok(ui.includes('INTERRUPTED'));
   assert.ok(ui.includes('Requires review before retrying.'));
+  assert.ok(ui.includes('task.canCancel &&'));
+  assert.ok(host.includes('fn lu_background_cancel('));
+  assert.ok(host.includes('processes.cancel_operator_owned(&task_id)'));
+  assert.ok(host.includes('Terminate task'));
+  assert.ok(ui.includes('Pause and resume remain unavailable'));
+
   assert.ok(css.includes('.backgroundPaneBackdrop'));
   assert.ok(css.includes('.backgroundTaskProgress'));
 });
