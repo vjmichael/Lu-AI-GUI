@@ -6,6 +6,7 @@ import { CodeEditor, createEditorState } from './code_editor.jsx';
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
+  { id: 'proposals', title: 'Proposals', glyph: '⇄' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
   { id: 'source', title: 'Source control', glyph: '⑂', pending: true },
   { id: 'tasks', title: 'Build & tests', glyph: '▶', pending: true },
@@ -29,6 +30,10 @@ function App() {
   const [savingKey, setSavingKey] = useState(null);
   const [review, setReview] = useState(null);
   const [reviewPending, setReviewPending] = useState(false);
+  const [proposalInput, setProposalInput] = useState('');
+  const [proposals, setProposals] = useState([]);
+  const [proposalDetail, setProposalDetail] = useState(null);
+  const [inboxBusy, setInboxBusy] = useState(false);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
 
@@ -36,6 +41,7 @@ function App() {
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
+  const isProposals = section === 'proposals';
   const parentPath = directory.split('/').slice(0, -1).join('/');
 
   async function refresh() {
@@ -52,6 +58,107 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  async function refreshProposals() {
+    setInboxBusy(true);
+    setProblem('');
+    try {
+      setProposals(await invoke('ide_list_proposals'));
+    } catch (error) { setProblem(String(error)); }
+    finally { setInboxBusy(false); }
+  }
+
+  // Useful for local UI tests even while Lu is disconnected. The generated
+  // JSON is DATA only: queue/import/review never runs code or saves a file.
+  function prepareLocalProposal() {
+    if (!activeTab) {
+      setProblem('Open a source file in the Explorer before preparing a proposal.');
+      return;
+    }
+    setProposalInput(JSON.stringify({
+      schemaVersion: 1,
+      taskId: 'local-' + Date.now(),
+      projectId: activeTab.projectId,
+      claimedProducer: 'Local draft (unverified)',
+      rationale: 'Review this proposed edit before staging anything.',
+      edits: [{
+        relativePath: activeTab.relativePath,
+        expectedRevision: activeTab.revision,
+        proposedText: activeTab.draft,
+      }],
+    }, null, 2));
+    setHint('Prepared a local proposal draft. Edit the JSON, then add it to the inbox.');
+    setProblem('');
+  }
+
+  async function importProposal() {
+    if (!proposalInput.trim() || inboxBusy) return;
+    setInboxBusy(true);
+    setProblem('');
+    try {
+      await invoke('ide_import_proposal', { proposalJson: proposalInput });
+      setProposals(await invoke('ide_list_proposals'));
+      setProposalInput('');
+      setHint('Proposal added to the review inbox. No project files were changed.');
+    } catch (error) {
+      setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
+        ? 'File changed on disk. Refresh the source revision before importing this proposal.'
+        : String(error));
+    } finally { setInboxBusy(false); }
+  }
+
+  async function openProposal(inboxId) {
+    if (inboxBusy) return;
+    setInboxBusy(true);
+    setProblem('');
+    try {
+      setProposalDetail(await invoke('ide_review_proposal', { inboxId }));
+    } catch (error) {
+      setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
+        ? 'File changed on disk. The proposal no longer matches the current source.'
+        : String(error));
+    } finally { setInboxBusy(false); }
+  }
+
+  async function decideProposal(approveForStaging) {
+    const detail = proposalDetail;
+    if (!detail || inboxBusy || detail.summary.status !== 'pending') return;
+    if (approveForStaging && detail.reviews.some(item => item.truncated || !item.countsExact)) {
+      setProblem('Review incomplete. This proposal cannot be approved for staging.');
+      return;
+    }
+    const msg = approveForStaging
+      ? 'Approve this exact proposal for manual staging? This records a review decision only. It does NOT edit, save, or execute any files.'
+      : 'Reject this proposal? No project files will be changed.';
+    if (!window.confirm(msg)) return;
+    setInboxBusy(true);
+    setProblem('');
+    try {
+      await invoke('ide_decide_proposal', {
+        inboxId: detail.summary.inboxId,
+        expectedDigest: detail.summary.digest,
+        approveForStaging,
+      });
+      setProposals(await invoke('ide_list_proposals'));
+      setProposalDetail(null);
+      setHint(approveForStaging
+        ? 'Review approval recorded. No source files were modified.'
+        : 'Proposal rejected. No source files were modified.');
+    } catch (error) { setProblem(String(error)); }
+    finally { setInboxBusy(false); }
+  }
+
+  async function discardProposal(item) {
+    if (inboxBusy || !window.confirm('Dismiss this proposal from the IDE inbox? This will not delete any project files.')) return;
+    setInboxBusy(true);
+    setProblem('');
+    try {
+      setProposals(await invoke('ide_discard_proposal', { inboxId: item.inboxId }));
+      setProposalDetail(null);
+      setHint('Proposal dismissed from the review inbox.');
+    } catch (error) { setProblem(String(error)); }
+    finally { setInboxBusy(false); }
   }
 
   useEffect(() => { void refresh(); }, []);
@@ -315,7 +422,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => setSection(item.id)}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -330,15 +437,16 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
+          <h1>{isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
+            isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
             'Choose projects without executing their code.'}</p>
         </div>
         <div className="ideControls">
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
