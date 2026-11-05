@@ -88,7 +88,7 @@ The historical eight-stage checklist remains the official acceptance accounting.
 
 ## Next three concrete coding slices
 
-**A1 — Authoritative source-span read:** add a host Rust request/response for selected project/file/revision with 1-based line/column plus explicit byte offsets, bounded output, newline metadata, and stale-revision rejection. Test CRLF, blank lines, multi-byte Unicode, traversal/symlink denial, and different saved vs unsaved editor state (buffer ownership established separately). Current code editor UI can consume this incrementally.
+**A1 — Authoritative source-span read (initial saved-disk implementation committed; verification and human UI pending):** add a host Rust request/response for selected project/file/revision with 1-based line/column plus explicit byte offsets, bounded output, newline metadata, and stale-revision rejection. Test CRLF, blank lines, multi-byte Unicode, traversal/symlink denial, and different saved vs unsaved editor state (buffer ownership established separately). Current code editor UI can consume this incrementally.
 
 **A2 — Bounded capability descriptors:** make a static, host-validated registry for *existing* read/review/stage/save operations. Test descriptors against commands, schema versions and effect class; no bridge, dynamic tools or auto-authorization.
 
