@@ -22,6 +22,14 @@
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
+## AI-first architectural reconciliation — AIW-IDE-01
+
+- **Designed / documented, not implemented:** [AI-first IDE requirements](docs/AI_FIRST_IDE_DESIGN.md), [IDE contributor orientation](AGENTS.md) and links in the canonical design.
+- Read verified sources: Lu [v1.0 reconciliation](../docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md) LU-AIW-01 and [draft PR #28](https://github.com/vjmichael/Lu-AI-GUI/pull/28), `LU-OPMEM-01A`. PR #28 is **draft / source-only**; its SQLite ledger is not integrated into the IDE or current Lu desktop preflight.
+- Highest-value standalone gates: revision-aware human/AI source spans, a host-owned verified resource/artifact inventory, concise task context/ledger indexing, and typed host capability descriptors. **These are future gates**, not completed R3.x features.
+- User decision preserved: live Lu↔IDE connection **DEFERRED**. Design contracts independently; retain all review, staging and explicit Save boundaries.
+- Exact-head CI / native Windows acceptance for this new documentation: **not run**. Local project/package inventory remains UNKNOWN.
+
 ## Continuity enforcement state
 
 - PCP-01 docs and CI PR gate added on this branch. **Not yet verified by a passing workflow run.**
