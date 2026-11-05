@@ -265,7 +265,7 @@ pub fn register_reader(
     let mut catalog=ModelToolCatalog::new();
     catalog.insert(registry,ModelToolDefinition{
         name:"lu_reader_read".into(),native_tool_id:TOOL_ID.into(),
-        description:"Read authorized TXT, MD, DOCX, XLSX cells/formulas, PPTX slides, JSON, CSV, config and source files. Complex/scanned PDFs and image OCR are not supported.".into(),
+        description:"Read authorized TXT, MD, DOCX, XLSX/ODS cells/formulas, PPTX/ODP slides, JSON, CSV, config and source files. Complex/scanned PDFs and image OCR are not supported.".into(),
         parameters:json!({"type":"object","properties":{
             "path":{"type":"string","description":"Authorized workspace-relative file path"},
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
