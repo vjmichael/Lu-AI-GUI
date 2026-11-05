@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `b39c626752e84ccc65f876283bc8b5ec3bd6c505`  
-**Current source validation:** [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605): Windows native host tests and Tauri check **passed** at last inspection; Linux/frontend still queued. Older [Windows 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) **failed** E0505 in Git test and has been repaired. Full matrix remains unverified.
+**Last inspected implementation source SHA:** `a372bc7ec6c054fc28be825203ea00c94bcfd211`  
+**Current source validation:** Wave B1 source has triggered [CI 42130813013](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42130813013) (pending at last inspection). Older [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605) passed Windows native host + Tauri checks at SHA `b39c6267` before new commits; remaining matrix may be superseded. **No latest exact-source CI acceptance yet.**
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -29,6 +29,14 @@
 - **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
 - Host-created, versioned descriptors for **21 existing** project, source, review, save, proposal, continuity, inventory and Git/GitHub operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
+
+## Wave B1 — Human Find and Replace (source implemented, exact-head CI open)
+
+- `app/web/find_replace.js` is a pure bounded literal match-and-replace planner for the **active unsaved CodeMirror draft only**. Matches preserve UTF-16 offsets, escape regex metacharacters and optionally match case. All-or-nothing replacement refuses scans above 10,000 matches; no partial bulk edit or direct disk write.
+- `app/web/main.jsx` adds Ctrl+H, human Find/Replace controls, Replace One and confirmation-gated Replace All. All edits enter the existing draft/dirty state and still require explicit Save and revision-checked host writes.
+- `app/web/code_editor.jsx` dispatches a planned set of changes as **one undoable CodeMirror transaction**, checks the expected draft before applying and acknowledges/consumes the nonce to prevent replay when tabs switch. No Lu model or file/host tool added.
+- New `app/tests/find_replace.test.mjs` includes UTF-16 Unicode offsets, literal metacharacter search, case-sensitivity, literal replacement of dollar strings, match selection, over-limit refusal and empty query. Updated existing frontend regression and editor styles.
+- **Verification:** implementation source committed; CI pending. The previous native Git/GitHub CI run for `b39c6267` is no longer an exact-head check for this new source. CI concurrency may cancel superseded branch runs. No new Windows installer or physical acceptance claimed.
 
 ## A3 live GitHub evidence and native Git CI repair
 
