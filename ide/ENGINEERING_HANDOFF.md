@@ -7,6 +7,12 @@
 
 This entrypoint is intended to spare the next development conversation from rediscovering the original scope, CI, app paths, and acceptance history.
 
+## Required first read (PCP-01)
+
+Before changing code, read [current project state](PROJECT_STATE.md), [chronological changelog](CHANGELOG.md), and [continuity protocol](CONTINUITY_PROTOCOL.md). Confirm real local workspace and `Delivered` contents before assuming GitHub is the most advanced source. Log unknown local or installer locations as unverified, not absent.
+
+**Latest source:** R3.6 notification banner + R3.7 editor Find have been committed, but exact-head CI, desktop smoke and installer checks remain open. **Live Lu-to-IDE connection is user-deferred.** The PCP-01 pull-request gate now requires state and changelog updates for IDE implementation changes; branch protection must make its check required to prevent bypass.
+
 ## Current user-verified Windows milestones
 
 - **R1:** standalone Windows IDE launches, displays project registration shell and shows "Lu connection: Not connected".
@@ -20,7 +26,7 @@ This entrypoint is intended to spare the next development conversation from redi
 
 These are real user-submitted Windows smoke tests, *not* full hostile-project or installed NSIS acceptance. See `docs/IDE_03_R3_EDITOR_ACCEPTANCE.md` and `docs/IDE_03_PROJECT_DELIST_ACCEPTANCE.md`.
 
-## Current development milestone — R3.3 reviewed changes
+## Historical milestone — R3.3 reviewed changes
 
 The user wants **Lu to use Lu IDE as an authorized coding assistant**, while the IDE remains independently useful.
 
@@ -52,7 +58,7 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 - **Stage in editor** is a separate explicit action requiring an approved current proposal. It rechecks all file revisions, confirms before replacing dirty tabs and loads proposed text into CodeMirror **unsaved editor drafts**. Only the existing human **Save** action writes disk bytes, one file at a time.
 - The entire inbox is memory-only and disappears on restart; no untrusted proposal data goes into the project catalog. The `claimedProducer` field remains unverified and no Lu bridge exists.
 - Tests include import/review, stale source, wrong digest, duplicate decision, incomplete preview, rejected staging, approved staging without writes, and volatile reset. Details and Windows manual acceptance: [R3.5 proposal inbox](docs/IDE_07_R35_PROPOSAL_INBOX.md).
-- **R3.5 tests passed:** [Windows/Linux/frontend native matrix 42063329884](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063329884) passed: 50 Linux Rust tests, 16 frontend tests, Windows Tauri compile. [Optimized Windows release 42063134868](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063134868) passed. The EXE and portable ZIP hashes are recorded in [R3.5 acceptance](docs/IDE_07_R35_PROPOSAL_INBOX.md). **R3.5 user Windows interactive smoke test remains pending.** All builds remain standalone; Lu Core unchanged.
+- **R3.5 tests passed:** [Windows/Linux/frontend native matrix 42063329884](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063329884) passed: 50 Linux Rust tests, 16 frontend tests, Windows Tauri compile. [Optimized Windows release 42063134868](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063134868) passed. The EXE and portable ZIP hashes are recorded in [R3.5 acceptance](docs/IDE_07_R35_PROPOSAL_INBOX.md). **R3.5 user subsequently reported staging and saving work on Windows; full security and installed-release acceptance remain open.** All builds remain standalone; Lu Core unchanged.
 
 ## Source map
 
