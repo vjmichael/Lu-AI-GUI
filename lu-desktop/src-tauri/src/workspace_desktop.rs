@@ -152,3 +152,38 @@ pub(crate) async fn lu_workspace_ask_directory(
     }).await.map_err(|_|"Workspace generation worker unavailable")?;
     outcome.map(Some)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn workspace_read_grant_requires_persisted_exact_user_turn() {
+        let root=std::env::temp_dir().join(next_id("lu-workspace-verifier-"));
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap();
+        let gid=next_id("g-");
+        let another=next_id("g-");
+        let verifier=PersistedWorkspaceTurn {
+            chats:&chats,conversation_id:&chat.chat_id,
+            generation_id:&gid,expected_prompt:"Inspect the folder",
+        };
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&gid));
+        chats.append_user(&chat.chat_id,"Inspect the folder").unwrap();
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&gid));
+        chats.append_user_with_turn_id(&chat.chat_id,&another,"Inspect the folder").unwrap();
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&gid));
+        chats.append_user_with_turn_id(&chat.chat_id,&gid,"Inspect the folder").unwrap();
+        assert!(verifier.verify_user_turn(&chat.chat_id,&gid));
+        assert!(!verifier.verify_user_turn(&chat.chat_id,&another));
+        assert!(!verifier.verify_user_turn("c-unrelated",&gid));
+        drop(chats);
+        let restored=ChatStore::open(&root).unwrap();
+        let verifier=PersistedWorkspaceTurn {
+            chats:&restored,conversation_id:&chat.chat_id,
+            generation_id:&gid,expected_prompt:"Inspect the folder",
+        };
+        assert!(verifier.verify_user_turn(&chat.chat_id,&gid));
+        drop(restored);
+        let _=fs::remove_dir_all(root);
+    }
+}
