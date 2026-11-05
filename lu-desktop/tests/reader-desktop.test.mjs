@@ -39,6 +39,10 @@ test('Ask Reader routes exactly one native-picker document through the supervise
   assert.ok(host.includes('lu_reader_ask_document,'));
   assert.ok(readerHost.includes('fn lu_reader_ask_document('));
   assert.ok(readerHost.includes('ReaderTurnSession::new('));
+  assert.ok(readerHost.includes('reader_user_turn_matches('));
+  assert.ok(readerHost.includes('append_reader_user(&chat_id,&generation_id,&prompt)'));
+  assert.ok(!readerHost.includes('messages.last().cloned()'));
+
   assert.ok(readerHost.includes('ModelTurnJournal::open('));
   assert.ok(readerHost.includes('run_journaled('));
   assert.ok(readerHost.includes('if result.tool_calls==0'));
