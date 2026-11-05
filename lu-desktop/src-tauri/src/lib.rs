@@ -482,7 +482,9 @@ impl DesktopState {
 fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
     std::thread::spawn(move||{
         let mut pushed_cursor=0i64;
-        let mut attempted=HashSet::<(String,i64)>::new();
+        // One monotonic attempt cursor per bounded conversation, not an
+        // unbounded set of every historical task event.
+        let mut attempted=HashMap::<String,i64>::new();
         let mut auto_scan_cursor=0i64;
         loop {
             std::thread::sleep(Duration::from_millis(500));
@@ -521,13 +523,13 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                 auto_scan_cursor=notice.sequence;
                 let chat_id=notice.workspace_id;
                 if !chat_id.starts_with("c-")
-                  ||attempted.contains(&(chat_id.clone(),notice.sequence))
+                  ||attempted.get(&chat_id).is_some_and(|seq|*seq>=notice.sequence)
                   ||!state.background_tasks.auto_continue_enabled(&chat_id)
                      .unwrap_or(false)
                   ||state.chats.history(&chat_id).is_err(){
                     continue;
                 }
-                attempted.insert((chat_id.clone(),notice.sequence));
+                attempted.insert(chat_id.clone(),notice.sequence);
                 let app=app.clone();
                 let state=Arc::clone(&state);
                 let session_id=session_id.clone();
