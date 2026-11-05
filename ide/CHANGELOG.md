@@ -2,6 +2,11 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Human-first Source control pane (source implemented, CI open)
+- Replaced sidebar's placeholder Source control section with a read-only local Git status view driven by `ide_read_git_status` Tauri command and versioned `git.status` registry contract.
+- Displays branch, local SHA, locally stored upstream tracking status and ahead/behind, real dirty/staged/untracked counts, and up to 120 changed paths; no fetch, push, staging, commit or project-code execution.
+- Native-to-schema parity audit confirms 20 operations with 20 matching descriptor schemas; native Git fixture tests and JS static checks added. Latest source `4d1a559d2f37afb062524827a6d23aff6e62f9b5`; **exact-source CI/physical Windows GUI acceptance not yet established.**
+
 ## 2026-11-05 — A3 native Git snapshot transitions
 - Persist local libgit2 worktree state with each explicit inventory baseline; historical stores remain readable via optional/default fields. Compare the newest baseline against a fresh native status and classify clean → dirty, dirty → clean, both dirty (not equivalent), or unverifiable.
 - Real Git fixture now checks baseline cleanliness followed by a modified tracked file and a new untracked file. Source commit `a37be15b808b2d238ac2457aee9e357d056be13f`, [CI 42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued at last inspection.
