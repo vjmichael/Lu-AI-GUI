@@ -10,9 +10,10 @@ fn bad()->ReaderFailure{ReaderFailure::InvalidDocument}
 fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
     tag.attributes().with_checks(true).filter_map(Result::ok)
         .find(|a|a.key.as_ref()==name)
-        .and_then(|a|std::str::from_utf8(a.value.as_ref()).ok())
-        .and_then(|s|quick_xml::escape::unescape(s).ok())
-        .map(|s|s.into_owned())
+        .and_then(|a|{
+            let value=std::str::from_utf8(a.value.as_ref()).ok()?;
+            quick_xml::escape::unescape(value).ok().map(|s|s.into_owned())
+        })
 }
 fn xml_value(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
     match e{
