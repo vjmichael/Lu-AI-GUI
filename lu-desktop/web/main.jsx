@@ -102,8 +102,10 @@ function App() {
       await refreshBackgroundTasks();
     } catch (error) {
       // Native dialog denial and races against completion are not success.
-      setBackgroundError(String(error));
       await refreshBackgroundTasks();
+      if (!String(error).includes('Cancellation declined')) {
+        setBackgroundError(String(error));
+      }
     }
   }
   async function refreshBackgroundTasks() {
