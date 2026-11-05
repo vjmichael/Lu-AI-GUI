@@ -1442,6 +1442,8 @@ async fn lu_generate_browser(
             }
             let mut answer=String::new();
             let mut index=0u32;
+            let mut last_checkpoint=std::time::Instant::now();
+            let mut last_checkpoint_bytes=0usize;
             let forward=|wire:Vec<u8>|->Result<(),BridgeError>{
                 let frame=decode_frame(&wire).map_err(BridgeError::Wire)?;
                 if let Some(proto::inference_frame::Body::Event(event))=frame.body{
@@ -1450,8 +1452,13 @@ async fn lu_generate_browser(
                             return Err(BridgeError::WrongOperation);
                         }
                         answer.push_str(&chunk.text);
-                        state.chats.append_progress(&chat_id,&gid,&answer)
-                            .map_err(|_|BridgeError::WrongOperation)?;
+                        if answer.len().saturating_sub(last_checkpoint_bytes)>=512
+                          ||last_checkpoint.elapsed()>=Duration::from_millis(750){
+                            state.chats.append_progress(&chat_id,&gid,&answer)
+                                .map_err(|_|BridgeError::WrongOperation)?;
+                            last_checkpoint_bytes=answer.len();
+                            last_checkpoint=std::time::Instant::now();
+                        }
                         app.emit("lu-token",ChatEvent{
                             chat_id:chat_id.clone(),generation_id:gid.clone(),
                             text:chunk.text,index,
@@ -1468,6 +1475,7 @@ async fn lu_generate_browser(
             if answer.trim().is_empty(){
                 return Err("Browser research continuation returned no answer".into());
             }
+            state.chats.append_progress(&chat_id,&gid,&answer)?;
             state.chats.complete(&chat_id,&gid)?;
             Ok(answer)
         })();
