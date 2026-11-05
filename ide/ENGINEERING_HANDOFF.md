@@ -19,6 +19,10 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## A3 inventory and baseline continuation (2026-11-05)
+
+`host/src/inventory.rs` enumerates limited trusted project-relative folders and hashes up to 64 MiB per file without running any binaries. It distinguishes discovered toolchain *candidates* from tested usable toolchains, and reads only selected local Git reference metadata. `host/src/inventory_history.rs` records a user-triggered, app-profile artifact baseline and compares future bounded scans. The Continuity UI exposes discovered hashes and changes; the typed capability directory now advertises `inventory.capture` and `inventory.compare`. **No proof of live GitHub state, dirty working-tree status or packages outside the registered project root.** No permission to execute files is conferred. Latest source acceptance pending [run 42123874954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42123874954); tests/Windows physical acceptance remain open.
+
 ## A2/A3 continuation: typed contracts and project continuity
 
 The latest A3 event format adds `sourcePath` (validated relative file path) alongside `sourceRevision`; project-root and `ide/` orientation files can be surfaced as **untrusted, revisioned excerpts**. A2 results embed JSON Schema type definitions for independent resolution and display compact human summaries. Most recent exact-source CI [42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) was queued at last inspection; do not claim host native tests or Windows runtime passed on these new changes until evidence appears.
