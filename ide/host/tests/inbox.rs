@@ -14,20 +14,28 @@ impl NativeDirectoryPicker for Picker {
 }
 fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String) {
     let root = std::env::temp_dir().join(format!(
-        "lu-ide-inbox-{}-{:016x}", std::process::id(), rand::random::<u64>()
+        "lu-ide-inbox-{}-{:016x}",
+        std::process::id(),
+        rand::random::<u64>()
     ));
     fs::create_dir_all(root.join("project/src")).unwrap();
     fs::write(root.join("project/src/one.py"), "x = 1\n").unwrap();
     fs::write(root.join("project/src/two.py"), "y = 2\n").unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-    let id = registry.register_from_native_picker(
-        &mut Picker(Some(root.join("project")))
-    ).unwrap().unwrap().project_id;
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(root.join("project"))))
+        .unwrap()
+        .unwrap()
+        .project_id;
     (root, registry, id)
 }
 fn envelope(registry: &IdeWorkspaceRegistry, project_id: &str) -> ProposalEnvelope {
-    let one = registry.preview_source_file(project_id, "src/one.py").unwrap();
-    let two = registry.preview_source_file(project_id, "src/two.py").unwrap();
+    let one = registry
+        .preview_source_file(project_id, "src/one.py")
+        .unwrap();
+    let two = registry
+        .preview_source_file(project_id, "src/two.py")
+        .unwrap();
     ProposalEnvelope {
         schema_version: 1,
         task_id: "review-01".into(),
@@ -62,17 +70,24 @@ fn import_review_and_approve_are_data_only_no_project_writes() {
     let detail = inbox.detail(&registry, &received.inbox_id).unwrap();
     assert_eq!(detail.reviews.len(), 2);
     assert!(detail.reviews.iter().all(|r| !r.truncated));
-    let decided = inbox.decide(&registry, &received.inbox_id, &received.digest, true).unwrap();
+    let decided = inbox
+        .decide(&registry, &received.inbox_id, &received.digest, true)
+        .unwrap();
     assert_eq!(decided.status, ReviewStatus::ApprovedForStaging);
     assert_eq!(
-        fs::read_to_string(root.join("project/src/one.py")).unwrap(), "x = 1\n"
+        fs::read_to_string(root.join("project/src/one.py")).unwrap(),
+        "x = 1\n"
     );
     assert_eq!(
-        fs::read_to_string(root.join("project/src/two.py")).unwrap(), "y = 2\n"
+        fs::read_to_string(root.join("project/src/two.py")).unwrap(),
+        "y = 2\n"
     );
     assert_eq!(
-        inbox.decide(&registry, &received.inbox_id, &received.digest, true)
-            .unwrap_err().code(), "PROPOSAL_STATE_CHANGED"
+        inbox
+            .decide(&registry, &received.inbox_id, &received.digest, true)
+            .unwrap_err()
+            .code(),
+        "PROPOSAL_STATE_CHANGED"
     );
     inbox.discard(&received.inbox_id).unwrap();
     assert!(inbox.list().unwrap().is_empty());
@@ -83,18 +98,28 @@ fn import_review_and_approve_are_data_only_no_project_writes() {
 fn stale_source_blocks_approval_and_retains_original_files() {
     let (root, registry, id) = fixture();
     let inbox = IdeProposalInbox::default();
-    let received = inbox.import(&registry, &serde_json::to_string(&envelope(&registry, &id)).unwrap()).unwrap();
+    let received = inbox
+        .import(
+            &registry,
+            &serde_json::to_string(&envelope(&registry, &id)).unwrap(),
+        )
+        .unwrap();
     fs::write(root.join("project/src/two.py"), "externally updated\n").unwrap();
     assert_eq!(
-        inbox.decide(&registry, &received.inbox_id, &received.digest, true)
-            .unwrap_err().code(), "FILE_CHANGED_ON_DISK"
+        inbox
+            .decide(&registry, &received.inbox_id, &received.digest, true)
+            .unwrap_err()
+            .code(),
+        "FILE_CHANGED_ON_DISK"
     );
     assert_eq!(inbox.list().unwrap()[0].status, ReviewStatus::Pending);
     assert_eq!(
-        fs::read_to_string(root.join("project/src/one.py")).unwrap(), "x = 1\n"
+        fs::read_to_string(root.join("project/src/one.py")).unwrap(),
+        "x = 1\n"
     );
     assert_eq!(
-        fs::read_to_string(root.join("project/src/two.py")).unwrap(), "externally updated\n"
+        fs::read_to_string(root.join("project/src/two.py")).unwrap(),
+        "externally updated\n"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -103,19 +128,33 @@ fn stale_source_blocks_approval_and_retains_original_files() {
 fn wrong_digest_and_duplicate_decisions_are_denied() {
     let (root, registry, id) = fixture();
     let inbox = IdeProposalInbox::default();
-    let received = inbox.import(&registry, &serde_json::to_string(&envelope(&registry, &id)).unwrap()).unwrap();
+    let received = inbox
+        .import(
+            &registry,
+            &serde_json::to_string(&envelope(&registry, &id)).unwrap(),
+        )
+        .unwrap();
     assert_eq!(
-        inbox.decide(&registry, &received.inbox_id, &"f".repeat(64), true)
-            .unwrap_err().code(), "PROPOSAL_STATE_CHANGED"
+        inbox
+            .decide(&registry, &received.inbox_id, &"f".repeat(64), true)
+            .unwrap_err()
+            .code(),
+        "PROPOSAL_STATE_CHANGED"
     );
-    let decision = inbox.decide(&registry, &received.inbox_id, &received.digest, false).unwrap();
+    let decision = inbox
+        .decide(&registry, &received.inbox_id, &received.digest, false)
+        .unwrap();
     assert_eq!(decision.status, ReviewStatus::Rejected);
     assert_eq!(
-        inbox.decide(&registry, &received.inbox_id, &received.digest, true)
-            .unwrap_err().code(), "PROPOSAL_STATE_CHANGED"
+        inbox
+            .decide(&registry, &received.inbox_id, &received.digest, true)
+            .unwrap_err()
+            .code(),
+        "PROPOSAL_STATE_CHANGED"
     );
     assert_eq!(
-        inbox.detail(&registry, "made-up").unwrap_err().code(), "PROPOSAL_NOT_FOUND"
+        inbox.detail(&registry, "made-up").unwrap_err().code(),
+        "PROPOSAL_NOT_FOUND"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -127,14 +166,22 @@ fn incomplete_preview_cannot_be_approved_for_staging() {
     doc.edits.truncate(1);
     doc.edits[0].proposed_text = "new value\n".repeat(350);
     let inbox = IdeProposalInbox::default();
-    let received = inbox.import(&registry, &serde_json::to_string(&doc).unwrap()).unwrap();
+    let received = inbox
+        .import(&registry, &serde_json::to_string(&doc).unwrap())
+        .unwrap();
     let detail = inbox.detail(&registry, &received.inbox_id).unwrap();
     assert!(detail.reviews[0].truncated);
     assert_eq!(
-        inbox.decide(&registry, &received.inbox_id, &received.digest, true)
-            .unwrap_err().code(), "PROPOSAL_PREVIEW_INCOMPLETE"
+        inbox
+            .decide(&registry, &received.inbox_id, &received.digest, true)
+            .unwrap_err()
+            .code(),
+        "PROPOSAL_PREVIEW_INCOMPLETE"
     );
-    assert_eq!(fs::read_to_string(root.join("project/src/one.py")).unwrap(), "x = 1\n");
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/one.py")).unwrap(),
+        "x = 1\n"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -142,7 +189,12 @@ fn incomplete_preview_cannot_be_approved_for_staging() {
 fn proposal_queue_is_volatile_and_never_persists_untrusted_code() {
     let (root, registry, id) = fixture();
     let inbox = IdeProposalInbox::default();
-    inbox.import(&registry, &serde_json::to_string(&envelope(&registry, &id)).unwrap()).unwrap();
+    inbox
+        .import(
+            &registry,
+            &serde_json::to_string(&envelope(&registry, &id)).unwrap(),
+        )
+        .unwrap();
     assert_eq!(inbox.list().unwrap().len(), 1);
     drop(inbox);
     let new_process_queue = IdeProposalInbox::default();
