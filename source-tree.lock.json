@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e251f2521286f5e1da4dd4a2282ab8c618ab64ca",
-  "trackedFileCount": 320,
+  "sourceCommitBeforeLock": "47ca08bd1837fa6d0cd5d0f0f001b4f4ec2650d5",
+  "trackedFileCount": 322,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -729,7 +729,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "415cd54daadc08ce0b352dbe8610af8806791db4"
+      "blob": "e6c45d196a9e9492c072d890f0ea09254a2c6516"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -854,6 +854,10 @@
     {
       "path": "src-tauri/lu-core/src/native_reader_turn.rs",
       "blob": "d158482c5ce5aba6527b02a2b0bb1afcca006c8c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_spreadsheet_create.rs",
+      "blob": "37e8f24fa3c3423e55d5a5054f9b529fd4e77485"
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
@@ -1174,6 +1178,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_git_inspect.rs",
       "blob": "e7c3674b44e75019e4fb096e7ce697fffdb6174a"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_spreadsheet_create.rs",
+      "blob": "474b41eec042336fbadee4d3662e7c26f6b4b63a"
     },
     {
       "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
