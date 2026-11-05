@@ -46,7 +46,9 @@ Use the [standalone IDE acceptance workflow](https://github.com/vjmichael/Lu-AI-
 
 **Passed CI:** [run 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363), source SHA `4ea91f2b09025df349ca0e1522c4666f88cd498f` (same R3.3 implementation after formatter patches). Linux native Rust: **33 tests passed**, `rustfmt --check` passed; frontend build and tests passed; Windows native IDE host tests and standalone Tauri `cargo check` passed.
 
-**Windows R3.3 unsigned release job:** [run 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831), initiated after CI formatting repairs. Check its real conclusion and artifact before claiming a binary is ready.
+**Windows R3.3 unsigned release:** [run 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831) **passed**; artifact `lu-ide-windows-alpha-r3-3-reviewed-changes` contains a 10,462,720-byte Windows PE executable. Verified EXE SHA-256: `703be602126523b17bbedfa0094648e6174ee11139772e097c63c3f9e7525f3c`.
+
+**User-facing package:** `Lu-IDE-Standalone-R3.3-Reviewed-Changes.zip`, integrity checked, SHA-256 `45d6e6fb22c077a6e611053400cf39f219cd930a6ccd5c9e53d3a6c8a5f24dc0`. Contains the unsigned executable, `ReviewTestProject` and `README-R3.3.txt` with read-only review, explicit save, external conflict and truncation tests. No actual installed Windows R3.3 review-dialog acceptance has been performed yet.
 
 Passing CI is **not** proof of Windows interactive review-dialog acceptance; that remains a separate user-facing gate.
 
