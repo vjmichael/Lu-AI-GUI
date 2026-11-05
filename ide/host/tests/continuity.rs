@@ -172,3 +172,21 @@ fn toolchain_candidates_are_found_but_never_certified_usable() {
     assert!(!result.inventory.execution_performed);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn benchmark_manifest_is_versioned_untrusted_context_and_never_executed() {
+    let (root, registry, id, ledger) = fixture();
+    let path = root.join("project/benchmarks");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("manifest.json"),
+        br#"{"dataset":"fixture-v1","metric":"latency","value":42}"#).unwrap();
+    let context = ledger.context(&registry, &id).unwrap();
+    let evidence = context.documents.iter().find(|doc|
+        doc.relative_path == "benchmarks/manifest.json").unwrap();
+    assert_eq!(evidence.availability, "present_unverified");
+    assert_eq!(evidence.trust, "untrusted_project_text");
+    assert_eq!(evidence.source_revision.as_ref().unwrap().len(), 64);
+    assert!(evidence.excerpt.as_ref().unwrap().contains("fixture-v1"));
+    assert!(!context.inventory.execution_performed);
+    fs::remove_dir_all(root).unwrap();
+}
