@@ -88,6 +88,8 @@ pub mod recovery;
 pub mod registry;
 pub mod tasks;
 pub mod native_background_status;
+pub mod native_background_result;
+pub mod native_background_control;
 pub mod native_background_process;
 pub mod wire;
 pub mod workspace;
