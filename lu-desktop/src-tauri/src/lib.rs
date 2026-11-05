@@ -1249,7 +1249,7 @@ async fn lu_reader_pick_document(app:AppHandle)
             .ok_or("Invalid document filename")?.to_owned();
         let mut input=File::open(&path).map_err(|_|"Cannot open selected document")?;
         let mut bytes=Vec::new();
-        input.by_ref().take(MAX_PICK_BYTES+1).read_to_end(&mut bytes)
+        std::io::Read::by_ref(&mut input).take(MAX_PICK_BYTES+1).read_to_end(&mut bytes)
             .map_err(|_|"Cannot read selected document")?;
         if bytes.len() as u64>MAX_PICK_BYTES{
             return Err("Document size changed during reading".into());
