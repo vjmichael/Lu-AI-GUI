@@ -1,6 +1,6 @@
 # Lu Core — Reader Tool and Native Vision Capability Routing
 
-Status: **In progress.** Bounded text, initial DOCX body extraction, typed Reader registration and a user-operated native document picker have been implemented in source. PDF, spreadsheet, presentation and OCR adapters, structured paging and full installed-app acceptance remain open.
+Status: **In progress.** Bounded text, initial DOCX, XLSX and PPTX extraction, typed Reader registration and a native file picker are in source. Exact-head Windows/Linux testing and installed desktop acceptance remain open. PDF, OCR, full structured range/paged reading and format compatibility are not yet implemented.
 
 ## Decision
 
@@ -25,16 +25,19 @@ reasoning.
 | PDF with text layer | Page-aware selectable text extraction | **Not implemented** |
 | Scanned PDF | Render page with strict resource limits, then OCR adapter | **Not implemented** |
 | JPG, PNG, TIFF and other document photos | OCR adapter, orientation and page/region provenance | **Not implemented** |
-| XLSX, XLSM | Workbook and worksheet catalog; bounded cell/range reads, shared strings, numbers, dates, formulas and stored cached results; never execute macros or external links | **Not implemented** |
+| XLSX | Initial workbook/worksheet order, cells, shared strings, raw formulas and stored cached values; chunk/range paging not yet present | **Implemented in source; CI pending** |
+| XLSM | Macro-enabled workbook reading without macro execution | **Not implemented** |
 | ODS, legacy XLS | Separate OpenDocument and legacy binary adapters; same typed range contract | **Not implemented** |
-| PPTX, PPSX, PPTM | Ordered slides, text boxes, shapes' text, tables, speaker notes, alt text, and slide-local references; never execute embedded content or macros | **Not implemented** |
+| PPTX | Initial slide order and text runs, slide number references; notes, diagrams and alt text not yet extracted | **Implemented in source; CI pending** |
+| PPSX, PPTM | Slide show and macro-enabled variants | **Not implemented** |
 | ODP, legacy PPT | Separate OpenDocument and legacy binary presentation adapters | **Not implemented** |
 | ODT, RTF, EPUB and legacy DOC | Separate vetted format adapters | **Not implemented** |
 | Encrypted, corrupted, unsupported and unknown | Explicit error; never claim successful extraction | Required |
 
-The `lu-core::native_reader` module deliberately refuses unsupported PDFs,
-images, spreadsheet and presentation formats. It handles bounded text and
-initial main-body DOCX extraction and records whether output was truncated. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
+The `lu-core::native_reader` module handles supported TXT, DOCX, XLSX, PPTX
+and other text formats, returning source-anchored text. It deliberately rejects
+unsupported PDF, image OCR, legacy/binary Office and unverified package types;
+no skipped format is silently claimed as extracted. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
 MIME/signature validation and host-authorized file handles belong in the
 admission layer; filename extensions alone are insufficient.
 
@@ -76,7 +79,7 @@ extension or assume a DOCX parser supports arbitrary Office packages.
 Encrypted packages, external relationships, macros, object linking, ZIP
 bombs and oversized XML parts must fail closed.
 
-These are **planned format adapters, not implemented features**. Keep Reader
+These are **partly implemented format adapters**: initial XLSX cell/formula and PPTX slide text code exists but structured inspect/range/slide paging, notes and enhanced provenance do not. Keep Reader
 as one user-visible family while dispatching internal format-specific,
 sandboxed extractors. A future typed API should include `reader.inspect`
 (metadata/catalog) and `reader.read` (bounded segments, ranges or slides)
@@ -134,12 +137,12 @@ as automatically detected.
    deny-by-default authorization boundary, catalog registration and rejection
    tests. **Implemented in Lu Core; desktop host integration pending.**
 3. Secure DOCX extraction from main body (paragraphs/tables and inserted text; deleted tracked text omitted), strict ZIP and XML limits, CRC, no external relationships. **Implemented and CI verification pending.** Headers/footers, comments and richer page provenance still open.
-4. Workbook adapters: XLSX first, preserving sheet identities, cell ranges,
-   formulas vs cached values and type/provenance; ODS/XLS/XLSM compatibility
-   separately and without executing active content. **Planned.**
-5. Presentation adapters: PPTX first, preserving slide order, notes, text,
-   tables and visual-element references; ODP/PPT/PPTM/PPSX separately.
-   **Planned.**
+4. Workbook adapters: XLSX initial sheet names, cell references, strings,
+   formulas vs cached values. **Implemented in source; CI pending.** Bounded
+   range paging and ODS/XLS/XLSM compatibility remain open.
+5. Presentation adapters: initial PPTX ordered slides and textual runs.
+   **Implemented in source; CI pending.** Notes, tables, nontextual visual
+   elements and ODP/PPT/PPTM/PPSX compatibility remain open.
 6. PDF selectable-text extraction with page boundaries; scanned page
    detection, bounded image conversion and OCR worker.
 7. Install Reader in the desktop tool catalog with actual per-turn grants,
