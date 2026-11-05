@@ -257,7 +257,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
-      "blob": "bfef6808d303a5995f2da71703f944f6722f6085"
+      "blob": "efc62ff60c743b47a20674c17f88de8e4cdc2cba"
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "bfcb363b7d74597aa82a429c26fb4e1cfcef84ee"
+      "blob": "93297bdf0cdfe66cd0ec8f486ea29d2e7697d829"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -281,7 +281,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "f6b123e98f296cca0fc9af4f91c7f9e7164ce5c9"
+      "blob": "9bdc7a97d2fd73957178aa39e3b8ed1fc79cfaa0"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "6bf52e080bde1a637683a8575323781b06a5b8d6"
+      "blob": "74f9affb3df5cb9412867685fde12e6b66ee94bb"
     },
     {
       "path": "lu-desktop/tests/browser-staging.test.mjs",
@@ -449,7 +449,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "7deb8ea59f8aa6267401842dae56bfe64293154f"
+      "blob": "384afd351fa5f3749ea8b56849c2a1d721f2ca2b"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -465,7 +465,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "14a403f32585cf292c699e1f9cd14548829e94f3"
+      "blob": "3ec89e05c32e61a9dbdd56b8ae74a1e72cb0bee6"
     },
     {
       "path": "scripts/source-identity.mjs",
