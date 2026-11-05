@@ -2,6 +2,12 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Wave B1 Find and Replace (source committed)
+- Implemented Ctrl+H Find and Replace in human editor with literal case-sensitive/insensitive search, Replace One, confirmation-gated Replace All, and an explicit scan cap that refuses incomplete bulk edits.
+- Changes apply only to the active unsaved CodeMirror buffer in one undoable transaction, with an expected-document check and consumed nonce to avoid accidental reapplication on remount. Explicit human Save and revision conflict handling remain authoritative; no new native file-write API.
+- Added pure-JS tests for literal regex metacharacters, Unicode UTF-16 offsets, case, literal dollar signs and all-or-nothing scan limits; updated frontend structural assertions and CSS.
+- **Verification:** code committed; [source CI 42130813013](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42130813013) pending at last inspection. No installed Windows GUI acceptance or installer produced. Note that branch-wide CI concurrency can supersede older native Git runs; a separate feature branch is preferable next time.
+
 ## 2026-11-05 — Live GitHub comparison and native Git CI repair
 - Implemented typed read-only public GitHub branch comparison and explicit Source control Check GitHub action. Compares local HEAD, locally stored tracking SHA, and time-stamped remote branch SHA separately; does not infer ancestry or execute Git, use credentials, or connect Lu.
 - Fixed a genuine Windows Rust E0505 fixture lifetime failure in [42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) by releasing the borrowed Git tree before the repository.
