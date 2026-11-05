@@ -30,5 +30,9 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_status -- --nocapture
       - name: Verify durable task store regressions
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test task_checkpoints -- --nocapture
+      - name: Verify operator task dashboard regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests -- --nocapture
+      - name: Verify background pane UI contract
+        run: node --test lu-desktop/tests/background-pane.test.mjs
       - name: Verify source identity
         run: git rev-parse HEAD
