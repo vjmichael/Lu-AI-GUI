@@ -1,0 +1,80 @@
+# Lu IDE — Engineering handoff / continuation entrypoint
+
+**Updated:** 2026-11-04 (America/Phoenix)  
+**Repository:** [vjmichael/Lu-AI-GUI](https://github.com/vjmichael/Lu-AI-GUI)  
+**Source branch:** `ide/workspace-development`  
+**IMPORTANT:** This is a **standalone Tauri 2 / React / Rust executable**, not a panel embedded in Lu Desktop. Keep all changes within `ide/` or IDE-specific workflows; **do not modify Lu Core** for ordinary IDE milestones.
+
+This entrypoint is intended to spare the next development conversation from rediscovering the original scope, CI, app paths, and acceptance history.
+
+## Current user-verified Windows milestones
+
+- **R1:** standalone Windows IDE launches, displays project registration shell and shows "Lu connection: Not connected".
+- **R2:** register and browse disposable project; previews Rust and Python source without execution.
+- **R3:** CodeMirror tabs; user edited/saved source, closed project and reopened with modified content intact.
+- **R3.1:** user's Windows screenshots verified line-number gutters and Rust/Python/Markdown syntax highlighting after CodeMirror CSP nonce fix.
+- **R3.2:** user screenshots verified registration removal to zero projects, re-registration and zero-project state persisting across a restart. **Remove from IDE** is catalog-only and never deletes the selected project directory.
+- A small R3.2 card-layout regression was corrected in source using `repeat(auto-fill,minmax(275px,1fr))`, preserving regular card widths when only one project remains.
+
+These are real user-submitted Windows smoke tests, *not* full hostile-project or installed NSIS acceptance. See `docs/IDE_03_R3_EDITOR_ACCEPTANCE.md` and `docs/IDE_03_PROJECT_DELIST_ACCEPTANCE.md`.
+
+## Current development milestone — R3.3 reviewed changes
+
+The user wants **Lu to use Lu IDE as an authorized coding assistant**, while the IDE remains independently useful.
+
+R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
+- Native `host/src/review.rs` compares a human-edited draft to the currently saved file at a specific SHA-256 revision; no writes.
+- `app/src-tauri/src/lib.rs` exposes read-only `ide_review_source_change`.
+- `app/web/main.jsx` adds **Review changes** and an explicit **Save reviewed changes** control, with project/draft/revision revalidation.
+- Review output is at most **240 lines / 32 KiB**, with a truncation warning that disables reviewed-save. Source file preview/save limits remain 512 KiB.
+- Source files, model output and project scripts remain untrusted; source content is rendered as escaped text.
+- `host/tests/review.rs` checks no filesystem effect, stale revision refusal, traversal, symlink denial and size limits.
+- `app/tests/standalone.test.mjs` checks command allowlists, review UI, and no executable or arbitrary patch apply path.
+
+**R3.3 CI:** [standalone acceptance workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml). The first run's tests passed but its Rust formatter check failed; exact rustfmt patches were committed. Latest candidate run at the time of writing: [41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363). A Windows R3.3 release build was triggered in [41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831). **Check final statuses before claiming success.** New user Windows interaction has NOT yet been accepted.
+
+## Source map
+
+| Path | Purpose |
+| --- | --- |
+| `ide/app/web/main.jsx` | Standalone project UI; tabs; explicit saves; change-review UI |
+| `ide/app/web/code_editor.jsx` | CodeMirror 6 state, syntax and per-tab undo/redo |
+| `ide/app/web/styles.css` | App, project cards, editor and review modal |
+| `ide/app/src-tauri/src/lib.rs` | Native Tauri command boundary; no Lu Core link |
+| `ide/host/src/lib.rs` | Project registration lifecycle and catalog-only delisting |
+| `ide/host/src/browser.rs` | Capability-relative and bounded source reads |
+| `ide/host/src/editor.rs` | Revision-checked temporary-file and rename save |
+| `ide/host/src/review.rs` | Pure bounded non-mutating change review |
+| `ide/sandbox` | Separate experimental Bubblewrap native probes; not wired to IDE execution |
+| `ide/docs/IDE_WORKSPACE_DESIGN.md` | Canonical eight-stage implementation plan |
+| `ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md` | Separate desktop and optional authenticated Lu bridge |
+| `ide/docs/ADR_0002_WORKSPACE_CHAT_BOUNDARIES.md` | IDE Coding Chat is distinct from Lu native chat and NVP chat |
+| `ide/docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md` | R3.3 safety boundaries and Windows acceptance plan |
+| `.github/workflows/ide-standalone.yml` | Linux host native tests; frontend build/tests; Windows host/Tauri checks |
+| `.github/workflows/ide-alpha-windows.yml` | On-demand unsigned optimized Windows executable artifact |
+
+## Local and CI checks
+
+```sh
+cargo test --manifest-path ide/host/Cargo.toml --all-targets
+cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+cd ide/app
+npm install --ignore-scripts --no-audit --no-fund
+npm run check
+cargo check --manifest-path src-tauri/Cargo.toml
+```
+
+Desktop Tauri uses Rust 1.90+, native host suite supports Rust 1.88+. The Windows release workflow is purposely separate from fast native CI; edit its name/artifact only to trigger a new numbered alpha build, or dispatch it explicitly. Release outputs are **unsigned**, not a production installer.
+
+## IMPORTANT open gates
+
+1. R3.3 actual Windows visual/interaction validation: review, cancel without write, save after review, conflict, truncated preview.
+2. Native file-save hardening: root identity and Windows reparse attacks, ACL/owner fidelity, external-writer race across final compare/rename, power-loss injection, crash recovery of unsaved drafts, full diff accuracy.
+3. Task 2 **OS sandbox**: initial Linux fixed probes passed, but arbitrary executable workers remain disallowed until CPU/RAM/PID quotas, process-tree cancellation, syscall/filesystem controls and **Windows native containment** pass.
+4. Task 3 editor completion: search/replace, split views, accessible keyboard navigation, large tree filtering and file watchers.
+5. Tasks 4–6: LSP/DAP/build/test, package manager and advanced Git; do not activate build/package scripts merely by project open.
+6. Task 7: **actual authenticated Lu↔IDE bridge** and project-specific IDE Coding Chat. All model-generated edits must be data-only proposals validated by IDE and authorized per task, not shell commands or reuse of Lu's ambient permissions.
+7. Task 8: disposable Lu Dev instance/worktree with human-approved merge, rollback, stable Lu untouched.
+8. Real installed Windows/Linux app and eventual NSIS lifecycle acceptance.
+
+Do not report a passed CI matrix as proof of user-installed UX, or a successful namespace probe as full sandbox acceptance. No automatic Lu connection exists yet.
