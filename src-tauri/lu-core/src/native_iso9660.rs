@@ -2,9 +2,11 @@
  //! Rock Ridge metadata interpretation, symlinks or special files.
  //! Host supplies the opened source/destination directory capabilities.
  //! This is an unprivileged parser/primitive, not a model grant.
-use std::{collections::BTreeSet, io::{Read,Seek,SeekFrom}, path::Path};
+use std::{collections::BTreeSet, io::{Read,Seek,SeekFrom,Write}};
+use sha2::{Digest,Sha256};
+use cap_std::fs::OpenOptions;
 use cap_std::fs::Dir;
-use crate::native_atomic_write::{create_new_atomic_in_dir,AtomicWriteError,WriteReceipt};
+use crate::native_atomic_write::{AtomicWriteError,WriteReceipt};
 
 const SECTOR:u64=2048;
 const MAX_IMAGE:u64=16*1024*1024*1024;
@@ -12,7 +14,7 @@ const MAX_ENTRIES:usize=4096;
 const MAX_DIRECTORY_BYTES:u64=4*1024*1024;
 const MAX_METADATA_READ:u64=32*1024*1024;
 const MAX_DEPTH:usize=12;
-const MAX_EXTRACT_BYTES:u64=1024*1024;
+const MAX_EXTRACT_BYTES:u64=256*1024*1024;
 
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub enum IsoError {
@@ -202,42 +204,103 @@ pub fn inspect_iso(root:&Dir,source:&str,max_entries:usize)->Result<IsoManifest,
     manifest.entries.truncate(max_entries);
     Ok(manifest)
 }
-/// Extract exactly one regular ISO member into a new file. The host must have
-/// authorized source image, member name, target and target directory separately.
-/// File size is <=1 MiB until the streamed writer receives durable
-/// interruption/reconciliation integration. No auto-replay of uncertain writes.
-fn member_bytes(source_root:&Dir,source:&str,member:&str)->Result<Vec<u8>,IsoError>{
-    let (manifest,mut file)=enumerate(source_root,source)?;
-    let chosen=manifest.entries.iter().find(|e|e.path==member)
+/// ISO file extraction is a host-approved, durable-journal-owned mutation.
+/// Files are streamed through a new, synced stage and published without
+/// overwriting an existing target; a cleanup failure is UNCERTAIN.
+fn find_member(source_root:&Dir,source:&str,member:&str)
+    ->Result<(cap_std::fs::File,IsoEntry),IsoError>{
+    let (manifest,file)=enumerate(source_root,source)?;
+    let chosen=manifest.entries.into_iter().find(|e|e.path==member)
         .ok_or(IsoError::NotFound)?;
     if chosen.is_directory{return Err(IsoError::UnsupportedFeature)}
     if chosen.bytes>MAX_EXTRACT_BYTES{return Err(IsoError::TooLarge)}
-    let mut bytes=vec![0u8;chosen.bytes as usize];
-    file.seek(SeekFrom::Start(chosen.extent*SECTOR)).map_err(fail)?;
-    file.read_exact(&mut bytes).map_err(fail)?;
-    Ok(bytes)
+    Ok((file,chosen))
+}
+fn stream_member(
+    file:&mut cap_std::fs::File,entry:&IsoEntry,
+    mut consume:impl FnMut(&[u8])->Result<(),IsoError>
+)->Result<String,IsoError>{
+    file.seek(SeekFrom::Start(entry.extent*SECTOR)).map_err(fail)?;
+    let mut remaining=entry.bytes;
+    let mut hasher=Sha256::new();
+    let mut buf=[0u8;64*1024];
+    while remaining>0{
+        let n=std::cmp::min(remaining,buf.len() as u64) as usize;
+        file.read_exact(&mut buf[..n]).map_err(fail)?;
+        consume(&buf[..n])?;
+        hasher.update(&buf[..n]);
+        remaining-=n as u64;
+    }
+    Ok(format!("{:x}",hasher.finalize()))
 }
 pub fn iso_member_digest(
     source_root:&Dir,source:&str,member:&str
 )->Result<String,IsoError>{
-    use sha2::{Digest,Sha256};
-    let bytes=member_bytes(source_root,source,member)?;
-    Ok(format!("{:x}",Sha256::digest(&bytes)))
+    let (mut file,entry)=find_member(source_root,source,member)?;
+    stream_member(&mut file,&entry,|_|Ok(()))
 }
-/// An exact hash is checked again against bytes actually published. It is
-/// not a grant; the trusted host must independently authorize it.
+fn safe_output_name(s:&str)->bool{
+    !s.is_empty() && s.len()<=240 && s!="." && s!=".."
+      && !s.starts_with(".lu-stage-") && !s.ends_with('.') && !s.ends_with(' ')
+      && !s.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':'))
+}
+fn valid_stage_id(s:&str)->bool{
+    (16..=128).contains(&s.len()) && s.bytes().all(|b|
+        b.is_ascii_alphanumeric()||b==b'-'||b==b'_')
+}
+fn discard_stage(dir:&Dir,stage:&str,error:IsoError)->IsoError{
+    if dir.remove_file(stage).is_err(){
+        IsoError::Publish(AtomicWriteError::PublishedNeedsReconciliation)
+    }else{error}
+}
+/// Exact approved digest checked against the bytes actually written to a
+/// temporary file. The host must separately authorize the target, source,
+/// persisted human turn and a durable effect journal before invoking this.
 pub fn extract_iso_file_new_checked(
     source_root:&Dir,source:&str,member:&str,
     destination:&Dir,new_name:&str,host_stage_id:&str,
     approved_sha256:&str,
 )->Result<WriteReceipt,IsoError>{
-    use sha2::{Digest,Sha256};
-    let bytes=member_bytes(source_root,source,member)?;
-    if format!("{:x}",Sha256::digest(&bytes))!=approved_sha256 {
+    if !safe_output_name(new_name) || !valid_stage_id(host_stage_id){
+        return Err(IsoError::BadName)
+    }
+    if approved_sha256.len()!=64 ||
+        !approved_sha256.bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
         return Err(IsoError::SourceChanged)
     }
-    create_new_atomic_in_dir(destination,new_name,host_stage_id,&bytes)
-        .map_err(IsoError::Publish)
+    let (mut file,entry)=find_member(source_root,source,member)?;
+    let stage=format!(".lu-stage-{host_stage_id}.iso.tmp");
+    let mut opts=OpenOptions::new();
+    opts.create_new(true).write(true);
+    let mut output=destination.open_with(&stage,&opts).map_err(|e|
+        if e.kind()==std::io::ErrorKind::AlreadyExists {
+            IsoError::Publish(AtomicWriteError::StageCollision)
+        }else{fail(e)}
+    )?;
+    let result=stream_member(&mut file,&entry,|bytes|
+        output.write_all(bytes).map_err(fail));
+    let result=match result{
+        Ok(hash)=>output.sync_all().map_err(fail).map(|_|hash),
+        Err(e)=>Err(e),
+    };
+    drop(output);
+    let sha=match result{
+        Ok(hash)=>hash,
+        Err(e)=>return Err(discard_stage(destination,&stage,e)),
+    };
+    if sha!=approved_sha256 {
+        return Err(discard_stage(destination,&stage,IsoError::SourceChanged))
+    }
+    if let Err(e)=destination.hard_link(&stage,destination,new_name){
+        return Err(discard_stage(destination,&stage,if e.kind()==std::io::ErrorKind::AlreadyExists{
+            IsoError::Publish(AtomicWriteError::ExistingTarget)
+        }else{fail(e)}))
+    }
+    destination.remove_file(&stage).map_err(|_|
+        IsoError::Publish(AtomicWriteError::PublishedNeedsReconciliation))?;
+    Ok(WriteReceipt{
+        target:new_name.into(),bytes_written:entry.bytes as usize,sha256:sha,
+    })
 }
 pub fn extract_iso_file_new(
     source_root:&Dir,source:&str,member:&str,
