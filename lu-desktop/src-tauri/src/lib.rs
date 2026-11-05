@@ -1401,10 +1401,18 @@ async fn lu_generate_browser(
                     if observed.len()>8{
                         return Err("Browser observation count exceeded".into());
                     }
-                    // One confirmed read supplies enough evidence for the
-                    // initial continuation; don't loop needlessly.
-                    if call.arguments_json.contains(r#""operation":"read""#)
-                      ||call.arguments_json.contains(r#""operation":"accessibility""#){
+                    // Only the browser worker's actual result, never the
+                    // model's requested operation name, can prove that page
+                    // content was read. Empty text is not source evidence.
+                    let actual_status=result.pointer(
+                        "/result/browser_result/result/status"
+                    ).and_then(serde_json::Value::as_str);
+                    let actual_text=result.pointer(
+                        "/result/browser_result/result/text"
+                    ).and_then(serde_json::Value::as_str)
+                     .is_some_and(|text|!text.trim().is_empty());
+                    if matches!(actual_status,Some("READ"|"ACCESSIBILITY"))
+                        &&actual_text{
                         collected_read=true;
                     }
                 }
