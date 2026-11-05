@@ -25,6 +25,11 @@
 
 ## Wave A2 typed contracts + Wave A3 continuity (new source, acceptance open)
 
+- Most recent exact-source CI request: [run 42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) for `7d27dc236e61648a85d6d088210c7ac2fee1a7e7`, **queued at last inspection**. Prior push-triggered runs were superseded/cancelled; cancellation is not test failure or success.
+- Typed result schemas are now independently resolvable via embedded JSON Schema 2020-12 `$defs`, not just unresolved type labels; human Capabilities cards show compact input/result signatures with optional full schema expansion.
+- The continuity service recognizes root and `ide/` project-orientation documents, and host-observed saves now include both validated relative source path and saved SHA-256 revision. Remote Git, local packages and toolchain readiness remain uninspected; a local event is not a verified build receipt.
+
+
 - **A2:** capability registry schema version 2 uses `host/src/capability_schemas.json` with fully typed JSON Schema request and result shapes, nested definitions and error schema. Advertises **17 implemented native commands** (including new read-only continuity endpoint), not future Git/toolchain/build capabilities. The Capabilities screen displays request/result/error contracts; type and command-parity regression checks added.
 - **A3:** app-profile `development-ledger.jsonl` with host-recorded project registration/open/close/unregister and explicit source-save observations (bounded record length; sync-to-disk). New `ide_read_project_context` is read-only, returning the latest 40 project events plus bounded revision-tagged excerpts from `PROJECT_STATE.md`, `CHANGELOG.md`, `ENGINEERING_HANDOFF.md`, `AGENTS.md` if present inside the opened project.
 - **Human UX:** Continuity screen now displays observed events, source-document revisions and explicit remote Git/artifact/toolchain unknowns. Project notes are untrusted content, not instructions, and no Lu connection or project code execution is introduced.
