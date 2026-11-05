@@ -3,14 +3,13 @@
 //! No model, process, network, or IDE write authorization is exposed here.
 //! "claimedProducer" is a label supplied by an untrusted sender, NOT identity
 //! authentication; no execution/apply API exists for an envelope.
-use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::{
     browser::{validate_relative, BrowserError, MAX_TEXT_BYTES},
     review::ChangeReview,
-    wire,
-    IdeWorkspaceRegistry,
+    wire, IdeWorkspaceRegistry,
 };
 
 const MAX_PROPOSAL_BYTES: usize = 600 * 1024;
@@ -70,17 +69,25 @@ impl ProposalEnvelope {
     /// Import a bounded JSON proposal strictly as data. Unknown fields
     /// (including "command", "approved" or "autoApply") are rejected.
     pub fn parse(json: &str) -> Result<Self, ProposalError> {
-        if json.len() > MAX_PROPOSAL_BYTES { return Err(ProposalError::TooLarge); }
-        let envelope: Self = serde_json::from_str(json)
-            .map_err(|_| ProposalError::InvalidEnvelope)?;
+        if json.len() > MAX_PROPOSAL_BYTES {
+            return Err(ProposalError::TooLarge);
+        }
+        let envelope: Self =
+            serde_json::from_str(json).map_err(|_| ProposalError::InvalidEnvelope)?;
         envelope.validate()?;
         Ok(envelope)
     }
 
     pub fn validate(&self) -> Result<(), ProposalError> {
-        if self.schema_version != 1 { return Err(ProposalError::UnsupportedVersion); }
-        if self.task_id.is_empty() || self.task_id.len() > 64
-            || !self.task_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        if self.schema_version != 1 {
+            return Err(ProposalError::UnsupportedVersion);
+        }
+        if self.task_id.is_empty()
+            || self.task_id.len() > 64
+            || !self
+                .task_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
             || self.claimed_producer.is_empty()
             || self.claimed_producer.len() > 64
             || self.claimed_producer.chars().any(char::is_control)
@@ -106,7 +113,10 @@ impl ProposalEnvelope {
                 return Err(ProposalError::DuplicateTarget);
             }
             if edit.expected_revision.len() != 64
-                || !edit.expected_revision.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                || !edit
+                    .expected_revision
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             {
                 return Err(ProposalError::InvalidRevision);
             }
@@ -116,7 +126,9 @@ impl ProposalEnvelope {
                 return Err(ProposalError::TooLarge);
             }
             total = total.saturating_add(edit.proposed_text.len());
-            if total > MAX_TOTAL_EDIT_BYTES { return Err(ProposalError::TooLarge); }
+            if total > MAX_TOTAL_EDIT_BYTES {
+                return Err(ProposalError::TooLarge);
+            }
         }
         Ok(())
     }
@@ -124,15 +136,23 @@ impl ProposalEnvelope {
     /// Review every edit against a current, open project. This is intentionally
     /// read-only and may fail after an earlier preview was created if the disk
     /// changed; even a successful preview confers NO permission to write.
-    pub fn review(&self, registry: &IdeWorkspaceRegistry) -> Result<Vec<ChangeReview>, ProposalError> {
+    pub fn review(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+    ) -> Result<Vec<ChangeReview>, ProposalError> {
         self.validate()?;
-        self.edits.iter()
-            .map(|edit| registry.review_source_change(
-                &self.project_id,
-                &edit.relative_path,
-                &edit.expected_revision,
-                &edit.proposed_text,
-            ).map_err(ProposalError::Review))
+        self.edits
+            .iter()
+            .map(|edit| {
+                registry
+                    .review_source_change(
+                        &self.project_id,
+                        &edit.relative_path,
+                        &edit.expected_revision,
+                        &edit.proposed_text,
+                    )
+                    .map_err(ProposalError::Review)
+            })
             .collect()
     }
 }
@@ -167,34 +187,65 @@ mod tests {
     #[test]
     fn reject_commands_and_self_approval_unknown_fields() {
         let json = serde_json::to_string(&sample()).unwrap();
-        let modified = json.replacen("\"schemaVersion\":1", "\"schemaVersion\":1,\"autoApply\":true", 1);
-        assert_eq!(ProposalEnvelope::parse(&modified).unwrap_err().code(), "PROPOSAL_INVALID");
-        let modified = json.replacen("\"schemaVersion\":1", "\"schemaVersion\":1,\"command\":\"cargo test\"", 1);
-        assert_eq!(ProposalEnvelope::parse(&modified).unwrap_err().code(), "PROPOSAL_INVALID");
+        let modified = json.replacen(
+            "\"schemaVersion\":1",
+            "\"schemaVersion\":1,\"autoApply\":true",
+            1,
+        );
+        assert_eq!(
+            ProposalEnvelope::parse(&modified).unwrap_err().code(),
+            "PROPOSAL_INVALID"
+        );
+        let modified = json.replacen(
+            "\"schemaVersion\":1",
+            "\"schemaVersion\":1,\"command\":\"cargo test\"",
+            1,
+        );
+        assert_eq!(
+            ProposalEnvelope::parse(&modified).unwrap_err().code(),
+            "PROPOSAL_INVALID"
+        );
     }
 
     #[test]
     fn deny_duplicate_and_escaped_paths() {
         let mut proposal = sample();
         proposal.edits[0].relative_path = "../outside".into();
-        assert_eq!(proposal.validate().unwrap_err().code(), "INVALID_RELATIVE_PATH");
+        assert_eq!(
+            proposal.validate().unwrap_err().code(),
+            "INVALID_RELATIVE_PATH"
+        );
         proposal.edits[0].relative_path = "src/main.rs".into();
         proposal.edits.push(ProposedEdit {
             relative_path: "src/main.rs".into(),
             expected_revision: "a".repeat(64),
             proposed_text: String::new(),
         });
-        assert_eq!(proposal.validate().unwrap_err().code(), "PROPOSAL_DUPLICATE_TARGET");
+        assert_eq!(
+            proposal.validate().unwrap_err().code(),
+            "PROPOSAL_DUPLICATE_TARGET"
+        );
     }
 
     #[test]
     fn deny_invalid_version_and_unbounded_payload() {
         let mut proposal = sample();
         proposal.schema_version = 2;
-        assert_eq!(proposal.validate().unwrap_err().code(), "PROPOSAL_UNSUPPORTED_VERSION");
+        assert_eq!(
+            proposal.validate().unwrap_err().code(),
+            "PROPOSAL_UNSUPPORTED_VERSION"
+        );
         proposal.schema_version = 1;
         proposal.edits[0].proposed_text = "x".repeat(MAX_TEXT_BYTES as usize + 1);
-        assert_eq!(proposal.validate().unwrap_err().code(), "PROPOSAL_TOO_LARGE");
-        assert_eq!(ProposalEnvelope::parse(&"x".repeat(MAX_PROPOSAL_BYTES + 1)).unwrap_err().code(), "PROPOSAL_TOO_LARGE");
+        assert_eq!(
+            proposal.validate().unwrap_err().code(),
+            "PROPOSAL_TOO_LARGE"
+        );
+        assert_eq!(
+            ProposalEnvelope::parse(&"x".repeat(MAX_PROPOSAL_BYTES + 1))
+                .unwrap_err()
+                .code(),
+            "PROPOSAL_TOO_LARGE"
+        );
     }
 }
