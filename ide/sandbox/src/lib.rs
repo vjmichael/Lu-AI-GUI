@@ -56,8 +56,8 @@ fn safe_workspace(workspace: &Path) -> Result<PathBuf, SandboxError> {
     // Never treat broad system or home roots as a project. Subdirectories of
     // an explicitly user-selected development root are a separate grant.
     const FORBIDDEN_ROOTS: &[&str] = &[
-        "/", "/usr", "/etc", "/home", "/root", "/proc", "/sys", "/dev",
-        "/run", "/var", "/tmp", "/bin", "/lib", "/lib64", "/sbin", "/opt",
+        "/", "/usr", "/etc", "/home", "/root", "/proc", "/sys", "/dev", "/run", "/var", "/tmp",
+        "/bin", "/lib", "/lib64", "/sbin", "/opt",
     ];
     if FORBIDDEN_ROOTS
         .iter()
