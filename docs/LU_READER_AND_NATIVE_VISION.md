@@ -1,6 +1,6 @@
 # Lu Core — Reader Tool and Native Vision Capability Routing
 
-Status: **In progress: bounded text Reader with typed model-facing tool registration is implemented in Lu Core; host runtime admission and PDF/DOCX/OCR adapters are pending.**
+Status: **In progress.** Bounded text, initial DOCX body extraction, typed Reader registration and a user-operated native document picker have been implemented in source. PDF, spreadsheet, presentation and OCR adapters, structured paging and full installed-app acceptance remain open.
 
 ## Decision
 
@@ -25,12 +25,16 @@ reasoning.
 | PDF with text layer | Page-aware selectable text extraction | **Not implemented** |
 | Scanned PDF | Render page with strict resource limits, then OCR adapter | **Not implemented** |
 | JPG, PNG, TIFF and other document photos | OCR adapter, orientation and page/region provenance | **Not implemented** |
+| XLSX, XLSM | Workbook and worksheet catalog; bounded cell/range reads, shared strings, numbers, dates, formulas and stored cached results; never execute macros or external links | **Not implemented** |
+| ODS, legacy XLS | Separate OpenDocument and legacy binary adapters; same typed range contract | **Not implemented** |
+| PPTX, PPSX, PPTM | Ordered slides, text boxes, shapes' text, tables, speaker notes, alt text, and slide-local references; never execute embedded content or macros | **Not implemented** |
+| ODP, legacy PPT | Separate OpenDocument and legacy binary presentation adapters | **Not implemented** |
 | ODT, RTF, EPUB and legacy DOC | Separate vetted format adapters | **Not implemented** |
 | Encrypted, corrupted, unsupported and unknown | Explicit error; never claim successful extraction | Required |
 
-The initial `lu-core::native_reader` module deliberately refuses PDF, DOCX,
-images and unknown types. It handles bounded text and records whether output
-was truncated. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
+The `lu-core::native_reader` module deliberately refuses unsupported PDFs,
+images, spreadsheet and presentation formats. It handles bounded text and
+initial main-body DOCX extraction and records whether output was truncated. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
 MIME/signature validation and host-authorized file handles belong in the
 admission layer; filename extensions alone are insufficient.
 
@@ -40,6 +44,44 @@ truncation, confidence and structured warnings. The model must request bounded
 pages/chunks rather than receiving arbitrarily large files in one prompt.
 Preserve text order and provenance where possible. OCR confidence does not
 prove accuracy.
+
+## Structured spreadsheets and presentations
+
+Spreadsheet reading belongs inside Reader, not a new mandatory core tool.
+A workbook is **not** a single plain-text file: the host should return a
+bounded worksheet catalog (stable source identifier, names, dimensions) and
+permit targeted `sheet + range` reads (e.g. `Sales!A1:D25`). Every returned
+cell preserves its coordinate, type, value and optional **formula text and
+cached value**. Cached values can be missing or stale: Reader never silently
+recalculates or presents them as verified current results. Dates, merged
+cells, hidden sheets/rows, external data references, chart metadata and
+truncation must be surfaced explicitly. Editing, recalculation and workbook
+execution are separate authorized capabilities.
+
+Presentation reading also belongs inside Reader. A slide deck should expose
+an ordered slide catalog, title, selectable text in reading order, text boxes,
+tables, speaker notes and provenance such as `slide 6 / shape 3`. Grouped
+shapes, diagrams, chart series, image alternative text and slide images need
+separate bounded adapters. A **presentation renderer** or verified native
+multimodal vision may inspect slide appearance; raw XML text extraction alone
+cannot prove what the slides visually communicate. Embedded video/audio and
+scripts are not executed or followed. Hidden slides and notes should be
+clearly labeled so the model does not confuse them with visible content.
+
+Both XLSX and PPTX use compressed Open XML packages, so parsers should share
+the same strict central-directory checks and resource budgets as Reader's
+DOCX parser, but **must verify each format's relationship and content type
+structure independently**. Do not simply rename a ZIP file to another office
+extension or assume a DOCX parser supports arbitrary Office packages.
+Encrypted packages, external relationships, macros, object linking, ZIP
+bombs and oversized XML parts must fail closed.
+
+These are **planned format adapters, not implemented features**. Keep Reader
+as one user-visible family while dispatching internal format-specific,
+sandboxed extractors. A future typed API should include `reader.inspect`
+(metadata/catalog) and `reader.read` (bounded segments, ranges or slides)
+rather than dumping multi-thousand-row workbooks and entire decks into the
+model context.
 
 ## Security
 
@@ -92,13 +134,19 @@ as automatically detected.
    deny-by-default authorization boundary, catalog registration and rejection
    tests. **Implemented in Lu Core; desktop host integration pending.**
 3. Secure DOCX extraction from main body (paragraphs/tables and inserted text; deleted tracked text omitted), strict ZIP and XML limits, CRC, no external relationships. **Implemented and CI verification pending.** Headers/footers, comments and richer page provenance still open.
-4. PDF selectable-text extraction with page boundaries; scanned page
+4. Workbook adapters: XLSX first, preserving sheet identities, cell ranges,
+   formulas vs cached values and type/provenance; ODS/XLS/XLSM compatibility
+   separately and without executing active content. **Planned.**
+5. Presentation adapters: PPTX first, preserving slide order, notes, text,
+   tables and visual-element references; ODP/PPT/PPTM/PPSX separately.
+   **Planned.**
+6. PDF selectable-text extraction with page boundaries; scanned page
    detection, bounded image conversion and OCR worker.
-5. Install Reader in the desktop tool catalog with actual per-turn grants,
+7. Install Reader in the desktop tool catalog with actual per-turn grants,
    chunk paging, provenance and user-facing file selection.
-6. Vision session probe and backend capability attestation, per-model
+8. Vision session probe and backend capability attestation, per-model
    invalidation and native-vision-first routing integration.
-7. Cross-format fixture tests, malicious/oversized documents, Windows/Linux
+9. Cross-format fixture tests, malicious/oversized documents, Windows/Linux
    process isolation, installed desktop acceptance.
 
 ## Candidate libraries (research only, not integrated)
