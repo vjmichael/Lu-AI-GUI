@@ -56,6 +56,7 @@ fn native_git_status_reads_real_dirty_and_untracked_work_without_running_git() {
 
     registry.close(&id).unwrap();
     assert_eq!(registry.inspect_git_worktree(&id).state, "project_unavailable");
+    drop(tree); // git2::Tree borrows repo; release it before repo cleanup.
     drop(repo);
     fs::remove_dir_all(root).unwrap();
 }
