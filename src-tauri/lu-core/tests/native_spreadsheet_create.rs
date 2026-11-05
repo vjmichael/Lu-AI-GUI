@@ -81,3 +81,17 @@ fn publish_is_create_only_never_overwrites(){
     assert_eq!(fs::read(root.join("report.xlsx")).unwrap(),original);
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn new_workbook_roundtrips_through_real_universal_reader(){
+    let bytes=render_xlsx("Income",&[
+        cell(1,1,CellValue::Text("Income & Costs".into())),
+        cell(2,2,CellValue::Number(301.25)),
+        cell(3,2,CellValue::Formula("SUM(B2:B2)".into())),
+    ]).unwrap();
+    let decoded=lu_core::native_reader_office::read_xlsx(&bytes,4096).unwrap();
+    assert!(decoded.text.contains("[Sheet: Income]"));
+    assert!(decoded.text.contains("A1=Income & Costs"));
+    assert!(decoded.text.contains("B2=301.25"));
+    assert!(decoded.text.contains("SUM(B2:B2)"));
+}
