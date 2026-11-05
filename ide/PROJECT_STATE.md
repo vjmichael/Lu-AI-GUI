@@ -23,6 +23,14 @@
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
+## Wave A2 typed contracts + Wave A3 continuity (new source, acceptance open)
+
+- **A2:** capability registry schema version 2 uses `host/src/capability_schemas.json` with fully typed JSON Schema request and result shapes, nested definitions and error schema. Advertises **17 implemented native commands** (including new read-only continuity endpoint), not future Git/toolchain/build capabilities. The Capabilities screen displays request/result/error contracts; type and command-parity regression checks added.
+- **A3:** app-profile `development-ledger.jsonl` with host-recorded project registration/open/close/unregister and explicit source-save observations (bounded record length; sync-to-disk). New `ide_read_project_context` is read-only, returning the latest 40 project events plus bounded revision-tagged excerpts from `PROJECT_STATE.md`, `CHANGELOG.md`, `ENGINEERING_HANDOFF.md`, `AGENTS.md` if present inside the opened project.
+- **Human UX:** Continuity screen now displays observed events, source-document revisions and explicit remote Git/artifact/toolchain unknowns. Project notes are untrusted content, not instructions, and no Lu connection or project code execution is introduced.
+- **Important limit:** ledger observations are best-effort breadcrumbs, **not** an authoritative effect journal, Git reconciliation or a proof of test/package success. Host-only append errors are logged, not surfaced as failed saves (which would invite duplicate retries). Full crash-proof effect journaling and artifact inventory remain open gates.
+- **Status:** source and regression tests committed. Exact-head Linux/frontend/Windows checks, installed Windows UI, and true local/remote artifact reconciliation remain to verify.
+
 ## Wave A2 — Semantic Capability Registry (implementation source, verification pending)
 
 - A2 source verification run: [GitHub Actions 42114104448](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42114104448) for implementation SHA `0a33585cee694764507bca153baa0f334dd4f035`, queued at last inspection; **no pass/fail conclusion yet**.
