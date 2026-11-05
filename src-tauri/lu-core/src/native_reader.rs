@@ -20,6 +20,8 @@ pub enum ReaderFormat{
     SourceCode,
     Pdf,
     Docx,
+    Xlsx,
+    Pptx,
     Image,
     Unknown,
 }
@@ -44,7 +46,12 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
     // container formats. Everything is still checked by its parser.
     if header.starts_with(b"%PDF-"){return ReaderFormat::Pdf;}
     if header.starts_with(b"PK\x03\x04"){
-        return ReaderFormat::Docx; // candidate, not proof
+        return match filename.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(){
+            "docx"=>ReaderFormat::Docx,
+            "xlsx"=>ReaderFormat::Xlsx,
+            "pptx"=>ReaderFormat::Pptx,
+            _=>ReaderFormat::Unknown,
+        };
     }
     if header.starts_with(b"\x89PNG\r\n\x1a\n")
         ||header.starts_with(&[0xff,0xd8,0xff]){
@@ -64,6 +71,8 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
         |"rb"|"php"|"swift"|"kt"|"lua"=>ReaderFormat::SourceCode,
         "pdf"=>ReaderFormat::Pdf,
         "docx"=>ReaderFormat::Docx,
+        "xlsx"=>ReaderFormat::Xlsx,
+        "pptx"=>ReaderFormat::Pptx,
         "png"|"jpg"|"jpeg"|"webp"|"tif"|"tiff"|"bmp"=>ReaderFormat::Image,
         _=>ReaderFormat::Unknown
     }
@@ -95,6 +104,12 @@ pub fn read_text_bytes(
     let format=classify(filename,&bytes[..bytes.len().min(16)]);
     if format==ReaderFormat::Docx{
         return crate::native_reader_docx::read_docx_bytes(bytes,max_chars);
+    }
+    if format==ReaderFormat::Xlsx{
+        return crate::native_reader_office::read_xlsx(bytes,max_chars);
+    }
+    if format==ReaderFormat::Pptx{
+        return crate::native_reader_office::read_pptx(bytes,max_chars);
     }
     if matches!(format,ReaderFormat::Pdf|ReaderFormat::Image
         |ReaderFormat::Unknown){
