@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2fd3f2b0d3249c7b6a4f63c37e5a99725e9f282f",
+  "sourceCommitBeforeLock": "ff270a97b6972386b866d62ccb096113f247a738",
   "trackedFileCount": 323,
   "files": [
     {
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "fd8415266a1f53db447d769b3424aa0d98a727c1"
+      "blob": "4b7ba503c127b6aa487ac248104946626f21297a"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -597,7 +597,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_worker_supervisor.rs",
-      "blob": "a54aca35062863b51cd527e564a2495a3d794046"
+      "blob": "51f03af2c3a38f7d8246aee85331427960482eaa"
     },
     {
       "path": "src-tauri/lu-core/src/capability_router.rs",
