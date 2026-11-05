@@ -86,6 +86,17 @@ pub struct TaskEvent {
     pub progress:u8,
     pub detail:String,
 }
+/// Durable, scoped terminal notice. An absent acknowledgement makes the
+/// event re-deliverable after restarts; the sequence is its idempotency key.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TaskTerminalNotice {
+    pub sequence:i64,
+    pub task_id:String,
+    pub workspace_id:String,
+    pub state:TaskState,
+    pub progress:u8,
+    pub detail:String,
+}
 /// Sanitized native operator view. Never includes checkpoints, raw worker
 /// output, files, or executable paths. Only Lu's trusted desktop host should
 /// expose this to the local user; model-facing tools remain workspace scoped.
@@ -130,7 +141,11 @@ impl TaskStore {
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE INDEX IF NOT EXISTS lu_task_events_task
-             ON lu_task_events(task_id, sequence);",
+             ON lu_task_events(task_id, sequence);
+             CREATE TABLE IF NOT EXISTS lu_task_notice_ack(
+               event_sequence INTEGER PRIMARY KEY NOT NULL,
+               acknowledged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );",
         )?;
         // Existing desktop profiles may have the older CHECK schema.
         // Rebuild atomically with every row preserved before enabling
@@ -382,6 +397,59 @@ impl TaskStore {
         let mut events=Vec::new();
         for row in rows{events.push(row?);}
         Ok(events)
+    }
+
+    /// Host-owned durable delivery queue. No workspace selector from a model
+    /// is accepted here; the host obtains each notice's workspace from SQLite.
+    /// Deliveries are at-least-once until explicitly acknowledged.
+    pub fn pending_terminal_notices(&self,limit:usize)
+        ->Result<Vec<TaskTerminalNotice>,TaskStoreError>{
+        if limit==0||limit>128{return Err(TaskStoreError::InvalidProgress);}
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT e.sequence,e.task_id,t.workspace_id,e.event,e.progress,e.detail
+             FROM lu_task_events e JOIN lu_tasks t ON t.task_id=e.task_id
+             LEFT JOIN lu_task_notice_ack a ON a.event_sequence=e.sequence
+             WHERE a.event_sequence IS NULL
+               AND e.event IN ('COMPLETED','FAILED','INTERRUPTED','CANCELLED','TIMED_OUT')
+               AND t.workspace_id IS NOT NULL
+             ORDER BY e.sequence ASC LIMIT ?1"
+        )?;
+        let rows=stmt.query_map(params![limit as i64],|row|{
+            Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,
+                row.get::<_,String>(2)?,row.get::<_,String>(3)?,
+                row.get::<_,u8>(4)?,row.get::<_,String>(5)?))
+        })?;
+        let mut result=Vec::new();
+        for row in rows {
+            let (sequence,task_id,workspace_id,event,progress,detail)=row?;
+            result.push(TaskTerminalNotice{
+                sequence,task_id,workspace_id,
+                state:TaskState::parse(&event)
+                    .ok_or(TaskStoreError::InvalidStoredState)?,
+                progress,detail:detail.chars().take(1024).collect(),
+            });
+        }
+        Ok(result)
+    }
+    /// Acknowledgement is explicit, scoped, idempotent, and only valid for
+    /// an actual terminal event belonging to the supplied trusted workspace.
+    pub fn acknowledge_terminal_notice(
+        &self,sequence:i64,workspace_id:&str
+    )->Result<bool,TaskStoreError>{
+        if sequence<=0||workspace_id.is_empty()||workspace_id.len()>128{
+            return Err(TaskStoreError::InvalidProgress);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let changed=connection.execute(
+            "INSERT OR IGNORE INTO lu_task_notice_ack(event_sequence)
+             SELECT e.sequence FROM lu_task_events e
+             JOIN lu_tasks t ON t.task_id=e.task_id
+             WHERE e.sequence=?1 AND t.workspace_id=?2
+               AND e.event IN ('COMPLETED','FAILED','INTERRUPTED','CANCELLED','TIMED_OUT')",
+            params![sequence,workspace_id],
+        )?;
+        Ok(changed==1)
     }
 
     /// Host-local overview: active tasks first, followed by recent history.
