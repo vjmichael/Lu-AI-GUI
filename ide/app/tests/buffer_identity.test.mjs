@@ -100,3 +100,13 @@ test('CRLF across multiple lines uses UTF-8 bytes despite one-unit editor breaks
   assert.equal(span.endLine, 3);
   assert.equal(span.endColumnUtf16, 1);
 });
+
+test('invalid source ranges may not split a UTF-16 surrogate pair', () => {
+  const identity = original();
+  const state = create('😀z');
+  assert.throws(() => captureBufferSpan(identity, state, 1, 3),
+    /INVALID_BUFFER_RANGE/);
+  assert.throws(() => captureBufferSpan(identity, state, 0, 1),
+    /INVALID_BUFFER_RANGE/);
+  assert.equal(captureBufferSpan(identity, state, 0, 2).text, '😀');
+});
