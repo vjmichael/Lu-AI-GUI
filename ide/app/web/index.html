@@ -4,6 +4,9 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Lu IDE</title>
+  <!-- Tauri injects a per-webview CSP nonce into bundled style tags. CodeMirror
+       reuses this nonce for its dynamically generated layout/highlighting CSS. -->
+  <style id="lu-ide-editor-style-nonce"></style>
   <link rel="stylesheet" href="./assets/styles.css"/>
 </head>
 <body>
