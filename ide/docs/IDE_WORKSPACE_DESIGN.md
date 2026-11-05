@@ -162,6 +162,7 @@ For each task: (a) design/API and threat analysis; (b) implement on dedicated ID
 Internal:
 - [Standalone app and optional Lu bridge — ADR-0001](ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md)
 - [Distinct native chat and workspace conversation experiences — ADR-0002](ADR_0002_WORKSPACE_CHAT_BOUNDARIES.md)
+- [Lu coding proposals and independent IDE authorization — ADR-0003](ADR_0003_LU_CODING_PROPOSAL_PROTOCOL.md)
 - [R3.3 reviewed changes and future Lu coding proposal boundary](IDE_07_PROPOSAL_REVIEW_FOUNDATION.md)
 - [IDE architecture](ARCHITECTURE.md)
 - [Package and toolchain orchestrator](PACKAGE_ORCHESTRATOR.md)
