@@ -332,3 +332,31 @@ test('Wave A3 exposes revisioned, read-only continuity with explicitly unknown e
   assert.equal(schemas.definitions.ProjectContext.properties.events.items.$ref, '#/$defs/DevelopmentEvent');
   assert.doesNotMatch(host, /Command::new|std::process::Command/);
 });
+
+test('typed schemas have no dangling nested refs or untyped object properties', () => {
+  const schema = JSON.parse(read('../../host/src/capability_schemas.json'));
+  const definitions = schema.definitions;
+  const visit = (node, path) => {
+    if (Array.isArray(node)) {
+      node.forEach((child, index) => visit(child, path + '[' + index + ']'));
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    if (node.$ref) {
+      assert.match(node.$ref, /^#\/\$defs\/[A-Za-z]+$/);
+      const key = node.$ref.split('/').pop();
+      assert.ok(definitions[key], path + ': unknown ' + key);
+    }
+    if (node.type === 'object') {
+      assert.equal(node.additionalProperties, false, path);
+      for (const prop of Object.values(node.properties ?? {})) {
+        assert.ok(prop.type || prop.$ref || prop.anyOf, path);
+      }
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (key !== '$ref') visit(child, path + '.' + key);
+    }
+  };
+  visit(schema.operations, 'operations');
+  visit(definitions, 'definitions');
+});
