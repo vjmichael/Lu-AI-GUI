@@ -27,6 +27,12 @@ Source control is now a real sidebar section using typed `git.status` and native
 
 Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
 
+## Wave B1 human Find and Replace
+
+The standalone editor now has Ctrl+H and a Find/Replace bar: bounded literal case-sensitive/insensitive matching with correct CodeMirror UTF-16 offsets, Replace One or confirmed Replace All. Replacement is an unsaved **single CodeMirror transaction**, not a host write; saved file revision checks remain unchanged. The operation checks expected draft and consumes its nonce so remounting a tab does not replay it. New JS tests live in `app/tests/find_replace.test.mjs`.
+
+**Source implemented, not accepted yet.** See [CI 42130813013](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42130813013), pending at last inspection. Earlier native Git/GitHub checks may be cancelled by same-branch concurrency. Separate feature branches would allow future work to continue without superseding an acceptance run.
+
 ## A3 live GitHub evidence and native CI repair
 
 New `host/src/github_live.rs`, typed `git.compareLive`, and explicit **Check GitHub** UI compare observed public GitHub origin branch head against local HEAD and the locally stored tracking ref. It is a bounded, unauthenticated, fixed-origin, read-only HTTPS request; no automatic network call, Git mutation or Lu connection. Different commits do not establish ancestry. Private repositories remain unsupported without separate explicit authorization.
