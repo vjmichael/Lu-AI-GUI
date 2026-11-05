@@ -2,6 +2,11 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — A3 native Git snapshot transitions
+- Persist local libgit2 worktree state with each explicit inventory baseline; historical stores remain readable via optional/default fields. Compare the newest baseline against a fresh native status and classify clean → dirty, dirty → clean, both dirty (not equivalent), or unverifiable.
+- Real Git fixture now checks baseline cleanliness followed by a modified tracked file and a new untracked file. Source commit `a37be15b808b2d238ac2457aee9e357d056be13f`, [CI 42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued at last inspection.
+- The operation is read-only except for user-requested IDE-private baseline storage; GitHub remote HEAD is not fetched, and stored upstream refs can be stale.
+
 ## 2026-11-05 — A3 native Git worktree reader (source implemented)
 - Added `git2` and `host/src/git_status.rs` for actual read-only local Git branch, staged/modified/untracked paths, and locally configured upstream comparison and ahead/behind. Only the exact native-registered project root may be inspected; parent repository discovery is refused. No shell, Git hooks, network operations, fetch or Git mutations.
 - Included true worktree status in the Continuity read model, typed JSON Schema and human UI. Added real native Git fixture tests and frontend source/security assertions.
