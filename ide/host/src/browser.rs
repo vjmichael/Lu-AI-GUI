@@ -9,11 +9,12 @@ use std::{
 
 use cap_std::{ambient_authority, fs::Dir};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::{safe_root, wire, IdeWorkspaceRegistry};
 
 const MAX_ENTRY_COUNT: usize = 400;
-const MAX_TEXT_BYTES: u64 = 512 * 1024;
+pub(crate) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 const MAX_RELATIVE_BYTES: usize = 1024;
 const MAX_DEPTH: usize = 32;
 
@@ -26,6 +27,8 @@ pub enum BrowserError {
     NotFile,
     NotText,
     TooLarge,
+    Conflict,
+    InvalidRevision,
     Io(io::Error),
     HostUnavailable,
 }
@@ -39,6 +42,8 @@ impl BrowserError {
             Self::NotFile => "NOT_A_FILE",
             Self::NotText => "NOT_UTF8_TEXT",
             Self::TooLarge => "FILE_TOO_LARGE",
+            Self::Conflict => "FILE_CHANGED_ON_DISK",
+            Self::InvalidRevision => "INVALID_FILE_REVISION",
             Self::Io(_) => "BROWSE_UNAVAILABLE",
             Self::HostUnavailable => "HOST_UNAVAILABLE",
         }
@@ -75,9 +80,16 @@ pub struct TextPreview {
     pub relative_path: String,
     pub text: String,
     pub byte_length: u64,
+    pub revision: String,
 }
 
-fn validate_relative(path: &str, allow_root: bool) -> Result<Vec<String>, BrowserError> {
+/// A content revision is a lower-case SHA-256 of the exact UTF-8 bytes.
+/// It is an optimistic concurrency token, not an authorization credential.
+pub(crate) fn revision_for(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+pub(crate) fn validate_relative(path: &str, allow_root: bool) -> Result<Vec<String>, BrowserError> {
     if path.len() > MAX_RELATIVE_BYTES || path.contains('\\') || path.chars().any(char::is_control)
     {
         return Err(BrowserError::InvalidPath);
@@ -109,7 +121,7 @@ fn validate_relative(path: &str, allow_root: bool) -> Result<Vec<String>, Browse
     Ok(parts)
 }
 
-fn descend(mut dir: Dir, parts: &[String]) -> Result<Dir, BrowserError> {
+pub(crate) fn descend(mut dir: Dir, parts: &[String]) -> Result<Dir, BrowserError> {
     for component in parts {
         let meta = dir.symlink_metadata(component)?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
@@ -125,7 +137,7 @@ impl IdeWorkspaceRegistry {
     /// Create an ephemeral capability from the host-only catalog. The identity
     /// of the picked root is revalidated on each call. All subsequent lookup
     /// happens within the cap-std Dir (never ambient absolute path joins).
-    fn source_capability(&self, project_id: &str) -> Result<Dir, BrowserError> {
+    pub(crate) fn source_capability(&self, project_id: &str) -> Result<Dir, BrowserError> {
         if !wire::valid_project_id(project_id) {
             return Err(BrowserError::InvalidProject);
         }
@@ -261,11 +273,13 @@ impl IdeWorkspaceRegistry {
             return Err(BrowserError::NotText);
         }
         let text = String::from_utf8(bytes).map_err(|_| BrowserError::NotText)?;
+        let revision = revision_for(text.as_bytes());
         Ok(TextPreview {
             project_id: project_id.into(),
             relative_path: relative_path.into(),
             byte_length: text.len() as u64,
             text,
+            revision,
         })
     }
 }
