@@ -41,7 +41,7 @@ test('real native file-scan worker connects the system picker to the pane',()=>{
   assert.ok(host.includes('std::env::current_exe()'));
   assert.ok(host.includes('progress_protocol:true'));
   assert.ok(host.includes('processes.start_host_approved(plan)'));
-  assert.ok(ui.includes("await invoke('lu_background_scan_file')"));
+  assert.ok(ui.includes("await invoke('lu_background_scan_file',{chatId:chatId||null})"));
   assert.ok(ui.includes('Scan media file…'));
   assert.ok(ui.includes('not video content analysis'));
   assert.ok(css.includes('.backgroundScanLaunch'));
