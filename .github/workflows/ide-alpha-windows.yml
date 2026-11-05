@@ -1,4 +1,4 @@
-name: Lu IDE Windows Alpha R3 — Code Editor
+name: Lu IDE Windows Alpha R3.1 — Editor Styling
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
       - name: Upload unsigned Windows alpha executable
         uses: actions/upload-artifact@v4
         with:
-          name: lu-ide-code-editor-windows-alpha-r3
+          name: lu-ide-code-editor-windows-alpha-r3-1
           path: ide/app/src-tauri/target/release/lu-ide-desktop.exe
           if-no-files-found: error
           retention-days: 7
