@@ -11,6 +11,10 @@ on:
       - ".github/workflows/ide-workspace-linux.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ide-host-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
