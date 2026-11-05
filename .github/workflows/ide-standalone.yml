@@ -4,7 +4,9 @@ on:
   push:
     branches: [ide/workspace-development]
     paths:
-      - "ide/**"
+      - "ide/app/**"
+      - "ide/host/**"
+      - "ide/proto/**"
       - ".github/workflows/ide-standalone.yml"
   workflow_dispatch:
 
