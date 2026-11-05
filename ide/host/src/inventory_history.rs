@@ -55,6 +55,8 @@ pub struct InventoryBaseline {
     pub artifacts: Vec<StoredArtifact>,
     pub local_head: Option<String>,
     pub local_tracking_head: Option<String>,
+    #[serde(default)]
+    pub git_worktree_state: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,6 +79,7 @@ pub struct InventoryComparison {
     pub discovery_complete: bool,
     pub entries: Vec<ArtifactComparison>,
     pub local_git_head_change: &'static str,
+    pub git_worktree_change: &'static str,
     pub live_remote: &'static str,
 }
 
@@ -163,6 +166,7 @@ impl InventorySnapshots {
         if !inventory.discovery_complete {
             return Err(SnapshotError::Incomplete);
         }
+        let git = registry.inspect_git_worktree(project_id);
         let observed_unix_seconds = SystemTime::now()
             .duration_since(UNIX_EPOCH).map_err(|_| SnapshotError::Unavailable)?
             .as_secs();
@@ -176,8 +180,10 @@ impl InventorySnapshots {
                 sha256: f.sha256,
                 digest_status: f.digest_status.to_owned(),
             }).collect(),
-            local_head: inventory.git.local_head,
-            local_tracking_head: inventory.git.local_tracking_head,
+            local_head: git.local_head,
+            local_tracking_head: git.upstream_head,
+            git_worktree_state: if git.worktree == "not_verified" { None }
+                else { Some(git.worktree.to_owned()) },
         };
         let _guard = self.lock.lock().map_err(|_| SnapshotError::Unavailable)?;
         let mut baselines = self.read()?;
@@ -197,18 +203,27 @@ impl InventorySnapshots {
     {
         let current = registry.inspect_project_evidence(project_id)
             .map_err(|_| SnapshotError::ProjectUnavailable)?;
+        let git = registry.inspect_git_worktree(project_id);
         let _guard = self.lock.lock().map_err(|_| SnapshotError::Unavailable)?;
         let recorded = self.read()?;
         let baseline_count = recorded.iter().filter(|b| b.project_id == project_id).count();
         let prior = recorded.into_iter().rev().find(|b| b.project_id == project_id);
         let mut entries = Vec::new();
         let mut git_state = "baseline_missing";
+        let mut worktree_state = "baseline_missing";
         let mut baseline_time = None;
         if let Some(ref baseline) = prior {
             baseline_time = Some(baseline.observed_unix_seconds);
-            git_state = match (&baseline.local_head, &current.git.local_head) {
+            git_state = match (&baseline.local_head, &git.local_head) {
                 (Some(a), Some(b)) if a == b => "same_observed_head",
                 (Some(_), Some(_)) => "different_observed_head",
+                _ => "unverifiable",
+            };
+            worktree_state = match (baseline.git_worktree_state.as_deref(), git.worktree) {
+                (Some("clean"), "clean") => "remained_clean",
+                (Some("clean"), "dirty") => "became_dirty",
+                (Some("dirty"), "clean") => "became_clean",
+                (Some("dirty"), "dirty") => "both_dirty_not_equivalent",
                 _ => "unverifiable",
             };
             let current_files: BTreeMap<_, _> = current.files.iter()
@@ -254,6 +269,7 @@ impl InventorySnapshots {
             discovery_complete: current.discovery_complete,
             entries,
             local_git_head_change: git_state,
+            git_worktree_change: worktree_state,
             live_remote: "not_queried",
         })
     }
