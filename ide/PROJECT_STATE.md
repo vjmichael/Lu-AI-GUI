@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `7d27dc236e61648a85d6d088210c7ac2fee1a7e7`  
-**Current source validation:** [Standalone IDE CI run 42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) — Windows in progress, frontend/Linux queued at last inspection; **do not claim it passed**.  
+**Last inspected implementation source SHA:** `ca4f0c545efee4a367dd4d2225117c3a12deb269`  
+**Current source validation:** [Standalone IDE CI run 42122469206](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122469206) — all three jobs queued at last inspection; **do not claim it passed**. Earlier run 42122003384 was superseded by the new test commit.  
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -16,7 +16,7 @@
 | R3.5 proposal inbox and editor-only staging | Implemented | Earlier native matrix passed; see [R3.5](docs/IDE_07_R35_PROPOSAL_INBOX.md) | User reported working staging flow; full hostile gates open |
 | R3.6 success banner, R3.7 Find in File | Implemented | [Source CI 42069988384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42069988384) passed for R3.7 SHA `eb0aefd` | New GUI acceptance still open |
 | A1 saved-file source spans, Copy Source Reference | Implemented | [CI 42075298457](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42075298457) Linux/frontend/Windows passed for SHA `467775e` | New clipboard UX still open |
-| **A2 typed Semantic Capability Registry** | **Implemented**: 17 real host operations, JSON Schema v2, nested definitions, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
+| **A2 typed Semantic Capability Registry** | **Implemented**: 17 real host operations, JSON Schema v2, self-contained nested definitions, native-argument parity tests, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | **A3 Development Ledger and Context Read Model** | **Initial runtime implemented**: host app-profile JSONL event history, bounded project context and Continuity UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | A3 verified local resources, artifact paths, real Git divergence | **Not implemented** | Not tested | Open |
 | Live Lu connector, worker execution, LSP/build/test/package | **Deferred/not implemented as IDE runtime** | Not tested | Open |
