@@ -625,6 +625,32 @@ mod task_auto_continue_tests {
         store.set_auto_continue("c-abc",false).unwrap();
         assert!(!store.auto_continue_enabled("c-abc").unwrap());
     }
+    #[test]
+    fn continuation_consent_survives_restart_and_revoke(){
+        let path=std::env::temp_dir().join(format!(
+            "lu-autoresume-{}-{:?}.sqlite",
+            std::process::id(),std::thread::current().id()
+        ));
+        let _=std::fs::remove_file(&path);
+        {
+            let store=TaskStore::open(&path).unwrap();
+            assert!(!store.auto_continue_enabled("c-abc").unwrap());
+            store.set_auto_continue("c-abc",true).unwrap();
+        }
+        {
+            let store=TaskStore::open(&path).unwrap();
+            assert!(store.auto_continue_enabled("c-abc").unwrap());
+            assert!(!store.auto_continue_enabled("c-other").unwrap());
+            store.set_auto_continue("c-abc",false).unwrap();
+        }
+        {
+            let store=TaskStore::open(&path).unwrap();
+            assert!(!store.auto_continue_enabled("c-abc").unwrap());
+        }
+        let _=std::fs::remove_file(&path);
+        let _=std::fs::remove_file(format!("{}-wal",path.display()));
+        let _=std::fs::remove_file(format!("{}-shm",path.display()));
+    }
 }
 #[cfg(test)]
 mod terminal_notification_tests{
