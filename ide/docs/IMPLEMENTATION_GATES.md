@@ -18,6 +18,8 @@ The project tracks **eight implementation tasks**, not ten competing roadmap tas
 
 **Cross-cutting final acceptance:** IDE-10 — native Linux and Windows security, performance, installer/upgrade, backward compatibility, end-to-end and crash-injection evidence. This is required to release the IDE but **not** a ninth task.
 
+**Build-order reconciliation (2026-11-05):** [IDE-ARCH-02](CAPABILITY_FIRST_ARCHITECTURE.md) changes the internal delivery sequence to capability-first Waves A–G. The stage IDs and their objective acceptance criteria above remain unchanged. Read-only source identity, project provenance, Git inspection and toolchain discovery can proceed before executable worker containment. Live Lu integration is deferred; no runtime bridge dependency is allowed.
+
 **Dependency rule:** Do not accept executable package installs, build/test sessions, or executable LSP/DAP adapters before task 2's native isolation gates. Windows release claims remain blocked until real Windows security parity tests are complete.
 
 **Progress discipline:** Track designed, prototype, compiled, unit-tested, native-tested, and accepted separately. A passing mock is not a passing sandbox; branch isolation is not process isolation.
