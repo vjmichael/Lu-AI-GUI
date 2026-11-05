@@ -709,6 +709,7 @@ function App() {
                   <strong>{item.operation.replaceAll('_', ' ')}</strong>
                   <span>{new Date(item.observedUnixSeconds * 1000).toLocaleString()}</span>
                   <p>{item.summary}</p>
+                  {item.sourcePath && <p>File: <code>{item.sourcePath}</code></p>}
                   {item.sourceRevision && <code>Revision: {item.sourceRevision}</code>}
                 </article>)}
               </div>
