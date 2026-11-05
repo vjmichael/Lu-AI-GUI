@@ -118,6 +118,24 @@ async fn ide_close_project(
     .map_err(|_| "PROJECT_TASK_UNAVAILABLE".to_string())?
 }
 
+/// Delist a project from the standalone IDE. This modifies only the private
+/// project catalog, never the selected directory or any of its files.
+#[tauri::command]
+async fn ide_unregister_project(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<Vec<ProjectSummary>, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .unregister(&project_id)
+            .map_err(|error| stable_error(&error).to_string())?;
+        summarize(&registry)
+    })
+    .await
+    .map_err(|_| "PROJECT_TASK_UNAVAILABLE".to_string())?
+}
+
 /// These read-only requests require a registered, currently open project ID.
 /// Paths are *relative within* a cap-std capability; never absolute WebView paths.
 #[tauri::command]
@@ -186,6 +204,7 @@ pub fn run() {
             ide_choose_project,
             ide_open_project,
             ide_close_project,
+            ide_unregister_project,
             ide_list_source_directory,
             ide_preview_source_file,
             ide_save_source_file
