@@ -625,6 +625,9 @@
         },
         "inventory": {
           "$ref": "#/$defs/EvidenceInventory"
+        },
+        "gitWorktree": {
+          "$ref": "#/$defs/GitWorktreeInspection"
         }
       },
       "required": [
@@ -637,7 +640,8 @@
         "currentToolchainReadiness",
         "events",
         "documents",
-        "inventory"
+        "inventory",
+        "gitWorktree"
       ]
     },
     "EvidenceFile": {
@@ -981,6 +985,130 @@
         "localGitHeadChange",
         "liveRemote",
         "baselineCount"
+      ]
+    },
+    "GitFileChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "kind",
+        "stage"
+      ]
+    },
+    "GitWorktreeInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "upstreamHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "upstreamComparison": {
+          "type": "string"
+        },
+        "commitsAhead": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commitsBehind": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "modifiedOrStagedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "untrackedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "displayedChanges": {
+          "type": "array",
+          "maxItems": 120,
+          "items": {
+            "$ref": "#/$defs/GitFileChange"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "state",
+        "branch",
+        "localHead",
+        "upstreamHead",
+        "upstreamComparison",
+        "commitsAhead",
+        "commitsBehind",
+        "worktree",
+        "modifiedOrStagedCount",
+        "untrackedCount",
+        "displayedChanges",
+        "truncated",
+        "liveRemote"
       ]
     }
   },
