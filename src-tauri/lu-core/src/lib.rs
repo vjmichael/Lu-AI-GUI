@@ -65,6 +65,7 @@ pub mod native_file_extra;
 pub mod native_files;
 pub mod native_reader;
 pub mod native_reader_docx;
+pub mod native_reader_pdf;
 pub mod native_reader_openxml;
 pub mod native_reader_office;
 pub mod native_reader_tool;
