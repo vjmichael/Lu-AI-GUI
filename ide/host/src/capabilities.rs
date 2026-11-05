@@ -93,6 +93,18 @@ fn schema_document() -> Value {
         .expect("maintained capability schema JSON must be valid")
 }
 
+/// Make each response schema independently valid JSON Schema 2020-12:
+/// its nested $ref values must resolve without requiring a separate file.
+fn self_contained_schema(mut shape: Value, definitions: &Value) -> Value {
+    if let Some(properties) = shape.as_object_mut() {
+        properties.insert("$schema".to_owned(), Value::String(
+            "https://json-schema.org/draft/2020-12/schema".to_owned(),
+        ));
+        properties.insert("$defs".to_owned(), definitions.clone());
+    }
+    shape
+}
+
 /// Advertise only real registered native commands. A descriptor supplies no
 /// grant, transport endpoint, authenticated identity or permission to execute.
 pub fn list_capabilities() -> CapabilityCatalog {
@@ -111,8 +123,8 @@ pub fn list_capabilities() -> CapabilityCatalog {
                 title,
                 description,
                 effect,
-                request_schema: schema["request"].clone(),
-                result_schema: schema["result"].clone(),
+                request_schema: self_contained_schema(schema["request"].clone(), &definitions),
+                result_schema: self_contained_schema(schema["result"].clone(), &definitions),
                 error_schema: serde_json::json!({"type":"string","minLength":1,
                     "description":"Stable native error code; not execution authority"}),
                 precondition,
@@ -180,6 +192,7 @@ mod tests {
         assert_eq!(save.effect, "file_write");
         assert_eq!(stage.effect, "read");
         assert_eq!(save.result_schema["$ref"], "#/$defs/TextPreview");
+        assert!(save.result_schema["$defs"]["TextPreview"].is_object());
         assert_eq!(stage.result_schema["$ref"], "#/$defs/ApprovedStaging");
         assert_eq!(spans.request_schema["properties"]["firstLine"]["type"], "integer");
         assert_eq!(spans.result_schema["$ref"], "#/$defs/SourceSpan");
