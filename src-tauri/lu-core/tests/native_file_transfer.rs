@@ -58,3 +58,39 @@ fn refuses_symlink_sources_and_existing_symlink_targets() {
     assert!(!p.join("new").exists());
     drop(d);fs::remove_dir_all(p).unwrap();
 }
+
+#[test]
+fn host_owned_trash_and_restore_preserve_bytes_and_refuse_overwrite() {
+    use lu_core::native_file_transfer::{trash_in_dirs,restore_from_trash_in_dirs};
+    let (p,d)=fixture();
+    fs::create_dir(p.join("trash")).unwrap();
+    let trash=Dir::open_ambient_dir(p.join("trash"),ambient_authority()).unwrap();
+    fs::write(p.join("report.txt"),b"original").unwrap();
+    let receipt=trash_in_dirs(&d,&trash,"report.txt","transaction-123456789").unwrap();
+    assert!(!p.join("report.txt").exists());
+    assert_eq!(fs::read(p.join("trash").join(&receipt.trash_entry)).unwrap(),b"original");
+    // A new file with the original name must not be destroyed on restore.
+    fs::write(p.join("report.txt"),b"newer").unwrap();
+    assert_eq!(restore_from_trash_in_dirs(&d,&trash,&receipt).unwrap_err(),TransferError::TargetExists);
+    assert_eq!(fs::read(p.join("report.txt")).unwrap(),b"newer");
+    fs::remove_file(p.join("report.txt")).unwrap();
+    let restored=restore_from_trash_in_dirs(&d,&trash,&receipt).unwrap();
+    assert_eq!(restored.sha256,receipt.sha256);
+    assert_eq!(fs::read(p.join("report.txt")).unwrap(),b"original");
+    assert!(!p.join("trash").join(&receipt.trash_entry).exists());
+    assert!(restore_from_trash_in_dirs(&d,&trash,&receipt).is_err(),"replay must not repeat effect");
+    drop(trash);drop(d);fs::remove_dir_all(p).unwrap();
+}
+#[test]
+fn tampered_trashed_content_is_not_restored() {
+    use lu_core::native_file_transfer::{trash_in_dirs,restore_from_trash_in_dirs};
+    let (p,d)=fixture();
+    fs::create_dir(p.join("trash")).unwrap();
+    let trash=Dir::open_ambient_dir(p.join("trash"),ambient_authority()).unwrap();
+    fs::write(p.join("file.txt"),b"verified").unwrap();
+    let receipt=trash_in_dirs(&d,&trash,"file.txt","transaction-123456789").unwrap();
+    fs::write(p.join("trash").join(&receipt.trash_entry),b"modified").unwrap();
+    assert_eq!(restore_from_trash_in_dirs(&d,&trash,&receipt).unwrap_err(),TransferError::SourceChanged);
+    assert!(!p.join("file.txt").exists());
+    drop(trash);drop(d);fs::remove_dir_all(p).unwrap();
+}
