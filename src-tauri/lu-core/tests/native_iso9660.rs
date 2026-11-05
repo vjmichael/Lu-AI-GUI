@@ -100,3 +100,99 @@ fn iso_image_source_must_not_be_symlink(){
     assert_eq!(inspect_iso(&dir,"alias.iso",16).unwrap_err(),IsoError::NotFile);
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn iso_extraction_requires_exact_grant_and_durable_receipt(){
+    use std::sync::Arc;
+    use prost::Message;
+    use lu_core::{
+        contracts::{ProtoPayload,ToolEffect,ToolInvocation},
+        conversation_authority::{
+            AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
+            TrustedUserTurnVerifier,
+        },
+        journal::{EffectJournal,EffectState},
+        model::ModelToolCatalog,
+        native_iso9660::iso_member_digest,
+        native_iso_extract_tool::{
+            register_iso_extractor,ExactIsoExtractPolicy,TOOL_ID,INPUT,OUTPUT,
+        },
+        policy::{CapabilityGrant,PolicyEngine},
+        registry::{DispatchError,NativeToolRegistry},
+        wire::proto,
+    };
+    struct Verifier;
+    impl TrustedUserTurnVerifier for Verifier{
+        fn verify_user_turn(&self,c:&str,u:&str)->bool{
+            c=="chat-authenticated" && u=="g-human-1"
+        }
+    }
+    let (root,dir)=fixture();
+    fs::write(root.join("disc.iso"),image_with_name(b"README.TXT;1")).unwrap();
+    let digest=iso_member_digest(&dir,"disc.iso","README.TXT").unwrap();
+    let directory=Arc::new(dir);
+    let registry=NativeToolRegistry::new();
+    let mut catalog=ModelToolCatalog::new();
+    register_iso_extractor(
+        &registry,&mut catalog,Arc::clone(&directory),Arc::clone(&directory)
+    ).unwrap();
+    let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let authority=ConversationAuthority::new();
+    let policy=PolicyEngine::new();
+    let origin=BoundCallOrigin{
+        conversation_id:"chat-authenticated".into(),
+        user_turn_id:"g-human-1".into(),task_id:"iso-task-01".into(),
+    };
+    authority.open_user_task(TaskAuthority{
+        conversation_id:origin.conversation_id.clone(),
+        user_turn_id:origin.user_turn_id.clone(),
+        task_id:origin.task_id.clone(),execution_scope_id:"approved-output".into(),
+        capabilities:vec![AuthorizedCapability{
+            tool_id:TOOL_ID.into(),effect:ToolEffect::WriteWorkspace,
+        }],expires_at:None,
+    },&Verifier).unwrap();
+    policy.grant(CapabilityGrant{
+        tool_id:TOOL_ID.into(),effect:ToolEffect::WriteWorkspace,
+        scope_id:"approved-output".into(),expires_at:None,
+    }).unwrap();
+    let fence=ExactIsoExtractPolicy{
+        host_policy:&policy,source_name:"disc.iso",member_path:"README.TXT",
+        target_name:"approved.txt",expected_sha256:&digest,
+        trusted_source_root:&directory,
+    };
+    let request=|name:&str,id:&str|ToolInvocation{
+        call_id:id.into(),tool_id:TOOL_ID.into(),
+        workspace_id:Some("approved-output".into()),
+        input:ProtoPayload{
+            type_url:INPUT.into(),
+            bytes:proto::IsoExtractRequest{
+                source_name:"disc.iso".into(),member_path:"README.TXT".into(),
+                target_name:name.into(),expected_sha256:digest.clone(),
+            }.encode_to_vec(),
+        },
+    };
+    let wrong=request("elsewhere.txt","iso-bad-target-01");
+    assert!(matches!(authority.dispatch_bound_durable(
+        &registry,&journal,wrong,origin.clone(),&fence
+    ).await,Err(DispatchError::Denied(_))));
+    assert!(!root.join("elsewhere.txt").exists());
+    let approved=request("approved.txt","iso-approved-001");
+    let output=authority.dispatch_bound_durable(
+        &registry,&journal,approved.clone(),origin.clone(),&fence
+    ).await.unwrap();
+    assert_eq!(output.payload.type_url,OUTPUT);
+    let receipt=proto::IsoExtractResult::decode(output.payload.bytes.as_slice()).unwrap();
+    assert_eq!(receipt.bytes_written,11);
+    assert_eq!(receipt.sha256,digest);
+    assert_eq!(fs::read(root.join("approved.txt")).unwrap(),b"hello world");
+    assert_eq!(journal.get(&approved.call_id).unwrap().unwrap().state,EffectState::Applied);
+    assert_eq!(authority.dispatch_bound_durable(
+        &registry,&journal,approved.clone(),origin.clone(),&fence
+    ).await.unwrap(),output);
+    authority.revoke_task(&origin.task_id).unwrap();
+    assert!(matches!(authority.dispatch_bound_durable(
+        &registry,&journal,approved,origin,&fence
+    ).await,Err(DispatchError::Denied(_))));
+    drop(journal);drop(catalog);drop(registry);drop(directory);
+    fs::remove_dir_all(root).unwrap();
+}
