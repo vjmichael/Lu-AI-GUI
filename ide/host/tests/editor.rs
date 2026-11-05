@@ -1,5 +1,5 @@
-use std::{fs, path::PathBuf};
 use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use std::{fs, path::PathBuf};
 
 struct Picker(Option<PathBuf>);
 impl NativeDirectoryPicker for Picker {
@@ -40,9 +40,11 @@ fn saves_text_atomically_and_updates_revision_without_running_code() {
         fs::read_to_string(root.join("project/src/hello.py")).unwrap(),
         "print('after')\n"
     );
-    assert!(fs::read_dir(root.join("project/src"))
+    assert!(fs::read_dir(root.join("project/src")).unwrap().all(|e| !e
         .unwrap()
-        .all(|e| !e.unwrap().file_name().to_string_lossy().starts_with(".lu-ide-")));
+        .file_name()
+        .to_string_lossy()
+        .starts_with(".lu-ide-")));
     assert!(!root.join("project/marker").exists());
 
     // No-op save preserves content and revision without replacing target.
@@ -74,31 +76,51 @@ fn rejects_closed_project_traversal_invalid_revision_and_oversized_writes() {
     let (root, registry, id) = fixture();
     let preview = registry.preview_source_file(&id, "src/hello.py").unwrap();
     assert_eq!(
-        registry.save_source_file(&id, "src/hello.py", "0", "hello")
-            .unwrap_err().code(),
+        registry
+            .save_source_file(&id, "src/hello.py", "0", "hello")
+            .unwrap_err()
+            .code(),
         "INVALID_FILE_REVISION"
     );
-    for illegal in ["../secret", "/tmp/secret", "src/../../secret", "src\\hello.py"] {
+    for illegal in [
+        "../secret",
+        "/tmp/secret",
+        "src/../../secret",
+        "src\\hello.py",
+    ] {
         assert_eq!(
-            registry.save_source_file(&id, illegal, &preview.revision, "bad")
-                .unwrap_err().code(),
+            registry
+                .save_source_file(&id, illegal, &preview.revision, "bad")
+                .unwrap_err()
+                .code(),
             "INVALID_RELATIVE_PATH"
         );
     }
     assert_eq!(
-        registry.save_source_file(&id, "src/hello.py", &preview.revision, &"x".repeat(512 * 1024 + 1))
-            .unwrap_err().code(),
+        registry
+            .save_source_file(
+                &id,
+                "src/hello.py",
+                &preview.revision,
+                &"x".repeat(512 * 1024 + 1)
+            )
+            .unwrap_err()
+            .code(),
         "FILE_TOO_LARGE"
     );
     assert_eq!(
-        registry.save_source_file(&id, "src/hello.py", &preview.revision, "bad\0text")
-            .unwrap_err().code(),
+        registry
+            .save_source_file(&id, "src/hello.py", &preview.revision, "bad\0text")
+            .unwrap_err()
+            .code(),
         "NOT_UTF8_TEXT"
     );
     registry.close(&id).unwrap();
     assert_eq!(
-        registry.save_source_file(&id, "src/hello.py", &preview.revision, "hello")
-            .unwrap_err().code(),
+        registry
+            .save_source_file(&id, "src/hello.py", &preview.revision, "hello")
+            .unwrap_err()
+            .code(),
         "PROJECT_NOT_OPEN"
     );
     fs::remove_dir_all(root).unwrap();
@@ -112,15 +134,22 @@ fn refuses_symlink_file_target_and_preserves_unix_mode_bits() {
     let file = root.join("project/src/hello.py");
     fs::set_permissions(&file, fs::Permissions::from_mode(0o744)).unwrap();
     let preview = registry.preview_source_file(&id, "src/hello.py").unwrap();
-    registry.save_source_file(&id, "src/hello.py", &preview.revision, "# changed\n").unwrap();
-    assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o744);
+    registry
+        .save_source_file(&id, "src/hello.py", &preview.revision, "# changed\n")
+        .unwrap();
+    assert_eq!(
+        fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o744
+    );
 
     let external = root.join("secret.txt");
     fs::write(&external, "secret").unwrap();
     symlink(&external, root.join("project/src/secret-link")).unwrap();
     assert_eq!(
-        registry.save_source_file(&id, "src/secret-link", &"a".repeat(64), "bad")
-            .unwrap_err().code(),
+        registry
+            .save_source_file(&id, "src/secret-link", &"a".repeat(64), "bad")
+            .unwrap_err()
+            .code(),
         "NOT_A_FILE"
     );
     assert_eq!(fs::read_to_string(external).unwrap(), "secret");
@@ -138,12 +167,17 @@ fn saved_text_survives_registry_restart_and_old_revision_is_rejected() {
     let restarted = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
     restarted.reopen(&id).unwrap();
     assert_eq!(
-        restarted.preview_source_file(&id, "src/hello.py").unwrap().revision,
+        restarted
+            .preview_source_file(&id, "src/hello.py")
+            .unwrap()
+            .revision,
         saved.revision
     );
     assert_eq!(
-        restarted.save_source_file(&id, "src/hello.py", &before.revision, "bad")
-            .unwrap_err().code(),
+        restarted
+            .save_source_file(&id, "src/hello.py", &before.revision, "bad")
+            .unwrap_err()
+            .code(),
         "FILE_CHANGED_ON_DISK"
     );
     fs::remove_dir_all(root).unwrap();
@@ -168,11 +202,17 @@ fn two_saves_with_same_base_revision_do_not_both_succeed() {
         }));
     }
     start.wait();
-    let results: Vec<_> = threads.into_iter().map(|thread| thread.join().unwrap()).collect();
+    let results: Vec<_> = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
     assert_eq!(
-        results.iter().filter_map(|result| result.as_ref().err())
-            .filter(|error| error.code() == "FILE_CHANGED_ON_DISK").count(),
+        results
+            .iter()
+            .filter_map(|result| result.as_ref().err())
+            .filter(|error| error.code() == "FILE_CHANGED_ON_DISK")
+            .count(),
         1
     );
     fs::remove_dir_all(root).unwrap();
