@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_discard_proposal'
-  ]);
+  ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
   }
