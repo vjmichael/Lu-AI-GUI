@@ -2,6 +2,12 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — A3 evidence snapshot and benchmark context refinement
+- Added 128 MiB total SHA-256 scan budget on top of 64 MiB per-file limit; over-budget files remain visible but explicitly unhashed. Local toolchain candidates are `present_unverified`, never assumed usable.
+- Extended revisioned, untrusted project context to include four recognized benchmark manifest/result paths; stored source revisions, not rerun results. Baseline tests cover matching, changed, new and missing observed artifact bytes after restart.
+- Typed capability directory now advertises **19 real host commands**; schema and native signature parity audited structurally. Latest source CI [42124467605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124467605) queued at last inspection.
+- Out-of-project files, actual Git working-tree diff and live GitHub are NOT inspected by this first A3 implementation. Installer execution / toolchain version checks require future supervised and approved native workers.
+
 ## 2026-11-05 — A3 bounded artifact/resource inventory and durable baseline (source implemented, CI open)
 - Added `host/src/inventory.rs`: read-only bounded scan of registered project subfolders `Delivered`, `dist`, `benchmarks`, `results`, selected tool/bin folders and NSIS output locations. Captures file size and SHA-256 (up to 64 MiB); skips symlinks and never executes or downloads project code.
 - Added read-only local `.git/HEAD` and loose ref/tracking-ref observation. **Not a live remote comparison or authoritative working-tree status**; packed refs/worktree pointers require later support.
