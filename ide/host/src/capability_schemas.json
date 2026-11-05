@@ -965,6 +965,10 @@
         "liveRemote": {
           "type": "string",
           "const": "not_queried"
+        },
+        "baselineCount": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "required": [
@@ -975,7 +979,8 @@
         "discoveryComplete",
         "entries",
         "localGitHeadChange",
-        "liveRemote"
+        "liveRemote",
+        "baselineCount"
       ]
     }
   },
