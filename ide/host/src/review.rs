@@ -47,10 +47,7 @@ fn lines(text: &str) -> Vec<&str> {
 /// diff for a file with multiple distant edits; `truncated` tells the user
 /// when the full changed region cannot be displayed. A later diff engine
 /// can replace this without changing the no-effects contract.
-fn summarize_change(
-    old: &str,
-    proposed: &str,
-) -> (Vec<ReviewLine>, usize, usize, bool) {
+fn summarize_change(old: &str, proposed: &str) -> (Vec<ReviewLine>, usize, usize, bool) {
     let old_lines = lines(old);
     let new_lines = lines(proposed);
     let mut common_start = 0;
@@ -88,7 +85,8 @@ fn summarize_change(
     let mut rendered_bytes = 0;
     let mut truncated = false;
     for (kind, text) in candidates {
-        if result.len() >= MAX_REVIEW_LINES || rendered_bytes + text.len() > MAX_REVIEW_OUTPUT_BYTES {
+        if result.len() >= MAX_REVIEW_LINES || rendered_bytes + text.len() > MAX_REVIEW_OUTPUT_BYTES
+        {
             truncated = true;
             break;
         }
@@ -118,7 +116,9 @@ impl IdeWorkspaceRegistry {
         if proposed_text.as_bytes().contains(&0) {
             return Err(BrowserError::NotText);
         }
-        if expected_revision.len() != 64 || !expected_revision.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if expected_revision.len() != 64
+            || !expected_revision.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(BrowserError::InvalidRevision);
         }
         let original = self.preview_source_file(project_id, relative_path)?;
@@ -151,9 +151,15 @@ mod tests {
             summarize_change("one\ntwo\nthree\nfour\n", "one\ntwo\nTHREE\nfour\n");
         assert_eq!((removed, added), (1, 1));
         assert!(!truncated);
-        assert_eq!(lines.iter().filter(|line| line.kind == "removed").count(), 1);
+        assert_eq!(
+            lines.iter().filter(|line| line.kind == "removed").count(),
+            1
+        );
         assert_eq!(lines.iter().filter(|line| line.kind == "added").count(), 1);
-        assert_eq!(lines.iter().filter(|line| line.kind == "context").count(), 3);
+        assert_eq!(
+            lines.iter().filter(|line| line.kind == "context").count(),
+            3
+        );
     }
 
     #[test]
