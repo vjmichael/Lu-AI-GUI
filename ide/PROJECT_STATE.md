@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `413e1b52e051ff7493d529e525567fb4369bb3d2`  
-**Current source validation:** [Standalone IDE CI 42124467605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124467605) queued at last inspection. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
+**Last inspected implementation source SHA:** `7409a3cb54fb6c71d42150b9ab362c3b1b5b7096`  
+**Current source validation:** [Standalone IDE CI 42124780433](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124780433) queued at last inspection. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -31,12 +31,12 @@
 
 ## A3 — Bounded local evidence inventory and saved baselines
 
-- **Implemented in source:** `host/src/inventory.rs` performs a bounded, nonexecuting scan of known folders such as `Delivered`, build output, benchmark/result folders, and selected project-local tool/bin directories. Files receive observed byte size, SHA-256 if at most 64 MiB per file and within a 128 MiB total scan budget, category, and explicit `present_unverified` status. No shell, package install, app launch, network request, or ambient filesystem search.
+- **Implemented in source:** `host/src/inventory.rs` performs a bounded, nonexecuting scan of known folders such as `Delivered`, direct root-level installers, build output, benchmark/result folders, and selected project-local tool/bin directories. Files receive observed byte size, SHA-256 if at most 64 MiB per file and within a 128 MiB total scan budget, category, and explicit `present_unverified` status. No shell, package install, app launch, network request, or ambient filesystem search.
 - **Local Git:** reads only `.git/HEAD` and loose local/remote-tracking refs through the project capability. It can report equal/different *locally stored* refs, but does **not** verify a working-tree diff, packed refs, linked Git worktrees or current GitHub HEAD. Those are marked `not_verified`/`not_queried`.
 - **Durable user-triggered baseline:** `host/src/inventory_history.rs` stores the observed artifact paths, sizes and SHA-256 digests in application-profile `evidence-baselines.json`. Later scans classify known files as `matched_bytes`, `changed_bytes`, `missing_in_scanned_scope`, `new_in_scanned_scope` or `unverifiable`. An incomplete scan never establishes missing evidence. Histories persist across restart, but the snapshots prove byte observations, **not executable readiness or benchmark comparability**.
 - **UI:** Continuity now shows evidence files and their digests, observed Git refs, a human **Record evidence snapshot** control and baseline comparisons. The capability catalog includes two typed host operations, `inventory.capture` and `inventory.compare`. Native fixture tests and frontend parity tests added.
-- **Scope limits:** only registered project roots are scanned. Toolchains installed elsewhere on the user's machine, older `Delivered` folders outside the chosen root, live remote GitHub, actual dirty/untracked diffs, native installer launch and benchmark reruns remain **not inspected** without separate explicit access and worker authorization.
-- **Verification:** source committed, pending native/Windows CI [run 42124467605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124467605). No physical Windows acceptance and no new installer claimed.
+- **Scope limits:** only registered project roots are scanned (including direct root-level installer candidates so a manually selected `Delivered` folder can be inspected). Toolchains installed elsewhere on the user's machine, older `Delivered` folders outside the chosen root, live remote GitHub, actual dirty/untracked diffs, native installer launch and benchmark reruns remain **not inspected** without separate explicit access and worker authorization.
+- **Verification:** source committed, pending native/Windows CI [run 42124780433](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124780433). No physical Windows acceptance and no new installer claimed.
 
 ## A3 — Current, narrowly scoped first slice
 
