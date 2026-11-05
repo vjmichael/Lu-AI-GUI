@@ -490,6 +490,17 @@
         },
         "summary": {
           "type": "string"
+        },
+        "sourcePath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -500,7 +511,8 @@
         "operation",
         "outcome",
         "sourceRevision",
-        "summary"
+        "summary",
+        "sourcePath"
       ]
     },
     "ContextDocument": {
