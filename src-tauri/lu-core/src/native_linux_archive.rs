@@ -398,6 +398,29 @@ pub fn inspect_linux_archive(
         input_bytes,truncated,
     })
 }
+/// Hash the exact selected decoded member without publishing. The returned
+/// digest is an integrity hint for trusted user preview, never a permission.
+pub fn linux_archive_member_digest(
+    source_root:&Dir,archive_name:&str,member:&str,
+)->Result<String,LinuxArchiveError>{
+    let (format,raw,_)=decoded(source_root,archive_name)?;
+    if format.is_tar(){
+        let selected=tar_entries(&raw)?.into_iter().find(|e|e.path==member)
+            .ok_or(LinuxArchiveError::NotFound)?;
+        if selected.is_directory{return Err(LinuxArchiveError::UnsupportedEntry)}
+        Ok(sha(&raw[selected.data_start..selected.data_end]))
+    }else{
+        let suffix=match format{
+            LinuxArchiveFormat::Gzip=>".gz",LinuxArchiveFormat::Xz=>".xz",
+            LinuxArchiveFormat::Bzip2=>".bz2",LinuxArchiveFormat::Zstd=>".zst",
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
+        };
+        if member!=&archive_name[..archive_name.len()-suffix.len()]{
+            return Err(LinuxArchiveError::NotFound)
+        }
+        Ok(sha(&raw))
+    }
+}
 /// Extract a selected member; the host must pin the exact source/member hash,
 /// destination and persisted human turn before dispatch via EffectJournal.
 pub fn extract_linux_archive_member(
