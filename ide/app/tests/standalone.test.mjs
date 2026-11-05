@@ -360,3 +360,21 @@ test('typed schemas have no dangling nested refs or untyped object properties', 
   visit(schema.operations, 'operations');
   visit(definitions, 'definitions');
 });
+
+test('Wave A2 typed request keys match actual Rust Tauri argument names', () => {
+  const native = read('../src-tauri/src/lib.rs');
+  const catalog = read('../../host/src/capabilities.rs');
+  const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
+  const capabilities = [...catalog.matchAll(/capability!\(\s*"([^"]+)",\s*"(ide_[a-z_]+)"/g)]
+    .map(match => ({ id: match[1], command: match[2] }));
+  for (const { id, command } of capabilities) {
+    const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
+    assert.ok(signature, id + ': missing native function');
+    const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger'].includes(name))
+      .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
+      .sort();
+    const typed = Object.keys(schemas.operations[id].request.properties).sort();
+    assert.deepEqual(typed, parameters, id + ': request schema differs from native command');
+  }
+});
