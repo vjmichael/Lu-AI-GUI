@@ -164,3 +164,14 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .capabilityEffect{font-size:10px;border:1px solid #5a7185;color:#d2e5f6;padding:4px 6px;border-radius:5px;white-space:nowrap}
 .capabilityCard dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px;margin:12px 0 0;font-size:11px}
 .capabilityCard dt{color:#90a9c0}.capabilityCard dd{margin:0;color:#e2edf7;overflow-wrap:anywhere}
+
+/* Wave A3: local-only continuity viewer, not a shell or executor. */
+.continuityWorkspace{overflow-y:auto}
+.continuityBody{max-width:1050px;padding-bottom:30px;color:#c6d8e9;font-size:12px}
+.continuityBody h3{margin:22px 0 10px;color:#e9f3ff}
+.continuityBody code{overflow-wrap:anywhere}
+.continuityEvents{display:grid;gap:9px}
+.continuityEvent,.continuityDocument{border:1px solid #38536b;border-radius:8px;background:#15273a;padding:12px;margin-bottom:10px}
+.continuityEvent span{color:#a6bed2;font-size:11px;margin-left:12px}
+.continuityEvent p{margin:6px 0}
+.continuityDocument pre{overflow:auto;max-height:180px;white-space:pre-wrap;word-break:break-word;padding:10px;border-radius:5px;background:#0d1a2a;color:#e1ecf6}
