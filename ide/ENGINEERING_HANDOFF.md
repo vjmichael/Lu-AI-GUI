@@ -13,6 +13,12 @@ Before changing code, read [current project state](PROJECT_STATE.md), [chronolog
 
 **Latest source:** R3.6 notification banner + R3.7 editor Find have been committed, but exact-head CI, desktop smoke and installer checks remain open. **Live Lu-to-IDE connection is user-deferred.** The PCP-01 pull-request gate now requires state and changelog updates for IDE implementation changes; branch protection must make its check required to prevent bypass.
 
+## AI-first philosophy and operational resource memory
+
+Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contributor orientation](AGENTS.md) before adding features. The Lu v1.0 `LU-AIW-01` reconciliation requires shared precise source references, discoverable host-validated capabilities, verified resource inventories, bounded provenance-aware context, typed semantic actions, real outcome evidence and recovery. [Lu Core draft PR #28](https://github.com/vjmichael/Lu-AI-GUI/pull/28) provides a source-only resource-memory model, **not a merged IDE or desktop service**. Do not assume it is callable or that old resource paths still exist.
+
+New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
+
 ## Current user-verified Windows milestones
 
 - **R1:** standalone Windows IDE launches, displays project registration shell and shows "Lu connection: Not connected".
