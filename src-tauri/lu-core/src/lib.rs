@@ -67,6 +67,7 @@ pub mod native_reader_docx;
 pub mod native_reader_pdf;
 pub mod native_reader_openxml;
 pub mod native_reader_office;
+pub mod native_spreadsheet_create;
 pub mod native_reader_odf;
 pub mod native_reader_turn;
 pub mod native_workspace_read_turn;
