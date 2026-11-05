@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `aad59a809bfeae8272d3d3fdd975fc9f67b69c38`  
-**Current source validation:** [Standalone IDE CI 42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending at last inspection. Exact-source native acceptance **not established**. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
+**Last inspected implementation source SHA:** `a37be15b808b2d238ac2457aee9e357d056be13f`  
+**Current source validation:** [Standalone IDE CI 42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued at last inspection; **do not claim it passed**. Earlier source-specific runs were superseded.ndalone IDE CI 42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending at last inspection. Exact-source native acceptance **not established**. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -32,10 +32,12 @@
 
 ## A3 native Git worktree reader — implementation committed, CI pending
 
+- Latest implementation SHA `a37be15b808b2d238ac2457aee9e357d056be13f`, source-specific verification [run 42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued. Tests include native Git fixture + baseline transition; Linux build and Windows installed acceptance remain open.
+
 - `host/src/git_status.rs` uses native `git2` / libgit2 to inspect the **exact registered project root** without launching `git` or executing project code. Refuses accidental parent-repository discovery.
 - Returns branch, local commit ID, locally configured upstream tracking commit, locally computed ahead/behind counts, true modified/staged/untracked file counts and at most 120 changed-path summaries. The Continuity screen displays these separately from older loose-ref evidence.
 - **Not a live GitHub comparison**: no fetch, push, network access, remote PR inspection or authority to mutate Git. Worktree inspection can be unverifiable, and none of its observations grant permission to write.
-- Added native Git fixture tests for clean -> dirty/untracked and parent-repo refusal, plus frontend/schema checks. `git2` now a standalone host dependency; native Windows/Linux CI must compile and run before marking this accepted.
+- Added native Git fixture tests for clean -> dirty/untracked and parent-repo refusal, plus frontend/schema checks. A recorded inventory baseline now includes the observed clean/dirty worktree state, and comparison reports a transition such as `became_dirty` rather than assuming the same commit means no local changes. `git2` now a standalone host dependency; native Windows/Linux CI must compile and run before marking this accepted.
 - CI: [run 42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending at last check; previous build `42125275258` had Windows success, but its Linux/frontend jobs were cancelled as source evolved.
 
 ## A3 — Bounded local evidence inventory and saved baselines
