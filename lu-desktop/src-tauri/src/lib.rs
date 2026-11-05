@@ -156,6 +156,7 @@ struct DesktopState {
     generation_queue: Arc<GenerationQueue>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
+    background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -442,7 +443,20 @@ impl DesktopState {
         // to the operator as phantom live workers after a restart.
         background_tasks.reconcile_interrupted()
             .map_err(|_|"Background task startup reconciliation failed")?;
+        let background_processes=Arc::new(
+            lu_core::native_background_process::BackgroundProcessSupervisor::new(
+                Arc::clone(&background_tasks)
+            )
+        );
+        // Host watchdog runs regardless of any loaded model or open pane.
+        let supervisor_weak=Arc::downgrade(&background_processes);
+        std::thread::spawn(move||loop {
+            std::thread::sleep(Duration::from_millis(500));
+            let Some(processes)=supervisor_weak.upgrade() else {break;};
+            let _=processes.poll(); // Failure stays visible for reconciliation.
+        });
         Ok(Self {
+            background_processes,
             background_tasks,
             models_dir,
             catalog_path,
@@ -984,10 +998,13 @@ struct BackgroundTaskView {
     detail:String,
     last_heartbeat:Option<String>,
     updated_at:String,
+    can_cancel:bool,
 }
 #[tauri::command]
 fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
     ->Result<Vec<BackgroundTaskView>,String>{
+    state.background_processes.poll()
+        .map_err(|_|"Background process status needs reconciliation")?;
     let tasks=state.background_tasks.dashboard(100)
         .map_err(|_|"Background task overview unavailable")?;
     Ok(tasks.into_iter().map(|task|BackgroundTaskView{
@@ -995,12 +1012,43 @@ fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
         state:format!("{:?}",task.state).to_uppercase(),
         progress:task.progress,detail:task.detail,
         last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
+        can_cancel:state.background_processes.can_cancel(&task.task_id),
     }).collect())
 }
 #[tauri::command]
 fn lu_chats(state: State<'_, Arc<DesktopState>>) -> Result<ChatListView, String> {
     let (chats, folders) = state.chats.list()?;
     Ok(ChatListView { chats, folders })
+}
+/// Local operator cancellation. Never expose a model-selectable PID,
+/// executable path, or arbitrary background command through Tauri.
+#[tauri::command]
+async fn lu_background_cancel(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    task_id:String,
+)->Result<(),String>{
+    if task_id.is_empty()||task_id.len()>128
+       ||!state.background_processes.can_cancel(&task_id){
+        return Err("No live Lu-owned worker with that task ID".into());
+    }
+    let message=format!(
+        "Cancel Lu's currently running background task?\n\n{}\n\n         This terminates its owned process and records CANCELLED.          Previous completed checkpoints are retained.",
+        task_id
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Cancel background task")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Terminate task".into(),"Keep running".into(),
+            )).blocking_show()
+    }).await.map_err(|_|"Native cancellation prompt unavailable")?;
+    if !confirmed{return Err("Cancellation declined".into());}
+    let processes=Arc::clone(&state.background_processes);
+    tauri::async_runtime::spawn_blocking(move||
+        processes.cancel_operator_owned(&task_id)
+            .map_err(|e|format!("Cannot cancel owned worker: {e:?}"))
+    ).await.map_err(|_|"Task cancellation worker unavailable")?
 }
 #[tauri::command]
 fn lu_new_chat(state: State<'_, Arc<DesktopState>>) -> Result<ChatSummary, String> {
@@ -1091,6 +1139,7 @@ pub fn run() {
             lu_history,
             lu_chats,
             lu_background_tasks,
+            lu_background_cancel,
             lu_new_chat,
             lu_new_folder,
             lu_favorite_chat,
