@@ -13,6 +13,21 @@ use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, pt
 type Handle = *mut c_void;
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: i32 = 9;
 const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+const TH32CS_SNAPTHREAD:u32=0x0000_0004;
+const THREAD_SUSPEND_RESUME:u32=0x0002;
+#[repr(C)]
+#[derive(Default)]
+struct ThreadEntry32 {
+    size:u32,
+    usage:u32,
+    thread_id:u32,
+    owner_process_id:u32,
+    base_priority:i32,
+    delta_priority:i32,
+    flags:u32,
+}
+const _:()={assert!(mem::size_of::<ThreadEntry32>()==28);};
+
 
 #[repr(C)]
 #[derive(Default)]
@@ -69,6 +84,11 @@ unsafe extern "system" {
     ) -> i32;
     fn AssignProcessToJobObject(job: Handle, process: Handle) -> i32;
     fn CloseHandle(handle: Handle) -> i32;
+    fn CreateToolhelp32Snapshot(flags:u32,process_id:u32)->Handle;
+    fn Thread32First(snapshot:Handle,entry:*mut ThreadEntry32)->i32;
+    fn Thread32Next(snapshot:Handle,entry:*mut ThreadEntry32)->i32;
+    fn OpenThread(access:u32,inherit:i32,thread_id:u32)->Handle;
+    fn ResumeThread(thread:Handle)->u32;
 }
 
 /// Owns one kernel Job Object handle, not the child process handle itself.
@@ -103,6 +123,60 @@ impl Job {
             return Err(io::Error::last_os_error());
         }
         Ok(job)
+    }
+
+
+    /// The host launches the child with CREATE_SUSPENDED. Put that process
+    /// into our kill-on-close Job *before* releasing its primary thread.
+    /// std::process::Child does not expose the thread handle, so the native
+    /// Win32 boundary locates the initial suspended thread by process ID.
+    /// Caller must kill/reap on every error; a thread is never resumed before
+    /// the Job assignment succeeds.
+    pub fn assign_and_resume_suspended(&self,child:&Child)->io::Result<()>{
+        self.assign(child)?;
+        // SAFETY: THREADENTRY32 has the documented Win32 layout and size.
+        let snapshot=unsafe{CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0)};
+        if snapshot.is_null()||snapshot as isize == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut entry=ThreadEntry32{
+            size:mem::size_of::<ThreadEntry32>() as u32,
+            ..Default::default()
+        };
+        let mut found=false;
+        // SAFETY: snapshot stays open and entry points to initialized data.
+        let mut next=unsafe{Thread32First(snapshot,&mut entry)};
+        while next!=0{
+            if entry.owner_process_id==child.id(){
+                found=true;
+                // SAFETY: OpenThread returns a separately owned thread handle.
+                let thread=unsafe{OpenThread(THREAD_SUSPEND_RESUME,0,entry.thread_id)};
+                if thread.is_null(){
+                    let error=io::Error::last_os_error();
+                    unsafe{CloseHandle(snapshot)};
+                    return Err(error);
+                }
+                // Must have a suspended primary thread: a returned zero
+                // means we cannot prove code was held prior to assignment.
+                let previous=unsafe{ResumeThread(thread)};
+                let failure=if previous==u32::MAX{
+                    Some(io::Error::last_os_error())
+                }else if previous==0{
+                    Some(io::Error::other("engine thread was not suspended"))
+                }else{None};
+                unsafe{CloseHandle(thread)};
+                if let Some(error)=failure{
+                    unsafe{CloseHandle(snapshot)};
+                    return Err(error);
+                }
+                break;
+            }
+            entry.size=mem::size_of::<ThreadEntry32>() as u32;
+            next=unsafe{Thread32Next(snapshot,&mut entry)};
+        }
+        unsafe{CloseHandle(snapshot)};
+        if !found{return Err(io::Error::other("suspended engine thread not found"));}
+        Ok(())
     }
 
     pub fn assign(&self, child: &Child) -> io::Result<()> {
