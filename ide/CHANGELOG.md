@@ -2,6 +2,10 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — A3 root-folder discovery and current CI (source only)
+- Root-level installers/archives are now discoverable with SHA-256 when the user selects a standalone `Delivered` folder through the existing native project picker. Added host-native regression fixture for this route; no external scanning or execution rights added.
+- Source commit under verification: `7409a3cb54fb6c71d42150b9ab362c3b1b5b7096`. [CI run 42124780433](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124780433) queued at last inspection. **Do not claim this runtime accepted until Linux/frontend/Windows results complete.**
+
 ## 2026-11-05 — A3 evidence snapshot and benchmark context refinement
 - Added 128 MiB total SHA-256 scan budget on top of 64 MiB per-file limit; over-budget files remain visible but explicitly unhashed. Local toolchain candidates are `present_unverified`, never assumed usable.
 - Extended revisioned, untrusted project context to include four recognized benchmark manifest/result paths; stored source revisions, not rerun results. Baseline tests cover matching, changed, new and missing observed artifact bytes after restart.
