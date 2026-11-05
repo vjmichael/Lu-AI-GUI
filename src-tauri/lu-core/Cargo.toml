@@ -20,6 +20,7 @@ sha2 = "0.10"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 ed25519-dalek = "2.1"
+lu-win-worker-job = { path = "../lu-win-worker-job" }
 
 [build-dependencies]
 prost-build = "0.14"
@@ -29,5 +30,3 @@ protoc-bin-vendored = "3"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 
-[target.'cfg(windows)'.dependencies]
-lu-win-worker-job = { path = "../lu-win-worker-job" }
