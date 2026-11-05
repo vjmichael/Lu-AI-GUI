@@ -288,6 +288,41 @@ impl Drop for BackgroundProcessSupervisor{
 mod tests{
     use super::*;
     #[test]
+    fn genuine_scanner_receipts_update_sqlite_without_model(){
+        use std::io::Cursor;
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("media123",Some("media"),None).unwrap();
+        store.start("media123").unwrap();
+        let digest="a".repeat(64);
+        let frames=format!("P\\t0\\t20\\nP\\t10\\t20\\nP\\t20\\t20\\nD\\t{digest}\\n");
+        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123"));
+        let record=store.get("media123").unwrap().unwrap();
+        assert_eq!(record.progress,100);
+        assert_eq!(record.detail,format!("SHA-256: {digest}"));
+        assert!(store.events_after("media123","other",0,12).unwrap().is_empty());
+        let events=store.events_after("media123","media",0,12).unwrap();
+        assert_eq!(events.len(),4);
+        assert_eq!(events.last().unwrap().progress,100);
+    }
+    #[test]
+    fn invalid_and_truncated_worker_reports_cannot_complete(){
+        use std::io::Cursor;
+        for frames in [
+            "P\\t0\\t100\\nP\\t100\\t100\\n",
+            "P\\t100\\t100\\nP\\t50\\t100\\n",
+            "P\\t100\\t100\\nD\\tnot-a-sha256\\n",
+            "P\\t2\\t1\\n",
+            "P\\t0\\t0\\n",
+            "P\\t5\\t10\\nD\\t",
+        ]{
+            let store=TaskStore::open(Path::new(":memory:")).unwrap();
+            store.create("t",Some("w"),None).unwrap();
+            store.start("t").unwrap();
+            assert!(!read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t"));
+            assert!(store.get("t").unwrap().unwrap().progress<100);
+        }
+    }
+    #[test]
     fn unreviewed_executable_never_creates_a_job(){
         let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
         let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
