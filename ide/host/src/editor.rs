@@ -100,11 +100,13 @@ impl IdeWorkspaceRegistry {
             durable_dir.sync_all()?;
             let mut file = parent.open_with(&temp, &options)?;
             file.write_all(payload)?;
+            // Modify permissions through the already-open file descriptor,
+            // never by resolving the temporary filename a second time.
+            // Unix mode bits are preserved; complete Windows ACL fidelity
+            // remains a separate release gate.
+            file.set_permissions(original_permissions)?;
             file.sync_all()?;
             drop(file);
-            // On Unix this preserves mode bits. Full platform-specific ACL
-            // and ownership preservation remain separate release gates.
-            parent.set_permissions(&temp, original_permissions)?;
 
             // Revalidate after potentially lengthy disk IO. This is still
             // optimistic concurrency, not cross-process exclusive locking.
