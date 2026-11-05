@@ -63,6 +63,8 @@ pub mod multimodal_http;
 pub mod multimodal_saved_turn;
 pub mod native_file_extra;
 pub mod native_files;
+pub mod native_reader;
+pub mod vision_routing;
 pub mod ownership_store;
 pub mod passive_diagnostics;
 pub mod passive_localization;
