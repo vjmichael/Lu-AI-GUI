@@ -36,13 +36,13 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 
 ## R3.4 development candidate — accurate multi-hunk review + proposal schema
 
-- The user completed the R3.3 Windows smoke gate on November 5. The next milestone is implemented on the IDE branch but **its new Windows acceptance is pending**.
+- The user completed the R3.3 Windows smoke gate on November 5. The next milestone is implemented on the IDE branch but **its automated Windows/Linux verification and release passed; human R3.4 GUI acceptance is pending**.
 - `host/src/review.rs` now uses the Similar line diff algorithm with grouped hunks and original/proposed line numbers. Limit: 240 preview lines / 32 KiB / 64 hunks / 8,000 input lines. Truncated reviews cannot be saved from the review dialog.
 - `app/web/main.jsx` and `styles.css` display true separate hunks and source line-number gutters.
 - `host/src/proposal.rs` defines a strict versioned, data-only JSON envelope for **untrusted** multi-file proposals. It rejects unknown effect/approval fields and never applies edits; `claimedProducer` is not authentication.
 - `host/tests/proposal.rs` verifies two-file previews do not write, and a stale file causes rejection. `host/src/review.rs` tests check distant edits and newline handling.
 - Acceptance record: [R3.4 multi-hunk and envelope plan](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md).
-- CI: verify the latest exact branch head at [IDE standalone workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml). Do not inherit R3.3 success. No R3.4 Windows executable has been accepted yet.
+- CI: [R3.4 run 42053180326](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053180326) **PASSED** (42 Rust tests, 13 frontend tests, Windows Tauri compile). [Windows unsigned release 42053262838](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053262838) **PASSED**; executable and ZIP checksums in [R3.4 evidence](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md). **User R3.4 desktop multi-hunk acceptance still pending.**
 
 ## Source map
 
