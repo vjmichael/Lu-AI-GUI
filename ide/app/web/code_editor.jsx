@@ -40,6 +40,12 @@ function languageExtension(filename) {
  */
 export function createEditorState(text, filename, onChange, onSelectionChange) {
   const syntax = languageExtension(filename);
+  // Keep uniform CRLF/CR files byte-for-byte stable across opening and Save.
+  // CodeMirror otherwise normalizes all line endings to LF by default.
+  const withoutCrLf = text.replace(/\r\n/g, '');
+  const separator = text.includes('\r\n') && !/[\r\n]/.test(withoutCrLf)
+    ? '\r\n'
+    : text.includes('\r') && !text.includes('\n') ? '\r' : '\n';
   // Tauri rewrites the nonce on this bundled <style> element and its CSP
   // policy for each WebView. CodeMirror's dynamic StyleModule uses that same
   // nonce rather than relaxing script-src or enabling unsafe-inline CSS.
@@ -49,6 +55,7 @@ export function createEditorState(text, filename, onChange, onSelectionChange) {
     doc: text,
     extensions: [
       basicSetup,
+      EditorState.lineSeparator.of(separator),
       ...(styleNonce ? [EditorView.cspNonce.of(styleNonce)] : []),
       oneDark,
       EditorView.lineWrapping,
