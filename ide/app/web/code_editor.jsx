@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -68,16 +68,25 @@ export function createEditorState(text, filename, onChange) {
   });
 }
 
-export function CodeEditor({ editorState, tabIdentity }) {
+export function CodeEditor({ editorState, tabIdentity, findRequest }) {
   const container = useRef(null);
+  const viewRef = useRef(null);
   useLayoutEffect(() => {
     if (!container.current) return;
     const view = new EditorView({
       state: editorState,
       parent: container.current,
     });
-    return () => view.destroy();
+    viewRef.current = view;
+    return () => { viewRef.current = null; view.destroy(); };
     // tabIdentity is the mount boundary; typing does not recreate EditorView.
   }, [tabIdentity]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !findRequest || findRequest.to > view.state.doc.length) return;
+    view.dispatch({ selection: { anchor: findRequest.from, head: findRequest.to },
+      scrollIntoView: true });
+    view.focus();
+  }, [findRequest, tabIdentity]);
   return <div ref={container} className="codeEditorHost" aria-label="Source code editor" />;
 }
