@@ -28,7 +28,7 @@
 - **Frontend:** same run — **5 Node tests passed**, standalone React/ESBuild production bundle built.
 - **Windows:** same run — `cargo test` for the IDE host and `cargo check` for the *independent* Tauri desktop passed.
 - This is GitHub-hosted native validation, not the user's local Windows click-through acceptance.
-- R2 Windows executable build: https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41970937767; check its actual conclusion and artifact, do not assume success in advance.
+- **R2 Windows release:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41970937767 — passed. Artifact `lu-ide-explorer-windows-alpha-r2` contains an unsigned 10,116,096-byte Windows PE executable. SHA-256: `fbc2ac5d735792aa8999c3f89fe0b03636456604f267a868de08a42dde9d4835`. A fresh user-facing ZIP also includes a harmless `DemoProject` fixture and launch instructions.
 
 ## Still pending before Task 3 completion
 
