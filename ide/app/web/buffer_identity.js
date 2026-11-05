@@ -16,12 +16,24 @@ export function advanceBufferIdentity(identity) {
   return Object.freeze({ ...identity, revision: identity.revision + 1 });
 }
 
+function splitsSurrogate(doc, position) {
+  if (position <= 0 || position >= doc.length) return false;
+  const adjacent = doc.sliceString(position - 1, position + 1);
+  return adjacent.length === 2 &&
+    adjacent.charCodeAt(0) >= 0xD800 && adjacent.charCodeAt(0) <= 0xDBFF &&
+    adjacent.charCodeAt(1) >= 0xDC00 && adjacent.charCodeAt(1) <= 0xDFFF;
+}
+
 // CodeMirror columns/positions are UTF-16. Byte offsets are UTF-8;
 // columns are one-based UTF-16 units, not Unicode grapheme indices.
 export function captureBufferSpan(identity, editorState, from, to) {
   if (!identity || !editorState?.doc || !Number.isSafeInteger(from) ||
       !Number.isSafeInteger(to) || from < 0 || to < from ||
       to > editorState.doc.length) throw Error('INVALID_BUFFER_RANGE');
+  if (splitsSurrogate(editorState.doc, from) ||
+      splitsSurrogate(editorState.doc, to)) {
+    throw Error('INVALID_BUFFER_RANGE');
+  }
   const first = editorState.doc.lineAt(from);
   const last = editorState.doc.lineAt(to);
   if (last.number - first.number + 1 > MAX_LINES) throw Error('BUFFER_SPAN_TOO_LARGE');
