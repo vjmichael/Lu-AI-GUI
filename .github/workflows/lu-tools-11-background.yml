@@ -35,6 +35,10 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_status -- --nocapture
       - name: Verify DOCX archive and XML security cases
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_docx -- --nocapture
+      - name: Validate safe OOXML archive admission
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_openxml -- --nocapture
+      - name: Extract XLSX cells and PPTX slides from authentic OOXML fixtures
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_office -- --nocapture
       - name: Verify bounded universal Reader kernel
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader -- --nocapture
       - name: Verify Reader typed model tool, authorization and binary refusal
