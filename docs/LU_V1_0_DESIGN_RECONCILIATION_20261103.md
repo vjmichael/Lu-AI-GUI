@@ -135,6 +135,8 @@ Distinguish at least **known historically**, **present/unverified**, **verified 
 
 For recognizable requests (build Windows installer, run Cognitum benchmark, edit screenplay, render shot), host-side task preflight must consult this inventory, probe the resource and prefer compatible existing tools or pinned caches before doing an expensive full search or reinstall. Save successful commands, exact inputs and output hashes and concise errors. This integrates with the Unified Toolchain & Dependency Manager design and task journal; it does not allow global installation without permission.
 
+**LU-OPMEM-01 implementation note (2026-11-05):** A standalone host-owned SQLite operational-resource ledger has been added in a draft development branch. It stores discovered resource identity, platform/path/version, historical verification evidence and last-successful recipe references. Read-only probes distinguish present/changed/missing resources; a new process does not inherit a previous session's `VerifiedUsable` attestation. See `docs/LU_OPERATIONAL_MEMORY_01.md`. This is source-only until desktop preflight, a trusted runner and real Windows acceptance are wired; it does not grant execution authority.
+
 ### R4 — Task-driven, provenance-aware context assembly
 
 Use ANSF + SQLite as the durable record and index, but make retrieval an **explicit host workflow**:
