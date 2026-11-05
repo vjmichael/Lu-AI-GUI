@@ -382,6 +382,54 @@ mod tests{
         source.extend_from_slice(b"\nendstream\nendobj\nxref\ntrailer\n<< /Root 1 0 R >>\nstartxref\n0\n%%EOF\n");
         source
     }
+    fn nested_fixture()->Vec<u8>{
+        let mut source=b"%PDF-1.4\n".to_vec();
+        for object in [
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+            "2 0 obj\n<< /Type /Pages /Kids [5 0 R 6 0 R] /Count 2 >>\nendobj\n",
+            "5 0 obj\n<< /Type /Pages /Parent 2 0 R /Kids [3 0 R] /Count 1 >>\nendobj\n",
+            "3 0 obj\n<< /Type /Page /Parent 5 0 R /Contents 4 0 R >>\nendobj\n",
+            "6 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 7 0 R >>\nendobj\n",
+        ]{source.extend_from_slice(object.as_bytes());}
+        for (id,content) in [(4,"BT (Nested first) Tj ET"),
+                             (7,"BT (Top-level second) Tj ET")]{
+            source.extend_from_slice(format!(
+                "{id} 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n",
+                content.len()).as_bytes());
+        }
+        source.extend_from_slice(b"xref\ntrailer\n<< /Root 1 0 R >>\nstartxref\n0\n%%EOF\n");
+        source
+    }
+    #[test]
+    fn nested_page_trees_preserve_catalog_order_and_page_selectors(){
+        let input=nested_fixture();
+        let read=read_pdf_text(&input,4096).unwrap();
+        let first=read.text.find("[Page 1]\nNested first").unwrap();
+        let second=read.text.find("[Page 2]\nTop-level second").unwrap();
+        assert!(first<second);
+        let selected=read_pdf_page(&input,4096,Some(2)).unwrap();
+        assert!(selected.text.contains("[Page 2]"));
+        assert!(selected.text.contains("Top-level second"));
+        assert!(!selected.text.contains("Nested first"));
+        assert_eq!(read_pdf_page(&input,4096,Some(3)),
+            Err(ReaderFailure::SelectorNotFound));
+    }
+    #[test]
+    fn nested_page_trees_reject_cycles_duplicates_invalid_counts_and_parents(){
+        let input=String::from_utf8(nested_fixture()).unwrap();
+        for (before,after) in [
+            ("/Kids [3 0 R]","/Kids [2 0 R]"), // nested cycle
+            ("/Count 2","/Count 3"), // root count mismatch
+            ("/Parent 5 0 R","/Parent 999 0 R"), // forged parent
+            ("/Kids [5 0 R 6 0 R]","/Kids [5 0 R 5 0 R]"), // same kid twice
+        ]{
+            assert!(input.contains(before));
+            let hostile=input.replacen(before,after,1);
+            assert!(read_pdf_text(hostile.as_bytes(),4096).is_err(),
+                "accepted invalid page tree: {before}");
+        }
+    }
+
     #[test]
     fn reads_page_anchored_pdf_text_and_flated_streams(){
         let plain=b"BT /F1 12 Tf 20 700 Td (Hello \\(PDF\\) world) Tj ET";
