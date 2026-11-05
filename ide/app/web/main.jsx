@@ -46,6 +46,8 @@ function App() {
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
   const [contextBusy, setContextBusy] = useState(false);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
 
@@ -131,11 +133,32 @@ function App() {
         projectId: activeProject.projectId,
       });
       setProjectContext(latest);
+      setInventoryComparison(await invoke('ide_compare_project_inventory', {
+        projectId: activeProject.projectId,
+      }));
     } catch (error) {
       setProjectContext(null);
       setProblem('Could not read project continuity: ' + String(error));
     } finally {
       setContextBusy(false);
+    }
+  }
+
+  async function captureInventorySnapshot() {
+    if (!activeProject?.projectId || snapshotBusy) return;
+    setSnapshotBusy(true);
+    setProblem('');
+    try {
+      const recorded = await invoke('ide_capture_project_inventory', {
+        projectId: activeProject.projectId,
+      });
+      setHint('Evidence snapshot recorded for ' + recorded.artifacts.length +
+        ' files. This does not verify an installer or execute a tool.');
+      await refreshContext();
+    } catch (error) {
+      setProblem('Could not record project evidence: ' + String(error));
+    } finally {
+      setSnapshotBusy(false);
     }
   }
 
@@ -702,7 +725,13 @@ function App() {
               <p>Remote Git: <strong>{projectContext.remoteGitState.replaceAll('_', ' ')}</strong>
                 {' · '} Local artifacts: <strong>{projectContext.localArtifacts.replaceAll('_', ' ')}</strong>
                 {' · '} Toolchains: <strong>{projectContext.currentToolchainReadiness.replaceAll('_', ' ')}</strong></p>
-              <h3>Local artifacts and benchmark evidence</h3>
+              <div className="continuityCapture">
+                <h3>Local artifacts and benchmark evidence</h3>
+                <button type="button" className="ghostBtn" disabled={snapshotBusy || contextBusy}
+                  onClick={() => captureInventorySnapshot()}>
+                  {snapshotBusy ? 'Recording…' : 'Record evidence snapshot'}
+                </button>
+              </div>
               <p>Bounded scan of common project folders only. A SHA-256 digest verifies
                 inspected bytes, not whether an installer works. No binaries are launched.</p>
               <p>Git observation: <strong>{projectContext.inventory.git.state.replaceAll('_', ' ')}</strong>
@@ -724,6 +753,22 @@ function App() {
                   {file.sha256 && <code>SHA-256: {file.sha256}</code>}
                 </article>)}
               </div>
+              <h3>Changes since recorded evidence</h3>
+              {!inventoryComparison?.baselinePresent
+                ? <p>No earlier snapshot recorded for this project. Record one to compare later.</p>
+                : <>
+                  <p>Baseline: {new Date(inventoryComparison.baselineUnixSeconds * 1000).toLocaleString()}
+                    {' · '} Local Git HEAD: {inventoryComparison.localGitHeadChange.replaceAll('_', ' ')}
+                    {' · '} Live remote: {inventoryComparison.liveRemote.replaceAll('_', ' ')}</p>
+                  {inventoryComparison.entries.length === 0 &&
+                    <p>No files were present in either scanned inventory.</p>}
+                  {inventoryComparison.entries.map(item => <article className="continuityEvent" key={item.relativePath}>
+                    <strong>{item.relativePath}</strong>
+                    <span>{item.status.replaceAll('_', ' ')}</span>
+                    {item.baselineSha256 && <p>Earlier SHA-256: <code>{item.baselineSha256}</code></p>}
+                    {item.currentSha256 && <p>Current SHA-256: <code>{item.currentSha256}</code></p>}
+                  </article>)}
+                </>}
               <h3>Recent host observations</h3>
               {projectContext.events.length === 0 && <p>No development events recorded by this IDE yet.</p>}
               <div className="continuityEvents">
