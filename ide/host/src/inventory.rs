@@ -260,6 +260,11 @@ impl IdeWorkspaceRegistry {
                 break;
             }
         }
+        let toolchain_readiness = if files.iter().any(|file| file.category == "toolchain_candidate") {
+            "present_unverified"
+        } else {
+            "not_verified"
+        };
         Ok(EvidenceInventory {
             schema_version: 1,
             project_id: project_id.to_owned(),
@@ -267,11 +272,7 @@ impl IdeWorkspaceRegistry {
             discovery_complete: complete,
             files,
             git,
-            toolchain_readiness: if files.iter().any(|file| file.category == "toolchain_candidate") {
-                "present_unverified"
-            } else {
-                "not_verified"
-            },
+            toolchain_readiness,
             execution_performed: false,
         })
     }
