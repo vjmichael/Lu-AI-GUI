@@ -25,11 +25,12 @@ export function captureBufferSpan(identity, editorState, from, to) {
   const first = editorState.doc.lineAt(from);
   const last = editorState.doc.lineAt(to);
   if (last.number - first.number + 1 > MAX_LINES) throw Error('BUFFER_SPAN_TOO_LARGE');
-  const full = editorState.doc.toString();
-  const text = full.slice(from, to);
+  // CodeMirror counts a CRLF separator as one position. Never slice the
+  // serialized JS string with editor offsets; use the Text tree's mapping.
+  const text = editorState.doc.sliceString(from, to);
   const length = encoder.encode(text).length;
   if (length > MAX_BYTES) throw Error('BUFFER_SPAN_TOO_LARGE');
-  const byteStart = encoder.encode(full.slice(0, from)).length;
+  const byteStart = encoder.encode(editorState.doc.sliceString(0, from)).length;
   return Object.freeze({
     schemaVersion: 1, projectId: identity.projectId,
     relativePath: identity.relativePath, bufferId: identity.bufferId,
