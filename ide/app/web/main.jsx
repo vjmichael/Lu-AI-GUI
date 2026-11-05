@@ -88,7 +88,11 @@ function App() {
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
-  const matchPlan = locateMatches(activeTab?.draft ?? '', findQuery, caseSensitiveFind);
+  const activeEditorState = activeTab ? editorStates.current.get(activeTab.key) : null;
+  // CodeMirror counts all line separators as one editor position, even CRLF.
+  // Search coordinates must come from the editor's normalized Text tree.
+  const matchPlan = locateMatches(activeEditorState?.doc.toString() ?? '',
+    findQuery, caseSensitiveFind);
   const matches = matchPlan.matches;
   function navigateMatch(delta) {
     if (matchPlan.truncated || !matches.length || !activeTab) return;
@@ -101,7 +105,9 @@ function App() {
 
   function replaceMatches(all = false) {
     if (!activeTab || savingKey || explorerPending || !findQuery || matchPlan.truncated) return;
-    const planned = planReplacement(activeTab.draft, findQuery, replaceText, {
+    const searchText = editorStates.current.get(activeTab.key)?.doc.toString();
+    if (searchText === undefined) return;
+    const planned = planReplacement(searchText, findQuery, replaceText, {
       caseSensitive: caseSensitiveFind, all, selectedIndex: findIndex,
     });
     if (planned.status !== 'ready') return;
@@ -125,7 +131,7 @@ function App() {
     if (!tab || draftReferencePending) return;
     const state = editorStates.current.get(tab.key);
     const identity = bufferIdentities.current.get(tab.key);
-    if (!state || !identity || state.doc.toString() !== tab.draft) {
+    if (!state || !identity || state.sliceDoc() !== tab.draft) {
       setProblem('This editor draft changed. Select the tab and try again.');
       return;
     }
@@ -143,7 +149,7 @@ function App() {
     setProblem('');
     try {
       const digest = await crypto.subtle.digest('SHA-256',
-        new TextEncoder().encode(state.doc.toString()));
+        new TextEncoder().encode(state.sliceDoc()));
       const sha = Array.from(new Uint8Array(digest),
         byte => byte.toString(16).padStart(2, '0')).join('');
       // Revalidate after async hashing; even edits undone back to the same
@@ -151,7 +157,7 @@ function App() {
       const latestState = editorStates.current.get(tab.key);
       const latestIdentity = bufferIdentities.current.get(tab.key);
       if (resolveBufferSpan(snapshot, latestIdentity, latestState).status !== 'current' ||
-          latestState.doc.toString() !== state.doc.toString()) {
+          latestState.sliceDoc() !== state.sliceDoc()) {
         throw Error('BUFFER_CHANGED_DURING_COPY');
       }
       await navigator.clipboard.writeText(formatBufferReference(snapshot, sha));
