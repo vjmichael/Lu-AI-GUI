@@ -12,7 +12,7 @@ use crate::{
         ToolOutput,CORE_CONTRACT_VERSION},
     model::{expect_fields,optional_uint,ModelToolCatalog,ModelToolCodec,
         ModelToolDefinition,ModelToolError},
-    native_reader::{read_selected_bytes,ReaderFailure,MAX_READER_INPUT_BYTES},
+    native_reader::{read_selected_bytes,read_plain_text_window,ReaderFailure,MAX_READER_INPUT_BYTES},
     registry::{NativeToolRegistry,RegistryError},
 };
 
@@ -22,7 +22,9 @@ pub const OUTPUT_TYPE:&str="type.googleapis.com/lu.v1.ReaderResponse";
 const MAX_BYTES:u32=8*1024*1024;
 const DEFAULT_BYTES:u32=256*1024;
 const MAX_CHARS:u32=32_000;
-const MAX_OFFSET_CHARS:u32=200_000;
+// Source byte admission is capped at 8 MiB. No decoded plain-text file
+// under this limit can contain more than 8 MiB Unicode scalar values.
+const MAX_OFFSET_CHARS:u32=MAX_BYTES;
 const DEFAULT_CHARS:u32=16_000;
 
 #[derive(Clone,PartialEq,Message)]
@@ -75,6 +77,17 @@ pub struct ReaderTool{
 }
 fn failure(code:&str)->ToolFailure{
     ToolFailure::new(code,code,false)
+}
+fn reader_parse_failure(err:ReaderFailure)->ToolFailure{
+    match err{
+        ReaderFailure::UnsupportedAdapter(_)=>failure("READER_ADAPTER_UNAVAILABLE"),
+        ReaderFailure::UnsupportedEncoding=>failure("READER_INVALID_ENCODING"),
+        ReaderFailure::InvalidDocument=>failure("READER_INVALID_DOCUMENT"),
+        ReaderFailure::SelectorNotFound=>failure("READER_SELECTOR_NOT_FOUND"),
+        ReaderFailure::TooLarge=>failure("READER_INPUT_TOO_LARGE"),
+        ReaderFailure::Empty=>failure("READER_EMPTY"),
+        ReaderFailure::Io=>failure("READER_FILE_UNAVAILABLE"),
+    }
 }
 fn relative_path(raw:&str)->Result<PathBuf,ToolFailure>{
     if raw.is_empty()||raw.len()>4096
@@ -143,37 +156,42 @@ fn read_authorized(source:&ReaderSource,request:ReaderRequest)
        request.expected_source_sha256!=source_sha256{
         return Err(failure("READER_SOURCE_CHANGED"));
     }
-    // Parse once into the bounded host extraction window, then return only
-    // this invocation's authorized slice. A later tool call can page again.
-    let text=read_selected_bytes(&request.path,&bytes,
-        MAX_OFFSET_CHARS as usize,&request.selector)
-        .map_err(|err|match err{
-            ReaderFailure::UnsupportedAdapter(_)=>failure("READER_ADAPTER_UNAVAILABLE"),
-            ReaderFailure::UnsupportedEncoding=>failure("READER_INVALID_ENCODING"),
-            ReaderFailure::InvalidDocument=>failure("READER_INVALID_DOCUMENT"),
-            ReaderFailure::SelectorNotFound=>failure("READER_SELECTOR_NOT_FOUND"),
-            ReaderFailure::TooLarge=>failure("READER_INPUT_TOO_LARGE"),
-            ReaderFailure::Empty=>failure("READER_EMPTY"),
-            ReaderFailure::Io=>failure("READER_FILE_UNAVAILABLE"),
-        })?;
-    let all_chars=text.text.chars().count();
-    if offset as usize>all_chars{
-        return Err(failure("READER_OFFSET_BEYOND_EXTRACTED_TEXT"));
-    }
-    let end=(offset as usize).saturating_add(max_chars as usize).min(all_chars);
-    let chunk:String=if request.inspect_only{String::new()}else{
-        text.text.chars().skip(offset as usize)
-            .take(end-offset as usize).collect()
+    // For ordinary source/text files, page the entire UTF-8/UTF-16 input
+    // instead of always truncating the extraction at character 200,000.
+    // Office and PDF retain their separately bounded extraction adapters.
+    let plain=if request.selector.is_empty(){
+        read_plain_text_window(
+            &request.path,&bytes,offset as usize,max_chars as usize,
+            request.inspect_only,
+        ).map_err(reader_parse_failure)?
+    }else{None};
+    let (format,chunk,all_chars,source_truncated)=if let Some(page)=plain{
+        if offset as usize>page.total_chars{
+            return Err(failure("READER_OFFSET_BEYOND_EXTRACTED_TEXT"));
+        }
+        (format!("{:?}",page.format),page.text,page.total_chars,false)
+    }else{
+        let parsed=read_selected_bytes(
+            &request.path,&bytes,200_000,&request.selector,
+        ).map_err(reader_parse_failure)?;
+        let count=parsed.text.chars().count();
+        if offset as usize>count{
+            return Err(failure("READER_OFFSET_BEYOND_EXTRACTED_TEXT"));
+        }
+        let end=(offset as usize).saturating_add(max_chars as usize).min(count);
+        let chunk=if request.inspect_only{String::new()}else{
+            parsed.text.chars().skip(offset as usize)
+                .take(end-offset as usize).collect()
+        };
+        (format!("{:?}",parsed.format),chunk,count,parsed.truncated)
     };
+    let end=(offset as usize).saturating_add(max_chars as usize).min(all_chars);
     let has_next=!request.inspect_only&&end<all_chars;
-    let next_offset_chars=if has_next{Some(end as u32)}else{None};
     Ok(ReaderResponse{
-        format:format!("{:?}",text.format),
-        text:chunk,truncated:has_next||text.truncated,
+        format,text:chunk,truncated:has_next||source_truncated,
         bytes_read:bytes.len() as u64,
-        offset_chars:offset,next_offset_chars,
-        source_truncated:text.truncated,
-        total_extracted_chars:all_chars as u32,
+        offset_chars:offset,next_offset_chars:if has_next{Some(end as u32)}else{None},
+        source_truncated,total_extracted_chars:all_chars as u32,
         source_sha256,
     })
 }
@@ -220,7 +238,7 @@ impl ModelToolCodec for ReaderCodec{
             None=>0,
             Some(v)=>v.as_u64().filter(|n|*n<=u64::from(MAX_OFFSET_CHARS))
                 .ok_or_else(||ModelToolError::InvalidArguments(
-                    "offset_chars must be between 0 and 200000".into()))? as u32,
+                    "offset_chars exceeds the 8 MiB source window".into()))? as u32,
         };
         let inspect_only=match args.get("inspect_only"){
             None=>false,
@@ -367,8 +385,9 @@ mod tests{
         let response=registry.dispatch(invocation("long.txt"),&Allow).await.unwrap();
         let output=ReaderResponse::decode(response.payload.bytes.as_slice()).unwrap();
         assert_eq!(output.bytes_read,400_000);
-        assert!(output.source_truncated);
-        assert!(output.total_extracted_chars>=200_000);
+        assert!(!output.source_truncated);
+        assert_eq!(output.total_extracted_chars,400_000);
+        assert_eq!(output.next_offset_chars,Some(16_000));
         let mut req=ReaderRequest::decode(invocation("long.txt").input.bytes.as_slice()).unwrap();
         req.max_bytes=Some(1024);
         let limited=ToolInvocation{
@@ -378,6 +397,38 @@ mod tests{
             }
         };
         assert!(registry.dispatch(limited,&Allow).await.is_err());
+    }
+    #[tokio::test]
+    async fn full_plain_text_paging_keeps_unicode_and_reports_true_end(){
+        let registry=NativeToolRegistry::new();
+        let payload=format!("{}{}", "x".repeat(300_000),"🦈".repeat(10_000)).into_bytes();
+        register_reader_pinned(&registry,"logs.txt",payload).unwrap();
+        let mut req=invocation("logs.txt");
+        let mut request=ReaderRequest::decode(req.input.bytes.as_slice()).unwrap();
+        request.offset_chars=Some(299_999);
+        request.max_chars=Some(4);
+        req.input.bytes=request.encode_to_vec();
+        let output=ReaderResponse::decode(registry.dispatch(req.clone(),&Allow)
+            .await.unwrap().payload.bytes.as_slice()).unwrap();
+        assert_eq!(output.text,"x🦈🦈🦈");
+        assert_eq!(output.total_extracted_chars,310_000);
+        assert!(!output.source_truncated);
+        assert_eq!(output.next_offset_chars,Some(300_003));
+        request.offset_chars=Some(309_999);
+        request.max_chars=Some(4);
+        req.input.bytes=request.encode_to_vec();
+        let output=ReaderResponse::decode(registry.dispatch(req.clone(),&Allow)
+            .await.unwrap().payload.bytes.as_slice()).unwrap();
+        assert_eq!(output.text,"🦈");
+        assert_eq!(output.next_offset_chars,None);
+        assert!(!output.truncated);
+        request.inspect_only=true;
+        request.offset_chars=Some(0);
+        req.input.bytes=request.encode_to_vec();
+        let output=ReaderResponse::decode(registry.dispatch(req,&Allow)
+            .await.unwrap().payload.bytes.as_slice()).unwrap();
+        assert!(output.text.is_empty());
+        assert_eq!(output.total_extracted_chars,310_000);
     }
     #[tokio::test]
     async fn pinned_document_never_opens_other_paths_or_mutated_disk_content(){
