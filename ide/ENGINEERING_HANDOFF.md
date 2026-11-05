@@ -1,6 +1,6 @@
 # Lu IDE — Engineering handoff / continuation entrypoint
 
-**Updated:** 2026-11-04 (America/Phoenix)  
+**Updated:** 2026-11-05 (America/Phoenix)  
 **Repository:** [vjmichael/Lu-AI-GUI](https://github.com/vjmichael/Lu-AI-GUI)  
 **Source branch:** `ide/workspace-development`  
 **IMPORTANT:** This is a **standalone Tauri 2 / React / Rust executable**, not a panel embedded in Lu Desktop. Keep all changes within `ide/` or IDE-specific workflows; **do not modify Lu Core** for ordinary IDE milestones.
@@ -15,6 +15,7 @@ This entrypoint is intended to spare the next development conversation from redi
 - **R3.1:** user's Windows screenshots verified line-number gutters and Rust/Python/Markdown syntax highlighting after CodeMirror CSP nonce fix.
 - **R3.2:** user screenshots verified registration removal to zero projects, re-registration and zero-project state persisting across a restart. **Remove from IDE** is catalog-only and never deletes the selected project directory.
 - A small R3.2 card-layout regression was corrected in source using `repeat(auto-fill,minmax(275px,1fr))`, preserving regular card widths when only one project remains.
+- **R3.3:** user confirmed Windows review dialog, reviewed save, stale-file conflict preserving draft, and large-preview truncation disabling reviewed save. Four Windows screenshots support the result; see `docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md`.
 
 These are real user-submitted Windows smoke tests, *not* full hostile-project or installed NSIS acceptance. See `docs/IDE_03_R3_EDITOR_ACCEPTANCE.md` and `docs/IDE_03_PROJECT_DELIST_ACCEPTANCE.md`.
 
@@ -31,7 +32,7 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 - `host/tests/review.rs` checks no filesystem effect, stale revision refusal, traversal, symlink denial and size limits.
 - `app/tests/standalone.test.mjs` checks command allowlists, review UI, and no executable or arbitrary patch apply path.
 
-**R3.3 verified:** [Windows/Linux/frontend acceptance 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363) **passed** (33 Rust tests, frontend, Windows Tauri); [unsigned Windows R3.3 release 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831) **passed**. The EXE SHA-256 and portable ZIP are recorded in [R3.3 evidence](docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md). **Interactive Windows R3.3 review-dialog acceptance remains pending.**
+**R3.3 verified:** [Windows/Linux/frontend acceptance 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363) **passed** (33 Rust tests, frontend, Windows Tauri); [unsigned Windows R3.3 release 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831) **passed**. The EXE SHA-256 and portable ZIP are recorded in [R3.3 evidence](docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md). **Interactive Windows R3.3 review-dialog smoke acceptance PASSED on 2026-11-05**; full security/agent integration remains pending.
 
 ## Source map
 
@@ -68,7 +69,7 @@ Desktop Tauri uses Rust 1.90+, native host suite supports Rust 1.88+. The Window
 
 ## IMPORTANT open gates
 
-1. R3.3 actual Windows visual/interaction validation: review, cancel without write, save after review, conflict, truncated preview.
+1. **R3.3 Windows review smoke gate closed.** Next: robust multi-hunk diff/proposal envelopes; continue testing undo/redo across tabs, process/power failure, actual file bytes and external-writer race behavior. Preserve the separate IDE write authorization boundary.
 2. Native file-save hardening: root identity and Windows reparse attacks, ACL/owner fidelity, external-writer race across final compare/rename, power-loss injection, crash recovery of unsaved drafts, full diff accuracy.
 3. Task 2 **OS sandbox**: initial Linux fixed probes passed, but arbitrary executable workers remain disallowed until CPU/RAM/PID quotas, process-tree cancellation, syscall/filesystem controls and **Windows native containment** pass.
 4. Task 3 editor completion: search/replace, split views, accessible keyboard navigation, large tree filtering and file watchers.
