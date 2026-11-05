@@ -17,6 +17,7 @@ pub enum TaskState {
     Failed,
     Interrupted,
     Cancelled,
+    TimedOut,
 }
 impl TaskState {
     fn as_str(self) -> &'static str {
@@ -28,6 +29,7 @@ impl TaskState {
             Self::Failed => "FAILED",
             Self::Interrupted => "INTERRUPTED",
             Self::Cancelled => "CANCELLED",
+            Self::TimedOut => "TIMED_OUT",
         }
     }
     fn parse(state: &str) -> Option<Self> {
@@ -39,6 +41,7 @@ impl TaskState {
             "FAILED" => Some(Self::Failed),
             "INTERRUPTED" => Some(Self::Interrupted),
             "CANCELLED" => Some(Self::Cancelled),
+            "TIMED_OUT" => Some(Self::TimedOut),
             _ => None,
         }
     }
@@ -110,7 +113,7 @@ impl TaskStore {
                 task_id TEXT PRIMARY KEY NOT NULL,
                 workspace_id TEXT,
                 state TEXT NOT NULL CHECK(state IN
-                    ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED','CANCELLED')),
+                    ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED','CANCELLED','TIMED_OUT')),
                 progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100),
                 detail TEXT NOT NULL,
                 output_folder TEXT,
@@ -136,14 +139,14 @@ impl TaskStore {
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='lu_tasks'",
             [],|row|row.get(0)
         )?;
-        if !schema.contains("'CANCELLED'"){
+        if !schema.contains("'TIMED_OUT'"){
             let tx=connection.transaction()?;
             tx.execute_batch(
                 "CREATE TABLE lu_tasks_migrating (
                     task_id TEXT PRIMARY KEY NOT NULL,
                     workspace_id TEXT,
                     state TEXT NOT NULL CHECK(state IN
-                       ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED','CANCELLED')),
+                       ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED','CANCELLED','TIMED_OUT')),
                     progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100),
                     detail TEXT NOT NULL,
                     output_folder TEXT,
@@ -241,6 +244,11 @@ impl TaskStore {
         )?;
         tx.commit()?;
         Ok(())
+    }
+    /// Host-enforced hard deadline: only after the owned worker was stopped
+    /// and reaped. No heartbeat-based classification or inferred timeout.
+    pub fn timed_out(&self,task_id:&str)->Result<(),TaskStoreError>{
+        self.transition(task_id,"RUNNING",TaskState::TimedOut)
     }
     /// When launch never occurred, move a PENDING intent to FAILED rather
     /// than leaving a ghost job in the operator's task pane.
@@ -387,7 +395,8 @@ impl TaskStore {
              ORDER BY CASE state
                WHEN 'RUNNING' THEN 0 WHEN 'PENDING' THEN 1
                WHEN 'PAUSED' THEN 2 WHEN 'INTERRUPTED' THEN 3
-               WHEN 'FAILED' THEN 4 WHEN 'CANCELLED' THEN 5 ELSE 6 END,
+               WHEN 'FAILED' THEN 4 WHEN 'CANCELLED' THEN 5
+               WHEN 'TIMED_OUT' THEN 6 ELSE 7 END,
                updated_at DESC,task_id ASC LIMIT ?1"
         )?;
         let rows=stmt.query_map(params![limit as i64],|row|{
