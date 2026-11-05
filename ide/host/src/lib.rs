@@ -9,6 +9,7 @@
 pub mod browser;
 pub mod editor;
 pub mod review;
+pub mod proposal;
 pub mod wire;
 
 use std::{
