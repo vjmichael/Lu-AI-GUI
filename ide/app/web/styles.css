@@ -185,3 +185,14 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 
 .continuityCapture{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .continuityCapture h3{margin:10px 0}
+
+/* Wave B: Find + Replace stays visually attached to the human-owned editor. */
+.editorFindPanel{border-bottom:1px solid #36536c;background:#19283b}
+.editorFindPanel .editorFindBar{border-bottom:0}
+.editorReplaceBar{display:flex;align-items:center;gap:9px;padding:0 14px 9px 14px}
+.editorReplaceBar input{min-width:80px;max-width:320px;flex:1;background:#0d1724;color:#edf7ff;border:1px solid #54718a;border-radius:5px;padding:7px 10px}
+.editorReplaceBar button{background:#283f55;color:#d7eafe;border:1px solid #4e6980;border-radius:5px;min-height:30px;padding:5px 10px}
+.editorReplaceBar button:disabled{opacity:.45}
+.editorFindOption{color:#c8dceb;font-size:11px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.editorFindOption input{min-width:auto;max-width:none;flex:none}
+@media(max-width:750px){.editorFindBar,.editorReplaceBar{flex-wrap:wrap}.editorFindCount{white-space:normal}}
