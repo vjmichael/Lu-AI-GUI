@@ -21,6 +21,7 @@ pub enum TransferError {
     TooLarge,
     TargetExists,
     StageExists,
+    SourceChanged,
     Io(String),
     PublishedNeedsReconciliation,
 }
@@ -152,6 +153,82 @@ pub fn move_new_in_dir(root: &Dir, source: &str, target: &str)
     root.remove_file(source).map_err(|_| TransferError::PublishedNeedsReconciliation)?;
     Ok(TransferReceipt {
         source: source.into(), target: target.into(), bytes, sha256,
+        source_removed: true,
+    })
+}
+
+/// Durable host-owned receipt for a reversible trash operation.
+/// Trusted host persists this (not the model) before treating deletion as done.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrashReceipt {
+    pub original: String,
+    pub trash_entry: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+fn check_target_absent(root: &Dir, target: &str) -> Result<(), TransferError> {
+    match root.symlink_metadata(target) {
+        Ok(_) => Err(TransferError::TargetExists),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(TransferError::Io(e.to_string())),
+    }
+}
+
+/// Move a file into an already trusted Lu-owned trash directory on the same
+/// volume. The host supplies an unpredictable ID and persists the receipt in
+/// its durable journal. This is not the operating system's recycle bin.
+/// A post-publish unlink failure is UNCERTAIN: do not blindly retry.
+pub fn trash_in_dirs(
+    root: &Dir, trash: &Dir, source: &str, host_trash_id: &str
+) -> Result<TrashReceipt, TransferError> {
+    if !plain_filename(source) { return Err(TransferError::InvalidName); }
+    if !valid_stage_id(host_trash_id) { return Err(TransferError::InvalidStage); }
+    let trash_entry = format!("lu-trash-{host_trash_id}");
+    check_target_absent(trash, &trash_entry)?;
+    let file = verify(root, source)?;
+    let (bytes, sha256) = source_hash(file)?;
+    root.hard_link(source, trash, &trash_entry).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            TransferError::TargetExists
+        } else { TransferError::Io(e.to_string()) }
+    })?;
+    root.remove_file(source).map_err(|_| TransferError::PublishedNeedsReconciliation)?;
+    Ok(TrashReceipt { original: source.into(), trash_entry, bytes, sha256 })
+}
+
+/// Restore only a host-recorded receipt to its original (currently absent)
+/// destination. Verify the trashed file hash before publication. An existing
+/// target is never replaced and tampering causes fail-closed rejection.
+pub fn restore_from_trash_in_dirs(
+    root: &Dir, trash: &Dir, receipt: &TrashReceipt
+) -> Result<TransferReceipt, TransferError> {
+    if !plain_filename(&receipt.original)
+        || !receipt.trash_entry.starts_with("lu-trash-")
+        || !valid_stage_id(receipt.trash_entry.trim_start_matches("lu-trash-"))
+        || receipt.sha256.len() != 64
+        || !receipt.sha256.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(TransferError::InvalidName);
+    }
+    check_target_absent(root, &receipt.original)?;
+    let file = verify(trash, &receipt.trash_entry)?;
+    let (bytes, sha256) = source_hash(file)?;
+    if bytes != receipt.bytes || sha256 != receipt.sha256 {
+        return Err(TransferError::SourceChanged);
+    }
+    trash.hard_link(&receipt.trash_entry, root, &receipt.original).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            TransferError::TargetExists
+        } else { TransferError::Io(e.to_string()) }
+    })?;
+    trash.remove_file(&receipt.trash_entry)
+        .map_err(|_| TransferError::PublishedNeedsReconciliation)?;
+    Ok(TransferReceipt {
+        source: receipt.trash_entry.clone(),
+        target: receipt.original.clone(),
+        bytes,
+        sha256,
         source_removed: true,
     })
 }
