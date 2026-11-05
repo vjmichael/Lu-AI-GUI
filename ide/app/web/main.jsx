@@ -734,6 +734,21 @@ function App() {
               </div>
               <p>Bounded scan of common project folders only. A SHA-256 digest verifies
                 inspected bytes, not whether an installer works. No binaries are launched.</p>
+              <p>Local Git worktree: <strong>{projectContext.gitWorktree.worktree.replaceAll('_', ' ')}</strong>
+                {' · '} Tracked/staged changes: {projectContext.gitWorktree.modifiedOrStagedCount}
+                {' · '} Untracked: {projectContext.gitWorktree.untrackedCount}
+                {' · '} Locally known upstream: {projectContext.gitWorktree.upstreamComparison.replaceAll('_', ' ')}
+                {' · '} Live GitHub: not queried</p>
+              {projectContext.gitWorktree.commitsAhead !== null &&
+                <p>Local branch commits ahead of stored upstream: {projectContext.gitWorktree.commitsAhead}
+                  {' · '} Behind: {projectContext.gitWorktree.commitsBehind}</p>}
+              {projectContext.gitWorktree.displayedChanges.map(item =>
+                <p key={item.relativePath + item.stage}>
+                  <code>{item.relativePath}</code> · {item.kind.replaceAll('_', ' ')}
+                  {' · '}{item.stage.replaceAll('_', ' ')}
+                </p>)}
+              {projectContext.gitWorktree.truncated &&
+                <p role="status">Git changes truncated; more are present.</p>}
               <p>Git observation: <strong>{projectContext.inventory.git.state.replaceAll('_', ' ')}</strong>
                 {projectContext.inventory.git.branch && <> · Branch <code>{projectContext.inventory.git.branch}</code></>}
                 {' · '}Local tracking: <strong>{projectContext.inventory.git.trackingComparison.replaceAll('_', ' ')}</strong>
