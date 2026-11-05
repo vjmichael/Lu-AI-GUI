@@ -17,11 +17,15 @@ const MAX_LEDGER_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 40;
 const MAX_NOTE_CHARS: usize = 240;
 const MAX_EXCERPT_CHARS: usize = 1200;
-const CONTEXT_FILES: [&str; 4] = [
+const CONTEXT_FILES: [&str; 8] = [
     "PROJECT_STATE.md",
     "CHANGELOG.md",
     "ENGINEERING_HANDOFF.md",
     "AGENTS.md",
+    "ide/PROJECT_STATE.md",
+    "ide/CHANGELOG.md",
+    "ide/ENGINEERING_HANDOFF.md",
+    "ide/AGENTS.md",
 ];
 
 #[derive(Debug)]
