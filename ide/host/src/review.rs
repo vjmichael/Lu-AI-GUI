@@ -95,8 +95,8 @@ fn summarize_change(old: &str, proposed: &str) -> DiffSummary {
     }
 
     let mut hunks = Vec::new();
-    let mut emitted_lines = 0;
-    let mut emitted_bytes = 0;
+    let mut emitted_lines: usize = 0;
+    let mut emitted_bytes: usize = 0;
     let mut truncated = false;
     'group: for group in diff.grouped_ops(CONTEXT_LINES) {
         if hunks.len() >= MAX_REVIEW_HUNKS {
