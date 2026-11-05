@@ -12,12 +12,14 @@ message WorkspaceRequest {
     SelectDirectory select = 4; // Triggers trusted native OS directory picker.
     ReopenProject reopen = 5;
     CloseProject close = 6;
+    UnregisterProject unregister = 7; // Catalog only: never removes disk files.
   }
 }
 message ListProjects {}
 message SelectDirectory {}
 message ReopenProject { string project_id = 1; }
 message CloseProject { string project_id = 1; }
+message UnregisterProject { string project_id = 1; }
 
 message ProjectView {
   string project_id = 1; // Opaque host-generated ID.
