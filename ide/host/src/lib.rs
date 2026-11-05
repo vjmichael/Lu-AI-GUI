@@ -13,6 +13,7 @@ pub mod editor;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
+pub mod git_status;
 pub mod proposal;
 pub mod review;
 pub mod source_span;
@@ -241,6 +242,27 @@ impl IdeWorkspaceRegistry {
             active: Mutex::new(BTreeSet::new()),
             save_lock: Mutex::new(()),
         })
+    }
+
+    /// Trusted-host-only filesystem locator for read-only native Git inspection.
+    /// Never expose this absolute path to the WebView or model capability catalog.
+    pub(crate) fn registered_git_root(
+        &self, project_id: &str,
+    ) -> Result<PathBuf, IdeError> {
+        if !wire::valid_project_id(project_id) {
+            return Err(IdeError::UnknownProject);
+        }
+        let records = self.records.lock().map_err(|_| IdeError::Poisoned)?;
+        let active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
+        if !active.contains(project_id) {
+            return Err(IdeError::NotActive);
+        }
+        let root = records.get(project_id)
+            .ok_or(IdeError::UnknownProject)?.root.clone();
+        if safe_root(&root)? != root {
+            return Err(IdeError::InvalidSelection);
+        }
+        Ok(root)
     }
 
     pub fn register_from_native_picker(
