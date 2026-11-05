@@ -60,12 +60,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install Rust 1.88
+      - name: Install Rust 1.90 for standalone Tauri
         shell: pwsh
         run: |
-          rustup toolchain install 1.88.0 --profile minimal
-          rustup component add rustfmt --toolchain 1.88.0
-          rustup default 1.88.0
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup component add rustfmt --toolchain 1.90.0
+          rustup default 1.90.0
       - name: Prepare standalone frontend
         run: |
           npm install --ignore-scripts --no-audit --no-fund
