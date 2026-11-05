@@ -24,14 +24,14 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   assert.ok(calls.includes('ide_save_source_file'));
   assert.ok(calls.includes('ide_unregister_project'));
   for(const command of ['ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
-    'ide_decide_proposal', 'ide_discard_proposal']) assert.ok(calls.includes(command), command);
+    'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal']) assert.ok(calls.includes(command), command);
 
   assert.deepEqual([...new Set(calls)].sort(), [
     'ide_choose_project', 'ide_close_project', 'ide_list_projects',
     'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
-    'ide_decide_proposal', 'ide_discard_proposal'
+    'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -219,6 +219,10 @@ test('R3.5 standalone proposal inbox requires explicit review and never applies 
   assert.match(web, /ide_review_proposal/);
   assert.match(web, /ide_decide_proposal/);
   assert.match(web, /ide_discard_proposal/);
+  assert.match(web, /ide_stage_proposal/);
+  assert.match(web, /Proposal staged as editor drafts/);
+  assert.match(native, /fn ide_stage_proposal/);
+  assert.match(inbox, /pub fn staging/);
   assert.match(web, /Approve for staging only/);
   assert.match(web, /No source files are saved by importing a proposal/);
   assert.match(web, /It does NOT edit, save, or execute any files/);
