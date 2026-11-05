@@ -27,14 +27,16 @@ reasoning.
 | JPG, PNG, TIFF and other document photos | OCR adapter, orientation and page/region provenance | **Not implemented** |
 | XLSX | Initial workbook/worksheet order, cells, shared strings, raw formulas and stored cached values; chunk/range paging not yet present | **Implemented in source; CI pending** |
 | XLSM | Macro-enabled workbook reading without macro execution | **Not implemented** |
-| ODS, legacy XLS | Separate OpenDocument and legacy binary adapters; same typed range contract | **Not implemented** |
+| ODS | Initial OpenDocument spreadsheet text, cells/formulas, sheet selectors and repeated blank rows/cells | **Implemented in source; CI pending** |
+| Legacy XLS | Separate binary adapter | **Not implemented** |
 | PPTX | Initial slide order and text runs, slide number references; notes, diagrams and alt text not yet extracted | **Implemented in source; CI pending** |
 | PPSX, PPTM | Slide show and macro-enabled variants | **Not implemented** |
-| ODP, legacy PPT | Separate OpenDocument and legacy binary presentation adapters | **Not implemented** |
+| ODP | Initial OpenDocument ordered slides and text with slide selectors | **Implemented in source; CI pending** |
+| Legacy PPT | Separate binary presentation adapter | **Not implemented** |
 | ODT, RTF, EPUB and legacy DOC | Separate vetted format adapters | **Not implemented** |
 | Encrypted, corrupted, unsupported and unknown | Explicit error; never claim successful extraction | Required |
 
-The `lu-core::native_reader` module handles supported TXT, DOCX, XLSX, PPTX, basic PDF
+The `lu-core::native_reader` module handles supported TXT, DOCX, XLSX, ODS, PPTX, ODP, basic PDF
 and other text formats, returning source-anchored text. It deliberately rejects
 complex/scanned PDF, image OCR, legacy/binary Office and unverified package types;
 no skipped format is silently claimed as extracted. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
@@ -139,10 +141,12 @@ as automatically detected.
 3. Secure DOCX extraction from main body (paragraphs/tables and inserted text; deleted tracked text omitted), strict ZIP and XML limits, CRC, no external relationships. **Implemented and CI verification pending.** Headers/footers, comments and richer page provenance still open.
 4. Workbook adapters: XLSX initial sheet names, cell references, strings,
    formulas vs cached values. **Implemented in source; CI pending.** Bounded
-   range paging and ODS/XLS/XLSM compatibility remain open.
+   range paging and XLS/XLSM compatibility remain open. Initial ODS cell extraction
+   is implemented in source, including repeated blank columns and rows; CI pending.
 5. Presentation adapters: initial PPTX ordered slides and textual runs.
    **Implemented in source; CI pending.** Notes, tables, nontextual visual
-   elements and ODP/PPT/PPTM/PPSX compatibility remain open.
+   elements and PPT/PPTM/PPSX compatibility remain open. Initial ODP slide text
+   is implemented in source; CI pending.
 6. Basic classic PDF text-layer extraction with page anchors and compressed
    stream decoding. **Implemented in source and Linux CI verified**; complex
    fonts, object streams and scanned pages explicitly unsupported. Full PDF
