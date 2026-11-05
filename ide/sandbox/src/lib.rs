@@ -124,6 +124,7 @@ fn arguments(workspace: &Path, probe: Probe) -> Result<Vec<OsString>, SandboxErr
     let root = safe_workspace(workspace)?;
     let mut args: Vec<OsString> = [
         "--unshare-all",
+        "--unshare-user",
         "--disable-userns",
         "--die-with-parent",
         "--new-session",
@@ -244,6 +245,7 @@ mod tests {
             .map(|x| x.to_string_lossy().to_string())
             .collect();
         assert!(normalized.contains(&"--unshare-all".to_owned()));
+        assert!(normalized.contains(&"--unshare-user".to_owned()));
         assert!(normalized.contains(&"--disable-userns".to_owned()));
         assert!(normalized.contains(&"--new-session".to_owned()));
         assert!(normalized.contains(&"--die-with-parent".to_owned()));
