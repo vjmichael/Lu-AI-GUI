@@ -125,3 +125,15 @@ test('browser research cannot silently opt ordinary chat into tool use',()=>{
   assert.ok(ui.includes('Native approval is required for each research turn.'));
   assert.ok(host.includes('Browser research requires an exact public HTTPS origin'));
 });
+
+test('browser research is progress-driven rather than capped at four rounds or eight reads',()=>{
+  assert.ok(host.includes('let research_deadline=std::time::Instant::now()'));
+  assert.ok(host.includes('Browser research deadline exceeded before verified reading'));
+  assert.ok(host.includes('round=round.saturating_add(1)'));
+  assert.ok(host.includes('if collected_read{break;}'));
+  assert.ok(host.includes('if observed.len()>6{observed.remove(0);}'));
+  assert.ok(host.includes('state.chats.append_browser_observation('));
+  assert.ok(host.includes('if !seen.insert(fingerprint)'));
+  assert.ok(!host.includes('for round in 0..4usize'));
+  assert.ok(!host.includes('Browser observation count exceeded'));
+});
