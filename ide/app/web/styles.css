@@ -74,3 +74,9 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .codeEditorHost .cm-scroller{overflow:auto}
 .editorInfoBar{padding:8px 15px;font-size:11px;color:#99aec5;border-top:1px solid #2e435c;background:#101e2f;line-height:1.4}
 @media(max-width:850px){.editorToolbar{gap:5px;flex-wrap:wrap}.sourcePreviewHeader{align-items:flex-start}.editorToolButton{padding:5px 7px}}
+
+/* Registered-project removal changes IDE catalog only; never disk files. */
+.removeProjectBtn{border:1px solid #705061;background:#2a1d2c;color:#f3cbd7;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:600;white-space:nowrap}
+.removeProjectBtn:not(:disabled):hover{background:#422536;border-color:#b97686}
+.removeProjectBtn:disabled{opacity:.48;cursor:not-allowed}
+.removeProjectBtn:focus-visible{outline:2px solid #f1b6c8;outline-offset:3px}
