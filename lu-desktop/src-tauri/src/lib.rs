@@ -1489,6 +1489,27 @@ async fn lu_browser_runtime_status(
     }).await.map_err(|e|format!("browser status worker failed: {e}"))?
 }
 
+/// User-controlled challenge completion. This is a native UI action,
+/// never a model-callable operation. The worker checks the current page
+/// and rejects unresolved CAPTCHAs/logins or off-origin redirects.
+#[tauri::command]
+async fn lu_browser_human_verified(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        {
+            let active=state.browser_task.lock()
+                .map_err(|_|"browser task lock poisoned")?;
+            if active.as_ref().is_none_or(|task|task.starting){
+                return Err("No active user-authorized browser task".into());
+            }
+        }
+        state.browser_runtime.resolve_human_verification()?;
+        state.browser_runtime.status(&state.browser_preferences)
+    }).await.map_err(|e|format!("browser verification worker failed: {e}"))?
+}
+
 #[tauri::command]
 async fn lu_browser_stop(
     state: State<'_, Arc<DesktopState>>
@@ -2622,6 +2643,7 @@ pub fn run() {
             lu_browser_settings,
             lu_browser_runtime_status,
             lu_browser_start,
+            lu_browser_human_verified,
             lu_browser_stop,
             lu_set_browser_visibility,
             lu_choose_default_document_folder,
