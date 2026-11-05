@@ -25,6 +25,8 @@ function App() {
   const [findQuery, setFindQuery] = useState('');
   const [findIndex, setFindIndex] = useState(-1);
   const [findRequest, setFindRequest] = useState(null);
+  const [cursorByTab, setCursorByTab] = useState({});
+  const [referencePending, setReferencePending] = useState(false);
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -67,6 +69,30 @@ function App() {
     setFindIndex(next);
     setFindRequest({ tabKey: activeTab.key, from: matches[next],
       to: matches[next] + findQuery.length, nonce: Date.now() });
+  }
+
+  async function copySourceReference(tab) {
+    if (!tab || referencePending) return;
+    if (tab.dirty) {
+      setProblem('Save this file before copying a saved-source reference. Your unsaved changes are preserved.');
+      return;
+    }
+    const line = cursorByTab[tab.key] || 1;
+    setReferencePending(true);
+    setProblem('');
+    try {
+      const span = await invoke('ide_read_source_span', {
+        projectId: tab.projectId, relativePath: tab.relativePath,
+        expectedRevision: tab.revision, firstLine: line, lastLine: line,
+      });
+      const reference = `ide-source:v1 project=${span.projectId} path=${JSON.stringify(span.relativePath)} revision=${span.revision} line=${line} bytes=${span.lines[0].startByte}..${span.lines[0].endByte}`;
+      await navigator.clipboard.writeText(reference);
+      setHint(`Copied source reference for ${tab.relativePath}, line ${line}.`);
+    } catch (error) {
+      setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
+        ? 'File changed on disk. Reload or review the latest source before copying a reference.'
+        : 'Could not copy a verified source reference: ' + String(error));
+    } finally { setReferencePending(false); }
   }
 
   async function refresh() {
@@ -708,6 +734,12 @@ function App() {
                 <span className="editorToolbar">
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={referencePending || explorerPending || !!savingKey}
+                    title="Copy a reference to the current saved file and cursor line"
+                    onClick={() => copySourceReference(activeTab)}>
+                    {referencePending ? 'Checking…' : 'Copy source reference'}
+                  </button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
@@ -744,6 +776,9 @@ function App() {
                 key={activeTab.key + ':' + activeTab.generation}
                 tabIdentity={activeTab.key + ':' + activeTab.generation}
                 editorState={editorStates.current.get(activeTab.key)}
+                onCursorLine={line => setCursorByTab(previous =>
+                  previous[activeTab.key] === line ? previous :
+                    { ...previous, [activeTab.key]: line })}
               />
               <div className="editorInfoBar">Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
