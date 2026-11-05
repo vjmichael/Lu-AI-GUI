@@ -110,6 +110,41 @@ impl ModelToolCatalog {
         Ok(())
     }
 
+    /// Compose independently registered Lu native domains into one host-owned
+    /// model catalog. Composition is atomic, does not widen the turn's allowed
+    /// names, and does not create an authorization grant. Callers must still
+    /// use the trusted per-turn allowlist and ConversationAuthority.
+    ///
+    /// All schemas were checked on initial registration, but their native
+    /// implementations may have been unloaded since then. Revalidate against
+    /// the *current* registry before accepting even one merged name.
+    pub fn absorb_registered(
+        &mut self,
+        registry: &NativeToolRegistry,
+        other: ModelToolCatalog,
+    ) -> Result<(), ModelToolError> {
+        let installed = registry.tools()
+            .map_err(|_| ModelToolError::RegistryUnavailable)?;
+        for (name, definition) in &other.definitions {
+            if self.definitions.contains_key(name) {
+                return Err(ModelToolError::DuplicateToolName(name.clone()));
+            }
+            let descriptor = installed.iter()
+                .find(|item| item.id == definition.native_tool_id)
+                .ok_or_else(|| ModelToolError::NoNativeImplementation(
+                    definition.native_tool_id.clone()
+                ))?;
+            if descriptor.input_type_url != definition.codec.input_type_url()
+                || descriptor.output_type_url != definition.codec.output_type_url() {
+                return Err(ModelToolError::TypeMismatch(
+                    definition.native_tool_id.clone()
+                ));
+            }
+        }
+        self.definitions.extend(other.definitions);
+        Ok(())
+    }
+
     /// A host-owned route descriptor is inert until its full native
     /// implementation, effect and advertised per-turn schema all agree.
     /// Never accept a manifest/model-supplied descriptor as authorization.
