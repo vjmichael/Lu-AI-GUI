@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "030663b3be1f06202889dd1053e92be19bb71758",
+  "sourceCommitBeforeLock": "235fce7d56969387be463a6f2cf653460f7d48c8",
   "trackedFileCount": 333,
   "files": [
     {
@@ -841,7 +841,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_iso9660.rs",
-      "blob": "7c8e2d181c613fdbc5ff899c3ca8fad0ac4a8e65"
+      "blob": "95ac04d141226f176fd0fc2ce44eee6eed25bcca"
     },
     {
       "path": "src-tauri/lu-core/src/native_iso_extract_tool.rs",
