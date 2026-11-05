@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "99a3bf36ce34aca86f6caace4ea0c12523399e0c",
+  "sourceCommitBeforeLock": "4fa99d02cc009f67583c8a940ca70b8590c15f05",
   "trackedFileCount": 323,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-10-web-research.yml",
-      "blob": "a74751681860c1dd3d438372b3167a9a28eb616c"
+      "blob": "358e13d31efbd041cba1d8cf69436a7565a5d454"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -585,7 +585,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_tool_stream.rs",
-      "blob": "579b461c7bea4a913f79926fc6c3ebc8ce4cfadb"
+      "blob": "4f0c359498745c48b9a87c67bfb5be0ef82e3f34"
     },
     {
       "path": "src-tauri/lu-core/src/browser_visibility_settings.rs",
@@ -789,7 +789,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_http.rs",
-      "blob": "f20b63ddb99492c24fffc2bca311240f083b46d2"
+      "blob": "63c34f8e102a2e1881b6ad3edd279e32bbdeeb21"
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
