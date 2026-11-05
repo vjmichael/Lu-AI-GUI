@@ -3,12 +3,14 @@
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
 mod generation_queue;
+mod ide_workspace;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
 use lu_core::{
     inference_bridge::BridgeError,
+    registry::NativeToolRegistry,
     inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
     inference_wire::decode_frame,
     mmproj_admission::admit_projector,
@@ -19,6 +21,7 @@ use lu_core::{
     projector_identity::projector_filename_for_model,
     wire::proto,
 };
+use lu_ide_workspace::IdeWorkspaceRegistry;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -155,6 +158,9 @@ struct DesktopState {
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
+    // Shared native tool registry for IDE and future Lu Core tool dispatch.
+    _native_registry: NativeToolRegistry,
+    ide: Arc<IdeWorkspaceRegistry>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -369,6 +375,16 @@ impl DesktopState {
     fn new(app: &AppHandle) -> Result<Self, String> {
         let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        // IDE opens only metadata; workspace paths never reach the WebView.
+        // The desktop supplies the *same* registry for Core and DLC modules.
+        let native_registry = NativeToolRegistry::new();
+        let ide = Arc::new(
+            IdeWorkspaceRegistry::open_with_registry(
+                root.join("ide-projects.json"),
+                native_registry.clone(),
+            )
+            .map_err(|e| format!("IDE workspace init: {e:?}"))?,
+        );
         let models_dir = root.join("lu-models");
         fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
         let engine_dir = app
@@ -441,6 +457,8 @@ impl DesktopState {
             images: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
             supervisor: Arc::new(supervisor),
+            _native_registry: native_registry,
+            ide,
         })
     }
 }
@@ -1060,7 +1078,11 @@ pub fn run() {
             lu_new_folder,
             lu_favorite_chat,
             lu_move_chat,
-            lu_rescan_models
+            lu_rescan_models,
+            ide_workspace::lu_ide_projects,
+            ide_workspace::lu_ide_select_project,
+            ide_workspace::lu_ide_open_project,
+            ide_workspace::lu_ide_close_project
         ])
         .run(tauri::generate_context!())
         .expect("Lu native desktop failed");
