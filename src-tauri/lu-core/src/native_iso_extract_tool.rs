@@ -143,7 +143,7 @@ impl ModelToolCodec for Codec{
         let result=proto::IsoExtractResult::decode(output.bytes.as_slice())
             .map_err(|_|ModelToolError::InvalidResult("Invalid ISO extraction receipt".into()))?;
         if !name_ok(&result.target_name)||!hash_ok(&result.sha256)||
-            result.bytes_written>1024*1024 {
+            result.bytes_written>256*1024*1024 {
             return Err(ModelToolError::InvalidResult("Untrusted ISO extraction receipt".into()))
         }
         Ok(json!({"target_name":result.target_name,"bytes_written":result.bytes_written,
