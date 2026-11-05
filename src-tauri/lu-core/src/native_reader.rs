@@ -30,6 +30,7 @@ pub enum ReaderFailure{
     UnsupportedAdapter(ReaderFormat),
     UnsupportedEncoding,
     InvalidDocument,
+    SelectorNotFound,
     TooLarge,
     Empty,
     Io,
@@ -126,6 +127,43 @@ pub fn read_text_bytes(
     let text=if truncated{decoded.chars().take(max_chars).collect()}else{decoded};
     Ok(ReaderText{format,text,truncated,extracted_from_image:false})
 }
+/// Read an authorized named sheet, numbered slide or PDF page without
+/// returning unrelated extracted source segments. The selector is data, not
+/// an OS path or permission grant.
+pub fn read_selected_bytes(
+    filename:&str,bytes:&[u8],max_chars:usize,selector:&str
+)->Result<ReaderText,ReaderFailure>{
+    if selector.is_empty(){return read_text_bytes(filename,bytes,max_chars)}
+    if bytes.is_empty(){return Err(ReaderFailure::Empty)}
+    if bytes.len() as u64>MAX_READER_INPUT_BYTES
+        ||max_chars==0||max_chars>MAX_READER_OUTPUT_CHARS
+        ||selector.len()>160{
+        return Err(ReaderFailure::TooLarge)
+    }
+    let format=classify(filename,&bytes[..bytes.len().min(16)]);
+    match format{
+        ReaderFormat::Xlsx=>{
+            let sheet=selector.strip_prefix("sheet:").filter(|s|!s.is_empty())
+                .ok_or(ReaderFailure::SelectorNotFound)?;
+            crate::native_reader_office::read_xlsx_sheet(bytes,max_chars,Some(sheet))
+        },
+        ReaderFormat::Pptx=>{
+            let slide=selector.strip_prefix("slide:")
+                .and_then(|s|s.parse::<usize>().ok())
+                .filter(|n|*n>0&&*n<=512)
+                .ok_or(ReaderFailure::SelectorNotFound)?;
+            crate::native_reader_office::read_pptx_slide(bytes,max_chars,Some(slide))
+        },
+        ReaderFormat::Pdf=>{
+            let page=selector.strip_prefix("page:")
+                .and_then(|s|s.parse::<usize>().ok())
+                .filter(|n|*n>0&&*n<=128)
+                .ok_or(ReaderFailure::SelectorNotFound)?;
+            crate::native_reader_pdf::read_pdf_page(bytes,max_chars,Some(page))
+        },
+        _=>Err(ReaderFailure::SelectorNotFound),
+    }
+}
 /// Bounded host-opened stream intake; no model-supplied OS pathname.
 pub fn read_text_stream(
     filename:&str,mut input:impl Read,max_chars:usize,
@@ -161,6 +199,11 @@ mod tests{
             Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Image)));
         assert_eq!(read_text_bytes("a.txt",&[0,1],100),
             Err(ReaderFailure::UnsupportedEncoding));
+    }
+    #[test]
+    fn does_not_accept_structure_selectors_for_plain_text(){
+        assert_eq!(read_selected_bytes("a.txt",b"Notes",20,"slide:1"),
+            Err(ReaderFailure::SelectorNotFound));
     }
     #[test]
     fn bounded_stream_never_reads_arbitrary_binary(){
