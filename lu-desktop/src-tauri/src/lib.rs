@@ -508,7 +508,10 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             }
             if state.generation_queue.has_jobs(){continue;}
             let Ok(model)=state.supervisor.status() else{continue};
-            if model.generation_id.is_some(){continue;}
+            if model.generation_id.is_some()
+              ||model.phase!=lu_core::inference_host::EnginePhase::Ready{
+                continue;
+            }
             let Some(session_id)=model.session_id else{continue};
             // Cursor pagination prevents >128 older pending events in
             // disabled chats from starving new opted-in conversations.
