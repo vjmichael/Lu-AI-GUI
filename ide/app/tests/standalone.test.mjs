@@ -413,3 +413,21 @@ test('A3 snapshot capture and comparison are separate typed operations', () => {
   assert.match(web, /Record evidence snapshot/);
   assert.doesNotMatch(store, /std::process::Command|Command::new/);
 });
+
+test('A3 native Git reader surfaces real dirty tree and no executable Git command', () => {
+  const source = read('../../host/src/git_status.rs');
+  const context = read('../../host/src/continuity.rs');
+  const native = read('../../host/src/lib.rs');
+  const ui = read('../web/main.jsx');
+  const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
+  assert.match(source, /Repository::open\(&root\)/);
+  assert.match(source, /repo\.statuses\(Some\(&mut options\)\)/);
+  assert.match(source, /repository_outside_selected_root/);
+  assert.match(source, /"not_queried"/);
+  assert.doesNotMatch(source, /Command::new|std::process::Command/);
+  assert.match(context, /inspect_git_worktree\(project_id\)/);
+  assert.match(native, /pub mod git_status/);
+  assert.match(ui, /projectContext\.gitWorktree\.worktree/);
+  assert.equal(schemas.definitions.ProjectContext.properties.gitWorktree.$ref, '#/$defs/GitWorktreeInspection');
+  assert.equal(schemas.definitions.GitWorktreeInspection.properties.liveRemote.const, 'not_queried');
+});
