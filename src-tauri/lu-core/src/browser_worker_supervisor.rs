@@ -77,6 +77,9 @@ fn valid_origin(input:&str)->bool{
         &&!host.bytes().any(|b|b.is_ascii_uppercase())
         &&host.rsplit('.').next().is_some_and(|tld|
             tld.len()>=2&&tld.bytes().all(|c|c.is_ascii_lowercase()))
+        && host.split('.').all(|label| !label.is_empty() && label.len()<=63
+            && label.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+            && label.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric))
         && host.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'.'||c==b'-')
 }
 fn valid_loopback_cdp(input:&str)->bool {
@@ -358,9 +361,17 @@ mod tests {
         for candidate in ["http://archive.example","https://x/y",
             "https://foo@bar","https://127.0.0.1:8443",
             "https://evil.example?q=1","https://foo\\bar",
-            "https://127.0.0.1","https://printer.local","https://LOCAL.Example"] {
+            "https://127.0.0.1","https://printer.local","https://LOCAL.Example",
+            "https://a..example","https://-host.example","https://host-.example"] {
             assert!(!valid_origin(candidate),"{candidate}");
         }
+    }
+    #[test]
+    fn origin_rejects_oversized_dns_label(){
+        let oversized=format!("https://{}.example","a".repeat(64));
+        assert!(!valid_origin(&oversized));
+        let maximum=format!("https://{}.example","a".repeat(63));
+        assert!(valid_origin(&maximum));
     }
     #[test]
     fn parser_refuses_oversized_or_unstructured_frames(){
