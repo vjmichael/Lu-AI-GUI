@@ -793,6 +793,190 @@
         "toolchainReadiness",
         "executionPerformed"
       ]
+    },
+    "StoredArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "digestStatus"
+      ]
+    },
+    "InventoryBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "observedUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StoredArtifact"
+          },
+          "maxItems": 80
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localTrackingHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "projectId",
+        "observedUnixSeconds",
+        "scope",
+        "artifacts",
+        "localHead",
+        "localTrackingHead"
+      ]
+    },
+    "ArtifactComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "baselineSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "matched_bytes",
+            "changed_bytes",
+            "changed_size_only",
+            "missing_in_scanned_scope",
+            "unverifiable",
+            "present_unverifiable",
+            "new_in_scanned_scope"
+          ]
+        }
+      },
+      "required": [
+        "relativePath",
+        "baselineSha256",
+        "currentSha256",
+        "status"
+      ]
+    },
+    "InventoryComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "baselinePresent": {
+          "type": "boolean"
+        },
+        "baselineUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discoveryComplete": {
+          "type": "boolean"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArtifactComparison"
+          },
+          "maxItems": 160
+        },
+        "localGitHeadChange": {
+          "type": "string"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "baselinePresent",
+        "baselineUnixSeconds",
+        "discoveryComplete",
+        "entries",
+        "localGitHeadChange",
+        "liveRemote"
+      ]
     }
   },
   "operations": {
@@ -1178,6 +1362,42 @@
       },
       "result": {
         "$ref": "#/$defs/ProjectContext"
+      }
+    },
+    "inventory.capture": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/InventoryBaseline"
+      }
+    },
+    "inventory.compare": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/InventoryComparison"
       }
     }
   }
