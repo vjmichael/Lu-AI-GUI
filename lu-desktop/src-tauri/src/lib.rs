@@ -1050,6 +1050,7 @@ async fn lu_background_scan_file(
             expected_sha256:format!("{:x}",hash.finalize()),
             args:vec!["--lu-file-scan-worker".into(),input.into_os_string()],
             progress_protocol:true,
+            max_runtime_seconds:None,
         };
         let task_id=plan.task_id.clone();
         processes.start_host_approved(plan)
