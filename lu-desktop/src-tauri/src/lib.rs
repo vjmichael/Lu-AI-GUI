@@ -1307,8 +1307,10 @@ async fn lu_generate_browser(
                     if round==0{&history}else{&[]}
                 ).map_err(|e|format!("browser model reserve: {e:?}"))?;
                 if ticket.cancelled(){
+                    // Latch cancellation, but ALWAYS enter the supervised
+                    // reserved run: its cleanup guard releases this model
+                    // reservation even when the backend rejects immediately.
                     let _=supervisor.cancel(&sid,&gid,&next_id("req-"));
-                    return Err("Cancelled browser research".into());
                 }
                 let calls=supervisor.run_reserved_browser_function_calls(
                     &sid,&gid,&rid,augmented,max_new_tokens,
@@ -1320,7 +1322,12 @@ async fn lu_generate_browser(
                 }
                 for call in calls{
                     if ticket.cancelled(){return Err("Cancelled browser research".into());}
-                    let fingerprint=format!("{}:{}",call.tool_name,call.arguments_json);
+                    // Canonicalize for the progress detector: model
+                    // reordering and JSON whitespace do not count as progress.
+                    let canonical:serde_json::Value=serde_json::from_str(
+                        &call.arguments_json
+                    ).map_err(|_|"Invalid structured browser call")?;
+                    let fingerprint=format!("{}:{}",call.tool_name,canonical);
                     if !seen.insert(fingerprint){
                         return Err("Browser research repeated a call without progress".into());
                     }
@@ -1421,8 +1428,9 @@ async fn lu_generate_browser(
                 &sid,&gid,&rid,&final_prompt,max_new_tokens,&[]
             ).map_err(|e|format!("browser answer reserve: {e:?}"))?;
             if ticket.cancelled(){
+                // The final reserved run must execute its cleanup guard,
+                // even if cancellation was requested after reservation.
                 let _=supervisor.cancel(&sid,&gid,&next_id("req-"));
-                return Err("Cancelled browser research".into());
             }
             let mut answer=String::new();
             let mut index=0u32;
