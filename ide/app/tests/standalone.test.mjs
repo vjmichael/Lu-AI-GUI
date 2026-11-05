@@ -221,6 +221,9 @@ test('R3.5 standalone proposal inbox requires explicit review and never applies 
   assert.match(web, /ide_discard_proposal/);
   assert.match(web, /ide_stage_proposal/);
   assert.match(web, /Proposal staged as editor drafts/);
+  assert.match(web, /stageConfirmation/);
+  assert.match(web, /noticeDismiss/);
+  assert.match(web, /aria-label="Dismiss notification"/);
   assert.match(native, /fn ide_stage_proposal/);
   assert.match(inbox, /pub fn staging/);
   assert.match(web, /Approve for staging only/);
