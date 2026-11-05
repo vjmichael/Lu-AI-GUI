@@ -47,6 +47,14 @@ type CapabilityMeta = (&'static str, &'static str, &'static str,
 
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
+            capability!("inventory.capture", "ide_capture_project_inventory", "Record verified inventory snapshot",
+                "Persist observed artifact paths and hashes for future comparison; no execution.",
+                "catalog_write", "open project and explicit user snapshot request",
+                "historical observed byte hashes; no software usability claim"),
+            capability!("inventory.compare", "ide_compare_project_inventory", "Compare inventory",
+                "Read-only comparison of latest bounded project evidence with saved baseline.",
+                "read", "open project; baseline optional",
+                "matched/changed/missing/new/unverifiable observed bytes"),
             capability!("continuity.read", "ide_read_project_context", "Read project continuity",
                 "Read bounded host observations and revisioned untrusted project notes.",
                 "read", "registered and active project",
@@ -155,7 +163,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 17);
+        assert_eq!(catalog.capabilities.len(), 19);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -180,7 +188,7 @@ mod tests {
             assert!(matches!(item.effect,
                 "read" | "session_write" | "catalog_write" | "file_write"));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 16);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 20);
     }
 
     #[test]
