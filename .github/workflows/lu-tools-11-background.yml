@@ -1,0 +1,117 @@
+name: Lu TOOLS-11 background task status
+on:
+  push:
+    branches: ['lu/tools-11-*', 'lu/reader-*']
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/native_background_status.rs'
+      - 'src-tauri/lu-core/src/native_background_result.rs'
+      - 'src-tauri/lu-core/src/native_background_control.rs'
+      - 'src-tauri/lu-core/src/native_reader_pdf.rs'
+      - 'src-tauri/lu-core/src/tasks.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - '.github/workflows/lu-tools-11-background.yml'
+  workflow_dispatch:
+# A new branch commit supersedes old source identities; cancel redundant
+# runs instead of compiling stale commits on both platforms.
+concurrency:
+  group: lu-tools-11-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-background:
+    name: Scoped task status
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test real native task status and authority
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_status -- --nocapture
+      - name: Verify model-visible scoped background status and terminal receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_result -- --nocapture
+      - name: Verify host-bound one-shot start/cancel against real owned workers
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_control -- --nocapture
+      - name: Verify DOCX archive and XML security cases
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_docx -- --nocapture
+      - name: Verify OpenDocument ODS and ODP extraction
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_odf -- --nocapture
+      - name: Verify classic PDF page-text extraction and unsupported scanned-page refusal
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_pdf -- --nocapture
+      - name: Validate safe OOXML archive admission
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_openxml -- --nocapture
+      - name: Extract XLSX cells and PPTX slides from authentic OOXML fixtures
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_office -- --nocapture
+      - name: Verify bounded universal Reader kernel
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader -- --nocapture
+      - name: Verify bound Reader model JSON to Protobuf execution and per-turn revocation
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_turn -- --nocapture
+      - name: Verify Reader typed model tool, authorization and binary refusal
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_tool -- --nocapture
+      - name: Verify vision preference requires actual model/backend proof
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib vision_routing -- --nocapture
+      - name: Verify durable task store regressions
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test task_checkpoints -- --nocapture
+      - name: Verify operator task dashboard regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests -- --nocapture
+      - name: Verify durable cancelled state and schema migration
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib cancellation_tests -- --nocapture
+      - name: Run real owned-process lifecycle and cancellation tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process -- --nocapture
+      - name: Verify all terminal outcomes and durable notification replay
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib terminal_notification_tests -- --nocapture
+      - name: Verify explicit default-off auto-continuation preferences
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib task_auto_continue_tests -- --nocapture
+      - name: Verify background pane UI contract
+        run: node --test lu-desktop/tests/background-pane.test.mjs
+      - name: Verify Reader desktop picker and per-chat draft contract
+        run: node --test lu-desktop/tests/reader-desktop.test.mjs
+      - name: Install frontend dependencies
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+      - name: Build desktop Background Tasks pane
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: npm run build
+      - name: Test actual production scanner module (portable)
+        run: cargo test --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml -- --nocapture
+      - name: Build native worker from production scanner source
+        run: cargo build --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+      - name: End-to-end actual worker scans 12 MiB fixture
+        run: node --test lu-desktop/tests/background-worker-e2e.test.mjs
+      - name: Detect authentic desktop engine resources
+        if: matrix.os == 'windows-latest'
+        id: engine
+        shell: pwsh
+        run: |
+          $found = Test-Path 'lu-desktop/src-tauri/resources/lu-inference/llama-server.exe'
+          "present=$($found.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+      - name: Compile full desktop host with authentic resources
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present == 'true'
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Compile full desktop Rust host with no packaged engine in CI only
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
+        shell: pwsh
+        run: |
+          $path = 'lu-desktop/src-tauri/tauri.conf.json'
+          $cfg = Get-Content $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources = @{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute native Windows Reader-turn journal identity regression
+        if: matrix.os == 'windows-latest'
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reader -- --nocapture
+      - name: Record unavailable installed-desktop prerequisite
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
+        run: echo "Desktop host compiled with a temporary CI-only no-resources config; installed-app and real inference-engine acceptance remain BLOCKED."
+      - name: Verify source identity
+        run: git rev-parse HEAD

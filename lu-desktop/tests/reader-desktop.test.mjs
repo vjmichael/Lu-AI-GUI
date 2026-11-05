@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {buildSubmittedPrompt} from '../web/attachment_drafts.mjs';
+
+const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+const readerHost=readFileSync(new URL('../src-tauri/src/reader_desktop.rs',import.meta.url),'utf8');
+
+test('native Reader file selection is host-mediated and file path never supplied by WebView',()=>{
+  assert.ok(host.includes('async fn lu_reader_pick_document(app:AppHandle)'));
+  assert.ok(readerHost.includes('blocking_pick_file()'));
+  assert.ok(host.includes('lu_core::native_reader::read_text_bytes'));
+  assert.ok(host.includes('pick_reader_bytes(&app,8*1024*1024)'));
+  assert.ok(readerHost.includes('meta.file_type().is_file()'));
+  assert.ok(readerHost.includes('read_to_end(&mut bytes)'));
+  assert.ok(host.includes('lu_reader_pick_document,'));
+  assert.ok(ui.includes("invoke('lu_reader_pick_document')"));
+  assert.ok(!ui.includes("invoke('lu_reader_pick_document',{path:"));
+});
+test('Reader attachments remain in originating chat and respect the 16k prompt cap',()=>{
+  assert.ok(ui.includes("const targetChat=currentChat.current||'new';"));
+  assert.ok(ui.includes('pendingDrafts.current.set(targetChat,{...old,files:next})'));
+  assert.ok(ui.includes('buildSubmittedPrompt(prior?.prompt'));
+  assert.ok(ui.includes('MAX_TEXT_FILES'));
+  assert.ok(ui.includes('document.truncated'));
+  assert.ok(ui.includes('Read file'));
+});
+
+test('Reader attachment context uses the model UTF-8 byte budget, not JS code-unit length',()=>{
+  const unicode='🦈'.repeat(4400);
+  assert.throws(()=>buildSubmittedPrompt('Read this',[{name:'marine.docx',text:unicode}]),
+    /16,384-byte/);
+  assert.match(buildSubmittedPrompt('Summarize',[{name:'notes.docx',text:'hello'}]),
+    /notes.docx/);
+});
+
+test('Ask Reader routes exactly one native-picker document through the supervised read-only model turn',()=>{
+  assert.ok(host.includes('lu_reader_ask_document,'));
+  assert.ok(readerHost.includes('fn lu_reader_ask_document('));
+  assert.ok(readerHost.includes('ReaderTurnSession::new('));
+  assert.ok(readerHost.includes('reader_user_turn_matches('));
+  assert.ok(readerHost.includes('append_reader_user(&chat_id,&generation_id,&prompt)'));
+  assert.ok(!readerHost.includes('messages.last().cloned()'));
+
+  assert.ok(readerHost.includes('ModelTurnJournal::open('));
+  assert.ok(readerHost.includes('run_journaled('));
+  assert.ok(readerHost.includes('if result.tool_calls==0'));
+  assert.ok(readerHost.includes('ticket.wait_for_slot()?'));
+  assert.ok(host.includes('reader.cancellation.cancel()'));
+  assert.ok(host.includes('reader.current_step.lock()'));
+  assert.ok(ui.includes("invoke('lu_reader_ask_document',{"));
+  assert.ok(ui.includes('Ask Reader</button>'));
+  assert.ok(!ui.includes("invoke('lu_reader_ask_document',{path:"));
+  assert.ok(!ui.includes("invoke('lu_reader_ask_document',{filePath:"));
+});
