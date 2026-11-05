@@ -3,6 +3,7 @@
 // The manually reviewed evidence, feature acceptance and release history are never rewritten.
 import fs from "node:fs/promises";
 import path from "node:path";
+import {fileURLToPath} from "node:url";
 
 const START = "<!-- LU_OPEN_PRS_START -->";
 const END = "<!-- LU_OPEN_PRS_END -->";
@@ -110,6 +111,6 @@ export async function run(argv = process.argv.slice(2)) {
   await fs.writeFile(file, next, "utf8");
   console.log("Updated Lu ledger PR metadata (" + prs.length + " open PRs); manually curated status untouched.");
 }
-if (process.argv[1] && path.resolve(process.argv[1]).endsWith("/scripts/lu-ledger.mjs")) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   run().catch(error => { console.error(error.message); process.exitCode = 1; });
 }
