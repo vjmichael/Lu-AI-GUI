@@ -81,3 +81,22 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .removeProjectBtn:not(:disabled):hover{background:#422536;border-color:#b97686}
 .removeProjectBtn:disabled{opacity:.48;cursor:not-allowed}
 .removeProjectBtn:focus-visible{outline:2px solid #f1b6c8;outline-offset:3px}
+
+/* Bounded, read-only change review: foundation for future Lu coding proposals. */
+.reviewOverlay{position:fixed;z-index:80;inset:0;background:rgba(2,8,18,.8);display:flex;align-items:center;justify-content:center;padding:30px}
+.reviewDialog{display:flex;flex-direction:column;gap:12px;max-height:min(88vh,890px);width:min(900px,100%);min-width:0;border:1px solid #4c6884;border-radius:12px;background:#102032;box-shadow:0 24px 75px rgba(0,0,0,.55);padding:18px}
+.reviewHeader{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.reviewHeader h2{margin:0;font-size:18px}
+.reviewHeader p{margin:5px 0 0;color:#a8bfd3;font-size:12px;overflow-wrap:anywhere}
+.reviewNotice{margin:0;font-size:12px;line-height:1.5;color:#a9c8df}
+.reviewLines{flex:1;min-height:80px;overflow:auto;background:#090f1b;border:1px solid #34495f;border-radius:6px;font-size:12px;font-family:Consolas,"Cascadia Code",ui-monospace,monospace}
+.reviewLine{display:grid;grid-template-columns:26px minmax(0,1fr);align-items:start;padding:2px 8px;gap:6px;min-height:23px;border-bottom:1px solid rgba(255,255,255,.035)}
+.reviewLine>span:first-child{text-align:center;color:#829db4}
+.reviewLine code{font-family:inherit;color:#d7e9f6;white-space:pre-wrap;overflow-wrap:anywhere}
+.reviewLine.added{background:#14372c}.reviewLine.added>span:first-child{color:#83d4a3}
+.reviewLine.removed{background:#40202c}.reviewLine.removed>span:first-child{color:#ef9aaa}
+.reviewLine.context{background:#132338}
+.reviewNoNewline{font-size:10px;color:#eac281}
+.reviewWarning{border:1px solid #b68143;background:#322715;color:#f6dcaf;padding:9px;border-radius:6px;font-size:12px}
+.reviewActions{display:flex;justify-content:flex-end;align-items:center;gap:10px}
+@media(max-width:700px){.reviewOverlay{padding:6px}.reviewDialog{max-height:95vh}.reviewHeader{flex-wrap:wrap}.reviewActions{flex-wrap:wrap}}
