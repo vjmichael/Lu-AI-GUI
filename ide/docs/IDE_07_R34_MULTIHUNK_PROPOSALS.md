@@ -2,7 +2,7 @@
 
 **Branch:** `ide/workspace-development`  
 **Date:** 2026-11-05  
-**Status:** Implemented on branch; require exact-HEAD CI and Windows interaction acceptance before closing R3.4.
+**Status:** Native Windows/Linux/frontend CI and unsigned Windows release **passed**. Human Windows multi-hunk interaction acceptance remains open.
 
 ## Delivered code
 
@@ -29,14 +29,23 @@
 
 ## Required acceptance
 
-- [ ] Exact HEAD Linux native Rust tests and `rustfmt --check`.
-- [ ] Exact HEAD frontend build and tests.
-- [ ] Exact HEAD Windows native host tests and Tauri compile.
-- [ ] R3.4 Windows executable build, ZIP and checksum verification.
+- [x] Linux native Rust suite: **42/42 passed**; `rustfmt --check` passed in [CI run 42053180326](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053180326).
+- [x] Frontend build and **13/13 tests passed** in the same run.
+- [x] Windows host tests and standalone Tauri compilation passed in the same run.
+- [x] Optimized unsigned Windows executable built in [run 42053262838](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053262838), artifact `lu-ide-windows-alpha-r3-4-multihunk-review-v3`. Windows PE EXE verified (10,564,608 bytes), SHA-256 `efe38b25c1e60bd46dc7be764ad168e5cdb84f97882077a96caf014d1ae363da`. User-facing ZIP `Lu-IDE-Standalone-R3.4-MultiHunk.zip` integrity-checked, SHA-256 `aed3b1b9a994620623cd4d55c9a2519635f3385a30857a729aa394d0e3da60f7`; includes `R34MultiHunkProject` and `README-R3.4.txt`.
 - [ ] Interactive Windows test: change two distant lines in one file; expect two hunks with correct line numbers, no extra removals.
 - [ ] Interactive Windows test: edit file, review/cancel, verify bytes unchanged; reviewed save still requires explicit user action.
 - [ ] Large/complex review still blocks reviewed-save rather than falsely presenting complete context.
 - [ ] IDE works while Lu is disconnected; packages/build/test still unavailable.
+
+## Verification repair history
+
+- The first native build failed on a Rust ambiguous integer type for the diff byte counter. Fixed by explicit `usize` annotations.
+- The next native run passed all tests but required `rustfmt` normalization. The exact formatter output was committed.
+- A subsequent frontend source-inspection test assumed the Rust proposal method signature was one line; after formatting it wrapped onto multiple lines. The assertion was corrected without loosening the runtime schema.
+- Only the **final green CI and release runs above** represent this deliverable. Earlier Windows release attempts were unsuccessful and are not distributed.
+
+**Windows human acceptance is not implied by the GitHub build.** The user should test two distant edits in one file and verify that two independently numbered hunks appear before this milestone is closed.
 
 ## Architecture constraint
 
