@@ -22,6 +22,8 @@ pub enum ReaderFormat{
     Docx,
     Xlsx,
     Pptx,
+    Ods,
+    Odp,
     Image,
     Unknown,
 }
@@ -51,6 +53,8 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
             "docx"=>ReaderFormat::Docx,
             "xlsx"=>ReaderFormat::Xlsx,
             "pptx"=>ReaderFormat::Pptx,
+            "ods"=>ReaderFormat::Ods,
+            "odp"=>ReaderFormat::Odp,
             _=>ReaderFormat::Unknown,
         };
     }
@@ -74,6 +78,8 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
         "docx"=>ReaderFormat::Docx,
         "xlsx"=>ReaderFormat::Xlsx,
         "pptx"=>ReaderFormat::Pptx,
+        "ods"=>ReaderFormat::Ods,
+        "odp"=>ReaderFormat::Odp,
         "png"|"jpg"|"jpeg"|"webp"|"tif"|"tiff"|"bmp"=>ReaderFormat::Image,
         _=>ReaderFormat::Unknown
     }
@@ -115,6 +121,12 @@ pub fn read_text_bytes(
     if format==ReaderFormat::Pptx{
         return crate::native_reader_office::read_pptx(bytes,max_chars);
     }
+    if format==ReaderFormat::Ods{
+        return crate::native_reader_odf::read_ods(bytes,max_chars,None);
+    }
+    if format==ReaderFormat::Odp{
+        return crate::native_reader_odf::read_odp(bytes,max_chars,None);
+    }
     if matches!(format,ReaderFormat::Image
         |ReaderFormat::Unknown){
         return Err(ReaderFailure::UnsupportedAdapter(format));
@@ -153,6 +165,18 @@ pub fn read_selected_bytes(
                 .filter(|n|*n>0&&*n<=512)
                 .ok_or(ReaderFailure::SelectorNotFound)?;
             crate::native_reader_office::read_pptx_slide(bytes,max_chars,Some(slide))
+        },
+        ReaderFormat::Ods=>{
+            let sheet=selector.strip_prefix("sheet:").filter(|s|!s.is_empty())
+                .ok_or(ReaderFailure::SelectorNotFound)?;
+            crate::native_reader_odf::read_ods(bytes,max_chars,Some(sheet))
+        },
+        ReaderFormat::Odp=>{
+            let slide=selector.strip_prefix("slide:")
+                .and_then(|s|s.parse::<usize>().ok())
+                .filter(|n|*n>0&&*n<=512)
+                .ok_or(ReaderFailure::SelectorNotFound)?;
+            crate::native_reader_odf::read_odp(bytes,max_chars,Some(slide))
         },
         ReaderFormat::Pdf=>{
             let page=selector.strip_prefix("page:")
