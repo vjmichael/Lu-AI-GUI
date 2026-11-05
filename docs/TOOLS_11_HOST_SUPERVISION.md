@@ -163,6 +163,41 @@ AI use long tasks **without writing a custom media analyzer into Lu Core**.
 The worker may run for hours while the LLM is unloaded; results are stored
 outside the context window and loaded in bounded portions when requested.
 
+## Mandatory terminal push contract (2026-11-04)
+
+A background worker must **never be responsible for waking the model**.
+Lu's host supervises the worker and records one authoritative terminal
+transition. The worker may report success/failure data, but actual OS exit,
+verified results, explicit task deadlines, operator cancellation, and restart
+reconciliation determine the host's final status.
+
+Every terminal classification is notification-worthy:
+`COMPLETED`, `FAILED`, `CANCELLED`, `INTERRUPTED`, `TIMED_OUT`.
+A task that fails before launch is `FAILED`; an unexpected previous
+`RUNNING` record after host restart is `INTERRUPTED`; an explicit
+host deadline that *actually terminated and reaped* its worker is
+`TIMED_OUT`. Missing heartbeat is not sufficient to claim timeout.
+
+The terminal transition and a monotonic event sequence share a SQLite
+transaction. A host-side durable inbox uses that sequence to support
+at-least-once delivery and workspace-scoped idempotent acknowledgement;
+neither model nor WebView can forge an end event. Lu emits
+`lu-background-terminal` from a host-only watchdog and shows the event
+on the desktop even when the Tasks pane is closed.
+
+**Current model delivery:** a bounded, host-constructed event summary is
+supplied to the **next eligible turn in the owning conversation**, without
+copying worker-authored detail into model instructions. A notice is
+acknowledged only after the AI response is durably completed. If the model
+is unloaded, busy, fails, or the app restarts, the notice remains pending.
+This deliberately does **not** auto-load a model, interrupt a turn, or
+create an unsolicited synthetic user message. A separate, authorized
+scheduler will later enable truly proactive model continuation if desired.
+
+The present native file scan originates from an existing chat and uses its
+verified conversation ID as the task's owner; jobs without a chat receive
+a local UI-only owner and are not handed to an unrelated model conversation.
+
 ## Acceptance scenarios
 
 1. 40-minute synthetic media task progresses with LLM unloaded; zero model
