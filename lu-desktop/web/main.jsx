@@ -569,6 +569,12 @@ function App() {
       </div>
     </aside>
     <main className="workspace">
+      {backgroundTerminalNotice && <button type="button"
+        className="backgroundGlobalNotice"
+        onClick={()=>{setBackgroundPaneOpen(true);setBackgroundFilter('all');}}>
+        <span>Background task ended: <strong>{backgroundTerminalNotice.state}</strong></span>
+        <small>Open Tasks for details</small>
+      </button>}
       <header className="topbar">
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
