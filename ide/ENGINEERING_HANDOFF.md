@@ -21,6 +21,9 @@ New `AIW-IDE-01` documentation is **design and orientation only**. Next independ
 
 ## A2/A3 continuation: typed contracts and project continuity
 
+The latest A3 event format adds `sourcePath` (validated relative file path) alongside `sourceRevision`; project-root and `ide/` orientation files can be surfaced as **untrusted, revisioned excerpts**. A2 results embed JSON Schema type definitions for independent resolution and display compact human summaries. Most recent exact-source CI [42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) was queued at last inspection; do not claim host native tests or Windows runtime passed on these new changes until evidence appears.
+
+
 - `host/src/capability_schemas.json` is the reviewed typed schema source for 17 real Tauri commands, with nested record definitions and schema version 2. `host/src/capabilities.rs` loads those bundled contracts; no arbitrary repo schema may authorize actions.
 - `host/src/continuity.rs` is an app-profile event log and bounded read-only context view. `ide_read_project_context` supplies scoped project observations and revisioned (untrusted) orientation-document excerpts, with Git/artifact/toolchain current readiness explicitly unknown.
 - Project lifecycle and saved-file operations append best-effort host observations after native success. Logs are not security grants, effect receipts, or proof of package/build success. Corrupt logs fail closed on read; a log append failure never turns a completed write into a retryable failure.
