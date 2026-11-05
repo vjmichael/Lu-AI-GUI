@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0e61b852b74632098eb54345928ac332f00aab58",
-  "trackedFileCount": 316,
+  "sourceCommitBeforeLock": "69427904e4eeb876f9300a76dfc7b993f5e48d8a",
+  "trackedFileCount": 318,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -721,7 +721,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "4c4290758c6c4f5a2d10aff0b4a1b560783b0c13"
+      "blob": "279110ea32f798c4d2095421d181f6a7a73d6204"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -806,6 +806,10 @@
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
       "blob": "8a90b49a1af32b0348659914db73c9ba7a7fd5b8"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_file_transfer.rs",
+      "blob": "11a685d2fb677e85eb609cd8e254118116516a4e"
     },
     {
       "path": "src-tauri/lu-core/src/native_files.rs",
@@ -1158,6 +1162,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_edit_existing_authority.rs",
       "blob": "24945ce01af99c5de3e96545919fff53545f6e98"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_file_transfer.rs",
+      "blob": "c6af7d679231d02bd71d177f1caa74f060bfb70e"
     },
     {
       "path": "src-tauri/lu-core/tests/native_git_inspect.rs",
