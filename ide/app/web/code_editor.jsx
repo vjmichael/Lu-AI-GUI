@@ -40,10 +40,16 @@ function languageExtension(filename) {
  */
 export function createEditorState(text, filename, onChange) {
   const syntax = languageExtension(filename);
+  // Tauri rewrites the nonce on this bundled <style> element and its CSP
+  // policy for each WebView. CodeMirror's dynamic StyleModule uses that same
+  // nonce rather than relaxing script-src or enabling unsafe-inline CSS.
+  const nonceCarrier = document.getElementById('lu-ide-editor-style-nonce');
+  const styleNonce = nonceCarrier?.nonce || '';
   return EditorState.create({
     doc: text,
     extensions: [
       basicSetup,
+      ...(styleNonce ? [EditorView.cspNonce.of(styleNonce)] : []),
       oneDark,
       EditorView.lineWrapping,
       EditorView.theme({
