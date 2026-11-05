@@ -90,6 +90,8 @@ The historical eight-stage checklist remains the official acceptance accounting.
 
 **A1 — Authoritative source-span read (initial saved-disk implementation committed; verification and human UI pending):** add a host Rust request/response for selected project/file/revision with 1-based line/column plus explicit byte offsets, bounded output, newline metadata, and stale-revision rejection. Test CRLF, blank lines, multi-byte Unicode, traversal/symlink denial, and different saved vs unsaved editor state (buffer ownership established separately). Current code editor UI can consume this incrementally.
 
+**A2 implementation note (2026-11-05):** A static Rust catalog and human capability directory were added for 16 existing commands, plus a read-only catalog endpoint and command-parity tests. The new runtime has not yet been independently CI-accepted or Windows user-tested. Catalog descriptions neither invoke commands nor grant authority.
+
 **A2 — Bounded capability descriptors:** make a static, host-validated registry for *existing* read/review/stage/save operations. Test descriptors against commands, schema versions and effect class; no bridge, dynamic tools or auto-authorization.
 
 **A3 — Project continuity read model:** represent current state, source and artifact provenance as host-owned read-only objects and define stable export. Probe and reconcile local worktrees and Git read-only. Never assume GitHub contains uncommitted local work. For the first slice, file-based ledger readback and validation can precede SQLite storage; avoid two competing canonical truths.
