@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 use std::{path::PathBuf, sync::Arc};
 
-use lu_ide_workspace::{inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use lu_ide_workspace::{continuity::DevelopmentLedger, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -47,6 +47,16 @@ fn summarize(registry: &IdeWorkspaceRegistry) -> Result<Vec<ProjectSummary>, Str
         .map_err(|error| format!("Project registry unavailable: {}", stable_error(&error)))
 }
 
+// Continuity records are best-effort operational breadcrumbs, not security
+// receipts. A failed ledger append never turns a successful file save into a
+// retryable failed write (which could lead to duplicate effects).
+fn observe(ledger: &DevelopmentLedger, project_id: &str, operation: &str,
+    summary: &str, revision: Option<&str>) {
+    if let Err(err) = ledger.record(project_id, operation, summary, revision) {
+        eprintln!("IDE continuity observation unavailable: {}", err.code());
+    }
+}
+
 fn stable_error(error: &IdeError) -> &'static str {
     match error {
         IdeError::Io(_) => "IO_FAILURE",
@@ -58,6 +68,23 @@ fn stable_error(error: &IdeError) -> &'static str {
         IdeError::AlreadyActive => "PROJECT_ALREADY_OPEN",
         IdeError::NotActive => "PROJECT_NOT_OPEN",
     }
+}
+
+/// Bounded, source-revisioned continuity from the trusted local IDE profile.
+#[tauri::command]
+async fn ide_read_project_context(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::continuity::ProjectContext, String> {
+    let registry = Arc::clone(registry.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        ledger.context(&registry, &project_id)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "CONTINUITY_TASK_UNAVAILABLE".to_owned())?
 }
 
 /// List actual host-supported operations. Discovery is not authorization.
@@ -80,12 +107,18 @@ async fn ide_list_projects(
 async fn ide_choose_project(
     app: AppHandle,
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<Vec<ProjectSummary>, String> {
     let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry
+        let selected = registry
             .register_from_native_picker(&mut NativePicker(app))
             .map_err(|error| stable_error(&error).to_string())?;
+        if let Some(ref project) = selected {
+            observe(&ledger, &project.project_id, "project.register",
+                "Project registered through native picker", None);
+        }
         summarize(&registry)
     })
     .await
@@ -96,12 +129,15 @@ async fn ide_choose_project(
 async fn ide_open_project(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
     project_id: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<Vec<ProjectSummary>, String> {
     let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
         registry
             .reopen(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
+        observe(&ledger, &project_id, "project.open", "Project reopened", None);
         summarize(&registry)
     })
     .await
@@ -112,12 +148,15 @@ async fn ide_open_project(
 async fn ide_close_project(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
     project_id: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<Vec<ProjectSummary>, String> {
     let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
         registry
             .close(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
+        observe(&ledger, &project_id, "project.close", "Project closed", None);
         summarize(&registry)
     })
     .await
@@ -130,12 +169,15 @@ async fn ide_close_project(
 async fn ide_unregister_project(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
     project_id: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<Vec<ProjectSummary>, String> {
     let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
         registry
             .unregister(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
+        observe(&ledger, &project_id, "project.unregister", "Project removed from IDE catalog", None);
         summarize(&registry)
     })
     .await
@@ -225,12 +267,17 @@ async fn ide_save_source_file(
     relative_path: String,
     expected_revision: String,
     text: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<lu_ide_workspace::browser::TextPreview, String> {
     let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry
+        let saved = registry
             .save_source_file(&project_id, &relative_path, &expected_revision, &text)
-            .map_err(|error| error.code().to_owned())
+            .map_err(|error| error.code().to_owned())?;
+        observe(&ledger, &project_id, "source.save",
+            "Source saved with revision check", Some(&saved.revision));
+        Ok(saved)
     })
     .await
     .map_err(|_| "SAVE_TASK_UNAVAILABLE".to_owned())?
@@ -328,12 +375,16 @@ pub fn run() {
             std::fs::create_dir_all(&data)?;
             let registry = IdeWorkspaceRegistry::open(data.join("projects.json"))
                 .map_err(|_| std::io::Error::other("standalone IDE registry failed to open"))?;
+            let ledger = DevelopmentLedger::new(data.join("development-ledger.jsonl"))
+                .map_err(|_| std::io::Error::other("standalone IDE ledger failed to open"))?;
             app.manage(Arc::new(registry));
+            app.manage(Arc::new(ledger));
             app.manage(Arc::new(IdeProposalInbox::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
+            ide_read_project_context,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
