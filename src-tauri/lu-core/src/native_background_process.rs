@@ -3,7 +3,7 @@
 //! chooses a reviewed executable digest, argv, workspace and task identity;
 //! untrusted model output never becomes a command, PID or process-kill target.
 use std::{
-    collections::BTreeMap,ffi::OsString,fs,io::{self,Read},path::{Path,PathBuf},
+    collections::BTreeMap,ffi::OsString,fs,io::{self,Read,BufReader},path::{Path,PathBuf},
     process::{Child,Command,Stdio},sync::{Arc,Mutex},
 };
 use sha2::{Digest,Sha256};
@@ -20,10 +20,14 @@ pub struct TrustedWorkerPlan {
     pub executable:PathBuf,
     pub expected_sha256:String,
     pub args:Vec<OsString>,
+    /// Only reviewed workers with an authenticated progress contract may
+    /// request stdout IPC; arbitrary subprocess output is discarded.
+    pub progress_protocol:bool,
 }
 struct OwnedWorker {
     workspace_id:String,
     child:Child,
+    progress_reader:Option<std::thread::JoinHandle<bool>>,
     #[cfg(windows)]
     job:lu_win_worker_job::Job,
 }
@@ -65,6 +69,58 @@ fn verified_executable(path:&Path,digest:&str)->Result<PathBuf,BackgroundProcess
     }
     Ok(canonical)
 }
+/// Worker progress stream is a deliberately tiny, bounded native protocol.
+/// The caller has already pinned the executable hash, so this is a receipt,
+/// never an authorization grant or a model-provided status claim.
+fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->bool{
+    let mut input=BufReader::new(pipe);
+    let mut line=Vec::with_capacity(96);
+    let mut final_result=false;
+    let mut total_seen=None::<u64>;
+    let mut last_bytes=0u64;
+    loop{
+        line.clear();
+        // Limit each line before allocating an attacker-sized buffer.
+        for _ in 0..128{
+            let mut byte=[0u8;1];
+            match input.read(&mut byte){
+                Ok(0)=>return final_result,
+                Err(_)=>return false,
+                Ok(_)=>{
+                    if byte[0]==b'\n'{break;}
+                    line.push(byte[0]);
+                }
+            }
+        }
+        if line.len()>=128{return false;}
+        let Ok(text)=std::str::from_utf8(&line) else{return false};
+        if let Some(value)=text.strip_prefix("P\t"){
+            if final_result{return false;}
+            let Some((read,total))=value.split_once('\t') else{return false};
+            let (Ok(read),Ok(total))=(read.parse::<u64>(),total.parse::<u64>())
+                else{return false};
+            if total==0||read>total||read<last_bytes
+                ||total_seen.is_some_and(|seen|seen!=total){return false;}
+            last_bytes=read;
+            total_seen=Some(total);
+            let percent=((u128::from(read)*99)/u128::from(total)) as u8;
+            if store.checkpoint(task_id,percent,
+                &format!("Verified {} of {} bytes",read,total),&[]).is_err(){
+                return false;
+            }
+        }else if let Some(digest)=text.strip_prefix("D\t"){
+            if final_result||total_seen!=Some(last_bytes)
+                ||digest.len()!=64
+                ||!digest.bytes().all(|b|b.is_ascii_hexdigit()){
+                return false;
+            }
+            if store.checkpoint(task_id,100,&format!("SHA-256: {digest}"),&[])
+                .is_err(){return false;}
+            final_result=true;
+        }else{return false;}
+    }
+}
+
 impl BackgroundProcessSupervisor {
     pub fn new(store:Arc<TaskStore>)->Self{
         Self{store,owned:Mutex::new(BTreeMap::new())}
@@ -89,7 +145,8 @@ impl BackgroundProcessSupervisor {
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         let mut command=Command::new(&executable);
         command.args(&plan.args).env_clear().stdin(Stdio::null())
-            .stdout(Stdio::null()).stderr(Stdio::null())
+            .stdout(if plan.progress_protocol{Stdio::piped()}else{Stdio::null()})
+            .stderr(Stdio::null())
             .current_dir(executable.parent().ok_or(BackgroundProcessError::InvalidPlan)?);
         #[cfg(windows)]
         {
@@ -117,9 +174,16 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed);
         }
+        let progress_reader=if plan.progress_protocol{
+            let pipe=child.stdout.take().ok_or(BackgroundProcessError::SpawnFailed)?;
+            let store=Arc::clone(&self.store);
+            let task_id=plan.task_id.clone();
+            Some(std::thread::spawn(move||read_worker_progress(pipe,&store,&task_id)))
+        }else{None};
         let owner=OwnedWorker{
             workspace_id:plan.workspace_id,
             child,
+            progress_reader,
             #[cfg(windows)]
             job,
         };
@@ -145,8 +209,10 @@ impl BackgroundProcessSupervisor {
         }
         let count=finished.len();
         for (id,ok) in finished{
-            let _owner=workers.remove(&id).expect("owned worker still registered");
-            if ok{self.store.complete(&id)}else{self.store.fail(&id)}
+            let mut owner=workers.remove(&id).expect("owned worker still registered");
+            let proof=owner.progress_reader.take().map(|handle|handle.join().unwrap_or(false));
+            let verified=ok && proof.unwrap_or(true);
+            if verified{self.store.complete(&id)}else{self.store.fail(&id)}
                 .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         }
         Ok(count)
@@ -161,7 +227,9 @@ impl BackgroundProcessSupervisor {
             return Err(BackgroundProcessError::WrongWorkspace);
         }
         terminate_owned(worker)?;
-        workers.remove(task_id);
+        let mut owner=workers.remove(task_id).expect("live worker owned");
+        if let Some(reader)=owner.progress_reader.take(){let _=reader.join();}
+        drop(owner); // Release the Windows Job handle (kills descendants).
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
     }
@@ -204,6 +272,7 @@ impl Drop for BackgroundProcessSupervisor{
         if let Ok(mut workers)=self.owned.lock(){
             for (_,mut worker) in std::mem::take(&mut *workers){
                 let _=terminate_owned(&mut worker);
+                if let Some(reader)=worker.progress_reader.take(){let _=reader.join();}
             }
         }
     }
@@ -218,7 +287,7 @@ mod tests{
         let plan=TrustedWorkerPlan{
             task_id:"video-1".into(),workspace_id:"media".into(),
             executable:PathBuf::from("relative-untrusted-executable"),
-            expected_sha256:"0".repeat(64),args:vec![],
+            expected_sha256:"0".repeat(64),args:vec![],progress_protocol:false,
         };
         assert_eq!(manager.start_host_approved(plan),
             Err(BackgroundProcessError::InvalidPlan));
@@ -243,7 +312,7 @@ mod tests{
             task_id:"win-media1".into(),workspace_id:"video".into(),
             executable,expected_sha256:digest,
             args:vec!["/D".into(),"/C".into(),
-                "ping -n 20 127.0.0.1 >NUL".into()],
+                "ping -n 20 127.0.0.1 >NUL".into()],progress_protocol:false,
         }).unwrap();
         assert!(manager.can_cancel("win-media1"));
         assert_eq!(manager.cancel_owned("win-media1","wrong"),
@@ -270,7 +339,7 @@ mod tests{
         manager.start_host_approved(TrustedWorkerPlan{
             task_id:"worker-1".into(),workspace_id:"media".into(),
             executable:sleep,expected_sha256:digest,
-            args:vec![OsString::from("30")],
+            args:vec![OsString::from("30")],progress_protocol:false,
         }).unwrap();
         assert_eq!(manager.cancel_owned("worker-1","unrelated"),
             Err(BackgroundProcessError::WrongWorkspace));
