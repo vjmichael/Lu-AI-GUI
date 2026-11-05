@@ -1559,6 +1559,24 @@
       "result": {
         "$ref": "#/$defs/InventoryComparison"
       }
+    },
+    "git.status": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitWorktreeInspection"
+      }
     }
   }
 }
