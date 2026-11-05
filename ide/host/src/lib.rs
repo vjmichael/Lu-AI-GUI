@@ -1,7 +1,7 @@
 //! IDE-01B: native, non-executing IDE project registration and lifecycle.
 //!
-//! This is an IDE *adapter* over Lu Core's WorkspaceHost. It does not implement
-//! another tool dispatcher, another policy engine, or a process launcher.
+//! Standalone project catalog and lifecycle. This crate does NOT depend on
+//! Lu Core, perform tool dispatch, grant authority, or launch processes.
 //! Project roots are obtained ONLY from a host-implemented native picker;
 //! Protobuf UI messages never contain paths or grants.
 #![forbid(unsafe_code)]
@@ -16,16 +16,10 @@ use std::{
     sync::Mutex,
 };
 
-use lu_core::{
-    contracts::{ModuleKind, ModuleManifest, PanelContribution, CORE_CONTRACT_VERSION},
-    registry::NativeToolRegistry,
-    workspace::{WorkspaceError, WorkspaceHost},
-};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use wire::proto::{self, workspace_reply::Outcome, workspace_request::Operation};
 
-const MODULE_ID: &str = "lu.ide";
 const CATALOG_VERSION: u32 = 1;
 const MAX_CATALOG_BYTES: u64 = 128 * 1024;
 const MAX_PROJECTS: usize = wire::MAX_PROJECTS;
@@ -40,7 +34,8 @@ pub trait NativeDirectoryPicker {
 pub enum IdeError {
     Io(std::io::Error),
     Format(serde_json::Error),
-    Core(WorkspaceError),
+    AlreadyActive,
+    NotActive,
     Poisoned,
     InvalidSelection,
     InvalidCatalog,
@@ -53,7 +48,8 @@ impl IdeError {
         match self {
             Self::Io(_) => "IO_UNAVAILABLE",
             Self::Format(_) | Self::InvalidCatalog => "CATALOG_INVALID",
-            Self::Core(_) => "WORKSPACE_LIFECYCLE_DENIED",
+            Self::AlreadyActive => "PROJECT_ALREADY_ACTIVE",
+            Self::NotActive => "PROJECT_NOT_ACTIVE",
             Self::Poisoned => "HOST_UNAVAILABLE",
             Self::InvalidSelection => "SELECTION_INVALID",
             Self::UnknownProject => "PROJECT_NOT_FOUND",
@@ -69,11 +65,6 @@ impl From<std::io::Error> for IdeError {
 impl From<serde_json::Error> for IdeError {
     fn from(e: serde_json::Error) -> Self {
         Self::Format(e)
-    }
-}
-impl From<WorkspaceError> for IdeError {
-    fn from(e: WorkspaceError) -> Self {
-        Self::Core(e)
     }
 }
 
@@ -181,8 +172,8 @@ fn read_catalog(path: &Path) -> Result<BTreeMap<String, ProjectRecord>, IdeError
     Ok(records)
 }
 
-/// Atomic replacement of host-only metadata. This is NOT Lu's tool-effect
-/// journal; executable effects must use the existing Lu Core durable journal.
+/// Atomic replacement of host-only metadata. This is NOT an executable effect
+/// journal; future Lu integration must use a separately authenticated bridge.
 fn save_catalog(path: &Path, records: &BTreeMap<String, ProjectRecord>) -> Result<(), IdeError> {
     if let Ok(meta) = fs::symlink_metadata(path) {
         if !meta.file_type().is_file() {
@@ -218,48 +209,24 @@ fn save_catalog(path: &Path, records: &BTreeMap<String, ProjectRecord>) -> Resul
     result
 }
 
-/// Host-side project catalog. Construct from trusted app-data catalog location.
+/// Standalone project metadata catalog. This only records the user's selected
+/// directories and currently opened project IDs; it creates no execution rights.
+/// Lock ordering: records -> active for every operation that uses both.
 pub struct IdeWorkspaceRegistry {
-    core: WorkspaceHost,
     catalog: PathBuf,
     records: Mutex<BTreeMap<String, ProjectRecord>>,
+    active: Mutex<BTreeSet<String>>,
 }
 
 impl IdeWorkspaceRegistry {
-    /// Convenience constructor for isolated host instances and tests.
-    /// The installed Lu desktop MUST call open_with_registry with its shared
-    /// native tool registry; no alternate authorization engine is introduced.
+    /// The catalog is located under this app's native user-data directory,
+    /// selected by the trusted desktop process rather than the WebView.
     pub fn open(catalog: PathBuf) -> Result<Self, IdeError> {
-        Self::open_with_registry(catalog, NativeToolRegistry::new())
-    }
-
-    /// Registers the IDE workspace in Lu's existing host-owned registry.
-    /// This registers metadata only; it never starts workers or grants tools.
-    pub fn open_with_registry(
-        catalog: PathBuf,
-        registry: NativeToolRegistry,
-    ) -> Result<Self, IdeError> {
         let records = read_catalog(&catalog)?;
-        let core = WorkspaceHost::new(registry);
-        core.register_workspace(
-            ModuleManifest {
-                id: MODULE_ID.into(),
-                display_name: "Lu IDE".into(),
-                contract_version: CORE_CONTRACT_VERSION,
-                kind: ModuleKind::Workspace,
-                tools: Vec::new(), // Task 1 registers NO executable tools.
-                panels: vec![PanelContribution {
-                    id: "lu.ide.explorer".into(),
-                    title: "IDE Explorer".into(),
-                }],
-                workflows: Vec::new(),
-            },
-            Vec::new(),
-        )?;
         Ok(Self {
-            core,
             catalog,
             records: Mutex::new(records),
+            active: Mutex::new(BTreeSet::new()),
         })
     }
 
@@ -289,12 +256,12 @@ impl IdeWorkspaceRegistry {
             id: id.clone(),
             root,
         };
-        self.core.open_instance(MODULE_ID, &id)?;
         let mut next = records.clone();
         next.insert(id.clone(), record.clone());
-        if let Err(e) = save_catalog(&self.catalog, &next) {
-            let _ = self.core.close_instance(&id);
-            return Err(e);
+        save_catalog(&self.catalog, &next)?;
+        let mut active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
+        if !active.insert(id.clone()) {
+            return Err(IdeError::AlreadyActive);
         }
         *records = next;
         Ok(Some(proto::ProjectView {
@@ -316,7 +283,10 @@ impl IdeWorkspaceRegistry {
         if safe_root(&record.root)? != record.root {
             return Err(IdeError::InvalidSelection);
         }
-        self.core.open_instance(MODULE_ID, id)?;
+        let mut active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
+        if !active.insert(id.to_owned()) {
+            return Err(IdeError::AlreadyActive);
+        }
         Ok(proto::ProjectView {
             project_id: id.to_owned(),
             display_name: record.display_name.clone(),
@@ -330,18 +300,16 @@ impl IdeWorkspaceRegistry {
         if !records.contains_key(id) {
             return Err(IdeError::UnknownProject);
         }
-        self.core.close_instance(id)?;
+        let mut active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
+        if !active.remove(id) {
+            return Err(IdeError::NotActive);
+        }
         Ok(())
     }
 
     pub fn projects(&self) -> Result<Vec<proto::ProjectView>, IdeError> {
         let records = self.records.lock().map_err(|_| IdeError::Poisoned)?;
-        let active: BTreeSet<String> = self
-            .core
-            .instances()?
-            .into_iter()
-            .map(|instance| instance.id)
-            .collect();
+        let active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
         Ok(records
             .values()
             .map(|r| proto::ProjectView {
