@@ -404,18 +404,24 @@ impl TaskStore {
     /// Deliveries are at-least-once until explicitly acknowledged.
     pub fn pending_terminal_notices(&self,limit:usize)
         ->Result<Vec<TaskTerminalNotice>,TaskStoreError>{
-        if limit==0||limit>128{return Err(TaskStoreError::InvalidProgress);}
+        self.pending_terminal_notices_after(0,limit)
+    }
+    /// Cursor pagination keeps more recent terminal events reachable even
+    /// when many earlier events await model acknowledgement.
+    pub fn pending_terminal_notices_after(&self,after:i64,limit:usize)
+        ->Result<Vec<TaskTerminalNotice>,TaskStoreError>{
+        if after<0||limit==0||limit>128{return Err(TaskStoreError::InvalidProgress);}
         let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
         let mut stmt=connection.prepare(
             "SELECT e.sequence,e.task_id,t.workspace_id,e.event,e.progress,e.detail
              FROM lu_task_events e JOIN lu_tasks t ON t.task_id=e.task_id
              LEFT JOIN lu_task_notice_ack a ON a.event_sequence=e.sequence
-             WHERE a.event_sequence IS NULL
+             WHERE a.event_sequence IS NULL AND e.sequence>?1
                AND e.event IN ('COMPLETED','FAILED','INTERRUPTED','CANCELLED','TIMED_OUT')
                AND t.workspace_id IS NOT NULL
-             ORDER BY e.sequence ASC LIMIT ?1"
+             ORDER BY e.sequence ASC LIMIT ?2"
         )?;
-        let rows=stmt.query_map(params![limit as i64],|row|{
+        let rows=stmt.query_map(params![after,limit as i64],|row|{
             Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,
                 row.get::<_,String>(2)?,row.get::<_,String>(3)?,
                 row.get::<_,u8>(4)?,row.get::<_,String>(5)?))
