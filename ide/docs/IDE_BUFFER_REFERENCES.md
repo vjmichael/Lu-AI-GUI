@@ -32,7 +32,7 @@ A draft reference therefore contains:
 4. Choose **Copy draft reference**. The IDE copies a structured, session-scoped reference with a full draft SHA-256. It does **not** copy or publish the source text, call an AI model, run a process, or save a file.
 5. The reference resolver can use a current identity and CodeMirror state to reject stale ranges. References saved outside the session are informational and cannot be assumed actionable on reopening.
 
-The selection and line map use CodeMirror's UTF-16 indexing; byte offsets are independently calculated using UTF-8. The reader refuses ranges spanning more than 120 lines or more than 32 KiB of selected UTF-8 text.
+The selection and line map use CodeMirror's UTF-16 indexing (with each line break counting as one editor position); byte offsets are independently calculated using UTF-8 over CodeMirror `state.sliceDoc()`, which preserves configured CRLF serialization. Uniform CRLF/CR files retain their line separators using `EditorState.lineSeparator`. Mixed-line-ending documents remain a separate editor preservation limitation and must not be confused with saved disk bytes. The reader refuses ranges spanning more than 120 lines or more than 32 KiB of selected UTF-8 text.
 
 ## Boundary guarantees
 
