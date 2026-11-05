@@ -52,7 +52,7 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 - **Stage in editor** is a separate explicit action requiring an approved current proposal. It rechecks all file revisions, confirms before replacing dirty tabs and loads proposed text into CodeMirror **unsaved editor drafts**. Only the existing human **Save** action writes disk bytes, one file at a time.
 - The entire inbox is memory-only and disappears on restart; no untrusted proposal data goes into the project catalog. The `claimedProducer` field remains unverified and no Lu bridge exists.
 - Tests include import/review, stale source, wrong digest, duplicate decision, incomplete preview, rejected staging, approved staging without writes, and volatile reset. Details and Windows manual acceptance: [R3.5 proposal inbox](docs/IDE_07_R35_PROPOSAL_INBOX.md).
-- **R3.5 native CI and Windows interactive acceptance must be checked against the exact new SHA; do not inherit R3.4 smoke results.** All builds remain standalone; Lu Core unchanged.
+- **R3.5 tests passed:** [Windows/Linux/frontend native matrix 42063329884](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063329884) passed: 50 Linux Rust tests, 16 frontend tests, Windows Tauri compile. [Optimized Windows release 42063134868](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063134868) passed. The EXE and portable ZIP hashes are recorded in [R3.5 acceptance](docs/IDE_07_R35_PROPOSAL_INBOX.md). **R3.5 user Windows interactive smoke test remains pending.** All builds remain standalone; Lu Core unchanged.
 
 ## Source map
 
