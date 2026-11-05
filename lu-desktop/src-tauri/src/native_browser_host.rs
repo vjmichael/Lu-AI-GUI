@@ -339,8 +339,19 @@ impl lu_core::native_browser_tool::BrowserTaskRunner for DesktopBrowserHost {
             session.take();
             return Err("Browser worker or Chromium has terminated".into());
         }
-        worker.execute(operation,arguments)
-            .map_err(|e|format!("Browser supervisor declined operation: {e:?}"))
+        let response=worker.execute(operation,arguments)
+            .map_err(|e|format!("Browser supervisor declined operation: {e:?}"))?;
+        // A worker-level rejection is not a successful research source.
+        // Keep the error category, never interpolate untrusted page text.
+        if response.get("ok").and_then(serde_json::Value::as_bool)!=Some(true){
+            let code=response.pointer("/error/code")
+                .and_then(serde_json::Value::as_str)
+                .filter(|s|s.len()<=64&&s.bytes().all(|b|
+                    b.is_ascii_uppercase()||b==b'_'))
+                .unwrap_or("BROWSER_REJECTED");
+            return Err(format!("Browser worker rejected operation: {code}"));
+        }
+        Ok(response)
     }
 }
 impl Drop for DesktopBrowserHost {
