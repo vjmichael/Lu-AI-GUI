@@ -746,13 +746,25 @@ function App() {
                   <p>{item.description}</p>
                   <dl>
                     <dt>Operation</dt><dd><code>{item.id}</code> · v{item.version}</dd>
-                    <dt>Request schema</dt>
-                    <dd><code>{JSON.stringify(item.requestSchema)}</code></dd>
-                    <dt>Result schema</dt>
-                    <dd><code>{JSON.stringify(item.resultSchema)}</code></dd>
-                    <dt>Errors</dt><dd><code>{JSON.stringify(item.errorSchema)}</code></dd>
+                    <dt>Inputs</dt>
+                    <dd>{Object.entries(item.requestSchema.properties ?? {}).length
+                      ? Object.entries(item.requestSchema.properties).map(([name, type]) =>
+                        name + ': ' + (type.type ?? type.$ref?.split('/').pop() ?? 'union')).join(', ')
+                      : 'None'}</dd>
+                    <dt>Result</dt>
+                    <dd><code>{item.resultSchema.$ref?.split('/').pop() ??
+                      item.resultSchema.type ?? 'Typed result'}</code></dd>
                     <dt>Before use</dt><dd>{item.precondition}</dd>
                     <dt>Evidence</dt><dd>{item.evidence}</dd>
+                  </dl>
+                  <details className="capabilitySchemaDetails">
+                    <summary>Inspect full typed request, result and error schemas</summary>
+                    <pre>{JSON.stringify({
+                      request: item.requestSchema, result: item.resultSchema,
+                      error: item.errorSchema,
+                    }, null, 2)}</pre>
+                  </details>
+                  <dl style={{display:'none'}}>
                   </dl>
                 </article>)}
             </div>}
