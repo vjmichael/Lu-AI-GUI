@@ -22,6 +22,12 @@
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
+## Continuity enforcement state
+
+- PCP-01 docs and CI PR gate added on this branch. **Not yet verified by a passing workflow run.**
+- To prevent bypass on protected branches, set the `continuity` job as a required status check (repository administrator operation); simply adding a workflow does not make a check mandatory for merges.
+- CI compares the full PR base-to-head diff and requires substantive entries in `ide/CHANGELOG.md` and `ide/PROJECT_STATE.md` for source changes. This is syntactic enforcement; reviewers must check accuracy of evidence and artifacts.
+
 ## Work to resume next
 
 1. **Reconcile branch and local copies**: identify all checkouts / `Delivered` folders / generated Windows packages, capture source roots, hashes and output locations. This step requires access to the relevant local filesystem; no remote connector can certify unseen files.
