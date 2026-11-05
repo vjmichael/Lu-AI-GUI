@@ -16,6 +16,7 @@ pub enum TaskState {
     Completed,
     Failed,
     Interrupted,
+    Cancelled,
 }
 impl TaskState {
     fn as_str(self) -> &'static str {
@@ -26,6 +27,7 @@ impl TaskState {
             Self::Completed => "COMPLETED",
             Self::Failed => "FAILED",
             Self::Interrupted => "INTERRUPTED",
+            Self::Cancelled => "CANCELLED",
         }
     }
     fn parse(state: &str) -> Option<Self> {
@@ -36,6 +38,7 @@ impl TaskState {
             "COMPLETED" => Some(Self::Completed),
             "FAILED" => Some(Self::Failed),
             "INTERRUPTED" => Some(Self::Interrupted),
+            "CANCELLED" => Some(Self::Cancelled),
             _ => None,
         }
     }
@@ -107,7 +110,7 @@ impl TaskStore {
                 task_id TEXT PRIMARY KEY NOT NULL,
                 workspace_id TEXT,
                 state TEXT NOT NULL CHECK(state IN
-                    ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED')),
+                    ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED','CANCELLED')),
                 progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100),
                 detail TEXT NOT NULL,
                 output_folder TEXT,
@@ -126,6 +129,38 @@ impl TaskStore {
              CREATE INDEX IF NOT EXISTS lu_task_events_task
              ON lu_task_events(task_id, sequence);",
         )?;
+        // Existing desktop profiles may have the older CHECK schema.
+        // Rebuild atomically with every row preserved before enabling
+        // cancellation; SQLite cannot ALTER an existing CHECK constraint.
+        let schema:String=connection.query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='lu_tasks'",
+            [],|row|row.get(0)
+        )?;
+        if !schema.contains("'CANCELLED'"){
+            let tx=connection.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE lu_tasks_migrating (
+                    task_id TEXT PRIMARY KEY NOT NULL,
+                    workspace_id TEXT,
+                    state TEXT NOT NULL CHECK(state IN
+                       ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED','CANCELLED')),
+                    progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100),
+                    detail TEXT NOT NULL,
+                    output_folder TEXT,
+                    checkpoint BLOB NOT NULL,
+                    last_heartbeat TEXT,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 INSERT INTO lu_tasks_migrating
+                 (task_id,workspace_id,state,progress,detail,output_folder,checkpoint,
+                  last_heartbeat,updated_at)
+                 SELECT task_id,workspace_id,state,progress,detail,output_folder,checkpoint,
+                        last_heartbeat,updated_at FROM lu_tasks;
+                 DROP TABLE lu_tasks;
+                 ALTER TABLE lu_tasks_migrating RENAME TO lu_tasks;"
+            )?;
+            tx.commit()?;
+        }
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -187,6 +222,30 @@ impl TaskStore {
 
     pub fn fail(&self, task_id: &str) -> Result<(), TaskStoreError> {
         self.transition(task_id, "RUNNING", TaskState::Failed)
+    }
+    /// A supervisor may record verified cancellation only *after* its owned
+    /// process has been terminated and reaped. This is not a UI-only flag.
+    pub fn cancelled(&self,task_id:&str)->Result<(),TaskStoreError>{
+        let mut connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=connection.transaction()?;
+        let changed=tx.execute(
+            "UPDATE lu_tasks SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP
+             WHERE task_id=?1 AND state IN ('PENDING','RUNNING','PAUSED')",
+            params![task_id],
+        )?;
+        if changed!=1{return Err(TaskStoreError::InvalidTransition);}
+        tx.execute(
+            "INSERT INTO lu_task_events(task_id,event,progress,detail)
+             SELECT task_id,'CANCELLED',progress,detail FROM lu_tasks WHERE task_id=?1",
+            params![task_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+    /// When launch never occurred, move a PENDING intent to FAILED rather
+    /// than leaving a ghost job in the operator's task pane.
+    pub fn fail_pending(&self,task_id:&str)->Result<(),TaskStoreError>{
+        self.transition(task_id,"PENDING",TaskState::Failed)
     }
 
     fn transition(&self, task_id: &str, from: &str, to: TaskState) -> Result<(), TaskStoreError> {
@@ -328,7 +387,7 @@ impl TaskStore {
              ORDER BY CASE state
                WHEN 'RUNNING' THEN 0 WHEN 'PENDING' THEN 1
                WHEN 'PAUSED' THEN 2 WHEN 'INTERRUPTED' THEN 3
-               WHEN 'FAILED' THEN 4 ELSE 5 END,
+               WHEN 'FAILED' THEN 4 WHEN 'CANCELLED' THEN 5 ELSE 6 END,
                updated_at DESC,task_id ASC LIMIT ?1"
         )?;
         let rows=stmt.query_map(params![limit as i64],|row|{
@@ -435,5 +494,57 @@ mod dashboard_tests{
         let list=store.dashboard(10).unwrap();
         assert_eq!(list[0].state,TaskState::Interrupted);
         assert_eq!(store.reconcile_interrupted().unwrap(),0);
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests{
+    use super::*;
+    #[test]
+    fn cancellation_is_terminal_audited_and_does_not_replay(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("task",Some("media"),None).unwrap();
+        store.start("task").unwrap();
+        store.checkpoint("task",45,"Decoding",b"checkpoint").unwrap();
+        store.cancelled("task").unwrap();
+        assert_eq!(store.get("task").unwrap().unwrap().state,TaskState::Cancelled);
+        let events=store.events_after("task","media",0,30).unwrap();
+        assert_eq!(events.last().unwrap().event,"CANCELLED");
+        assert!(store.cancelled("task").is_err());
+        assert!(store.resume("task").is_err());
+        assert_eq!(store.reconcile_interrupted().unwrap(),0);
+    }
+    #[test]
+    fn cancelled_schema_upgrades_old_profile_without_losing_history(){
+        let dir=std::env::temp_dir().join(format!(
+            "lu-bg-schema-{}-{:?}",std::process::id(),std::thread::current().id()
+        ));
+        let _=std::fs::remove_file(&dir);
+        {
+            let db=Connection::open(&dir).unwrap();
+            db.execute_batch("CREATE TABLE lu_tasks (
+                task_id TEXT PRIMARY KEY NOT NULL,
+                workspace_id TEXT,
+                state TEXT NOT NULL CHECK(state IN
+                    ('PENDING','RUNNING','PAUSED','COMPLETED','FAILED','INTERRUPTED')),
+                progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100),
+                detail TEXT NOT NULL,
+                output_folder TEXT,
+                checkpoint BLOB NOT NULL,
+                last_heartbeat TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+                INSERT INTO lu_tasks(task_id,workspace_id,state,progress,detail,checkpoint)
+                VALUES('old','w','RUNNING',20,'retained',x'6162');").unwrap();
+        }
+        let store=TaskStore::open(&dir).unwrap();
+        let before=store.get("old").unwrap().unwrap();
+        assert_eq!(before.progress,20);
+        assert_eq!(before.checkpoint,b"ab");
+        store.cancelled("old").unwrap();
+        assert_eq!(store.get("old").unwrap().unwrap().state,TaskState::Cancelled);
+        drop(store);
+        let _=std::fs::remove_file(&dir);
+        let _=std::fs::remove_file(dir.with_extension("sqlite-wal"));
+        let _=std::fs::remove_file(dir.with_extension("sqlite-shm"));
     }
 }
