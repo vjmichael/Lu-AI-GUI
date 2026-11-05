@@ -41,7 +41,7 @@ fn native_git_status_reads_real_dirty_and_untracked_work_without_running_git() {
     assert_eq!(clean.modified_or_staged_count, 0);
     assert_eq!(clean.untracked_count, 0);
 
-    fs::write(project.join("tracked.txt"), b"modified\n").unwrap();
+    fs::write(project.join("tracked.txt"), b"modified file content with a new size\n").unwrap();
     fs::write(project.join("untracked.txt"), b"new\n").unwrap();
     let dirty = registry.inspect_git_worktree(&id);
     let baseline_delta = snapshots.compare(&registry, &id).unwrap();
