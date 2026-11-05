@@ -172,7 +172,21 @@ fn parse_document(xml:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
             },
             Event::Text(e)=>{
                 if in_text&&del_depth==0{
-                    out.push_str(&e.unescape().map_err(|_|bad())?);
+                    out.push_str(&e.decode().map_err(|_|bad())?);
+                }
+            },
+            Event::GeneralRef(reference)=>{
+                if in_text&&del_depth==0 {
+                    if let Some(ch)=reference.resolve_char_ref().map_err(|_|bad())? {
+                        out.push(ch);
+                    }else{
+                        // OOXML may only use XML's predefined named
+                        // entities here: custom DTD entities are forbidden.
+                        let decoded=reference.decode().map_err(|_|bad())?;
+                        let value=quick_xml::escape::resolve_xml_entity(&decoded)
+                            .ok_or_else(bad)?;
+                        out.push_str(value);
+                    }
                 }
             },
             Event::CData(e)=>{
