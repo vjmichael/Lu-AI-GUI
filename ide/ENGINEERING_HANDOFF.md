@@ -19,6 +19,10 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## Wave A2 capability registry continuation
+
+`host/src/capabilities.rs` holds the versioned static host-authored catalog of **existing** project, source, save and proposal commands. `ide_list_capabilities` returns that metadata only, with no dispatch or permission grant. The UI now has a Capabilities directory, and a static frontend test compares all registered native operation names against catalog descriptors. Do **not** list future Git, LSP, package or worker actions as available until real guarded implementations exist. No Lu connection. Native exact-head CI and physical Windows acceptance must be checked before closing Wave A2.
+
 ## Latest Wave A1 continuation
 
 The source editor now exposes a `Copy source reference` button that verifies an exact saved revision/line through the native span operation, then copies a structured reference. It blocks dirty tabs rather than claiming an unsaved edit is part of a saved revision. `CodeEditor` tracks cursor line by key/mouse. Linux CI formatter failure from run 42074135705 was addressed in code; fresh exact-head CI and physical Windows clipboard acceptance are open. No Lu bridge activated.
