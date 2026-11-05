@@ -232,8 +232,8 @@ function App() {
       return true;
     } catch (error) {
       if (String(error).includes('FILE_CHANGED_ON_DISK')) {
-        setProblem('FILE_CHANGED_ON_DISK: This file changed outside Lu IDE. ' +
-          'Your unsaved edits are preserved in the tab. Compare them before reloading.');
+        setProblem('File changed on disk. This file was updated outside Lu IDE. ' +
+          'Your unsaved edits are preserved in the tab. Compare the changes before reloading.');
       } else {
         setProblem(String(error));
       }
@@ -259,7 +259,7 @@ function App() {
       });
     } catch (error) {
       setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
-        ? 'FILE_CHANGED_ON_DISK: The source changed outside Lu IDE. Your draft remains intact.'
+        ? 'File changed on disk. The source was updated outside Lu IDE. Your unsaved edits are safe.'
         : String(error));
     } finally { setReviewPending(false); }
   }
