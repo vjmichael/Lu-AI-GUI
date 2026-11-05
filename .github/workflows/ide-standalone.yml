@@ -1,0 +1,74 @@
+name: Standalone Lu IDE acceptance
+
+on:
+  push:
+    branches: [ide/workspace-development]
+    paths:
+      - "ide/**"
+      - ".github/workflows/ide-standalone.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lu-ide-standalone-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.88 and formatter
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup component add rustfmt --toolchain 1.88.0
+          rustup default 1.88.0
+      - name: Test independent IDE host
+        run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Verify IDE host formatting
+        run: cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ide/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install frontend dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Build and test standalone frontend
+        run: npm run check
+
+  desktop-windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ide/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Rust 1.88
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup component add rustfmt --toolchain 1.88.0
+          rustup default 1.88.0
+      - name: Prepare standalone frontend
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Check Windows standalone Rust host
+        run: cargo test --manifest-path ../host/Cargo.toml --all-targets
+      - name: Check standalone Tauri desktop without Lu
+        run: cargo check --manifest-path src-tauri/Cargo.toml
