@@ -1,0 +1,33 @@
+name: IDE workspace host Linux acceptance
+
+on:
+  push:
+    branches:
+      - ide/workspace-development
+    paths:
+      - "ide/host/**"
+      - "ide/proto/**"
+      - "src-tauri/lu-core/**"
+      - ".github/workflows/ide-workspace-linux.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ide-host-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+      - name: Rust 1.88 toolchain
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+      - name: Compile and run IDE host native Linux tests
+        run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Check IDE host formatting
+        run: cargo fmt --manifest-path ide/host/Cargo.toml -- --check
