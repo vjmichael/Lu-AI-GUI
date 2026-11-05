@@ -1,45 +1,37 @@
-# LU IDE — IDE-01B Native Host Implementation Evidence
+# IDE-01B — Standalone Rust host and desktop shell evidence
 
 **Date:** 2026-11-04  
-**Canonical roadmap:** [Design Document, Section 6, Task 1](IDE_WORKSPACE_DESIGN.md)  
 **Branch:** `ide/workspace-development`  
-**Status:** **PARTIAL IMPLEMENTATION — native crate compiled and Linux tests passed; Tauri host and authenticated user-origin integration still pending.**
+**Canonical Task:** [Task 1 in the design document](IDE_WORKSPACE_DESIGN.md)  
+**Architecture decision:** [ADR-0001](ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md)
 
-## Implemented in branch
+## Scope after the standalone pivot
 
-- `ide/host/Cargo.toml`, `ide/host/build.rs` — independent Rust 1.88 IDE host crate depending on *existing* `lu-core`, with generated prost IPC.
-- `ide/proto/lu/ide/v1/workspace.proto` — versioned and path-free UI lifecycle operations; host-minted project identifiers and bounded metadata replies. No tool execution, filesystem paths, grants, credentials or shell commands in protocol.
-- `ide/host/src/lib.rs` — Lu Core `WorkspaceHost` registration for `lu.ide` with zero executable tools; native directory picker trait; canonical project root admission; bounded persistent metadata catalog; close/reopen/list; rollback on catalog write failure.
-- `ide/host/src/wire.rs` — canonical Protobuf decoding/encoding, version checks, size limits, malformed-frame denial and stable error codes.
-- `ide/host/tests/lifecycle.rs` — project lifecycle, restart, cancel, missing/changed root, metadata rollback, symlink and malformed UI request tests.
-- `.github/workflows/ide-workspace-linux.yml` — Rust 1.88 Linux native compilation, tests and rustfmt gate. Read-only contents token; superseded workflow runs are cancelled.
+IDE-01B is now an **independent IDE executable** foundation, not an embedded component of Lu Desktop.
 
-## Verified evidence
+- `ide/host`: Rust workspace metadata catalog, trusted native picker trait, host-generated project IDs, close/reopen/list lifecycle; **no link to `lu-core`**.
+- `ide/proto/lu/ide/v1/workspace.proto`: local IDE lifecycle Protobuf request/reply; IDs and display names only; no filesystem paths, commands or grants.
+- `ide/app/src-tauri`: independent Tauri binary `lu-ide-desktop`, own application-data catalog, native OS folder chooser and four project lifecycle commands.
+- `ide/app/web`: standalone React project-management UI with disconnected Lu status and disabled not-yet-implemented IDE sections.
+- `.github/workflows/ide-standalone.yml`: Linux Rust host tests and rustfmt, frontend build/tests, Windows Rust host tests and Tauri desktop `cargo check`.
 
-- **Latest Linux run:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41961852933
-- Source revision checked: `e8ef9f081f64358243e0e3c23e502b2f6670162b`.
-- Runner: GitHub-hosted Ubuntu Linux using Rust 1.88.
-- **9 of 9 Rust tests passed** (2 protobuf unit tests, 7 lifecycle integration tests, including shared Lu Core registry injection).
-- **Rust formatting check passed** on committed source.
-- This is a real Linux CI runner, **not** the user's separate local Linux development machine.
-- Native tests verify registration and protocol behavior; they are **not** proof of runtime sandboxing.
+## Evidence and status
 
-## What this does not yet prove
+- Earlier independent host Linux Rust native tests: https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41963552544 (successful).
+- First standalone front-end and Linux host test run: https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41963904882 (those portions succeeded; Windows web build script initially failed when invoking Unix-style `esbuild`, corrected in commit `47c7e44674c77cdd545f0881daf909c93f0cb8e1`).
+- Current standalone integration CI: https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml (check exact run status, do not infer acceptance from a prior commit).
+- No claim of real installed Windows launch, manual native picker acceptance, sandbox protection or working Lu connection. These remain open.
 
-1. No Tauri command is connected to a real OS directory picker; `NativeDirectoryPicker` currently has test implementations only.
-2. No trusted conversation/UI origin is attached to an executable IDE action. The protocol is not an authority grant, and Task 1's full origin integration is still open.
-3. Catalog root metadata is not a durable filesystem capability; any future file access requires Lu host-brokered root handles and revalidation.
-4. No LSP, debugger, shell, build, tests, Git mutations, package installer or worker execution is enabled.
-5. No Windows compile or physical Windows acceptance has been run for this IDE crate.
-6. The standalone IDE crate has no checked-in lockfile yet; dependencies should be locked or brought under a common workspace lock before release.
-7. No integration into the running Lu Tauri/React app or installed build has been tested.
+## What was superseded
 
-## Next engineering work within Task 1
+The earlier experiments integrating `ide_workspace.rs`, a panel, and shared `WorkspaceHost` directly into `lu-desktop` have been rolled back on this branch. No IDE feature is injected into the Lu app. The `lu-core` native registry is not a dependency of the standalone host.
 
-- Implement a trusted Tauri-native folder-selection adapter and IDE registry state with no path supplied by WebView.
-- Bind lifecycle requests to authenticated UI/session origin and, where model-originated actions are introduced later, to Lu's persisted user-turn verifier and capability policy.
-- Establish backward-compatible registration/recovery and tests against real Lu app-data storage.
-- Add Windows compile check and record local Linux acceptance where available; verify Lu Core and IDE workspace version compatibility.
-- Only after Task 1 acceptance proceed to Task 2's real Linux sandbox, restricted workers and adversarial process tests.
+## Acceptance still required
 
-**Security note:** Passing lifecycle tests does not certify arbitrary package managers, code execution or native extension loading. Execution remains disabled in this component.
+1. Native Linux and Windows Rust host unit/integration test success for current revision.
+2. Frontend build/tests and Windows standalone Tauri `cargo check` for current revision.
+3. Native installed-app launch and folder picker response, including cancel, close, reopen, and restart; independent checks on Windows and Linux.
+4. Secure, versioned Lu bridge discovery/authentication, only when both sides have a stable contract. No implicit privilege sharing.
+5. Before running any project code, separately pass Task 2 OS sandbox and hostile-project tests.
+
+**Status:** Task 1 in progress; no executable tools enabled.
