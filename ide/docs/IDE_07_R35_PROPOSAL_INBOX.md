@@ -12,8 +12,8 @@ Lu should eventually be able to use its standalone IDE to help code. Its model-g
 
 - `ide/host/src/inbox.rs`: native `IdeProposalInbox` with at most **16** entries; random opaque IDs; SHA-256 digest of each validated proposal; `pending`, `approved_for_staging`, or `rejected` status; list, review, digest-bound decision, and dismissal.
 - `ide/host/src/proposal.rs`: strict schema v1 parser, 4-file maximum, size and traversal restrictions, unknown command/auto-apply fields rejected.
-- `ide/app/src-tauri/src/lib.rs`: five explicit native commands to import, list, review, decide and dismiss. **No apply, run, build, terminal, or shell command** is added.
-- `ide/app/web/main.jsx`: a new **Proposals** section. Human can prepare a local JSON draft from an open editor tab, import an untrusted proposal, inspect all file diffs, explicitly approve it **for staging only**, reject it, or dismiss it.
+- `ide/app/src-tauri/src/lib.rs`: six explicit native commands to import, list, review, decide, stage (editor data only), and dismiss. **No apply, run, build, terminal, or shell command** is added.
+- `ide/app/web/main.jsx`: a new **Proposals** section. Human can prepare a local JSON draft from an open editor tab, import untrusted proposal text, inspect all file diffs, approve for staging only, reject, or dismiss it. **Stage in editor** subsequently loads all approved files into CodeMirror as unsaved drafts after revalidation and confirmation before replacing unsaved tabs.
 - `ide/app/web/styles.css`: separate inbox and per-file diff review UI.
 
 ### Critical security distinction
@@ -26,7 +26,7 @@ The queue is deliberately **memory-only**; restarting the IDE discards all propo
 
 ### Current limits
 
-- The inbox's **Approve for staging** does not load edits into editor tabs and never writes to disk. That is a future separate, explicitly authorized stage after conflict/review integration. Avoid implying that reviewed proposals are already applied.
+- **Approve for staging** records a review decision only; a separate **Stage in editor** action can load approved proposals as unsaved CodeMirror drafts. Neither action writes disk files. Each source is previewed/revalidated before staging, and an existing dirty tab requires explicit confirmation before replacement. Future Lu-generated apply authority and atomic multi-file writes remain separate gates.
 - Multi-file *review* is implemented, but multi-file atomic apply is **not**. Avoid claiming rollback or all-or-nothing editing.
 - Manual JSON entry is an alpha/test UI until authenticated Lu messaging exists; the `claimedProducer` string is not proof of origin.
 - In-process review decision is not OS-level human authentication, and no executable worker or package-manager scope exists.
@@ -40,6 +40,7 @@ The queue is deliberately **memory-only**; restarting the IDE discards all propo
 - Reject wrong proposal digest and replay of a decision.
 - Prevent approval of truncated/incomplete review.
 - Verify proposal inbox disappears on restart and source bodies do not enter the project catalog.
+- Verify approved staging returns source text without writes; rejected proposals, digest mismatches and externally changed sources refuse staging.
 
 `ide/app/tests/standalone.test.mjs`:
 - Five native inbox commands are explicitly allowlisted.
@@ -51,7 +52,7 @@ The queue is deliberately **memory-only**; restarting the IDE discards all propo
 1. Open the disposable source project in Lu IDE, edit a file without saving, then switch to **Proposals**.
 2. Click **Prepare from open editor**. Review the generated JSON containing the correct project ID, relative path, expected disk revision and proposed text.
 3. Click **Add to review inbox**. See a pending proposal. Verify the on-disk source remains unchanged.
-4. Open **Review**, inspect the added/removed lines, click **Approve for staging only**, and confirm the dialog. Verify the proposal changes status but **the file on disk is still original**.
+4. Open **Review**, inspect the added/removed lines, click **Approve for staging only**, and confirm. Verify status changes but disk bytes remain unchanged. Then click **Stage in editor** and verify source tabs show **Unsaved** until a separate manual **Save**. Test that unsaved preexisting tabs require confirmation before replacement.
 5. Repeat with a fresh draft, choose **Reject** instead. No file changes.
 6. Modify the source externally after import, then try to approve a stale proposal. The IDE must refuse approval and preserve external disk contents.
 7. Import an oversized/truncated proposal and check the reviewed-approval button remains unavailable.
