@@ -1209,6 +1209,59 @@ async fn lu_background_scan_file(
     }).await.map_err(|_|"Native media picker unavailable")?
 }
 
+/// User-selected local document. This is a native operator file-picker
+/// action, never a model-provided pathname or general filesystem tool grant.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct ReaderDocumentView{
+    name:String,
+    format:String,
+    text:String,
+    bytes_read:u64,
+    truncated:bool,
+}
+#[tauri::command]
+async fn lu_reader_pick_document(app:AppHandle)
+    ->Result<Option<ReaderDocumentView>,String>{
+    tauri::async_runtime::spawn_blocking(move||{
+        let selected=app.dialog().file()
+            .add_filter("Reader documents",&[
+                "docx","txt","md","markdown","csv","tsv","json",
+                "jsonl","log","py","rs","js","jsx","ts","tsx",
+                "xml","html","htm","yaml","yml","toml","ini","sql",
+            ]).blocking_pick_file();
+        let Some(file)=selected else{return Ok(None)};
+        let path=file.into_path().map_err(|_|"Invalid document picker result")?;
+        let meta=fs::symlink_metadata(&path)
+            .map_err(|_|"Cannot inspect selected document")?;
+        const MAX_PICK_BYTES:u64=8*1024*1024;
+        if !meta.file_type().is_file()||meta.len()==0
+            ||meta.len()>MAX_PICK_BYTES{
+            return Err("Selected document must be a regular file up to 8 MB".into());
+        }
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{
+                return Err("Document reparse points are not supported".into());
+            }
+        }
+        let name=path.file_name().and_then(|n|n.to_str())
+            .ok_or("Invalid document filename")?.to_owned();
+        let mut input=File::open(&path).map_err(|_|"Cannot open selected document")?;
+        let mut bytes=Vec::new();
+        input.by_ref().take(MAX_PICK_BYTES+1).read_to_end(&mut bytes)
+            .map_err(|_|"Cannot read selected document")?;
+        if bytes.len() as u64>MAX_PICK_BYTES{
+            return Err("Document size changed during reading".into());
+        }
+        let reader=lu_core::native_reader::read_text_bytes(&name,&bytes,6_000)
+            .map_err(|e|format!("Reader cannot extract this document: {e:?}"))?;
+        Ok(Some(ReaderDocumentView{
+            name,format:format!("{:?}",reader.format),text:reader.text,
+            bytes_read:bytes.len() as u64,truncated:reader.truncated,
+        }))
+    }).await.map_err(|_|"Native Reader worker unavailable")?
+}
 #[tauri::command]
 fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
     ->Result<Vec<BackgroundTaskView>,String>{
@@ -1369,6 +1422,7 @@ pub fn run() {
             lu_history,
             lu_chats,
             lu_background_tasks,
+            lu_reader_pick_document,
             lu_background_auto_continue,
             lu_background_scan_file,
             lu_background_cancel,
