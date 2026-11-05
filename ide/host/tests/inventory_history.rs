@@ -38,6 +38,11 @@ fn restart_recovers_baseline_and_identifies_changed_and_missing_artifacts() {
     let different = snapshots.compare(&registry, &id).unwrap();
     assert_eq!(different.entries.len(), 1);
     assert_eq!(different.entries[0].status, "changed_bytes");
+    let second = snapshots.capture(&registry, &id).unwrap();
+    assert_eq!(second.artifacts.len(), 1);
+    let after_second_capture = snapshots.compare(&registry, &id).unwrap();
+    assert_eq!(after_second_capture.baseline_count, 2);
+    assert_eq!(after_second_capture.entries[0].status, "matched_bytes");
 
     drop(snapshots);
     let snapshots = InventorySnapshots::new(root.join("evidence-baselines.json")).unwrap();
