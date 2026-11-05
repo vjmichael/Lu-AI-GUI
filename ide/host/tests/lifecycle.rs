@@ -227,8 +227,14 @@ fn unregister_open_project_removes_only_registration_and_never_files() {
     assert!(registry.projects().unwrap()[0].active);
     registry.unregister(&id).unwrap();
     assert!(registry.projects().unwrap().is_empty());
-    assert!(matches!(registry.reopen(&id), Err(IdeError::UnknownProject)));
-    assert!(matches!(registry.unregister(&id), Err(IdeError::UnknownProject)));
+    assert!(matches!(
+        registry.reopen(&id),
+        Err(IdeError::UnknownProject)
+    ));
+    assert!(matches!(
+        registry.unregister(&id),
+        Err(IdeError::UnknownProject)
+    ));
     assert_eq!(
         fs::read(project.join("keep_me.txt")).unwrap(),
         b"precious project data"
@@ -238,7 +244,10 @@ fn unregister_open_project_removes_only_registration_and_never_files() {
     let registry = IdeWorkspaceRegistry::open(catalog).unwrap();
     assert!(registry.projects().unwrap().is_empty());
     picker.selected = Some(project.clone());
-    assert!(registry.register_from_native_picker(&mut picker).unwrap().is_some());
+    assert!(registry
+        .register_from_native_picker(&mut picker)
+        .unwrap()
+        .is_some());
     assert!(project.join("keep_me.txt").exists());
     fs::remove_dir_all(root).unwrap();
 }
