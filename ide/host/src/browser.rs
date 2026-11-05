@@ -256,7 +256,7 @@ impl IdeWorkspaceRegistry {
         if metadata.len() > MAX_TEXT_BYTES {
             return Err(BrowserError::TooLarge);
         }
-        let mut file = parent.open(&leaf)?;
+        let file = parent.open(&leaf)?;
         let actual = file.metadata()?;
         if !actual.is_file() {
             return Err(BrowserError::NotFile);
