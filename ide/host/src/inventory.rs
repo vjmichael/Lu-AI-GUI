@@ -16,6 +16,7 @@ use crate::{
 
 const MAX_CANDIDATES: usize = 80;
 const MAX_HASH_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_SCAN_HASH_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_GIT_REF_BYTES: u64 = 1024;
 const DISCOVERY_DIRS: [&str; 15] = [
     "Delivered",
@@ -169,13 +170,13 @@ fn category(path: &str) -> &'static str {
     }
 }
 
-fn verify_file(folder: &Dir, name: &str, path: String) -> Option<EvidenceFile> {
+fn verify_file(folder: &Dir, name: &str, path: String, remaining: &mut u64) -> Option<EvidenceFile> {
     let metadata = folder.symlink_metadata(name).ok()?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return None;
     }
     let size = metadata.len();
-    let (sha, status) = if size <= MAX_HASH_BYTES {
+    let (sha, status) = if size <= MAX_HASH_BYTES && size <= *remaining {
         let mut file = folder.open(name).ok()?;
         let mut hasher = Sha256::new();
         let mut buffer = [0u8; 65536];
@@ -194,10 +195,11 @@ fn verify_file(folder: &Dir, name: &str, path: String) -> Option<EvidenceFile> {
         if total != size {
             (None, "changed_during_probe")
         } else {
+            *remaining -= total;
             (Some(format!("{:x}", hasher.finalize())), "sha256_observed")
         }
     } else {
-        (None, "over_digest_limit")
+        (None, if size > MAX_HASH_BYTES { "over_digest_limit" } else { "scan_budget_exhausted" })
     };
     Some(EvidenceFile {
         relative_path: path.clone(),
@@ -222,6 +224,7 @@ impl IdeWorkspaceRegistry {
         let git = git_snapshot(&root);
         let mut files = Vec::new();
         let mut complete = true;
+        let mut remaining_digest_bytes = MAX_SCAN_HASH_BYTES;
         for name in DISCOVERY_DIRS {
             let Ok(parts) = validate_relative(name, false) else {
                 continue;
@@ -252,7 +255,7 @@ impl IdeWorkspaceRegistry {
                     break;
                 }
                 let path = format!("{name}/{filename}");
-                if let Some(item) = verify_file(&folder, &filename, path) {
+                if let Some(item) = verify_file(&folder, &filename, path, &mut remaining_digest_bytes) {
                     files.push(item);
                 }
             }
