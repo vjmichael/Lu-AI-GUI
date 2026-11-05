@@ -165,6 +165,17 @@ impl BackgroundProcessSupervisor {
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
     }
+    /// Local operator action: derive ownership from the host's active map,
+    /// never from a model/WebView-supplied workspace or process identifier.
+    pub fn cancel_operator_owned(&self,task_id:&str)
+        ->Result<(),BackgroundProcessError>{
+        let workspace={
+            let workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
+            workers.get(task_id).ok_or(BackgroundProcessError::NotOwned)?
+                .workspace_id.clone()
+        };
+        self.cancel_owned(task_id,&workspace)
+    }
     pub fn can_cancel(&self,task_id:&str)->bool{
         self.owned.lock().is_ok_and(|owned|owned.contains_key(task_id))
     }
