@@ -1,33 +1,45 @@
-# Lu IDE Workspace — dedicated development branch
+# Lu IDE — standalone development application
 
-Status: **architecture and security design**, not an integrated release.
-Branch: `ide/workspace-development` in `vjmichael/Lu-AI-GUI`.
-This branch contains the IDE DLC only; it must not silently change core runtime or accepted alpha artifacts.
+**Status:** Standalone desktop alpha foundation; editor, package manager, sandboxed execution and Lu bridge are not implemented.  
+**Repo:** `vjmichael/Lu-AI-GUI` · **IDE-only branch:** `ide/workspace-development`
 
-## Mission
-A native, Lu-assisted IDE for opening software projects; reading/editing code; navigating symbols; reviewing diffs; running builds and tests; debugging; managing project toolchains/dependencies; and using advanced local/remote Git. Long term: develop and validate Lu itself in disposable development instances.
+Lu IDE is its **own desktop application**, with its own process, project registry and native UI. It belongs in the same Git repository as Lu Core for convenience, but it **does not load inside Lu Desktop**, does not link against `lu-core`, and does not require Lu to run.
 
-## Repository and ownership
-- Keep IDE under `ide/` in this same repository; do not create another GitHub repository.
-- Lu Core owns model inference, memory, trusted human-turn identity, authority grants, durable journal, worker supervision and basic Git primitives.
-- IDE owns source/editor UI, language adapters, debugging, package-manager orchestration, project build/test recipes, advanced Git operations and GitHub/gh integration.
-- Reuse existing Rust/Protobuf host-worker contracts with versioned explicit extension API; **do not** create an alternate authorization or execution bypass.
-- IDE branch is not a process-security boundary. Future merges into main require compatibility and acceptance evidence.
-- Linux is the primary development/test environment for the initial IDE; Windows parity is required before release. GitHub is repository storage and optional CI, not the only test environment.
+The future interface to Lu will be an optional, authenticated, versioned **out-of-process Protobuf bridge**. There is **no active bridge yet**; the IDE clearly displays the disconnected state.
 
-## Planned modules
-`ide/ui`: file tree, editor, panes, diagnostics, symbol search, source-control, testing, package center, task console.
-`ide/host`: Rust workspace registry, path-safe file operations, authenticated tool dispatch, workspace trust, manager adapter registry, git operations.
-`ide/proto`: versioned IDE service and event contracts (host-minted IDs, no privileged raw paths from WebView).
-`ide/workers`: LSP/DAP/build/test/package/git worker lifecycle under host supervision and OS isolation.
-`ide/tests`: unit, integration, adversarial security and Windows/Linux native acceptance.
+## Workspace ownership
 
-## Scope boundaries
-- Prototype IDE-01A was described as a standalone Python Git read/inspection prototype; it is **not claimed to be integrated** into Lu or uploaded to this branch.
-- Core basic Git stays in Lu Core. Interactive rebase, cherry-pick, conflict resolution, bisect, worktrees, PR/CI review and credential-aware remote Git stay in IDE.
-- No automatic running of repository-defined scripts, extensions, package lifecycle hooks, debug adapters or AI-written commands upon opening.
-- No Docker prerequisite or multi-installer requirement for end users. Host tools may be detected; provisioning needs explicit consent. Optional higher-isolation VM can be used for risky code.
+- `ide/app`: standalone Tauri 2 and React desktop, project UI and trusted OS directory picker.
+- `ide/host`: standalone Rust project metadata/lifecycle registry, no code execution.
+- `ide/proto`: path-free, size-bounded versioned IDE lifecycle contracts.
+- `ide/docs`: consolidated design, stage list, acceptance and decision records.
+- `ide/workers`: future OS-restricted build, package, language-server and debugger workers.
 
-**Canonical design and task list:** [IDE Workspace consolidated design — Section 6 (eight recommended implementations)](docs/IDE_WORKSPACE_DESIGN.md). This document is the source of truth for stage ordering and acceptance. The older engineering gate identifiers are subordinate acceptance checks.
+`lu-desktop` and `src-tauri/lu-core` are **not dependencies** of the standalone IDE. Basic Git stays in Lu Core; advanced Git is an IDE responsibility. The IDE will later coordinate Python uv, C/C++ vcpkg/Conan, Cargo and other native managers behind one controlled interface.
 
-See [architecture](docs/ARCHITECTURE.md), [package manager](docs/PACKAGE_ORCHESTRATOR.md), [security](docs/SECURITY_MODEL.md), and [gates](docs/IMPLEMENTATION_GATES.md).
+## Development / tests
+
+From the repository root:
+
+```sh
+cargo test --manifest-path ide/host/Cargo.toml --all-targets
+cd ide/app
+npm install
+npm run check
+# Once the platform's Tauri development prerequisites are available:
+npm run tauri:dev
+```
+
+`ide/app` is designed to run on Linux and Windows. GitHub CI is a portable build check; real installed-app launch, native picker tests and hostile-code sandbox acceptance are separately required. Opening a project runs **no scripts**. There are no executable project workers in this phase.
+
+## Documents
+
+- **Canonical design and eight-task list:** [IDE Workspace design, Section 6](docs/IDE_WORKSPACE_DESIGN.md).
+- **Architecture decision:** [Standalone executable + optional Lu bridge](docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md).
+- [System architecture](docs/ARCHITECTURE.md)
+- [Master package manager](docs/PACKAGE_ORCHESTRATOR.md)
+- [Security model](docs/SECURITY_MODEL.md)
+- [Task acceptance subgates](docs/IMPLEMENTATION_GATES.md)
+- [IDE-01B evidence](docs/IDE_01B_IMPLEMENTATION_EVIDENCE.md)
+
+This branch contains experimental code only. No Lu Core integration or production security guarantee is implied.
