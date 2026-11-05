@@ -78,11 +78,12 @@ async fn ide_read_git_status(
     project_id: String,
 ) -> Result<lu_ide_workspace::git_status::GitWorktreeInspection, String> {
     let registry = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        Ok(registry.inspect_git_worktree(&project_id))
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_worktree(&project_id)
     })
     .await
-    .map_err(|_| "GIT_STATUS_UNAVAILABLE".to_owned())?
+    .map_err(|_| "GIT_STATUS_UNAVAILABLE".to_owned())?;
+    Ok(status)
 }
 
 /// Bounded, source-revisioned continuity from the trusted local IDE profile.
