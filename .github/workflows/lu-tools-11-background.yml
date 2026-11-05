@@ -36,6 +36,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib cancellation_tests -- --nocapture
       - name: Run real owned-process lifecycle and cancellation tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process -- --nocapture
+      - name: Verify all terminal outcomes and durable notification replay
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib terminal_notification_tests -- --nocapture
       - name: Verify background pane UI contract
         run: node --test lu-desktop/tests/background-pane.test.mjs
       - name: Install frontend dependencies
