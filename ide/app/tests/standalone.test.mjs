@@ -21,11 +21,12 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   assert.ok(calls.includes('ide_list_source_directory'));
   assert.ok(calls.includes('ide_preview_source_file'));
   assert.ok(calls.includes('ide_save_source_file'));
+  assert.ok(calls.includes('ide_unregister_project'));
 
   assert.deepEqual([...new Set(calls)].sort(), [
     'ide_choose_project', 'ide_close_project', 'ide_list_projects',
     'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
-    'ide_save_source_file'
+    'ide_save_source_file', 'ide_unregister_project'
   ]);
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -108,4 +109,23 @@ test('CodeMirror stylesheet uses Tauri nonce without weakening CSP', () => {
   assert.match(config.app.security.csp, /style-src 'self'/);
   assert.doesNotMatch(config.app.security.csp, /unsafe-inline|unsafe-eval/);
   assert.doesNotMatch(config.app.security.csp, /script-src[^;]*unsafe/);
+});
+
+test('Remove from IDE only delists catalog and confirms disk folders are retained', () => {
+  const ui = read('../web/main.jsx');
+  const native = read('../src-tauri/src/lib.rs');
+  const host = read('../../host/src/lib.rs');
+  const schema = read('../../proto/lu/ide/v1/workspace.proto');
+  assert.match(ui, /Remove from IDE<\/button>/);
+  assert.match(ui, /window\.confirm\(message\)/);
+  assert.match(ui, /original project folder and ALL files on disk will be kept/);
+  assert.match(ui, /Unsaved edits in its open tabs will be discarded/);
+  assert.match(ui, /operation\('ide_unregister_project'/);
+  assert.match(native, /fn ide_unregister_project/);
+  assert.match(native, /\.unregister\(&project_id\)/);
+  assert.match(host, /pub fn unregister\(&self, id: &str\)/);
+  assert.match(host, /save_catalog\(&self\.catalog, &next\)\?/);
+  assert.match(schema, /UnregisterProject unregister = 7/);
+  const method = host.split('pub fn unregister(&self, id: &str)')[1].split('pub fn projects(&self)')[0];
+  assert.doesNotMatch(method, /remove_dir|remove_file|remove_dir_all|Command::new/);
 });
