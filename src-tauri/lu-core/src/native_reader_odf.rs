@@ -33,6 +33,13 @@ fn text_event(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
         _=>Ok(None),
     }
 }
+fn repeat_count(e:&BytesStart<'_>,key:&[u8])->Result<usize,ReaderFailure>{
+    match attr(e,key){
+        None=>Ok(1),
+        Some(s)=>s.parse::<usize>().ok().filter(|n|*n>0)
+            .ok_or_else(bad),
+    }
+}
 fn colname(mut col:usize)->Result<String,ReaderFailure>{
     if col==0||col>16_384{return Err(ReaderFailure::TooLarge)}
     let mut letters=Vec::new();
@@ -76,8 +83,7 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
             Event::End(e) if e.name().as_ref()==b"table:table"=>inside=false,
             Event::Start(e) if e.name().as_ref()==b"table:table-row"&&inside=>{
                 row+=1;col=0;row_had_content=false;
-                row_repeat=attr(e,b"table:number-rows-repeated")
-                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                row_repeat=repeat_count(e,b"table:number-rows-repeated")?;
                 if row_repeat==0||row.checked_add(row_repeat-1)
                     .is_none_or(|n|n>1_048_576){return Err(ReaderFailure::TooLarge)}
             },
@@ -89,8 +95,7 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
                 row_repeat=1;
             },
             Event::Empty(e) if e.name().as_ref()==b"table:table-row"&&inside=>{
-                let repeated=attr(e,b"table:number-rows-repeated")
-                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                let repeated=repeat_count(e,b"table:number-rows-repeated")?;
                 if repeated==0||row.checked_add(repeated)
                     .is_none_or(|n|n>1_048_576){return Err(ReaderFailure::TooLarge)}
                 row+=repeated;col=0;
@@ -99,15 +104,13 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
                 col+=1;cell_active=true;value.clear();
                 cached=attr(e,b"office:value").unwrap_or_default();
                 formula=attr(e,b"table:formula").unwrap_or_default();
-                cell_repeat=attr(e,b"table:number-columns-repeated")
-                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                cell_repeat=repeat_count(e,b"table:number-columns-repeated")?;
                 if cell_repeat==0||col.checked_add(cell_repeat-1)
                     .is_none_or(|n|n>16_384){return Err(ReaderFailure::TooLarge)}
             },
             Event::Empty(e) if (e.name().as_ref()==b"table:table-cell"||
                 e.name().as_ref()==b"table:covered-table-cell")&&inside=>{
-                let repeated=attr(e,b"table:number-columns-repeated")
-                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                let repeated=repeat_count(e,b"table:number-columns-repeated")?;
                 if repeated==0||col.checked_add(repeated)
                     .is_none_or(|n|n>16_384){return Err(ReaderFailure::TooLarge)}
                 col+=repeated;
