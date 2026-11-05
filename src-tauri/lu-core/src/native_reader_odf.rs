@@ -58,6 +58,7 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
     let mut reader=Reader::from_reader(xml);
     let mut table=String::new();let mut inside=false;let mut found=false;
     let mut row=0usize;let mut col=0usize;
+    let mut row_repeat=1usize;let mut cell_repeat=1usize;let mut row_had_content=false;
     let mut cell_active=false;let mut value=String::new();
     let mut cached=String::new();let mut formula=String::new();
     let mut text_depth=0usize;let mut out=String::new();let mut events=0usize;
@@ -74,14 +75,42 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
             },
             Event::End(e) if e.name().as_ref()==b"table:table"=>inside=false,
             Event::Start(e) if e.name().as_ref()==b"table:table-row"&&inside=>{
-                row+=1;col=0;
-                if row>1_048_576{return Err(ReaderFailure::TooLarge)}
+                row+=1;col=0;row_had_content=false;
+                row_repeat=attr(e,b"table:number-rows-repeated")
+                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                if row_repeat==0||row.checked_add(row_repeat-1)
+                    .is_none_or(|n|n>1_048_576){return Err(ReaderFailure::TooLarge)}
+            },
+            Event::End(e) if e.name().as_ref()==b"table:table-row"&&inside=>{
+                if row_had_content && row_repeat>1 {
+                    return Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Ods));
+                }
+                row+=row_repeat-1;
+                row_repeat=1;
+            },
+            Event::Empty(e) if e.name().as_ref()==b"table:table-row"&&inside=>{
+                let repeated=attr(e,b"table:number-rows-repeated")
+                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                if repeated==0||row.checked_add(repeated)
+                    .is_none_or(|n|n>1_048_576){return Err(ReaderFailure::TooLarge)}
+                row+=repeated;col=0;
             },
             Event::Start(e) if e.name().as_ref()==b"table:table-cell"&&inside=>{
                 col+=1;cell_active=true;value.clear();
                 cached=attr(e,b"office:value").unwrap_or_default();
                 formula=attr(e,b"table:formula").unwrap_or_default();
-                if col>16_384{return Err(ReaderFailure::TooLarge)}
+                cell_repeat=attr(e,b"table:number-columns-repeated")
+                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                if cell_repeat==0||col.checked_add(cell_repeat-1)
+                    .is_none_or(|n|n>16_384){return Err(ReaderFailure::TooLarge)}
+            },
+            Event::Empty(e) if (e.name().as_ref()==b"table:table-cell"||
+                e.name().as_ref()==b"table:covered-table-cell")&&inside=>{
+                let repeated=attr(e,b"table:number-columns-repeated")
+                    .map(|s|s.parse::<usize>().ok()).flatten().unwrap_or(1);
+                if repeated==0||col.checked_add(repeated)
+                    .is_none_or(|n|n>16_384){return Err(ReaderFailure::TooLarge)}
+                col+=repeated;
             },
             Event::Start(e) if e.name().as_ref()==b"text:p"&&cell_active=>{
                 text_depth+=1;
@@ -94,13 +123,19 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
                 let display=value.trim_end_matches('\n');
                 let display=if display.is_empty(){&cached}else{display};
                 if !display.is_empty()||!formula.is_empty(){
-                    out.push_str(&format!("{}{}={}",colname(col)?,row,
-                        display.replace('\n'," ")));
-                    if !formula.is_empty(){
-                        out.push_str(&format!(" [formula: {}; cached value may be stale]",formula))
+                    row_had_content=true;
+                    if cell_repeat>128{return Err(ReaderFailure::TooLarge)}
+                    for i in 0..cell_repeat {
+                        out.push_str(&format!("{}{}={}",colname(col+i)?,row,
+                            display.replace('\n'," ")));
+                        if !formula.is_empty(){
+                            out.push_str(&format!(" [formula: {}; cached value may be stale]",formula))
+                        }
+                        out.push('\n');
                     }
-                    out.push('\n');
                 }
+                col+=cell_repeat-1;
+                cell_repeat=1;
                 cell_active=false;text_depth=0;
             },
             Event::DocType(_)=>return Err(bad()),
@@ -220,6 +255,19 @@ mod tests{
         assert!(extracted.text.contains("of:=SUM"));
         assert_eq!(read_ods(&file,500,Some("Missing")),
             Err(ReaderFailure::SelectorNotFound));
+    }
+    #[test]
+    fn ods_repeated_blank_cells_and_rows_keep_real_coordinates(){
+        let file=zip(&[
+            ("mimetype","application/vnd.oasis.opendocument.spreadsheet"),
+            ("content.xml",r#"<office:document-content><table:table table:name="Coordinates">
+            <table:table-row table:number-rows-repeated="3"/>
+            <table:table-row><table:table-cell table:number-columns-repeated="5"/>
+            <table:table-cell office:value="14"><text:p>Fourteen</text:p></table:table-cell>
+            </table:table-row></table:table></office:document-content>"#),
+        ]);
+        let extracted=read_ods(&file,500,Some("Coordinates")).unwrap();
+        assert!(extracted.text.contains("F4=Fourteen"));
     }
     #[test]
     fn reads_odp_slide_text_and_slide_selector(){
