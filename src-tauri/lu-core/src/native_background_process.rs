@@ -301,7 +301,8 @@ mod tests{
         assert_eq!(record.detail,format!("SHA-256: {digest}"));
         assert!(store.events_after("media123","other",0,12).unwrap().is_empty());
         let events=store.events_after("media123","media",0,12).unwrap();
-        assert_eq!(events.len(),4);
+        // One durable START event plus four worker checkpoints.
+        assert_eq!(events.len(),5);
         assert_eq!(events.last().unwrap().progress,100);
     }
     #[test]
