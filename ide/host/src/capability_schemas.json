@@ -444,6 +444,185 @@
         "summary",
         "edits"
       ]
+    },
+    "DevelopmentEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "observedUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "project.register",
+            "project.open",
+            "project.close",
+            "project.unregister",
+            "source.save"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "const": "observed_host_success"
+        },
+        "sourceRevision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "observedUnixSeconds",
+        "projectId",
+        "operation",
+        "outcome",
+        "sourceRevision",
+        "summary"
+      ]
+    },
+    "ContextDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "present_unverified",
+            "missing",
+            "unverifiable"
+          ]
+        },
+        "trust": {
+          "type": "string",
+          "const": "untrusted_project_text"
+        },
+        "sourceRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "byteLength": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excerptTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "relativePath",
+        "availability",
+        "trust",
+        "sourceRevision",
+        "byteLength",
+        "excerpt",
+        "excerptTruncated"
+      ]
+    },
+    "ProjectContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "local_standalone_host"
+        },
+        "remoteGitState": {
+          "type": "string",
+          "const": "not_inspected"
+        },
+        "localArtifacts": {
+          "type": "string",
+          "const": "not_inspected"
+        },
+        "currentToolchainReadiness": {
+          "type": "string",
+          "const": "not_verified"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DevelopmentEvent"
+          },
+          "maxItems": 40
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextDocument"
+          },
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "projectName",
+        "source",
+        "remoteGitState",
+        "localArtifacts",
+        "currentToolchainReadiness",
+        "events",
+        "documents"
+      ]
     }
   },
   "operations": {
@@ -811,6 +990,24 @@
         "items": {
           "$ref": "#/$defs/ProposalSummary"
         }
+      }
+    },
+    "continuity.read": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectContext"
       }
     }
   }
