@@ -68,9 +68,11 @@ export function createEditorState(text, filename, onChange) {
   });
 }
 
-export function CodeEditor({ editorState, tabIdentity, findRequest }) {
+export function CodeEditor({ editorState, tabIdentity, findRequest, onCursorLine }) {
   const container = useRef(null);
   const viewRef = useRef(null);
+  const cursorCallback = useRef(onCursorLine);
+  cursorCallback.current = onCursorLine;
   useLayoutEffect(() => {
     if (!container.current) return;
     const view = new EditorView({
@@ -78,7 +80,18 @@ export function CodeEditor({ editorState, tabIdentity, findRequest }) {
       parent: container.current,
     });
     viewRef.current = view;
-    return () => { viewRef.current = null; view.destroy(); };
+    const reportLine = () => {
+      cursorCallback.current?.(view.state.doc.lineAt(view.state.selection.main.head).number);
+    };
+    view.dom.addEventListener('keyup', reportLine);
+    view.dom.addEventListener('mouseup', reportLine);
+    reportLine();
+    return () => {
+      view.dom.removeEventListener('keyup', reportLine);
+      view.dom.removeEventListener('mouseup', reportLine);
+      viewRef.current = null;
+      view.destroy();
+    };
     // tabIdentity is the mount boundary; typing does not recreate EditorView.
   }, [tabIdentity]);
   useEffect(() => {
