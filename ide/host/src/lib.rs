@@ -312,6 +312,31 @@ impl IdeWorkspaceRegistry {
         Ok(())
     }
 
+    /// Remove a project from the IDE's registered catalog. This is *never*
+    /// filesystem deletion: no project root or file is opened, removed or
+    /// moved here. The user may re-register the directory with the OS picker.
+    ///
+    /// Serialize with IDE saves so an in-progress write finishes before its
+    /// registration is revoked. Persistent catalog replacement must succeed
+    /// before the live record and active state are changed.
+    pub fn unregister(&self, id: &str) -> Result<(), IdeError> {
+        if !wire::valid_project_id(id) {
+            return Err(IdeError::UnknownProject);
+        }
+        let _save = self.save_lock.lock().map_err(|_| IdeError::Poisoned)?;
+        let mut records = self.records.lock().map_err(|_| IdeError::Poisoned)?;
+        if !records.contains_key(id) {
+            return Err(IdeError::UnknownProject);
+        }
+        let mut active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
+        let mut next = records.clone();
+        next.remove(id);
+        save_catalog(&self.catalog, &next)?;
+        *records = next;
+        active.remove(id);
+        Ok(())
+    }
+
     pub fn projects(&self) -> Result<Vec<proto::ProjectView>, IdeError> {
         let records = self.records.lock().map_err(|_| IdeError::Poisoned)?;
         let active = self.active.lock().map_err(|_| IdeError::Poisoned)?;
@@ -348,6 +373,10 @@ impl IdeWorkspaceRegistry {
                 }),
             Operation::Reopen(op) => self.reopen(&op.project_id).map(Outcome::Project),
             Operation::Close(op) => self.close(&op.project_id).and_then(|()| {
+                self.projects()
+                    .map(|projects| Outcome::Projects(proto::ProjectList { projects }))
+            }),
+            Operation::Unregister(op) => self.unregister(&op.project_id).and_then(|()| {
                 self.projects()
                     .map(|projects| Outcome::Projects(proto::ProjectList { projects }))
             }),
