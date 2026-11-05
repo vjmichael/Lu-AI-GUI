@@ -19,6 +19,10 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## Latest Wave A1 continuation
+
+The source editor now exposes a `Copy source reference` button that verifies an exact saved revision/line through the native span operation, then copies a structured reference. It blocks dirty tabs rather than claiming an unsaved edit is part of a saved revision. `CodeEditor` tracks cursor line by key/mouse. Linux CI formatter failure from run 42074135705 was addressed in code; fresh exact-head CI and physical Windows clipboard acceptance are open. No Lu bridge activated.
+
 ## Wave A1 saved-source identity (new code, unverified)
 
 `host/src/source_span.rs` adds `read_source_span` backed by the existing capability-safe text preview. The standalone Tauri command `ide_read_source_span` requires project ID, relative path, exact saved file revision and bounded one-based line range; returns line text, UTF-8 byte offsets and line-ending identity. Rejects stale disk SHA and invalid ranges. `host/tests/source_span.rs` contains native regression cases. **This source has not yet passed native CI or Windows installed acceptance, and cannot reference unsaved editor buffers.** No Lu bridge activated. See [current state](PROJECT_STATE.md).
