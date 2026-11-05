@@ -28,6 +28,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # This repository deliberately tests an exact frozen source tree.
+          # GitHub's synthetic PR merge commit changes tracked blobs without
+          # regenerating that lock; verify the true PR head instead.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -89,6 +93,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # This repository deliberately tests an exact frozen source tree.
+          # GitHub's synthetic PR merge commit changes tracked blobs without
+          # regenerating that lock; verify the true PR head instead.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -144,6 +152,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # This repository deliberately tests an exact frozen source tree.
+          # GitHub's synthetic PR merge commit changes tracked blobs without
+          # regenerating that lock; verify the true PR head instead.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
