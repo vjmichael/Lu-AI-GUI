@@ -764,8 +764,6 @@ function App() {
                       error: item.errorSchema,
                     }, null, 2)}</pre>
                   </details>
-                  <dl style={{display:'none'}}>
-                  </dl>
                 </article>)}
             </div>}
           </section>
