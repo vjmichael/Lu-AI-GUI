@@ -6,7 +6,10 @@
 //! Failure to assign is fatal and requires killing/reaping the child. A normal
 //! std::process::Command spawn still has a small pre-assignment race; therefore
 //! this is defense-in-depth, NOT proof of fully race-free process containment.
-#![cfg(windows)]
+
+#[cfg(windows)]
+mod windows_owned {
+
 
 use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, ptr};
 
@@ -194,5 +197,28 @@ impl Drop for Job {
         // SAFETY: unique owner; KILL_ON_JOB_CLOSE terminates any remaining
         // processes assigned to this job when its final handle is closed.
         unsafe { CloseHandle(self.0) };
+    }
+}
+
+}
+#[cfg(windows)]
+pub use windows_owned::Job;
+
+#[cfg(unix)]
+pub mod unix_owned {
+    use std::{io,process::Child};
+    // POSIX killpg via negative PID. The calling host MUST have spawned this
+    // child with CommandExt::process_group(0); never accept a model PID here.
+    unsafe extern "C" {fn kill(pid:i32, signal:i32)->i32;}
+    const SIGKILL:i32=9;
+    pub fn kill_owned_group(child:&Child)->io::Result<()>{
+        let pid=i32::try_from(child.id()).map_err(|_|io::Error::other("invalid worker pid"))?;
+        if pid<=1 {return Err(io::Error::other("invalid worker process group"));}
+        // SAFETY: negative pid targets only the independently created process
+        // group whose leader is our trusted Child, not an arbitrary model PID.
+        if unsafe{kill(-pid,SIGKILL)}!=0{
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 }
