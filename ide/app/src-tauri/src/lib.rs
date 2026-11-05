@@ -153,6 +153,27 @@ async fn ide_list_source_directory(
     .map_err(|_| "BROWSER_TASK_UNAVAILABLE".to_string())?
 }
 
+/// Read a precisely identified span from a previously observed saved revision.
+/// No AI bridge, shell execution, file mutation or implicit authority.
+#[tauri::command]
+async fn ide_read_source_span(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+    expected_revision: String,
+    first_line: usize,
+    last_line: usize,
+) -> Result<lu_ide_workspace::source_span::SourceSpan, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.read_source_span(&project_id, &relative_path,
+            &expected_revision, first_line, last_line)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "SOURCE_SPAN_TASK_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_preview_source_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -313,6 +334,7 @@ pub fn run() {
             ide_unregister_project,
             ide_list_source_directory,
             ide_preview_source_file,
+            ide_read_source_span,
             ide_review_source_change,
             ide_save_source_file,
             ide_import_proposal,
