@@ -47,10 +47,13 @@ fn persists_host_observations_and_reloads_with_source_revision() {
     assert_eq!(context.events[0].source_revision.as_deref(), Some(before.revision.as_str()));
     assert_eq!(context.documents[0].source_revision.as_deref(), Some(before.revision.as_str()));
     assert_eq!(context.documents[0].trust, "untrusted_project_text");
-    assert_eq!(context.remote_git_state, "not_inspected");
-    assert_eq!(context.local_artifacts, "not_inspected");
+    assert_eq!(context.remote_git_state, "not_queried");
+    assert_eq!(context.local_artifacts, "bounded_scan");
     assert_eq!(context.current_toolchain_readiness, "not_verified");
     assert_eq!(context.documents[1].availability, "missing");
+    assert!(!context.inventory.execution_performed);
+    assert_eq!(context.inventory.git.live_remote, "not_queried");
+    assert_eq!(context.inventory.git.working_tree, "not_verified");
     assert_eq!(context.documents[4].relative_path, "ide/PROJECT_STATE.md");
     assert_eq!(context.documents[4].availability, "present_unverified");
     fs::remove_dir_all(root).unwrap();
@@ -100,5 +103,41 @@ fn refuses_symlinked_ledger() {
         DevelopmentLedger::new(root.join("redirect.jsonl")),
         Err(ContinuityError::Corrupt)
     ));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn inventory_finds_real_delivered_and_benchmark_bytes_without_execution() {
+    let (root, registry, id, ledger) = fixture();
+    let project = root.join("project");
+    fs::create_dir_all(project.join("Delivered")).unwrap();
+    fs::create_dir_all(project.join("benchmarks")).unwrap();
+    fs::write(project.join("Delivered/alpha.exe"), b"safe fixture only").unwrap();
+    fs::write(project.join("benchmarks/latency.json"), b"{\"latency\":12}").unwrap();
+    let snapshot = ledger.context(&registry, &id).unwrap();
+    assert_eq!(snapshot.inventory.files.len(), 2);
+    let installer = snapshot.inventory.files.iter()
+        .find(|file| file.relative_path == "Delivered/alpha.exe").unwrap();
+    assert_eq!(installer.category, "installer_or_executable");
+    assert_eq!(installer.digest_status, "sha256_observed");
+    assert_eq!(installer.sha256.as_ref().unwrap().len(), 64);
+    assert_eq!(installer.state, "present_unverified");
+    assert!(snapshot.inventory.files.iter().any(|file|
+        file.category == "benchmark_or_result_evidence"));
+    assert!(!snapshot.inventory.execution_performed);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn artifact_scanning_skips_symlink_escape() {
+    use std::os::unix::fs::symlink;
+    let (root, registry, id, ledger) = fixture();
+    let project = root.join("project");
+    fs::create_dir_all(project.join("Delivered")).unwrap();
+    fs::write(root.join("outside.exe"), b"secret").unwrap();
+    symlink(root.join("outside.exe"), project.join("Delivered/out.exe")).unwrap();
+    let snapshot = ledger.context(&registry, &id).unwrap();
+    assert!(snapshot.inventory.files.iter().all(|file| file.relative_path != "Delivered/out.exe"));
     fs::remove_dir_all(root).unwrap();
 }
