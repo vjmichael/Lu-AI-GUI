@@ -128,6 +128,41 @@ independently blocked by the unavailable verified llama-server executable
 resource in GitHub source. Do not substitute a dummy engine or claim an
 installed GUI acceptance pass from the harness alone.
 
+## Scope decision: model-directed, host-supervised generic jobs (2026-11-04)
+
+**Dedicated audio/video analysis engines are explicitly deferred.** Lu is a
+general background-work manager, not an audio/video algorithm library. The
+multimodal model or a future DLC chooses an approved media-specific algorithm,
+but only Lu's trusted host starts and supervises the worker. The current
+file-integrity scan remains the first real lifecycle acceptance fixture, not
+the basis for implementing custom transcription, video decoding, or analysis.
+
+The next essential gate is **an AI-accessible, strictly authorized typed task
+control API**, discoverable in the model's tool catalog:
+- `background.start`: propose an *approved job kind* and typed parameters.
+  Host validates task-specific authority, input scope, resource budgets, and
+  a registered worker capability. It returns a durable task ID promptly.
+  Never accept arbitrary executable paths, raw shell commands, process IDs,
+  or client-asserted permissions.
+- `background.status`: exact-workspace scoped query (already implemented),
+  without transferring checkpoints or host-private paths.
+- `background.cancel`: request cancellation of an authorized, owned task;
+  Lu carries out process-tree termination and durable receipt, optionally
+  obtaining separate user approval. The model does not send OS signals.
+- `background.result`: retrieve a bounded output manifest and trusted
+  artifact references after completion, never an unlimited prompt payload.
+
+Models must not poll heartbeat/progress or perpetually call `status`.
+Lu watches processes independently and durably queues completion, failure,
+interruption and decision-required events. A host-owned delivery cursor and
+acknowledgement ensure notices are delivered to the right conversation without
+silent loss or uncontrolled duplicate model turns. No event grants permissions.
+
+Model-facing tool schemas, scoped grants and host-minted IDs let a multimodal
+AI use long tasks **without writing a custom media analyzer into Lu Core**.
+The worker may run for hours while the LLM is unloaded; results are stored
+outside the context window and loaded in bounded portions when requested.
+
 ## Acceptance scenarios
 
 1. 40-minute synthetic media task progresses with LLM unloaded; zero model
