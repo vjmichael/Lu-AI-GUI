@@ -22,13 +22,19 @@ pub enum WireError {
 fn valid_correlation(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
-        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 pub fn valid_project_id(id: &str) -> bool {
-    let Some(suffix) = id.strip_prefix("ide-") else { return false; };
+    let Some(suffix) = id.strip_prefix("ide-") else {
+        return false;
+    };
     suffix.len() == 32
-        && suffix.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && suffix
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn validate_request(msg: &proto::WorkspaceRequest) -> Result<(), WireError> {
@@ -39,7 +45,11 @@ fn validate_request(msg: &proto::WorkspaceRequest) -> Result<(), WireError> {
     if !valid_correlation(&msg.request_id) {
         return Err(WireError::Invalid("request ID"));
     }
-    match msg.operation.as_ref().ok_or(WireError::Invalid("operation"))? {
+    match msg
+        .operation
+        .as_ref()
+        .ok_or(WireError::Invalid("operation"))?
+    {
         Operation::List(_) | Operation::Select(_) => {}
         Operation::Reopen(op) if valid_project_id(&op.project_id) => {}
         Operation::Close(op) if valid_project_id(&op.project_id) => {}
@@ -77,7 +87,10 @@ fn validate_reply(msg: &proto::WorkspaceReply) -> Result<(), WireError> {
         Outcome::Failure(err) => {
             if err.code.is_empty()
                 || err.code.len() > 64
-                || !err.code.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+                || !err
+                    .code
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b == b'_')
             {
                 return Err(WireError::Invalid("failure code"));
             }
@@ -88,29 +101,41 @@ fn validate_reply(msg: &proto::WorkspaceReply) -> Result<(), WireError> {
 
 pub fn encode_request(request: &proto::WorkspaceRequest) -> Result<Vec<u8>, WireError> {
     validate_request(request)?;
-    if request.encoded_len() > MAX_REQUEST_BYTES { return Err(WireError::Oversized); }
+    if request.encoded_len() > MAX_REQUEST_BYTES {
+        return Err(WireError::Oversized);
+    }
     Ok(request.encode_to_vec())
 }
 
 pub fn decode_request(bytes: &[u8]) -> Result<proto::WorkspaceRequest, WireError> {
-    if bytes.is_empty() || bytes.len() > MAX_REQUEST_BYTES { return Err(WireError::Oversized); }
+    if bytes.is_empty() || bytes.len() > MAX_REQUEST_BYTES {
+        return Err(WireError::Oversized);
+    }
     let value = proto::WorkspaceRequest::decode(bytes).map_err(|_| WireError::Decode)?;
     validate_request(&value)?;
-    if value.encode_to_vec() != bytes { return Err(WireError::Noncanonical); }
+    if value.encode_to_vec() != bytes {
+        return Err(WireError::Noncanonical);
+    }
     Ok(value)
 }
 
 pub fn encode_reply(reply: &proto::WorkspaceReply) -> Result<Vec<u8>, WireError> {
     validate_reply(reply)?;
-    if reply.encoded_len() > MAX_REPLY_BYTES { return Err(WireError::Oversized); }
+    if reply.encoded_len() > MAX_REPLY_BYTES {
+        return Err(WireError::Oversized);
+    }
     Ok(reply.encode_to_vec())
 }
 
 pub fn decode_reply(bytes: &[u8]) -> Result<proto::WorkspaceReply, WireError> {
-    if bytes.is_empty() || bytes.len() > MAX_REPLY_BYTES { return Err(WireError::Oversized); }
+    if bytes.is_empty() || bytes.len() > MAX_REPLY_BYTES {
+        return Err(WireError::Oversized);
+    }
     let value = proto::WorkspaceReply::decode(bytes).map_err(|_| WireError::Decode)?;
     validate_reply(&value)?;
-    if value.encode_to_vec() != bytes { return Err(WireError::Noncanonical); }
+    if value.encode_to_vec() != bytes {
+        return Err(WireError::Noncanonical);
+    }
     Ok(value)
 }
 
@@ -142,7 +167,13 @@ mod tests {
     #[test]
     fn protocol_never_carries_project_paths_or_authority() {
         let raw = include_str!("../../proto/lu/ide/v1/workspace.proto");
-        for forbidden in ["absolute_path", "shell_command", "access_token", "workspace_root", "privileged_path"] {
+        for forbidden in [
+            "absolute_path",
+            "shell_command",
+            "access_token",
+            "workspace_root",
+            "privileged_path",
+        ] {
             assert!(!raw.contains(&format!("string {forbidden} =")));
         }
         assert!(!valid_project_id("../../etc"));
