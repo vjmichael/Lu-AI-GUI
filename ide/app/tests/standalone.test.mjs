@@ -478,3 +478,23 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(editor, /expectedDraft/);
   assert.doesNotMatch(planner, /invoke\(|window\.fetch|\.writeText\(/);
 });
+
+test('Wave B2 draft source identity is distinct from saved-disk authority', () => {
+  const web = read('../web/main.jsx');
+  const editor = read('../web/code_editor.jsx');
+  const identity = read('../web/buffer_identity.js');
+  assert.match(web, /crypto\.randomUUID\(\)/);
+  assert.match(web, /crypto\.subtle\.digest\('SHA-256'/);
+  assert.match(web, /function copyDraftReference\(tab\)/);
+  assert.match(editor, /aria-label="Source code editor"/);
+  assert.match(web, /Copy draft reference/);
+  assert.match(web, /resolveBufferSpan\(snapshot, latestIdentity, latestState\)/);
+  assert.match(web, /bufferIdentities\.current\.delete\(key\)/);
+  assert.match(web, /newBufferIdentity\(/);
+  assert.match(web, /advanceBufferIdentity\(previous\)/);
+  assert.match(web, /savedRevision: saved\.revision/);
+  assert.match(editor, /onSelectionChange\?\.\(update\.state\)/);
+  assert.match(identity, /stale_buffer_reference/);
+  assert.match(identity, /lifetime=session-only/);
+  assert.doesNotMatch(identity, /invoke\(|fetch\(|navigator\.clipboard/);
+});
