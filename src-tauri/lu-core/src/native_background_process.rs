@@ -226,6 +226,33 @@ mod tests{
         assert_eq!(manager.cancel_owned("video-1","media"),
             Err(BackgroundProcessError::NotOwned));
     }
+    #[cfg(windows)]
+    #[test]
+    fn windows_owned_job_is_contained_and_reaped_on_cancellation(){
+        // An ordinary Windows system binary stands in for a reviewed worker.
+        // Cmd starts a child ping process, exercising the Job object tree.
+        let executable=PathBuf::from(std::env::var_os("ComSpec")
+            .unwrap_or_else(||OsString::from(r"C:\Windows\System32\cmd.exe")));
+        if !executable.is_file(){return;}
+        let mut sha=Sha256::new();
+        sha.update(fs::read(&executable).unwrap());
+        let digest=format!("{:x}",sha.finalize());
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        manager.start_host_approved(TrustedWorkerPlan{
+            task_id:"win-media1".into(),workspace_id:"video".into(),
+            executable,expected_sha256:digest,
+            args:vec!["/D".into(),"/C".into(),
+                "ping -n 20 127.0.0.1 >NUL".into()],
+        }).unwrap();
+        assert!(manager.can_cancel("win-media1"));
+        assert_eq!(manager.cancel_owned("win-media1","wrong"),
+            Err(BackgroundProcessError::WrongWorkspace));
+        manager.cancel_owned("win-media1","video").unwrap();
+        assert!(!manager.can_cancel("win-media1"));
+        assert_eq!(store.get("win-media1").unwrap().unwrap().state,
+            TaskState::Cancelled);
+    }
     #[cfg(unix)]
     #[test]
     fn real_supervised_worker_can_be_cancelled_without_touching_other_job(){
