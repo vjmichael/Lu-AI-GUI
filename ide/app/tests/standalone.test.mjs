@@ -247,10 +247,10 @@ test('R3.7 in-file find navigates the active unsaved buffer without native IPC',
   const css = read('../web/styles.css');
   assert.match(web, /key === 'f'/);
   assert.match(web, /role="search" aria-label="Find in active file"/);
-  assert.match(web, /activeTab\.draft\.toLocaleLowerCase/);
+  assert.match(web, /locateMatches\(activeTab\?\.draft/);
   assert.match(web, /aria-label="Previous match"/);
   assert.match(web, /aria-label="Next match"/);
-  assert.match(web, /matches\.length < 10000/);
+  assert.match(read('../web/find_replace.js'), /MAX_FIND_MATCHES = 10000/);
   assert.match(editor, /scrollIntoView: true/);
   assert.match(editor, /view\.dispatch/);
   assert.match(css, /\.editorFindBar/);
@@ -460,4 +460,21 @@ test('live GitHub comparison is a separate explicit network-read action', () => 
   assert.match(native, /MAX_RESPONSE_BYTES/);
   assert.match(native, /branch_not_found_or_private/);
   assert.doesNotMatch(native, /Command::new|std::process::Command/);
+});
+
+test('Wave B human-owned Find and Replace preserves explicit Save and undo', () => {
+  const web = read('../web/main.jsx');
+  const editor = read('../web/code_editor.jsx');
+  const planner = read('../web/find_replace.js');
+  assert.match(web, /key === 'h'/);
+  assert.match(web, /aria-label="Replacement text"/);
+  assert.match(web, /aria-label="Replace current match"/);
+  assert.match(web, /aria-label="Replace all matches"/);
+  assert.match(web, /planReplacement\(activeTab\.draft/);
+  assert.match(web, /window\.confirm\(/);
+  assert.match(web, /Draft only · Undo available · Save required/);
+  assert.match(web, /replaceRequest=\{replaceRequest\?\.tabKey/);
+  assert.match(editor, /view\.dispatch\(\{ changes, scrollIntoView: true \}\)/);
+  assert.match(editor, /expectedDraft/);
+  assert.doesNotMatch(planner, /invoke\(|window\.fetch|\.writeText\(/);
 });
