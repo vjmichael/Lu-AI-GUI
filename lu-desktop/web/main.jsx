@@ -42,6 +42,12 @@ function App() {
   const [rollbackHistory, setRollbackHistory] = useState([]);
   const [latestRestored, setLatestRestored] = useState(null);
   const [latestEdited, setLatestEdited] = useState(null);
+  const [backgroundPaneOpen,setBackgroundPaneOpen] = useState(false);
+  const [backgroundTasks,setBackgroundTasks] = useState([]);
+  const [backgroundError,setBackgroundError] = useState('');
+  const [backgroundFilter,setBackgroundFilter] = useState('active');
+  const [backgroundTerminalNotice,setBackgroundTerminalNotice] = useState(null);
+  const [autoBackgroundContinuation,setAutoBackgroundContinuation] = useState(false);
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
@@ -85,6 +91,10 @@ function App() {
   const visibleJob = chatId ? jobs[chatId] : null;
   const visibleStream = visibleJob?.text ?? '';
   const chatBusy = Boolean(visibleJob);
+  const activeBackgroundTasks=backgroundTasks.filter(task=>
+    ['PENDING','RUNNING','PAUSED'].includes(task.state));
+  const shownBackgroundTasks=backgroundFilter==='active'
+    ?activeBackgroundTasks:backgroundTasks;
   // An in-flight checkpoint is already visible in the live stream buffer.
   // Do not render that same unfinished assistant text twice after chat switch.
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
@@ -133,6 +143,74 @@ function App() {
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
   }
+  async function startMediaFileScan() {
+    setBackgroundError('');
+    try {
+      // Host-owned OS file dialog and pinned Lu worker, never model inference.
+      const taskId=await invoke('lu_background_scan_file',{chatId:chatId||null});
+      if (taskId) {
+        setBackgroundFilter('active');
+        await refreshBackgroundTasks();
+      }
+    } catch (error) {
+      setBackgroundError(String(error));
+    }
+  }
+  useEffect(()=>{
+    let alive=true;
+    if (!chatId){
+      setAutoBackgroundContinuation(false);
+      return ()=>{alive=false;};
+    }
+    invoke('lu_background_auto_continue',{chatId,enabled:null})
+      .then(value=>{if(alive)setAutoBackgroundContinuation(Boolean(value));})
+      .catch(error=>{if(alive)setBackgroundError(String(error));});
+    return ()=>{alive=false;};
+  },[chatId]);
+  async function changeAutoBackgroundContinuation(checked){
+    if (!chatId)return;
+    try{
+      const saved=await invoke('lu_background_auto_continue',{
+        chatId,enabled:Boolean(checked)
+      });
+      setAutoBackgroundContinuation(Boolean(saved));
+      setBackgroundError('');
+    }catch(error){
+      setBackgroundError(String(error));
+    }
+  }
+  async function cancelBackgroundTask(taskId) {
+    try {
+      await invoke('lu_background_cancel', {taskId});
+      await refreshBackgroundTasks();
+    } catch (error) {
+      // Native dialog denial and races against completion are not success.
+      await refreshBackgroundTasks();
+      if (!String(error).includes('Cancellation declined')) {
+        setBackgroundError(String(error));
+      }
+    }
+  }
+  async function refreshBackgroundTasks() {
+    try {
+      const items=await invoke('lu_background_tasks');
+      setBackgroundTasks(Array.isArray(items)?items:[]);
+      setBackgroundError('');
+    } catch (error) {
+      setBackgroundError(String(error));
+    }
+  }
+  useEffect(()=>{
+    if (!backgroundPaneOpen) return undefined;
+    let alive=true;
+    const refresh=()=>{if(alive) void refreshBackgroundTasks();};
+    refresh();
+    // UI polling queries Lu's local store, not the model or a worker.
+    // Future host event pushes can replace this lightweight refresh.
+    const timer=setInterval(refresh,2500);
+    return ()=>{alive=false;clearInterval(timer);};
+  },[backgroundPaneOpen]);
+
   async function refreshChats() {
     const list = await invoke('lu_chats');
     setChats(list.chats);
@@ -167,7 +245,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopBackground = () => {}, stopFinished = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -204,7 +282,27 @@ function App() {
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
       setEditProposals(prev => ({...prev, [proposal.proposalId]:proposal}));
     }).then(fn => { if (alive) stopEditProposal = fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); };
+    listen('lu-generation-finish', e=>{
+      if (!alive || !e.payload?.chatId)return;
+      const {chatId:finishedChat,generationId}=e.payload;
+      setJobs(prev=>prev[finishedChat]?.generationId===generationId
+        ?removeJob(prev,finishedChat):prev);
+      // Native auto turns aren't initiated by a WebView invoke. Read their
+      // journaled assistant output, including after a background tab switch.
+      if (currentChat.current===finishedChat){
+        invoke('lu_history',{chatId:finishedChat})
+          .then(items=>{if(alive&&currentChat.current===finishedChat)setHistory(items);})
+          .catch(()=>{});
+      }
+    }).then(fn=>{if(alive)stopFinished=fn;else fn();});
+    listen('lu-background-terminal', e => {
+      if (!alive || !e.payload?.taskId) return;
+      // This event comes from the native host's persisted terminal ledger.
+      // No AI generation or permission grant is performed by the WebView.
+      setBackgroundTerminalNotice(e.payload);
+      if (backgroundPaneOpen) void refreshBackgroundTasks();
+    }).then(fn => { if (alive) stopBackground=fn; else fn(); });
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopBackground(); stopFinished(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -604,6 +702,57 @@ function App() {
     } catch (error) { setError(String(error)); }
   }
 
+  async function askReaderDocument() {
+    // This deliberately opts in to a separate read-only structured model
+    // tool turn. The native dialog supplies the document, not the WebView.
+    if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
+    if (images.length || textFiles.length) {
+      setError('Ask Reader selects one document with the native picker. Use normal Send for existing attachments.');
+      return;
+    }
+    const input=prompt.trim();
+    let activeId=chatId;
+    if (!activeId) {
+      const created=await invoke('lu_new_chat')
+        .catch(error=>{setError(String(error));return null;});
+      if (!created) return;
+      activeId=created.chatId;
+      currentChat.current=activeId;
+      setChatId(activeId);
+    }
+    setJobs(prev=>({...prev,[activeId]:{
+      generationId:null,phase:'selecting-document',position:0,text:''
+    }}));
+    setError('');
+    try {
+      const answer=await invoke('lu_reader_ask_document',{
+        sessionId:runtime.sessionId,chatId:activeId,prompt:input
+      });
+      // A canceled OS picker returns null, without making a user turn.
+      if (answer!==null && typeof answer!=='string') {
+        throw Error('Reader returned an invalid model answer');
+      }
+      if (answer!==null && currentChat.current===activeId &&
+          draftText.current===input) {
+        draftText.current='';
+        setPrompt('');
+        const prior=pendingDrafts.current.get(activeId)||{};
+        pendingDrafts.current.set(activeId,{...prior,prompt:''});
+      }
+    } catch(error) {
+      if (currentChat.current===activeId &&
+          !/Cancelled|Canceled/i.test(String(error))) {
+        setError(String(error));
+      }
+    } finally {
+      await refreshChats().catch(()=>{});
+      if (currentChat.current===activeId){
+        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        if (entries&&currentChat.current===activeId)setHistory(entries);
+      }
+      setJobs(prev=>removeJob(prev,activeId));
+    }
+  }
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
@@ -666,6 +815,50 @@ function App() {
     for (const image of submittedImages) {
       if (image.previewUrl) {URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
       await invoke('lu_release_image', {imageRef:image.imageRef}).catch(() => {});
+    }
+  }
+  async function attachReaderDocument() {
+    // Keep the attachment in its originating chat even if the operator
+    // switches conversations while the native system picker is open.
+    const targetChat=currentChat.current||'new';
+    try {
+      const document=await invoke('lu_reader_pick_document');
+      if (!document) return;
+      const prior=pendingDrafts.current.get(targetChat);
+      const currentlyVisible=targetChat===(currentChat.current||'new');
+      const previous=prior?.files || (currentlyVisible?draftFiles.current:[]);
+      if(previous.length>=MAX_TEXT_FILES){
+        setError(`You can attach up to ${MAX_TEXT_FILES} documents per message`);
+        return;
+      }
+      const extracted=document.truncated
+        ?document.text+'\n[Reader: document text was truncated to fit the chat context]'
+        :document.text;
+      const item={
+        name:document.name,
+        size:document.bytesRead,
+        text:extracted,
+        format:document.format,
+        truncated:document.truncated,
+      };
+      const next=[...previous,item];
+      try{
+        buildSubmittedPrompt(prior?.prompt ||
+          (currentlyVisible?draftText.current:'Attachment') || 'Attachment',next);
+      }catch(error){setError(String(error));return;}
+      const old=prior||{
+        prompt:currentlyVisible?draftText.current:'',
+        images:currentlyVisible?draftImages.current:[],
+        files:previous
+      };
+      pendingDrafts.current.set(targetChat,{...old,files:next});
+      if(currentlyVisible){
+        draftFiles.current=next;
+        setTextFiles(next);
+      }
+      setError('');
+    }catch(error){
+      setError(String(error));
     }
   }
   async function importAttachments(files) {
@@ -807,10 +1000,19 @@ function App() {
       <div className="sidebarFooter">
         <div className="runtimeStatus"><span className="statusDot" data-ready={loaded}></span><strong>{loaded ? 'Model loaded' : working && activity.startsWith('Loading') ? 'Loading model…' : 'No model loaded'}</strong></div>
         <small>{loaded ? loadedModel?.filename : 'Select a model from the chat header'}</small>
+        <button className="settingsButton" onClick={() => setBackgroundPaneOpen(true)}>
+          ◷ Background Tasks {activeBackgroundTasks.length ? '· '+activeBackgroundTasks.length : ''}
+        </button>
         <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </div>
     </aside>
     <main className="workspace">
+      {backgroundTerminalNotice && <button type="button"
+        className="backgroundGlobalNotice"
+        onClick={()=>{setBackgroundPaneOpen(true);setBackgroundFilter('all');}}>
+        <span>Background task ended: <strong>{backgroundTerminalNotice.state}</strong></span>
+        <small>Open Tasks for details</small>
+      </button>}
       <header className="topbar">
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
@@ -1126,6 +1328,12 @@ function App() {
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
+            <button type="button" className="subtleButton" disabled={!loaded}
+              onClick={()=>void attachReaderDocument()}>+ Read file</button>
+            <button type="button" className="subtleButton"
+              disabled={!loaded||chatBusy||working||!prompt.trim()}
+              title="Select one document and allow a read-only AI Reader tool turn"
+              onClick={()=>void askReaderDocument()}>Ask Reader</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
@@ -1134,6 +1342,85 @@ function App() {
       </div>
     </main>
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
+    {backgroundPaneOpen && <div className="backgroundPaneBackdrop" role="presentation"
+      onClick={()=>setBackgroundPaneOpen(false)}>
+      <aside className="backgroundPane" role="dialog" aria-modal="true"
+        aria-label="Background Tasks" onClick={e=>e.stopPropagation()}>
+        <header className="backgroundPaneHeader">
+          <div><h2>Background Tasks</h2><small>Monitored by Lu — no model polling</small></div>
+          <button className="quietIcon" aria-label="Close Background Tasks"
+            onClick={()=>setBackgroundPaneOpen(false)}>×</button>
+        </header>
+        <div className="backgroundContinuationPreference">
+          <label>
+            <input type="checkbox" disabled={!chatId}
+              checked={Boolean(chatId&&autoBackgroundContinuation)}
+              onChange={e=>void changeAutoBackgroundContinuation(e.target.checked)}/>
+            Automatically notify this conversation's AI when a task ends
+          </label>
+          <small>Off by default. When enabled, Lu may start a short AI reply after completion, failure, cancellation, interruption, or timeout. Does not grant tool permissions or load a model.</small>
+        </div>
+        <div className="backgroundScanLaunch">
+          <button type="button" className="primaryButton"
+            onClick={()=>void startMediaFileScan()}>
+            Scan media file…
+          </button>
+          <small>Native worker · file integrity scan (SHA-256), not video content analysis</small>
+        </div>
+        {backgroundTerminalNotice && <div className="backgroundTerminalBanner" role="status">
+          <strong>Task ended: {backgroundTerminalNotice.state}</strong>
+          <span>{backgroundTerminalNotice.taskId}</span>
+          <button type="button" className="quietIcon"
+            aria-label="Dismiss terminal notification"
+            onClick={()=>setBackgroundTerminalNotice(null)}>×</button>
+        </div>}
+        <div className="backgroundPaneToolbar">
+          <div className="backgroundPaneFilters" aria-label="Task history filter">
+            <button className={backgroundFilter==='active'?'selected':''}
+              onClick={()=>setBackgroundFilter('active')}>Active ({activeBackgroundTasks.length})</button>
+            <button className={backgroundFilter==='all'?'selected':''}
+              onClick={()=>setBackgroundFilter('all')}>Recent</button>
+          </div>
+          <button className="subtleButton" onClick={()=>void refreshBackgroundTasks()}
+            aria-label="Refresh background tasks">Refresh</button>
+        </div>
+        {backgroundError && <p className="backgroundPaneError" role="alert">{backgroundError}</p>}
+        <div className="backgroundPaneList" aria-live="off">
+          {shownBackgroundTasks.map(task=><article className="backgroundTask" key={task.taskId}>
+            <div className="backgroundTaskHeading">
+              <strong title={task.taskId}>{task.taskId}</strong>
+              <span className={'backgroundTaskStatus state-'+task.state.toLowerCase()}>{task.state}</span>
+            </div>
+            {task.workspaceId && <small>Workspace: {task.workspaceId}</small>}
+            <p>{task.detail || 'No progress details yet'}</p>
+            <div className="backgroundTaskProgress" role="progressbar"
+              aria-label={'Progress for '+task.taskId} aria-valuemin={0}
+              aria-valuemax={100} aria-valuenow={task.progress}>
+              <span style={{width:Math.max(0,Math.min(100,task.progress))+'%'}}/>
+            </div>
+            <div className="backgroundTaskFoot">
+              <span>{task.progress}% recorded</span><span>Updated: {task.updatedAt || 'unknown'}</span>
+            </div>
+            {['INTERRUPTED','FAILED'].includes(task.state) &&
+              <p className="backgroundTaskWarning">Requires review before retrying.</p>}
+            {task.canCancel && <button className="backgroundTaskCancel" type="button"
+              onClick={()=>void cancelBackgroundTask(task.taskId)}>
+              Cancel task…
+            </button>}
+
+          </article>)}
+          {!shownBackgroundTasks.length && !backgroundError &&
+            <p className="backgroundPaneEmpty">
+              {backgroundFilter==='active'?'No active background tasks.':'No background task history yet.'}
+            </p>}
+        </div>
+        <footer className="backgroundPaneFooter">
+          Cancel is available only for Lu-owned live workers and requires native confirmation.
+          Pause and resume remain unavailable until workers support them.
+          Ordinary progress updates do not invoke the AI model.
+        </footer>
+      </aside>
+    </div>}
     {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <header><div><h2>Settings</h2><small>Local model management</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
