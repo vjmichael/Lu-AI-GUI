@@ -19,6 +19,10 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## A3 Git status host reader (new source, unverified)
+
+`host/src/git_status.rs` uses read-only libgit2 for real local dirty/staged/untracked changes, restricted to exact registered project root and separately labeled locally stored upstream. It neither calls Git CLI nor contacts GitHub. The Continuity UI and JSON Schema now carry the local status; native Git fixture tests exist. CI [42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending; no execution/installer/user GUI gate passed for this change.
+
 ## A3 inventory acceptance and honest scope (latest)
 
 The app can inspect selected, registered project roots, including direct root-level installer candidates when an existing `Delivered` directory is registered through the native picker, observe hashes for bounded output/benchmark files, detect local loose Git reference differences, and create durable user-requested snapshots for comparison across restarts. It now includes nested benchmark manifest excerpts with provenance, total 128 MiB digest budget, and two typed inventory capabilities (19 native catalog operations total). **No live GitHub check, no dirty-worktree verification, no global Windows package search, no executable toolchain readiness, no installer acceptance.** Latest source CI [42125275258](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42125275258) queued at last check. Inventory history now preserves up to 64 observations without overwriting previous baselines; comparison targets the latest observed baseline, and a full store fails explicitly instead of discarding evidence. Native/Windows runtime verification remains required.
