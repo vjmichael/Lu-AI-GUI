@@ -68,6 +68,7 @@ pub mod native_reader_docx;
 pub mod native_reader_pdf;
 pub mod native_reader_openxml;
 pub mod native_reader_office;
+pub mod native_reader_odf;
 pub mod native_reader_tool;
 pub mod vision_routing;
 pub mod ownership_store;
