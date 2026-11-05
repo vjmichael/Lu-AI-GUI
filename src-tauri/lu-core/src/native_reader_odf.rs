@@ -33,6 +33,16 @@ fn text_event(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
         _=>Ok(None),
     }
 }
+fn stored_cell_value(e:&BytesStart<'_>)->String{
+    for attribute in [
+        b"office:value".as_slice(),b"office:string-value".as_slice(),
+        b"office:date-value".as_slice(),b"office:time-value".as_slice(),
+        b"office:boolean-value".as_slice()
+    ]{
+        if let Some(value)=attr(e,attribute){return value}
+    }
+    String::new()
+}
 fn repeat_count(e:&BytesStart<'_>,key:&[u8])->Result<usize,ReaderFailure>{
     match attr(e,key){
         None=>Ok(1),
@@ -102,7 +112,7 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
             },
             Event::Start(e) if e.name().as_ref()==b"table:table-cell"&&inside=>{
                 col+=1;cell_active=true;value.clear();
-                cached=attr(e,b"office:value").unwrap_or_default();
+                cached=stored_cell_value(e);
                 formula=attr(e,b"table:formula").unwrap_or_default();
                 cell_repeat=repeat_count(e,b"table:number-columns-repeated")?;
                 if cell_repeat==0||col.checked_add(cell_repeat-1)
@@ -113,6 +123,22 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
                 let repeated=repeat_count(e,b"table:number-columns-repeated")?;
                 if repeated==0||col.checked_add(repeated)
                     .is_none_or(|n|n>16_384){return Err(ReaderFailure::TooLarge)}
+                if e.name().as_ref()==b"table:table-cell"{
+                    let value=stored_cell_value(e);
+                    let formula=attr(e,b"table:formula").unwrap_or_default();
+                    if !value.is_empty()||!formula.is_empty(){
+                        row_had_content=true;
+                        if repeated>128{return Err(ReaderFailure::TooLarge)}
+                        for n in 0..repeated{
+                            out.push_str(&format!("{}{}={}",colname(col+n+1)?,row,value));
+                            if !formula.is_empty(){
+                                out.push_str(&format!(
+                                    " [formula: {}; cached value may be stale]",formula));
+                            }
+                            out.push('\n');
+                        }
+                    }
+                }
                 col+=repeated;
             },
             Event::Start(e) if e.name().as_ref()==b"text:p"&&cell_active=>{
@@ -271,6 +297,16 @@ mod tests{
         ]);
         let extracted=read_ods(&file,500,Some("Coordinates")).unwrap();
         assert!(extracted.text.contains("F4=Fourteen"));
+    }
+    #[test]
+    fn ods_self_closing_numeric_cell_keeps_its_value(){
+        let file=zip(&[
+            ("mimetype","application/vnd.oasis.opendocument.spreadsheet"),
+            ("content.xml",r#"<office:document-content><table:table table:name="Data"><table:table-row><table:table-cell office:value-type="float" office:value="2.5"/><table:table-cell office:date-value="2026-11-04"/></table:table-row></table:table></office:document-content>"#),
+        ]);
+        let result=read_ods(&file,500,None).unwrap();
+        assert!(result.text.contains("A1=2.5"));
+        assert!(result.text.contains("B1=2026-11-04"));
     }
     #[test]
     fn reads_odp_slide_text_and_slide_selector(){
