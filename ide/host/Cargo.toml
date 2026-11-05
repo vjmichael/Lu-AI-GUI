@@ -16,6 +16,7 @@ cap-std = "3.4.6"
 sha2 = "0.10"
 similar = "2.7.0"
 git2 = { version = "0.20", default-features = false }
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 
 [build-dependencies]
 prost-build = "0.14"
