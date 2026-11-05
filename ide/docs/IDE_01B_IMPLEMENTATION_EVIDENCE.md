@@ -16,10 +16,10 @@
 
 ## Verified evidence
 
-- **Linux run:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41961237114
-- Source revision checked: `8de251a0d2cb0bbe82e37caac254ab50c14726c1`.
+- **Latest Linux run:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41961852933
+- Source revision checked: `e8ef9f081f64358243e0e3c23e502b2f6670162b`.
 - Runner: GitHub-hosted Ubuntu Linux using Rust 1.88.
-- **8 of 8 Rust tests passed** (2 protobuf unit tests, 6 lifecycle integration tests).
+- **9 of 9 Rust tests passed** (2 protobuf unit tests, 7 lifecycle integration tests, including shared Lu Core registry injection).
 - **Rust formatting check passed** on committed source.
 - This is a real Linux CI runner, **not** the user's separate local Linux development machine.
 - Native tests verify registration and protocol behavior; they are **not** proof of runtime sandboxing.
