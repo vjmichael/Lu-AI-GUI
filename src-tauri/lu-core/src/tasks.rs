@@ -152,18 +152,19 @@ impl TaskStore {
     }
 
     pub fn resume(&self, task_id: &str) -> Result<(), TaskStoreError> {
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| TaskStoreError::Poisoned)?;
-        let changed = connection.execute(
+        let mut connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=connection.transaction()?;
+        let changed=tx.execute(
             "UPDATE lu_tasks SET state='RUNNING', updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state IN ('PAUSED','INTERRUPTED')",
+             WHERE task_id=?1 AND state IN ('PAUSED','INTERRUPTED')",params![task_id]
+        )?;
+        if changed!=1{return Err(TaskStoreError::InvalidTransition);}
+        tx.execute(
+            "INSERT INTO lu_task_events(task_id,event,progress,detail)
+             SELECT task_id,'RUNNING',progress,detail FROM lu_tasks WHERE task_id=?1",
             params![task_id],
         )?;
-        if changed == 0 {
-            return Err(TaskStoreError::InvalidTransition);
-        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -255,15 +256,21 @@ impl TaskStore {
 
     /// Requires exclusive ownership of the database/process at restart.
     pub fn reconcile_interrupted(&self) -> Result<usize, TaskStoreError> {
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| TaskStoreError::Poisoned)?;
-        Ok(connection.execute(
+        let mut connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=connection.transaction()?;
+        // Insert events for precisely the RUNNING set while holding a
+        // transaction, so after a crash every interrupted job is discoverable.
+        tx.execute(
+            "INSERT INTO lu_task_events(task_id,event,progress,detail)
+             SELECT task_id,'INTERRUPTED',progress,detail FROM lu_tasks
+             WHERE state='RUNNING'",[],
+        )?;
+        let changed=tx.execute(
             "UPDATE lu_tasks SET state='INTERRUPTED',updated_at=CURRENT_TIMESTAMP
-             WHERE state='RUNNING'",
-            [],
-        )?)
+             WHERE state='RUNNING'",[],
+        )?;
+        tx.commit()?;
+        Ok(changed)
     }
 
     /// Cursor-based events are delivered by the native host. A caller must
