@@ -2,6 +2,10 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — A3 historical evidence retention
+- Snapshot capture now preserves multiple observations instead of overwriting the previous baseline. Comparisons use the latest snapshot; the UI displays how many baselines exist for the active project. History is bounded to 64 snapshots/1 MiB and refuses further captures rather than silently deleting evidence.
+- Added native regression for a second snapshot and newest-baseline comparison. Source commit `d7fd8cfac1d91a1ddc3073e631a249c1f5b1f9a7`; [CI 42125275258](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42125275258) queued at last inspection. No Windows-installed GUI acceptance or verified global paths.
+
 ## 2026-11-05 — A3 root-folder discovery and current CI (source only)
 - Root-level installers/archives are now discoverable with SHA-256 when the user selects a standalone `Delivered` folder through the existing native project picker. Added host-native regression fixture for this route; no external scanning or execution rights added.
 - Source commit under verification: `7409a3cb54fb6c71d42150b9ab362c3b1b5b7096`. [CI run 42124780433](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124780433) queued at last inspection. **Do not claim this runtime accepted until Linux/frontend/Windows results complete.**
