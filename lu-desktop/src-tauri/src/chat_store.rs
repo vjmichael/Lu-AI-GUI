@@ -59,6 +59,16 @@ enum Event {
     AssistantProgress { generation_id: String, text: String }, // cumulative checkpoint.
     AssistantCompleted { generation_id: String },
     AssistantCancelled { generation_id: String },
+    /// Persisted untrusted browser observation from a host-dispatched native
+    /// tool. The journal record is not an assistant/user role and cannot
+    /// authorize more browsing. Digest is over the complete bounded extract.
+    BrowserObservation {
+        generation_id:String,
+        call_id:String,
+        tool_name:String,
+        content_sha256:String,
+        text:String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -437,6 +447,59 @@ impl ChatStore {
         }
         found
     }
+    pub fn append_browser_observation(
+        &self,chat_id:&str,generation_id:&str,call_id:&str,
+        tool_name:&str,text:&str
+    )->Result<String,String>{
+        use sha2::{Digest,Sha256};
+        if !valid_id(generation_id,"g-")||call_id.is_empty()
+          ||call_id.len()>128
+          ||!call_id.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-')
+          ||tool_name!="lu_browser_read"
+          ||text.is_empty()||text.len()>12*1024
+          ||text.chars().any(|c|c=='\\0'){
+            return Err("invalid or oversized browser observation".into());
+        }
+        let hash=format!("{:x}",Sha256::digest(text.as_bytes()));
+        self.append_assistant(chat_id,Event::BrowserObservation{
+            generation_id:generation_id.into(),call_id:call_id.into(),
+            tool_name:tool_name.into(),content_sha256:hash.clone(),
+            text:text.into(),
+        })?;
+        Ok(hash)
+    }
+    pub fn browser_observations(
+        &self,chat_id:&str,generation_id:&str
+    )->Result<Vec<(String,String,String)>,String>{
+        use sha2::{Digest,Sha256};
+        if !valid_id(generation_id,"g-"){return Err("invalid browser generation identity".into());}
+        let catalog=self.inner.lock().map_err(|_|"chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){
+            return Err("unknown conversation".into());
+        }
+        let file=File::open(self.chat_path(chat_id)).map_err(|e|e.to_string())?;
+        let mut entries=Vec::new();
+        let mut calls=HashSet::new();
+        for line in BufReader::new(file).lines(){
+            let line=line.map_err(|e|e.to_string())?;
+            let event:Event=serde_json::from_str(&line)
+                .map_err(|_|"corrupt conversation evidence journal")?;
+            if let Event::BrowserObservation{
+                generation_id:id,call_id,tool_name,content_sha256,text
+            }=event{
+                if id==generation_id{
+                    if tool_name!="lu_browser_read"||text.len()>12*1024
+                       ||format!("{:x}",Sha256::digest(text.as_bytes()))!=content_sha256
+                       ||!calls.insert(call_id.clone()){
+                        return Err("browser evidence integrity failure".into());
+                    }
+                    entries.push((call_id,content_sha256,text));
+                    if entries.len()>16{return Err("too many browser observations".into());}
+                }
+            }
+        }
+        Ok(entries)
+    }
     pub fn append_progress(
         &self,
         chat_id: &str,
@@ -542,6 +605,10 @@ impl ChatStore {
                             message.cancelled = true;
                         }
                     }
+                }
+                Event::BrowserObservation{..} => {
+                    // Never present a browser/tool result as an assistant
+                    // message or future trusted conversation instruction.
                 }
             }
         }
