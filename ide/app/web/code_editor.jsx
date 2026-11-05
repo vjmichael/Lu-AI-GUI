@@ -68,7 +68,7 @@ export function createEditorState(text, filename, onChange) {
   });
 }
 
-export function CodeEditor({ editorState, tabIdentity, findRequest, onCursorLine }) {
+export function CodeEditor({ editorState, tabIdentity, findRequest, replaceRequest, onCursorLine }) {
   const container = useRef(null);
   const viewRef = useRef(null);
   const cursorCallback = useRef(onCursorLine);
@@ -101,5 +101,22 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, onCursorLine
       scrollIntoView: true });
     view.focus();
   }, [findRequest, tabIdentity]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !replaceRequest || replaceRequest.tabIdentity !== tabIdentity) return;
+    // Reject plans computed for a different editor document, including stale
+    // asynchronous/UI-state requests. Never reconstruct the EditorState here:
+    // dispatching one transaction preserves CodeMirror undo/redo history.
+    if (view.state.doc.toString() !== replaceRequest.expectedDraft) return;
+    const changes = replaceRequest.changes;
+    if (!changes?.length || changes.some(change =>
+      !Number.isInteger(change.from) || !Number.isInteger(change.to) ||
+      change.from < 0 || change.to > view.state.doc.length ||
+      change.from > change.to || typeof change.insert !== 'string'
+    )) return;
+    view.dispatch({ changes, scrollIntoView: true });
+    view.focus();
+  }, [replaceRequest, tabIdentity]);
+
   return <div ref={container} className="codeEditorHost" aria-label="Source code editor" />;
 }
