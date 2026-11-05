@@ -28,4 +28,4 @@ A native, Lu-assisted IDE for opening software projects; reading/editing code; n
 - No automatic running of repository-defined scripts, extensions, package lifecycle hooks, debug adapters or AI-written commands upon opening.
 - No Docker prerequisite or multi-installer requirement for end users. Host tools may be detected; provisioning needs explicit consent. Optional higher-isolation VM can be used for risky code.
 
-See [architecture](docs/ARCHITECTURE.md), [package manager](docs/PACKAGE_ORCHESTRATOR.md), [security](docs/SECURITY_MODEL.md), and [gates](docs/IMPLEMENTATION_GATES.md).
+**Canonical design and task list:** [IDE Workspace consolidated design — Section 6 (eight recommended implementations)](docs/IDE_WORKSPACE_DESIGN.md). This document is the source of truth for stage ordering and acceptance. The older engineering gate identifiers are subordinate acceptance checks.\n\nSee [architecture](docs/ARCHITECTURE.md), [package manager](docs/PACKAGE_ORCHESTRATOR.md), [security](docs/SECURITY_MODEL.md), and [gates](docs/IMPLEMENTATION_GATES.md).
