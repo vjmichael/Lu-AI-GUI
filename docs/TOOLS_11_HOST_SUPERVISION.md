@@ -190,9 +190,27 @@ supplied to the **next eligible turn in the owning conversation**, without
 copying worker-authored detail into model instructions. A notice is
 acknowledged only after the AI response is durably completed. If the model
 is unloaded, busy, fails, or the app restarts, the notice remains pending.
-This deliberately does **not** auto-load a model, interrupt a turn, or
-create an unsolicited synthetic user message. A separate, authorized
-scheduler will later enable truly proactive model continuation if desired.
+Lu now also supports **operator-opted-in proactive continuation** for
+individual conversations. The Background Tasks pane provides a default-OFF
+switch that is persisted in the native SQLite task store. When enabled,
+the Lu-owned watchdog may schedule one short assistant reply for a pending
+terminal batch, provided an inference model is already loaded, the global
+generation queue is idle, and the conversation still exists. This does
+**not** auto-load a model, interrupt existing or queued user work, grant tool
+authority, or append a synthetic human-authored message to the chat journal.
+
+A host-originated completion turn follows the same native generation queue
+and durable assistant-journal path as an ordinary reply. It includes bounded
+host-verified terminal status data, not worker-authored commands. Terminal
+events are acknowledged only after the response is durably committed.
+If the generation fails, the event remains unacknowledged and will be
+available in a later manual turn or after an application restart; the
+watchdog does not retry in an infinite loop during that session.
+Automatic model continuation can be disabled per conversation at any time.
+
+**Full installed-app validation of host-initiated generations is still open.**
+Native core, desktop frontend and Windows compile-only acceptance are
+separate from the complete packaged GGUF+Vulkan execution gate.
 
 The present native file scan originates from an existing chat and uses its
 verified conversation ID as the task's owner; jobs without a chat receive
