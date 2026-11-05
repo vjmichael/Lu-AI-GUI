@@ -1551,6 +1551,73 @@ async fn dispatch_authenticated_browser_model_call(
         .map_err(|e|format!("invalid browser tool result: {e:?}"))
 }
 
+/// Host-only end-to-end read-only browser turn. The persisted USER text
+/// and task ID are resolved from Lu's durable chat state. The browser tool
+/// request is emitted by the *loaded supervised model* and dispatched only
+/// after canonical Protobuf and the native per-turn authority rechecks.
+/// This is not a Tauri command: a separate UI permission/queue integration
+/// gate must be satisfied before enabling it for general chat.
+#[allow(dead_code)]
+async fn run_authenticated_browser_model_turn(
+    state:Arc<DesktopState>,
+    session_id:&str,
+    chat_id:&str,
+    user_turn_id:&str,
+    max_new_tokens:u32,
+)->Result<Vec<serde_json::Value>,String>{
+    use std::collections::BTreeSet;
+    let persisted_prompt=state.chats.trusted_user_turn_text(chat_id,user_turn_id)
+        .ok_or("Browser request does not match a persisted USER turn")?;
+    if persisted_prompt.trim().is_empty()||max_new_tokens==0||max_new_tokens>4096{
+        return Err("Invalid browser model generation request".into());
+    }
+    let installed={
+        let active=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        let task=active.as_ref().ok_or("Browser task is not authorized")?;
+        if task.starting||task.chat_id!=chat_id||task.user_turn_id!=user_turn_id{
+            return Err("Browser task is not bound to this persisted USER turn".into());
+        }
+        state.browser_tools.lock().map_err(|_|"browser tool lock poisoned")?
+            .as_ref().cloned().ok_or("Browser tool registry unavailable")?
+    };
+    let allowed=BTreeSet::from(["lu_browser_read".into()]);
+    let schemas=installed.model_catalog.schemas(&allowed)
+        .map_err(|e|format!("Browser model tools were not admitted: {e:?}"))?;
+    if schemas.len()!=1 {return Err("Invalid browser read tool advertisement".into());}
+    let supervisor=Arc::clone(&state.supervisor);
+    let status=supervisor.status().map_err(|e|format!("model status: {e:?}"))?;
+    if status.session_id.as_deref()!=Some(session_id) {
+        return Err("Loaded model session differs from browser research turn".into());
+    }
+    let generation_id=next_id("g-browser-");
+    let request_id=next_id("req-browser-");
+    supervisor.reserve_generation_with_history(
+        session_id,&generation_id,&request_id,&persisted_prompt,
+        max_new_tokens,&[]
+    ).map_err(|e|format!("model is not available for browser research: {e:?}"))?;
+    let sid=session_id.to_owned();
+    let gid=generation_id.clone();
+    let rid=request_id.clone();
+    let calls=tauri::async_runtime::spawn_blocking(move||
+        supervisor.run_reserved_browser_function_calls(
+            &sid,&gid,&rid,persisted_prompt,max_new_tokens,Vec::new(),&schemas
+        )
+    ).await.map_err(|e|format!("browser model generation worker failed: {e}"))?
+     .map_err(|e|format!("supervised browser function generation failed: {e:?}"))?;
+    // Results remain untrusted page data, not a new browser authorization.
+    // The native dispatcher verifies the original task for EACH proposal.
+    let mut results=Vec::with_capacity(calls.len());
+    for call in calls{
+        let result=dispatch_authenticated_browser_model_call(
+            Arc::clone(&state),chat_id,user_turn_id,
+            &call.tool_name,&call.call_id,&call.arguments_json
+        ).await?;
+        results.push(result);
+    }
+    Ok(results)
+}
+
 /// Native user approval is mandatory before any browser session starts.
 /// The trusted host chooses an authenticated USER turn from the journal;
 /// a web page or model cannot forge one with a message string.
