@@ -96,6 +96,16 @@ function App() {
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
   }
+  async function cancelBackgroundTask(taskId) {
+    try {
+      await invoke('lu_background_cancel', {taskId});
+      await refreshBackgroundTasks();
+    } catch (error) {
+      // Native dialog denial and races against completion are not success.
+      setBackgroundError(String(error));
+      await refreshBackgroundTasks();
+    }
+  }
   async function refreshBackgroundTasks() {
     try {
       const items=await invoke('lu_background_tasks');
@@ -653,6 +663,11 @@ function App() {
             </div>
             {['INTERRUPTED','FAILED'].includes(task.state) &&
               <p className="backgroundTaskWarning">Requires review before retrying.</p>}
+            {task.canCancel && <button className="backgroundTaskCancel" type="button"
+              onClick={()=>void cancelBackgroundTask(task.taskId)}>
+              Cancel task…
+            </button>}
+
           </article>)}
           {!shownBackgroundTasks.length && !backgroundError &&
             <p className="backgroundPaneEmpty">
@@ -660,7 +675,8 @@ function App() {
             </p>}
         </div>
         <footer className="backgroundPaneFooter">
-          Pause, resume and cancel will appear when native worker controls are verified.
+          Cancel is available only for Lu-owned live workers and requires native confirmation.
+          Pause and resume remain unavailable until workers support them.
           Ordinary progress updates do not invoke the AI model.
         </footer>
       </aside>
