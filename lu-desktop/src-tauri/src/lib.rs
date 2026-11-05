@@ -2,6 +2,8 @@
 //! WebView receives opaque model/image/session IDs only. All disk selection is
 //! from native OS dialogs; only host code can resolve the signed engine package.
 mod chat_store;
+mod file_scan_worker;
+pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
 mod prompt_context;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
