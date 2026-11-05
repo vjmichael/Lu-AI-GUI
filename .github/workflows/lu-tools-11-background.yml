@@ -9,6 +9,11 @@ on:
       - 'src-tauri/lu-core/src/lib.rs'
       - '.github/workflows/lu-tools-11-background.yml'
   workflow_dispatch:
+# A new branch commit supersedes old source identities; cancel redundant
+# runs instead of compiling stale commits on both platforms.
+concurrency:
+  group: lu-tools-11-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
