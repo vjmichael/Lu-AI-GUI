@@ -1,7 +1,7 @@
 # Lu IDE R3.5 — Native proposal review inbox
 
 **Branch:** `ide/workspace-development`  
-**Status:** Implementation candidate, not yet accepted on Windows.  
+**Status:** Native Linux/frontend checks and unsigned Windows release passed. R3.5 interactive Windows proposal-inbox acceptance remains open.  
 **Date:** 2026-11-05
 
 ## User goal
@@ -46,6 +46,15 @@ The queue is deliberately **memory-only**; restarting the IDE discards all propo
 - Five native inbox commands are explicitly allowlisted.
 - UI provides import, review, approve/reject/dismiss controls and states no automatic file changes.
 - No proposal apply or process execution path is introduced.
+
+## CI and unsigned Windows release evidence
+
+- [Native Linux/frontend/Windows acceptance run 42063329884](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063329884): Linux **50 Rust tests passed** and formatting passed; frontend **16 tests passed**. Windows native check had not yet finished when this entry was recorded; inspect the actual final result before marking that independent matrix complete.
+- [Windows R3.5 optimized release run 42063134868](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42063134868): **passed**; artifact `lu-ide-windows-alpha-r3-5-proposal-inbox`. Release source SHA was `a35f51744c405450c1ecfa8bfa92447a96611e53`; subsequent branch changes were formatting and documentation, not changes to the staging workflow.
+- Verified Windows portable executable `Lu-IDE-Standalone-R3.5-Proposal-Inbox.exe`: **10,947,584 bytes**, valid PE `MZ` header, SHA-256 `f7939a9c50177636885d27abccc452afaf45a83b2f22ad618d1d953fec444c62`.
+- User-facing ZIP `Lu-IDE-Standalone-R3.5-Proposal-Inbox.zip`: ZIP CRC/integrity verified; SHA-256 `8d5b563d12ccb942fcc27d79878e22b756f569706405e4c0ced3792be214d116`. Includes the executable, `README-R35.txt` and disposable `R35ProposalTestProject` sources.
+
+The Windows release has **not** been launched manually by the user, and no authenticated Lu bridge or automatic source application exists.
 
 ## Windows manual acceptance
 
