@@ -1335,6 +1335,53 @@ async fn lu_generate_browser(
                             &call.tool_name,&host_call_id,&call.arguments_json
                         )
                     )?;
+                    // A challenge is a pause, NOT source verification.
+                    // Keep the same browser/task and queue reservation until
+                    // the human completes the challenge or cancels. Do not
+                    // turn challenge content into an approved observation.
+                    let is_challenge=result.pointer(
+                        "/result/browser_result/result/status"
+                    ).and_then(serde_json::Value::as_str)==Some("NEEDS_HUMAN");
+                    if is_challenge{
+                        let _=app.emit("lu-generation-start",GenerationEvent{
+                            chat_id:chat_id.clone(),generation_id:gid.clone(),
+                            phase:"needs-human",position:0,
+                        });
+                        let deadline=std::time::Instant::now()
+                            +Duration::from_secs(600);
+                        loop{
+                            if ticket.cancelled(){
+                                return Err("Cancelled during browser verification".into());
+                            }
+                            if std::time::Instant::now()>=deadline{
+                                return Err("Browser verification timed out".into());
+                            }
+                            let view=state.browser_runtime.status(
+                                &state.browser_preferences
+                            )?;
+                            if !view.running {
+                                return Err("Browser closed during human verification".into());
+                            }
+                            if !view.human_verification_required{break;}
+                            std::thread::sleep(Duration::from_millis(500));
+                        }
+                        let _=app.emit("lu-generation-start",GenerationEvent{
+                            chat_id:chat_id.clone(),generation_id:gid.clone(),
+                            phase:"running",position:0,
+                        });
+                        // Human verification is not a read result. The model
+                        // should request the page content in the next round.
+                        let label="The user completed a browser verification challenge. No page text has been verified yet.".to_string();
+                        state.chats.append_browser_observation(
+                            &chat_id,&gid,&host_call_id,&call.tool_name,&label
+                        )?;
+                        observed.push(label);
+                        continue;
+                    }
+                    if result.pointer("/result/browser_result/ok")
+                        .and_then(serde_json::Value::as_bool)!=Some(true){
+                        return Err("Browser operation did not return native success".into());
+                    }
                     let json=serde_json::to_string(&result)
                         .map_err(|_|"Invalid browser observation")?;
                     // Preserve Unicode boundaries and bound untrusted text.
