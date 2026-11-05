@@ -17,10 +17,14 @@ concurrency:
 
 jobs:
   linux-isolation-probe:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Record actual kernel and distribution
+        run: |
+          cat /etc/os-release
+          uname -a
       - name: Rust 1.88 with rustfmt
         run: |
           rustup toolchain install 1.88.0 --profile minimal
