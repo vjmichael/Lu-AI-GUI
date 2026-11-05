@@ -27,6 +27,8 @@ function App() {
   const [tabs, setTabs] = useState([]);
   const [activeTabKey, setActiveTabKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
+  const [review, setReview] = useState(null);
+  const [reviewPending, setReviewPending] = useState(false);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
 
@@ -55,6 +57,7 @@ function App() {
   useEffect(() => { void refresh(); }, []);
 
   function discardProjectTabs(projectId) {
+    setReview(previous => previous?.projectId === projectId ? null : previous);
     const affected = tabs.filter(tab => tab.projectId === projectId);
     affected.forEach(tab => editorStates.current.delete(tab.key));
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
@@ -128,6 +131,7 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
       tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText } : tab));
   }
@@ -173,6 +177,7 @@ function App() {
     if (selected.dirty && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
     editorStates.current.delete(key);
+    setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
     setTabs(other);
     if (activeTabKey === key) {
@@ -182,7 +187,8 @@ function App() {
   }
 
   async function reloadTab(tab) {
-    if (!tab || savingKey) return;
+    if (!tab || savingKey || reviewPending) return;
+    setReview(null);
     if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
     setExplorerPending(true);
     setProblem('');
@@ -223,6 +229,7 @@ function App() {
         dirty: item.draft !== content,
       } : item));
       setHint('Saved ' + tab.relativePath + ' to disk.');
+      return true;
     } catch (error) {
       if (String(error).includes('FILE_CHANGED_ON_DISK')) {
         setProblem('FILE_CHANGED_ON_DISK: This file changed outside Lu IDE. ' +
@@ -231,6 +238,44 @@ function App() {
         setProblem(String(error));
       }
     } finally { setSavingKey(null); }
+    return false;
+  }
+
+  async function reviewTab(tab) {
+    if (!tab || !tab.dirty || reviewPending || explorerPending || savingKey) return;
+    setReviewPending(true);
+    setProblem('');
+    try {
+      const proposal = await invoke('ide_review_source_change', {
+        projectId: tab.projectId,
+        relativePath: tab.relativePath,
+        expectedRevision: tab.revision,
+        proposedText: tab.draft,
+      });
+      setReview({
+        ...proposal,
+        tabKey: tab.key,
+        draft: tab.draft,
+      });
+    } catch (error) {
+      setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
+        ? 'FILE_CHANGED_ON_DISK: The source changed outside Lu IDE. Your draft remains intact.'
+        : String(error));
+    } finally { setReviewPending(false); }
+  }
+
+  async function saveReviewedChange() {
+    if (!review || review.truncated || savingKey || reviewPending) return;
+    const tab = tabs.find(item => item.key === review.tabKey);
+    if (!tab || !tab.dirty || tab.draft !== review.draft ||
+        tab.revision !== review.expectedRevision ||
+        tab.projectId !== review.projectId) {
+      setReview(null);
+      setProblem('The reviewed edit changed. Review the latest draft before saving.');
+      return;
+    }
+    const saved = await saveTab(tab);
+    if (saved) setReview(null);
   }
 
   useEffect(() => {
@@ -396,6 +441,11 @@ function App() {
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
                     onClick={() => reloadTab(activeTab)}>Reload</button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={!activeTab.dirty || explorerPending || !!savingKey || reviewPending}
+                    onClick={() => reviewTab(activeTab)}>
+                    {reviewPending ? 'Reviewing…' : 'Review changes'}
+                  </button>
                   <button className="primaryBtn editorToolButton"
                     disabled={!activeTab.dirty || explorerPending || !!savingKey}
                     onClick={() => saveTab(activeTab)}>
@@ -420,6 +470,48 @@ function App() {
             </div>}
           </div>
         </section>}
+      {review && <div className="reviewOverlay" role="presentation">
+        <section className="reviewDialog" role="dialog" aria-modal="true"
+          aria-label={'Review proposed changes to ' + review.relativePath}>
+          <div className="reviewHeader">
+            <div>
+              <h2>Review changes</h2>
+              <p>{review.relativePath} · {review.removedLines} removed, {review.addedLines} added</p>
+            </div>
+            <button type="button" className="ghostBtn"
+              onClick={() => setReview(null)}>Close review</button>
+          </div>
+          <p className="reviewNotice">
+            This is a preview of the current human-owned draft, not a Lu-generated suggestion.
+            No files are changed by reviewing. Future Lu proposals will require
+            independent approval before the IDE applies them.
+          </p>
+          <div className="reviewLines" aria-label="Proposed source changes">
+            {review.lines.map((line, index) =>
+              <div key={index} className={'reviewLine ' + line.kind}>
+                <span aria-hidden="true">{line.kind === 'added' ? '+' :
+                  line.kind === 'removed' ? '−' : ' '}</span>
+                <code>{line.text.endsWith('\n') ? line.text.slice(0, -1) : line.text}
+                  {!line.text.endsWith('\n') && <span className="reviewNoNewline"> [no newline]</span>}
+                </code>
+              </div>)}
+            {review.unchanged && <p>No differences from the saved version.</p>}
+          </div>
+          {review.truncated && <p className="reviewWarning" role="alert">
+            Preview truncated to prevent excessive output. Save from this review is
+            unavailable; use the regular editor Save only after inspecting the full draft.
+          </p>}
+          <div className="reviewActions">
+            <button type="button" className="ghostBtn"
+              onClick={() => setReview(null)}>Return to editor</button>
+            <button type="button" className="primaryBtn"
+              disabled={review.truncated || review.unchanged || !!savingKey}
+              onClick={() => saveReviewedChange()}>
+              {savingKey ? 'Saving…' : 'Save reviewed changes'}
+            </button>
+          </div>
+        </section>
+      </div>}
       <footer className="ideStatusBar"><span>● Local standalone application</span>
         <span>{savingKey ? 'Saving…' : pending || explorerPending ? 'Working…' :
           anyDirty ? '● Unsaved changes' : 'Ready'} · Ctrl+O folder · Ctrl+S save</span>
