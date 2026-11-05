@@ -19,6 +19,13 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## A2/A3 continuation: typed contracts and project continuity
+
+- `host/src/capability_schemas.json` is the reviewed typed schema source for 17 real Tauri commands, with nested record definitions and schema version 2. `host/src/capabilities.rs` loads those bundled contracts; no arbitrary repo schema may authorize actions.
+- `host/src/continuity.rs` is an app-profile event log and bounded read-only context view. `ide_read_project_context` supplies scoped project observations and revisioned (untrusted) orientation-document excerpts, with Git/artifact/toolchain current readiness explicitly unknown.
+- Project lifecycle and saved-file operations append best-effort host observations after native success. Logs are not security grants, effect receipts, or proof of package/build success. Corrupt logs fail closed on read; a log append failure never turns a completed write into a retryable failure.
+- Human UI sections: Capabilities (typed contracts) and Continuity (project context). **Native CI, exact-head tests, installed Windows UX and real local artifact enumeration remain open until verified.**
+
 ## Wave A2 capability registry continuation
 
 `host/src/capabilities.rs` holds the versioned static host-authored catalog of **existing** project, source, save and proposal commands. `ide_list_capabilities` returns that metadata only, with no dispatch or permission grant. The UI now has a Capabilities directory, and a static frontend test compares all registered native operation names against catalog descriptors. Do **not** list future Git, LSP, package or worker actions as available until real guarded implementations exist. No Lu connection. Native exact-head CI and physical Windows acceptance must be checked before closing Wave A2.
