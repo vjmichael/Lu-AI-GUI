@@ -21,6 +21,10 @@ function App() {
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState('');
   const [hint, setHint] = useState('');
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findIndex, setFindIndex] = useState(0);
+  const [findRequest, setFindRequest] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -43,6 +47,26 @@ function App() {
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
   const parentPath = directory.split('/').slice(0, -1).join('/');
+  // Search is local to the active unsaved editor buffer, never the filesystem.
+  const matches = [];
+  if (activeTab && findQuery) {
+    const source = activeTab.draft.toLocaleLowerCase();
+    const needle = findQuery.toLocaleLowerCase();
+    let cursor = 0;
+    while (needle && cursor < source.length && matches.length < 10000) {
+      const found = source.indexOf(needle, cursor);
+      if (found < 0) break;
+      matches.push(found);
+      cursor = found + Math.max(needle.length, 1);
+    }
+  }
+  function navigateMatch(delta) {
+    if (!matches.length || !activeTab) return;
+    const next = (findIndex + delta + matches.length) % matches.length;
+    setFindIndex(next);
+    setFindRequest({ tabKey: activeTab.key, from: matches[next],
+      to: matches[next] + findQuery.length, nonce: Date.now() });
+  }
 
   async function refresh() {
     setPending(true);
@@ -457,6 +481,10 @@ function App() {
       if (key === 'o') {
         event.preventDefault();
         if (!pending && !explorerPending && !savingKey) void operation('ide_choose_project');
+      } else if (key === 'f' && section === 'explorer' && activeTab) {
+        event.preventDefault();
+        setFindOpen(true);
+        setFindIndex(0);
       } else if (key === 's') {
         event.preventDefault();
         if (activeTab) void saveTab(activeTab);
@@ -464,7 +492,7 @@ function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [pending, explorerPending, savingKey, activeTab, tabs]);
+  }, [pending, explorerPending, savingKey, activeTab, tabs, section]);
 
   useEffect(() => {
     const warn = event => {
@@ -679,6 +707,8 @@ function App() {
                 <span className="editorToolbar">
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                  <button className="ghostBtn editorToolButton" aria-label="Find in file"
+                    onClick={() => { setFindOpen(true); setFindIndex(0); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
                     onClick={() => reloadTab(activeTab)}>Reload</button>
                   <button className="ghostBtn editorToolButton"
@@ -693,7 +723,23 @@ function App() {
                   </button>
                 </span>
               </div>
+              {findOpen && <div className="editorFindBar" role="search" aria-label="Find in active file">
+                <input aria-label="Find text" placeholder="Find in file"
+                  value={findQuery} autoFocus
+                  onChange={event => { setFindQuery(event.target.value); setFindIndex(0); }}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') { event.preventDefault(); navigateMatch(event.shiftKey ? -1 : 1); }
+                    if (event.key === 'Escape') { event.preventDefault(); setFindOpen(false); }
+                  }}/>
+                <span className="editorFindCount">{matches.length ? `${Math.min(findIndex + 1, matches.length)} of ${matches.length}` : 'No matches'}</span>
+                <button type="button" aria-label="Previous match" disabled={!matches.length}
+                  onClick={() => navigateMatch(-1)}>↑</button>
+                <button type="button" aria-label="Next match" disabled={!matches.length}
+                  onClick={() => navigateMatch(1)}>↓</button>
+                <button type="button" aria-label="Close find" onClick={() => setFindOpen(false)}>×</button>
+              </div>}
               <CodeEditor
+                findRequest={findRequest?.tabKey === activeTab.key ? findRequest : null}
                 key={activeTab.key + ':' + activeTab.generation}
                 tabIdentity={activeTab.key + ':' + activeTab.generation}
                 editorState={editorStates.current.get(activeTab.key)}
