@@ -155,9 +155,16 @@ pub fn read_selected_bytes(
     let format=classify(filename,&bytes[..bytes.len().min(16)]);
     match format{
         ReaderFormat::Xlsx=>{
-            let sheet=selector.strip_prefix("sheet:").filter(|s|!s.is_empty())
-                .ok_or(ReaderFailure::SelectorNotFound)?;
-            crate::native_reader_office::read_xlsx_sheet(bytes,max_chars,Some(sheet))
+            if let Some(spec)=selector.strip_prefix("range:"){
+                let (sheet,range)=spec.rsplit_once('!')
+                    .ok_or(ReaderFailure::SelectorNotFound)?;
+                crate::native_reader_office::read_xlsx_range(
+                    bytes,max_chars,sheet,range)
+            }else{
+                let sheet=selector.strip_prefix("sheet:").filter(|s|!s.is_empty())
+                    .ok_or(ReaderFailure::SelectorNotFound)?;
+                crate::native_reader_office::read_xlsx_sheet(bytes,max_chars,Some(sheet))
+            }
         },
         ReaderFormat::Pptx=>{
             let slide=selector.strip_prefix("slide:")
