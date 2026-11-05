@@ -519,8 +519,14 @@ function App() {
       </header>
       {problem && <div className="errorMsg appError" role="alert">{problem}
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
-      {hint && <p className={'successMsg appMessage' +
-        (hint.startsWith('Saved ') ? ' saveConfirmation' : '')} role="status">{hint}</p>}
+      {hint && <div className={'successMsg appMessage noticeBanner' +
+        (hint.startsWith('Saved ') ? ' saveConfirmation' :
+          hint.startsWith('Proposal staged') ? ' stageConfirmation' : '')}
+        role="status">
+        <span className="noticeContent">{hint}</span>
+        <button type="button" className="noticeDismiss" aria-label="Dismiss notification"
+          onClick={() => setHint('')}>×</button>
+      </div>}
       {isProposals
         ? <section className="proposalWorkspace" aria-label="Coding proposal inbox">
           <div className="proposalIntro">
