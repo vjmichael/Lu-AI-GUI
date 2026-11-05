@@ -208,3 +208,57 @@ fn proposal_queue_is_volatile_and_never_persists_untrusted_code() {
     assert!(!catalog.contains("x = 123"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn stage_refuses_stale_source_even_after_human_review() {
+    let (root, registry, id) = fixture();
+    let inbox = IdeProposalInbox::default();
+    let json = serde_json::to_string(&envelope(&registry, &id)).unwrap();
+    let queued = inbox.import(&registry, &json).unwrap();
+    inbox
+        .decide(&registry, &queued.inbox_id, &queued.digest, true)
+        .unwrap();
+    fs::write(root.join("project/src/one.py"), "changed externally\n").unwrap();
+    assert_eq!(
+        inbox
+            .staging(&registry, &queued.inbox_id, &queued.digest)
+            .unwrap_err()
+            .code(),
+        "FILE_CHANGED_ON_DISK"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/one.py")).unwrap(),
+        "changed externally\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/two.py")).unwrap(),
+        "y = 2\n"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejected_proposal_and_wrong_digest_never_stage() {
+    let (root, registry, id) = fixture();
+    let inbox = IdeProposalInbox::default();
+    let json = serde_json::to_string(&envelope(&registry, &id)).unwrap();
+    let queued = inbox.import(&registry, &json).unwrap();
+    assert_eq!(
+        inbox
+            .staging(&registry, &queued.inbox_id, &queued.digest)
+            .unwrap_err()
+            .code(),
+        "PROPOSAL_NOT_APPROVED"
+    );
+    inbox
+        .decide(&registry, &queued.inbox_id, &queued.digest, false)
+        .unwrap();
+    assert_eq!(
+        inbox
+            .staging(&registry, &queued.inbox_id, &queued.digest)
+            .unwrap_err()
+            .code(),
+        "PROPOSAL_NOT_APPROVED"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
