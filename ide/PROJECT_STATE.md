@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `d7fd8cfac1d91a1ddc3073e631a249c1f5b1f9a7`  
-**Current source validation:** [Standalone IDE CI 42125275258](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42125275258) queued at last inspection. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
+**Last inspected implementation source SHA:** `aad59a809bfeae8272d3d3fdd975fc9f67b69c38`  
+**Current source validation:** [Standalone IDE CI 42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending at last inspection. Exact-source native acceptance **not established**. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -20,7 +20,8 @@
 | **A3 Development Ledger and Context Read Model** | **Initial runtime implemented**: host app-profile JSONL event history, bounded project context and Continuity UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | A3 bounded local artifact and toolchain-candidate inventory | **Implemented in source** | CI on latest source pending | Installed acceptance open |
 | A3 persistent snapshot and compare | **Implemented in source** | Native regression fixtures added; CI pending | Installed acceptance open |
-| A3 full GitHub, worktree and external toolchain reconciliation | **Not implemented** | Not tested | Open |
+| A3 native local Git dirty/untracked inspection | **Implemented in source** | Exact-head CI pending | Windows UI open |
+| A3 full live GitHub and external toolchain reconciliation | **Not implemented** | Not tested | Open |
 | Live Lu connector, worker execution, LSP/build/test/package | **Deferred/not implemented as IDE runtime** | Not tested | Open |
 
 ## A2 — Typed contracts actually implemented
@@ -28,6 +29,14 @@
 - **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
 - Host-created, versioned descriptors for **19 existing** project, source, review, save, proposal, continuity and inventory operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
+
+## A3 native Git worktree reader — implementation committed, CI pending
+
+- `host/src/git_status.rs` uses native `git2` / libgit2 to inspect the **exact registered project root** without launching `git` or executing project code. Refuses accidental parent-repository discovery.
+- Returns branch, local commit ID, locally configured upstream tracking commit, locally computed ahead/behind counts, true modified/staged/untracked file counts and at most 120 changed-path summaries. The Continuity screen displays these separately from older loose-ref evidence.
+- **Not a live GitHub comparison**: no fetch, push, network access, remote PR inspection or authority to mutate Git. Worktree inspection can be unverifiable, and none of its observations grant permission to write.
+- Added native Git fixture tests for clean -> dirty/untracked and parent-repo refusal, plus frontend/schema checks. `git2` now a standalone host dependency; native Windows/Linux CI must compile and run before marking this accepted.
+- CI: [run 42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending at last check; previous build `42125275258` had Windows success, but its Linux/frontend jobs were cancelled as source evolved.
 
 ## A3 — Bounded local evidence inventory and saved baselines
 
