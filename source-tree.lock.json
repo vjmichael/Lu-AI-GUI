@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ff270a97b6972386b866d62ccb096113f247a738",
+  "sourceCommitBeforeLock": "ce3b46b977e0339bac5c4a8b5fd927e8ce56c20c",
   "trackedFileCount": 323,
   "files": [
     {
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "74f9affb3df5cb9412867685fde12e6b66ee94bb"
+      "blob": "f554b8ce4864f65ee780fe1edf926681b78814ad"
     },
     {
       "path": "lu-desktop/tests/browser-staging.test.mjs",
