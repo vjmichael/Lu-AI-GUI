@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "52f3e08788493cc2aea5843b3d93f5b17d3900f8"
+      "blob": "fd8415266a1f53db447d769b3424aa0d98a727c1"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
