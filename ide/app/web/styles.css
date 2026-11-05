@@ -152,3 +152,15 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .editorFindBar input{min-width:80px;max-width:320px;flex:1;background:#0d1724;color:#edf7ff;border:1px solid #54718a;border-radius:5px;padding:7px 10px}
 .editorFindBar button{background:#283f55;color:#d7eafe;border:1px solid #4e6980;border-radius:5px;min-width:30px;min-height:30px}
 .editorFindBar button:disabled{opacity:.45}.editorFindCount{font-size:11px;color:#abc3d9;white-space:nowrap}
+
+/* Wave A2: human-readable view of trusted, non-executable capability metadata. */
+.capabilityWorkspace{overflow-y:auto}
+.capabilityNotice{font-size:12px;line-height:1.55;color:#bfd4e8;max-width:880px}
+.capabilityGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(275px,1fr));gap:14px;padding-bottom:24px}
+.capabilityCard{border:1px solid #35516a;background:#15263a;border-radius:10px;padding:15px;min-width:0}
+.capabilityCard h3{margin:0;font-size:14px;color:#e9f3ff}
+.capabilityCard p{font-size:12px;line-height:1.5;color:#b6cbe0}
+.capabilityHeading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.capabilityEffect{font-size:10px;border:1px solid #5a7185;color:#d2e5f6;padding:4px 6px;border-radius:5px;white-space:nowrap}
+.capabilityCard dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px;margin:12px 0 0;font-size:11px}
+.capabilityCard dt{color:#90a9c0}.capabilityCard dd{margin:0;color:#e2edf7;overflow-wrap:anywhere}
