@@ -18,6 +18,37 @@ test('only approved HTTPS origins are navigable', () => {
     assert.throws(()=>approvedUrl(url,allowed),BrowserGateError,url);
   }
 });
+test('browser worker accepts two approved research sites but never expands grant', async () => {
+  const approved=['https://archive.example','https://catalog.example'];
+  let current='about:blank',routeHandler;
+  const page={
+    url:()=>current,
+    goto:async url=>{current=url;return {status:()=>200};},
+    locator:()=>({innerText:async()=> 'Verified page content'}),
+  };
+  const context={
+    route:async (_pattern,handler)=>{routeHandler=handler;},
+    pages:()=>[page],close:async()=>{},
+  };
+  const worker=new BrowserSession({origins:approved,
+    profileDirectory:'/host/approved/profile',
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:nativeWindow()});
+  await worker.start();
+  for(const url of ['https://archive.example/a','https://catalog.example/b']){
+    assert.equal((await worker.execute({op:'navigate',url})).status,'NAVIGATED');
+    const read=await worker.execute({op:'read'});
+    assert.equal(read.url,url);
+    assert.equal(read.status,'READ');
+  }
+  await assert.rejects(worker.execute({op:'navigate',url:'https://outsider.example/c'}),
+    e=>e.code==='ORIGIN_NOT_GRANTED');
+  let aborted=false;
+  await routeHandler({request:()=>({url:'https://outsider.example/resource'}),
+    continue:async()=>{},abort:async()=>{aborted=true;}});
+  assert.equal(aborted,true);
+  await worker.close();
+});
 test('CAPTCHA detection does not confuse normal pages with challenges', () => {
   assert.equal(challengeKind('Research paper and abstract'),null);
   assert.equal(challengeKind('Please complete the CAPTCHA'), 'CAPTCHA_REQUIRED');
