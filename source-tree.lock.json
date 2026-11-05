@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "235fce7d56969387be463a6f2cf653460f7d48c8",
+  "sourceCommitBeforeLock": "a99fac1472a169294a093fb6e4979e6d810cb65c",
   "trackedFileCount": 333,
   "files": [
     {
@@ -141,7 +141,7 @@
     },
     {
       "path": "docs/TOOLS_ISO_01_AND_LINUX_ARCHIVE_SUPPORT.md",
-      "blob": "45b193aad4f95125a8e53c30933c94fb5122fc73"
+      "blob": "ca491eed37328fab8d527d9b965b295203aeb1c7"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -841,11 +841,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_iso9660.rs",
-      "blob": "95ac04d141226f176fd0fc2ce44eee6eed25bcca"
+      "blob": "0ab5cec279950d0551311cb1f382183a40083612"
     },
     {
       "path": "src-tauri/lu-core/src/native_iso_extract_tool.rs",
-      "blob": "d17ceac12687dea526ee4519bdf0eb925efa1d56"
+      "blob": "98e577a4c0036a3dc97b986cf9d3e83db0676da7"
     },
     {
       "path": "src-tauri/lu-core/src/native_reader.rs",
@@ -1217,7 +1217,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_iso9660.rs",
-      "blob": "f9667c208e9af5cda271c518557d89e890b5f507"
+      "blob": "8e12fed16f7c27615ec7b2b97a796254b9ea0e21"
     },
     {
       "path": "src-tauri/lu-core/tests/native_spreadsheet_create.rs",
