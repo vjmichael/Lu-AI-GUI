@@ -599,11 +599,11 @@
         },
         "remoteGitState": {
           "type": "string",
-          "const": "not_inspected"
+          "const": "not_queried"
         },
         "localArtifacts": {
           "type": "string",
-          "const": "not_inspected"
+          "const": "bounded_scan"
         },
         "currentToolchainReadiness": {
           "type": "string",
@@ -622,6 +622,9 @@
             "$ref": "#/$defs/ContextDocument"
           },
           "maxItems": 8
+        },
+        "inventory": {
+          "$ref": "#/$defs/EvidenceInventory"
         }
       },
       "required": [
@@ -633,7 +636,159 @@
         "localArtifacts",
         "currentToolchainReadiness",
         "events",
-        "documents"
+        "documents",
+        "inventory"
+      ]
+    },
+    "EvidenceFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "const": "present_unverified"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        },
+        "trust": {
+          "type": "string",
+          "const": "untrusted_project_file"
+        }
+      },
+      "required": [
+        "relativePath",
+        "category",
+        "state",
+        "sizeBytes",
+        "sha256",
+        "digestStatus",
+        "trust"
+      ]
+    },
+    "GitObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localTrackingHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trackingComparison": {
+          "type": "string"
+        },
+        "workingTree": {
+          "type": "string"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "state",
+        "branch",
+        "localHead",
+        "localTrackingHead",
+        "trackingComparison",
+        "workingTree",
+        "liveRemote"
+      ]
+    },
+    "EvidenceInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "discoveryComplete": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceFile"
+          },
+          "maxItems": 80
+        },
+        "git": {
+          "$ref": "#/$defs/GitObservation"
+        },
+        "toolchainReadiness": {
+          "type": "string",
+          "const": "not_verified"
+        },
+        "executionPerformed": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "scope",
+        "discoveryComplete",
+        "files",
+        "git",
+        "toolchainReadiness",
+        "executionPerformed"
       ]
     }
   },
