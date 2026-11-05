@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span'
+    'ide_read_source_span', 'ide_list_capabilities'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -267,4 +267,26 @@ test('Wave A1 copy source reference validates saved revision and selected line',
   assert.match(cm, /aria-label="Source code editor"/);
   assert.match(cm, /lineAt\(view\.state\.selection\.main\.head\)\.number/);
   assert.match(tauri, /fn ide_read_source_span/);
+});
+
+test('Wave A2 registry advertises actual host operations without granting execution', () => {
+  const registry = read('../../host/src/capabilities.rs');
+  const tauri = read('../src-tauri/src/lib.rs');
+  const web = read('../web/main.jsx');
+  const css = read('../web/styles.css');
+  const commands = [...registry.matchAll(/capability!\("[^"]+",\s*"(ide_[a-z_]+)"/g)]
+    .map(match => match[1]);
+  const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
+  assert.equal(new Set(commands).size, commands.length);
+  const declared = registered.filter(value => value !== 'ide_list_capabilities');
+  assert.deepEqual(commands.slice().sort(), declared.slice().sort());
+  assert.match(registry, /descriptions_only: true/);
+  assert.match(registry, /connected_to_lu: false/);
+  assert.match(registry, /"source.save"/);
+  assert.match(registry, /"file_write"/);
+  assert.match(registry, /"proposal.stage"/);
+  assert.match(tauri, /async fn ide_list_capabilities/);
+  assert.match(web, /aria-label="IDE capability directory"/);
+  assert.match(web, /This directory describes operations/);
+  assert.match(css, /\.capabilityCard/);
 });
