@@ -32,11 +32,7 @@ fn main() -> ExitCode {
     }
     // A long-running fixture must be killed and reaped by the host deadline.
     // This does not by itself prove all descendant cleanup or cgroup quotas.
-    match run_probe(
-        &dir,
-        Probe::TimeoutContainment,
-        Duration::from_millis(250),
-    ) {
+    match run_probe(&dir, Probe::TimeoutContainment, Duration::from_millis(250)) {
         Err(SandboxError::TimedOut) => {
             println!("ISOLATION_PROBE_PASS: TimeoutContainment");
             passed += 1;
