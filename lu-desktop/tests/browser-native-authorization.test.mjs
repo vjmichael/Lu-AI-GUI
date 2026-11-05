@@ -144,7 +144,7 @@ test('multi-page research requires distinct browser-confirmed source URLs',()=>{
   assert.ok(host.includes('result.pointer("/result/browser_result/result/url")'));
   assert.ok(host.includes('result.pointer("/result/browser_result/result/text")'));
   assert.ok(host.includes('if matches!(actual_status,Some("READ"|"ACCESSIBILITY"))'));
-  assert.ok(host.includes('Browser read escaped approved HTTPS origin'));
+  assert.ok(host.includes('Browser read escaped approved HTTPS origins'));
   assert.ok(host.includes('if unique_urls.len()>=2{break;}'));
   assert.ok(host.includes('if distinct_urls.len()<2{'));
   assert.ok(host.includes('source_records:Vec<String>=verified_pages.into_values().collect()'));
@@ -157,4 +157,19 @@ test('source summaries do not turn navigation into evidence or consume unbounded
   assert.ok(host.includes('if text.len().saturating_add(fragment.len())>14*1024'));
   assert.ok(host.includes('Do not cite or claim to have assessed their contents.'));
   assert.ok(host.includes('state.chats.append_browser_observation('));
+});
+
+test('cross-origin research grants use a bounded exact native-approved set',()=>{
+  assert.ok(host.includes('fn research_origin_scope(input:&str)'));
+  assert.ok(host.includes('input.len()>2048'));
+  assert.ok(host.includes('parts.len()>8'));
+  assert.ok(host.includes('BrowserOriginScope::from_host_grant(parts)'));
+  assert.ok(host.includes('let scope=research_origin_scope(&origin)?;'));
+  assert.ok(host.includes('approved_origins.join("\\n")'));
+  assert.ok(host.includes('BrowserReadOnlyPolicy'));
+  assert.ok(host.includes('let approved_source_scope=research_origin_scope(&origin)?;'));
+  assert.ok(host.includes('approved_source_scope.allows(page)'));
+  assert.ok(ui.includes('Research HTTPS origins'));
+  assert.ok(ui.includes('Lu asks for native approval of the entire list'));
+  assert.ok(!host.includes('page.strip_prefix(origin.as_str())'));
 });
