@@ -118,6 +118,38 @@ async fn ide_close_project(
     .map_err(|_| "PROJECT_TASK_UNAVAILABLE".to_string())?
 }
 
+/// These read-only requests require a registered, currently open project ID.
+/// Paths are *relative within* a cap-std capability; never absolute WebView paths.
+#[tauri::command]
+async fn ide_list_source_directory(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_dir: String,
+) -> Result<lu_ide_workspace::browser::DirectoryListing, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.list_source_directory(&project_id, &relative_dir)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "BROWSER_TASK_UNAVAILABLE".to_string())?
+}
+
+#[tauri::command]
+async fn ide_preview_source_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::browser::TextPreview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_source_file(&project_id, &relative_path)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "PREVIEW_TASK_UNAVAILABLE".to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -133,7 +165,9 @@ pub fn run() {
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
-            ide_close_project
+            ide_close_project,
+            ide_list_source_directory,
+            ide_preview_source_file
         ])
         .run(tauri::generate_context!())
         .expect("standalone Lu IDE failed to initialize");
