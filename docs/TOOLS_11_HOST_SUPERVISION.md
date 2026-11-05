@@ -95,6 +95,39 @@ checkpoint bytes, expand workspace grants, or demand a worker kill.
 - CI: native Rust unit tests must pass on Windows and Linux, plus real
   installed-app testing later in release acceptance.
 
+## First real host-worker integration: media integrity scan
+
+A user can open the Lu Background Tasks pane and select **Scan media
+file…**. The native OS file picker supplies a local video/audio file path
+to the trusted host, which mints a unique task ID. The host launches a
+separate copy of the **current installed Lu executable** using its
+reserved `--lu-file-scan-worker` mode, after computing and independently
+checking the executable's SHA-256. That child enters worker mode before
+Tauri or any model is loaded. This is not an arbitrary-command interface.
+
+The worker reads the file sequentially in **1 MiB bounded-memory chunks**,
+publishes only numeric byte-progress frames and a final SHA-256 digest.
+The host accepts those frames through a limited, line-oriented pipe,
+checks monotonic byte counts and fixed input size, stores checkpoints in
+SQLite, and marks completion only after process exit plus a valid
+end-of-file digest receipt. Corrupt or truncated output causes a failed
+task. Cancellation is still handled by the owner-specific OS process
+supervisor; the model never polls the worker.
+
+**This is a real media-file I/O/integrity scan, not video/audio content
+understanding.** It does not transcribe speech, extract frames, or analyze
+the content of the media. The scanner can run without any GGUF loaded and
+does not inherit the model-generation timeout.
+
+### Acceptance distinction
+
+The Windows/Linux CI harness imports the *identical production worker
+module* and executes a real native child against a 12 MiB file, checking
+progress and SHA-256. The actual full Tauri desktop build remains
+independently blocked by the unavailable verified llama-server executable
+resource in GitHub source. Do not substitute a dummy engine or claim an
+installed GUI acceptance pass from the harness alone.
+
 ## Acceptance scenarios
 
 1. 40-minute synthetic media task progresses with LLM unloaded; zero model
