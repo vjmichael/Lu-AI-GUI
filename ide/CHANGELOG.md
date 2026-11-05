@@ -2,6 +2,12 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Wave A1 CI repair and human Copy source reference (unverified)
+- Investigated [native CI 42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705): Windows desktop and frontend passed; Linux Rust host tests completed, then formatting check failed on the new span files. Applied rustfmt-suggested formatting changes.
+- Added editor toolbar's `Copy source reference`: verifies currently saved SHA revision and selected cursor line using native `ide_read_source_span`, then copies a machine-readable reference with project ID, relative path, full SHA, line and UTF-8 byte offsets.
+- Unsaved drafts are explicitly refused for this saved-disk operation. New UI tests were added; no live Lu connection or file writes.
+- **Verification and packages:** exact-head CI after repair remains open; native clipboard UX not physically tested; no new Windows installer generated.
+
 ## 2026-11-05 — IDE-ARCH-02 / Wave A1 saved-source span (implemented, unverified)
 - Implemented `host/src/source_span.rs` bounded read-only exact-revision source spans: one-based line numbers, UTF-8 byte positions, LF/CRLF terminators and blank/trailing lines. Reuses trusted `preview_source_file` and rejects stale revisions; maximum 120 lines and 32 KiB selected text.
 - Added `ide_read_source_span` to standalone Tauri command registry and `host/tests/source_span.rs` native tests (Unicode, CRLF, stale SHA, traversal, invalid range, closed project, Unix symlink).
