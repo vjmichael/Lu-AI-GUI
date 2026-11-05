@@ -188,3 +188,15 @@ Do not force post-v1.0 workspaces into the v1.0 release criteria. Interfaces can
 Benchmark **real task completion**, wasted rediscovery/downloads, retrieval precision and source provenance, false-positive resource readiness, compute/tokens/time to result, permission violations, recovery success and human clarification burden. Compare host preflight on/off while holding model, hardware, inputs and task difficulty consistent; a trivia memory quiz is not sufficient.
 
 **Principle:** Make software easier for AI to understand and operate. Efficient references, discoverable actions, verified resources, relevant context, robust evidence and reversible effects should reduce intelligence wasted merely figuring out where to begin.
+
+## 2026-11-05 owner sequencing decision — Native tools before integrated memory
+
+The owner selected the following v1.0 engineering **implementation order**:
+
+1. **Finish the remaining first-party general-purpose Core native tools** (source, contracts, trusted host/desktop routing, authorized real operations, cancellation/recovery, Windows/Linux and real-model acceptance). Reconcile existing draft implementations first; do not build duplicate replacement toolkits. This includes bounded files/Reader/search, local Git, archive, JSON boundary and schema validation, environment discovery, relevant web/research, loop guard and supervised background operations. Advanced IDE, Film/NVP and specialized DLC workflows remain outside the Core tool gate.
+2. **Then integrate the full memory structure**: ANSF/SQLite provenance and decision retrieval, immutable source and revision links, task continuity/effect evidence, operational resource inventory with fresh environment checks, and the host-owned preflight/context assembler that supplies compact relevant orientation to each task.
+3. **Then validate and stabilize the complete v1.0 system**, using real GGUF/Qwen tool-use tasks, Windows installed-app workflows, cross-chat NSIS/Cognitum resource reuse, restart and recovery.
+
+**Architectural invariants apply during the tool build:** Tool interfaces should already return typed source identity/revision, structured outcomes and safe recovery hints as appropriate. Current persisted user-turn authority, policy, effect journals and host evidence must remain mandatory. A discovered tool or recalled resource never grants permission. The small compatibility hooks needed for future memory should be included in tool contracts now, but the full automatic retrieval/memory orchestration is deliberately scheduled **after native tool completion**. This implementation order supersedes any prior suggestion to integrate operational memory before the tool closeout; it does not defer memory beyond Core v1.0.
+
+Full finding-by-finding source references and integration gates: [LU-AIW-AUDIT-01](LU_AIW_FOUNDATIONAL_CODEBASE_AUDIT_20261105.md).
