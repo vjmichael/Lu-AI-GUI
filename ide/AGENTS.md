@@ -5,7 +5,7 @@ The root repository may also contain Lu Core guidance. This file applies specifi
 ## Read first
 1. [Current observed state](PROJECT_STATE.md) — exact branch, unverified areas and next tasks.
 2. [Development changelog](CHANGELOG.md) and [continuity protocol](CONTINUITY_PROTOCOL.md) — distinguish local, remote, CI, packages and installed acceptance.
-3. [AI-first IDE requirements](docs/AI_FIRST_IDE_DESIGN.md) — foundational design philosophy; [IDE workspace architecture](docs/IDE_WORKSPACE_DESIGN.md).
+3. [Capability-first architecture and implementation waves](docs/CAPABILITY_FIRST_ARCHITECTURE.md) — current build order. [AI-first IDE requirements](docs/AI_FIRST_IDE_DESIGN.md) — foundational philosophy; [IDE workspace architecture](docs/IDE_WORKSPACE_DESIGN.md) — canonical eight-stage acceptance accounting.
 4. [Engineering handoff](ENGINEERING_HANDOFF.md) and documented acceptance evidence.
 
 ## Canon
