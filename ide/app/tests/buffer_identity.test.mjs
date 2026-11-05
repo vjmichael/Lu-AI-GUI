@@ -90,3 +90,13 @@ test('clipboard source reference is explicitly volatile, with full draft digest'
   assert.match(ref, /lifetime=session-only/);
   assert.doesNotMatch(ref, /hello/); // source contents stay in editor
 });
+
+test('CRLF across multiple lines uses UTF-8 bytes despite one-unit editor breaks', () => {
+  const state = createCrLf('α\r\n😀z\r\nlast');
+  const afterTwoLines = state.doc.line(3).from;
+  const span = captureBufferSpan(original(), state, 0, afterTwoLines);
+  assert.equal(afterTwoLines, 6); // editor counts each CRLF as one
+  assert.equal(span.toByte, 11); // serialized UTF-8 has two-byte CRLF pairs
+  assert.equal(span.endLine, 3);
+  assert.equal(span.endColumnUtf16, 1);
+});
