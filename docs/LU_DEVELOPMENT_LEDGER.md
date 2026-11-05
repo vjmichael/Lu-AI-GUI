@@ -42,25 +42,9 @@ This is an initial **source-grounded reconciliation of inspected branches**, not
 | **Memory — scheduled second** | ANSF/FTS/revisions and continuity APIs on `main`; Cognitum search bridge [#21](https://github.com/vjmichael/Lu-AI-GUI/pull/21); operational resource ledger [#28](https://github.com/vjmichael/Lu-AI-GUI/pull/28) | **Core components + draft extensions**, no default desktop preflight | After tool integration: connect verified resource probe, cross-chat provenance and task checkpoint/context assembly |
 | **AI-usability audit** | Findings and tool-first decision [#29](https://github.com/vjmichael/Lu-AI-GUI/pull/29) | **Draft report**, not implementation acceptance | Use for v1.0 scope/verification and source-reference contracts |
 
-### 2026-11-05 actual closeout work — TOOLS 1–5 (accepted states only when proven)
+### 2026-11-05 tool closeout (1–5) — current integration evidence
 
-| Scope | Code branch / exact source head | Verified result | Next unclosed gate |
-| --- | --- | --- | --- |
-| 1 — Filesystem/search | [PR #32](https://github.com/vjmichael/Lu-AI-GUI/pull/32), `69360585f07d326c300260290cd1d2f05143e5fe` (stacked on #24) | Repaired outdated 300-vs-512-entry truncation test to exceed real budget; **native-core and source identity green**. This changes a regression fixture, not filesystem semantics | Remaining Windows-host/other matrix checks and tool integration; no installed acceptance |
-| 2 — Archive | [PR #33](https://github.com/vjmichael/Lu-AI-GUI/pull/33), `c4ada5ac3da9354bcdc26c1fca339b75d6ecd108` (stacked on #15) | Fixed missing `zip` edge in desktop Cargo.lock after inspecting actual [Windows failure](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41895206776/job/126808737558); **source identity green**. No parser rewrite | Exact-head native/Windows build and approved ZIP inspection desktop path; physical Windows acceptance |
-| 3 — Controlled execution | On-main CE `CeExecuteRequest/Result` and `ExecuteCode` authorization; [#27](https://github.com/vjmichael/Lu-AI-GUI/pull/27) host worker | Existing source/contract verified by inspection only **in this closeout** | Approved typed job-kind model/host operation, no arbitrary shell, end-to-end tested execution receipts; no new general exec advertised |
-| 4 — Background tasks | [PR #30](https://github.com/vjmichael/Lu-AI-GUI/pull/30), `aec0ac378dcb1cf5b42be75f2d19e2bb819bc008` (stacked on #27) | **Windows and Ubuntu scoped task-status/receipt matrix passed**; real native status/result are model-schema-advertisable, workspace-gated, with no private checkpoint/artifact claims | Host-owned authorized start/cancel model route, actual task receipt/artifact verification and physical Windows acceptance |
-| 5 — Universal Reader | [PR #31](https://github.com/vjmichael/Lu-AI-GUI/pull/31), `9b4269badd49a66a5229ee6b2501c96150faa002` (stacked on #27) | **Windows and Ubuntu Reader matrix passed** for bounded nested classic-PDF tree traversal and existing Reader module regressions | Real-producer/CMap/scanned PDF/OCR/parsing hardening, model+installed desktop acceptance |
-
-**Limitations:** Feature integration PRs #15/#24/#27 remain draft and separate from `main`. Reader #31, search #32 and archive lock #33 were merged into their existing development bases; background #30 was copied byte-identically into #27 then closed as superseded. No accepted installed Lu v1.0 is claimed. **Historical note:** Reader #31 and search #32 were subsequently **merged into their existing development base branches only**, not main. Background #30 code was ported byte-identically into #27's development branch, with whole-base CI underway. CI successes above are exact-commit observations, not evidence these five coexist in one shippable Lu desktop. This table is the current source-of-truth handoff; do not reopen finished implementations or count the old archive lock issue as a missing Windows Job method. Broad integration and actual physical Windows v1.0 tests remain separate gates.
-
-### 2026-11-05 tool closeout integration receipts
-
-- **Reader #31**: merged into development PR #27 at `13a58f0af9af4b651f0c10c1d3d5c31758ee1b8f` after exact-head Windows+Linux native pass. This is **not** a merge to `main`.
-- **Background/controlled execution #30**: original commit `d16d681890e309531bc508a260cf4b76b760cf24` passed native Windows+Linux; both added Rust modules were copied **byte-identically** into the existing Reader/background #27 development branch and registered in Core/workflow at `5fef956d6a81fb2c9843e116465847fa1251f690`. Combined-source Linux CI succeeded; Windows CI underway. The #30 PR remains open pending final consolidation receipt.
-- **Filesystem/search #32**: exact `69360585f07d326c300260290cd1d2f05143e5fe` native-core, Windows-host, source identity and approved-dispatch tests passed; merged to development PR #24 at `3ceb00c7c60f29a56a9af4a709fb90892fb6ce3d`, not `main`.
-- **Archive #33**: generated the real Windows Cargo.lock difference via a fail-closed diagnostic, applied exactly 33 hunks, and confirmed the resulting Git blob `4314c65c2758f1d68cc84aedb60a47a438c41bd8` matches the runner's expected regenerated lockfile. Exact branch source revision `7efa41870daf1bb191e30f9196a2bd4a8f99aeb7`; Cargo.lock check, source identity, Core and portable tests green; full Windows-host still in progress.
-- **No release promotion:** none of the above proves all 5 tool families are merged into one installer, or that GGUF models execute them in a tested installed Lu desktop.
+This section **supersedes** early progress snapshots from PRs #30–33. The feature map above gives current scope, and the exact branch/CI receipts below are the only current summary of today's closeout. Historical failures remain in GitHub run logs, not as competing status claims.
 
 ### 2026-11-05 branch-consolidation verification — authoritative handoff
 
@@ -69,12 +53,11 @@ This is an initial **source-grounded reconciliation of inspected branches**, not
 - **[#15](https://github.com/vjmichael/Lu-AI-GUI/pull/15)** at `6e17793c52fd81dbaf8fbbbcd2d2f50cfe6e6ff5`: PR #33 Cargo-generated lockfile repair merged into this development branch after [exact-head Windows-host success](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074988062/job/127422309070) and native-core/source-identity/desktop-lock audit green. ZIP-specific pending jobs and new post-merge build identity are separate checks, not assumed green.
 - **State:** **21 open PRs** after closing/merging four transient tool closeout PRs (#30–33); all three surviving Core feature branches remain **unmerged**, not one installed toolset. The model+installed Windows acceptance is not established by these CI jobs.
 
-### Recorded selective CI evidence (not exhaustive)
+### Prior failures (superseded by later exact-source fixes)
 
-- [#24 head `b5face4d0abed8ccc56411e068bf420fe8b7b87a`](https://github.com/vjmichael/Lu-AI-GUI/commit/b5face4d0abed8ccc56411e068bf420fe8b7b87a): `windows-host` succeeded; `native-core` failed. **No whole-app pass.**
-- [#15 head `f1caf91ef88beacb063c0c6348035ad12b0e0a6e`](https://github.com/vjmichael/Lu-AI-GUI/commit/f1caf91ef88beacb063c0c6348035ad12b0e0a6e): ZIP-specific Windows/Linux checks succeeded; `windows-host` failed. **Do not call ZIP desktop integrated.**
-- [#27 head `c716876aed0276e98cb372ccd2cd16c916c5c00d`](https://github.com/vjmichael/Lu-AI-GUI/commit/c716876aed0276e98cb372ccd2cd16c916c5c00d): scoped task-status checks succeeded on Windows and Ubuntu; **no verified full Tauri/installed acceptance**.
-- Other PR-specific CI/physical results were **not exhaustively checked for this snapshot**. The source branch's own documentation and exact GitHub run are evidence only for the executed scope.
+- Original [#24 native-core failure](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41896488882/job/126807296947) was a test expecting truncation with 300 directories while the actual search ceiling was 512. Fixed and verified on #32; changes merged into dev #24.
+- Original [#15 Windows-host failure](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41895206776/job/126808737558) was stale desktop Cargo.lock. The full Windows Cargo-resolved lockfile was committed and tested on #33; changes merged into dev #15.
+- Prior #27 Reader limitations are still recorded in its [closeout file](https://github.com/vjmichael/Lu-AI-GUI/blob/5fef956d6a81fb2c9843e116465847fa1251f690/docs/LU_READER_CLOSEOUT.md) and **not** all resolved by nested-page support.
 
 ## 4. Active PRs and branch topology (machine-refreshable)
 
