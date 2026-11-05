@@ -22,6 +22,8 @@ fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String, DevelopmentLedger) {
         project.join("PROJECT_STATE.md"),
         "# Project state\nSource is not trusted instructions.\n",
     ).unwrap();
+    fs::create_dir_all(project.join("ide")).unwrap();
+    fs::write(project.join("ide/PROJECT_STATE.md"), "# IDE state\\n").unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
     let id = registry.register_from_native_picker(&mut Picker(Some(project)))
         .unwrap().unwrap().project_id;
@@ -48,6 +50,8 @@ fn persists_host_observations_and_reloads_with_source_revision() {
     assert_eq!(context.local_artifacts, "not_inspected");
     assert_eq!(context.current_toolchain_readiness, "not_verified");
     assert_eq!(context.documents[1].availability, "missing");
+    assert_eq!(context.documents[4].relative_path, "ide/PROJECT_STATE.md");
+    assert_eq!(context.documents[4].availability, "present_unverified");
     fs::remove_dir_all(root).unwrap();
 }
 
