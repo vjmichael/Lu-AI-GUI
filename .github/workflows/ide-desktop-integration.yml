@@ -1,0 +1,65 @@
+name: IDE desktop bridge verification
+
+on:
+  push:
+    branches:
+      - ide/workspace-development
+    paths:
+      - "ide/**"
+      - "lu-desktop/**"
+      - ".github/workflows/ide-desktop-integration.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ide-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: lu-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: IDE bridge source regression
+        run: node --test tests/ide-workspace.test.mjs
+      - name: Install web build dependencies without scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Compile Lu React UI
+        run: npm run build
+      - name: Run existing UI regressions
+        run: npm run test:ui
+      - name: Validate bundled UI
+        run: npm run check
+
+  windows-host-check:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Rust 1.88
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc --version
+      - name: Verify isolated IDE Rust crate on Windows
+        run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Prepare frontend resources for Tauri check
+        working-directory: lu-desktop
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Compile Tauri desktop integration without packaging or starting model
+        run: cargo check --manifest-path lu-desktop/src-tauri/Cargo.toml
