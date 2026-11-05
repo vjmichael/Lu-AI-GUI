@@ -253,6 +253,38 @@ mod tests{
                 }.encode_to_vec()}}
     }
     #[tokio::test]
+    async fn pages_unicode_document_without_splitting_codepoints_or_granting_paths(){
+        let path=workspace();let _=std::fs::remove_dir_all(&path);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("sample.txt"),"αβγδεζηθ").unwrap();
+        let registry=NativeToolRegistry::new();
+        let _catalog=register_reader(&registry,&path).unwrap();
+        let mut req=invocation("sample.txt");
+        req.input.bytes=ReaderRequest{
+            path:"sample.txt".into(),max_bytes:None,
+            max_chars:Some(3),offset_chars:Some(2),
+        }.encode_to_vec();
+        let result=registry.dispatch(req.clone(),&Allow).await.unwrap();
+        let response=ReaderResponse::decode(result.payload.bytes.as_slice()).unwrap();
+        assert_eq!(response.text,"γδε");
+        assert_eq!(response.offset_chars,2);
+        assert_eq!(response.next_offset_chars,Some(5));
+        assert!(response.truncated);
+        assert!(!response.source_truncated);
+        let mut next=ReaderRequest::decode(req.input.bytes.as_slice()).unwrap();
+        next.offset_chars=Some(5);
+        req.input.bytes=next.encode_to_vec();
+        let response=ReaderResponse::decode(registry.dispatch(req.clone(),&Allow).await
+            .unwrap().payload.bytes.as_slice()).unwrap();
+        assert_eq!(response.text,"ζηθ");
+        assert_eq!(response.next_offset_chars,None);
+        assert!(!response.truncated);
+        next.offset_chars=Some(100);
+        req.input.bytes=next.encode_to_vec();
+        assert!(registry.dispatch(req,&Allow).await.is_err());
+        let _=std::fs::remove_dir_all(path);
+    }
+    #[tokio::test]
     async fn registered_reader_is_scoped_and_no_ocr_is_claimed(){
         let path=workspace();let _=std::fs::remove_dir_all(&path);
         std::fs::create_dir(&path).unwrap();
