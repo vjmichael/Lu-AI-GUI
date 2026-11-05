@@ -27,6 +27,10 @@ Source control is now a real sidebar section using typed `git.status` and native
 
 Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
 
+## Wave B2 — Source identity for unsaved drafts
+
+Working PR: [#43](https://github.com/vjmichael/Lu-AI-GUI/pull/43), branch `ide/buffer-revision-20261105`. [Canonical source identity contract](docs/IDE_BUFFER_REFERENCES.md). The IDE now tracks volatile buffer UUID/revision separately from disk SHA-256, captures bounded exact CodeMirror selection/caret spans, computes full-draft digest in WebView and copies a session-only reference. Validation rejects a changed buffer/undo/reload/reopened tab. No draft is submitted to Lu, native IPC or Git; Save remains explicit and revision checked. The feature has **not** passed latest PR CI or installed Windows acceptance yet. Keep it isolated until its own CI gates are verified.
+
 ## Wave B1 human Find and Replace
 
 The standalone editor now has Ctrl+H and a Find/Replace bar: bounded literal case-sensitive/insensitive matching with correct CodeMirror UTF-16 offsets, Replace One or confirmed Replace All. Replacement is an unsaved **single CodeMirror transaction**, not a host write; saved file revision checks remain unchanged. The operation checks expected draft and consumes its nonce so remounting a tab does not replay it. New JS tests live in `app/tests/find_replace.test.mjs`.
