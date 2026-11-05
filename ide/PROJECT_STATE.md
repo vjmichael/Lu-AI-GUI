@@ -23,6 +23,14 @@
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
+## Wave A1 source-reference UI and CI repair — 2026-11-05
+
+- CI [42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705): Windows desktop **passed**, frontend **passed**, Linux native job **failed due to `cargo fmt --check` formatting differences**. Rust tests had completed before formatting failed. This was not a source-span behavioral failure.
+- Formatting corrections applied to `host/src/source_span.rs` and `host/tests/source_span.rs`, based on actual Rust CI formatter diff; **new exact-head CI still required**.
+- Human-facing **Copy source reference** added to the editor toolbar. It tracks the active cursor's line, rejects dirty buffers, calls `ide_read_source_span` against the saved SHA-256 before copying an exact project/path/revision/line/byte span, and reports a human-readable stale-file conflict. It performs no file write and does not enable the Lu bridge.
+- New frontend regression assertions accompany the UI. **Clipboard behavior on installed Windows remains unverified**. The operation refers to the **saved disk file**, not any unsaved CodeMirror draft.
+- Current completion classification: **source implemented; verification pending exact-head CI and physical Windows UX**. No new installer identified.
+
 ## Wave A1 — first host implementation (source only)
 
 - [GitHub Actions 42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705) started for source commit `15f4b99c`: frontend passed; at last check Windows desktop still running and Linux host queued. **No complete Wave A1 acceptance claim.**
