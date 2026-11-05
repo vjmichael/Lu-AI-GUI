@@ -456,7 +456,62 @@ function App() {
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
       {hint && <p className={'successMsg appMessage' +
         (hint.startsWith('Saved ') ? ' saveConfirmation' : '')} role="status">{hint}</p>}
-      {!isExplorer
+      {isProposals
+        ? <section className="proposalWorkspace" aria-label="Coding proposal inbox">
+          <div className="proposalIntro">
+            <div>
+              <h2>Proposals awaiting review</h2>
+              <p>Import a bounded proposal or prepare one from the open editor.
+                No model is connected; author claims in proposals are unverified.
+                Nothing in this inbox can write or execute code.</p>
+            </div>
+            <span>{proposals.length} / 16 proposals</span>
+          </div>
+          <div className="proposalGrid">
+            <div className="proposalCompose">
+              <h3>Prepare a proposal</h3>
+              <p>Open a project source file, then create a local proposal draft.
+                You can edit its JSON text to suggest a replacement. Importing
+                is read-only and validates the file's saved revision.</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeTab || inboxBusy}
+                onClick={prepareLocalProposal}>Prepare from open editor</button>
+              <label htmlFor="proposal-json">Proposal JSON</label>
+              <textarea id="proposal-json" className="proposalJsonInput"
+                value={proposalInput} spellCheck={false} maxLength={650000}
+                onChange={event => setProposalInput(event.target.value)}
+                placeholder="Paste a schemaVersion: 1 proposal or prepare one from the editor." />
+              <button type="button" className="primaryBtn"
+                disabled={!proposalInput.trim() || inboxBusy}
+                onClick={() => importProposal()}>
+                {inboxBusy ? 'Working…' : 'Add to review inbox'}
+              </button>
+              <p className="proposalNotice">No source files are saved by importing a proposal.
+                The inbox exists only while this IDE instance is running.</p>
+            </div>
+            <div className="proposalList">
+              <h3>Review inbox</h3>
+              {proposals.length === 0
+                ? <div className="proposalEmpty">No coding proposals have been queued.
+                    Open a source tab to prepare a local example.</div>
+                : proposals.map(item => <article key={item.inboxId} className="proposalItem">
+                  <div className="proposalItemHeader">
+                    <strong>{item.taskId}</strong>
+                    <span className={'proposalStatus ' + item.status}>{item.status.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>{item.rationale || 'No rationale provided.'}</p>
+                  <small>{item.editCount} file(s) · Claimed source: {item.claimedProducer} (unverified)</small>
+                  <div className="proposalItemActions">
+                    <button type="button" className="ghostBtn" disabled={inboxBusy}
+                      onClick={() => openProposal(item.inboxId)}>Review</button>
+                    <button type="button" className="ghostBtn" disabled={inboxBusy}
+                      onClick={() => discardProposal(item)}>Dismiss</button>
+                  </div>
+                </article>)}
+            </div>
+          </div>
+        </section>
+        : !isExplorer
         ? <section aria-label="Projects" className="workspaceContent">
           <div className="sectionHeading"><h2>Registered projects</h2>
             <span>{projects.length} project{projects.length === 1 ? '' : 's'}</span></div>
@@ -635,6 +690,63 @@ function App() {
               onClick={() => saveReviewedChange()}>
               {savingKey ? 'Saving…' : 'Save reviewed changes'}
             </button>
+          </div>
+        </section>
+      </div>}
+      {proposalDetail && <div className="reviewOverlay" role="presentation">
+        <section className="reviewDialog proposalReviewDialog" role="dialog" aria-modal="true"
+          aria-label={'Review coding proposal ' + proposalDetail.summary.taskId}>
+          <div className="reviewHeader">
+            <div>
+              <h2>Review coding proposal</h2>
+              <p>{proposalDetail.summary.taskId} · {proposalDetail.summary.editCount} file(s)</p>
+            </div>
+            <button type="button" className="ghostBtn"
+              onClick={() => setProposalDetail(null)}>Close review</button>
+          </div>
+          <p className="proposalNotice">The claimed source
+            “{proposalDetail.summary.claimedProducer}” is unverified. Approval
+            records a review decision only. It does NOT modify files or authorize
+            Lu, scripts, or tools to execute.</p>
+          <p className="proposalRationale">{proposalDetail.summary.rationale}</p>
+          <div className="proposalReviewFiles">
+            {proposalDetail.reviews.map((file, fileIndex) =>
+              <section className="proposalReviewFile" key={fileIndex}>
+                <h3>{file.relativePath}</h3>
+                <p>{file.countsExact
+                  ? file.removedLines + ' removed · ' + file.addedLines + ' added'
+                  : 'Diff too large to compute completely'}</p>
+                <div className="reviewLines" aria-label={'Changes to ' + file.relativePath}>
+                  {file.hunks.map((hunk, hunkIndex) =>
+                    <section className="reviewHunk" key={hunkIndex}>
+                      <div className="reviewHunkHeader">{hunk.header}</div>
+                      {hunk.lines.map((line, lineIndex) =>
+                        <div className={'reviewLine ' + line.kind} key={lineIndex}>
+                          <span className="reviewOldNumber">{line.oldLine ?? ''}</span>
+                          <span className="reviewNewNumber">{line.newLine ?? ''}</span>
+                          <span className="reviewMark" aria-hidden="true">
+                            {line.kind === 'added' ? '+' : line.kind === 'removed' ? '−' : ' '}
+                          </span>
+                          <code>{line.text}</code>
+                        </div>)}
+                    </section>)}
+                </div>
+                {file.truncated && <p className="reviewWarning" role="alert">
+                  Review incomplete. This file cannot be approved for staging.
+                </p>}
+              </section>)}
+          </div>
+          <div className="reviewActions">
+            <button type="button" className="ghostBtn"
+              onClick={() => setProposalDetail(null)}>Return to inbox</button>
+            {proposalDetail.summary.status === 'pending' && <>
+              <button type="button" className="removeProjectBtn" disabled={inboxBusy}
+                onClick={() => decideProposal(false)}>Reject proposal</button>
+              <button type="button" className="primaryBtn"
+                disabled={inboxBusy || proposalDetail.reviews.some(file =>
+                  file.truncated || !file.countsExact)}
+                onClick={() => decideProposal(true)}>Approve for staging only</button>
+            </>}
           </div>
         </section>
       </div>}
