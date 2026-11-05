@@ -33,7 +33,9 @@ capabilities, revalidate roots and enforce explicit grants. This component
 turns, launch processes, run package managers, or claim OS containment.
 UI-only project lifecycle messages do not authorize tool dispatch.
 
-This commit is a **candidate** until Rust compilation and Linux native tests
-run on an environment with Rust 1.88+, dependencies and a supported C compiler.
-The current execution environment does not have `cargo` or `rustc`; do not
-treat static review as successful native acceptance.
+**Native Linux CI evidence:** Rust 1.88 compilation, 8/8 tests and committed
+rustfmt all passed in [run 41961237114](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41961237114).
+See [implementation evidence](../docs/IDE_01B_IMPLEMENTATION_EVIDENCE.md).
+This is **not** full Task 1 acceptance: no live Tauri picker/verified UI origin,
+desktop integration or Windows native tests. The current local container lacks
+`cargo` and `rustc`; the verified compile occurred on GitHub's Linux runner.
