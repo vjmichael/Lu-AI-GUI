@@ -96,6 +96,19 @@ function App() {
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
   }
+  async function startMediaFileScan() {
+    setBackgroundError('');
+    try {
+      // Host-owned OS file dialog and pinned Lu worker, never model inference.
+      const taskId=await invoke('lu_background_scan_file');
+      if (taskId) {
+        setBackgroundFilter('active');
+        await refreshBackgroundTasks();
+      }
+    } catch (error) {
+      setBackgroundError(String(error));
+    }
+  }
   async function cancelBackgroundTask(taskId) {
     try {
       await invoke('lu_background_cancel', {taskId});
@@ -636,6 +649,13 @@ function App() {
           <button className="quietIcon" aria-label="Close Background Tasks"
             onClick={()=>setBackgroundPaneOpen(false)}>×</button>
         </header>
+        <div className="backgroundScanLaunch">
+          <button type="button" className="primaryButton"
+            onClick={()=>void startMediaFileScan()}>
+            Scan media file…
+          </button>
+          <small>Native worker · file integrity scan (SHA-256), not video content analysis</small>
+        </div>
         <div className="backgroundPaneToolbar">
           <div className="backgroundPaneFilters" aria-label="Task history filter">
             <button className={backgroundFilter==='active'?'selected':''}
