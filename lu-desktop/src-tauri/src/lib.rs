@@ -483,6 +483,7 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
     std::thread::spawn(move||{
         let mut pushed_cursor=0i64;
         let mut attempted=HashSet::<(String,i64)>::new();
+        let mut auto_scan_cursor=0i64;
         loop {
             std::thread::sleep(Duration::from_millis(500));
             // The native task supervisor must not depend on a visible
@@ -505,12 +506,19 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             }
             if state.generation_queue.has_jobs(){continue;}
             let Ok(model)=state.supervisor.status() else{continue};
+            if model.generation_id.is_some(){continue;}
             let Some(session_id)=model.session_id else{continue};
-            // Scan a bounded batch of durable events. A completed AI turn
-            // acknowledges the batch; a failure is not retried in a hot loop.
-            let Ok(notices)=state.background_tasks.pending_terminal_notices(128)
-                else{continue};
+            // Cursor pagination prevents >128 older pending events in
+            // disabled chats from starving new opted-in conversations.
+            let Ok(notices)=state.background_tasks.pending_terminal_notices_after(
+                auto_scan_cursor,128
+            ) else{continue};
+            if notices.is_empty(){
+                auto_scan_cursor=0;
+                continue;
+            }
             for notice in notices{
+                auto_scan_cursor=notice.sequence;
                 let chat_id=notice.workspace_id;
                 if !chat_id.starts_with("c-")
                   ||attempted.contains(&(chat_id.clone(),notice.sequence))
