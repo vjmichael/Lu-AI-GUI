@@ -9,6 +9,10 @@
 
 > This document consolidates the decisions for the Lu IDE DLC. It records intended behavior, boundaries, priorities, and acceptance tests; it does **not** assert that those features are already implemented or security-certified.
 
+## Architecture redesign — capability-first build strategy (IDE-ARCH-02)
+
+**Current approved development direction:** [Capability-first architecture and phased build plan](CAPABILITY_FIRST_ARCHITECTURE.md). Build the standalone IDE as one authoritative host with revision-aware source objects, a host-validated semantic operation layer, verified project/tool/artifact inventory, operational development ledger, effect journal and human-first presentation. An optional AI adapter may use those same operations in the future, but the **live Lu bridge remains deferred**. Retain the eight canonical implementation stages below for continuity and acceptance; replace their old strictly linear build order with the wave/dependency order in IDE-ARCH-02. This design does not imply new runtime capabilities are already implemented.
+
 ## Foundational AI-first design rule (LU-IDE-AIW-01)
 
 **Every IDE feature must be easy for humans to use and for authorized AI to understand, locate, operate, verify and recover.** Build around shared, revision-aware source objects, a discoverable typed action surface, verified resource/artifact inventories, task-relevant provenance, explicit human authority, and evidence-backed completion.
@@ -150,7 +154,7 @@ This **eight-stage sequence is the official Lu IDE task list**. Existing IDE-01B
 | **7. Optional Lu AI coding integration** | Pre-bridge review foundation implemented; authenticated Lu connection not started | Authenticated out-of-process bridge, agent plans, diff proposals, independent IDE grants, test feedback and durable task recovery | End-to-end code change with review, verified tests, prompt-injection rejection and cancel/restart recovery |
 | **8. Lu self-development environment** | Not started | Disposable Lu Dev instance/worktree, isolated build/test, version comparison and human-approved update | Stable Lu unaffected by failed build; terminate/rollback; merge proposal only after test evidence |
 
-**Execution order:** 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8. Some research or read-only prototyping may overlap, but **no package/build/test/executable extension feature is accepted before Stage 2's minimal verified containment**. Stage 8 does not automatically authorize self-modification of the running Lu binary. Windows native sandbox parity, installer/upgrade tests and release hardening are mandatory cross-stage acceptance and final release gates, not an additional numbered task.
+**Revised delivery order:** IDE-ARCH-02 waves A–G, while retaining stage numbers 1–8 as acceptance identifiers. Begin with source identity, semantic capability descriptors, human editor hardening, continuity ledger and read-only Git/resource discovery. Complete Stage 2's native worker containment **before any executable build/test/package/LSP/DAP worker feature**. Stage 8 does not automatically authorize self-modification of the running Lu binary. Windows native sandbox parity, installer/upgrade tests and release hardening are mandatory cross-stage acceptance and final release gates, not an additional numbered task.
 
 ### Implementation discipline
 For each task: (a) design/API and threat analysis; (b) implement on dedicated IDE branch, preserving core boundary; (c) unit/integration tests; (d) native Linux acceptance; (e) Windows parity where effects are OS-specific; (f) Git commit and evidence; (g) user-facing status and remaining defects. “Designed”, “compiled”, “tested under mocks”, “native tested” and “accepted” are distinct statuses.
