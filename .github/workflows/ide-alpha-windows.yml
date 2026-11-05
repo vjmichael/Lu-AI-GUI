@@ -1,4 +1,4 @@
-name: Lu IDE Windows Alpha R3.2 — Remove Project
+name: Lu IDE Windows Alpha R3.3 — Reviewed Changes
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
       - name: Upload unsigned Windows alpha executable
         uses: actions/upload-artifact@v4
         with:
-          name: lu-ide-windows-alpha-r3-2-remove-project
+          name: lu-ide-windows-alpha-r3-3-reviewed-changes
           path: ide/app/src-tauri/target/release/lu-ide-desktop.exe
           if-no-files-found: error
           retention-days: 7
