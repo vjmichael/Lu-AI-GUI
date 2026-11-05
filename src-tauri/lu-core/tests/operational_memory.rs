@@ -107,6 +107,7 @@ fn project_scoping_conflicts_platform_and_hash_are_not_authority() {
         ResourceState::Changed);
     assert_eq!(ledger.record_host_success("project-a","hashed","check","success"),
         Err(OperationalError::NotReady));
+    drop(ledger);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -125,6 +126,7 @@ fn directories_are_discoverable_but_not_attested_to_have_working_tools() {
     // its prior successful scan a verified usable toolchain.
     assert_eq!(ledger.probe("workspace","delivered").unwrap().state,
         ResourceState::PresentUnverified);
+    drop(ledger);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -141,5 +143,6 @@ fn symlink_never_proves_resource_ready() {
     ledger.remember(&resource(&alias,"alias","workspace")).unwrap();
     assert_eq!(ledger.probe("workspace","alias").unwrap().state,
         ResourceState::Unverifiable);
+    drop(ledger);
     fs::remove_dir_all(root).unwrap();
 }
