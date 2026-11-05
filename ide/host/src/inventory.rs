@@ -18,7 +18,8 @@ const MAX_CANDIDATES: usize = 80;
 const MAX_HASH_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_SCAN_HASH_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_GIT_REF_BYTES: u64 = 1024;
-const DISCOVERY_DIRS: [&str; 15] = [
+const DISCOVERY_DIRS: [&str; 16] = [
+    "",
     "Delivered",
     "artifacts",
     "benchmarks",
@@ -148,6 +149,15 @@ fn git_snapshot(dir: &Dir) -> GitObservation {
     }
 }
 
+fn root_artifact_candidate(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".exe", ".msi", ".zip", ".tar", ".gz", ".deb", ".rpm", ".appimage"]
+        .iter().any(|ext| lower.ends_with(ext))
+        || lower.contains("benchmark")
+        || lower.contains("results")
+        || lower.contains("manifest")
+}
+
 fn category(path: &str) -> &'static str {
     let lower = path.to_ascii_lowercase();
     if lower.contains("bench") || lower.contains("/results/") || lower.starts_with("results/") {
@@ -226,7 +236,7 @@ impl IdeWorkspaceRegistry {
         let mut complete = true;
         let mut remaining_digest_bytes = MAX_SCAN_HASH_BYTES;
         for name in DISCOVERY_DIRS {
-            let Ok(parts) = validate_relative(name, false) else {
+            let Ok(parts) = validate_relative(name, true) else {
                 continue;
             };
             let Ok(folder) = descend(root.try_clone()?, &parts) else {
@@ -239,7 +249,9 @@ impl IdeWorkspaceRegistry {
                 let Some(file_name) = file_name.to_str() else {
                     continue;
                 };
-                if validate_relative(file_name, false).is_err() {
+                if validate_relative(file_name, false).is_err()
+                    || (name.is_empty() && !root_artifact_candidate(file_name))
+                {
                     continue;
                 }
                 entries.push(file_name.to_owned());
@@ -254,7 +266,8 @@ impl IdeWorkspaceRegistry {
                     complete = false;
                     break;
                 }
-                let path = format!("{name}/{filename}");
+                let path = if name.is_empty() { filename.clone() }
+                    else { format!("{name}/{filename}") };
                 if let Some(item) = verify_file(&folder, &filename, path, &mut remaining_digest_bytes) {
                     files.push(item);
                 }
