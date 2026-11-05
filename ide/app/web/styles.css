@@ -90,11 +90,14 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .reviewHeader p{margin:5px 0 0;color:#a8bfd3;font-size:12px;overflow-wrap:anywhere}
 .reviewNotice{margin:0;font-size:12px;line-height:1.5;color:#a9c8df}
 .reviewLines{flex:1;min-height:80px;overflow:auto;background:#090f1b;border:1px solid #34495f;border-radius:6px;font-size:12px;font-family:Consolas,"Cascadia Code",ui-monospace,monospace}
-.reviewLine{display:grid;grid-template-columns:26px minmax(0,1fr);align-items:start;padding:2px 8px;gap:6px;min-height:23px;border-bottom:1px solid rgba(255,255,255,.035)}
-.reviewLine>span:first-child{text-align:center;color:#829db4}
+.reviewHunk{border-bottom:1px solid #354b64}
+.reviewHunkHeader{position:sticky;top:0;background:#1c3655;color:#a7d8fa;font-size:11px;padding:7px 12px;font-family:inherit;z-index:1}
+.reviewLine{display:grid;grid-template-columns:38px 38px 18px minmax(0,1fr);align-items:start;padding:2px 8px;gap:6px;min-height:23px;border-bottom:1px solid rgba(255,255,255,.035)}
+.reviewOldNumber,.reviewNewNumber{text-align:right;color:#809cb3;font-size:10px;user-select:none}
+.reviewMark{text-align:center;color:#829db4}
 .reviewLine code{font-family:inherit;color:#d7e9f6;white-space:pre-wrap;overflow-wrap:anywhere}
-.reviewLine.added{background:#14372c}.reviewLine.added>span:first-child{color:#83d4a3}
-.reviewLine.removed{background:#40202c}.reviewLine.removed>span:first-child{color:#ef9aaa}
+.reviewLine.added{background:#14372c}.reviewLine.added .reviewMark{color:#83d4a3}
+.reviewLine.removed{background:#40202c}.reviewLine.removed .reviewMark{color:#ef9aaa}
 .reviewLine.context{background:#132338}
 .reviewNoNewline{font-size:10px;color:#eac281}
 .reviewWarning{border:1px solid #b68143;background:#322715;color:#f6dcaf;padding:9px;border-radius:6px;font-size:12px}
