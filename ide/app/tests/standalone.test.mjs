@@ -156,3 +156,32 @@ test('bounded change reviews are explicit and independent of AI execution', () =
   assert.doesNotMatch(web, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(host, /Command::new|std::process::Command|\.save_source_file\(/);
 });
+
+test('R3.4 renders separate diff hunks with old and new line numbers', () => {
+  const web = read('../web/main.jsx');
+  const styles = read('../web/styles.css');
+  const rust = read('../../host/src/review.rs');
+  assert.match(web, /review\.hunks\.map/);
+  assert.match(web, /hunk\.header/);
+  assert.match(web, /line\.oldLine/);
+  assert.match(web, /line\.newLine/);
+  assert.match(web, /review\.countsExact/);
+  assert.match(styles, /\.reviewHunkHeader/);
+  assert.match(rust, /TextDiff::from_lines/);
+  assert.match(rust, /grouped_ops\(CONTEXT_LINES\)/);
+  assert.match(rust, /const MAX_DIFF_INPUT_LINES: usize = 8_000/);
+  assert.doesNotMatch(web, /review\.lines\.map/);
+});
+
+test('future Lu proposal envelope is untrusted data, never an executable command', () => {
+  const host = read('../../host/src/proposal.rs');
+  const native = read('../src-tauri/src/lib.rs');
+  assert.match(host, /deny_unknown_fields/);
+  assert.match(host, /struct ProposalEnvelope/);
+  assert.match(host, /claimed_producer/);
+  assert.match(host, /schema_version != 1/);
+  assert.match(host, /self\.edits\.len\(\) > MAX_EDIT_FILES/);
+  assert.match(host, /pub fn review\(&self, registry: &IdeWorkspaceRegistry\)/);
+  assert.doesNotMatch(host, /\.save_source_file\(|Command::new|std::process::Command/);
+  assert.doesNotMatch(native, /fn ide_apply_proposal|fn ide_execute_proposal/);
+});
