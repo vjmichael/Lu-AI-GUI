@@ -196,3 +196,18 @@ fn invalid_ui_operation_cannot_supply_a_host_path() {
         .is_err());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn uses_the_same_registry_as_the_lu_host_without_granting_tools() {
+    let root = temp();
+    let shared = lu_core::registry::NativeToolRegistry::new();
+    let _ide =
+        IdeWorkspaceRegistry::open_with_registry(root.join("catalog.json"), shared.clone())
+            .unwrap();
+    let modules = shared.modules().unwrap();
+    let ide = modules.iter().find(|module| module.id == "lu.ide").unwrap();
+    assert_eq!(ide.kind, lu_core::contracts::ModuleKind::Workspace);
+    assert!(ide.tools.is_empty());
+    assert!(shared.tools().unwrap().is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
