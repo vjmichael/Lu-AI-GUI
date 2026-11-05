@@ -5,12 +5,10 @@ edition = "2021"
 rust-version = "1.88"
 publish = false
 license = "Apache-2.0"
-description = "Host-side IDE workspace lifecycle built on Lu Core"
+description = "Standalone Lu IDE workspace project registry"
 
 [dependencies]
-lu-core = { path = "../../src-tauri/lu-core" }
 prost = "0.14"
-protoc-bin-vendored = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand = "0.8"
