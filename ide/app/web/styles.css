@@ -56,3 +56,21 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .sourcePreviewEmpty h3{margin:0;font-size:18px;color:#e6f2ff}
 .sourcePreviewEmpty p{max-width:420px;font-size:12px;line-height:1.6}
 @media(max-width:800px){.sourceWorkspace{grid-template-columns:minmax(175px,35%) minmax(0,1fr)}.sourcePreviewHeader{flex-direction:column;align-items:flex-start;gap:4px}}
+
+/* R3 — independent human-owned tabbed CodeMirror editor. */
+.editorTabs{display:flex;overflow-x:auto;flex-shrink:0;min-height:38px;background:#0e1a29;border-bottom:1px solid #2c4257;scrollbar-width:thin}
+.editorTab{display:flex;flex-shrink:0;align-items:center;max-width:230px;border-right:1px solid #304358;position:relative}
+.editorTab.selected{background:#1c3046;border-bottom:2px solid #7bc9fa}
+.editorTabSelect{display:flex;align-items:center;gap:7px;padding:9px 6px 9px 14px;max-width:195px;min-width:0;background:transparent;color:#b9c9dc;border:0;font-size:12px}
+.editorTab.selected .editorTabSelect{color:#fff}
+.editorTabSelect>span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.unsavedDot{color:#f9c77b;font-size:13px;line-height:1}
+.editorTabClose{background:transparent;color:#a1b9cf;border:0;font-size:18px;min-width:25px;height:28px;padding:0}
+.editorTabClose:not(:disabled):hover{color:#fff;background:#344b60;border-radius:4px}
+.editorToolbar{display:flex;gap:9px;align-items:center;font-size:11px}
+.editorToolButton{padding:6px 12px;font-size:11px}
+.codeEditorHost{flex:1;min-height:0;overflow:hidden}
+.codeEditorHost .cm-editor{height:100%}
+.codeEditorHost .cm-scroller{overflow:auto}
+.editorInfoBar{padding:8px 15px;font-size:11px;color:#99aec5;border-top:1px solid #2e435c;background:#101e2f;line-height:1.4}
+@media(max-width:850px){.editorToolbar{gap:5px;flex-wrap:wrap}.sourcePreviewHeader{align-items:flex-start}.editorToolButton{padding:5px 7px}}
