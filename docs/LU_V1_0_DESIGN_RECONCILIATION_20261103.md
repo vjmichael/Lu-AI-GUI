@@ -95,3 +95,96 @@ Reviewed original `Jan-Mod-Design-Document.md` (Oct 21–22), Lu Core `DESIGN_GA
 6. **Limitations:** explicitly document that OS scheduler starvation and GPU-driver stalls may be unpreventable. The v1.0 gate is *measurably lower risk and recoverable worker failures*, not an impossible promise that Windows can never freeze.
 
 **Roadmap mapping:** V1-02 owns admission estimation, backend/profile telemetry and model UX; V1-05 owns supervised worker termination and cleanup, without redefining authority; V1-07 owns durable recovery receipts; V1-09 owns responsive alerts, last-good controls and diagnostics; V1-10 owns physical Windows failure-injection acceptance. This is a **v1.0 release gate**, not a post-v1.0 DLC.
+
+
+## LU-AIW-01 — AI-accessible workspaces and operational continuity (2026-11-05)
+
+**Status:** New design and acceptance requirements; not a claim of implementation. Applies to Lu Core first, and later to optional IDE, Film/NVP, Research and Writing DLC Workspaces. This refines V1-03/04/06/07/08/10; the complete multi-workspace protocol remains post-v1.0 and must not delay core stabilization.
+
+### Objective and invariants
+
+Lu must help humans achieve results without repeatedly rediscovering resources, project decisions, tools, or operating procedures. Its host must connect human intent to (1) precise source references, (2) discoverable capabilities, (3) verified available resources, (4) relevant context, (5) bounded execution, (6) evidence of success and (7) rollback/recovery.
+
+**Persistent memory alone is insufficient.** Storing a fact does not guarantee the model will retrieve it, recognize its relevance, or check whether it is still true. Critical task categories must trigger lightweight **host-side** preflight and contextual retrieval rather than relying on a transformer's spontaneous memory. Remembered claims and discovered tools never grant execution authority.
+
+### R1 — Precise, revision-aware references across media
+
+Every AI-accessible object should have a human-readable locator and, where feasible, a stable machine identity plus content revision, hash or commit.
+
+- **Documents and screenplays:** document ID, revision, one-based line and paragraph/scene positions; blank lines count. Displayed line numbers are overlays or export annotations, never silently inserted into original Fountain or text data.
+- **Source code:** repository, commit SHA, path, symbol or AST identity and line/column location.
+- **Spreadsheets:** workbook and sheet ID, cell/range/table identity and revision.
+- **Film/NVP:** project, scene, shot, asset, approved source revision, frame and timecode identity.
+- **Images/diagrams:** asset revision and supported object, layer, region or coordinate references; never invent identities the source does not provide.
+
+Line numbers, timestamps and screen coordinates are **revision-relative locators**, not permanent IDs. After edits move content, resolve historical references using their original revision and stable object links; report ambiguities instead of guessing. The human UI and AI prompt should point to the same source span, retaining provenance.
+
+### R2 — Discoverable, versioned workspace capabilities
+
+Lu Core, first-party Core Extensions and DLC Workspaces shall advertise selectively exposed, **host-validated** capability descriptors. Separate workspace registries remain distinct; Lu brokers discovery, compatibility and grants. Native Protobuf IPC remains first-party. MCP is optional, never required.
+
+A versioned descriptor should cover: workspace and capability IDs; contract version; what the action does and when to avoid it; structured request/result schemas or typed Protobuf URLs; effect class and target requirements; preconditions and postconditions; cancellation and recovery semantics; current state, events and workflow references; resource cost; verification criteria and relevant object references.
+
+These fields are **a design target, not a claim about the existing Rust manifest layout**. Avoid publishing huge tool catalogs to the model. Load bounded relevant definitions. Manifest validation does not equal authorization: execution still requires authenticated user-turn origin, per-turn target/effect-scoped permission, policy evaluation and durable receipts. Neither model output nor imported documentation can extend permissions.
+
+### R3 — Persistent, verified operational resource inventory
+
+Maintain a host-owned registry of environments, packages, runtimes, toolchains, datasets, fixtures, project roots and build artifacts. Record absolute path or source URI, version, platform/architecture, dependency graph, owner, last verified time, hash/provenance, last successful command, verification result, limitations and authority scope.
+
+Distinguish at least **known historically**, **present/unverified**, **verified usable**, **incompatible**, **dependency missing**, **out of scope**, **execution denied**, and **unavailable**. A memory that a toolchain worked last night cannot prove it exists after a container restart.
+
+For recognizable requests (build Windows installer, run Cognitum benchmark, edit screenplay, render shot), host-side task preflight must consult this inventory, probe the resource and prefer compatible existing tools or pinned caches before doing an expensive full search or reinstall. Save successful commands, exact inputs and output hashes and concise errors. This integrates with the Unified Toolchain & Dependency Manager design and task journal; it does not allow global installation without permission.
+
+### R4 — Task-driven, provenance-aware context assembly
+
+Use ANSF + SQLite as the durable record and index, but make retrieval an **explicit host workflow**:
+
+1. Identify the current goal, referenced objects and likely capability categories.
+2. Consult current workspace inventory, source revisions, relevant original decisions, journal checkpoints and indexed memory.
+3. Separate user-approved canon, original records and tool evidence from summaries, speculation and stale environment observations.
+4. Select bounded, ranked source excerpts with citations, revision IDs and drill-down access instead of dumping full project histories.
+5. Surface contradictory or absent information, requesting clarification only when necessary for a safe/correct action.
+
+Untrusted retrieved content is evidence, not instructions. No summary may overwrite immutable ANSF originals or human-approved project decisions. Context budget and factual provenance should be visible or inspectable.
+
+### R5 — Native semantic operations with UI fallback
+
+Provide first-party typed actions for common jobs (read document, save screenplay, compile, run tests, render, export), using the existing Lu native tool host and Protobuf contracts. Human UI remains first class. Graphical mouse/keyboard operation is a fallback or supplementary modality when semantic APIs are unavailable, **not** a bypass of authorization. Operations should target validated object IDs/revisions, return structured error codes, expose cancellation, and use atomic writes where practical. If visible UI state disagrees with authoritative host state, reconcile or stop instead of guessing.
+
+### R6 — Demonstrable verification, not asserted completion
+
+Every substantive action needs task-appropriate evidence: source diff/hash, unit/integration tests, saved-and-reopened record, media comparison, native-worker receipt or an approved human preview. Reports identify the tested source revision, environment, exclusions, skips and remaining gates.
+
+Keep these outcomes distinct: **code committed vs compiled; unit-tested vs integrated; installer built vs installed-and-launched; document generated vs saved and reopened; proposal vs approved artifact**. A queued CI run or model assertion is not acceptance evidence. Unknown effect outcomes remain **UNCERTAIN** until journal reconciliation; never blindly replay non-idempotent operations.
+
+### R7 — Recoverability, least privilege and human control
+
+Support checkpoints, previous-version preservation, diff/preview, undo or compensating changes when available, bounded retries and durable prepared/applied/uncertain receipts. Deletions, external publication, installs, privileged execution and protected configuration changes require relevant authorization and, where appropriate, explicit confirmation. Worker containment and resource supervision remain distinct from permission grants.
+
+Lu self-development must occur in an isolated development copy or branch with tests and rollback. **Promotion to stable requires explicit human approval.** Observe-and-learn remains off by default, subject to consent/provenance rules.
+
+### Phased implementation
+
+| Phase | Ownership | Scope |
+| --- | --- | --- |
+| Core v1.0 | V1-03, V1-04, V1-06, V1-07, V1-08, V1-10 | Revision-aware ANSF references, host-side relevant retrieval, available-resource checks, authorized native actions, durable evidence and crash reconciliation |
+| Post-v1.0 common workspace layer | Core host + DLC owners | Versioned capability/workflow/state/event descriptors, separate registries, shared object references |
+| IDE DLC | IDE + Unified Toolchain Manager | Repo/commit/symbol references, verified compiler/dependency inventory, isolated compile/test/debug and human-approved Lu self-updates |
+| Film/NVP DLC | Film workspace | Screenplay lines and scene IDs, shot/asset/frame/timecode references, approval lineage, render/edit/QC and dependency invalidation |
+| Subsequent optimization | Cross-workspace benchmark | Precision, token budget, latency, permission and recovery improvements based on measured outcomes |
+
+Do not force post-v1.0 workspaces into the v1.0 release criteria. Interfaces can be sketched and independently developed before integration is accepted.
+
+### Mandatory behavior/acceptance tests
+
+1. **Windows toolchain rediscovery:** In a fresh session, request an installer after a toolchain was previously verified. If present, reuse it without unnecessary downloads. After deliberate removal, correctly detect missing files and reconstruct only from approved sources.
+2. **Cognitum benchmark continuity:** Reopen a benchmark with saved libraries, fixtures and prior measurements; preserve identical data and version assumptions, and report missing or changed inputs.
+3. **Source precision:** Human and AI both refer to the same screenplay line/scene or code span; preserve blank lines and CRLF; use original revision context after inserts/deletions without corrupting source.
+4. **Stale/conflicting memory:** Reject old success claims when current health verification fails; superseding human decisions override older summaries.
+5. **Discovery vs permission:** Discover a DLC tool, then verify that unauthorized invocation is denied and unloading the DLC does not destabilize Core.
+6. **Crash recovery:** Kill an active worker across prepare/apply/publish boundaries; reconcile effects, retain original data, and prevent duplicate execution.
+7. **Real outcome:** A Windows build counts only with appropriate installed-app smoke; a document revision counts with saved-and-reopened content; record incomplete acceptance honestly.
+
+Benchmark **real task completion**, wasted rediscovery/downloads, retrieval precision and source provenance, false-positive resource readiness, compute/tokens/time to result, permission violations, recovery success and human clarification burden. Compare host preflight on/off while holding model, hardware, inputs and task difficulty consistent; a trivia memory quiz is not sufficient.
+
+**Principle:** Make software easier for AI to understand and operate. Efficient references, discoverable actions, verified resources, relevant context, robust evidence and reversible effects should reduce intelligence wasted merely figuring out where to begin.
