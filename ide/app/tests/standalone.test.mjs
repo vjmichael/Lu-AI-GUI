@@ -181,7 +181,7 @@ test('future Lu proposal envelope is untrusted data, never an executable command
   assert.match(host, /claimed_producer/);
   assert.match(host, /schema_version != 1/);
   assert.match(host, /self\.edits\.len\(\) > MAX_EDIT_FILES/);
-  assert.match(host, /pub fn review\(&self, registry: &IdeWorkspaceRegistry\)/);
+  assert.match(host, /pub fn review\(\s*&self,\s*registry: &IdeWorkspaceRegistry,?\s*\)/);
   assert.doesNotMatch(host, /\.save_source_file\(|Command::new|std::process::Command/);
   assert.doesNotMatch(native, /fn ide_apply_proposal|fn ide_execute_proposal/);
 });
