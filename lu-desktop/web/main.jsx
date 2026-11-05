@@ -729,7 +729,7 @@ function App() {
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             <button type="button" className="subtleButton" disabled={!loaded}
-              onClick={()=>void attachReaderDocument()}>+ Read document</button>
+              onClick={()=>void attachReaderDocument()}>+ Read file</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
