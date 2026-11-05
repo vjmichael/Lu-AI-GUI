@@ -36,6 +36,7 @@ npm run tauri:dev
 
 - **Canonical design and eight-task list:** [IDE Workspace design, Section 6](docs/IDE_WORKSPACE_DESIGN.md).
 - **Architecture decision:** [Standalone executable + optional Lu bridge](docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md).
+- **Workspace conversation distinction:** [Native Lu chat vs IDE coding chat vs NVP film chat](docs/ADR_0002_WORKSPACE_CHAT_BOUNDARIES.md).
 - [System architecture](docs/ARCHITECTURE.md)
 - [Master package manager](docs/PACKAGE_ORCHESTRATOR.md)
 - [Security model](docs/SECURITY_MODEL.md)
