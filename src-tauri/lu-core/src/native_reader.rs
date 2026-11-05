@@ -27,6 +27,7 @@ pub enum ReaderFormat{
 pub enum ReaderFailure{
     UnsupportedAdapter(ReaderFormat),
     UnsupportedEncoding,
+    InvalidDocument,
     TooLarge,
     Empty,
     Io,
@@ -92,7 +93,10 @@ pub fn read_text_bytes(
         return Err(ReaderFailure::TooLarge);
     }
     let format=classify(filename,&bytes[..bytes.len().min(16)]);
-    if matches!(format,ReaderFormat::Pdf|ReaderFormat::Docx|ReaderFormat::Image
+    if format==ReaderFormat::Docx{
+        return crate::native_reader_docx::read_docx_bytes(bytes,max_chars);
+    }
+    if matches!(format,ReaderFormat::Pdf|ReaderFormat::Image
         |ReaderFormat::Unknown){
         return Err(ReaderFailure::UnsupportedAdapter(format));
     }
@@ -134,7 +138,7 @@ mod tests{
         assert_eq!(read_text_bytes("a.txt",b"%PDF-1.7",100),
             Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Pdf)));
         assert_eq!(read_text_bytes("a.docx",b"PK\x03\x04bad",100),
-            Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Docx)));
+            Err(ReaderFailure::InvalidDocument));
         assert_eq!(read_text_bytes("a.png",b"\x89PNG\r\n\x1a\n",100),
             Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Image)));
         assert_eq!(read_text_bytes("a.txt",&[0,1],100),
