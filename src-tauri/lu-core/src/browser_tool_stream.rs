@@ -30,6 +30,7 @@ struct Pending {
 pub enum ToolStreamEvent {
     Fragments(Vec<ToolFragment>),
     EndCalls,
+    Stop,
     Done,
     Other,
 }
@@ -105,7 +106,8 @@ pub fn parse_tool_sse_frame(bytes:&[u8])->Result<ToolStreamEvent,ToolStreamError
         return Ok(ToolStreamEvent::Fragments(parsed));
     }
     if finish==Some("tool_calls"){return Ok(ToolStreamEvent::EndCalls);}
-    if finish.is_some_and(|v|v!="stop"&&v!="length"){
+    if finish==Some("stop"){return Ok(ToolStreamEvent::Stop);}
+    if finish.is_some_and(|v|v!="length"){
         return Err(ToolStreamError::InvalidFrame);
     }
     Ok(ToolStreamEvent::Other)
@@ -187,6 +189,12 @@ impl BrowserToolCallCollector{
                 }
                 Ok(Some(result))
             }
+            ToolStreamEvent::Stop=>{
+                // Only a completed natural-language stop (not a length
+                // cutoff or bare [DONE]) can end the read-only proposal loop.
+                if !self.pending.is_empty(){return Err(ToolStreamError::InvalidSequence);}
+                self.done=true;Ok(None)
+            }
             ToolStreamEvent::Done=>{
                 if !self.pending.is_empty(){return Err(ToolStreamError::InvalidSequence);}
                 self.done=true;Ok(None)
@@ -216,6 +224,21 @@ mod tests {
         assert_eq!(finished[0].tool_name,"lu_browser_read");
         assert_eq!(finished[0].arguments_json,
             r#"{"operation":"navigate","url":"https://example.com"}"#);
+    }
+    #[test]
+    fn clean_stop_is_distinct_from_truncated_or_bare_done(){
+        let allowed=["lu_browser_read".into()].into();
+        let mut collector=BrowserToolCallCollector::new(allowed);
+        assert!(matches!(frame(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#),
+            ToolStreamEvent::Stop));
+        collector.absorb(frame(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#)).unwrap();
+        assert!(collector.absorb(ToolStreamEvent::Done).unwrap().is_none());
+        let mut half=BrowserToolCallCollector::new(["lu_browser_read".into()].into());
+        half.absorb(frame(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lu_browser_read","arguments":"{"}}]}}]}"#)).unwrap();
+        assert!(matches!(half.absorb(frame(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#)),
+            Err(ToolStreamError::InvalidSequence)));
+        assert!(matches!(frame(r#"{"choices":[{"delta":{},"finish_reason":"length"}]}"#),
+            ToolStreamEvent::Other));
     }
     #[test]
     fn no_unadvertised_tool_or_duplicate_json_survives_finish(){
