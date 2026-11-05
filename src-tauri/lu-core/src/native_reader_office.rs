@@ -267,10 +267,77 @@ pub fn read_pptx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    fn make_zip(parts:&[(&str,&str)])->Vec<u8>{
+        let mut out=Vec::new();let mut directory=Vec::new();
+        fn u16x(out:&mut Vec<u8>,v:u16){out.extend(v.to_le_bytes())}
+        fn u32x(out:&mut Vec<u8>,v:u32){out.extend(v.to_le_bytes())}
+        for (name,data) in parts{
+            let offset=out.len() as u32;
+            let crc=crc32fast::hash(data.as_bytes());
+            u32x(&mut out,0x04034b50);u16x(&mut out,20);
+            u16x(&mut out,0);u16x(&mut out,0);u16x(&mut out,0);u16x(&mut out,0);
+            u32x(&mut out,crc);u32x(&mut out,data.len() as u32);
+            u32x(&mut out,data.len() as u32);u16x(&mut out,name.len() as u16);
+            u16x(&mut out,0);out.extend(name.as_bytes());out.extend(data.as_bytes());
+            u32x(&mut directory,0x02014b50);u16x(&mut directory,20);u16x(&mut directory,20);
+            u16x(&mut directory,0);u16x(&mut directory,0);u16x(&mut directory,0);
+            u16x(&mut directory,0);u32x(&mut directory,crc);
+            u32x(&mut directory,data.len() as u32);u32x(&mut directory,data.len() as u32);
+            u16x(&mut directory,name.len() as u16);u16x(&mut directory,0);
+            u16x(&mut directory,0);u16x(&mut directory,0);u16x(&mut directory,0);
+            u32x(&mut directory,0);u32x(&mut directory,offset);
+            directory.extend(name.as_bytes());
+        }
+        let offset=out.len() as u32;out.extend(&directory);
+        u32x(&mut out,0x06054b50);u16x(&mut out,0);u16x(&mut out,0);
+        u16x(&mut out,parts.len() as u16);u16x(&mut out,parts.len() as u16);
+        u32x(&mut out,directory.len() as u32);u32x(&mut out,offset);u16x(&mut out,0);
+        out
+    }
+    const CT:&str=r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>"#;
     #[test]
-    fn invalid_packages_do_not_claim_success(){
+    fn actual_xlsx_sheet_cells_cached_formula_and_shared_strings(){
+        let data=make_zip(&[
+            ("[Content_Types].xml",CT),
+            ("xl/workbook.xml",r#"<workbook xmlns:r="rel"><sheets><sheet name="Revenue" sheetId="1" r:id="rId5"/></sheets></workbook>"#),
+            ("xl/_rels/workbook.xml.rels",r#"<Relationships><Relationship Id="rId5" Target="worksheets/sheet1.xml"/></Relationships>"#),
+            ("xl/sharedStrings.xml",r#"<sst><si><t>Hello &amp; goodbye</t></si></sst>"#),
+            ("xl/worksheets/sheet1.xml",r#"<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><f>SUM(C1:C3)</f><v>42</v></c></row></sheetData></worksheet>"#),
+        ]);
+        let result=read_xlsx(&data,800).unwrap();
+        assert_eq!(result.format,ReaderFormat::Xlsx);
+        assert!(result.text.contains("[Sheet: Revenue]"));
+        assert!(result.text.contains("A1=Hello & goodbye"));
+        assert!(result.text.contains("B1=42 [formula: =SUM(C1:C3); cached value may be stale]"));
+        let trunc=read_xlsx(&data,12).unwrap();
+        assert!(trunc.truncated);
+    }
+    #[test]
+    fn presentation_uses_actual_presentation_order_not_slide_filenames(){
+        let data=make_zip(&[
+            ("[Content_Types].xml",CT),
+            ("ppt/presentation.xml",r#"<p:presentation xmlns:p="p" xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId2"/><p:sldId id="257" r:id="rId1"/></p:sldIdLst></p:presentation>"#),
+            ("ppt/_rels/presentation.xml.rels",r#"<Relationships><Relationship Id="rId1" Target="slides/slide1.xml"/><Relationship Id="rId2" Target="slides/slide2.xml"/></Relationships>"#),
+            ("ppt/slides/slide1.xml",r#"<p:sld><p:sp><a:t>Second</a:t></p:sp></p:sld>"#),
+            ("ppt/slides/slide2.xml",r#"<p:sld><p:sp><a:t>First &amp; most important</a:t></p:sp></p:sld>"#),
+        ]);
+        let result=read_pptx(&data,800).unwrap();
+        assert_eq!(result.format,ReaderFormat::Pptx);
+        assert!(result.text.contains("[Slide 1]\nFirst & most important"));
+        assert!(result.text.contains("[Slide 2]\nSecond"));
+        assert!(result.text.find("First").unwrap()<result.text.find("Second").unwrap());
+    }
+    #[test]
+    fn mismatched_office_package_and_external_links_rejected(){
         assert!(read_xlsx(b"PK\x03\x04fake",200).is_err());
         assert!(read_pptx(b"PK\x03\x04fake",200).is_err());
+        let malicious=make_zip(&[
+            ("[Content_Types].xml",CT),
+            ("xl/workbook.xml",r#"<workbook/>"#),
+            ("xl/_rels/workbook.xml.rels",r#"<Relationships><Relationship Id="rId1" TargetMode="External" Target="https://example.com"/></Relationships>"#)
+        ]);
+        assert!(read_xlsx(&malicious,200).is_err());
+        assert!(read_pptx(&malicious,200).is_err());
     }
     #[test]
     fn relationship_target_cannot_escape_package(){
