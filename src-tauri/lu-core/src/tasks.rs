@@ -432,6 +432,39 @@ impl TaskStore {
         }
         Ok(result)
     }
+    /// Model delivery is scoped to the originating conversation. Query the
+    /// owning workspace directly so unrelated unacknowledged jobs never
+    /// starve this conversation, even after a long offline period.
+    pub fn pending_notices_for_workspace(
+        &self,workspace_id:&str,limit:usize
+    )->Result<Vec<TaskTerminalNotice>,TaskStoreError>{
+        if workspace_id.is_empty()||workspace_id.len()>128
+            ||limit==0||limit>32{return Err(TaskStoreError::InvalidProgress);}
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT e.sequence,e.task_id,e.event,e.progress,e.detail
+             FROM lu_task_events e JOIN lu_tasks t ON t.task_id=e.task_id
+             LEFT JOIN lu_task_notice_ack a ON a.event_sequence=e.sequence
+             WHERE t.workspace_id=?1 AND a.event_sequence IS NULL
+               AND e.event IN ('COMPLETED','FAILED','INTERRUPTED','CANCELLED','TIMED_OUT')
+             ORDER BY e.sequence ASC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![workspace_id,limit as i64],|row|{
+            Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,
+                row.get::<_,String>(2)?,row.get::<_,u8>(3)?))
+        })?;
+        let mut result=Vec::new();
+        for row in rows {
+            let (sequence,task_id,event,progress)=row?;
+            result.push(TaskTerminalNotice{
+                sequence,task_id,workspace_id:workspace_id.to_owned(),
+                state:TaskState::parse(&event)
+                    .ok_or(TaskStoreError::InvalidStoredState)?,
+                progress,detail:String::new(), // never pass worker text to LLM
+            });
+        }
+        Ok(result)
+    }
     /// Acknowledgement is explicit, scoped, idempotent, and only valid for
     /// an actual terminal event belonging to the supplied trusted workspace.
     pub fn acknowledge_terminal_notice(
