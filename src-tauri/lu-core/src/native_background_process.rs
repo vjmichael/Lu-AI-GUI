@@ -5,6 +5,7 @@
 use std::{
     collections::BTreeMap,ffi::OsString,fs,io::{self,Read,BufReader},path::{Path,PathBuf},
     process::{Child,Command,Stdio},sync::{Arc,Mutex},
+    time::{Duration,Instant},
 };
 use sha2::{Digest,Sha256};
 use crate::tasks::{TaskState,TaskStore};
@@ -23,11 +24,15 @@ pub struct TrustedWorkerPlan {
     /// Only reviewed workers with an authenticated progress contract may
     /// request stdout IPC; arbitrary subprocess output is discarded.
     pub progress_protocol:bool,
+    /// Explicit host deadline, not a model generation or heartbeat timeout.
+    /// None means there is no overall task deadline.
+    pub max_runtime_seconds:Option<u64>,
 }
 struct OwnedWorker {
     workspace_id:String,
     child:Child,
     progress_reader:Option<std::thread::JoinHandle<bool>>,
+    deadline:Option<Instant>,
     #[cfg(windows)]
     job:lu_win_worker_job::Job,
 }
@@ -131,6 +136,7 @@ impl BackgroundProcessSupervisor {
     pub fn start_host_approved(&self,plan:TrustedWorkerPlan)
         ->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
+          ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
           ||plan.args.len()>64||plan.args.iter().any(|arg|
                arg.to_string_lossy().len()>4096
                ||arg.to_string_lossy().contains('\0')){
@@ -181,6 +187,7 @@ impl BackgroundProcessSupervisor {
             workspace_id:plan.workspace_id,
             child,
             progress_reader:None,
+            deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
             #[cfg(windows)]
             job,
         };
@@ -209,18 +216,29 @@ impl BackgroundProcessSupervisor {
         let mut finished=Vec::new();
         for (id,worker) in workers.iter_mut(){
             match worker.child.try_wait(){
-                Ok(Some(status))=>finished.push((id.clone(),status.success())),
-                Ok(None)=>{},
+                Ok(Some(status))=>finished.push((id.clone(),Some(status.success()))),
+                Ok(None)=>{
+                    if worker.deadline.is_some_and(|deadline|Instant::now()>=deadline){
+                        // Host deadline, never a model decision or an inferred
+                        // lost heartbeat. Kill and reap before publishing.
+                        terminate_owned(worker)?;
+                        finished.push((id.clone(),None));
+                    }
+                },
                 Err(_)=>return Err(BackgroundProcessError::ProcessUncertain),
             }
         }
         let count=finished.len();
-        for (id,ok) in finished{
+        for (id,outcome) in finished{
             let mut owner=workers.remove(&id).expect("owned worker still registered");
             let proof=owner.progress_reader.take().map(|handle|handle.join().unwrap_or(false));
-            let verified=ok && proof.unwrap_or(true);
-            if verified{self.store.complete(&id)}else{self.store.fail(&id)}
-                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            drop(owner); // Release Windows Job handle before terminal receipt.
+            let result=match outcome{
+                Some(true) if proof.unwrap_or(true)=>self.store.complete(&id),
+                Some(_)=>self.store.fail(&id),
+                None=>self.store.timed_out(&id),
+            };
+            result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         }
         Ok(count)
     }
@@ -330,7 +348,7 @@ mod tests{
         let plan=TrustedWorkerPlan{
             task_id:"video-1".into(),workspace_id:"media".into(),
             executable:PathBuf::from("relative-untrusted-executable"),
-            expected_sha256:"0".repeat(64),args:vec![],progress_protocol:false,
+            expected_sha256:"0".repeat(64),args:vec![],progress_protocol:false,max_runtime_seconds:None,
         };
         assert_eq!(manager.start_host_approved(plan),
             Err(BackgroundProcessError::InvalidPlan));
@@ -355,7 +373,7 @@ mod tests{
             task_id:"win-media1".into(),workspace_id:"video".into(),
             executable,expected_sha256:digest,
             args:vec!["/D".into(),"/C".into(),
-                "ping -n 20 127.0.0.1 >NUL".into()],progress_protocol:false,
+                "ping -n 20 127.0.0.1 >NUL".into()],progress_protocol:false,max_runtime_seconds:None,
         }).unwrap();
         assert!(manager.can_cancel("win-media1"));
         assert_eq!(manager.cancel_owned("win-media1","wrong"),
@@ -382,7 +400,7 @@ mod tests{
         manager.start_host_approved(TrustedWorkerPlan{
             task_id:"worker-1".into(),workspace_id:"media".into(),
             executable:sleep,expected_sha256:digest,
-            args:vec![OsString::from("30")],progress_protocol:false,
+            args:vec![OsString::from("30")],progress_protocol:false,max_runtime_seconds:None,
         }).unwrap();
         assert_eq!(manager.cancel_owned("worker-1","unrelated"),
             Err(BackgroundProcessError::WrongWorkspace));
