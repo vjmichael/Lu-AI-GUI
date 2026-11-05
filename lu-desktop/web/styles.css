@@ -206,3 +206,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .browserChallengeNotice{margin:12px 0;padding:12px;border:1px solid #947c45;border-radius:8px;background:transparent}
 .browserChallengeNotice strong{display:block;margin-bottom:5px}
 .browserChallengeNotice p{font-size:12px;line-height:1.5;margin:5px 0 10px}
+
+/* TOOLS-10F: deliberate per-turn browser research admission in composer. */
+.browserResearchComposer{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;font-size:12px}
+.browserResearchComposer label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.browserResearchComposer span{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.browserResearchComposer input[type=url]{min-width:190px;max-width:280px;padding:6px 9px;border:1px solid #45627b;background:#142033;color:inherit;border-radius:6px}
+.browserResearchComposer small{color:#abc0d0}
