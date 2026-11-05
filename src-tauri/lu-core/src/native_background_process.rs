@@ -258,6 +258,10 @@ mod tests{
     fn real_supervised_worker_can_be_cancelled_without_touching_other_job(){
         let sleep=PathBuf::from("/bin/sleep");
         if !sleep.is_file(){return;}
+        // Distributions may expose /bin/sleep through a symlink chain.
+        // The admission rule rightly refuses symlink executable paths;
+        // use the actual canonical target in this trusted test fixture.
+        let sleep=sleep.canonicalize().unwrap();
         let mut sha=Sha256::new();
         sha.update(fs::read(&sleep).unwrap());
         let digest=format!("{:x}",sha.finalize());
