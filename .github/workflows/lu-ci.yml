@@ -22,7 +22,7 @@ jobs:
       - name: Resolve exact desktop lockfile delta without accepting mutation
         shell: pwsh
         run: |
-          cargo metadata --format-version 1 --no-deps --manifest-path lu-desktop/src-tauri/Cargo.toml | Out-Null
+          cargo metadata --format-version 1 --manifest-path lu-desktop/src-tauri/Cargo.toml | Out-Null
           $diff = git diff -- lu-desktop/src-tauri/Cargo.lock
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Cargo.lock diff' }
           if ($diff) {
