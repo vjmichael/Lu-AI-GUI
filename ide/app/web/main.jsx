@@ -23,7 +23,7 @@ function App() {
   const [hint, setHint] = useState('');
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
-  const [findIndex, setFindIndex] = useState(0);
+  const [findIndex, setFindIndex] = useState(-1);
   const [findRequest, setFindRequest] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
@@ -62,7 +62,8 @@ function App() {
   }
   function navigateMatch(delta) {
     if (!matches.length || !activeTab) return;
-    const next = (findIndex + delta + matches.length) % matches.length;
+    const next = findIndex < 0 ? (delta < 0 ? matches.length - 1 : 0) :
+      (findIndex + delta + matches.length) % matches.length;
     setFindIndex(next);
     setFindRequest({ tabKey: activeTab.key, from: matches[next],
       to: matches[next] + findQuery.length, nonce: Date.now() });
@@ -484,7 +485,7 @@ function App() {
       } else if (key === 'f' && section === 'explorer' && activeTab) {
         event.preventDefault();
         setFindOpen(true);
-        setFindIndex(0);
+        setFindIndex(-1);
       } else if (key === 's') {
         event.preventDefault();
         if (activeTab) void saveTab(activeTab);
@@ -708,7 +709,7 @@ function App() {
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
-                    onClick={() => { setFindOpen(true); setFindIndex(0); }}>Find · Ctrl+F</button>
+                    onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
                     onClick={() => reloadTab(activeTab)}>Reload</button>
                   <button className="ghostBtn editorToolButton"
@@ -726,12 +727,12 @@ function App() {
               {findOpen && <div className="editorFindBar" role="search" aria-label="Find in active file">
                 <input aria-label="Find text" placeholder="Find in file"
                   value={findQuery} autoFocus
-                  onChange={event => { setFindQuery(event.target.value); setFindIndex(0); }}
+                  onChange={event => { setFindQuery(event.target.value); setFindIndex(-1); }}
                   onKeyDown={event => {
                     if (event.key === 'Enter') { event.preventDefault(); navigateMatch(event.shiftKey ? -1 : 1); }
                     if (event.key === 'Escape') { event.preventDefault(); setFindOpen(false); }
                   }}/>
-                <span className="editorFindCount">{matches.length ? `${Math.min(findIndex + 1, matches.length)} of ${matches.length}` : 'No matches'}</span>
+                <span className="editorFindCount">{matches.length ? `${Math.max(0, Math.min(findIndex + 1, matches.length))} of ${matches.length}` : 'No matches'}</span>
                 <button type="button" aria-label="Previous match" disabled={!matches.length}
                   onClick={() => navigateMatch(-1)}>↑</button>
                 <button type="button" aria-label="Next match" disabled={!matches.length}
