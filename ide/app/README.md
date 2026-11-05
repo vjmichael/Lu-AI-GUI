@@ -4,7 +4,7 @@ This is an independent Tauri 2 + React application. It does **not** use Lu Deskt
 
 ## Run locally
 
-Prerequisites: Rust 1.88+, Node 22+, platform-specific [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
+Prerequisites: Rust 1.90+ for the Tauri desktop (Rust 1.88+ for the independent host crate), Node 22+, platform-specific [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 From `ide/app`:
 
@@ -16,13 +16,13 @@ cargo run --manifest-path src-tauri/Cargo.toml
 
 The desktop application is registered as `org.lu.ide` and stores its project catalog in its own OS app-data directory. It has no dependency on the `lu-desktop` executable or its model files.
 
-The app currently offers Project selection, status, close, reopen and persistent registration. Package manager, editor, terminal, debugger, advanced Git, AI coding, and an active Lu connection are **not yet implemented**. These features will be developed against the eight-stage plan in `ide/docs/IDE_WORKSPACE_DESIGN.md`.
+The app currently offers project selection, status, close, reopen, persistent registration, **read-only folder navigation and UTF-8 source preview**. In Projects, click **Explore** on an active project, browse subfolders and select a text file. Editing/saving, package manager, terminal, debugger, advanced Git, AI coding, and an active Lu connection are **not yet implemented**. These features will be developed against the eight-stage plan in `ide/docs/IDE_WORKSPACE_DESIGN.md`.
 
 ## Security
 
-New projects are **never executed** on open. The WebView supplies no path to the registration command; it invokes an OS-owned directory picker. The native host stores paths privately and sends only opaque IDs, display names, and availability state to the UI.
+New projects are **never executed** on open. The WebView supplies no path to the registration command; it invokes an OS-owned directory picker. The native host stores project roots privately and sends only opaque IDs, display names, and availability state to the project UI. Explorer commands accept validated relative paths and use a capability-relative directory handle; browsing is bounded to 400 entries per folder and 512 KiB per source file.
 
-No OS sandbox is implemented yet. This build cannot safely run untrusted project scripts because it deliberately has **no execution command**.
+The separate `ide/sandbox` crate has passed limited Linux isolation probes, but **no executable worker or OS sandbox is attached to the desktop yet**. This build deliberately has **no project code execution command**.
 
 ## Verification
 
