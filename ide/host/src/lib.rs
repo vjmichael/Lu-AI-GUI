@@ -6,8 +6,8 @@
 //! Protobuf UI messages never contain paths or grants.
 #![forbid(unsafe_code)]
 
-pub mod wire;
 pub mod browser;
+pub mod wire;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
