@@ -3,6 +3,7 @@
 //! error until their audited parsers are installed. No MCP or OS shell.
 use cap_std::{ambient_authority,fs::Dir};
 use prost::Message;
+use sha2::{Digest,Sha256};
 use serde_json::{json,Map,Value};
 use std::{io::Read,path::{Path,PathBuf},sync::Arc};
 use crate::{
@@ -38,6 +39,8 @@ pub struct ReaderRequest{
     pub inspect_only:bool,
     #[prost(string,tag="6")]
     pub selector:String,
+    #[prost(string,tag="7")]
+    pub expected_source_sha256:String,
 }
 #[derive(Clone,PartialEq,Message)]
 pub struct ReaderResponse{
@@ -57,6 +60,8 @@ pub struct ReaderResponse{
     pub source_truncated:bool,
     #[prost(uint32,tag="8")]
     pub total_extracted_chars:u32,
+    #[prost(string,tag="9")]
+    pub source_sha256:String,
 }
 pub struct ReaderTool{
     descriptor:ToolDescriptor,
@@ -107,6 +112,11 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
     if bytes.len()>max_bytes as usize{
         return Err(failure("READER_INPUT_TOO_LARGE"));
     }
+    let source_sha256=format!("{:x}",Sha256::digest(&bytes));
+    if !request.expected_source_sha256.is_empty() &&
+       request.expected_source_sha256!=source_sha256{
+        return Err(failure("READER_SOURCE_CHANGED"));
+    }
     // Parse once into the bounded host extraction window, then return only
     // this invocation's authorized slice. A later tool call can page again.
     let text=read_selected_bytes(&request.path,&bytes,
@@ -138,6 +148,7 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
         offset_chars:offset,next_offset_chars,
         source_truncated:text.truncated,
         total_extracted_chars:all_chars as u32,
+        source_sha256,
     })
 }
 impl NativeTool for ReaderTool{
@@ -169,7 +180,7 @@ impl ModelToolCodec for ReaderCodec{
     fn output_type_url(&self)->&'static str{OUTPUT_TYPE}
     fn encode(&self,args:&Map<String,Value>)
         ->Result<ProtoPayload,ModelToolError>{
-        expect_fields(args,&["path","max_bytes","max_chars","offset_chars","inspect_only","selector"],&["path"])?;
+        expect_fields(args,&["path","max_bytes","max_chars","offset_chars","inspect_only","selector","expected_source_sha256"],&["path"])?;
         let path=args.get("path").and_then(Value::as_str)
             .ok_or_else(||ModelToolError::InvalidArguments(
                 "Reader path must be a string".into()))?;
@@ -197,12 +208,21 @@ impl ModelToolCodec for ReaderCodec{
             _=>return Err(ModelToolError::InvalidArguments(
                 "selector must be a string of up to 160 characters".into())),
         };
+        let expected_source_sha256=match args.get("expected_source_sha256"){
+            None=>"",
+            Some(Value::String(s)) if s.len()==64
+                &&s.bytes().all(|b|b.is_ascii_hexdigit())
+                &&s.bytes().all(|b|!b.is_ascii_uppercase())=>s,
+            _=>return Err(ModelToolError::InvalidArguments(
+                "expected_source_sha256 must be a 64-character lowercase hex digest".into()))
+        };
         Ok(ProtoPayload{type_url:INPUT_TYPE.into(),
             bytes:ReaderRequest{
                 path:path.into(),max_bytes:Some(max_bytes),
                 max_chars:Some(max_chars),
                 offset_chars:Some(offset),inspect_only,
                 selector:selector.to_owned(),
+                expected_source_sha256:expected_source_sha256.to_owned(),
             }.encode_to_vec()})
     }
     fn decode(&self,result:&ProtoPayload)->Result<Value,ModelToolError>{
@@ -217,7 +237,8 @@ impl ModelToolCodec for ReaderCodec{
             "offset_chars":output.offset_chars,
             "next_offset_chars":output.next_offset_chars,
             "source_truncated":output.source_truncated,
-            "total_extracted_chars":output.total_extracted_chars}))
+            "total_extracted_chars":output.total_extracted_chars,
+            "source_sha256":output.source_sha256}))
     }
 }
 /// Register Reader for a host-approved directory; registration itself does
@@ -251,7 +272,8 @@ pub fn register_reader(
             "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS},
             "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS},
             "inspect_only":{"type":"boolean","description":"Return bounded document format and extraction size without text; then page with offset_chars"},
-            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, slide:2, or page:3; inspect/read is scoped to that section"}
+            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, slide:2, or page:3; inspect/read is scoped to that section"},
+            "expected_source_sha256":{"type":"string","description":"Optional digest from prior Reader response; refuses changed files between paged reads"}
         },"required":["path"],"additionalProperties":false}),
         codec:Arc::new(ReaderCodec),
     }).map_err(|e|format!("{e:?}"))?;
@@ -282,8 +304,29 @@ mod tests{
         ToolInvocation{call_id:"read-call-1".into(),tool_id:TOOL_ID.into(),
             workspace_id:Some("project".into()),input:ProtoPayload{
                 type_url:INPUT_TYPE.into(),bytes:ReaderRequest{
-                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false,selector:String::new()
+                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false,selector:String::new(),expected_source_sha256:String::new()
                 }.encode_to_vec()}}
+    }
+    #[tokio::test]
+    async fn source_fingerprint_rejects_mutation_between_reader_pages(){
+        let path=workspace();let _=std::fs::remove_dir_all(&path);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("report.txt"),"unchanged version").unwrap();
+        let registry=NativeToolRegistry::new();
+        let _catalog=register_reader(&registry,&path).unwrap();
+        let mut invocation=invocation("report.txt");
+        let result=registry.dispatch(invocation.clone(),&Allow).await.unwrap();
+        let first=ReaderResponse::decode(result.payload.bytes.as_slice()).unwrap();
+        assert_eq!(first.source_sha256.len(),64);
+        let mut request=ReaderRequest::decode(invocation.input.bytes.as_slice()).unwrap();
+        request.expected_source_sha256=first.source_sha256;
+        request.offset_chars=Some(3);
+        invocation.input.bytes=request.encode_to_vec();
+        assert!(registry.dispatch(invocation.clone(),&Allow).await.is_ok());
+        std::fs::write(path.join("report.txt"),"changed version").unwrap();
+        let result=registry.dispatch(invocation,&Allow).await;
+        assert!(result.is_err());
+        let _=std::fs::remove_dir_all(path);
     }
     #[tokio::test]
     async fn inspect_then_read_uses_one_native_tool_and_no_file_text_on_inspect(){
@@ -322,7 +365,7 @@ mod tests{
         req.input.bytes=ReaderRequest{
             path:"sample.txt".into(),max_bytes:None,
             max_chars:Some(3),offset_chars:Some(2),
-            inspect_only:false,selector:String::new(),
+            inspect_only:false,selector:String::new(),expected_source_sha256:String::new(),
         }.encode_to_vec();
         let result=registry.dispatch(req.clone(),&Allow).await.unwrap();
         let response=ReaderResponse::decode(result.payload.bytes.as_slice()).unwrap();
