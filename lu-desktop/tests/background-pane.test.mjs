@@ -58,6 +58,24 @@ test('Lu host pushes end notifications without model polling, and routes them in
   assert.ok(ui.includes("await invoke('lu_background_scan_file',{chatId:chatId||null})"));
   assert.ok(!ui.includes("invoke('lu_generate', {taskId"));
 });
+test('explicit native opt-in is required before Lu can proactively ask the model to respond',()=>{
+  assert.ok(host.includes('fn lu_background_auto_continue('));
+  assert.ok(host.includes('state.chats.history(&chat_id)?'));
+  assert.ok(host.includes('set_auto_continue(&chat_id,approved)'));
+  assert.ok(host.includes('auto_continue_enabled(&chat_id)'));
+  assert.ok(host.includes('fn start_background_watchdog('));
+  assert.ok(host.includes('if state.generation_queue.has_jobs(){continue;}'));
+  assert.ok(host.includes('let Some(session_id)=model.session_id else{continue};'));
+  assert.ok(host.includes('GenerationOrigin::BackgroundTerminal'));
+  assert.ok(host.includes('generate_internal('));
+  assert.ok(host.includes('origin==GenerationOrigin::Human'));
+  assert.ok(host.includes('state.background_tasks.pending_notices_for_workspace(&chat_id,1)'));
+  assert.ok(ui.includes("invoke('lu_background_auto_continue'"));
+  assert.ok(ui.includes('checked={Boolean(chatId&&autoBackgroundContinuation)}'));
+  assert.ok(ui.includes('Automatically notify this conversation'));
+  assert.ok(ui.includes("listen('lu-generation-finish'"));
+  assert.ok(ui.includes("invoke('lu_history',{chatId:finishedChat})"));
+});
 test('host overview has no checkpoint or output path fields',()=>{
   const start=host.indexOf('struct BackgroundTaskView {');
   const end=host.indexOf('#[tauri::command]',start);
