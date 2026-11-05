@@ -120,3 +120,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .backgroundGlobalNotice small{font-size:11px;color:#c6d9ec}
 .backgroundTerminalBanner{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px 16px;background:#293f54;color:#e1effb;border-bottom:1px solid #59748c;font-size:12px}
 .backgroundTerminalBanner span{flex:1;min-width:0;overflow-wrap:anywhere}
+
+.backgroundContinuationPreference{padding:14px 18px;border-bottom:1px solid #30435b;background:#21334a}
+.backgroundContinuationPreference label{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:#e5f0fc;cursor:pointer}
+.backgroundContinuationPreference input{margin:2px 0 0;accent-color:#6daee1;flex:none}
+.backgroundContinuationPreference label:has(input:disabled){opacity:.55;cursor:not-allowed}
+.backgroundContinuationPreference small{display:block;margin:8px 0 0 25px;font-size:11px;line-height:1.6;color:#a9bdd0}
