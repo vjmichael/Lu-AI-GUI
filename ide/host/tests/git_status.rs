@@ -29,6 +29,11 @@ fn native_git_status_reads_real_dirty_and_untracked_work_without_running_git() {
     let id = registry.register_from_native_picker(&mut Picker(Some(project.clone())))
         .unwrap().unwrap().project_id;
 
+    let snapshots = lu_ide_workspace::inventory_history::InventorySnapshots::new(
+        root.join("evidence-baselines.json"),
+    ).unwrap();
+    let baseline = snapshots.capture(&registry, &id).unwrap();
+    assert_eq!(baseline.git_worktree_state.as_deref(), Some("clean"));
     let clean = registry.inspect_git_worktree(&id);
     assert_eq!(clean.state, "local_repository_inspected");
     assert_eq!(clean.worktree, "clean");
@@ -39,6 +44,8 @@ fn native_git_status_reads_real_dirty_and_untracked_work_without_running_git() {
     fs::write(project.join("tracked.txt"), b"modified\n").unwrap();
     fs::write(project.join("untracked.txt"), b"new\n").unwrap();
     let dirty = registry.inspect_git_worktree(&id);
+    let baseline_delta = snapshots.compare(&registry, &id).unwrap();
+    assert_eq!(baseline_delta.git_worktree_change, "became_dirty");
     assert_eq!(dirty.worktree, "dirty");
     assert_eq!(dirty.modified_or_staged_count, 1);
     assert_eq!(dirty.untracked_count, 1);
