@@ -25,6 +25,7 @@ pub enum InboxError {
     Full,
     NotFound,
     StateChanged,
+    NotApproved,
     PreviewIncomplete,
 }
 impl InboxError {
@@ -35,6 +36,7 @@ impl InboxError {
             Self::Full => "INBOX_FULL",
             Self::NotFound => "PROPOSAL_NOT_FOUND",
             Self::StateChanged => "PROPOSAL_STATE_CHANGED",
+            Self::NotApproved => "PROPOSAL_NOT_APPROVED",
             Self::PreviewIncomplete => "PROPOSAL_PREVIEW_INCOMPLETE",
         }
     }
@@ -72,6 +74,23 @@ pub struct ProposalSummary {
 pub struct ProposalDetail {
     pub summary: ProposalSummary,
     pub reviews: Vec<ChangeReview>,
+}
+
+/// Approved proposal text can enter editor memory only. This type has NO
+/// filesystem handles, write grants, shell commands, or executable payloads.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingEdit {
+    pub relative_path: String,
+    pub expected_revision: String,
+    pub proposed_text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovedStaging {
+    pub summary: ProposalSummary,
+    pub edits: Vec<StagingEdit>,
 }
 
 struct Entry {
@@ -188,6 +207,34 @@ impl IdeProposalInbox {
             entry.status = ReviewStatus::Rejected;
         }
         Ok(entry.summary(inbox_id))
+    }
+
+    /// Read a previously approved proposal into an editor-staging response.
+    /// Revalidate every source revision AGAIN. This still does not write files.
+    /// Any actual file save requires the separate existing explicit IDE path.
+    pub fn staging(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        inbox_id: &str,
+        expected_digest: &str,
+    ) -> Result<ApprovedStaging, InboxError> {
+        let items = self.items.lock().map_err(|_| InboxError::Unavailable)?;
+        let entry = items.get(inbox_id).ok_or(InboxError::NotFound)?;
+        if entry.status != ReviewStatus::ApprovedForStaging || entry.digest != expected_digest {
+            return Err(InboxError::NotApproved);
+        }
+        let reviews = entry.review(registry)?;
+        if reviews.iter().any(|review| review.truncated || !review.counts_exact) {
+            return Err(InboxError::PreviewIncomplete);
+        }
+        Ok(ApprovedStaging {
+            summary: entry.summary(inbox_id),
+            edits: entry.envelope.edits.iter().map(|edit| StagingEdit {
+                relative_path: edit.relative_path.clone(),
+                expected_revision: edit.expected_revision.clone(),
+                proposed_text: edit.proposed_text.clone(),
+            }).collect(),
+        })
     }
 
     pub fn discard(&self, inbox_id: &str) -> Result<(), InboxError> {
