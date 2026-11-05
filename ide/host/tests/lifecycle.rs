@@ -206,3 +206,131 @@ fn standalone_registry_is_independent_from_lu_core() {
     assert!(!root.join("lu_core.json").exists());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unregister_open_project_removes_only_registration_and_never_files() {
+    let root = temp();
+    let project = root.join("valuable-project");
+    fs::create_dir(&project).unwrap();
+    fs::write(project.join("keep_me.txt"), b"precious project data").unwrap();
+    let catalog = root.join("catalog.json");
+    let registry = IdeWorkspaceRegistry::open(catalog.clone()).unwrap();
+    let mut picker = Picker {
+        selected: Some(project.clone()),
+        calls: AtomicUsize::new(0),
+    };
+    let id = registry
+        .register_from_native_picker(&mut picker)
+        .unwrap()
+        .unwrap()
+        .project_id;
+    assert!(registry.projects().unwrap()[0].active);
+    registry.unregister(&id).unwrap();
+    assert!(registry.projects().unwrap().is_empty());
+    assert!(matches!(registry.reopen(&id), Err(IdeError::UnknownProject)));
+    assert!(matches!(registry.unregister(&id), Err(IdeError::UnknownProject)));
+    assert_eq!(
+        fs::read(project.join("keep_me.txt")).unwrap(),
+        b"precious project data"
+    );
+    // Delisting is durable across restart and does not ban re-registering.
+    drop(registry);
+    let registry = IdeWorkspaceRegistry::open(catalog).unwrap();
+    assert!(registry.projects().unwrap().is_empty());
+    picker.selected = Some(project.clone());
+    assert!(registry.register_from_native_picker(&mut picker).unwrap().is_some());
+    assert!(project.join("keep_me.txt").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unregister_closed_and_missing_folders_without_touching_disk() {
+    let root = temp();
+    let project = root.join("gone");
+    fs::create_dir(&project).unwrap();
+    let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
+    let mut picker = Picker {
+        selected: Some(project.clone()),
+        calls: AtomicUsize::new(0),
+    };
+    let id = registry
+        .register_from_native_picker(&mut picker)
+        .unwrap()
+        .unwrap()
+        .project_id;
+    registry.close(&id).unwrap();
+    fs::remove_dir(&project).unwrap();
+    assert!(!registry.projects().unwrap()[0].available);
+    // Removing stale metadata does not need to read or delete the old path.
+    registry.unregister(&id).unwrap();
+    assert!(registry.projects().unwrap().is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unregister_catalog_write_failure_preserves_registration_and_active_state() {
+    let root = temp();
+    let project = root.join("selected");
+    fs::create_dir(&project).unwrap();
+    fs::write(project.join("keep.txt"), "never delete").unwrap();
+    let catalog = root.join("catalog.json");
+    let registry = IdeWorkspaceRegistry::open(catalog.clone()).unwrap();
+    let mut picker = Picker {
+        selected: Some(project.clone()),
+        calls: AtomicUsize::new(0),
+    };
+    let id = registry
+        .register_from_native_picker(&mut picker)
+        .unwrap()
+        .unwrap()
+        .project_id;
+    let original = fs::read(&catalog).unwrap();
+    // A directory at the catalog destination forces a metadata-write error.
+    fs::rename(&catalog, root.join("saved.json")).unwrap();
+    fs::create_dir(&catalog).unwrap();
+    assert!(registry.unregister(&id).is_err());
+    assert_eq!(registry.projects().unwrap().len(), 1);
+    assert!(registry.projects().unwrap()[0].active);
+    assert_eq!(fs::read(project.join("keep.txt")).unwrap(), b"never delete");
+    fs::remove_dir(&catalog).unwrap();
+    fs::rename(root.join("saved.json"), &catalog).unwrap();
+    assert_eq!(fs::read(&catalog).unwrap(), original);
+    registry.unregister(&id).unwrap();
+    assert!(registry.projects().unwrap().is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn path_free_unregister_protobuf_operation_cannot_access_filesystem() {
+    let root = temp();
+    let project = root.join("project");
+    fs::create_dir(&project).unwrap();
+    fs::write(project.join("source.rs"), "fn main() {}").unwrap();
+    let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
+    let mut picker = Picker {
+        selected: Some(project.clone()),
+        calls: AtomicUsize::new(0),
+    };
+    let id = registry
+        .register_from_native_picker(&mut picker)
+        .unwrap()
+        .unwrap()
+        .project_id;
+    let reply = response(
+        &registry
+            .handle_ui_request(
+                &request(Operation::Unregister(proto::UnregisterProject {
+                    project_id: id,
+                })),
+                &mut picker,
+            )
+            .unwrap(),
+    );
+    match reply.outcome {
+        Some(Outcome::Projects(projects)) => assert!(projects.projects.is_empty()),
+        other => panic!("expected empty registered projects: {other:?}"),
+    }
+    assert_eq!(picker.calls.load(Ordering::SeqCst), 1);
+    assert!(project.join("source.rs").exists());
+    fs::remove_dir_all(root).unwrap();
+}
