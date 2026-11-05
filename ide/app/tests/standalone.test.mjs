@@ -290,3 +290,26 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.match(web, /This directory describes operations/);
   assert.match(css, /\.capabilityCard/);
 });
+
+test('Wave A2 exposes typed request/result/error schemas rather than loose fields', () => {
+  const catalog = read('../../host/src/capabilities.rs');
+  const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
+  const web = read('../web/main.jsx');
+  assert.equal(schemas.schemaVersion, 2);
+  assert.equal(Object.keys(schemas.operations).length, 16);
+  for (const [id, shapes] of Object.entries(schemas.operations)) {
+    assert.equal(shapes.request.type, 'object', id);
+    assert.equal(shapes.request.additionalProperties, false, id);
+    assert.deepEqual(shapes.request.required.sort(), Object.keys(shapes.request.properties).sort(), id);
+    assert.ok(shapes.result.type || shapes.result.$ref, id);
+  }
+  assert.equal(schemas.definitions.SourceSpan.properties.lines.items.$ref, '#/$defs/SourceLine');
+  assert.equal(schemas.definitions.ProposalDetail.properties.reviews.items.$ref, '#/$defs/ChangeReview');
+  assert.match(catalog, /pub request_schema: Value/);
+  assert.match(catalog, /pub result_schema: Value/);
+  assert.match(catalog, /pub error_schema: Value/);
+  assert.doesNotMatch(catalog, /pub input_fields:/);
+  assert.doesNotMatch(catalog, /pub result_type:/);
+  assert.match(web, /item\.requestSchema/);
+  assert.match(web, /item\.resultSchema/);
+});
