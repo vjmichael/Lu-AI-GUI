@@ -27,7 +27,14 @@
   3. Read-only mounted workspace.
   4. External network connection denied.
 
-**Expanded hardened run:** See https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-sandbox-linux.yml for current commit-specific outcome. Do not inherit the earlier success status for the new broad-root rejection, nested-userns lockout, or timeout fixture unless their own exact HEAD run passes.
+**Expanded hardened run:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41967265761
+
+- Linux native Rust static tests **3/3 passed**, rustfmt passed.
+- Bubblewrap 0.11.1, Ubuntu 26.04.1 LTS.
+- Five actual kernel-level checks **5/5 passed**: namespace setup, hidden host secret paths, read-only workspace, offline network, and fixed long-running process termination on deadline.
+- The tested policy now passes `--unshare-all --unshare-user --disable-userns`, explicitly refusing nested user namespaces.
+- Previous attempts with `--disable-userns` but no explicit `--unshare-user` failed **closed**. The corrected combination passed.
+- This is **not** evidence of resource quotas, process descendant cleanup on arbitrary complex workloads, or resistance to kernel vulnerabilities.
 
 ## Outstanding security gates
 
