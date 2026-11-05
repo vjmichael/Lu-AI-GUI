@@ -168,6 +168,27 @@ async fn ide_preview_source_file(
     .map_err(|_| "PREVIEW_TASK_UNAVAILABLE".to_string())?
 }
 
+/// Validate and preview a proposed source edit, without applying it.
+/// Future Lu-proposed edits must use an independently authenticated bridge;
+/// this desktop command does not grant write or execution authority.
+#[tauri::command]
+async fn ide_review_source_change(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+    expected_revision: String,
+    proposed_text: String,
+) -> Result<lu_ide_workspace::review::ChangeReview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .review_source_change(&project_id, &relative_path, &expected_revision, &proposed_text)
+            .map_err(|error| error.code().to_string())
+    })
+    .await
+    .map_err(|_| "REVIEW_TASK_UNAVAILABLE".to_string())?
+}
+
 /// An explicit user-initiated save with optimistic file-revision protection.
 /// There is no model-origin tool path or unrestricted filesystem write command.
 #[tauri::command]
@@ -207,6 +228,7 @@ pub fn run() {
             ide_unregister_project,
             ide_list_source_directory,
             ide_preview_source_file,
+            ide_review_source_change,
             ide_save_source_file
         ])
         .run(tauri::generate_context!())
