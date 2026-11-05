@@ -1,8 +1,8 @@
 # Lu IDE Workspace host — IDE-01B candidate
 
-This Rust crate composes **Lu Core**'s existing `WorkspaceHost` and module registry.
-It registers `lu.ide` as a workspace with **zero executable tools**. It is not a
-new authorization engine, executable worker, Tauri command, or OS sandbox.
+This **standalone** Rust crate owns local project registration and does not link
+against Lu Core. It is not an authorization engine, process executor, tool host,
+or OS sandbox. Future Lu communication is an **optional, separately authenticated bridge**.
 
 ## Structure
 
@@ -36,6 +36,6 @@ UI-only project lifecycle messages do not authorize tool dispatch.
 **Native Linux CI evidence:** Rust 1.88 compilation, 8/8 tests and committed
 rustfmt all passed in [run 41961237114](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41961237114).
 See [implementation evidence](../docs/IDE_01B_IMPLEMENTATION_EVIDENCE.md).
-This is **not** full Task 1 acceptance: no live Tauri picker/verified UI origin,
-desktop integration or Windows native tests. The current local container lacks
+This was the earlier native library validation. Standalone Tauri UI and Windows
+acceptance are now separate gates; see the current standalone app workflow. The current local container lacks
 `cargo` and `rustc`; the verified compile occurred on GitHub's Linux runner.
