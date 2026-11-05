@@ -48,7 +48,7 @@ test('real native file-scan worker connects the system picker to the pane',()=>{
 });
 test('Lu host pushes end notifications without model polling, and routes them into the next chat turn',()=>{
   assert.ok(host.includes('pending_terminal_notices_after('));
-  assert.ok(host.includes('app_events.emit("lu-background-terminal"'));
+  assert.ok(host.includes('app.emit("lu-background-terminal"'));
   assert.ok(host.includes('pending_notices_for_workspace(&chat_id,8)'));
   assert.ok(host.includes('acknowledge_terminal_notice('));
   assert.ok(host.includes('state.chats.complete(&chat_id, &gid)?'));
