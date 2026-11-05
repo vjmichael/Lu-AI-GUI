@@ -1232,12 +1232,12 @@ function App() {
               Research with Lu browser (read only)
             </label>
             {browserResearch && <span>
-              <input type="url" aria-label="Research website origin"
-                placeholder="https://example.com" maxLength={256}
+              <input type="text" aria-label="Research HTTPS origins"
+                placeholder="https://example.com, https://archive.example.org" maxLength={2048}
                 value={browserOrigin}
                 onChange={e => setBrowserOrigin(e.target.value)}
                 disabled={chatBusy}/>
-              <small>Native approval is required for each research turn.</small>
+              <small>Enter 1–8 exact HTTPS origins, separated by commas. Lu asks for native approval of the entire list on every research turn; websites cannot add permissions.</small>
             </span>}
           </div>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
@@ -1321,11 +1321,11 @@ function App() {
             </button>
           </div>}
           <label className="browserOriginLabel" htmlFor="luBrowserOrigin">
-            Authorized website (HTTPS origin)
+            Authorized websites (1–8 exact HTTPS origins)
           </label>
           <input id="luBrowserOrigin" className="browserOriginInput"
-            type="url" placeholder="https://example.com"
-            value={browserOrigin} maxLength={256}
+            type="text" placeholder="https://example.com, https://archive.example.org"
+            value={browserOrigin} maxLength={2048}
             onChange={event => setBrowserOrigin(event.target.value)}
             disabled={browserRuntime?.running || startingBrowser}/>
           <div className="settingsActions">
