@@ -35,6 +35,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_status -- --nocapture
       - name: Verify DOCX archive and XML security cases
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_docx -- --nocapture
+      - name: Verify OpenDocument ODS and ODP extraction
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_odf -- --nocapture
       - name: Verify classic PDF page-text extraction and unsupported scanned-page refusal
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_pdf -- --nocapture
       - name: Validate safe OOXML archive admission
