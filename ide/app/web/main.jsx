@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
+import { locateMatches, planReplacement } from './find_replace.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -25,6 +26,10 @@ function App() {
   const [hint, setHint] = useState('');
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+  const [replaceVisible, setReplaceVisible] = useState(false);
+  const [replaceText, setReplaceText] = useState('');
+  const [caseSensitiveFind, setCaseSensitiveFind] = useState(false);
+  const [replaceRequest, setReplaceRequest] = useState(null);
   const [findIndex, setFindIndex] = useState(-1);
   const [findRequest, setFindRequest] = useState(null);
   const [cursorByTab, setCursorByTab] = useState({});
@@ -64,26 +69,39 @@ function App() {
   const isContinuity = section === 'continuity';
   const isSource = section === 'source';
   const parentPath = directory.split('/').slice(0, -1).join('/');
-  // Search is local to the active unsaved editor buffer, never the filesystem.
-  const matches = [];
-  if (activeTab && findQuery) {
-    const source = activeTab.draft.toLocaleLowerCase();
-    const needle = findQuery.toLocaleLowerCase();
-    let cursor = 0;
-    while (needle && cursor < source.length && matches.length < 10000) {
-      const found = source.indexOf(needle, cursor);
-      if (found < 0) break;
-      matches.push(found);
-      cursor = found + Math.max(needle.length, 1);
-    }
-  }
+  // Both search and replacement operate on the active unsaved buffer only.
+  // The pure planner counts matches before anything is changed.
+  const matchPlan = locateMatches(activeTab?.draft ?? '', findQuery, caseSensitiveFind);
+  const matches = matchPlan.matches;
   function navigateMatch(delta) {
-    if (!matches.length || !activeTab) return;
+    if (matchPlan.truncated || !matches.length || !activeTab) return;
     const next = findIndex < 0 ? (delta < 0 ? matches.length - 1 : 0) :
       (findIndex + delta + matches.length) % matches.length;
     setFindIndex(next);
-    setFindRequest({ tabKey: activeTab.key, from: matches[next],
-      to: matches[next] + findQuery.length, nonce: Date.now() });
+    setFindRequest({ tabKey: activeTab.key,
+      from: matches[next].from, to: matches[next].to, nonce: Date.now() });
+  }
+
+  function replaceMatches(all = false) {
+    if (!activeTab || savingKey || explorerPending || !findQuery || matchPlan.truncated) return;
+    const planned = planReplacement(activeTab.draft, findQuery, replaceText, {
+      caseSensitive: caseSensitiveFind, all, selectedIndex: findIndex,
+    });
+    if (planned.status !== 'ready') return;
+    if (all && !window.confirm(
+      'Replace all ' + planned.count + ' match(es) in the unsaved editor buffer of ' +
+      activeTab.relativePath + '? This does NOT save anything to disk. You can Undo.'
+    )) return;
+    setReplaceRequest({
+      tabIdentity: activeTab.key + ':' + activeTab.generation,
+      tabKey: activeTab.key, expectedDraft: activeTab.draft,
+      changes: planned.changes, nonce: Date.now(),
+    });
+    setFindIndex(-1);
+    setFindRequest(null);
+    setHint((all ? 'Replaced ' + planned.count + ' matches' : 'Replaced one match') +
+      ' in the editor draft. Use Undo to reverse or Save to write the file.');
+    setProblem('');
   }
 
   async function copySourceReference(tab) {
@@ -607,6 +625,11 @@ function App() {
       if (key === 'o') {
         event.preventDefault();
         if (!pending && !explorerPending && !savingKey) void operation('ide_choose_project');
+      } else if (key === 'h' && section === 'explorer' && activeTab) {
+        event.preventDefault();
+        setFindOpen(true);
+        setReplaceVisible(true);
+        setFindIndex(-1);
       } else if (key === 'f' && section === 'explorer' && activeTab) {
         event.preventDefault();
         setFindOpen(true);
@@ -1073,23 +1096,49 @@ function App() {
                   </button>
                 </span>
               </div>
-              {findOpen && <div className="editorFindBar" role="search" aria-label="Find in active file">
-                <input aria-label="Find text" placeholder="Find in file"
-                  value={findQuery} autoFocus
-                  onChange={event => { setFindQuery(event.target.value); setFindIndex(-1); }}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter') { event.preventDefault(); navigateMatch(event.shiftKey ? -1 : 1); }
-                    if (event.key === 'Escape') { event.preventDefault(); setFindOpen(false); }
-                  }}/>
-                <span className="editorFindCount">{matches.length ? `${Math.max(0, Math.min(findIndex + 1, matches.length))} of ${matches.length}` : 'No matches'}</span>
-                <button type="button" aria-label="Previous match" disabled={!matches.length}
-                  onClick={() => navigateMatch(-1)}>↑</button>
-                <button type="button" aria-label="Next match" disabled={!matches.length}
-                  onClick={() => navigateMatch(1)}>↓</button>
-                <button type="button" aria-label="Close find" onClick={() => setFindOpen(false)}>×</button>
+              {findOpen && <div className="editorFindPanel" role="search" aria-label="Find in active file">
+                <div className="editorFindBar">
+                  <input aria-label="Find text" placeholder="Find in file"
+                    value={findQuery} autoFocus
+                    onChange={event => { setFindQuery(event.target.value); setFindIndex(-1); }}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') { event.preventDefault(); navigateMatch(event.shiftKey ? -1 : 1); }
+                      if (event.key === 'Escape') { event.preventDefault(); setFindOpen(false); }
+                    }}/>
+                  <label className="editorFindOption"><input type="checkbox"
+                    checked={caseSensitiveFind} onChange={event => {
+                      setCaseSensitiveFind(event.target.checked); setFindIndex(-1);
+                    }}/> Match case</label>
+                  <span className="editorFindCount">
+                    {matchPlan.truncated ? 'Too many matches or query too long' :
+                      matches.length ? `${Math.max(0, Math.min(findIndex + 1, matches.length))} of ${matches.length}` : 'No matches'}
+                  </span>
+                  <button type="button" aria-label="Previous match" disabled={!matches.length || matchPlan.truncated}
+                    onClick={() => navigateMatch(-1)}>↑</button>
+                  <button type="button" aria-label="Next match" disabled={!matches.length || matchPlan.truncated}
+                    onClick={() => navigateMatch(1)}>↓</button>
+                  <button type="button" aria-label="Toggle replace"
+                    onClick={() => setReplaceVisible(value => !value)}>
+                    {replaceVisible ? 'Hide replace' : 'Replace'}
+                  </button>
+                  <button type="button" aria-label="Close find" onClick={() => setFindOpen(false)}>×</button>
+                </div>
+                {replaceVisible && <div className="editorReplaceBar">
+                  <input aria-label="Replacement text" placeholder="Replace with (literal text)"
+                    value={replaceText} onChange={event => setReplaceText(event.target.value)}
+                    onKeyDown={event => { if (event.key === 'Escape') setFindOpen(false); }}/>
+                  <button type="button" aria-label="Replace current match"
+                    disabled={!matches.length || matchPlan.truncated || !!savingKey || explorerPending}
+                    onClick={() => replaceMatches(false)}>Replace</button>
+                  <button type="button" aria-label="Replace all matches"
+                    disabled={!matches.length || matchPlan.truncated || !!savingKey || explorerPending}
+                    onClick={() => replaceMatches(true)}>Replace all</button>
+                  <span className="editorFindCount">Draft only · Undo available · Save required</span>
+                </div>}
               </div>}
               <CodeEditor
                 findRequest={findRequest?.tabKey === activeTab.key ? findRequest : null}
+                replaceRequest={replaceRequest?.tabKey === activeTab.key ? replaceRequest : null}
                 key={activeTab.key + ':' + activeTab.generation}
                 tabIdentity={activeTab.key + ':' + activeTab.generation}
                 editorState={editorStates.current.get(activeTab.key)}
