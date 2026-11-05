@@ -49,5 +49,14 @@ jobs:
       - name: Compile desktop native command wiring
         if: matrix.os == 'windows-latest'
         run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Test actual bounded-memory media worker
+        if: matrix.os == 'windows-latest'
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib file_scan_worker -- --nocapture
+      - name: Build installed-entrypoint worker executable
+        if: matrix.os == 'windows-latest'
+        run: cargo build --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --bin lu-desktop
+      - name: End-to-end: desktop binary scans actual media fixture
+        if: matrix.os == 'windows-latest'
+        run: node --test lu-desktop/tests/background-worker-e2e.test.mjs
       - name: Verify source identity
         run: git rev-parse HEAD
