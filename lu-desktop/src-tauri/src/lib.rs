@@ -1028,8 +1028,9 @@ async fn lu_background_cancel(
     state:State<'_,Arc<DesktopState>>,
     task_id:String,
 )->Result<(),String>{
+    let processes=Arc::clone(&state.background_processes);
     if task_id.is_empty()||task_id.len()>128
-       ||!state.background_processes.can_cancel(&task_id){
+       ||!processes.can_cancel(&task_id){
         return Err("No live Lu-owned worker with that task ID".into());
     }
     let message=format!(
@@ -1044,7 +1045,6 @@ async fn lu_background_cancel(
             )).blocking_show()
     }).await.map_err(|_|"Native cancellation prompt unavailable")?;
     if !confirmed{return Err("Cancellation declined".into());}
-    let processes=Arc::clone(&state.background_processes);
     tauri::async_runtime::spawn_blocking(move||
         processes.cancel_operator_owned(&task_id)
             .map_err(|e|format!("Cannot cancel owned worker: {e:?}"))
