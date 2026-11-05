@@ -80,3 +80,16 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .appDropHint{position:fixed;z-index:19;left:50%;top:46%;transform:translate(-50%,-50%);background:#213b55;border:1px solid #85bff0;border-radius:12px;color:#f4faff;padding:16px 22px;box-shadow:0 12px 40px rgba(0,0,0,.38);pointer-events:none}
 .busyHint .spinner{will-change:transform}
 @media(prefers-reduced-motion:reduce){.busyHint .spinner{animation:none;will-change:auto}}
+
+/* IDE-01B: register projects only; no project scripts are executed. */
+.ideWorkspacePane{width:min(650px,calc(100vw - 28px));max-height:88vh;overflow:auto}
+.ideSafetyNotice{background:#1c3043;border:1px solid #4d6c88;padding:12px 14px;border-radius:9px;line-height:1.55;color:#cee2f6}
+.ideAddProject{width:100%;margin:10px 0}
+.ideProjectList{display:flex;flex-direction:column;gap:8px;margin-top:13px}
+.ideProjectRow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;border:1px solid #3d5871;border-radius:9px;background:#19293a}
+.ideProjectIdentity{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ideProjectIdentity strong{overflow-wrap:anywhere;color:#eef7ff}
+.ideProjectIdentity small{color:#9cbbd3}
+.ideProjectRow .subtleButton{flex-shrink:0}
+.ideStatusMessage{color:#bfe1ca;margin:8px 0}
+.ideProjectRow button:focus-visible,.ideAddProject:focus-visible{outline:2px solid #b4daff;outline-offset:2px}
