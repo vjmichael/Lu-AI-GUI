@@ -14,15 +14,15 @@ const original = () => newBufferIdentity('p-12345', 'src/example.rs', base,
 test('unsaved draft has a distinct immutable ID and correct CRLF/Unicode offsets', () => {
   const identity = original();
   const state = create('α\r\n😀z\nlast');
-  const ref = captureBufferSpan(identity, state, 4, 7);
+  const ref = captureBufferSpan(identity, state, 3, 6);
   assert.equal(ref.bufferRevision, 0);
   assert.equal(ref.baseDiskRevision, base);
   assert.equal(ref.startLine, 2);
   assert.equal(ref.endLine, 2);
   assert.equal(ref.startColumnUtf16, 1);
   assert.equal(ref.endColumnUtf16, 4);
-  assert.equal(ref.fromByte, 5); // 2-byte alpha, CRLF, then emoji
-  assert.equal(ref.toByte, 10);
+  assert.equal(ref.fromByte, 4); // 2-byte alpha, CRLF, then emoji
+  assert.equal(ref.toByte, 9);
   assert.equal(ref.text, '😀z');
   assert.equal(ref.lifetime, 'current_editor_session_only');
   assert.equal(resolveBufferSpan(ref, identity, state).status, 'current');
