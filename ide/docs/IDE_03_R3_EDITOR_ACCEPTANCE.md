@@ -66,3 +66,20 @@ Use an expendable copy of `DemoProject`, not a live production project. R2 alrea
 - [ ] Observe the UI remains **Lu connection: Not connected**; editing works without Lu.
 
 **Pass criteria:** Record exact build SHA and OS, actual file bytes before/after, successful conflict rejection, undo/redo after tab switch and dialog behavior. A CI build is not human desktop acceptance.
+
+
+## R3.1 — CodeMirror CSP styling repair (Windows visual acceptance pending)
+
+**Reported by user (November 4, 2026 America/Phoenix):** The R3 editor screenshots showed line numbers stacked above the source, with little or no syntax coloration. Saving and project reopen persistence worked, but editor layout was not accepted.
+
+**Root cause analysis:** The standalone desktop configured `style-src 'self'`. CodeMirror 6 dynamically inserts style modules to lay out its gutter and syntax highlighting; a strict CSP blocks those inline style nodes without a nonce. Official CodeMirror provides `EditorView.cspNonce`; Tauri 2 generates nonces for static style tags and includes them in the packaged CSP. A static, empty style nonce carrier is added to `ide/app/web/index.html`; `ide/app/web/code_editor.jsx` passes its runtime nonce to CodeMirror. The CSP remains restrictive—no `unsafe-inline` or `unsafe-eval` added.
+
+**Verification:**
+- https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41975718712 — all three standalone CI jobs passed: Linux Rust tests, frontend tests including new nonce regression check, and Windows native Tauri compile.
+- https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41975814653 — optimized unsigned Windows release succeeded; artifact `lu-ide-code-editor-windows-alpha-r3-1`.
+- Release EXE SHA-256: `604abcc9470745ad9f623489c6c905d119aad6f5ba9adcacf84b52249acfab26`, size 10,408,448 bytes, valid PE header.
+- User-facing package `Lu-IDE-Standalone-R3.1-Editor.zip` SHA-256: `6c0cc6cac54a9880e972c32934fbcb5de09e8aa74bc2348f502068719b46697b`; ZIP integrity passed, includes `StylingTestProject` fixture and instructions.
+
+**Still open:** The rebuilt executable has not yet been visually tested by the user. Confirm gutter line numbers align alongside source lines and Rust/Python syntax colors appear. A compile/test pass alone does not establish that the WebView applies the generated nonce as expected.
+
+Reference: https://codemirror.net/docs/ref/#view.EditorView%5EcspNonce and https://v2.tauri.app/security/csp/.
