@@ -98,7 +98,6 @@ pub fn create_zip_new_in_dir(
     })?;
     let written=(|| -> Result<(),ArchiveCreateError> {
         let mut writer=ZipWriter::new(stage_file);
-        let opts=SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let mut buf=[0_u8;64*1024];
         let mut actual_total=0_u64;
         for name in inputs {
@@ -110,7 +109,7 @@ pub fn create_zip_new_in_dir(
             if !source.metadata().map_err(|e| ArchiveCreateError::Io(e.to_string()))?.is_file() {
                 return Err(ArchiveCreateError::SourceNotRegular);
             }
-            writer.start_file(name.as_str(),opts)
+            writer.start_file(name.as_str(),SimpleFileOptions::default().compression_method(CompressionMethod::Stored))
                 .map_err(|e| ArchiveCreateError::Io(e.to_string()))?;
             let mut count=0_u64;
             loop {
