@@ -1,0 +1,40 @@
+name: Lu AIW operational-memory regression
+on:
+  push:
+    branches: ['lu/aiw-operational-memory-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lu-aiw-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  operational-memory:
+    name: Core operational-memory regression
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run production ledger module tests in cross-platform harness
+        run: cargo test --manifest-path tests/operational-memory-harness/Cargo.toml --test operational_memory -- --nocapture
+      - name: Run integrated Lu Core ledger regressions on Linux
+        if: runner.os == 'Linux'
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test operational_memory -- --nocapture
+      - name: Compile integrated Lu Core on Linux
+        if: runner.os == 'Linux'
+        run: cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml
+      - name: Disclose pre-existing Windows integration blocker
+        if: runner.os == 'Windows'
+        run: echo "Windows ledger harness compiled against production source; full Lu Core is separately blocked by the missing Job::assign_and_resume_suspended Windows worker API."
+      - name: Record exact source identity
+        run: git rev-parse HEAD
