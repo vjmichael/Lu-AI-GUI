@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e414870777e2c443f3186fa48d8aea5068548650",
-  "trackedFileCount": 318,
+  "sourceCommitBeforeLock": "a3690fa2118daeedf285dfdf76a77bcb1988a7a7",
+  "trackedFileCount": 320,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -285,7 +285,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "fa4e623849cdce7ca878a2c8142186348b7511ff"
+      "blob": "23eb3f275bf59fdb5ce906291c8441c601c4254d"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -322,6 +322,10 @@
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
       "blob": "5936bebd94754c80b029cf2b6cad95628c659740"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
+      "blob": "f8c31c5bf50505497cf5c6c122ea2281af4cd6e9"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -436,6 +440,10 @@
       "blob": "04e2b9102684045394d13146076734ed570e1aa9"
     },
     {
+      "path": "lu-desktop/tests/workspace-desktop.test.mjs",
+      "blob": "55cc44c2557ce690cb89614c3b83e995b8a9a1cd"
+    },
+    {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
       "blob": "c4e9f4a01fcab2f6dbf793e646d9300408274c35"
     },
@@ -465,7 +473,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "7935334d1903f9ef7988af61e5b93a9e58e454d8"
+      "blob": "bfaa8f4bfdebbc9a8b7e1332153cfe02a3469ca2"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
