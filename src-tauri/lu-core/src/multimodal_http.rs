@@ -315,10 +315,12 @@ pub fn generate_browser_tool_stream_body(
         if let Some(calls)=collector.absorb(event)
             .map_err(|_|"invalid or unadvertised browser tool call")?{
             completed=Some(calls);
-            return Ok(FrameDisposition::Done);
         }
         if done {
-            return Err("browser-enabled turn finished without approved tool calls".into());
+            if completed.is_none(){
+                return Err("browser-enabled turn finished without approved tool calls".into());
+            }
+            return Ok(FrameDisposition::Done);
         }
         Ok(FrameDisposition::Continue)
     })?;
