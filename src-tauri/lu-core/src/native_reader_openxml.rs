@@ -3,6 +3,7 @@
 //! external links, macro content, ZIP64, encrypted entries or data descriptors.
 use crate::native_reader::ReaderFailure;
 use flate2::read::DeflateDecoder;
+use quick_xml::{events::Event,Reader};
 use std::{collections::BTreeMap,io::Read};
 
 const MAX_ARCHIVE_BYTES:usize=16*1024*1024;
@@ -25,6 +26,51 @@ fn slice_at<'a>(bytes:&'a [u8],start:usize,size:usize)->Result<&'a [u8],ReaderFa
 #[derive(Debug)]
 pub struct OpenXmlPackage{
     parts:BTreeMap<String,Vec<u8>>,
+}
+fn reject_external_relationships(xml:&[u8])->Result<(),ReaderFailure>{
+    let mut reader=Reader::from_reader(xml);
+    let mut events=0usize;
+    loop{
+        events+=1;
+        if events>10_000{return Err(ReaderFailure::TooLarge)}
+        let event=reader.read_event().map_err(|_|malformed())?;
+        match event{
+            Event::Start(ref e)|Event::Empty(ref e)
+                if e.local_name().as_ref()==b"Relationship"=>{
+                let mut target_mode=None::<String>;
+                let mut target=None::<String>;
+                for item in e.attributes().with_checks(true){
+                    let attr=item.map_err(|_|malformed())?;
+                    let raw=std::str::from_utf8(attr.value.as_ref())
+                        .map_err(|_|malformed())?;
+                    let value=quick_xml::escape::unescape(raw)
+                        .map_err(|_|malformed())?.into_owned();
+                    if attr.key.as_ref().eq_ignore_ascii_case(b"TargetMode"){
+                        target_mode=Some(value);
+                    }else if attr.key.as_ref().eq_ignore_ascii_case(b"Target"){
+                        target=Some(value);
+                    }
+                }
+                if target_mode.as_deref().is_some_and(|m|
+                    !m.eq_ignore_ascii_case("Internal")) {
+                    return Err(malformed())
+                }
+                if let Some(target)=target{
+                    let lower=target.to_ascii_lowercase();
+                    if lower.contains("://")||lower.starts_with("file:")||
+                        lower.starts_with("mailto:")||lower.starts_with("\\\\")||
+                        lower.starts_with('/')||lower.contains('?')||
+                        lower.contains('#'){
+                        return Err(malformed())
+                    }
+                }
+            },
+            Event::DocType(_)=>return Err(malformed()),
+            Event::Eof=>break,
+            _=>{},
+        }
+    }
+    Ok(())
 }
 impl OpenXmlPackage{
     pub fn new(bytes:&[u8])->Result<Self,ReaderFailure>{
@@ -144,9 +190,8 @@ impl OpenXmlPackage{
                    ||content.windows(8).any(|w|w.eq_ignore_ascii_case(b"<!ENTITY")){
                     return Err(malformed())
                 }
-                if name.ends_with(".rels") &&
-                    String::from_utf8_lossy(content).contains("TargetMode=\"External\""){
-                    return Err(malformed())
+                if name.to_ascii_lowercase().ends_with(".rels"){
+                    reject_external_relationships(content)?;
                 }
             }
         }
@@ -163,6 +208,20 @@ impl OpenXmlPackage{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn rejects_external_relationships_regardless_of_xml_quoting_or_spacing(){
+        for xml in [
+            r#"<Relationships><Relationship Id='rId1' TargetMode='External' Target='https://remote.example/secret'/></Relationships>"#,
+            r#"<Relationships><Relationship TargetMode = "external" Target="file:///etc/passwd"/></Relationships>"#,
+            r#"<Relationships><Relationship Id="rId3" Target="https://remote.example/file" /></Relationships>"#,
+            r#"<Relationships><Relationship Id="rId5" TargetMode="FTP" Target="slides/s.xml"/></Relationships>"#,
+        ]{
+            assert!(reject_external_relationships(xml.as_bytes()).is_err());
+        }
+        assert!(reject_external_relationships(
+            br#"<Relationships><Relationship Id="rId4" Target="slides/slide1.xml"/></Relationships>"#
+        ).is_ok());
+    }
     #[test]
     fn rejects_fake_zip_and_non_ooxml(){
         assert!(OpenXmlPackage::new(b"PK\x03\x04bad").is_err());
