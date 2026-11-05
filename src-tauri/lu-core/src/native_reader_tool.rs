@@ -19,7 +19,7 @@ use crate::{
 pub const TOOL_ID:&str="lu.reader.read";
 pub const INPUT_TYPE:&str="type.googleapis.com/lu.v1.ReaderRequest";
 pub const OUTPUT_TYPE:&str="type.googleapis.com/lu.v1.ReaderResponse";
-const MAX_BYTES:u32=1024*1024;
+const MAX_BYTES:u32=8*1024*1024;
 const DEFAULT_BYTES:u32=256*1024;
 const MAX_CHARS:u32=32_000;
 const MAX_OFFSET_CHARS:u32=200_000;
@@ -87,7 +87,13 @@ fn relative_path(raw:&str)->Result<PathBuf,ToolFailure>{
 }
 fn read_authorized(source:&ReaderSource,request:ReaderRequest)
     ->Result<ReaderResponse,ToolFailure>{
-    let max_bytes=request.max_bytes.unwrap_or(DEFAULT_BYTES);
+    // In-memory bytes were individually admitted by a native operator.
+    // Workspace directory reads retain the conservative 256 KiB default;
+    // omitting max_bytes must not make approved larger documents unreadable.
+    let max_bytes=request.max_bytes.unwrap_or(match source{
+        ReaderSource::Workspace(_)=>DEFAULT_BYTES,
+        ReaderSource::Pinned{bytes,..}=>bytes.len() as u32,
+    });
     let max_chars=request.max_chars.unwrap_or(DEFAULT_CHARS);
     let offset=request.offset_chars.unwrap_or(0);
     if request.selector.len()>160 || request.selector.chars().any(|ch|ch=='\0'){
@@ -206,7 +212,9 @@ impl ModelToolCodec for ReaderCodec{
                 "Reader path must be a string".into()))?;
         relative_path(path).map_err(|_|ModelToolError::InvalidArguments(
             "Reader requires a workspace-relative safe path".into()))?;
-        let max_bytes=optional_uint(args,"max_bytes",DEFAULT_BYTES,MAX_BYTES)?;
+        let max_bytes=if args.contains_key("max_bytes"){
+            Some(optional_uint(args,"max_bytes",DEFAULT_BYTES,MAX_BYTES)?)
+        }else{None};
         let max_chars=optional_uint(args,"max_chars",DEFAULT_CHARS,MAX_CHARS)?;
         let offset=match args.get("offset_chars"){
             None=>0,
@@ -238,7 +246,7 @@ impl ModelToolCodec for ReaderCodec{
         };
         Ok(ProtoPayload{type_url:INPUT_TYPE.into(),
             bytes:ReaderRequest{
-                path:path.into(),max_bytes:Some(max_bytes),
+                path:path.into(),max_bytes,
                 max_chars:Some(max_chars),
                 offset_chars:Some(offset),inspect_only,
                 selector:selector.to_owned(),
@@ -281,7 +289,7 @@ pub fn register_reader_pinned(
 )->Result<ModelToolCatalog,String>{
     let path=relative_path(filename).map_err(|_|"Invalid pinned document name")?;
     if path.components().count()!=1||bytes.is_empty()||bytes.len()>MAX_BYTES as usize{
-        return Err("Pinned Reader requires one safe file <=1 MiB".into());
+        return Err("Pinned Reader requires one safe file <=8 MiB".into());
     }
     let ext=crate::native_reader::classify(filename,&bytes[..bytes.len().min(16)]);
     if matches!(ext,crate::native_reader::ReaderFormat::Unknown){
@@ -350,6 +358,26 @@ mod tests{
                 type_url:INPUT_TYPE.into(),bytes:ReaderRequest{
                     path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false,selector:String::new(),expected_source_sha256:String::new()
                 }.encode_to_vec()}}
+    }
+    #[tokio::test]
+    async fn larger_pinned_document_is_readable_without_model_byte_limit_hint(){
+        let registry=NativeToolRegistry::new();
+        let payload="x".repeat(400_000).into_bytes();
+        register_reader_pinned(&registry,"long.txt",payload).unwrap();
+        let response=registry.dispatch(invocation("long.txt"),&Allow).await.unwrap();
+        let output=ReaderResponse::decode(response.payload.bytes.as_slice()).unwrap();
+        assert_eq!(output.bytes_read,400_000);
+        assert!(output.source_truncated);
+        assert!(output.total_extracted_chars>=200_000);
+        let mut req=ReaderRequest::decode(invocation("long.txt").input.bytes.as_slice()).unwrap();
+        req.max_bytes=Some(1024);
+        let limited=ToolInvocation{
+            call_id:"read-limited".into(),tool_id:TOOL_ID.into(),
+            workspace_id:Some("project".into()),input:ProtoPayload{
+                type_url:INPUT_TYPE.into(),bytes:req.encode_to_vec()
+            }
+        };
+        assert!(registry.dispatch(limited,&Allow).await.is_err());
     }
     #[tokio::test]
     async fn pinned_document_never_opens_other_paths_or_mutated_disk_content(){
