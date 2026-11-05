@@ -17,10 +17,19 @@
 | R3.5 proposal inbox | Yes | Yes | Prior CI passed; see handoff | User reported functional flow; hostile gates still open | Prior build references in handoff; reverify availability |
 | R3.6 success banner | Yes | Yes | Regression assertions added, **exact-head run unverified** | **Not yet tested by user** | **No R3.6 package verified** |
 | R3.7 in-file Find | Yes | Yes | Regression assertions added, **exact-head run unverified** | **Not yet tested by user** | **No R3.7 package verified** |
+| Wave A1 disk source spans | Source implemented | Yes | Native tests added, **not yet run** | **Not yet tested by user** | None |
 | Find and Replace | No | No | No | No | No |
 | Live Lu↔IDE connection | Deferred | No | No | No | No |
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
+
+## Wave A1 — first host implementation (source only)
+
+- Added `host/src/source_span.rs`: bounded 120-line, 32 KiB read-only disk source spans using existing capability-relative file preview and mandatory SHA-256 revision match.
+- Each reply includes project ID, normalized relative path, saved revision, one-based line numbers, precise UTF-8 byte offsets and LF/CRLF/none terminator types. The last blank line after a final newline is addressable.
+- New `ide_read_source_span` Tauri command and `host/tests/source_span.rs` native regression fixtures. This command is **not yet a displayed human code-reference UI, not unsaved buffer snapshots and not an AI bridge**.
+- Tests authored for Unicode, CRLF, trailing blanks, stale file, invalid range/path/revision, closed projects and symlink refusal. **Execution and CI status unknown/not run.**
+- Follow-up work: compile and verify on Linux/Windows; add a human-friendly “Copy source reference” interaction based on this same host API; extend snapshots to unsaved CodeMirror buffers without treating UI text as trusted disk state.
 
 ## Capability-first redesign — IDE-ARCH-02 (design-only)
 
@@ -28,7 +37,7 @@
 - Seven service boundaries planned: workspace registry, revision-aware source snapshots, host semantic capability registry, resource inventory, durable development ledger/context index, effect/evidence journal, gated execution supervisor.
 - Human UI uses the same authoritative host operations that a future approved AI client could use. **No Lu runtime bridge is active or required.**
 - Wave A first: **A1 source-span/revision API → A2 bounded capability descriptors → A3 continuity read model**, then B human editor hardening, C read-only Git and inventory, D worker security, E/F development workflows, G deferred AI integration.
-- **Status:** documentation redesign committed; new services/APIs are **not implemented by this change**. Source tests, native Windows validation and installer acceptance **not run for redesign**.
+- **Status:** architecture redesign committed; **Wave A1 saved-disk span service has now been written as source**, while remaining planned services/APIs are **not implemented**. Source tests, native Windows validation and installer acceptance **not run for redesign**.
 
 ## AI-first architectural reconciliation — AIW-IDE-01
 
@@ -46,7 +55,7 @@
 
 ## Work to resume next
 
-1. **Begin IDE-ARCH-02 Wave A1 host source-span API**, preserving existing human editor and revision-checked Save. Before changing code, inspect actual branch HEAD and available local workspace; do not rewrite unseen local work.
+1. **Verify Wave A1 host span implementation** on Linux/Windows, including native host tests, Tauri build and exact-head CI. Then connect human source-reference UI without weakening explicit Save. A1 does not yet represent unsaved buffer revisions.
 2. **Reconcile branch and local copies**: identify all checkouts / `Delivered` folders / generated Windows packages, capture source roots, hashes and output locations. This step requires access to the relevant local filesystem; no remote connector can certify unseen files.
 3. **Verify R3.6/R3.7**: run `cd ide/app && npm run check`, native host tests and Windows Tauri build. Review exact-head CI outcomes and test Find/navigation + banner dismissal on Windows. Resolve failures before calling either release-accepted.
 4. **Next standalone editor feature: Find and Replace**, with explicit editor-buffer edits, undo support and no implicit Save. Keep all Lu bridge activation deferred.
