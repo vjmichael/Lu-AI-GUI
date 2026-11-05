@@ -324,8 +324,8 @@ test('Wave A3 exposes revisioned, read-only continuity with explicitly unknown e
   assert.match(host, /pub fn context\(/);
   assert.match(host, /fn events\(/);
   assert.match(host, /"untrusted_project_text"/);
-  assert.match(host, /remote_git_state: "not_inspected"/);
-  assert.match(host, /local_artifacts: "not_inspected"/);
+  assert.match(host, /remote_git_state: "not_queried"/);
+  assert.match(host, /local_artifacts: "bounded_scan"/);
   assert.match(web, /aria-label="Project continuity"/);
   assert.match(web, /invoke\('ide_read_project_context'/);
   assert.equal(schemas.operations['continuity.read'].result.$ref, '#/$defs/ProjectContext');
@@ -377,4 +377,21 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
     assert.deepEqual(typed, parameters, id + ': request schema differs from native command');
   }
+});
+
+test('A3 performs a bounded, no-execution local artifact and Git reference probe', () => {
+  const inventory = read('../../host/src/inventory.rs');
+  const continuity = read('../../host/src/continuity.rs');
+  const schema = JSON.parse(read('../../host/src/capability_schemas.json'));
+  const web = read('../web/main.jsx');
+  assert.match(inventory, /const MAX_CANDIDATES: usize = 80/);
+  assert.match(inventory, /const MAX_HASH_BYTES: u64 = 64 \* 1024 \* 1024/);
+  assert.match(inventory, /source_capability\(project_id\)/);
+  assert.match(inventory, /"Delivered"/);
+  assert.match(inventory, /"benchmarks"/);
+  assert.match(inventory, /"not_queried"/);
+  assert.doesNotMatch(inventory, /std::process::Command|Command::new/);
+  assert.match(continuity, /inspect_project_evidence\(project_id\)/);
+  assert.equal(schema.definitions.ProjectContext.properties.inventory.$ref, '#/$defs/EvidenceInventory');
+  assert.match(web, /projectContext\.inventory\.files/);
 });
