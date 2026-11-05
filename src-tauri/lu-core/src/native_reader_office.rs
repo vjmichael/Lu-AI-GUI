@@ -111,7 +111,43 @@ fn shared_strings(xml:&[u8])->Result<Vec<String>,ReaderFailure>{
     }
     Ok(strings)
 }
-fn worksheet(xml:&[u8],strings:&[String],name:&str,out:&mut String)
+#[derive(Clone,Copy)]
+struct CellRange{first_row:usize,last_row:usize,first_col:usize,last_col:usize}
+impl CellRange{
+    fn has(&self,cell:&str)->bool{
+        parse_cell_ref(cell).is_some_and(|(row,col)|
+            row>=self.first_row&&row<=self.last_row&&
+            col>=self.first_col&&col<=self.last_col)
+    }
+}
+fn parse_cell_ref(s:&str)->Option<(usize,usize)>{
+    let s=s.strip_prefix('$').unwrap_or(s);
+    if s.is_empty()||s.len()>12{return None}
+    let bytes=s.as_bytes();let mut col=0usize;let mut i=0usize;
+    while i<bytes.len()&&bytes[i].is_ascii_alphabetic(){
+        col=col.checked_mul(26)?
+            .checked_add((bytes[i].to_ascii_uppercase()-b'A'+1) as usize)?;
+        i+=1;
+    }
+    if i==0||i==bytes.len()||col>16_384{return None}
+    let digits=&bytes[i..];
+    if digits.len()>7||digits[0]==b'0'||!digits.iter().all(u8::is_ascii_digit){
+        return None
+    }
+    let row=std::str::from_utf8(digits).ok()?.parse::<usize>().ok()?;
+    if row==0||row>1_048_576{return None}
+    Some((row,col))
+}
+fn parse_cell_range(spec:&str)->Result<CellRange,ReaderFailure>{
+    let (first,last)=spec.split_once(':').unwrap_or((spec,spec));
+    let (first_row,first_col)=parse_cell_ref(first).ok_or(ReaderFailure::SelectorNotFound)?;
+    let (last_row,last_col)=parse_cell_ref(last).ok_or(ReaderFailure::SelectorNotFound)?;
+    if first_row>last_row||first_col>last_col{
+        return Err(ReaderFailure::SelectorNotFound)
+    }
+    Ok(CellRange{first_row,last_row,first_col,last_col})
+}
+fn worksheet(xml:&[u8],strings:&[String],name:&str,out:&mut String,range:Option<CellRange>)
     ->Result<(),ReaderFailure>{
     let mut reader=Reader::from_reader(xml);
     let mut cell=String::new();let mut cell_type=String::new();
@@ -140,7 +176,8 @@ fn worksheet(xml:&[u8],strings:&[String],name:&str,out:&mut String)
                     let index=value.parse::<usize>().map_err(|_|bad())?;
                     value=strings.get(index).ok_or_else(bad)?.clone();
                 }
-                if !value.is_empty()||!formula.is_empty(){
+                if (!value.is_empty()||!formula.is_empty())&&
+                    range.is_none_or(|r|r.has(&cell)){
                     out.push_str(&cell);
                     out.push('=');
                     out.push_str(&value.replace('\n'," "));
@@ -173,6 +210,18 @@ pub fn read_xlsx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
 }
 pub fn read_xlsx_sheet(bytes:&[u8],max_chars:usize,selected:Option<&str>)
     ->Result<ReaderText,ReaderFailure>{
+    read_xlsx_scoped(bytes,max_chars,selected,None)
+}
+pub fn read_xlsx_range(
+    bytes:&[u8],max_chars:usize,sheet:&str,cells:&str,
+)->Result<ReaderText,ReaderFailure>{
+    if sheet.is_empty()||sheet.len()>128{return Err(ReaderFailure::SelectorNotFound)}
+    let range=parse_cell_range(cells)?;
+    read_xlsx_scoped(bytes,max_chars,Some(sheet),Some(range))
+}
+fn read_xlsx_scoped(
+    bytes:&[u8],max_chars:usize,selected:Option<&str>,range:Option<CellRange>
+)->Result<ReaderText,ReaderFailure>{
     let pkg=OpenXmlPackage::new(bytes)?;
     if !pkg.has("xl/workbook.xml"){return Err(bad())}
     let relationships=relationships(pkg.part("xl/_rels/workbook.xml.rels")?)?;
@@ -208,7 +257,7 @@ pub fn read_xlsx_sheet(bytes:&[u8],max_chars:usize,selected:Option<&str>)
     let mut out=String::new();let mut found=false;
     for (name,path) in sheets{
         if selected.is_none_or(|s|s==name){
-            worksheet(pkg.part(&path)?,&strings,&name,&mut out)?;
+            worksheet(pkg.part(&path)?,&strings,&name,&mut out,range)?;
             found=true;
         }
     }
@@ -328,6 +377,27 @@ mod tests{
         assert!(result.text.contains("B1=42 [formula: =SUM(C1:C3); cached value may be stale]"));
         let trunc=read_xlsx(&data,12).unwrap();
         assert!(trunc.truncated);
+    }
+    #[test]
+    fn worksheet_ranges_read_only_requested_coordinates(){
+        let data=make_zip(&[
+            ("[Content_Types].xml",CT),
+            ("xl/workbook.xml",r#"<workbook xmlns:r="r"><sheets><sheet name="Sales" r:id="rId1"/></sheets></workbook>"#),
+            ("xl/_rels/workbook.xml.rels",r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>"#),
+            ("xl/worksheets/sheet1.xml",r#"<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c><c r="C1"><v>3</v></c></row><row r="2"><c r="B2"><f>SUM(A1:B1)</f><v>3</v></c></row></sheetData></worksheet>"#),
+        ]);
+        let result=read_xlsx_range(&data,1024,"Sales","B1:B2").unwrap();
+        assert!(result.text.contains("B1=2"));
+        assert!(result.text.contains("B2=3 [formula: =SUM"));
+        assert!(!result.text.contains("A1=1"));
+        assert!(!result.text.contains("C1=3"));
+        assert_eq!(read_xlsx_range(&data,1024,"Sales","B3:A2"),
+            Err(ReaderFailure::SelectorNotFound));
+        assert_eq!(read_xlsx_range(&data,1024,"Other","A1:B2"),
+            Err(ReaderFailure::SelectorNotFound));
+        assert_eq!(parse_cell_ref("XFD1048576"),Some((1_048_576,16_384)));
+        assert_eq!(parse_cell_ref("XFE1"),None);
+        assert_eq!(parse_cell_ref("A0"),None);
     }
     #[test]
     fn selector_reports_missing_without_returning_another_sheet(){
