@@ -1,0 +1,32 @@
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0c111a;color:#e5edf8}
+*{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}button:disabled{cursor:not-allowed;opacity:.48}
+button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
+.ideShell{display:flex;height:100vh;min-height:500px;overflow:hidden}
+.ideRail{width:262px;min-width:234px;display:flex;flex-direction:column;background:#111b2a;border-right:1px solid #26364a}
+.ideBrand{display:flex;align-items:center;gap:12px;padding:25px 20px 26px;border-bottom:1px solid #26364a}
+.brandSymbol{width:39px;height:39px;border-radius:12px;background:linear-gradient(145deg,#92d6ff,#5e8cfd);color:#11243c;display:grid;place-items:center;font-weight:900;font-size:26px}
+.ideBrand span{display:flex;flex-direction:column;gap:3px}.ideBrand strong{font-size:16px}.ideBrand small{color:#91a5bc;font-size:11px}
+.ideNav{display:flex;flex-direction:column;gap:6px;padding:20px 12px}.navItem{display:flex;align-items:center;gap:13px;padding:12px 13px;text-align:left;background:transparent;border:1px solid transparent;border-radius:9px;color:#bbcada;font-size:13px}
+.navItem span{min-width:18px;font-size:18px}.navItem.selected{background:#1c334c;border-color:#395e7e;color:#fff}.navItem small{margin-left:auto;font-size:10px;color:#7790a8}
+.ideRailFooter{margin-top:auto;border-top:1px solid #26364a;padding:20px 18px;color:#93a8bc;font-size:12px;line-height:1.5}
+.bridgeLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bridgeLine strong{font-size:11px;color:#b1becd;font-weight:500;margin-left:15px}.bridgeDot{width:7px;height:7px;border-radius:50%;background:#8492a5}
+.ideRailFooter p{margin-bottom:0}
+.ideMain{min-width:0;flex:1;display:flex;flex-direction:column;background:#0c111a}
+.ideTopBar{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:1px solid #26364a;padding:32px 37px 28px}
+.eyebrow{letter-spacing:1.7px;font-size:10px;font-weight:700;color:#7e9db9}
+.ideTopBar h1{font-size:28px;letter-spacing:-.6px;margin:8px 0}.ideTopBar p{font-size:13px;color:#95aac0;margin:0}
+.ideControls{display:flex;gap:10px}.ghostBtn,.primaryBtn{border-radius:8px;padding:11px 15px;font-weight:600;font-size:12px;border:1px solid #46607a;color:#d9eaff;background:#203246;white-space:nowrap}
+.primaryBtn{color:#071a2c;background:#83c8fa;border-color:#a4dcff}.ghostBtn:not(:disabled):hover{background:#304b66}.primaryBtn:not(:disabled):hover{background:#b3e1ff}
+.workspaceContent{padding:35px 37px;overflow:auto;flex:1}
+.sectionHeading{display:flex;align-items:center;gap:13px;margin-bottom:20px}.sectionHeading h2{font-size:16px;margin:0}.sectionHeading span{font-size:11px;color:#85a5c2;background:#192d40;padding:4px 9px;border-radius:30px}
+.emptyState{border:1px dashed #344f67;border-radius:16px;background:#101e2d;text-align:center;padding:54px 30px;max-width:650px;margin:auto;display:flex;flex-direction:column;align-items:center;gap:12px}
+.emptySymbol{font-size:41px;color:#79bbec}.emptyState h3{font-size:19px;margin:0}.emptyState p{max-width:420px;line-height:1.65;font-size:13px;color:#a1b5c9;margin:0 0 6px}
+.projectGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:14px}
+.projectCard{display:flex;gap:15px;align-items:start;min-width:0;border:1px solid #30465d;background:#142131;border-radius:12px;padding:19px}
+.projectIcon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:#29455e;color:#93cbee;font-size:23px;flex-shrink:0}
+.projectDetails{min-width:0;flex:1}.projectDetails h3{margin:0;font-size:15px;overflow-wrap:anywhere}.projectDetails p{font-size:12px;color:#95aec6;line-height:1.4;margin:7px 0}.projectDetails small{font-family:monospace;font-size:10px;color:#7c91a6}
+.projectActions{align-self:center}
+.infoNotice{margin-top:28px;border:1px solid #3a546a;border-radius:10px;padding:14px 17px;color:#a6bcd0;font-size:12px;line-height:1.6}.infoNotice strong{color:#d8eafa}
+.errorMsg{padding:12px;background:#4c2532;border-radius:9px;color:#ffe0e4;display:flex;justify-content:space-between;gap:15px;margin-bottom:18px}.errorMsg button{background:none;border:none;color:inherit;text-decoration:underline}
+.successMsg{color:#a7e4be;font-size:12px}.ideStatusBar{display:flex;justify-content:space-between;align-items:center;padding:8px 18px;border-top:1px solid #26364a;color:#91a8bd;font-size:11px}
+@media(max-width:800px){.ideRail{width:208px;min-width:208px}.ideTopBar{padding:22px;align-items:flex-start;flex-direction:column}.workspaceContent{padding:24px}.ideControls{width:100%}.ideControls button{flex:1}}
