@@ -60,6 +60,12 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// List actual host-supported operations. Discovery is not authorization.
+#[tauri::command]
+async fn ide_list_capabilities() -> lu_ide_workspace::capabilities::CapabilityCatalog {
+    lu_ide_workspace::capabilities::list_capabilities()
+}
+
 #[tauri::command]
 async fn ide_list_projects(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -327,6 +333,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            ide_list_capabilities,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
