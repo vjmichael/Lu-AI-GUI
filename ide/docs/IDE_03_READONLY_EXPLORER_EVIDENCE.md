@@ -30,13 +30,19 @@
 - This is GitHub-hosted native validation, not the user's local Windows click-through acceptance.
 - **R2 Windows release:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41970937767 — passed. Artifact `lu-ide-explorer-windows-alpha-r2` contains an unsigned 10,116,096-byte Windows PE executable. SHA-256: `fbc2ac5d735792aa8999c3f89fe0b03636456604f267a868de08a42dde9d4835`. A fresh user-facing ZIP also includes a harmless `DemoProject` fixture and launch instructions.
 
+## User-observed Windows desktop smoke acceptance
+
+**Observed November 4, 2026 (America/Phoenix):** The user launched the R2 standalone Windows alpha and supplied two screenshots showing the **DemoProject** registered and open in the **Explorer** view. The screenshots show the **src/** directory, successful selection of **src/app.rs** with readable Rust code, and switching to **src/hello.py** with readable Python code. The standalone UI displays **Lu connection: Not connected**. This constitutes **PASS** for basic Windows launch, project selection/navigation and cross-file read-only preview.
+
+**Evidence scope:** These are real user-supplied screenshots from an interactive Windows session, not CI screenshots. They do **not** establish restart persistence, native-folder-dialog cancel behavior, closed-project denial, filesystem-swap resistance, or permission/isolation guarantees. Those checks remain open.
+
 ## Still pending before Task 3 completion
 
 - Actual editor integration (evaluate Monaco vs CodeMirror); multi-tab editing, undo/redo, search/replace, syntax support.
 - Authorized atomic file saves, backups/recovery, dirty buffers, write conflict detection and safe rename/delete (none of these are present).
 - Project-root capability pinned across rename/replacement races and Windows reparse-point adversarial acceptance.
 - Very large trees, ignore rules, file watchers, indexing, binary/encoding UX and accessibility/load testing.
-- A human's installed Windows run of the R2 Explorer: choose a disposable folder, navigate nested directories, open file preview, verify closed-project denial and restart persistence.
+- **Windows smoke acceptance passed:** navigate DemoProject/src and preview Rust/Python files. **Still pending:** verify closed-project denial, restart persistence, picker cancellation and destructive/hostile edge cases in a hands-on Windows test.
 - **Task 2 sandbox remains separate and incomplete**. No executable worker is exposed by the explorer.
 
 ## Next engineering step
