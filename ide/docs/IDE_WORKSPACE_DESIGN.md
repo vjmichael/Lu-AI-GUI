@@ -158,7 +158,7 @@ Internal:
 - [Package and toolchain orchestrator](PACKAGE_ORCHESTRATOR.md)
 - [Execution security model](SECURITY_MODEL.md)
 - [Engineering subgates and acceptance](IMPLEMENTATION_GATES.md)
-- [Lu v1.0 reconciliation](../../../docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md)
+- [Lu v1.0 reconciliation](../../docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md)
 
 External references (implementation guidance, not blanket certification):
 - VS Code Workspace Trust: https://code.visualstudio.com/docs/editing/workspaces/workspace-trust
