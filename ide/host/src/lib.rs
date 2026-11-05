@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod wire;
+pub mod browser;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
