@@ -30,6 +30,15 @@
 - Host-created, versioned descriptors for **21 existing** project, source, review, save, proposal, continuity, inventory and Git/GitHub operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
 
+## Wave B2 — Unsaved-buffer source identity (draft PR #43, verification pending)
+
+- Working branch: `ide/buffer-revision-20261105`, isolated from `ide/workspace-development` so prior Git/GitHub CI isn't cancelled. [Draft PR #43](https://github.com/vjmichael/Lu-AI-GUI/pull/43). Canonical design: [IDE-BUF-01](docs/IDE_BUFFER_REFERENCES.md).
+- New `app/web/buffer_identity.js`: distinct session-only UUID per open/reloaded/staged CodeMirror buffer, strictly monotonic draft revision on every edit (Undo counts), validated source spans with exact UTF-16 CodeMirror offsets and UTF-8 byte ranges, explicit stale-reference resolver.
+- Human **Copy draft reference** button calculates a SHA-256 digest of the entire in-memory draft, checks it is still the same buffer revision after async hashing, copies location and provenance metadata, and **does not copy source text**. Existing saved-file reference and native revision-checked Save remain distinct.
+- Tab status shows the current draft revision. Identity reset on open/reload/approved staging; invalidated on tab/project close and rebased on successful Save. No Tauri command, AI bridge, disk publication or new authorization.
+- Added pure Node behavioral tests for Unicode/CRLF, undo/reopen staleness, Save rebasing and bounded spans, plus frontend integration assertions. Enhanced `ide-standalone.yml` with PR-triggered isolated CI, while retaining the original main IDE branch push gate.
+- **Verification:** source committed, [PR CI](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42132079821) and [continuity gate](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42132079842) queued at last inspection. Physical Windows installed UI/clipboard remains unverified. No new installer claimed.
+
 ## Wave B1 — Human Find and Replace (source implemented, exact-head CI open)
 
 - `app/web/find_replace.js` is a pure bounded literal match-and-replace planner for the **active unsaved CodeMirror draft only**. Matches preserve UTF-16 offsets, escape regex metacharacters and optionally match case. All-or-nothing replacement refuses scans above 10,000 matches; no partial bulk edit or direct disk write.
