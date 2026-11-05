@@ -207,7 +207,7 @@ fn text_stream(bytes:&[u8])->Result<String,ReaderFailure>{
                 let op=&bytes[start..at];
                 if op==b"BT"{inside=true;operands.clear()}
                 else if op==b"ET"{inside=false;operands.clear();out.push('\n')}
-                else if inside && matches!(op,b"Tj"|b"TJ"){
+                else if inside && (op==b"Tj"||op==b"TJ"){
                     for string in operands.drain(..){out.push_str(&string)}
                     out.push('\n');
                 }else if inside && (op==b"T*"||op==b"Td"||op==b"TD"){
@@ -233,16 +233,14 @@ pub fn read_pdf_text(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailu
         return Err(unsupported())
     }
     let roots=objects.iter().filter(|(_,obj)|
-        value_after(&obj.dictionary,b"/Type")
-            .is_some_and(|v|v.iter().take(20).copied().any(|b|b==b'/' ))
-        &&obj.dictionary.windows(12).any(|w|w==b"/Type /Pages"))
+        obj.dictionary.windows(12).any(|w|w==b"/Type /Pages"))
         .map(|(_,obj)|&obj.dictionary).collect::<Vec<_>>();
     if roots.len()!=1{return Err(unsupported())}
     let page_ids=parse_page_ids(roots[0])?;
     let mut text=String::new();
     for (index,id) in page_ids.iter().enumerate(){
         let page=objects.get(id).ok_or_else(bad)?;
-        if !page.dictionary.windows(11).any(|w|w==b"/Type /Page "){
+        if !page.dictionary.windows(12).any(|w|w==b"/Type /Page "){
             return Err(unsupported())
         }
         let stream_id=object_ref(&page.dictionary,b"/Contents")
