@@ -497,10 +497,10 @@ mod tests {
         let first=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
             "index":0,"id":"call-browser-1","type":"function",
             "function":{"name":"lu_browser_read",
-                "arguments":"{\\\"operation\\\":\\\"navigate\\\","}
+                "arguments":"{\"operation\":\"navigate\","}
         }]}}]});
         let second=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
-            "index":0,"function":{"arguments":"\\\"url\\\":\\\"https://example.com\\\"}"}
+            "index":0,"function":{"arguments":"\"url\":\"https://example.com\"}"}
         }]}}]});
         let end=serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]});
         let stream=format!(
@@ -525,7 +525,7 @@ mod tests {
         let first=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
             "index":0,"id":"call-browser-1","type":"function",
             "function":{"name":"lu_browser_read",
-                "arguments":"{\\\"operation\\\":\\\"read\\\"}"}
+                "arguments":"{\"operation\":\"read\"}"}
         }]}}]});
         let end=serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]});
         let stream=format!("data: {}\\n\\ndata: {}\\n\\n",first,end)
