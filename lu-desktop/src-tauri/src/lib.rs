@@ -1332,16 +1332,13 @@ async fn lu_generate_browser(
                     if round==0{history.clone()}else{Vec::new()},
                     &schemas
                 ).map_err(|e|format!("structured browser proposal: {e:?}"))?;
-                // An empty model tool proposal means the model is ready to
-                // synthesize. It is not evidence on its own: this multi-page
-                // research gate requires two independently read URLs.
+                // A clean no-tool completion is a model decision, not a
+                // source-quality certificate. Do not enforce an arbitrary
+                // source quota: a focused question may need only one page.
+                // A no-evidence completion still fails closed.
                 if calls.is_empty(){
-                    let unique_urls:std::collections::BTreeSet<&str>=
-                        verified_pages.keys()
-                        .filter_map(|key|key.rsplit_once('#').map(|(url,_)|url))
-                        .collect();
-                    if unique_urls.len()>=2{break;}
-                    return Err("Browser research stopped before two distinct verified pages".into());
+                    if !verified_pages.is_empty(){break;}
+                    return Err("Browser research stopped without a readable source".into());
                 }
                 if calls.len()>2{
                     return Err("Browser call count exceeded per-round limit".into());
@@ -1468,13 +1465,11 @@ async fn lu_generate_browser(
             if observed.is_empty(){
                 return Err("Browser did not supply any research observations".into());
             }
-            // Distinct read URLs, not page loads or screenshots, are evidence.
-            // Require two separate URLs, not two mutable versions of one page.
-            let distinct_urls:std::collections::BTreeSet<&str>=verified_pages.keys()
-                .filter_map(|key|key.rsplit_once('#').map(|(url,_)|url))
-                .collect();
-            if distinct_urls.len()<2{
-                return Err("Browser research ended without two distinct verified page URLs".into());
+            // Actual nonempty reads, not page loads or screenshots, form
+            // the available source record. Multi-page exploration is allowed
+            // but a fixed source-count quota would reject focused research.
+            if verified_pages.is_empty(){
+                return Err("Browser research ended without a readable source".into());
             }
             if ticket.cancelled(){return Err("Cancelled browser research".into());}
             // Observations are durable before assistant generation begins.
