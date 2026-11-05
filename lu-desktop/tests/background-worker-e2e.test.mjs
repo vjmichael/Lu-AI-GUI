@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 
-const executable=resolve('lu-desktop/src-tauri/target/debug/lu-desktop.exe');
+const executable=process.env.LU_BACKGROUND_WORKER_TEST_EXE || resolve('lu-desktop/tests/native-file-scan/target/debug/lu-file-scan-worker-acceptance' + (process.platform==='win32'?'.exe':''));
 function launch(args){
   const result=spawnSync(executable,args,{encoding:'utf8',timeout:60_000,
     maxBuffer:256*1024,windowsHide:true,env:{...process.env}});
