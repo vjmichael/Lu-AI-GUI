@@ -584,6 +584,14 @@ function App() {
     try {setBrowserRuntime(await invoke('lu_browser_runtime_status'));}
     catch (error) {setError(String(error));}
   }
+  async function changeBrowserWatch(visible) {
+    setError('');
+    try {
+      const mode=visible ? 'lu_browser_watch' : 'lu_browser_hide';
+      setBrowserRuntime(await invoke(mode));
+      setActivity(visible ? 'Research browser visible' : 'Research browser hidden');
+    } catch (error) {setError(String(error));}
+  }
   async function humanVerifiedBrowser() {
     setError('');
     try {
@@ -1267,6 +1275,20 @@ function App() {
                 !browserOrigin.trim() || startingBrowser || browserRuntime?.running}
               onClick={startResearchBrowser}>
               {startingBrowser ? 'Starting browser…' : 'Authorize and start browser'}
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={() => changeBrowserWatch(true)}
+              disabled={!browserRuntime?.running ||
+                browserRuntime?.windowVisibility === 'VISIBLE'}>
+              Watch browser
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={() => changeBrowserWatch(false)}
+              disabled={!browserRuntime?.running ||
+                browserRuntime?.humanVerificationRequired ||
+                browserRuntime?.windowVisibility !== 'VISIBLE' ||
+                browserMode === 'always-visible'}>
+              Hide browser
             </button>
             <button type="button" className="subtleButton"
               onClick={refreshResearchBrowser} disabled={!browserRuntime?.running}>
