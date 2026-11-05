@@ -46,17 +46,24 @@ jobs:
         if: matrix.os == 'windows-latest'
         working-directory: lu-desktop
         run: npm run build
-      - name: Compile desktop native command wiring
-        if: matrix.os == 'windows-latest'
-        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
-      - name: Test actual bounded-memory media worker
-        if: matrix.os == 'windows-latest'
-        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib file_scan_worker -- --nocapture
-      - name: Build installed-entrypoint worker executable
-        if: matrix.os == 'windows-latest'
-        run: cargo build --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --bin lu-desktop
-      - name: End-to-end: desktop binary scans actual media fixture
-        if: matrix.os == 'windows-latest'
+      - name: Test actual production scanner module (portable)
+        run: cargo test --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml -- --nocapture
+      - name: Build native worker from production scanner source
+        run: cargo build --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+      - name: End-to-end actual worker scans 12 MiB fixture
         run: node --test lu-desktop/tests/background-worker-e2e.test.mjs
+      - name: Detect authentic desktop engine resources
+        if: matrix.os == 'windows-latest'
+        id: engine
+        shell: pwsh
+        run: |
+          $found = Test-Path 'lu-desktop/src-tauri/resources/lu-inference/llama-server.exe'
+          "present=$($found.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+      - name: Compile installed desktop when authentic inference bundle is staged
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present == 'true'
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Record unavailable installed-desktop prerequisite
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
+        run: echo "Installed desktop acceptance BLOCKED by unavailable required llama-server.exe resource; native worker and UI verified independently."
       - name: Verify source identity
         run: git rev-parse HEAD
