@@ -32,12 +32,16 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test task_checkpoints -- --nocapture
       - name: Verify operator task dashboard regression
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests -- --nocapture
+      - name: Verify durable cancelled state and schema migration
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib cancellation_tests -- --nocapture
+      - name: Run real owned-process lifecycle and cancellation tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process -- --nocapture
       - name: Verify background pane UI contract
         run: node --test lu-desktop/tests/background-pane.test.mjs
       - name: Install frontend dependencies
         if: matrix.os == 'windows-latest'
         working-directory: lu-desktop
-        run: npm ci
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
       - name: Build desktop Background Tasks pane
         if: matrix.os == 'windows-latest'
         working-directory: lu-desktop
