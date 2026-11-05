@@ -34,6 +34,16 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 
 **R3.3 verified:** [Windows/Linux/frontend acceptance 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363) **passed** (33 Rust tests, frontend, Windows Tauri); [unsigned Windows R3.3 release 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831) **passed**. The EXE SHA-256 and portable ZIP are recorded in [R3.3 evidence](docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md). **Interactive Windows R3.3 review-dialog smoke acceptance PASSED on 2026-11-05**; full security/agent integration remains pending.
 
+## R3.4 development candidate — accurate multi-hunk review + proposal schema
+
+- The user completed the R3.3 Windows smoke gate on November 5. The next milestone is implemented on the IDE branch but **its new Windows acceptance is pending**.
+- `host/src/review.rs` now uses the Similar line diff algorithm with grouped hunks and original/proposed line numbers. Limit: 240 preview lines / 32 KiB / 64 hunks / 8,000 input lines. Truncated reviews cannot be saved from the review dialog.
+- `app/web/main.jsx` and `styles.css` display true separate hunks and source line-number gutters.
+- `host/src/proposal.rs` defines a strict versioned, data-only JSON envelope for **untrusted** multi-file proposals. It rejects unknown effect/approval fields and never applies edits; `claimedProducer` is not authentication.
+- `host/tests/proposal.rs` verifies two-file previews do not write, and a stale file causes rejection. `host/src/review.rs` tests check distant edits and newline handling.
+- Acceptance record: [R3.4 multi-hunk and envelope plan](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md).
+- CI: verify the latest exact branch head at [IDE standalone workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml). Do not inherit R3.3 success. No R3.4 Windows executable has been accepted yet.
+
 ## Source map
 
 | Path | Purpose |
@@ -45,7 +55,8 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 | `ide/host/src/lib.rs` | Project registration lifecycle and catalog-only delisting |
 | `ide/host/src/browser.rs` | Capability-relative and bounded source reads |
 | `ide/host/src/editor.rs` | Revision-checked temporary-file and rename save |
-| `ide/host/src/review.rs` | Pure bounded non-mutating change review |
+| `ide/host/src/review.rs` | Bounded non-mutating multi-hunk change review |
+| `ide/host/src/proposal.rs` | Strict data-only, unauthenticated proposal envelope validation and preview |
 | `ide/sandbox` | Separate experimental Bubblewrap native probes; not wired to IDE execution |
 | `ide/docs/IDE_WORKSPACE_DESIGN.md` | Canonical eight-stage implementation plan |
 | `ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md` | Separate desktop and optional authenticated Lu bridge |
@@ -69,7 +80,7 @@ Desktop Tauri uses Rust 1.90+, native host suite supports Rust 1.88+. The Window
 
 ## IMPORTANT open gates
 
-1. **R3.3 Windows review smoke gate closed.** Next: robust multi-hunk diff/proposal envelopes; continue testing undo/redo across tabs, process/power failure, actual file bytes and external-writer race behavior. Preserve the separate IDE write authorization boundary.
+1. **R3.3 Windows review smoke gate closed.** R3.4 grouped diff/proposal schema implemented; its new CI and Windows acceptance remain pending. Next continue native save hardening, undo/redo across tabs and source-index usability.
 2. Native file-save hardening: root identity and Windows reparse attacks, ACL/owner fidelity, external-writer race across final compare/rename, power-loss injection, crash recovery of unsaved drafts, full diff accuracy.
 3. Task 2 **OS sandbox**: initial Linux fixed probes passed, but arbitrary executable workers remain disallowed until CPU/RAM/PID quotas, process-tree cancellation, syscall/filesystem controls and **Windows native containment** pass.
 4. Task 3 editor completion: search/replace, split views, accessible keyboard navigation, large tree filtering and file watchers.
