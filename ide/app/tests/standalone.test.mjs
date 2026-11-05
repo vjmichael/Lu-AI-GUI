@@ -185,3 +185,13 @@ test('future Lu proposal envelope is untrusted data, never an executable command
   assert.doesNotMatch(host, /\.save_source_file\(|Command::new|std::process::Command/);
   assert.doesNotMatch(native, /fn ide_apply_proposal|fn ide_execute_proposal/);
 });
+
+test('successful source saves display amber confirmation without recoloring conflicts', () => {
+  const web = read('../web/main.jsx');
+  const css = read('../web/styles.css');
+  assert.match(web, /hint\.startsWith\('Saved '\) \? ' saveConfirmation' : ''/);
+  assert.match(web, /role="status"\}\>\{hint\}/);
+  assert.match(css, /\.saveConfirmation\s*\{[^}]*color:\s*#ffe48c/);
+  assert.match(css, /\.saveConfirmation\s*\{[^}]*background:\s*#332b17/);
+  assert.match(css, /\.errorMsg\s*\{[^}]*background:\s*#4c2532/);
+});
