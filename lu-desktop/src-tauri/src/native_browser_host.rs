@@ -67,6 +67,8 @@ pub struct BrowserRuntimeView {
     pub package_available:bool,
     pub launch_ready:bool,
     pub running:bool,
+    pub human_verification_required:bool,
+    pub window_visibility:Option<String>,
     pub reason:String,
 }
 pub struct DesktopBrowserHost {
@@ -176,6 +178,17 @@ impl DesktopBrowserHost {
             session.take(); // crash recovery closes stale worker ownership
         }
         let running=session.is_some();
+        let mut human_verification_required=false;
+        let mut window_visibility=None;
+        if let Some(worker)=session.as_mut(){
+            if let Ok(report)=worker.execute(BrowserOperation::Status,serde_json::json!({})){
+                if report.get("ok").and_then(serde_json::Value::as_bool)==Some(true){
+                    let result=&report["result"];
+                    human_verification_required=result["status"]=="NEEDS_HUMAN";
+                    window_visibility=result["windowVisibility"].as_str().map(str::to_owned);
+                }
+            }
+        }
         drop(session);
         let package_available=self.packaged_components_present();
         let launch_ready=self.package_verified();
@@ -188,7 +201,8 @@ impl DesktopBrowserHost {
         };
         Ok(BrowserRuntimeView{
             visibility_mode:mode.worker_mode().to_string(),
-            package_available,launch_ready,running,reason
+            package_available,launch_ready,running,
+            human_verification_required,window_visibility,reason
         })
     }
     /// Host-only entrypoint. The caller must first establish a separate
@@ -267,6 +281,20 @@ impl DesktopBrowserHost {
             authority,origin,invocation,host_policy,scope,
             worker,operation,arguments
         ).map_err(|e|format!("browser task rejected: {e:?}"))
+    }
+    /// A user, not a model, confirms they have completed verification.
+    /// The worker independently rechecks that the challenge text is gone
+    /// and that the page remains on a trusted HTTPS origin.
+    pub fn resolve_human_verification(&self)->Result<(),String>{
+        let mut owned=self.session.lock()
+            .map_err(|_|"browser supervisor lock poisoned")?;
+        let worker=owned.as_mut().ok_or("Browser session is not running")?;
+        let result=worker.execute(BrowserOperation::HumanResolved,serde_json::json!({}))
+            .map_err(|e|format!("browser verification resume refused: {e:?}"))?;
+        if result["ok"]!=true||result["result"]["status"]!="RESUMED"{
+            return Err("Browser verification remains required or was not accepted".into());
+        }
+        Ok(())
     }
     pub fn stop(&self)->Result<bool,String>{
         let mut session=self.session.lock()
