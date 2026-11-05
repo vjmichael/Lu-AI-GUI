@@ -1139,6 +1139,10 @@ function App() {
               <CodeEditor
                 findRequest={findRequest?.tabKey === activeTab.key ? findRequest : null}
                 replaceRequest={replaceRequest?.tabKey === activeTab.key ? replaceRequest : null}
+                onReplaceApplied={(nonce, applied) => {
+                  setReplaceRequest(previous => previous?.nonce === nonce ? null : previous);
+                  if (!applied) setProblem('Editor changed before replacement. Review the current draft and retry.');
+                }}
                 key={activeTab.key + ':' + activeTab.generation}
                 tabIdentity={activeTab.key + ':' + activeTab.generation}
                 editorState={editorStates.current.get(activeTab.key)}
