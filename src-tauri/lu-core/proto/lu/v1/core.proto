@@ -458,3 +458,26 @@ message DiagnosticTrace {
   uint32 dropped_events = 3; // Recorded loss: a missing stage is not proof.
   repeated DiagnosticEvent events = 4;
 }
+
+// Structured Lu-native spreadsheet Write. A model proposal is not a grant:
+// the trusted host must verify exact target, rendered bytes and effect scope.
+message SpreadsheetCreateCell {
+  uint32 row = 1;
+  uint32 column = 2;
+  oneof value {
+    string text = 3;
+    double number = 4;
+    bool boolean = 5;
+    string formula = 6;
+  }
+}
+message SpreadsheetCreateRequest {
+  string file_name = 1;
+  string sheet_name = 2;
+  repeated SpreadsheetCreateCell cells = 3;
+}
+message SpreadsheetCreateResult {
+  string file_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
