@@ -149,6 +149,71 @@ function App() {
     finally { setInboxBusy(false); }
   }
 
+  async function stageProposal(item) {
+    if (inboxBusy || pending || savingKey || explorerPending) return;
+    const project = projects.find(entry => entry.projectId === item.projectId && entry.active);
+    if (!project) {
+      setProblem('Open this project from the Projects screen before staging its proposed edits.');
+      return;
+    }
+    if (tabs.some(tab => tab.projectId === item.projectId && tab.dirty) &&
+      !window.confirm('Staging will replace unsaved drafts in this project. Continue? No disk files will be changed.')) {
+      return;
+    }
+    setInboxBusy(true);
+    setProblem('');
+    try {
+      const approved = await invoke('ide_stage_proposal', {
+        inboxId: item.inboxId,
+        expectedDigest: item.digest,
+      });
+      // Every source is reread before changing editor buffers. No partial
+      // staging occurs when one file became unavailable or changed on disk.
+      const originals = await Promise.all(approved.edits.map(edit =>
+        invoke('ide_preview_source_file', {
+          projectId: item.projectId,
+          relativePath: edit.relativePath,
+        })
+      ));
+      for (let index = 0; index < originals.length; index++) {
+        if (originals[index].revision !== approved.edits[index].expectedRevision) {
+          throw new Error('File changed on disk. Nothing was staged.');
+        }
+      }
+      const rootListing = await invoke('ide_list_source_directory', {
+        projectId: item.projectId, relativeDir: '',
+      });
+      const stagedTabs = approved.edits.map((edit, index) => {
+        const key = keyFor(item.projectId, edit.relativePath);
+        const previous = tabs.find(tab => tab.key === key);
+        editorStates.current.set(key, createEditorState(
+          edit.proposedText, edit.relativePath,
+          (state, draft) => onEditorChange(key, state, draft)
+        ));
+        return {
+          key, projectId: item.projectId, relativePath: edit.relativePath,
+          revision: edit.expectedRevision, savedText: originals[index].text,
+          draft: edit.proposedText,
+          dirty: edit.proposedText !== originals[index].text,
+          generation: (previous?.generation ?? 0) + 1,
+        };
+      });
+      const stagedKeys = new Set(stagedTabs.map(tab => tab.key));
+      setTabs(previous => [...previous.filter(tab => !stagedKeys.has(tab.key)), ...stagedTabs]);
+      setActiveProject(project);
+      setListing(rootListing);
+      setDirectory('');
+      setSection('explorer');
+      setActiveTabKey(stagedTabs[0].key);
+      setProposalDetail(null);
+      setHint('Proposal staged as editor drafts. Review and Save each file yourself; nothing was written to disk.');
+    } catch (error) {
+      setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
+        ? 'File changed on disk. The proposal was not staged.'
+        : String(error));
+    } finally { setInboxBusy(false); }
+  }
+
   async function discardProposal(item) {
     if (inboxBusy || !window.confirm('Dismiss this proposal from the IDE inbox? This will not delete any project files.')) return;
     setInboxBusy(true);
@@ -504,6 +569,11 @@ function App() {
                   <div className="proposalItemActions">
                     <button type="button" className="ghostBtn" disabled={inboxBusy}
                       onClick={() => openProposal(item.inboxId)}>Review</button>
+                    {item.status === 'approved_for_staging' &&
+                      <button type="button" className="primaryBtn"
+                        disabled={inboxBusy || !projects.some(project =>
+                          project.projectId === item.projectId && project.active)}
+                        onClick={() => stageProposal(item)}>Stage in editor</button>}
                     <button type="button" className="ghostBtn" disabled={inboxBusy}
                       onClick={() => discardProposal(item)}>Dismiss</button>
                   </div>
@@ -739,6 +809,9 @@ function App() {
           <div className="reviewActions">
             <button type="button" className="ghostBtn"
               onClick={() => setProposalDetail(null)}>Return to inbox</button>
+            {proposalDetail.summary.status === 'approved_for_staging' &&
+              <button type="button" className="primaryBtn" disabled={inboxBusy}
+                onClick={() => stageProposal(proposalDetail.summary)}>Stage in editor</button>}
             {proposalDetail.summary.status === 'pending' && <>
               <button type="button" className="removeProjectBtn" disabled={inboxBusy}
                 onClick={() => decideProposal(false)}>Reject proposal</button>
