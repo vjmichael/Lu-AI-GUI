@@ -46,6 +46,18 @@ test('real native file-scan worker connects the system picker to the pane',()=>{
   assert.ok(ui.includes('not video content analysis'));
   assert.ok(css.includes('.backgroundScanLaunch'));
 });
+test('Lu host pushes end notifications without model polling, and routes them into the next chat turn',()=>{
+  assert.ok(host.includes('pending_terminal_notices(128)'));
+  assert.ok(host.includes('app_events.emit("lu-background-terminal"'));
+  assert.ok(host.includes('pending_notices_for_workspace(&chat_id,8)'));
+  assert.ok(host.includes('acknowledge_terminal_notice('));
+  assert.ok(host.includes('state.chats.complete(&chat_id, &gid)?'));
+  assert.ok(ui.includes("listen('lu-background-terminal'"));
+  assert.ok(ui.includes('backgroundGlobalNotice'));
+  assert.ok(ui.includes('Background task ended:'));
+  assert.ok(ui.includes("await invoke('lu_background_scan_file',{chatId:chatId||null})"));
+  assert.ok(!ui.includes("invoke('lu_generate', {taskId"));
+});
 test('host overview has no checkpoint or output path fields',()=>{
   const start=host.indexOf('struct BackgroundTaskView {');
   const end=host.indexOf('#[tauri::command]',start);
