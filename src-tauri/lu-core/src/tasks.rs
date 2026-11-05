@@ -102,7 +102,7 @@ pub struct TaskStore {
 
 impl TaskStore {
     pub fn open(path: &Path) -> Result<Self, TaskStoreError> {
-        let connection = Connection::open(path)?;
+        let mut connection = Connection::open(path)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "synchronous", "FULL")?;
         connection.execute_batch(
