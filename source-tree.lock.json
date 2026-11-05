@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "93297bdf0cdfe66cd0ec8f486ea29d2e7697d829"
+      "blob": "52f3e08788493cc2aea5843b3d93f5b17d3900f8"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -345,7 +345,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
-      "blob": "6755813a407ecb1c3a2982f4d40aa3f5931ef70e"
+      "blob": "252a5e3a22b88bc8163efbecf44c7c8acfc402de"
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
