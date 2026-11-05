@@ -31,7 +31,8 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
-    'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal'
+    'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
+    'ide_read_source_span'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -253,4 +254,17 @@ test('R3.7 in-file find navigates the active unsaved buffer without native IPC',
   assert.match(editor, /scrollIntoView: true/);
   assert.match(editor, /view\.dispatch/);
   assert.match(css, /\.editorFindBar/);
+});
+
+test('Wave A1 copy source reference validates saved revision and selected line', () => {
+  const web = read('../web/main.jsx');
+  const cm = read('../web/code_editor.jsx');
+  const tauri = read('../src-tauri/src/lib.rs');
+  assert.match(web, /invoke\('ide_read_source_span'/);
+  assert.match(web, /expectedRevision: tab\.revision/);
+  assert.match(web, /navigator\.clipboard\.writeText\(reference\)/);
+  assert.match(web, /if \(tab\.dirty\)/);
+  assert.match(cm, /aria-label="Source code editor"/);
+  assert.match(cm, /lineAt\(view\.state\.selection\.main\.head\)\.number/);
+  assert.match(tauri, /fn ide_read_source_span/);
 });
