@@ -702,6 +702,28 @@ function App() {
               <p>Remote Git: <strong>{projectContext.remoteGitState.replaceAll('_', ' ')}</strong>
                 {' · '} Local artifacts: <strong>{projectContext.localArtifacts.replaceAll('_', ' ')}</strong>
                 {' · '} Toolchains: <strong>{projectContext.currentToolchainReadiness.replaceAll('_', ' ')}</strong></p>
+              <h3>Local artifacts and benchmark evidence</h3>
+              <p>Bounded scan of common project folders only. A SHA-256 digest verifies
+                inspected bytes, not whether an installer works. No binaries are launched.</p>
+              <p>Git observation: <strong>{projectContext.inventory.git.state.replaceAll('_', ' ')}</strong>
+                {projectContext.inventory.git.branch && <> · Branch <code>{projectContext.inventory.git.branch}</code></>}
+                {' · '}Local tracking: <strong>{projectContext.inventory.git.trackingComparison.replaceAll('_', ' ')}</strong>
+                {' · '}Working tree: <strong>{projectContext.inventory.git.workingTree.replaceAll('_', ' ')}</strong>
+                {' · '}Live GitHub: <strong>{projectContext.inventory.git.liveRemote.replaceAll('_', ' ')}</strong>
+              </p>
+              {!projectContext.inventory.discoveryComplete && <p role="status">
+                Inventory limit reached. More project artifacts may exist.</p>}
+              {projectContext.inventory.files.length === 0 && <p>
+                No files found in the scanned folders; other local folders were not inspected.</p>}
+              <div className="continuityEvents">
+                {projectContext.inventory.files.map(file => <article className="continuityEvent" key={file.relativePath}>
+                  <strong>{file.relativePath}</strong>
+                  <span>{file.category.replaceAll('_', ' ')}</span>
+                  <p>{file.sizeBytes.toLocaleString()} bytes · {file.state.replaceAll('_', ' ')}
+                    {' · '}{file.digestStatus.replaceAll('_', ' ')}</p>
+                  {file.sha256 && <code>SHA-256: {file.sha256}</code>}
+                </article>)}
+              </div>
               <h3>Recent host observations</h3>
               {projectContext.events.length === 0 && <p>No development events recorded by this IDE yet.</p>}
               <div className="continuityEvents">
