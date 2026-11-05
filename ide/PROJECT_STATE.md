@@ -16,7 +16,7 @@
 | R3.4 diff/review | Yes | Yes | Prior CI passed; see handoff | User accepted interactive multi-hunk smoke | Prior unsigned Windows artifact documented |
 | R3.5 proposal inbox | Yes | Yes | Prior CI passed; see handoff | User reported functional flow; hostile gates still open | Prior build references in handoff; reverify availability |
 | R3.6 success banner | Yes | Yes | Regression assertions added, **exact-head run unverified** | **Not yet tested by user** | **No R3.6 package verified** |
-| R3.7 in-file Find | Yes | Yes | Regression assertions added, **exact-head run unverified** | **Not yet tested by user** | **No R3.7 package verified** |
+| R3.7 in-file Find | Yes | Yes | [Exact-source CI 42069988384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42069988384) **passed** at `eb0aefdb` | **Not yet tested by user** | **No R3.7 package verified** |
 | Wave A1 disk source spans | Source implemented | Yes | Native tests added, **not yet run** | **Not yet tested by user** | None |
 | Find and Replace | No | No | No | No | No |
 | Live Lu↔IDE connection | Deferred | No | No | No | No |
@@ -24,6 +24,8 @@
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
 ## Wave A1 — first host implementation (source only)
+
+- [GitHub Actions 42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705) started for source commit `15f4b99c`: frontend passed; at last check Windows desktop still running and Linux host queued. **No complete Wave A1 acceptance claim.**
 
 - Added `host/src/source_span.rs`: bounded 120-line, 32 KiB read-only disk source spans using existing capability-relative file preview and mandatory SHA-256 revision match.
 - Each reply includes project ID, normalized relative path, saved revision, one-based line numbers, precise UTF-8 byte offsets and LF/CRLF/none terminator types. The last blank line after a final newline is addressable.
