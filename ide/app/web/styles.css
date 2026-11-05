@@ -30,3 +30,29 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .errorMsg{padding:12px;background:#4c2532;border-radius:9px;color:#ffe0e4;display:flex;justify-content:space-between;gap:15px;margin-bottom:18px}.errorMsg button{background:none;border:none;color:inherit;text-decoration:underline}
 .successMsg{color:#a7e4be;font-size:12px}.ideStatusBar{display:flex;justify-content:space-between;align-items:center;padding:8px 18px;border-top:1px solid #26364a;color:#91a8bd;font-size:11px}
 @media(max-width:800px){.ideRail{width:208px;min-width:208px}.ideTopBar{padding:22px;align-items:flex-start;flex-direction:column}.workspaceContent{padding:24px}.ideControls{width:100%}.ideControls button{flex:1}}
+
+/* IDE-02 read-only source viewer; project files are never executed. */
+.projectActions{display:flex;flex-direction:column;gap:7px}
+.projectActions .primaryBtn,.projectActions .ghostBtn{min-width:86px}
+.appError,.appMessage{margin:12px 24px 0}
+.sourceWorkspace{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);min-height:0;flex:1;overflow:hidden}
+.sourceTree{overflow:auto;border-right:1px solid #30445b;background:#101b2b}
+.sourceTreeHeader{padding:18px 18px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.sourceTreeHeader span{font-size:10px;color:#a3c5db;border:1px solid #3d5d75;padding:4px 7px;border-radius:4px}
+.sourcePath{padding:5px 18px 14px;color:#9db3c8;font-size:12px;overflow-wrap:anywhere}
+.pathLink{color:#a2d5ff;text-decoration:underline;border:0;background:none;padding:0}
+.fileRow{display:flex;gap:10px;align-items:center;text-align:left;padding:9px 18px;border:0;width:100%;color:#dbe8f5;background:transparent;min-width:0;font-size:12px}
+.fileRow:hover:not(:disabled),.fileRow.active{background:#1d3955}
+.fileRow:disabled{opacity:.54}.fileGlyph{min-width:14px;color:#80bee5;font-size:14px}
+.fileName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.backRow{color:#a9d5ef;background:#1b2b40}
+.treeCaution{padding:9px 18px;color:#d8b589;font-size:11px}
+.sourcePreview{min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.sourcePreviewHeader{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:13px 22px;background:#162538;border-bottom:1px solid #34485c;font-size:12px}
+.sourcePreviewHeader strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sourcePreviewHeader span{color:#9aafc5;white-space:nowrap;font-size:11px}
+.sourceCode{padding:22px 26px;margin:0;flex:1;overflow:auto;white-space:pre;tab-size:4;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px;line-height:1.55;color:#d9ebfa}
+.sourcePreviewEmpty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;flex:1;padding:30px;color:#abc0d2}
+.sourcePreviewEmpty h3{margin:0;font-size:18px;color:#e6f2ff}
+.sourcePreviewEmpty p{max-width:420px;font-size:12px;line-height:1.6}
+@media(max-width:800px){.sourceWorkspace{grid-template-columns:minmax(175px,35%) minmax(0,1fr)}.sourcePreviewHeader{flex-direction:column;align-items:flex-start;gap:4px}}
