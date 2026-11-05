@@ -1,6 +1,6 @@
 # Lu IDE — standalone development application
 
-**Status:** Standalone desktop alpha foundation; editor, package manager, sandboxed execution and Lu bridge are not implemented.  
+**Status:** Standalone Alpha R3 editor candidate — project explorer, CodeMirror tabs and revision-checked manual saves; package manager, sandboxed execution and Lu bridge remain disabled.  
 **Repo:** `vjmichael/Lu-AI-GUI` · **IDE-only branch:** `ide/workspace-development`
 
 Lu IDE is its **own desktop application**, with its own process, project registry and native UI. It belongs in the same Git repository as Lu Core for convenience, but it **does not load inside Lu Desktop**, does not link against `lu-core`, and does not require Lu to run.
@@ -10,7 +10,7 @@ The future interface to Lu will be an optional, authenticated, versioned **out-o
 ## Workspace ownership
 
 - `ide/app`: standalone Tauri 2 and React desktop, project UI and trusted OS directory picker.
-- `ide/host`: standalone Rust project metadata/lifecycle registry, no code execution.
+- `ide/host`: standalone Rust project registry, scoped source browsing and explicit revision-checked atomic saves; no code execution.
 - `ide/proto`: path-free, size-bounded versioned IDE lifecycle contracts.
 - `ide/docs`: consolidated design, stage list, acceptance and decision records.
 - `ide/workers`: future OS-restricted build, package, language-server and debugger workers.
@@ -30,7 +30,7 @@ npm run check
 npm run tauri:dev
 ```
 
-`ide/app` is designed to run on Linux and Windows. GitHub CI is a portable build check; real installed-app launch, native picker tests and hostile-code sandbox acceptance are separately required. Opening a project runs **no scripts**. There are no executable project workers in this phase.
+`ide/app` is designed to run on Linux and Windows. GitHub CI is a portable build check; real installed-app launch, native picker tests and hostile-code sandbox acceptance are separately required. Opening a project runs **no scripts**. R3 adds CodeMirror editing and Ctrl+S, guarded by source revision hashes and bounded native writes. Unsaved buffers remain memory-only; see [R3 editor acceptance](docs/IDE_03_R3_EDITOR_ACCEPTANCE.md). There are no executable project workers in this phase.
 
 ## Documents
 
@@ -42,5 +42,6 @@ npm run tauri:dev
 - [Security model](docs/SECURITY_MODEL.md)
 - [Task acceptance subgates](docs/IMPLEMENTATION_GATES.md)
 - [IDE-01B evidence](docs/IDE_01B_IMPLEMENTATION_EVIDENCE.md)
+- [R3 code editor and save acceptance](docs/IDE_03_R3_EDITOR_ACCEPTANCE.md)
 
 This branch contains experimental code only. No Lu Core integration or production security guarantee is implied.
