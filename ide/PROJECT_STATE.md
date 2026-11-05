@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `4d1a559d2f37afb062524827a6d23aff6e62f9b5`  
-**Current source validation:** exact-source GitHub Actions run pending for latest native Source control UI implementation; do not claim CI or installed Windows acceptance. Previous runs for older SHAs were cancelled by subsequent source commits.
+**Last inspected implementation source SHA:** `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`  
+**Current source validation:** [Standalone IDE CI 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) queued at last check for exact source commit `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`. **Full native acceptance is not established**; earlier runs were superseded.
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -31,6 +31,9 @@
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
 
 ## A3 native Git worktree reader — implementation committed, CI pending
+
+- Native Git dirty-status regression now alters file byte length to avoid a same-size timestamp/stat-cache race. Latest source commit `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`; [CI run 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) queued; no recent compile or physical Windows acceptance result for this SHA.
+
 
 - Activated the **Source control** sidebar page (previously 'Soon'), backed by new read-only `ide_read_git_status` Tauri command and typed `git.status` capability. UI shows exact local branch, modified/staged/untracked counts, local commit and upstream difference, limited change list and explicit no-live-GitHub disclaimer.
 - New native operation increases capability registry to **20** descriptors, matching 20 implemented non-discovery Tauri commands. Structural audit found no argument/schema mismatch. Source revision `4d1a559d2f37afb062524827a6d23aff6e62f9b5`; full Linux/frontend/Windows acceptance remains open.
