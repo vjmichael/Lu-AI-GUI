@@ -34,15 +34,16 @@ fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String, DevelopmentLedger) {
 #[test]
 fn persists_host_observations_and_reloads_with_source_revision() {
     let (root, registry, id, ledger) = fixture();
-    ledger.record(&id, "project.register", "Project selected", None).unwrap();
+    ledger.record(&id, "project.register", "Project selected", None, None).unwrap();
     let before = registry.preview_source_file(&id, "PROJECT_STATE.md").unwrap();
-    ledger.record(&id, "source.save", "Saved source", Some(&before.revision)).unwrap();
+    ledger.record(&id, "source.save", "Saved source", Some(&before.revision), Some("PROJECT_STATE.md")).unwrap();
     drop(ledger);
     let ledger = DevelopmentLedger::new(root.join("development-ledger.jsonl")).unwrap();
     let context = ledger.context(&registry, &id).unwrap();
     assert_eq!(context.schema_version, 1);
     assert_eq!(context.events.len(), 2);
     assert_eq!(context.events[0].operation, "source.save");
+    assert_eq!(context.events[0].source_path.as_deref(), Some("PROJECT_STATE.md"));
     assert_eq!(context.events[0].source_revision.as_deref(), Some(before.revision.as_str()));
     assert_eq!(context.documents[0].source_revision.as_deref(), Some(before.revision.as_str()));
     assert_eq!(context.documents[0].trust, "untrusted_project_text");
@@ -59,15 +60,15 @@ fn persists_host_observations_and_reloads_with_source_revision() {
 fn does_not_allow_model_sourced_actions_or_unbounded_notes() {
     let (root, registry, id, ledger) = fixture();
     assert!(matches!(
-        ledger.record(&id, "execute_shell", "do anything", None),
+        ledger.record(&id, "execute_shell", "do anything", None, None),
         Err(ContinuityError::InvalidInput)
     ));
     assert!(matches!(
-        ledger.record(&id, "source.save", &"x".repeat(300), None),
+        ledger.record(&id, "source.save", &"x".repeat(300), None, None),
         Err(ContinuityError::InvalidInput)
     ));
     assert!(matches!(
-        ledger.record(&id, "source.save", "Saved", Some("invalid")),
+        ledger.record(&id, "source.save", "Saved", Some("invalid"), None),
         Err(ContinuityError::InvalidInput)
     ));
     assert_eq!(ledger.context(&registry, &id).unwrap().events.len(), 0);
