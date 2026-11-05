@@ -34,6 +34,8 @@ pub struct ReaderRequest{
     pub max_chars:Option<u32>,
     #[prost(uint32,optional,tag="4")]
     pub offset_chars:Option<u32>,
+    #[prost(bool,tag="5")]
+    pub inspect_only:bool,
 }
 #[derive(Clone,PartialEq,Message)]
 pub struct ReaderResponse{
@@ -51,6 +53,8 @@ pub struct ReaderResponse{
     pub next_offset_chars:Option<u32>,
     #[prost(bool,tag="7")]
     pub source_truncated:bool,
+    #[prost(uint32,tag="8")]
+    pub total_extracted_chars:u32,
 }
 pub struct ReaderTool{
     descriptor:ToolDescriptor,
@@ -73,6 +77,7 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
     let max_bytes=request.max_bytes.unwrap_or(DEFAULT_BYTES);
     let max_chars=request.max_chars.unwrap_or(DEFAULT_CHARS);
     let offset=request.offset_chars.unwrap_or(0);
+    if request.inspect_only&&offset!=0{return Err(failure("READER_INVALID_INSPECT_REQUEST"));}
     if offset>MAX_OFFSET_CHARS{return Err(failure("READER_INVALID_OFFSET"));}
     if max_bytes==0||max_bytes>MAX_BYTES
         ||max_chars==0||max_chars>MAX_CHARS
@@ -113,9 +118,11 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
         return Err(failure("READER_OFFSET_BEYOND_EXTRACTED_TEXT"));
     }
     let end=(offset as usize).saturating_add(max_chars as usize).min(all_chars);
-    let chunk:String=text.text.chars().skip(offset as usize)
-        .take(end-offset as usize).collect();
-    let has_next=end<all_chars;
+    let chunk:String=if request.inspect_only{String::new()}else{
+        text.text.chars().skip(offset as usize)
+            .take(end-offset as usize).collect()
+    };
+    let has_next=!request.inspect_only&&end<all_chars;
     let next_offset_chars=if has_next{Some(end as u32)}else{None};
     Ok(ReaderResponse{
         format:format!("{:?}",text.format),
@@ -123,6 +130,7 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
         bytes_read:bytes.len() as u64,
         offset_chars:offset,next_offset_chars,
         source_truncated:text.truncated,
+        total_extracted_chars:all_chars as u32,
     })
 }
 impl NativeTool for ReaderTool{
@@ -154,7 +162,7 @@ impl ModelToolCodec for ReaderCodec{
     fn output_type_url(&self)->&'static str{OUTPUT_TYPE}
     fn encode(&self,args:&Map<String,Value>)
         ->Result<ProtoPayload,ModelToolError>{
-        expect_fields(args,&["path","max_bytes","max_chars","offset_chars"],&["path"])?;
+        expect_fields(args,&["path","max_bytes","max_chars","offset_chars","inspect_only"],&["path"])?;
         let path=args.get("path").and_then(Value::as_str)
             .ok_or_else(||ModelToolError::InvalidArguments(
                 "Reader path must be a string".into()))?;
@@ -168,11 +176,19 @@ impl ModelToolCodec for ReaderCodec{
                 .ok_or_else(||ModelToolError::InvalidArguments(
                     "offset_chars must be between 0 and 200000".into()))? as u32,
         };
+        let inspect_only=match args.get("inspect_only"){
+            None=>false,
+            Some(Value::Bool(v))=>*v,
+            _=>return Err(ModelToolError::InvalidArguments(
+                "inspect_only must be a boolean".into())),
+        };
+        if inspect_only&&offset!=0{return Err(ModelToolError::InvalidArguments(
+            "inspection must start at character offset zero".into()))}
         Ok(ProtoPayload{type_url:INPUT_TYPE.into(),
             bytes:ReaderRequest{
                 path:path.into(),max_bytes:Some(max_bytes),
                 max_chars:Some(max_chars),
-                offset_chars:Some(offset),
+                offset_chars:Some(offset),inspect_only,
             }.encode_to_vec()})
     }
     fn decode(&self,result:&ProtoPayload)->Result<Value,ModelToolError>{
@@ -186,7 +202,8 @@ impl ModelToolCodec for ReaderCodec{
             "truncated":output.truncated,"bytes_read":output.bytes_read,
             "offset_chars":output.offset_chars,
             "next_offset_chars":output.next_offset_chars,
-            "source_truncated":output.source_truncated}))
+            "source_truncated":output.source_truncated,
+            "total_extracted_chars":output.total_extracted_chars}))
     }
 }
 /// Register Reader for a host-approved directory; registration itself does
@@ -218,7 +235,8 @@ pub fn register_reader(
             "path":{"type":"string","description":"Authorized workspace-relative file path"},
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
             "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS},
-            "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS}
+            "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS},
+            "inspect_only":{"type":"boolean","description":"Return bounded document format and extraction size without text; then page with offset_chars"}
         },"required":["path"],"additionalProperties":false}),
         codec:Arc::new(ReaderCodec),
     }).map_err(|e|format!("{e:?}"))?;
@@ -249,8 +267,34 @@ mod tests{
         ToolInvocation{call_id:"read-call-1".into(),tool_id:TOOL_ID.into(),
             workspace_id:Some("project".into()),input:ProtoPayload{
                 type_url:INPUT_TYPE.into(),bytes:ReaderRequest{
-                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None
+                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false
                 }.encode_to_vec()}}
+    }
+    #[tokio::test]
+    async fn inspect_then_read_uses_one_native_tool_and_no_file_text_on_inspect(){
+        let path=workspace();let _=std::fs::remove_dir_all(&path);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("notes.md"),"Reader inspection content").unwrap();
+        let registry=NativeToolRegistry::new();
+        let _catalog=register_reader(&registry,&path).unwrap();
+        let mut invocation=invocation("notes.md");
+        let mut req=ReaderRequest::decode(invocation.input.bytes.as_slice()).unwrap();
+        req.inspect_only=true;
+        invocation.input.bytes=req.encode_to_vec();
+        let reply=registry.dispatch(invocation.clone(),&Allow).await.unwrap();
+        let info=ReaderResponse::decode(reply.payload.bytes.as_slice()).unwrap();
+        assert_eq!(info.format,"Markdown");
+        assert!(info.text.is_empty());
+        assert_eq!(info.total_extracted_chars,25);
+        assert_eq!(info.next_offset_chars,None);
+        req.inspect_only=false;
+        req.max_chars=Some(8);
+        invocation.input.bytes=req.encode_to_vec();
+        let reply=registry.dispatch(invocation,&Allow).await.unwrap();
+        let body=ReaderResponse::decode(reply.payload.bytes.as_slice()).unwrap();
+        assert_eq!(body.text,"Reader i");
+        assert_eq!(body.next_offset_chars,Some(8));
+        let _=std::fs::remove_dir_all(path);
     }
     #[tokio::test]
     async fn pages_unicode_document_without_splitting_codepoints_or_granting_paths(){
@@ -263,6 +307,7 @@ mod tests{
         req.input.bytes=ReaderRequest{
             path:"sample.txt".into(),max_bytes:None,
             max_chars:Some(3),offset_chars:Some(2),
+            inspect_only:false,
         }.encode_to_vec();
         let result=registry.dispatch(req.clone(),&Allow).await.unwrap();
         let response=ReaderResponse::decode(result.payload.bytes.as_slice()).unwrap();
