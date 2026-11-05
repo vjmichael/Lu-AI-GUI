@@ -11,7 +11,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{browser::{validate_relative, BrowserError}, inventory::EvidenceInventory, IdeWorkspaceRegistry};
+use crate::{browser::{validate_relative, BrowserError}, inventory::EvidenceInventory, git_status::GitWorktreeInspection, IdeWorkspaceRegistry};
 
 const MAX_LEDGER_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 40;
@@ -91,6 +91,7 @@ pub struct ProjectContext {
     pub events: Vec<DevelopmentEvent>,
     pub documents: Vec<ContextDocument>,
     pub inventory: EvidenceInventory,
+    pub git_worktree: GitWorktreeInspection,
 }
 
 pub struct DevelopmentLedger {
@@ -253,6 +254,7 @@ impl DevelopmentLedger {
             };
             documents.push(doc);
         }
+        let git_worktree = registry.inspect_git_worktree(project_id);
         let inventory = registry.inspect_project_evidence(project_id)
             .map_err(|_| ContinuityError::Unavailable)?;
         Ok(ProjectContext {
@@ -263,7 +265,7 @@ impl DevelopmentLedger {
             remote_git_state: "not_queried",
             local_artifacts: "bounded_scan",
             current_toolchain_readiness: "not_verified",
-            events, documents, inventory,
+            events, documents, inventory, git_worktree,
         })
     }
 }
