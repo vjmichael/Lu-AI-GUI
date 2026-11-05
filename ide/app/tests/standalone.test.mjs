@@ -247,7 +247,7 @@ test('R3.7 in-file find navigates the active unsaved buffer without native IPC',
   const css = read('../web/styles.css');
   assert.match(web, /key === 'f'/);
   assert.match(web, /role="search" aria-label="Find in active file"/);
-  assert.match(web, /locateMatches\(activeTab\?\.draft/);
+  assert.match(web, /locateMatches\(activeEditorState\?\.doc\.toString\(\)/);
   assert.match(web, /aria-label="Previous match"/);
   assert.match(web, /aria-label="Next match"/);
   assert.match(read('../web/find_replace.js'), /MAX_FIND_MATCHES = 10000/);
@@ -470,7 +470,7 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(web, /aria-label="Replacement text"/);
   assert.match(web, /aria-label="Replace current match"/);
   assert.match(web, /aria-label="Replace all matches"/);
-  assert.match(web, /planReplacement\(activeTab\.draft/);
+  assert.match(web, /planReplacement\(searchText/);
   assert.match(web, /window\.confirm\(/);
   assert.match(web, /Draft only · Undo available · Save required/);
   assert.match(web, /replaceRequest=\{replaceRequest\?\.tabKey/);
