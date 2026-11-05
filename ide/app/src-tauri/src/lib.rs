@@ -150,6 +150,26 @@ async fn ide_preview_source_file(
     .map_err(|_| "PREVIEW_TASK_UNAVAILABLE".to_string())?
 }
 
+/// An explicit user-initiated save with optimistic file-revision protection.
+/// There is no model-origin tool path or unrestricted filesystem write command.
+#[tauri::command]
+async fn ide_save_source_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+    expected_revision: String,
+    text: String,
+) -> Result<lu_ide_workspace::browser::TextPreview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .save_source_file(&project_id, &relative_path, &expected_revision, &text)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "SAVE_TASK_UNAVAILABLE".to_owned())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -167,7 +187,8 @@ pub fn run() {
             ide_open_project,
             ide_close_project,
             ide_list_source_directory,
-            ide_preview_source_file
+            ide_preview_source_file,
+            ide_save_source_file
         ])
         .run(tauri::generate_context!())
         .expect("standalone Lu IDE failed to initialize");
