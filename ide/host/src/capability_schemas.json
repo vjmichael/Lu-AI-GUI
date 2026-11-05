@@ -870,6 +870,20 @@
               "type": "null"
             }
           ]
+        },
+        "gitWorktreeState": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "clean",
+                "dirty"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -878,7 +892,8 @@
         "scope",
         "artifacts",
         "localHead",
-        "localTrackingHead"
+        "localTrackingHead",
+        "gitWorktreeState"
       ]
     },
     "ArtifactComparison": {
@@ -973,6 +988,17 @@
         "baselineCount": {
           "type": "integer",
           "minimum": 0
+        },
+        "gitWorktreeChange": {
+          "type": "string",
+          "enum": [
+            "baseline_missing",
+            "remained_clean",
+            "became_dirty",
+            "became_clean",
+            "both_dirty_not_equivalent",
+            "unverifiable"
+          ]
         }
       },
       "required": [
@@ -984,7 +1010,8 @@
         "entries",
         "localGitHeadChange",
         "liveRemote",
-        "baselineCount"
+        "baselineCount",
+        "gitWorktreeChange"
       ]
     },
     "GitFileChange": {
