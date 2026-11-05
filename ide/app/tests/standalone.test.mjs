@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status'
+    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -296,7 +296,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 20);
+  assert.equal(Object.keys(schemas.operations).length, 21);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -442,4 +442,22 @@ test('human source control tab uses the native Git status without shell executio
   assert.match(native, /async fn ide_read_git_status/);
   assert.equal(schema.operations['git.status'].result.$ref, '#/$defs/GitWorktreeInspection');
   assert.doesNotMatch(web, /invoke\('ide_git_push'|invoke\('ide_git_commit'/);
+});
+
+test('live GitHub comparison is a separate explicit network-read action', () => {
+  const frontend = read('../web/main.jsx');
+  const command = read('../src-tauri/src/lib.rs');
+  const native = read('../../host/src/github_live.rs');
+  const schema = JSON.parse(read('../../host/src/capability_schemas.json'));
+  assert.match(frontend, /Check GitHub/);
+  assert.match(frontend, /invoke\('ide_compare_live_github'/);
+  assert.match(frontend, /aria-label="Live GitHub comparison"/);
+  assert.match(command, /async fn ide_compare_live_github/);
+  assert.equal(schema.operations['git.compareLive'].result.$ref, '#/$defs/LiveGitHubComparison');
+  assert.equal(schema.definitions.LiveGitHubComparison.properties.responseAuthenticated.const, false);
+  assert.match(native, /api\.github\.com\/repos\//);
+  assert.match(native, /\.redirects\(0\)/);
+  assert.match(native, /MAX_RESPONSE_BYTES/);
+  assert.match(native, /branch_not_found_or_private/);
+  assert.doesNotMatch(native, /Command::new|std::process::Command/);
 });
