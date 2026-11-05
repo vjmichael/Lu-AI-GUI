@@ -74,7 +74,9 @@ fn import_review_and_approve_are_data_only_no_project_writes() {
         .decide(&registry, &received.inbox_id, &received.digest, true)
         .unwrap();
     assert_eq!(decided.status, ReviewStatus::ApprovedForStaging);
-    let staged = inbox.staging(&registry, &received.inbox_id, &received.digest).unwrap();
+    let staged = inbox
+        .staging(&registry, &received.inbox_id, &received.digest)
+        .unwrap();
     assert_eq!(staged.edits.len(), 2);
     assert_eq!(staged.edits[0].proposed_text, "x = 123\n");
     assert_eq!(staged.edits[1].proposed_text, "y = 456\n");
