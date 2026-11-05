@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4fa99d02cc009f67583c8a940ca70b8590c15f05",
+  "sourceCommitBeforeLock": "22ee9ab1d006918d1e5fc23f6750a5d8cac093db",
   "trackedFileCount": 323,
   "files": [
     {
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "6471929c90f39c4fe7a51c6dd40ccef5c2a0bd03"
+      "blob": "dd586b0c1468dab2f92df14adaa2a3748096b36b"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "ef095321ecb0efb2023918fe69fe2e69bfa3d634"
+      "blob": "f9478dc2a329abc7037a306dc301dcb00f749fd8"
     },
     {
       "path": "lu-desktop/tests/browser-staging.test.mjs",
@@ -449,7 +449,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "384afd351fa5f3749ea8b56849c2a1d721f2ca2b"
+      "blob": "0abaed80d10bd9bc25f03c2455e0aca63c718ed1"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -557,7 +557,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_authorized_execution.rs",
-      "blob": "da29dabcaedd2567494754930a68d0db905fde84"
+      "blob": "75915af45dc52adf3afc4a6de81a7402e64facde"
     },
     {
       "path": "src-tauri/lu-core/src/browser_chromium_launcher.rs",
@@ -1289,7 +1289,7 @@
     },
     {
       "path": "tests/lu-browser-worker.test.mjs",
-      "blob": "12a06c8c9bd5e1b9f1d478e65c7708a71838bde9"
+      "blob": "b9ead88bfc1672fb568108cc3c205af8c2c8823e"
     },
     {
       "path": "tests/source-identity.test.mjs",
