@@ -282,6 +282,22 @@ impl DesktopBrowserHost {
             worker,operation,arguments
         ).map_err(|e|format!("browser task rejected: {e:?}"))
     }
+    /// User watch/hide controls the same Lu-owned headed browser session.
+    /// Model tools never receive this control. The browser worker refuses
+    /// hiding while a human challenge is unresolved.
+    pub fn set_user_visible(&self,visible:bool)->Result<(),String>{
+        let mut session=self.session.lock()
+            .map_err(|_|"browser supervisor lock poisoned")?;
+        let worker=session.as_mut().ok_or("Browser session is not running")?;
+        let operation=if visible{BrowserOperation::Show}else{BrowserOperation::Hide};
+        let response=worker.execute(operation,serde_json::json!({}))
+            .map_err(|e|format!("browser window transition refused: {e:?}"))?;
+        let expected=if visible{"VISIBLE"}else{"HIDDEN"};
+        if response["ok"]!=true||response["result"]["windowVisibility"]!=expected{
+            return Err("Native browser window did not confirm requested visibility".into());
+        }
+        Ok(())
+    }
     /// A user, not a model, confirms they have completed verification.
     /// The worker independently rechecks that the challenge text is gone
     /// and that the page remains on a trusted HTTPS origin.
