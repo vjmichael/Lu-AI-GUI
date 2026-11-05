@@ -16,6 +16,7 @@ This entrypoint is intended to spare the next development conversation from redi
 - **R3.2:** user screenshots verified registration removal to zero projects, re-registration and zero-project state persisting across a restart. **Remove from IDE** is catalog-only and never deletes the selected project directory.
 - A small R3.2 card-layout regression was corrected in source using `repeat(auto-fill,minmax(275px,1fr))`, preserving regular card widths when only one project remains.
 - **R3.3:** user confirmed Windows review dialog, reviewed save, stale-file conflict preserving draft, and large-preview truncation disabling reviewed save. Four Windows screenshots support the result; see `docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md`.
+- **R3.4:** four Windows screenshots show an actual two-hunk review (2 removed / 2 added at lines 5 and 40), reviewed save with Saved status, and `FILE_CHANGED_ON_DISK` preserving the unsaved draft. R3.4 multi-hunk/save/conflict **interactive smoke accepted**; separate cancel, disk-byte proof and hostile filesystem gates remain open.
 
 These are real user-submitted Windows smoke tests, *not* full hostile-project or installed NSIS acceptance. See `docs/IDE_03_R3_EDITOR_ACCEPTANCE.md` and `docs/IDE_03_PROJECT_DELIST_ACCEPTANCE.md`.
 
@@ -34,15 +35,15 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 
 **R3.3 verified:** [Windows/Linux/frontend acceptance 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363) **passed** (33 Rust tests, frontend, Windows Tauri); [unsigned Windows R3.3 release 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831) **passed**. The EXE SHA-256 and portable ZIP are recorded in [R3.3 evidence](docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md). **Interactive Windows R3.3 review-dialog smoke acceptance PASSED on 2026-11-05**; full security/agent integration remains pending.
 
-## R3.4 development candidate — accurate multi-hunk review + proposal schema
+## R3.4 accepted interactive smoke — accurate multi-hunk review + proposal schema
 
-- The user completed the R3.3 Windows smoke gate on November 5. The next milestone is implemented on the IDE branch but **its automated Windows/Linux verification and release passed; human R3.4 GUI acceptance is pending**.
+- The user completed the R3.3 Windows smoke gate on November 5. The milestone's **automated Windows/Linux verification, optimized Windows release and human R3.4 GUI smoke have all passed**; adversarial/edge-case acceptance remains outstanding.
 - `host/src/review.rs` now uses the Similar line diff algorithm with grouped hunks and original/proposed line numbers. Limit: 240 preview lines / 32 KiB / 64 hunks / 8,000 input lines. Truncated reviews cannot be saved from the review dialog.
 - `app/web/main.jsx` and `styles.css` display true separate hunks and source line-number gutters.
 - `host/src/proposal.rs` defines a strict versioned, data-only JSON envelope for **untrusted** multi-file proposals. It rejects unknown effect/approval fields and never applies edits; `claimedProducer` is not authentication.
 - `host/tests/proposal.rs` verifies two-file previews do not write, and a stale file causes rejection. `host/src/review.rs` tests check distant edits and newline handling.
 - Acceptance record: [R3.4 multi-hunk and envelope plan](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md).
-- CI: [R3.4 run 42053180326](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053180326) **PASSED** (42 Rust tests, 13 frontend tests, Windows Tauri compile). [Windows unsigned release 42053262838](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053262838) **PASSED**; executable and ZIP checksums in [R3.4 evidence](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md). **User R3.4 desktop multi-hunk acceptance still pending.**
+- CI: [R3.4 run 42053180326](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053180326) **PASSED** (42 Rust tests, 13 frontend tests, Windows Tauri compile). [Windows unsigned release 42053262838](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053262838) **PASSED**; executable and ZIP checksums in [R3.4 evidence](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md). **User R3.4 desktop multi-hunk/save/conflict smoke accepted (2026-11-05)**.
 
 ## Source map
 
@@ -80,7 +81,7 @@ Desktop Tauri uses Rust 1.90+, native host suite supports Rust 1.88+. The Window
 
 ## IMPORTANT open gates
 
-1. **R3.3 Windows review smoke gate closed.** R3.4 grouped diff/proposal schema implemented; its new CI and Windows acceptance remain pending. Next continue native save hardening, undo/redo across tabs and source-index usability.
+1. **R3.3 and R3.4 Windows GUI smoke gates closed.** R3.4 genuine multi-hunk review, reviewed save and conflict are screenshot-verified. Remaining manual cases: cancel without save, disk-byte evidence, large-review safeguard on this build, and adversarial filesystem tests. Next development should advance bounded IDE-owned proposal review/authorization, while keeping the Lu bridge absent and the IDE standalone.
 2. Native file-save hardening: root identity and Windows reparse attacks, ACL/owner fidelity, external-writer race across final compare/rename, power-loss injection, crash recovery of unsaved drafts, full diff accuracy.
 3. Task 2 **OS sandbox**: initial Linux fixed probes passed, but arbitrary executable workers remain disallowed until CPU/RAM/PID quotas, process-tree cancellation, syscall/filesystem controls and **Windows native containment** pass.
 4. Task 3 editor completion: search/replace, split views, accessible keyboard navigation, large tree filtering and file watchers.
