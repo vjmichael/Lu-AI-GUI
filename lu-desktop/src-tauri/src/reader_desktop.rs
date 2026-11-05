@@ -42,8 +42,11 @@ pub(crate) fn pick_reader_bytes(
 )->Result<Option<(String,Vec<u8>)>,String>{
     let selection=app.dialog().file()
         .add_filter("Reader document", &[
-            "txt","md","markdown","log","csv","tsv","json","jsonl",
-            "py","rs","js","jsx","ts","tsx","sql","yaml","yml","toml",
+            "txt","text","md","markdown","log","csv","tsv","json","jsonl",
+            "ndjson","xml","html","htm","svg","ini","cfg","conf","rst",
+            "properties","env","py","rs","js","jsx","ts","tsx","sql",
+            "yaml","yml","toml","go","c","h","cpp","hpp","cs","java",
+            "sh","ps1","css","rb","php","swift","kt","lua",
             "docx","xlsx","pptx","ods","odp","pdf",
         ]).blocking_pick_file();
     let Some(selection)=selection else{return Ok(None)};
