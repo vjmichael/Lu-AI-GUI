@@ -63,11 +63,20 @@ jobs:
         run: |
           $found = Test-Path 'lu-desktop/src-tauri/resources/lu-inference/llama-server.exe'
           "present=$($found.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-      - name: Compile installed desktop when authentic inference bundle is staged
+      - name: Compile full desktop host with authentic resources
         if: matrix.os == 'windows-latest' && steps.engine.outputs.present == 'true'
         run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Compile full desktop Rust host with no packaged engine in CI only
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
+        shell: pwsh
+        run: |
+          $path = 'lu-desktop/src-tauri/tauri.conf.json'
+          $cfg = Get-Content $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources = @{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
       - name: Record unavailable installed-desktop prerequisite
         if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
-        run: echo "Installed desktop acceptance BLOCKED by unavailable required llama-server.exe resource; native worker and UI verified independently."
+        run: echo "Desktop host compiled with a temporary CI-only no-resources config; installed-app and real inference-engine acceptance remain BLOCKED."
       - name: Verify source identity
         run: git rev-parse HEAD
