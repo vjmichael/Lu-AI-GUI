@@ -91,6 +91,13 @@ impl IdeWorkspaceRegistry {
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         let result = (|| -> Result<(), BrowserError> {
+            // cap-std directory handles may be O_PATH on Linux. They cannot
+            // be fsynced directly (EBADF). Open a separate read-only directory
+            // fd before replacement and verify it is syncable.
+            #[cfg(unix)]
+            let durable_dir = parent.open(".")?;
+            #[cfg(unix)]
+            durable_dir.sync_all()?;
             let mut file = parent.open_with(&temp, &options)?;
             file.write_all(payload)?;
             file.sync_all()?;
@@ -107,7 +114,7 @@ impl IdeWorkspaceRegistry {
             }
             parent.rename(&temp, &parent, &leaf)?;
             #[cfg(unix)]
-            parent.try_clone()?.into_std_file().sync_all()?;
+            durable_dir.sync_all()?;
             Ok(())
         })();
         if result.is_err() {
