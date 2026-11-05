@@ -1216,6 +1216,25 @@ fn lu_chats(state: State<'_, Arc<DesktopState>>) -> Result<ChatListView, String>
     let (chats, folders) = state.chats.list()?;
     Ok(ChatListView { chats, folders })
 }
+/// Only the native operator may opt a real conversation into unsolicited
+/// model continuation. Default is OFF; no model or background worker can
+/// toggle this via a tool invocation.
+#[tauri::command]
+fn lu_background_auto_continue(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    enabled:Option<bool>,
+)->Result<bool,String>{
+    // Verified against the durable conversation index, not a client claim.
+    state.chats.history(&chat_id)?;
+    if let Some(approved)=enabled{
+        state.background_tasks.set_auto_continue(&chat_id,approved)
+            .map_err(|_|"Unable to persist background continuation preference")?;
+    }
+    state.background_tasks.auto_continue_enabled(&chat_id)
+        .map_err(|_|"Background continuation preference unavailable".into())
+}
+
 /// Local operator cancellation. Never expose a model-selectable PID,
 /// executable path, or arbitrary background command through Tauri.
 #[tauri::command]
@@ -1337,6 +1356,7 @@ pub fn run() {
             lu_history,
             lu_chats,
             lu_background_tasks,
+            lu_background_auto_continue,
             lu_background_scan_file,
             lu_background_cancel,
             lu_new_chat,
