@@ -757,7 +757,8 @@ function App() {
               {!inventoryComparison?.baselinePresent
                 ? <p>No earlier snapshot recorded for this project. Record one to compare later.</p>
                 : <>
-                  <p>Baseline: {new Date(inventoryComparison.baselineUnixSeconds * 1000).toLocaleString()}
+                  <p>{inventoryComparison.baselineCount} recorded snapshot(s) ·
+                    Latest baseline: {new Date(inventoryComparison.baselineUnixSeconds * 1000).toLocaleString()}
                     {' · '} Local Git HEAD: {inventoryComparison.localGitHeadChange.replaceAll('_', ' ')}
                     {' · '} Live remote: {inventoryComparison.liveRemote.replaceAll('_', ' ')}</p>
                   {inventoryComparison.entries.length === 0 &&
