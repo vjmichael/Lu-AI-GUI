@@ -45,9 +45,12 @@ fn review_is_read_only_and_requires_correct_revision() {
     assert!(!preview.truncated);
     assert_eq!(preview.expected_revision, original.revision);
     assert_ne!(preview.proposed_revision, original.revision);
+    assert_eq!(preview.hunks.len(), 1);
+    assert!(preview.counts_exact);
     assert!(preview
-        .lines
+        .hunks
         .iter()
+        .flat_map(|h| &h.lines)
         .any(|line| line.kind == "added" && line.text.contains("goodbye")));
     // A review is purely advisory; it cannot modify disk or start a process.
     assert_eq!(
@@ -66,6 +69,7 @@ fn review_is_read_only_and_requires_correct_revision() {
         .unwrap();
     assert!(no_change.unchanged);
     assert_eq!((no_change.removed_lines, no_change.added_lines), (0, 0));
+    assert!(no_change.hunks.is_empty());
     fs::remove_dir_all(root).unwrap();
 }
 
