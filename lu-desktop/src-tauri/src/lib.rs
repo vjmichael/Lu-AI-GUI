@@ -1406,6 +1406,12 @@ async fn lu_generate_browser(
             if observed.is_empty(){
                 return Err("Browser did not supply any research observations".into());
             }
+            // Navigation acknowledgments and screenshots without a
+            // multimodal analysis are NOT evidence that page content was
+            // actually read. Do not ask the model to answer from them.
+            if !collected_read{
+                return Err("Browser research ended without a verified page-content read".into());
+            }
             if ticket.cancelled(){return Err("Cancelled browser research".into());}
             // Observations are durable before assistant generation begins.
             // Prompt content is explicitly untrusted and size bounded.
