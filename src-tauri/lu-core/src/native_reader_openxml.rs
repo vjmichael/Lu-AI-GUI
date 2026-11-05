@@ -28,6 +28,12 @@ pub struct OpenXmlPackage{
 }
 impl OpenXmlPackage{
     pub fn new(bytes:&[u8])->Result<Self,ReaderFailure>{
+        Self::new_inner(bytes,true)
+    }
+    pub fn new_odf(bytes:&[u8])->Result<Self,ReaderFailure>{
+        Self::new_inner(bytes,false)
+    }
+    fn new_inner(bytes:&[u8],ooxml:bool)->Result<Self,ReaderFailure>{
         if bytes.len()<22||bytes.len()>MAX_ARCHIVE_BYTES||
            !bytes.starts_with(b"PK\x03\x04"){return Err(malformed())}
         let start=bytes.len().saturating_sub(65_535+22);
@@ -90,6 +96,7 @@ impl OpenXmlPackage{
             }
             let lower=name.to_ascii_lowercase();
             if lower.ends_with("vbaproject.bin")||
+                lower.starts_with("basic/")||lower.starts_with("scripts/")||
                 lower.ends_with(".exe")||lower.ends_with(".dll"){
                 return Err(malformed()) // no macros or binaries in Reader v1
             }
@@ -124,7 +131,10 @@ impl OpenXmlPackage{
             at+=entry_size;
         }
         if at!=eocd{return Err(malformed())}
-        if !parts.contains_key("[Content_Types].xml"){
+        if ooxml&&!parts.contains_key("[Content_Types].xml"){
+            return Err(malformed())
+        }
+        if !ooxml&&(!parts.contains_key("mimetype")||!parts.contains_key("content.xml")){
             return Err(malformed())
         }
         // Reject DTDs in all XML parts, and external relationship targets.
