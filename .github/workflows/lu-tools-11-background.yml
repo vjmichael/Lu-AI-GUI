@@ -100,6 +100,9 @@ jobs:
           $cfg.bundle.resources = @{}
           $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute native Windows Reader-turn journal identity regression
+        if: matrix.os == 'windows-latest'
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reader -- --nocapture
       - name: Record unavailable installed-desktop prerequisite
         if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
         run: echo "Desktop host compiled with a temporary CI-only no-resources config; installed-app and real inference-engine acceptance remain BLOCKED."
