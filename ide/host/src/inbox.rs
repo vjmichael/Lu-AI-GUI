@@ -107,7 +107,9 @@ pub struct IdeProposalInbox {
 }
 impl Default for IdeProposalInbox {
     fn default() -> Self {
-        Self { items: Mutex::new(BTreeMap::new()) }
+        Self {
+            items: Mutex::new(BTreeMap::new()),
+        }
     }
 }
 
@@ -125,9 +127,15 @@ impl IdeProposalInbox {
             .map_err(|_| InboxError::Proposal(ProposalError::InvalidEnvelope))?;
         let digest = format!("{:x}", Sha256::digest(&bytes));
         let mut items = self.items.lock().map_err(|_| InboxError::Unavailable)?;
-        if items.len() >= MAX_INBOX_ITEMS { return Err(InboxError::Full); }
+        if items.len() >= MAX_INBOX_ITEMS {
+            return Err(InboxError::Full);
+        }
         let id = fresh_project_id();
-        let entry = Entry { envelope, digest, status: ReviewStatus::Pending };
+        let entry = Entry {
+            envelope,
+            digest,
+            status: ReviewStatus::Pending,
+        };
         let summary = entry.summary(&id);
         items.insert(id, entry);
         Ok(summary)
@@ -146,7 +154,10 @@ impl IdeProposalInbox {
         let items = self.items.lock().map_err(|_| InboxError::Unavailable)?;
         let entry = items.get(inbox_id).ok_or(InboxError::NotFound)?;
         let reviews = entry.review(registry)?;
-        Ok(ProposalDetail { summary: entry.summary(inbox_id), reviews })
+        Ok(ProposalDetail {
+            summary: entry.summary(inbox_id),
+            reviews,
+        })
     }
 
     /// A separately requested, digest-bound HUMAN review decision. The
@@ -166,7 +177,10 @@ impl IdeProposalInbox {
         }
         if approve_for_staging {
             let reviews = entry.review(registry)?;
-            if reviews.iter().any(|review| review.truncated || !review.counts_exact) {
+            if reviews
+                .iter()
+                .any(|review| review.truncated || !review.counts_exact)
+            {
                 return Err(InboxError::PreviewIncomplete);
             }
             entry.status = ReviewStatus::ApprovedForStaging;
@@ -178,7 +192,9 @@ impl IdeProposalInbox {
 
     pub fn discard(&self, inbox_id: &str) -> Result<(), InboxError> {
         let mut items = self.items.lock().map_err(|_| InboxError::Unavailable)?;
-        if items.remove(inbox_id).is_none() { return Err(InboxError::NotFound); }
+        if items.remove(inbox_id).is_none() {
+            return Err(InboxError::NotFound);
+        }
         Ok(())
     }
 }
@@ -190,6 +206,9 @@ mod tests {
     fn new_queue_is_empty_and_does_not_confer_apply_rights() {
         let inbox = IdeProposalInbox::default();
         assert!(inbox.list().unwrap().is_empty());
-        assert_eq!(inbox.discard("missing").unwrap_err().code(), "PROPOSAL_NOT_FOUND");
+        assert_eq!(
+            inbox.discard("missing").unwrap_err().code(),
+            "PROPOSAL_NOT_FOUND"
+        );
     }
 }
