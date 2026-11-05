@@ -112,11 +112,18 @@ impl PremiseStore {
         // positive research evidence; normalize those admission failures to
         // Unverified rather than leaking source-lookup details into the
         // premise review path.
-        let verified=ledger.has_verified_passage(source_id,quote).unwrap_or(false);
-        if !verified
-            || !ledger.eligible_for_reviewed_bibliography(source_id).unwrap_or(false) {
-            return Err(PremiseError::Unverified);
-        }
+        let verified=match ledger.has_verified_passage(source_id,quote){
+            Ok(value)=>value,
+            Err(EvidenceError::Missing)=>false,
+            Err(error)=>return Err(PremiseError::Evidence(error)),
+        };
+        if !verified{return Err(PremiseError::Unverified);}
+        let eligible=match ledger.eligible_for_reviewed_bibliography(source_id){
+            Ok(value)=>value,
+            Err(EvidenceError::Missing)=>false,
+            Err(error)=>return Err(PremiseError::Evidence(error)),
+        };
+        if !eligible{return Err(PremiseError::Unverified);}
         if relation==ResearchRelation::Unrelated && strength==ClaimStrength::CausallyEstablished {
             // An unrelated source cannot independently establish causation
             // about a thesis it does not actually address.
