@@ -97,3 +97,15 @@ test('saved preview includes revision and uses capability-relative atomic replac
   assert.match(editor, /self\.source_capability\(project_id\)/);
   assert.doesNotMatch(editor, /Command::new|std::process::Command/);
 });
+
+test('CodeMirror stylesheet uses Tauri nonce without weakening CSP', () => {
+  const html = read('../web/index.html');
+  const editor = read('../web/code_editor.jsx');
+  const config = JSON.parse(read('../src-tauri/tauri.conf.json'));
+  assert.match(html, /<style id="lu-ide-editor-style-nonce"><\/style>/);
+  assert.match(editor, /getElementById\('lu-ide-editor-style-nonce'\)/);
+  assert.match(editor, /EditorView\.cspNonce\.of\(styleNonce\)/);
+  assert.match(config.app.security.csp, /style-src 'self'/);
+  assert.doesNotMatch(config.app.security.csp, /unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(config.app.security.csp, /script-src[^;]*unsafe/);
+});
