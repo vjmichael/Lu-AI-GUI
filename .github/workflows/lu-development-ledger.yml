@@ -2,6 +2,12 @@ name: Lu development ledger refresh
 
 # Metadata-only maintenance. Never builds or merges untrusted PR source.
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/lu-development-ledger.yml'
+      - 'scripts/lu-ledger.mjs'
+      - 'scripts/lu-ledger.test.mjs'
   workflow_dispatch:
   schedule:
     - cron: '17 13 * * *'
@@ -14,8 +20,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-on-source-change:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify snapshot generator tests
+        run: node --test scripts/lu-ledger.test.mjs
+      - name: Confirm current ledger matches open GitHub PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/lu-ledger.mjs --check
+
   refresh:
-    if: github.repository == 'vjmichael/Lu-AI-GUI'
+    if: github.repository == 'vjmichael/Lu-AI-GUI' && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
