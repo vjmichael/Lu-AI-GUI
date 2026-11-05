@@ -25,13 +25,19 @@
 
 ## Wave A2 — Semantic Capability Registry (implementation source, verification pending)
 
+- A2 source verification run: [GitHub Actions 42114104448](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42114104448) for implementation SHA `0a33585cee694764507bca153baa0f334dd4f035`, queued at last inspection; **no pass/fail conclusion yet**.
+
+
 - Added `host/src/capabilities.rs`: static, versioned list of **16 existing native operations**, each with stable semantic ID, actual Tauri command name, typed input-field names, effect class, precondition, result type, expected evidence and bounded-call cancellation note.
 - Added read-only `ide_list_capabilities` Tauri endpoint. It lists descriptors only, **does not dispatch operations or authorize effects**, and does not open any Lu bridge.
 - Added a human **Capabilities** section showing the host-owned catalog. Frontend test checks exact parity between the registered Tauri command names and descriptor list, excluding the descriptor endpoint itself.
 - `source.save` is classified as a disk write and remains explicit/human-owned; proposal staging is data only. Existing editor and project UX retained.
 - **Status:** code committed; exact-head CI, native Windows interactive acceptance and installer verification **not yet established**. No local `Delivered` inspection.
 
-## Wave A1 source-reference UI and CI repair — 2026-11-05
+## Wave A1 source-reference UI and CI repair
+
+- **Follow-up exact-source CI passed** for `467775e4766cb6e42a00aefec114fa4f76d592e7`: Linux host, Windows desktop, frontend all succeeded in [run 42075298457](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42075298457). Physical Windows user acceptance of source-reference clipboard remains open.
+ — 2026-11-05
 
 - CI [42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705): Windows desktop **passed**, frontend **passed**, Linux native job **failed due to `cargo fmt --check` formatting differences**. Rust tests had completed before formatting failed. This was not a source-span behavioral failure.
 - Formatting corrections applied to `host/src/source_span.rs` and `host/tests/source_span.rs`, based on actual Rust CI formatter diff; **new exact-head CI still required**.
