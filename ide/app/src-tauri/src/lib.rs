@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 use std::{path::PathBuf, sync::Arc};
 
-use lu_ide_workspace::{continuity::DevelopmentLedger, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use lu_ide_workspace::{continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -85,6 +85,41 @@ async fn ide_read_project_context(
     })
     .await
     .map_err(|_| "CONTINUITY_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Explicitly capture read-only observed artifact and local reference bytes
+/// into the IDE's private app-profile evidence history. No executable worker.
+#[tauri::command]
+async fn ide_capture_project_inventory(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    snapshots: State<'_, Arc<InventorySnapshots>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::inventory_history::InventoryBaseline, String> {
+    let registry = Arc::clone(registry.inner());
+    let snapshots = Arc::clone(snapshots.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        snapshots.capture(&registry, &project_id)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "SNAPSHOT_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Compare a saved local baseline against a fresh bounded read-only scan.
+#[tauri::command]
+async fn ide_compare_project_inventory(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    snapshots: State<'_, Arc<InventorySnapshots>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::inventory_history::InventoryComparison, String> {
+    let registry = Arc::clone(registry.inner());
+    let snapshots = Arc::clone(snapshots.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        snapshots.compare(&registry, &project_id)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "INVENTORY_COMPARE_UNAVAILABLE".to_owned())?
 }
 
 /// List actual host-supported operations. Discovery is not authorization.
@@ -378,13 +413,18 @@ pub fn run() {
             let ledger = DevelopmentLedger::new(data.join("development-ledger.jsonl"))
                 .map_err(|_| std::io::Error::other("standalone IDE ledger failed to open"))?;
             app.manage(Arc::new(registry));
+            let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
+                .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
             app.manage(Arc::new(ledger));
+            app.manage(Arc::new(snapshots));
             app.manage(Arc::new(IdeProposalInbox::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
             ide_read_project_context,
+            ide_capture_project_inventory,
+            ide_compare_project_inventory,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
