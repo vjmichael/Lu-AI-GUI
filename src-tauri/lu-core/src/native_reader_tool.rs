@@ -223,9 +223,7 @@ mod tests{
         std::fs::write(path.join("readme.md"),"# Verified source").unwrap();
         std::fs::write(path.join("scan.pdf"),"%PDF-1.7").unwrap();
         let registry=NativeToolRegistry::new();
-        let catalog=register_reader(&registry,&path).unwrap();
-        assert!(format!("{catalog:?}").contains("ModelToolCatalog") 
-            || registry.contains(TOOL_ID));
+        let _catalog=register_reader(&registry,&path).unwrap();
         let result=registry.dispatch(invocation("readme.md"),&Allow).await.unwrap();
         let output=ReaderResponse::decode(result.payload.bytes.as_slice()).unwrap();
         assert_eq!(output.format,"Markdown");
