@@ -9,6 +9,12 @@
 
 > This document consolidates the decisions for the Lu IDE DLC. It records intended behavior, boundaries, priorities, and acceptance tests; it does **not** assert that those features are already implemented or security-certified.
 
+## Foundational AI-first design rule (LU-IDE-AIW-01)
+
+**Every IDE feature must be easy for humans to use and for authorized AI to understand, locate, operate, verify and recover.** Build around shared, revision-aware source objects, a discoverable typed action surface, verified resource/artifact inventories, task-relevant provenance, explicit human authority, and evidence-backed completion.
+
+Read [AI-first Lu IDE design and acceptance requirements](AI_FIRST_IDE_DESIGN.md). This applies the [LU-AIW-01 cross-workspace philosophy](../../docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md#lu-aiw-01--ai-accessible-workspaces-and-operational-continuity-2026-11-05) and takes lessons from [draft PR #28](https://github.com/vjmichael/Lu-AI-GUI/pull/28). **PR #28 is not merged, not a runtime IDE dependency, and does not establish that resources exist locally.** Human and AI operations must share authoritative object identities but remain separately authorized. The user's explicit direction to **defer live Lu-to-IDE connectivity** remains in force.
+
 ## 1. Mission, goals and constraints
 
 Lu IDE Workspace is a **standalone desktop application** in the same Git repository as Lu. It is not hosted by Lu's Tauri window and does not require Lu running. It must be useful for ordinary human software development and provide Lu with supervised capabilities to read, reason about, edit, build, test, debug, review and maintain software. The longer-term goal is a **disposable Lu Dev instance** capable of safely working on Lu itself.
