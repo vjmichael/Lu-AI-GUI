@@ -37,7 +37,7 @@ pub struct IsoManifest{
 fn fail(e:std::io::Error)->IsoError{IsoError::Io(e.to_string())}
 fn safe_source(s:&str)->bool{
     !s.is_empty() && s.len()<=240 && s!="." && s!=".."
-    && !s.starts_with(".lu-stage-") && !s.ends_with(['.',' '])
+    && !s.starts_with(".lu-stage-") && !s.ends_with('.') && !s.ends_with(' ')
     && !s.chars().any(|c|c.is_control() || matches!(c,'/'|'\\'|':'))
     && s.to_ascii_lowercase().ends_with(".iso")
 }
