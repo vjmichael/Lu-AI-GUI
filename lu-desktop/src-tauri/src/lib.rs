@@ -486,7 +486,7 @@ impl DesktopState {
                                     sequence:notice.sequence,
                                     task_id:notice.task_id,
                                     chat_id:conversation,
-                                    state:format!("{:?}",notice.state).to_uppercase(),
+                                    state:notice.state.as_str().to_owned(),
                                     progress:notice.progress,
                                     detail:notice.detail,
                                 });
@@ -1141,7 +1141,7 @@ fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
         .map_err(|_|"Background task overview unavailable")?;
     Ok(tasks.into_iter().map(|task|BackgroundTaskView{
         task_id:task.task_id,workspace_id:task.workspace_id,
-        state:format!("{:?}",task.state).to_uppercase(),
+        state:task.state.as_str().to_owned(),
         progress:task.progress,detail:task.detail,
         last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
         can_cancel:state.background_processes.can_cancel(&task.task_id),
