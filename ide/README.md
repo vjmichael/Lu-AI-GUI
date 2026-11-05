@@ -1,6 +1,6 @@
 # Lu IDE — standalone development application
 
-**Status:** Standalone R3.3 candidate — editor, safe project delisting, bounded review of source edits; package manager, executable workers and Lu bridge remain disabled.  
+**Status:** R3.3 Windows smoke accepted; R3.4 candidate adds accurate multi-hunk reviews and strict, data-only coding proposal envelopes. Package manager, executable workers and Lu bridge remain disabled.  
 **Repo:** `vjmichael/Lu-AI-GUI` · **IDE-only branch:** `ide/workspace-development`
 
 Lu IDE is its **own desktop application**, with its own process, project registry and native UI. It belongs in the same Git repository as Lu Core for convenience, but it **does not load inside Lu Desktop**, does not link against `lu-core`, and does not require Lu to run.
@@ -35,6 +35,7 @@ npm run tauri:dev
 ## Documents
 
 - **Start here when resuming development:** [Engineering handoff and verified gates](ENGINEERING_HANDOFF.md).
+- [R3.4 multi-hunk review and future proposal-envelope acceptance](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md).
 - [R3.3 reviewed changes / Lu coding foundation](docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md).
 - **Canonical design and eight-task list:** [IDE Workspace design, Section 6](docs/IDE_WORKSPACE_DESIGN.md).
 - **Architecture decision:** [Standalone executable + optional Lu bridge](docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md).
