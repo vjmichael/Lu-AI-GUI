@@ -190,3 +190,16 @@ fn benchmark_manifest_is_versioned_untrusted_context_and_never_executed() {
     assert!(!context.inventory.execution_performed);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn root_level_installer_is_detected_without_running_it() {
+    let (root, registry, id, ledger) = fixture();
+    fs::write(root.join("project/standalone.msi"), b"installer fixture").unwrap();
+    let result = ledger.context(&registry, &id).unwrap();
+    let found = result.inventory.files.iter().find(|file|
+        file.relative_path == "standalone.msi").unwrap();
+    assert_eq!(found.category, "installer_or_executable");
+    assert_eq!(found.sha256.as_ref().unwrap().len(), 64);
+    assert!(!result.inventory.execution_performed);
+    fs::remove_dir_all(root).unwrap();
+}
