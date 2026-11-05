@@ -1,6 +1,6 @@
 fn main() {
-    let protoc = protoc_bin_vendored::protoc_bin_path()
-        .expect("vendored protoc is required for IDE IPC");
+    let protoc =
+        protoc_bin_vendored::protoc_bin_path().expect("vendored protoc is required for IDE IPC");
     std::env::set_var("PROTOC", protoc);
     prost_build::Config::new()
         .compile_protos(&["../proto/lu/ide/v1/workspace.proto"], &["../proto"])
