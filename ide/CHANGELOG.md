@@ -2,6 +2,11 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — A3 native Git worktree reader (source implemented)
+- Added `git2` and `host/src/git_status.rs` for actual read-only local Git branch, staged/modified/untracked paths, and locally configured upstream comparison and ahead/behind. Only the exact native-registered project root may be inspected; parent repository discovery is refused. No shell, Git hooks, network operations, fetch or Git mutations.
+- Included true worktree status in the Continuity read model, typed JSON Schema and human UI. Added real native Git fixture tests and frontend source/security assertions.
+- **Evidence:** source committed; [exact-source CI 42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending at last inspection. No Windows installed acceptance or live GitHub comparison established.
+
 ## 2026-11-05 — A3 historical evidence retention
 - Snapshot capture now preserves multiple observations instead of overwriting the previous baseline. Comparisons use the latest snapshot; the UI displays how many baselines exist for the active project. History is bounded to 64 snapshots/1 MiB and refuses further captures rather than silently deleting evidence.
 - Added native regression for a second snapshot and newest-baseline comparison. Source commit `d7fd8cfac1d91a1ddc3073e631a249c1f5b1f9a7`; [CI 42125275258](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42125275258) queued at last inspection. No Windows-installed GUI acceptance or verified global paths.
