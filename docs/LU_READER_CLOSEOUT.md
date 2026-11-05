@@ -33,7 +33,9 @@ real-model tool call.
   immutable one-file snapshots. Tool registration **is not authorization**.
 - `native_reader_turn.rs`: read-only, persisted-user-verifier-gated
   one-document model tool loop, bound conversation/task scope, journaled
-  model interactions, automatic revocation.
+  model interactions, automatic revocation. Desktop Reader requests now
+  persist a unique host-minted `ReaderUser` journal event, not just matching
+  user text; queued turns retain exact scope even after later messages.
 - `lu-desktop/src-tauri/src/reader_desktop.rs`: explicit native-picker
   experimental 'Ask Reader' Q&A using the existing supervised tool loop,
   per-turn pinned bytes, real queued generation IDs and cancellation of
@@ -53,7 +55,7 @@ real-model tool call.
 | RDR-02 | Desktop Reader Q&A | Windows build, file dialog, queued chat switch, cancel at tool step, saved final and restart, no synthetic user turns | Opt-in source path in branch; installed-app test open |
 | RDR-03 | PDF completeness | Position/page provenance for real producer PDFs; CMaps/ToUnicode, nested pages, cross-reference/object streams where safe; explicit scanned detection | Partial classic parser only |
 | RDR-04 | Document photo/scanned PDF OCR | Offline, pinned native OCR worker with strict deadlines, page/image budgets and process termination; no implicit system package; cross-platform fixtures | Not implemented |
-| RDR-05 | Progressive reading | Reliable inspect/catalog→section→bounded reads for large input, backpressure, page/range indexes, searchable source anchors, no 200K extracted-character ceiling | First character paging + SHA pinning only |
+| RDR-05 | Progressive reading | Reliable inspect/catalog→section→bounded reads for large input, backpressure, page/range indexes, searchable source anchors, no 200K extracted-character ceiling | Full-source UTF-8/UTF-16 text paging up to 8 MiB implemented; PDF/Office remain limited to 200K extraction, true stream-backed parsing/backpressure open |
 | RDR-06 | Rich workbook/deck scope | XLSX/ODS cell ranges, cached-value/formula distinctions, dates, hidden/merged cells, slide notes/tables/charts and accessible visual references | XLSX range initial; other advanced features open |
 | RDR-07 | Native visual-model evidence | Per-session actual image Q&A probe, backend feature proof, invalidate evidence on model/projector/backend/session changes | Policy implemented, live probe not wired |
 | RDR-08 | Parser containment | Host-owned sandbox worker for risky PDF/Office/OCR parsing, hard CPU/memory budgets, worker kill/recovery, hostile documents and fuzzing | In-process bounded adapters; worker isolation open |
@@ -89,11 +91,14 @@ not a reason to block a useful alpha.
    bounded initial excerpt into the chat draft. No model filesystem grant.
 2. Ask Reader: operator chooses exactly one file **for this turn**.
    The original path never enters the model tool schema; Lu pins an immutable
-   in-memory copy, verifies the persisted current human message, opens only
+   in-memory copy, verifies the exact host-minted ID and text of its durable
+   `ReaderUser` event (not merely the most recent matching prompt), opens only
    `lu.reader.read` with `ReadWorkspace`, journals every action and
    automatically revokes on completion/failure/cancellation.
-3. `inspect_only` returns metadata without source text. A subsequent
-   `offset_chars` request can pin `expected_source_sha256` to reject
+3. `inspect_only` returns metadata without source text. For text formats,
+   `offset_chars` now pages the full admitted source up to 8 MiB without the
+   previous 200K-character cutoff; PDF/Office still have bounded adapters.
+   A subsequent `offset_chars` request can pin `expected_source_sha256` to reject
    changed source revisions. `selector` accepts `sheet:Name`,
    `range:Sales!A1:D50` (XLSX), `slide:2` and `page:3` on formats
    supporting those selections.
