@@ -45,6 +45,15 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 - Acceptance record: [R3.4 multi-hunk and envelope plan](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md).
 - CI: [R3.4 run 42053180326](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053180326) **PASSED** (42 Rust tests, 13 frontend tests, Windows Tauri compile). [Windows unsigned release 42053262838](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053262838) **PASSED**; executable and ZIP checksums in [R3.4 evidence](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md). **User R3.4 desktop multi-hunk/save/conflict smoke accepted (2026-11-05)**.
 
+## R3.5 candidate — IDE-owned proposal inbox and explicit staging
+
+- Implemented in `host/src/inbox.rs`, `host/tests/inbox.rs`, `app/src-tauri/src/lib.rs`, and `app/web/main.jsx`: bounded **16-proposal in-memory queue** for strict untrusted R3.4 JSON envelopes.
+- The new Proposals screen imports and reviews full diffs. A human can approve **for staging only**, reject or dismiss; no action writes project files. Approvals are digest-bound, non-replayable, and revalidate every source revision before approval.
+- **Stage in editor** is a separate explicit action requiring an approved current proposal. It rechecks all file revisions, confirms before replacing dirty tabs and loads proposed text into CodeMirror **unsaved editor drafts**. Only the existing human **Save** action writes disk bytes, one file at a time.
+- The entire inbox is memory-only and disappears on restart; no untrusted proposal data goes into the project catalog. The `claimedProducer` field remains unverified and no Lu bridge exists.
+- Tests include import/review, stale source, wrong digest, duplicate decision, incomplete preview, rejected staging, approved staging without writes, and volatile reset. Details and Windows manual acceptance: [R3.5 proposal inbox](docs/IDE_07_R35_PROPOSAL_INBOX.md).
+- **R3.5 native CI and Windows interactive acceptance must be checked against the exact new SHA; do not inherit R3.4 smoke results.** All builds remain standalone; Lu Core unchanged.
+
 ## Source map
 
 | Path | Purpose |
@@ -58,6 +67,7 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 | `ide/host/src/editor.rs` | Revision-checked temporary-file and rename save |
 | `ide/host/src/review.rs` | Bounded non-mutating multi-hunk change review |
 | `ide/host/src/proposal.rs` | Strict data-only, unauthenticated proposal envelope validation and preview |
+| `ide/host/src/inbox.rs` | Volatile human-review inbox with digest-bound approval and data-only staging |
 | `ide/sandbox` | Separate experimental Bubblewrap native probes; not wired to IDE execution |
 | `ide/docs/IDE_WORKSPACE_DESIGN.md` | Canonical eight-stage implementation plan |
 | `ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md` | Separate desktop and optional authenticated Lu bridge |
@@ -81,7 +91,7 @@ Desktop Tauri uses Rust 1.90+, native host suite supports Rust 1.88+. The Window
 
 ## IMPORTANT open gates
 
-1. **R3.3 and R3.4 Windows GUI smoke gates closed.** R3.4 genuine multi-hunk review, reviewed save and conflict are screenshot-verified. Remaining manual cases: cancel without save, disk-byte evidence, large-review safeguard on this build, and adversarial filesystem tests. Next development should advance bounded IDE-owned proposal review/authorization, while keeping the Lu bridge absent and the IDE standalone.
+1. **R3.3/R3.4 Windows review smoke gates closed; R3.5 inbox implemented, awaiting exact native CI and user acceptance.** Verify manual Import → Review → Approve → Stage (unsaved) → explicit Save. Confirm rejection, stale source, review truncation, and restart behavior. Full automatic Lu application remains unauthorized.
 2. Native file-save hardening: root identity and Windows reparse attacks, ACL/owner fidelity, external-writer race across final compare/rename, power-loss injection, crash recovery of unsaved drafts, full diff accuracy.
 3. Task 2 **OS sandbox**: initial Linux fixed probes passed, but arbitrary executable workers remain disallowed until CPU/RAM/PID quotas, process-tree cancellation, syscall/filesystem controls and **Windows native containment** pass.
 4. Task 3 editor completion: search/replace, split views, accessible keyboard navigation, large tree filtering and file watchers.
