@@ -1,0 +1,10 @@
+[package]
+name = "lu-ide-linux-sandbox"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+publish = false
+description = "Fail-closed Linux sandbox admission and adversarial probes for Lu IDE"
+
+[dependencies]
