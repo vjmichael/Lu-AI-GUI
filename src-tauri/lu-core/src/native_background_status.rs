@@ -36,6 +36,7 @@ fn state_name(state:TaskState)->&'static str{
         TaskState::Pending=>"PENDING",TaskState::Running=>"RUNNING",
         TaskState::Paused=>"PAUSED",TaskState::Completed=>"COMPLETED",
         TaskState::Failed=>"FAILED",TaskState::Interrupted=>"INTERRUPTED",
+        TaskState::Cancelled=>"CANCELLED",
     }
 }
 fn valid_id(id:&str)->bool{
