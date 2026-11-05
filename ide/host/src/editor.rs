@@ -8,7 +8,9 @@ use std::io::{Read, Write};
 use cap_std::fs::{Dir, OpenOptions};
 
 use crate::{
-    browser::{descend, revision_for, validate_relative, BrowserError, TextPreview, MAX_TEXT_BYTES},
+    browser::{
+        descend, revision_for, validate_relative, BrowserError, TextPreview, MAX_TEXT_BYTES,
+    },
     fresh_project_id, IdeWorkspaceRegistry,
 };
 
@@ -21,7 +23,10 @@ fn read_existing(parent: &Dir, leaf: &str) -> Result<Vec<u8>, BrowserError> {
         return Err(BrowserError::TooLarge);
     }
     let mut bytes = Vec::with_capacity(meta.len() as usize);
-    parent.open(leaf)?.take(MAX_TEXT_BYTES + 1).read_to_end(&mut bytes)?;
+    parent
+        .open(leaf)?
+        .take(MAX_TEXT_BYTES + 1)
+        .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_TEXT_BYTES {
         return Err(BrowserError::TooLarge);
     }
@@ -65,7 +70,10 @@ impl IdeWorkspaceRegistry {
 
         // Serialize saves in this standalone process. Other programs may edit
         // the same project; protect against those edits by comparing revisions.
-        let _save = self.save_lock.lock().map_err(|_| BrowserError::HostUnavailable)?;
+        let _save = self
+            .save_lock
+            .lock()
+            .map_err(|_| BrowserError::HostUnavailable)?;
         let mut parts = validate_relative(relative_path, false)?;
         let leaf = parts.pop().ok_or(BrowserError::InvalidPath)?;
         let base = self.source_capability(project_id)?;
