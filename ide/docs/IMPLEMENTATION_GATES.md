@@ -7,7 +7,7 @@ The project tracks **eight implementation tasks**, not ten competing roadmap tas
 
 | Canonical task | Related engineering gates | Required verification |
 | --- | --- | --- |
-| 1. Rust workspace host + Protobuf interface | IDE-01B | Authenticated open/close/reopen, opaque IDs, scoped root access, lifecycle/cancel, restart |
+| 1. Standalone Rust host + Protobuf lifecycle | IDE-01B | Independent Tauri app and host; OS-native picker, opaque IDs, no Lu dependency, open/close/reopen and persistence, Linux/Windows compile and native lifecycle tests |
 | 2. Linux sandbox and real execution tests | IDE-07 (Linux first; Windows parity later) | Actual hostile-worker file/secret/network/resource tests; fail-closed; no automatic execution |
 | 3. Project explorer and code editor | IDE-02 | Tabs/splits, undo/redo, search, diff, reliable save/recovery, accessibility |
 | 4. LSP, build/test and debugger integration | IDE-03, IDE-06 | Sandboxed language server, build/test worker and DAP lifecycle; stream/cancel/recover |
@@ -21,3 +21,5 @@ The project tracks **eight implementation tasks**, not ten competing roadmap tas
 **Dependency rule:** Do not accept executable package installs, build/test sessions, or executable LSP/DAP adapters before task 2's native isolation gates. Windows release claims remain blocked until real Windows security parity tests are complete.
 
 **Progress discipline:** Track designed, prototype, compiled, unit-tested, native-tested, and accepted separately. A passing mock is not a passing sandbox; branch isolation is not process isolation.
+
+**Architectural change:** [ADR-0001](ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md) makes Lu IDE a standalone application. Lu's optional bridge must not be treated as a required startup dependency or a shortcut around IDE security.
