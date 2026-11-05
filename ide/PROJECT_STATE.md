@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`  
-**Current source validation:** [Standalone IDE CI 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) queued at last check for exact source commit `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`. **Full native acceptance is not established**; earlier runs were superseded.
+**Last inspected implementation source SHA:** `b39c626752e84ccc65f876283bc8b5ec3bd6c505`  
+**Current source validation:** [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605): Windows native host tests and Tauri check **passed** at last inspection; Linux/frontend still queued. Older [Windows 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) **failed** E0505 in Git test and has been repaired. Full matrix remains unverified.
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -16,7 +16,7 @@
 | R3.5 proposal inbox and editor-only staging | Implemented | Earlier native matrix passed; see [R3.5](docs/IDE_07_R35_PROPOSAL_INBOX.md) | User reported working staging flow; full hostile gates open |
 | R3.6 success banner, R3.7 Find in File | Implemented | [Source CI 42069988384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42069988384) passed for R3.7 SHA `eb0aefd` | New GUI acceptance still open |
 | A1 saved-file source spans, Copy Source Reference | Implemented | [CI 42075298457](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42075298457) Linux/frontend/Windows passed for SHA `467775e` | New clipboard UX still open |
-| **A2 typed Semantic Capability Registry** | **Implemented**: 20 real host operations, JSON Schema v2, self-contained nested definitions, native-argument parity tests, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
+| **A2 typed Semantic Capability Registry** | **Implemented**: 21 real host operations, JSON Schema v2, self-contained nested definitions, native-argument parity tests, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | **A3 Development Ledger and Context Read Model** | **Initial runtime implemented**: host app-profile JSONL event history, bounded project context and Continuity UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | A3 bounded local artifact and toolchain-candidate inventory | **Implemented in source** | CI on latest source pending | Installed acceptance open |
 | A3 persistent snapshot and compare | **Implemented in source** | Native regression fixtures added; CI pending | Installed acceptance open |
@@ -27,8 +27,16 @@
 ## A2 — Typed contracts actually implemented
 
 - **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
-- Host-created, versioned descriptors for **20 existing** project, source, review, save, proposal, continuity, inventory and Git operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
+- Host-created, versioned descriptors for **21 existing** project, source, review, save, proposal, continuity, inventory and Git/GitHub operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
+
+## A3 live GitHub evidence and native Git CI repair
+
+- `host/src/github_live.rs` provides an explicit read-only check against public GitHub origin HEAD, exposed through typed `git.compareLive`, Tauri `ide_compare_live_github`, and a human **Check GitHub** button. The catalog contains **21 actual native operations**.
+- Origin is syntactically restricted to `github.com`, with fixed `https://api.github.com` REST, no redirects, credentials, shell commands or Git mutation. TLS query has short timeouts and a 48 KiB response bound.
+- Separately reports time-stamped GitHub branch SHA, local HEAD, stored tracking SHA, local dirty/untracked status and **SHA equality or difference without assuming ancestry**. Private/rate-limited/unavailable GitHub remains unverified; no automatic request or Lu connection.
+- CI [42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) exposed E0505 dropping a Git repository before a borrowed Git tree during test teardown. Fixed by releasing the tree first, in source `b39c6267`.
+- CI [42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605): **Windows host and Tauri checks passed**; Linux/frontend queued at last inspection. No physical installed Windows UI acceptance or local user filesystem inspection.
 
 ## A3 native Git worktree reader — implementation committed, CI pending
 

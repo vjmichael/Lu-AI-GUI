@@ -2,6 +2,11 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Live GitHub comparison and native Git CI repair
+- Implemented typed read-only public GitHub branch comparison and explicit Source control Check GitHub action. Compares local HEAD, locally stored tracking SHA, and time-stamped remote branch SHA separately; does not infer ancestry or execute Git, use credentials, or connect Lu.
+- Fixed a genuine Windows Rust E0505 fixture lifetime failure in [42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) by releasing the borrowed Git tree before the repository.
+- Source `b39c6267`; [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605) Windows host/native desktop checks passed; Linux and frontend queued at last inspection. No installed Windows acceptance.
+
 ## 2026-11-05 — Git status native fixture stabilization
 - Changed tracked-file test fixture to have a different byte length after editing, preventing false negatives from timestamp/stat-cache resolution. This is a regression reliability change, not a new runtime feature.
 - Source `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`; [CI 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) queued at last inspection. No latest exact-SHA CI conclusion or installed Windows smoke proven.

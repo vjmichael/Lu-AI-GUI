@@ -27,6 +27,12 @@ Source control is now a real sidebar section using typed `git.status` and native
 
 Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
 
+## A3 live GitHub evidence and native CI repair
+
+New `host/src/github_live.rs`, typed `git.compareLive`, and explicit **Check GitHub** UI compare observed public GitHub origin branch head against local HEAD and the locally stored tracking ref. It is a bounded, unauthenticated, fixed-origin, read-only HTTPS request; no automatic network call, Git mutation or Lu connection. Different commits do not establish ancestry. Private repositories remain unsupported without separate explicit authorization.
+
+Real Windows CI E0505 from [42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) was repaired by dropping the Git fixture's borrowed tree before repo. [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605) Windows host tests + Tauri check passed, Linux/frontend queued at last inspection. **Full gate and installed Windows acceptance remain open.**
+
 ## A3 Git status host reader (new source, unverified)
 
 `host/src/git_status.rs` uses read-only libgit2 for real local dirty/staged/untracked changes, restricted to exact registered project root and separately labeled locally stored upstream. It neither calls Git CLI nor contacts GitHub. The Continuity UI and JSON Schema now carry the local status; native Git fixture tests exist. CI [42127100529](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127100529) pending; no execution/installer/user GUI gate passed for this change.
