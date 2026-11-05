@@ -1,6 +1,6 @@
 # Lu Core — Reader Tool and Native Vision Capability Routing
 
-Status: **Design accepted; first bounded-text and vision-routing primitives implemented; format adapters and native-tool registration pending.**
+Status: **In progress: bounded text Reader with typed model-facing tool registration is implemented in Lu Core; host runtime admission and PDF/DOCX/OCR adapters are pending.**
 
 ## Decision
 
@@ -30,7 +30,7 @@ reasoning.
 
 The initial `lu-core::native_reader` module deliberately refuses PDF, DOCX,
 images and unknown types. It handles bounded text and records whether output
-was truncated. **It is not yet registered as a model-callable native tool.**
+was truncated. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
 MIME/signature validation and host-authorized file handles belong in the
 admission layer; filename extensions alone are insufficient.
 
@@ -88,15 +88,18 @@ as automatically detected.
 
 1. Reader text kernel, format classification, binary refusal, byte and
    output bounds, UTF-8/UTF-16 tests. **Implemented in source.**
-2. Secure DOCX extraction including headers, tables and tracked edits,
+2. Typed Protobuf Reader invocation, host workspace-relative root capability,
+   deny-by-default authorization boundary, catalog registration and rejection
+   tests. **Implemented in Lu Core; desktop host integration pending.**
+3. Secure DOCX extraction including headers, tables and tracked edits,
    with archive limits, tests and source anchors.
-3. PDF selectable-text extraction with page boundaries; scanned page
+4. PDF selectable-text extraction with page boundaries; scanned page
    detection, bounded image conversion and OCR worker.
-4. Reader tool registration, typed Protobuf schemas, per-turn host grants,
+5. Install Reader in the desktop tool catalog with actual per-turn grants,
    chunk paging, provenance and user-facing file selection.
-5. Vision session probe and backend capability attestation, per-model
+6. Vision session probe and backend capability attestation, per-model
    invalidation and native-vision-first routing integration.
-6. Cross-format fixture tests, malicious/oversized documents, Windows/Linux
+7. Cross-format fixture tests, malicious/oversized documents, Windows/Linux
    process isolation, installed desktop acceptance.
 
 ## Candidate libraries (research only, not integrated)
