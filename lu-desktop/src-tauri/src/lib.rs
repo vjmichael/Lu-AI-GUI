@@ -1325,10 +1325,14 @@ async fn lu_generate_browser(
                         return Err("Browser research repeated a call without progress".into());
                     }
                     // Obtain observation with a task/turn authorization check.
+                    // Do not treat a model-produced call ID as the journal
+                    // identity. The host mints a unique per-call correlation
+                    // ID even if the model repeats its own ID in later rounds.
+                    let host_call_id=next_id("browser-call-");
                     let result=tauri::async_runtime::block_on(
                         dispatch_authenticated_browser_model_call(
                             Arc::clone(&state),&chat_id,&gid,
-                            &call.tool_name,&call.call_id,&call.arguments_json
+                            &call.tool_name,&host_call_id,&call.arguments_json
                         )
                     )?;
                     let json=serde_json::to_string(&result)
@@ -1337,7 +1341,7 @@ async fn lu_generate_browser(
                     let snippet:String=json.chars().take(2300).collect();
                     let label=format!("Browser operation {}: {}",round+1,snippet);
                     state.chats.append_browser_observation(
-                        &chat_id,&gid,&call.call_id,&call.tool_name,&label
+                        &chat_id,&gid,&host_call_id,&call.tool_name,&label
                     )?;
                     observed.push(label);
                     if observed.len()>8{
