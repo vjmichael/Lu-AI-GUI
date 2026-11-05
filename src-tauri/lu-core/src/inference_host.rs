@@ -386,6 +386,37 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn unsupported_browser_backend_fails_without_corrupting_engine_state(){
+        let root=std::env::temp_dir().join(format!("lu-browser-host-{}",std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut file=fs::File::create(root.join("test.gguf")).unwrap();
+        file.write_all(b"GGUF").unwrap();
+        file.write_all(&3u32.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(file);
+        let mut admission=ModelAdmissionManager::new();
+        admission.admit(&root,"test.gguf").unwrap();
+        let mut host=InferenceHost::new(FakeBackend{loaded:false});
+        host.load(admission.current().unwrap()).unwrap();
+        let request=GenerationRequest{
+            history:Vec::new(),prompt:"Research this question".into(),
+            max_new_tokens:48,
+        };
+        let refused=host.generate_browser_function_calls(
+            request.clone(),&[],Cancellation::default()
+        );
+        assert!(matches!(refused,Err(EngineError::Backend(_))));
+        assert_eq!(host.phase(),EnginePhase::Ready);
+        let cancel=Cancellation::default();
+        cancel.cancel();
+        assert_eq!(host.generate_browser_function_calls(request,&[],cancel),
+            Err(EngineError::Cancelled));
+        assert_eq!(host.phase(),EnginePhase::Ready);
+        host.unload().unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn pre_cancelled_generation_does_not_enter_backend() {
         let cancel = Cancellation::default();
         cancel.cancel();
