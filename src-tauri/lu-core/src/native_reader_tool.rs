@@ -316,7 +316,7 @@ fn register_reader_source(
             "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS},
             "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS},
             "inspect_only":{"type":"boolean","description":"Return bounded document format and extraction size without text; then page with offset_chars"},
-            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, slide:2, or page:3; inspect/read is scoped to that section"},
+            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, range:Revenue!A1:D50, slide:2 or page:3; limits extraction to the chosen section"},
             "expected_source_sha256":{"type":"string","description":"Optional digest from prior Reader response; refuses changed files between paged reads"}
         },"required":["path"],"additionalProperties":false}),
         codec:Arc::new(ReaderCodec),
