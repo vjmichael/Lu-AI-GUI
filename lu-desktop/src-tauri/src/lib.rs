@@ -6,6 +6,8 @@ mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
 mod prompt_context;
+mod reader_desktop;
+use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
@@ -167,6 +169,7 @@ struct DesktopState {
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
+    reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
@@ -465,6 +468,7 @@ impl DesktopState {
         Ok(Self {
             background_processes,
             background_tasks,
+            reader_generations:Mutex::new(HashMap::new()),
             models_dir,
             catalog_path,
             chats: ChatStore::open(&root)?,
@@ -821,19 +825,36 @@ fn lu_cancel(
 ) -> Result<(), String> {
     // A queued job is canceled in place. It must never cancel the distinct
     // generation currently executing on the single model session.
+    let reader=state.reader_generations.lock()
+        .map_err(|_|"Reader cancellation state unavailable")?
+        .get(&generation_id).cloned();
     match state.generation_queue.cancel(&session_id, &generation_id)? {
-        CancelState::Queued => Ok(()),
+        CancelState::Queued => {
+            if let Some(reader)=reader{reader.cancellation.cancel();}
+            Ok(())
+        },
         CancelState::Active => {
-            match state
-                .supervisor
-                .cancel(&session_id, &generation_id, &next_id("req-"))
-            {
-                Ok(()) | Err(SupervisorError::WrongGeneration) => {
-                    // A narrow pre-reservation window: ticket's cancellation bit
-                    // is checked again after the supervisor reserves its turn.
-                    Ok(())
+            if let Some(reader)=reader{
+                if reader.session_id!=session_id{
+                    return Err("Reader session ownership changed".into())
                 }
-                Err(error) => Err(format!("cancel: {error:?}")),
+                reader.cancellation.cancel();
+                let step=reader.current_step.lock()
+                    .map_err(|_|"Reader active step unavailable")?.clone();
+                if let Some(current)=step{
+                    match state.supervisor.cancel(&session_id,&current,&next_id("req-")){
+                        Ok(())|Err(SupervisorError::WrongGeneration)=>Ok(()),
+                        Err(error)=>Err(format!("cancel Reader: {error:?}")),
+                    }
+                }else{Ok(())}
+            }else{
+                match state
+                    .supervisor
+                    .cancel(&session_id, &generation_id, &next_id("req-"))
+                {
+                    Ok(()) | Err(SupervisorError::WrongGeneration) => Ok(()),
+                    Err(error) => Err(format!("cancel: {error:?}")),
+                }
             }
         }
     }
@@ -1224,36 +1245,8 @@ struct ReaderDocumentView{
 async fn lu_reader_pick_document(app:AppHandle)
     ->Result<Option<ReaderDocumentView>,String>{
     tauri::async_runtime::spawn_blocking(move||{
-        let selected=app.dialog().file()
-            .add_filter("Reader documents",&[
-                "docx","xlsx","pptx","ods","odp","pdf","txt","md","markdown","csv","tsv","json",
-                "jsonl","log","py","rs","js","jsx","ts","tsx",
-                "xml","html","htm","yaml","yml","toml","ini","sql",
-            ]).blocking_pick_file();
-        let Some(file)=selected else{return Ok(None)};
-        let path=file.into_path().map_err(|_|"Invalid document picker result")?;
-        let meta=fs::symlink_metadata(&path)
-            .map_err(|_|"Cannot inspect selected document")?;
-        const MAX_PICK_BYTES:u64=8*1024*1024;
-        if !meta.file_type().is_file()||meta.len()==0
-            ||meta.len()>MAX_PICK_BYTES{
-            return Err("Selected document must be a regular file up to 8 MB".into());
-        }
-        #[cfg(windows)]{
-            use std::os::windows::fs::MetadataExt;
-            if meta.file_attributes()&0x400!=0{
-                return Err("Document reparse points are not supported".into());
-            }
-        }
-        let name=path.file_name().and_then(|n|n.to_str())
-            .ok_or("Invalid document filename")?.to_owned();
-        let mut input=File::open(&path).map_err(|_|"Cannot open selected document")?;
-        let mut bytes=Vec::new();
-        std::io::Read::by_ref(&mut input).take(MAX_PICK_BYTES+1).read_to_end(&mut bytes)
-            .map_err(|_|"Cannot read selected document")?;
-        if bytes.len() as u64>MAX_PICK_BYTES{
-            return Err("Document size changed during reading".into());
-        }
+        let Some((name,bytes))=reader_desktop::pick_reader_bytes(&app,8*1024*1024)?
+            else{return Ok(None)};
         let reader=lu_core::native_reader::read_text_bytes(&name,&bytes,6_000)
             .map_err(|e|format!("Reader cannot extract this document: {e:?}"))?;
         Ok(Some(ReaderDocumentView{
@@ -1423,6 +1416,7 @@ pub fn run() {
             lu_chats,
             lu_background_tasks,
             lu_reader_pick_document,
+            lu_reader_ask_document,
             lu_background_auto_continue,
             lu_background_scan_file,
             lu_background_cancel,
