@@ -34,6 +34,7 @@ function App() {
   const [backgroundTasks,setBackgroundTasks] = useState([]);
   const [backgroundError,setBackgroundError] = useState('');
   const [backgroundFilter,setBackgroundFilter] = useState('active');
+  const [backgroundTerminalNotice,setBackgroundTerminalNotice] = useState(null);
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [error, setError] = useState('');
@@ -100,7 +101,7 @@ function App() {
     setBackgroundError('');
     try {
       // Host-owned OS file dialog and pinned Lu worker, never model inference.
-      const taskId=await invoke('lu_background_scan_file');
+      const taskId=await invoke('lu_background_scan_file',{chatId:chatId||null});
       if (taskId) {
         setBackgroundFilter('active');
         await refreshBackgroundTasks();
@@ -175,7 +176,8 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {},
+        stopBackground = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -194,7 +196,14 @@ function App() {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
     }).then(fn => { if (alive) stopToken = fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); };
+    listen('lu-background-terminal', e => {
+      if (!alive || !e.payload?.taskId) return;
+      // This event comes from the native host's persisted terminal ledger.
+      // No AI generation or permission grant is performed by the WebView.
+      setBackgroundTerminalNotice(e.payload);
+      if (backgroundPaneOpen) void refreshBackgroundTasks();
+    }).then(fn => { if (alive) stopBackground=fn; else fn(); });
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopBackground(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -656,6 +665,13 @@ function App() {
           </button>
           <small>Native worker · file integrity scan (SHA-256), not video content analysis</small>
         </div>
+        {backgroundTerminalNotice && <div className="backgroundTerminalBanner" role="status">
+          <strong>Task ended: {backgroundTerminalNotice.state}</strong>
+          <span>{backgroundTerminalNotice.taskId}</span>
+          <button type="button" className="quietIcon"
+            aria-label="Dismiss terminal notification"
+            onClick={()=>setBackgroundTerminalNotice(null)}>×</button>
+        </div>}
         <div className="backgroundPaneToolbar">
           <div className="backgroundPaneFilters" aria-label="Task history filter">
             <button className={backgroundFilter==='active'?'selected':''}
