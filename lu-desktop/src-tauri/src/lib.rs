@@ -1672,22 +1672,23 @@ async fn run_authenticated_browser_model_turn(
 /// The trusted host chooses an authenticated USER turn from the journal;
 /// a web page or model cannot forge one with a message string.
 #[tauri::command]
-async fn lu_browser_start(
+async fn start_browser_for_turn(
     app:AppHandle,
-    state:State<'_,Arc<DesktopState>>,
+    state:Arc<DesktopState>,
     chat_id:String,
     origin:String,
+    user_turn_id:String,
 )->Result<native_browser_host::BrowserRuntimeView,String>{
     use lu_core::{
         browser_authorized_execution::{BrowserOriginScope,BROWSER_READ_TOOL},
         conversation_authority::{AuthorizedCapability,TaskAuthority},
         contracts::ToolEffect,
     };
-    let state=Arc::clone(state.inner());
     let scope=BrowserOriginScope::from_host_grant(vec![origin])
         .map_err(|_|"Invalid or non-public HTTPS browser origin")?;
-    let user_turn_id=state.chats.latest_authenticated_user_turn_id(&chat_id)
-        .ok_or("No authenticated user turn in this conversation")?;
+    if state.chats.trusted_user_turn_text(&chat_id,&user_turn_id).is_none(){
+        return Err("Browser task must bind a persisted authenticated user turn".into());
+    }
     // Before presenting approval, check the actual bundled runtime.
     state.browser_runtime.require_launch_ready()?;
     let approved_origins=scope.origins();
@@ -1794,6 +1795,22 @@ async fn lu_browser_start(
         return Err("Browser startup was cancelled by user".into());
     }
     state.browser_runtime.status(&state.browser_preferences)
+}
+
+/// Legacy manual launch remains scoped to the latest real USER turn.
+/// Newly submitted research must call start_browser_for_turn with its OWN ID.
+#[tauri::command]
+async fn lu_browser_start(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    origin:String,
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let user_turn_id=state.chats.latest_authenticated_user_turn_id(&chat_id)
+        .ok_or("No authenticated user turn in this conversation")?;
+    start_browser_for_turn(
+        app,Arc::clone(state.inner()),chat_id,origin,user_turn_id
+    ).await
 }
 
 #[tauri::command]
