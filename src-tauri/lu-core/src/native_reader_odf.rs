@@ -198,7 +198,7 @@ mod tests{
             w32(&mut cd,crc);w32(&mut cd,payload.len() as u32);
             w32(&mut cd,payload.len() as u32);
             w16(&mut cd,name.len() as u16);
-            for _ in 0..5{w16(&mut cd,0)}
+            for _ in 0..4{w16(&mut cd,0)}
             w32(&mut cd,0);w32(&mut cd,offset);cd.extend(name.as_bytes());
         }
         let offset=data.len() as u32;
