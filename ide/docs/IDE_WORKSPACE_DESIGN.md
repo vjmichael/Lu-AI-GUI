@@ -141,7 +141,7 @@ This **eight-stage sequence is the official Lu IDE task list**. Existing IDE-01B
 | **4. LSP, build/test and debugger integration** | Not started | LSP/DAP adapters; terminal/task runner; streaming diagnostics; run configs | Representative Python/C++/Rust/JS projects; bounded build/test/debug workers; cancellation and crash cleanup |
 | **5. Master package manager** | Not started | uv and Python envs; vcpkg/Conan and C/C++ toolchains; Cargo, JS, Go/JVM/.NET adapters in staged rollout | Detect/preview/approve/apply/verify; lockfiles; no install-on-open; blocked malicious hooks; offline/recovery scenarios |
 | **6. Advanced Git and GitHub workflows** | Not started | Worktrees, staging, history, rebase/cherry-pick/conflicts, PR/CI, remote credentials | Rehearsal fixtures; destructive-action confirmation; recoverable conflicts; no ambient secret leaks |
-| **7. Optional Lu AI coding integration** | Not started | Authenticated out-of-process bridge, agent plans, diff proposals, independent IDE grants, test feedback and durable task recovery | End-to-end code change with review, verified tests, prompt-injection rejection and cancel/restart recovery |
+| **7. Optional Lu AI coding integration** | Pre-bridge review foundation implemented; authenticated Lu connection not started | Authenticated out-of-process bridge, agent plans, diff proposals, independent IDE grants, test feedback and durable task recovery | End-to-end code change with review, verified tests, prompt-injection rejection and cancel/restart recovery |
 | **8. Lu self-development environment** | Not started | Disposable Lu Dev instance/worktree, isolated build/test, version comparison and human-approved update | Stable Lu unaffected by failed build; terminate/rollback; merge proposal only after test evidence |
 
 **Execution order:** 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8. Some research or read-only prototyping may overlap, but **no package/build/test/executable extension feature is accepted before Stage 2's minimal verified containment**. Stage 8 does not automatically authorize self-modification of the running Lu binary. Windows native sandbox parity, installer/upgrade tests and release hardening are mandatory cross-stage acceptance and final release gates, not an additional numbered task.
@@ -162,6 +162,7 @@ For each task: (a) design/API and threat analysis; (b) implement on dedicated ID
 Internal:
 - [Standalone app and optional Lu bridge — ADR-0001](ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md)
 - [Distinct native chat and workspace conversation experiences — ADR-0002](ADR_0002_WORKSPACE_CHAT_BOUNDARIES.md)
+- [R3.3 reviewed changes and future Lu coding proposal boundary](IDE_07_PROPOSAL_REVIEW_FOUNDATION.md)
 - [IDE architecture](ARCHITECTURE.md)
 - [Package and toolchain orchestrator](PACKAGE_ORCHESTRATOR.md)
 - [Execution security model](SECURITY_MODEL.md)
