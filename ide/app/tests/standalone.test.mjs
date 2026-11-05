@@ -23,11 +23,15 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   assert.ok(calls.includes('ide_review_source_change'));
   assert.ok(calls.includes('ide_save_source_file'));
   assert.ok(calls.includes('ide_unregister_project'));
+  for(const command of ['ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
+    'ide_decide_proposal', 'ide_discard_proposal']) assert.ok(calls.includes(command), command);
 
   assert.deepEqual([...new Set(calls)].sort(), [
     'ide_choose_project', 'ide_close_project', 'ide_list_projects',
     'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
-    'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project'
+    'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
+    'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
+    'ide_decide_proposal', 'ide_discard_proposal'
   ]);
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -202,4 +206,29 @@ test('successful source saves display amber confirmation without recoloring conf
   assert.match(css, /\.saveConfirmation\s*\{[^}]*color:\s*#ffe48c/);
   assert.match(css, /\.saveConfirmation\s*\{[^}]*background:\s*#332b17/);
   assert.match(css, /\.errorMsg\s*\{[^}]*background:\s*#4c2532/);
+});
+
+test('R3.5 standalone proposal inbox requires explicit review and never applies edits', () => {
+  const web = read('../web/main.jsx');
+  const native = read('../src-tauri/src/lib.rs');
+  const inbox = read('../../host/src/inbox.rs');
+  const css = read('../web/styles.css');
+  assert.match(web, /id: 'proposals'/);
+  assert.match(web, /aria-label="Coding proposal inbox"/);
+  assert.match(web, /ide_import_proposal/);
+  assert.match(web, /ide_review_proposal/);
+  assert.match(web, /ide_decide_proposal/);
+  assert.match(web, /ide_discard_proposal/);
+  assert.match(web, /Approve for staging only/);
+  assert.match(web, /No source files are saved by importing a proposal/);
+  assert.match(web, /It does NOT edit, save, or execute any files/);
+  assert.match(web, /file\.truncated \|\| !file\.countsExact/);
+  assert.match(native, /IdeProposalInbox::default\(\)/);
+  assert.match(native, /fn ide_decide_proposal/);
+  assert.match(inbox, /const MAX_INBOX_ITEMS: usize = 16/);
+  assert.match(inbox, /entry\.status != ReviewStatus::Pending/);
+  assert.match(inbox, /review\.truncated \|\| !review\.counts_exact/);
+  assert.doesNotMatch(inbox, /\.save_source_file\(|std::process::Command|Command::new/);
+  assert.doesNotMatch(native, /fn ide_apply_proposal|fn ide_execute_proposal/);
+  assert.match(css, /\.proposalWorkspace/);
 });
