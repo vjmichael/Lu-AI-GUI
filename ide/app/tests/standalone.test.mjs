@@ -186,6 +186,14 @@ test('future Lu proposal envelope is untrusted data, never an executable command
   assert.doesNotMatch(native, /fn ide_apply_proposal|fn ide_execute_proposal/);
 });
 
+test('file change conflict messages use readable language but preserve internal error code checks', () => {
+  const web = read('../web/main.jsx');
+  assert.match(web, /includes\('FILE_CHANGED_ON_DISK'\)/);
+  assert.match(web, /File changed on disk\./);
+  assert.doesNotMatch(web, /setProblem\('FILE_CHANGED_ON_DISK:/);
+  assert.doesNotMatch(web, /\? 'FILE_CHANGED_ON_DISK:/);
+});
+
 test('successful source saves display amber confirmation without recoloring conflicts', () => {
   const web = read('../web/main.jsx');
   const css = read('../web/styles.css');
