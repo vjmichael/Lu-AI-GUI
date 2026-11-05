@@ -145,6 +145,10 @@ impl TaskStore {
              CREATE TABLE IF NOT EXISTS lu_task_notice_ack(
                event_sequence INTEGER PRIMARY KEY NOT NULL,
                acknowledged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE IF NOT EXISTS lu_task_auto_continue (
+               workspace_id TEXT PRIMARY KEY NOT NULL,
+               enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
              );",
         )?;
         // Existing desktop profiles may have the older CHECK schema.
@@ -399,6 +403,37 @@ impl TaskStore {
         Ok(events)
     }
 
+    /// Native operator opt-in; never infer permission from a model message.
+    /// This preference never grants a tool capability.
+    pub fn set_auto_continue(&self,workspace_id:&str,enabled:bool)
+        ->Result<(),TaskStoreError>{
+        if workspace_id.len()<3||workspace_id.len()>128
+           ||!workspace_id.starts_with("c-")
+           ||!workspace_id.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'){
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        connection.execute(
+            "INSERT INTO lu_task_auto_continue(workspace_id,enabled) VALUES(?1,?2)
+             ON CONFLICT(workspace_id) DO UPDATE SET enabled=excluded.enabled",
+            params![workspace_id,if enabled{1}else{0}],
+        )?;
+        Ok(())
+    }
+    pub fn auto_continue_enabled(&self,workspace_id:&str)
+        ->Result<bool,TaskStoreError>{
+        if workspace_id.len()<3||workspace_id.len()>128
+           ||!workspace_id.starts_with("c-"){
+            return Ok(false);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let enabled:Option<i64>=connection.query_row(
+            "SELECT enabled FROM lu_task_auto_continue WHERE workspace_id=?1",
+            params![workspace_id],|row|row.get(0),
+        ).optional()?;
+        Ok(enabled==Some(1))
+    }
+
     /// Host-owned durable delivery queue. No workspace selector from a model
     /// is accepted here; the host obtains each notice's workspace from SQLite.
     /// Deliveries are at-least-once until explicitly acknowledged.
@@ -575,6 +610,22 @@ impl TaskStore {
     }
 }
 
+#[cfg(test)]
+mod task_auto_continue_tests {
+    use super::*;
+    #[test]
+    fn disabled_by_default_and_persisted_with_explicit_operator_opt_in(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        assert!(!store.auto_continue_enabled("c-abc").unwrap());
+        store.set_auto_continue("c-abc",true).unwrap();
+        assert!(store.auto_continue_enabled("c-abc").unwrap());
+        assert!(!store.auto_continue_enabled("c-other").unwrap());
+        assert!(!store.auto_continue_enabled("local-media").unwrap());
+        assert!(store.set_auto_continue("local-media",true).is_err());
+        store.set_auto_continue("c-abc",false).unwrap();
+        assert!(!store.auto_continue_enabled("c-abc").unwrap());
+    }
+}
 #[cfg(test)]
 mod terminal_notification_tests{
     use super::*;
