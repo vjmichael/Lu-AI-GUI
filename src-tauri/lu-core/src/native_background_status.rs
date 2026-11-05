@@ -37,6 +37,7 @@ fn state_name(state:TaskState)->&'static str{
         TaskState::Paused=>"PAUSED",TaskState::Completed=>"COMPLETED",
         TaskState::Failed=>"FAILED",TaskState::Interrupted=>"INTERRUPTED",
         TaskState::Cancelled=>"CANCELLED",
+        TaskState::TimedOut=>"TIMED_OUT",
     }
 }
 fn valid_id(id:&str)->bool{
@@ -64,6 +65,8 @@ pub fn host_task_notices_after(
             "COMPLETED"=>"TASK_COMPLETED",
             "FAILED"=>"TASK_FAILED",
             "INTERRUPTED"=>"TASK_INTERRUPTED",
+            "CANCELLED"=>"TASK_CANCELLED",
+            "TIMED_OUT"=>"TASK_TIMED_OUT",
             _=>return None,
         };
         Some(HostTaskNotice{
