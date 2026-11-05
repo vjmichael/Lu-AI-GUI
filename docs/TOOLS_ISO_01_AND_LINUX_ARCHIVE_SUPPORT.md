@@ -4,7 +4,7 @@ Status: DRAFT SOURCE, not installed/accepted.
 
 ## Supported in this development branch
 - The existing native `lu_archive_list` read-only tool accepts host-scoped `.zip` and `.iso` basenames. For ISO, it parses the ISO 9660 primary volume descriptor (`CD001`), validates dual-endian extent/size metadata, and lists bounded regular files/directories without mounting.
-- `native_iso9660::extract_iso_file_new_checked` extracts **one selected regular file** into an **existing, host-selected destination directory**, as a new non-overwriting file. It verifies exact member SHA-256 against the approved preview before publication. First version caps each extracted file at 1 MiB pending a streamed transactional publisher.
+- `native_iso9660::extract_iso_file_new_checked` extracts **one selected regular file** into an **existing, host-selected destination directory**, as a new non-overwriting file. It verifies exact member SHA-256 against the approved preview before publication. First version caps each extracted file at 256 MiB with a bounded streamed, synced staging publisher.
 - `native_iso_extract_tool` adds a dedicated Protobuf request/receipt and strict target/member/digest model codec. `ExactIsoExtractPolicy` must be used with a persisted human-turn `ConversationAuthority`, host `PolicyEngine`, and durable `EffectJournal`. No automatic write grant comes from model output or catalog registration.
 - Native fixtures cover valid ISO listing/extraction, missing members, traversal and malformed PVD refusal, source symlink refusal on Unix, exact approved scope, durable receipt, replay fence and task revocation.
 
@@ -17,7 +17,7 @@ Status: DRAFT SOURCE, not installed/accepted.
 | Format | Core inspect | Core extract | Core create |
 | --- | --- | --- | --- |
 | ZIP (`.zip`) | Source implemented | No | Source implemented, pending integration |
-| ISO 9660 (`.iso`) | New source implemented | New selected-file source, capped at 1 MiB | No |
+| ISO 9660 (`.iso`) | New source implemented | New selected-file source, capped at 256 MiB | No |
 | TAR (`.tar`) | No | No | No |
 | gzip TAR (`.tar.gz`, `.tgz`) | No | No | No |
 | XZ TAR (`.tar.xz`, `.txz`) | No | No | No |
