@@ -493,6 +493,52 @@ mod tests {
         assert!(!err.contains("secret-image-content"));
     }
     #[test]
+    fn actual_authenticated_sse_transport_delivers_fragmented_browser_tool_calls(){
+        let first=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-browser-1","type":"function",
+            "function":{"name":"lu_browser_read",
+                "arguments":"{\\\"operation\\\":\\\"navigate\\\","}
+        }]}}]});
+        let second=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"function":{"arguments":"\\\"url\\\":\\\"https://example.com\\\"}"}
+        }]}}]});
+        let end=serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]});
+        let stream=format!(
+            "data: {}\\n\\ndata: {}\\n\\ndata: {}\\n\\ndata: [DONE]\\n\\n",
+            first,second,end
+        ).replace("\\n","\n");
+        let parts=[&stream.as_bytes()[..31],&stream.as_bytes()[31..]];
+        let (port,handle)=fixture(response(&parts),false);
+        let allowed=std::collections::BTreeSet::from(["lu_browser_read".into()]);
+        let calls=generate_browser_tool_stream_body(
+            port,&"ab".repeat(32),r#"{"stream":true,"tools":[{"type":"function"}]}"#,
+            Duration::from_secs(5),||false,allowed
+        ).unwrap();
+        handle.join().unwrap();
+        assert_eq!(calls.len(),1);
+        assert_eq!(calls[0].tool_name,"lu_browser_read");
+        assert_eq!(calls[0].arguments_json,
+            r#"{"operation":"navigate","url":"https://example.com"}"#);
+    }
+    #[test]
+    fn browser_tool_stream_requires_final_done_frame(){
+        let first=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-browser-1","type":"function",
+            "function":{"name":"lu_browser_read",
+                "arguments":"{\\\"operation\\\":\\\"read\\\"}"}
+        }]}}]});
+        let end=serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]});
+        let stream=format!("data: {}\\n\\ndata: {}\\n\\n",first,end)
+            .replace("\\n","\n");
+        let (port,handle)=fixture(response(&[stream.as_bytes()]),false);
+        let result=generate_browser_tool_stream_body(
+            port,&"ab".repeat(32),"{}",Duration::from_secs(5),||false,
+            std::collections::BTreeSet::from(["lu_browser_read".into()])
+        );
+        handle.join().unwrap();
+        assert!(result.is_err());
+    }
+    #[test]
     fn text_generation_uses_chat_completions_not_raw_completion() {
         let stream = b"data: {\"choices\":[{\"delta\":{\"content\":\"Ready\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n";
         let (port, handle) = fixture(response(&[stream]), false);
