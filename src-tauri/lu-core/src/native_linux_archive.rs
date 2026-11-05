@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 use cap_std::fs::{Dir,OpenOptions};
-use flate2::{read::GzDecoder,write::GzEncoder,Compression};
+use flate2::{read::MultiGzDecoder,write::GzEncoder,Compression};
 use sha2::{Digest,Sha256};
 
 const MAX_ARCHIVE:u64=128*1024*1024;
@@ -204,7 +204,7 @@ fn expand(format:LinuxArchiveFormat,data:&[u8])->Result<Vec<u8>,LinuxArchiveErro
         None=>{if data.len()>MAX_UNPACKED{return Err(LinuxArchiveError::TooLarge)}
             Ok(data.to_vec())},
         Some(LinuxArchiveFormat::Gzip)=>{
-            let mut decoder=GzDecoder::new(data);
+            let mut decoder=MultiGzDecoder::new(data);
             let mut output=Vec::new();
             decoder.take(MAX_UNPACKED as u64+1).read_to_end(&mut output)
                 .map_err(|_|LinuxArchiveError::InvalidEncoding)?;
@@ -523,10 +523,10 @@ fn append_header(
 /// One archive assembled from host-selected existing flat files. The result
 /// is a *new* target, never an overwrite. All inputs are checked and bounded
 /// before staging, no filesystem metadata is imported into archive headers.
-pub fn create_linux_archive_new(
-    root:&Dir,target_name:&str,inputs:&[String],stage_id:&str
-)->Result<LinuxArchiveReceipt,LinuxArchiveError>{
-    if !flat_name(target_name)||!valid_stage(stage_id){return Err(LinuxArchiveError::InvalidName)}
+fn render_linux_archive(
+    root:&Dir,target_name:&str,inputs:&[String]
+)->Result<Vec<u8>,LinuxArchiveError>{
+    if !flat_name(target_name){return Err(LinuxArchiveError::InvalidName)}
     let format=detect_linux_archive(target_name)
         .ok_or(LinuxArchiveError::UnsupportedFormat)?;
     if inputs.is_empty()||inputs.len()>MAX_SOURCE_FILES{
@@ -563,6 +563,30 @@ pub fn create_linux_archive_new(
     }
     let encoded=compress(format,&raw)?;
     if encoded.len()>MAX_ARCHIVE as usize{return Err(LinuxArchiveError::TooLarge)}
+    Ok(encoded)
+}
+/// Compute the exact proposed archive content receipt. This verifies bytes,
+/// but is NOT authority: the trusted host separately binds user/target/grant.
+pub fn preview_linux_archive(
+    root:&Dir,target_name:&str,inputs:&[String],
+)->Result<(u64,String),LinuxArchiveError>{
+    let encoded=render_linux_archive(root,target_name,inputs)?;
+    Ok((encoded.len() as u64,sha(&encoded)))
+}
+pub fn create_linux_archive_new_checked(
+    root:&Dir,target_name:&str,inputs:&[String],stage_id:&str,approved_digest:&str,
+)->Result<LinuxArchiveReceipt,LinuxArchiveError>{
+    if !valid_stage(stage_id)||!digest_valid(approved_digest){
+        return Err(LinuxArchiveError::InvalidName)
+    }
+    let encoded=render_linux_archive(root,target_name,inputs)?;
     let digest=sha(&encoded);
-    publish_new(root,target_name,stage_id,&encoded,&digest,inputs.len())
+    if digest!=approved_digest{return Err(LinuxArchiveError::SourceChanged)}
+    publish_new(root,target_name,stage_id,&encoded,approved_digest,inputs.len())
+}
+pub fn create_linux_archive_new(
+    root:&Dir,target_name:&str,inputs:&[String],stage_id:&str
+)->Result<LinuxArchiveReceipt,LinuxArchiveError>{
+    let (_bytes,digest)=preview_linux_archive(root,target_name,inputs)?;
+    create_linux_archive_new_checked(root,target_name,inputs,stage_id,&digest)
 }
