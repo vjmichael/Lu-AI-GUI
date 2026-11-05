@@ -149,6 +149,17 @@ struct GenerationEvent {
     position: usize,
 }
 
+/// Native host notification, not an AI tool result or an instruction grant.
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct BackgroundTerminalEvent{
+    sequence:i64,
+    task_id:String,
+    chat_id:Option<String>,
+    state:String,
+    progress:u8,
+    detail:String,
+}
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
@@ -452,10 +463,37 @@ impl DesktopState {
         );
         // Host watchdog runs regardless of any loaded model or open pane.
         let supervisor_weak=Arc::downgrade(&background_processes);
-        std::thread::spawn(move||loop {
-            std::thread::sleep(Duration::from_millis(500));
-            let Some(processes)=supervisor_weak.upgrade() else {break;};
-            let _=processes.poll(); // Failure stays visible for reconciliation.
+        let store_weak=Arc::downgrade(&background_tasks);
+        let app_events=app.clone();
+        std::thread::spawn(move||{
+            let mut published=HashSet::<i64>::new();
+            loop {
+                std::thread::sleep(Duration::from_millis(500));
+                let (Some(processes),Some(store))=(
+                    supervisor_weak.upgrade(),store_weak.upgrade()
+                ) else {break;};
+                // Lu, not model inference, observes real workers and posts
+                // terminal events from the durable SQLite notification inbox.
+                let _=processes.poll();
+                if let Ok(events)=store.pending_terminal_notices(128) {
+                    for notice in events {
+                        if published.insert(notice.sequence) {
+                            let conversation=if notice.workspace_id.starts_with("c-"){
+                                Some(notice.workspace_id)
+                            }else{None};
+                            let _=app_events.emit("lu-background-terminal",
+                                BackgroundTerminalEvent{
+                                    sequence:notice.sequence,
+                                    task_id:notice.task_id,
+                                    chat_id:conversation,
+                                    state:format!("{:?}",notice.state).to_uppercase(),
+                                    progress:notice.progress,
+                                    detail:notice.detail,
+                                });
+                        }
+                    }
+                }
+            }
         });
         Ok(Self {
             background_processes,
@@ -1009,8 +1047,16 @@ struct BackgroundTaskView {
 async fn lu_background_scan_file(
     app:AppHandle,
     state:State<'_,Arc<DesktopState>>,
+    chat_id:Option<String>,
 )->Result<Option<String>,String>{
     let processes=Arc::clone(&state.background_processes);
+    let workspace=if let Some(id)=chat_id{
+        if !id.starts_with("c-")||id.len()>128{
+            return Err("Invalid conversation for background task".into());
+        }
+        state.chats.history(&id)?;
+        id
+    }else{"local-media".to_owned()};
     tauri::async_runtime::spawn_blocking(move||{
         let file=app.dialog().file()
             .add_filter("Media", &["mp4","mkv","mov","webm","avi",
@@ -1045,7 +1091,7 @@ async fn lu_background_scan_file(
         }
         let plan=lu_core::native_background_process::TrustedWorkerPlan{
             task_id:next_id("scan-"),
-            workspace_id:"local-media".into(),
+            workspace_id:workspace,
             executable,
             expected_sha256:format!("{:x}",hash.finalize()),
             args:vec!["--lu-file-scan-worker".into(),input.into_os_string()],
