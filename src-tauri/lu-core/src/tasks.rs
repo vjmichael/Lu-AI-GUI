@@ -399,3 +399,41 @@ impl TaskStore {
         }
     }
 }
+
+#[cfg(test)]
+mod dashboard_tests{
+    use super::*;
+    #[test]
+    fn operator_dashboard_is_bounded_and_keeps_private_checkpoints_out(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("finished",Some("video"),Some("/secret/output")).unwrap();
+        store.start("finished").unwrap();
+        store.checkpoint("finished",67,"Analyzing frames",b"secret bytes").unwrap();
+        store.complete("finished").unwrap();
+        store.create("running",Some("audio"),None).unwrap();
+        store.start("running").unwrap();
+        store.checkpoint("running",13,"Decoding audio",b"not for UI").unwrap();
+        let list=store.dashboard(20).unwrap();
+        assert_eq!(list.len(),2);
+        assert_eq!(list[0].task_id,"running");
+        assert_eq!(list[1].task_id,"finished");
+        assert_eq!(list[1].progress,67);
+        assert_eq!(list[0].state,TaskState::Running);
+        assert_eq!(list[1].state,TaskState::Completed);
+        let visible=format!("{list:?}");
+        assert!(!visible.contains("secret bytes"));
+        assert!(!visible.contains("/secret/output"));
+        assert!(store.dashboard(0).is_err());
+        assert!(store.dashboard(201).is_err());
+    }
+    #[test]
+    fn startup_dashboard_never_presents_orphan_running_process_as_live(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("video",Some("research"),None).unwrap();
+        store.start("video").unwrap();
+        assert_eq!(store.reconcile_interrupted().unwrap(),1);
+        let list=store.dashboard(10).unwrap();
+        assert_eq!(list[0].state,TaskState::Interrupted);
+        assert_eq!(store.reconcile_interrupted().unwrap(),0);
+    }
+}
