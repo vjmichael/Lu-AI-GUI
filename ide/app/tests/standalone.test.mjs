@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities'
+    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -296,7 +296,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 16);
+  assert.equal(Object.keys(schemas.operations).length, 17);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -312,4 +312,23 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   assert.doesNotMatch(catalog, /pub result_type:/);
   assert.match(web, /item\.requestSchema/);
   assert.match(web, /item\.resultSchema/);
+});
+
+test('Wave A3 exposes revisioned, read-only continuity with explicitly unknown external state', () => {
+  const native = read('../src-tauri/src/lib.rs');
+  const host = read('../../host/src/continuity.rs');
+  const web = read('../web/main.jsx');
+  const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
+  assert.match(native, /async fn ide_read_project_context/);
+  assert.match(native, /development-ledger\.jsonl/);
+  assert.match(host, /pub fn context\(/);
+  assert.match(host, /fn events\(/);
+  assert.match(host, /"untrusted_project_text"/);
+  assert.match(host, /remote_git_state: "not_inspected"/);
+  assert.match(host, /local_artifacts: "not_inspected"/);
+  assert.match(web, /aria-label="Project continuity"/);
+  assert.match(web, /invoke\('ide_read_project_context'/);
+  assert.equal(schemas.operations['continuity.read'].result.$ref, '#/$defs/ProjectContext');
+  assert.equal(schemas.definitions.ProjectContext.properties.events.items.$ref, '#/$defs/DevelopmentEvent');
+  assert.doesNotMatch(host, /Command::new|std::process::Command/);
 });
