@@ -82,3 +82,14 @@ test('actual browser tool-call path reads persisted USER turn and supervised mod
   assert.ok(host.includes('supervisor.run_reserved_browser_function_calls('));
   assert.ok(host.includes('dispatch_authenticated_browser_model_call('));
 });
+
+test('user Watch/Hide uses the owned Chromium session and not model-facing tools',()=>{
+  assert.ok(host.includes('async fn lu_browser_watch('));
+  assert.ok(host.includes('async fn lu_browser_hide('));
+  assert.ok(host.includes('state.browser_runtime.set_user_visible(visible)?'));
+  assert.ok(ui.includes("lu_browser_watch"));
+  assert.ok(ui.includes("lu_browser_hide"));
+  assert.ok(ui.includes('browserRuntime?.humanVerificationRequired ||'));
+  assert.ok(ui.includes("browserMode === 'always-visible'"));
+  assert.ok(!host.includes('fn lu_browser_window_by_pid('));
+});
