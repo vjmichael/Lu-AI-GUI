@@ -27,7 +27,7 @@
 
 ## Enforcement
 
-Repository policy: a code or workflow PR touching `ide/**` must include a meaningful `ide/CHANGELOG.md` update and refresh `ide/PROJECT_STATE.md` when status changes. CI should reject missing updates on such PRs, excluding ledger-only and purely administrative modifications. A real Git-aware diff gate must compare PR base and head and must not be bypassable by merely editing timestamps. The initial continuity records are **policy adoption**, not proof that the CI diff gate is already enabled.
+Repository policy: a code or workflow PR touching `ide/**` must include a meaningful `ide/CHANGELOG.md` update and refresh `ide/PROJECT_STATE.md` when status changes. CI should reject missing updates on such PRs, excluding ledger-only and purely administrative modifications. A real Git-aware diff gate must compare PR base and head and must not be bypassable by merely editing timestamps. The PR diff gate is implemented in `ide/scripts/check_continuity.py` and `.github/workflows/ide-continuity.yml`, but its first passing run is unverified and branch protection must explicitly require its `continuity` check before merges are actually blocked.
 
 ## Minimal entry template
 
