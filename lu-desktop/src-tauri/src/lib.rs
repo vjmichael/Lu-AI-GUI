@@ -16,6 +16,8 @@ mod rollback_review;
 mod prompt_context;
 mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
+mod workspace_desktop;
+use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue};
@@ -2641,6 +2643,7 @@ pub fn run() {
             lu_background_tasks,
             lu_reader_pick_document,
             lu_reader_ask_document,
+            lu_workspace_ask_directory,
             lu_background_auto_continue,
             lu_background_scan_file,
             lu_background_cancel,

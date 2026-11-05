@@ -69,6 +69,7 @@ pub mod native_reader_openxml;
 pub mod native_reader_office;
 pub mod native_reader_odf;
 pub mod native_reader_turn;
+pub mod native_workspace_read_turn;
 pub mod native_reader_tool;
 pub mod vision_routing;
 pub mod reversible_edit;

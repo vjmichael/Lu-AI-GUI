@@ -753,6 +753,55 @@ function App() {
       setJobs(prev=>removeJob(prev,activeId));
     }
   }
+  async function askWorkspaceDirectory() {
+    // Opt in to one native-selected read-only folder, never a WebView path.
+    if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
+    if (images.length || textFiles.length) {
+      setError('Ask Workspace selects a folder with the native picker. Use normal Send for existing attachments.');
+      return;
+    }
+    const input=prompt.trim();
+    let activeId=chatId;
+    if (!activeId) {
+      const created=await invoke('lu_new_chat')
+        .catch(error=>{setError(String(error));return null;});
+      if (!created) return;
+      activeId=created.chatId;
+      currentChat.current=activeId;
+      setChatId(activeId);
+    }
+    setJobs(prev=>({...prev,[activeId]:{
+      generationId:null,phase:'selecting-workspace',position:0,text:''
+    }}));
+    setError('');
+    try {
+      const answer=await invoke('lu_workspace_ask_directory',{
+        sessionId:runtime.sessionId,chatId:activeId,prompt:input
+      });
+      if (answer!==null && typeof answer!=='string') {
+        throw Error('Workspace returned an invalid model answer');
+      }
+      if (answer!==null && currentChat.current===activeId &&
+          draftText.current===input) {
+        draftText.current='';
+        setPrompt('');
+        const prior=pendingDrafts.current.get(activeId)||{};
+        pendingDrafts.current.set(activeId,{...prior,prompt:''});
+      }
+    } catch(error) {
+      if (currentChat.current===activeId &&
+          !/Cancelled|Canceled/i.test(String(error))) {
+        setError(String(error));
+      }
+    } finally {
+      await refreshChats().catch(()=>{});
+      if (currentChat.current===activeId) {
+        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        if(entries&&currentChat.current===activeId)setHistory(entries);
+      }
+      setJobs(prev=>removeJob(prev,activeId));
+    }
+  }
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
@@ -1334,6 +1383,10 @@ function App() {
               disabled={!loaded||chatBusy||working||!prompt.trim()}
               title="Select one document and allow a read-only AI Reader tool turn"
               onClick={()=>void askReaderDocument()}>Ask Reader</button>
+            <button type="button" className="subtleButton"
+              disabled={!loaded||chatBusy||working||!prompt.trim()}
+              title="Select one folder and let Lu read, search and inspect ZIP metadata inside it for this turn only"
+              onClick={()=>void askWorkspaceDirectory()}>Ask Workspace</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
