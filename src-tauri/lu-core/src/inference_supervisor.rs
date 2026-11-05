@@ -501,6 +501,47 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         };
         result
     }
+    /// Run a reserved browser-capable model turn under the same session,
+    /// model, single-active-generation and cancellation custody as text chat.
+    /// Output is structured proposals, not automatic tool execution.
+    pub fn run_reserved_browser_function_calls(
+        &self,
+        session_id:&str,
+        generation_id:&str,
+        request_id:&str,
+        prompt:String,
+        max_new_tokens:u32,
+        history:Vec<proto::InferenceChatTurn>,
+        admitted_read_schemas:&[serde_json::Value],
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,SupervisorError>{
+        let session=self.session(session_id)?;
+        let frame=Self::frame(
+            request_id,
+            proto::inference_frame::Body::Generate(proto::InferenceGenerateRequest{
+                session_id:session_id.into(),
+                generation_id:generation_id.into(),
+                prompt,max_new_tokens,
+                images:Vec::new(),history,
+            }),
+        );
+        validate_frame(&frame).map_err(|_|SupervisorError::InvalidRequest)?;
+        let cancellation={
+            let control=session.control.lock().map_err(|_|SupervisorError::Poisoned)?;
+            let active=control.active.as_ref().ok_or(SupervisorError::WrongGeneration)?;
+            if active.generation_id!=generation_id{
+                return Err(SupervisorError::WrongGeneration);
+            }
+            active.cancellation.clone()
+        };
+        let _cleanup=GenerationCleanup{
+            session:Arc::clone(&session),
+            generation_id:generation_id.into(),
+        };
+        let result=session.engine.lock().map_err(|_|SupervisorError::Poisoned)?
+            .generate_browser_function_calls(&frame,cancellation,admitted_read_schemas)
+            .map_err(SupervisorError::Bridge);
+        result
+    }
     /// Called on a blocking worker after reservation. Does not acquire a model
     /// lock for cancellation. The cleanup guard also handles a backend panic.
     pub fn run_reserved(
