@@ -34,7 +34,7 @@ struct OwnedWorker {
     progress_reader:Option<std::thread::JoinHandle<bool>>,
     deadline:Option<Instant>,
     #[cfg(windows)]
-    job:lu_win_worker_job::Job,
+    job:Option<lu_win_worker_job::Job>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
@@ -189,7 +189,7 @@ impl BackgroundProcessSupervisor {
             progress_reader:None,
             deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
             #[cfg(windows)]
-            job,
+            job:Some(job),
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -231,6 +231,8 @@ impl BackgroundProcessSupervisor {
         let count=finished.len();
         for (id,outcome) in finished{
             let mut owner=workers.remove(&id).expect("owned worker still registered");
+            #[cfg(windows)]
+            drop(owner.job.take()); // Close Job and any inherited stdout handles.
             let proof=owner.progress_reader.take().map(|handle|handle.join().unwrap_or(false));
             drop(owner); // Release Windows Job handle before terminal receipt.
             let result=match outcome{
@@ -285,9 +287,9 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     }
     #[cfg(windows)]
     {
-        // Kill-on-close of the Job handle terminates the owned process tree
-        // when this owner is dropped. Direct process kill precedes reap.
-        worker.child.kill().map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        // Closing the Job first terminates all descendants, including those
+        // inheriting our stdout pipe. Only then can reader.join() be safe.
+        drop(worker.job.take());
     }
     worker.child.wait().map_err(|_|BackgroundProcessError::ProcessUncertain)?;
     Ok(())
