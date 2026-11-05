@@ -77,10 +77,21 @@ checkpoint bytes, expand workspace grants, or demand a worker kill.
   `tasks.rs`; read-only `native_background_status.rs`; host-filtered
   terminal event projection. Checkpoint notifications are deliberately
   suppressed for the model.
-- Not yet implemented: actual background spawn/stop/kill, authenticated
-  worker event intake, Tauri UI push, durable notification delivery/ack,
-  model continuation injection, media segment jobs, full Windows process
-  acceptance. Source-level status must not be reported as end-to-end complete.
+- Implemented (source, CI under verification): host-only supervised subprocess
+  admission with executable digest pinning, Windows suspended launch + Job
+  Object containment, POSIX owned process group, OS termination/reap, and
+  durable CANCELLED receipts. Desktop operator cancellation requires a
+  native confirmation and is shown only for currently owned tasks.
+- Implemented (source): a read-only Background Tasks pane with real SQLite
+  dashboard querying, active/recent filtering, progress, warnings, and
+  refresh independent of model inference. The host watchdog polls child
+  process completion and journals completion/failure.
+- Not yet implemented: a packaged production media-worker catalog or user
+  start command; authenticated worker progress IPC; verified resource
+  budgets; Tauri push instead of dashboard refresh; durable model
+  notification delivery/ack; long video/audio segment pipeline; installed
+  Windows process-tree acceptance. Source-level features remain gated by
+  native CI and desktop integration tests.
 - CI: native Rust unit tests must pass on Windows and Linux, plus real
   installed-app testing later in release acceptance.
 
