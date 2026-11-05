@@ -37,7 +37,11 @@ Frontend `ide/app/tests/standalone.test.mjs` asserts the command is allowlisted,
 - Verified executable: 10,420,736 bytes, Windows PE `MZ` header, SHA-256 `a1689f68757229f2a0b2c1e027182b516f0e272fed79bab6f5db58022bf04707`.
 - User-facing package `Lu-IDE-Standalone-R3.2-Remove-Project.zip`: ZIP integrity passed, SHA-256 `f75cc87eb808ee5e150a8f1e9275d109cf036bcc2f2d0c14e62fa63c63605a91`. It includes a disposable project with `DO_NOT_DELETE.txt` and a test guide.
 
-**Actual Windows user interaction for R3.2 removal is not yet accepted.** R3.1 gutter/syntax smoke acceptance is separately confirmed by user screenshots.
+**Windows R3.2 acceptance — PASS for project delisting and persisted empty state (November 4, 2026, America/Phoenix).** The user supplied four Windows screenshots showing the registered-project collection progress from four projects to zero, a project re-registered and shown as open, and a subsequent empty collection. The user explicitly reported relaunching R3.2 and seeing the no-projects state persist, and marked the smoke test **pass**.
+
+**Evidence scope:** This verifies Windows project-removal UI, re-registration, and persistent empty-catalog behavior. These screenshots do not independently show an OS folder listing or all confirmation branches; the no-disk-delete behavior is enforced by the Rust unregister implementation and its native tests. The explicit cancel/unsaved-draft cases remain separate manual acceptance items.
+
+**UI finding and follow-up:** With one registered project, its card expanded across the row. Root cause was `repeat(auto-fit,minmax(275px,1fr))` collapsing empty columns, which stretched the last card. Changed to `repeat(auto-fill,minmax(275px,1fr))` to retain regular column widths. Frontend regression test added. This sizing fix is committed for the next build; it was not included in the user's tested R3.2 executable.
 
 ## Manual Windows checks for R3.2
 
