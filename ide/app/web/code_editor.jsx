@@ -38,7 +38,7 @@ function languageExtension(filename) {
  * undo history, cursor, and selection when the user switches tabs.
  * The state is never sent across the Tauri IPC boundary automatically.
  */
-export function createEditorState(text, filename, onChange) {
+export function createEditorState(text, filename, onChange, onSelectionChange) {
   const syntax = languageExtension(filename);
   // Tauri rewrites the nonce on this bundled <style> element and its CSP
   // policy for each WebView. CodeMirror's dynamic StyleModule uses that same
@@ -61,6 +61,10 @@ export function createEditorState(text, filename, onChange) {
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
           onChange(update.state, update.state.doc.toString());
+        } else if (update.selectionSet) {
+          // Keep exact selection/caret for session-only source references
+          // without recreating the parent editor state or changing the draft.
+          onSelectionChange?.(update.state);
         }
       }),
       ...(syntax ? [syntax] : []),
