@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "224803c42189daad0ed53cdb1f8a2d6e0d36db89",
+  "sourceCommitBeforeLock": "36b9bbd1cde1cff4eaf92293d691eca322b664b7",
   "trackedFileCount": 288,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "64c205e274646d5de76b5722de3225e06c359b6f"
+      "blob": "4314c65c2758f1d68cc84aedb60a47a438c41bd8"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
