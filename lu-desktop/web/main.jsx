@@ -396,6 +396,57 @@ function App() {
       });
     // Cancellation only targets this conversation's generation ID.
   }
+  async function askReaderDocument() {
+    // This deliberately opts in to a separate read-only structured model
+    // tool turn. The native dialog supplies the document, not the WebView.
+    if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
+    if (images.length || textFiles.length) {
+      setError('Ask Reader selects one document with the native picker. Use normal Send for existing attachments.');
+      return;
+    }
+    const input=prompt.trim();
+    let activeId=chatId;
+    if (!activeId) {
+      const created=await invoke('lu_new_chat')
+        .catch(error=>{setError(String(error));return null;});
+      if (!created) return;
+      activeId=created.chatId;
+      currentChat.current=activeId;
+      setChatId(activeId);
+    }
+    setJobs(prev=>({...prev,[activeId]:{
+      generationId:null,phase:'selecting-document',position:0,text:''
+    }}));
+    setError('');
+    try {
+      const answer=await invoke('lu_reader_ask_document',{
+        sessionId:runtime.sessionId,chatId:activeId,prompt:input
+      });
+      // A canceled OS picker returns null, without making a user turn.
+      if (answer!==null && typeof answer!=='string') {
+        throw Error('Reader returned an invalid model answer');
+      }
+      if (answer!==null && currentChat.current===activeId &&
+          draftText.current===input) {
+        draftText.current='';
+        setPrompt('');
+        const prior=pendingDrafts.current.get(activeId)||{};
+        pendingDrafts.current.set(activeId,{...prior,prompt:''});
+      }
+    } catch(error) {
+      if (currentChat.current===activeId &&
+          !/Cancelled|Canceled/i.test(String(error))) {
+        setError(String(error));
+      }
+    } finally {
+      await refreshChats().catch(()=>{});
+      if (currentChat.current===activeId){
+        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        if (entries&&currentChat.current===activeId)setHistory(entries);
+      }
+      setJobs(prev=>removeJob(prev,activeId));
+    }
+  }
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
@@ -730,6 +781,10 @@ function App() {
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             <button type="button" className="subtleButton" disabled={!loaded}
               onClick={()=>void attachReaderDocument()}>+ Read file</button>
+            <button type="button" className="subtleButton"
+              disabled={!loaded||chatBusy||working||!prompt.trim()}
+              title="Select one document and allow a read-only AI Reader tool turn"
+              onClick={()=>void askReaderDocument()}>Ask Reader</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
