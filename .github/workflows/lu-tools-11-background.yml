@@ -45,6 +45,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_office -- --nocapture
       - name: Verify bounded universal Reader kernel
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader -- --nocapture
+      - name: Verify bound Reader model JSON to Protobuf execution and per-turn revocation
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_turn -- --nocapture
       - name: Verify Reader typed model tool, authorization and binary refusal
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_tool -- --nocapture
       - name: Verify vision preference requires actual model/backend proof
