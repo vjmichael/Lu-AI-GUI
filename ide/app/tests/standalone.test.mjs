@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context'
+    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -296,7 +296,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 17);
+  assert.equal(Object.keys(schemas.operations).length, 19);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -394,4 +394,22 @@ test('A3 performs a bounded, no-execution local artifact and Git reference probe
   assert.match(continuity, /inspect_project_evidence\(project_id\)/);
   assert.equal(schema.definitions.ProjectContext.properties.inventory.$ref, '#/$defs/EvidenceInventory');
   assert.match(web, /projectContext\.inventory\.files/);
+});
+
+test('A3 snapshot capture and comparison are separate typed operations', () => {
+  const native = read('../src-tauri/src/lib.rs');
+  const web = read('../web/main.jsx');
+  const store = read('../../host/src/inventory_history.rs');
+  const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
+  for (const command of ['ide_capture_project_inventory', 'ide_compare_project_inventory']) {
+    assert.ok(native.includes('async fn ' + command), command);
+    assert.ok(web.includes("invoke('" + command + "'"), command);
+  }
+  assert.equal(schemas.operations['inventory.capture'].result.$ref, '#/$defs/InventoryBaseline');
+  assert.equal(schemas.operations['inventory.compare'].result.$ref, '#/$defs/InventoryComparison');
+  assert.match(store, /"missing_in_scanned_scope"/);
+  assert.match(store, /"matched_bytes"/);
+  assert.match(store, /"changed_bytes"/);
+  assert.match(web, /Record evidence snapshot/);
+  assert.doesNotMatch(store, /std::process::Command|Command::new/);
 });
