@@ -109,6 +109,28 @@ fn inherited_engine_env_is_forbidden(key: &str) -> bool {
 }
 
 impl PersistentLlamaBackend {
+    /// Host-only browser-function generation. Ordinary assistant streaming
+    /// remains separate. This returns untrusted, parsed function-call
+    /// proposals; execution still requires Lu's native registry and task
+    /// authorization. No arbitrary assistant prose is executable.
+    pub fn generate_browser_function_calls(
+        &mut self,
+        request:&GenerationRequest,
+        admitted_read_schemas:&[serde_json::Value],
+        cancel:&Cancellation,
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,String>{
+        if cancel.is_cancelled(){return Err("browser tool generation cancelled".into());}
+        let port=self.active_port()?;
+        let body=crate::browser_model_request::build_read_only_browser_tool_request(
+            &request.prompt,&request.history,&[],request.max_new_tokens,
+            admitted_read_schemas,
+        ).map_err(|_|"unapproved llama.cpp browser tool schema")?;
+        crate::multimodal_http::generate_browser_tool_stream_body(
+            port,&self.config.api_key,&body,self.config.request_timeout,
+            ||cancel.is_cancelled(),
+            std::collections::BTreeSet::from(["lu_browser_read".into()]),
+        )
+    }
     pub fn new(config: PersistentEngineConfig) -> Result<Self, String> {
         if !valid_api_key(&config.api_key) {
             return Err("engine requires a host-generated 256-bit hexadecimal API key".into());
