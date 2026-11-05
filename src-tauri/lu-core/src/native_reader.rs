@@ -97,6 +97,46 @@ fn decode_text(bytes:&[u8])->Result<String,ReaderFailure>{
     let data=bytes.strip_prefix(&[0xef,0xbb,0xbf]).unwrap_or(bytes);
     String::from_utf8(data.to_vec()).map_err(|_|ReaderFailure::UnsupportedEncoding)
 }
+/// A bounded page from an entire small-enough text file. Unlike the
+/// generic Office/PDF extraction window, this exposes later offsets without
+/// materializing or returning the first 200K characters in the response.
+/// The desktop already caps pinned documents at 8 MiB; encoding and embedded
+/// NUL validation still apply to the whole source on every read.
+/// None means the input belongs to an Office/PDF/image adapter instead.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct PlainTextWindow {
+    pub format: ReaderFormat,
+    pub text: String,
+    pub total_chars: usize,
+}
+pub fn read_plain_text_window(
+    filename: &str, bytes: &[u8], offset_chars: usize,
+    max_chars: usize, inspect_only: bool,
+) -> Result<Option<PlainTextWindow>, ReaderFailure> {
+    if bytes.is_empty() { return Err(ReaderFailure::Empty); }
+    if bytes.len() as u64 > MAX_READER_INPUT_BYTES
+        || max_chars == 0 || max_chars > MAX_READER_OUTPUT_CHARS {
+        return Err(ReaderFailure::TooLarge);
+    }
+    let format = classify(filename, &bytes[..bytes.len().min(16)]);
+    if !matches!(format, ReaderFormat::PlainText | ReaderFormat::Markdown
+        | ReaderFormat::Csv | ReaderFormat::Json | ReaderFormat::Xml
+        | ReaderFormat::Html | ReaderFormat::SourceCode) {
+        return Ok(None);
+    }
+    let decoded = decode_text(bytes)?;
+    if decoded.chars().any(|c| c == '\0') {
+        return Err(ReaderFailure::UnsupportedEncoding);
+    }
+    let total_chars = decoded.chars().count();
+    // The tool supplies a distinct, typed offset error to the caller.
+    let text = if inspect_only || offset_chars > total_chars {
+        String::new()
+    } else {
+        decoded.chars().skip(offset_chars).take(max_chars).collect()
+    };
+    Ok(Some(PlainTextWindow { format, text, total_chars }))
+}
 /// Only actual text formats may enter this path. HTML/XML are retained as
 /// literal source, not stripped or rendered; future structured adapters
 /// will handle markup semantics separately.
@@ -235,6 +275,24 @@ mod tests{
     fn does_not_accept_structure_selectors_for_plain_text(){
         assert_eq!(read_selected_bytes("a.txt",b"Notes",20,"slide:1"),
             Err(ReaderFailure::SelectorNotFound));
+    }
+    #[test]
+    fn plain_text_windows_cover_long_unicode_input_without_200k_ceiling(){
+        let source=format!("{}{}", "x".repeat(250_000), "🦈".repeat(1000));
+        let page=read_plain_text_window(
+            "log.txt",source.as_bytes(),249_999,4,false,
+        ).unwrap().unwrap();
+        assert_eq!(page.total_chars,251_000);
+        assert_eq!(page.text,"x🦈🦈🦈");
+        let inspect=read_plain_text_window(
+            "log.txt",source.as_bytes(),0,100,true,
+        ).unwrap().unwrap();
+        assert_eq!(inspect.total_chars,251_000);
+        assert!(inspect.text.is_empty());
+        // File header wins over an extension that pretends PDF is text.
+        assert!(read_plain_text_window(
+            "log.txt",b"%PDF-1.7",0,100,false,
+        ).unwrap().is_none());
     }
     #[test]
     fn bounded_stream_never_reads_arbitrary_binary(){
