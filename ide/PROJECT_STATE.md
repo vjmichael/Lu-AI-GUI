@@ -2,8 +2,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `52887f4d66f8af6bc2bff9cd1fee0c1088219c52`  
-**Current source validation:** [Standalone IDE CI 42123874954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42123874954) queued at last inspection; **do not claim it passed**. Earlier runs were superseded by later source commits.  
+**Last inspected implementation source SHA:** `413e1b52e051ff7493d529e525567fb4369bb3d2`  
+**Current source validation:** [Standalone IDE CI 42124467605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124467605) queued at last inspection. **No source acceptance established for A2/A3 yet.** Earlier source runs were superseded/cancelled.  
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -16,7 +16,7 @@
 | R3.5 proposal inbox and editor-only staging | Implemented | Earlier native matrix passed; see [R3.5](docs/IDE_07_R35_PROPOSAL_INBOX.md) | User reported working staging flow; full hostile gates open |
 | R3.6 success banner, R3.7 Find in File | Implemented | [Source CI 42069988384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42069988384) passed for R3.7 SHA `eb0aefd` | New GUI acceptance still open |
 | A1 saved-file source spans, Copy Source Reference | Implemented | [CI 42075298457](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42075298457) Linux/frontend/Windows passed for SHA `467775e` | New clipboard UX still open |
-| **A2 typed Semantic Capability Registry** | **Implemented**: 17 real host operations, JSON Schema v2, self-contained nested definitions, native-argument parity tests, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
+| **A2 typed Semantic Capability Registry** | **Implemented**: 19 real host operations, JSON Schema v2, self-contained nested definitions, native-argument parity tests, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | **A3 Development Ledger and Context Read Model** | **Initial runtime implemented**: host app-profile JSONL event history, bounded project context and Continuity UI | **Exact-source CI pending** on latest code | Windows installed UX open |
 | A3 bounded local artifact and toolchain-candidate inventory | **Implemented in source** | CI on latest source pending | Installed acceptance open |
 | A3 persistent snapshot and compare | **Implemented in source** | Native regression fixtures added; CI pending | Installed acceptance open |
@@ -26,25 +26,25 @@
 ## A2 — Typed contracts actually implemented
 
 - **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
-- Host-created, versioned descriptors for **17 existing** project, source, review, save, proposal and continuity operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
+- Host-created, versioned descriptors for **19 existing** project, source, review, save, proposal, continuity and inventory operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
 
 ## A3 — Bounded local evidence inventory and saved baselines
 
-- **Implemented in source:** `host/src/inventory.rs` performs a bounded, nonexecuting scan of known folders such as `Delivered`, build output, benchmark/result folders, and selected project-local tool/bin directories. Files receive observed byte size, SHA-256 if at most 64 MiB, category, and explicit `present_unverified` status. No shell, package install, app launch, network request, or ambient filesystem search.
+- **Implemented in source:** `host/src/inventory.rs` performs a bounded, nonexecuting scan of known folders such as `Delivered`, build output, benchmark/result folders, and selected project-local tool/bin directories. Files receive observed byte size, SHA-256 if at most 64 MiB per file and within a 128 MiB total scan budget, category, and explicit `present_unverified` status. No shell, package install, app launch, network request, or ambient filesystem search.
 - **Local Git:** reads only `.git/HEAD` and loose local/remote-tracking refs through the project capability. It can report equal/different *locally stored* refs, but does **not** verify a working-tree diff, packed refs, linked Git worktrees or current GitHub HEAD. Those are marked `not_verified`/`not_queried`.
 - **Durable user-triggered baseline:** `host/src/inventory_history.rs` stores the observed artifact paths, sizes and SHA-256 digests in application-profile `evidence-baselines.json`. Later scans classify known files as `matched_bytes`, `changed_bytes`, `missing_in_scanned_scope`, `new_in_scanned_scope` or `unverifiable`. An incomplete scan never establishes missing evidence. Histories persist across restart, but the snapshots prove byte observations, **not executable readiness or benchmark comparability**.
 - **UI:** Continuity now shows evidence files and their digests, observed Git refs, a human **Record evidence snapshot** control and baseline comparisons. The capability catalog includes two typed host operations, `inventory.capture` and `inventory.compare`. Native fixture tests and frontend parity tests added.
 - **Scope limits:** only registered project roots are scanned. Toolchains installed elsewhere on the user's machine, older `Delivered` folders outside the chosen root, live remote GitHub, actual dirty/untracked diffs, native installer launch and benchmark reruns remain **not inspected** without separate explicit access and worker authorization.
-- **Verification:** source committed, pending native/Windows CI [run 42123874954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42123874954). No physical Windows acceptance and no new installer claimed.
+- **Verification:** source committed, pending native/Windows CI [run 42124467605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124467605). No physical Windows acceptance and no new installer claimed.
 
 ## A3 — Current, narrowly scoped first slice
 
 - **Source:** `host/src/continuity.rs`, `host/tests/continuity.rs`, standalone Tauri `ide_read_project_context`, React Continuity screen.
 - Private app-profile `development-ledger.jsonl` receives **best-effort host observations after successful actions**: project register/open/close/unregister and explicit revision-checked source save. Saved events include **validated relative source path** and saved SHA-256 revision. No project root or absolute local path stored in event.
-- The read model requires an **active registered project**, returns at most **40 recent events** and eight bounded root/`ide/` orientation document slots with exact saved revisions and excerpts. Project-authored documents are labeled **untrusted_project_text**.
-- Remote Git state: `not_inspected`. Local artifacts: `not_inspected`. Toolchain readiness: `not_verified`. These remain **honest unknowns**, not false missing/ready claims.
-- **Limitations:** Observations are NOT crash-safe effect receipts, verified CI results, operational resource probes, Git reconciliation or authoritative build history. Failed ledger appends are logged separately and do not convert a successful file write into a retryable failure. A corrupt ledger fails closed on read. True effect journaling, richer provenance, resource inventory and local/remote reconciliation remain open.
+- The read model requires an **active registered project**, returns at most **40 recent events** and twelve bounded root/`ide/`/benchmark orientation document slots with exact saved revisions and excerpts. Project-authored documents are labeled **untrusted_project_text**.
+- Remote Git state: `not_queried`. Local artifacts: `bounded_scan`. Toolchain readiness: `not_verified` or `present_unverified` for scoped candidates. These describe exactly what was and was not inspected, not false missing/ready claims.
+- **Limitations:** Observations are NOT crash-safe effect receipts, verified CI results, operational resource probes, Git reconciliation or authoritative build history. Failed ledger appends are logged separately and do not convert a successful file write into a retryable failure. A corrupt ledger fails closed on read. True effect journaling, verified external resources and complete local/remote reconciliation remain open. The bounded artifact inventory and persisted byte snapshots are implemented as separate services.
 
 ## Next unblocked tasks (order matters)
 
