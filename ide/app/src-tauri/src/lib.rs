@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 use std::{path::PathBuf, sync::Arc};
 
-use lu_ide_workspace::{inbox::{IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use lu_ide_workspace::{inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -265,6 +265,22 @@ async fn ide_decide_proposal(
     }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// A reviewed proposal enters editor buffers only; never a native file save.
+#[tauri::command]
+async fn ide_stage_proposal(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    inbox: State<'_, Arc<IdeProposalInbox>>,
+    inbox_id: String,
+    expected_digest: String,
+) -> Result<ApprovedStaging, String> {
+    let registry = Arc::clone(registry.inner());
+    let inbox = Arc::clone(inbox.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        inbox.staging(&registry, &inbox_id, &expected_digest)
+            .map_err(|error| error.code().to_string())
+    }).await.map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_discard_proposal(
     inbox: State<'_, Arc<IdeProposalInbox>>,
@@ -303,6 +319,7 @@ pub fn run() {
             ide_list_proposals,
             ide_review_proposal,
             ide_decide_proposal,
+            ide_stage_proposal,
             ide_discard_proposal
         ])
         .run(tauri::generate_context!())
