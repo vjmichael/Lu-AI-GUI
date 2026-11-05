@@ -2,7 +2,7 @@
 
 **Branch:** `ide/workspace-development`  
 **Date:** 2026-11-05  
-**Status:** Native Windows/Linux/frontend CI and unsigned Windows release **passed**. Human Windows multi-hunk interaction acceptance remains open.
+**Status:** Native Windows/Linux/frontend CI and Windows release **passed**. Windows R3.4 interactive multi-hunk/save/conflict smoke test **passed from user screenshots** on 2026-11-05; additional adversarial/edge-case acceptance remains open.
 
 ## Delivered code
 
@@ -33,10 +33,13 @@
 - [x] Frontend build and **13/13 tests passed** in the same run.
 - [x] Windows host tests and standalone Tauri compilation passed in the same run.
 - [x] Optimized unsigned Windows executable built in [run 42053262838](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42053262838), artifact `lu-ide-windows-alpha-r3-4-multihunk-review-v3`. Windows PE EXE verified (10,564,608 bytes), SHA-256 `efe38b25c1e60bd46dc7be764ad168e5cdb84f97882077a96caf014d1ae363da`. User-facing ZIP `Lu-IDE-Standalone-R3.4-MultiHunk.zip` integrity-checked, SHA-256 `aed3b1b9a994620623cd4d55c9a2519635f3385a30857a729aa394d0e3da60f7`; includes `R34MultiHunkProject` and `README-R3.4.txt`.
-- [ ] Interactive Windows test: change two distant lines in one file; expect two hunks with correct line numbers, no extra removals.
-- [ ] Interactive Windows test: edit file, review/cancel, verify bytes unchanged; reviewed save still requires explicit user action.
-- [ ] Large/complex review still blocks reviewed-save rather than falsely presenting complete context.
-- [ ] IDE works while Lu is disconnected; packages/build/test still unavailable.
+- [x] **Windows multi-hunk visual:** User edited `src/multihunk.py` in `R34MultiHunkProject`. The screenshot shows **2 removed, 2 added, 2 visible hunks** with independent `@@ -2,7 +2,7 @@` and `@@ -37,7 +37,7 @@` headers. Old and new line-number gutters correspond to changed definitions at **lines 5 and 40**; unrelated intervening context is not marked removed.
+- [x] **Reviewed save UI:** The next screenshots show the accepted changes in the editor, `Saved src/multihunk.py to disk.`, and the **Saved** status. The source is now shown with the changed function parameters. These screenshots verify the UI save path; an independent disk-byte comparison was not provided.
+- [x] **Conflict protection:** A later screenshot shows `FILE_CHANGED_ON_DISK` after an external change, plus the unsaved dot and **Unsaved** status, with the draft retained.
+- [x] **Disconnected standalone operation:** Screenshots show `Lu connection: Not connected`; Packages, Source control and Build & tests remain disabled.
+- [ ] Separate **Close review without saving** and disk-byte invariance test (not individually shown in the R3.4 screenshots).
+- [ ] R3.4-specific incomplete/large review blocking test (the same safeguard was user-verified in R3.3 and remains covered by R3.4 automated tests).
+- [ ] Full manual Windows security tests against concurrent writers, hostile reparse points, OS metadata preservation, crash recovery and installation/uninstallation.
 
 ## Verification repair history
 
@@ -45,7 +48,7 @@
 - A subsequent frontend source-inspection test assumed the Rust proposal method signature was one line; after formatting it wrapped onto multiple lines. The assertion was corrected without loosening the runtime schema.
 - Only the **final green CI and release runs above** represent this deliverable. Earlier Windows release attempts were unsuccessful and are not distributed.
 
-**Windows human acceptance is not implied by the GitHub build.** The user should test two distant edits in one file and verify that two independently numbered hunks appear before this milestone is closed.
+**Windows interactive evidence (2026-11-05):** Four user-supplied Windows screenshots show the two-hunk review, a successful reviewed-save UI state, the edited source visible at line 5 and line 40, and `FILE_CHANGED_ON_DISK` preserving the unsaved draft. This **closes the R3.4 multi-hunk/save/conflict GUI smoke acceptance**, but not filesystem-byte verification or adversarial OS security testing. The example renames the two function parameters without changing the `name` references in the bodies: the fixture would fail if executed. That does not invalidate the nonexecuting review smoke test; it motivates later Python diagnostics.
 
 ## Architecture constraint
 
