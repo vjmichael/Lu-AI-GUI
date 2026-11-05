@@ -108,3 +108,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .backgroundPaneEmpty{padding:28px 10px;text-align:center;color:#aabdd0;font-size:13px}
 .backgroundPaneFooter{padding:16px 20px;border-top:1px solid #354b63;color:#90a9c0;font-size:11px;line-height:1.6}
 @media(max-width:620px){.backgroundPane{width:100vw}.backgroundTaskFoot{flex-wrap:wrap}}
+
+.backgroundTaskCancel{margin-top:12px;border:1px solid #ac6f5f;border-radius:7px;background:#482b31;color:#ffd7cf;font-size:12px;padding:9px 12px}
+.backgroundTaskCancel:hover,.backgroundTaskCancel:focus-visible{background:#61353b;border-color:#e59983}
