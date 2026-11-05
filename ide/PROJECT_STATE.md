@@ -2,7 +2,7 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `a372bc7ec6c054fc28be825203ea00c94bcfd211`  
+**Last inspected implementation source SHA:** `57966b677e1580e4312c0a61550dd6e95c7baa1d` (Wave B2 feature PR branch; base IDE implementation remains independent).  
 **Current source validation:** Wave B1 source has triggered [CI 42130813013](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42130813013) (pending at last inspection). Older [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605) passed Windows native host + Tauri checks at SHA `b39c6267` before new commits; remaining matrix may be superseded. **No latest exact-source CI acceptance yet.**
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
@@ -32,8 +32,10 @@
 
 ## Wave B2 — Unsaved-buffer source identity (draft PR #43, verification pending)
 
+- Final pre-verification implementation SHA `57966b677e1580e4312c0a61550dd6e95c7baa1d`; feature-branch CI [run 42132689708](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42132689708) and continuity [run 42132689913](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42132689913) were pending at last inspection. No Linux/frontend/Windows acceptance claim. Documentation commits do not imply native runtime verification.
+
 - Working branch: `ide/buffer-revision-20261105`, isolated from `ide/workspace-development` so prior Git/GitHub CI isn't cancelled. [Draft PR #43](https://github.com/vjmichael/Lu-AI-GUI/pull/43). Canonical design: [IDE-BUF-01](docs/IDE_BUFFER_REFERENCES.md).
-- New `app/web/buffer_identity.js`: distinct session-only UUID per open/reloaded/staged CodeMirror buffer, strictly monotonic draft revision on every edit (Undo counts), validated source spans with exact UTF-16 CodeMirror offsets and UTF-8 byte ranges, explicit stale-reference resolver.
+- New `app/web/buffer_identity.js`: distinct session-only UUID per open/reloaded/staged CodeMirror buffer, strictly monotonic draft revision on every edit (Undo counts), validated source spans with exact UTF-16 CodeMirror offsets and UTF-8 byte ranges computed with `state.sliceDoc()` so a serialized CRLF spans two bytes but one editor position, explicit stale-reference resolver.
 - Human **Copy draft reference** button calculates a SHA-256 digest of the entire in-memory draft, checks it is still the same buffer revision after async hashing, copies location and provenance metadata, and **does not copy source text**. Existing saved-file reference and native revision-checked Save remain distinct.
 - Tab status shows the current draft revision. Identity reset on open/reload/approved staging; invalidated on tab/project close and rebased on successful Save. No Tauri command, AI bridge, disk publication or new authorization.
 - Added pure Node behavioral tests for Unicode/CRLF, undo/reopen staleness, Save rebasing and bounded spans, plus frontend integration assertions. Enhanced `ide-standalone.yml` with PR-triggered isolated CI, while retaining the original main IDE branch push gate.
