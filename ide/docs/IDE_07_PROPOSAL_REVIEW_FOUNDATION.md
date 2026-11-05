@@ -44,7 +44,11 @@ Use the [standalone IDE acceptance workflow](https://github.com/vjmichael/Lu-AI-
 - Frontend build and source/UI tests.
 - Windows Tauri native compile.
 
-CI result will be added here once it actually completes. A passing test/compile is **not** proof of Windows UX acceptance.
+**Passed CI:** [run 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363), source SHA `4ea91f2b09025df349ca0e1522c4666f88cd498f` (same R3.3 implementation after formatter patches). Linux native Rust: **33 tests passed**, `rustfmt --check` passed; frontend build and tests passed; Windows native IDE host tests and standalone Tauri `cargo check` passed.
+
+**Windows R3.3 unsigned release job:** [run 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831), initiated after CI formatting repairs. Check its real conclusion and artifact before claiming a binary is ready.
+
+Passing CI is **not** proof of Windows interactive review-dialog acceptance; that remains a separate user-facing gate.
 
 ## Next Windows interaction checks
 
