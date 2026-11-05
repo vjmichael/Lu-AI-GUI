@@ -495,3 +495,23 @@ message IsoExtractResult {
   uint64 bytes_written = 2;
   string sha256 = 3;
 }
+
+// Linux TAR / compression exact approval. Input strings are never grants.
+// Host must pin approved source/target/content digest against saved human turn.
+message LinuxArchiveExtractRequest {
+  string archive_name = 1;
+  string member_path = 2;
+  string target_name = 3;
+  string expected_sha256 = 4;
+}
+message LinuxArchiveCreateRequest {
+  string archive_name = 1;
+  repeated string input_names = 2;
+  string expected_sha256 = 3;
+}
+message LinuxArchiveWriteResult {
+  string target_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+  uint32 member_count = 4;
+}

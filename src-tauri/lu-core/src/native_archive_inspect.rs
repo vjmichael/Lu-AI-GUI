@@ -186,8 +186,38 @@ fn inspect(root:&Dir,request:proto::ArchiveListRequest)
     if request.path.to_ascii_lowercase().ends_with(".zip"){
         return inspect_zip(root,request)
     }
+    if crate::native_linux_archive::detect_linux_archive(&request.path).is_some(){
+        let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
+        if !(1..=MAX_RETURNED_ENTRIES).contains(&max){
+            return Err(refuse("ARCHIVE_LIMIT","Invalid archive listing limit"))
+        }
+        let path=safe_relative_name(&request.path,false)?;
+        if path.components().count()!=1 {
+            return Err(refuse("INVALID_ARCHIVE_PATH","Linux archive must be in approved directory"))
+        }
+        let manifest=crate::native_linux_archive::inspect_linux_archive(
+            root,&request.path,max as usize
+        ).map_err(|_|refuse("ARCHIVE_INVALID","Linux archive inspection failed validation"))?;
+        return Ok(ToolOutput{payload:ProtoPayload{
+            type_url:OUTPUT.into(),
+            bytes:proto::ArchiveListResult {
+                entries:manifest.entries.into_iter().map(|e|proto::ArchiveEntry {
+                    path:e.path,
+                    kind:if e.is_directory{"directory".into()}else{"file".into()},
+                    compressed_bytes:0, // TAR has no per-file compressed size.
+                    declared_uncompressed_bytes:e.uncompressed_bytes,
+                    crc32:0, // No per-file CRC32 in these formats.
+                }).collect(),
+                truncated:manifest.truncated,
+                total_entries:manifest.total_entries as u64,
+                total_declared_uncompressed_bytes:manifest.total_uncompressed_bytes,
+                archive_bytes:manifest.input_bytes,
+            }.encode_to_vec(),
+        }})
+    }
     if !request.path.to_ascii_lowercase().ends_with(".iso"){
-        return Err(refuse("ARCHIVE_FORMAT_UNSUPPORTED","Supported inspection formats: ZIP, ISO9660"))
+        return Err(refuse("ARCHIVE_FORMAT_UNSUPPORTED",
+            "Supported: ZIP, ISO9660, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, TAR.ZST, GZ, XZ, BZ2, ZST"))
     }
     let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
     if !(1..=MAX_RETURNED_ENTRIES).contains(&max){
@@ -252,8 +282,8 @@ impl ModelToolCodec for ArchiveCodec {
             .ok_or_else(|| ModelToolError::InvalidArguments("path must be text".into()))?;
         safe_relative_name(path, false)
             .map_err(|_| ModelToolError::InvalidArguments("unsafe archive path".into()))?;
-        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") {
-            return Err(ModelToolError::InvalidArguments("ZIP or ISO format required".into()));
+        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") && crate::native_linux_archive::detect_linux_archive(path).is_none() {
+            return Err(ModelToolError::InvalidArguments("Unsupported archive format".into()));
         }
         let max_entries = optional_uint(args, "max_entries", DEFAULT_ENTRIES, MAX_RETURNED_ENTRIES)?;
         let message = proto::ArchiveListRequest {
@@ -277,7 +307,7 @@ impl ModelToolCodec for ArchiveCodec {
             "total_entries": data.total_entries,
             "total_declared_uncompressed_bytes": data.total_declared_uncompressed_bytes,
             "archive_bytes": data.archive_bytes,
-            "note": "Untrusted ZIP or ISO9660 metadata only. ISO fields have no CRC32 and are not proof of content validation; no extraction occurred."
+            "note": "Archive metadata only. TAR, ISO and compressed streams have no per-member CRC32; zero is not proof of integrity. No extraction occurred."
         }))
     }
 }
@@ -319,11 +349,11 @@ pub fn register_archive_inspection_tool(
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_archive_list".into(),
         native_tool_id: LIST.into(),
-        description: "Inspect a ZIP archive or ISO9660 disc image; list bounded metadata without mounting or extracting.".into(),
+        description: "Inspect ZIP, ISO9660, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, TAR.ZST and single-stream gzip/xz/bzip2/zstd without extracting.".into(),
         parameters: json!({
             "type": "object",
             "properties": {
-                "path": {"type":"string","description":"ZIP or ISO filename relative to the approved workspace"},
+                "path": {"type":"string","description":"Archive filename relative to the approved workspace"},
                 "max_entries":{"type":"integer","minimum":1,"maximum":MAX_RETURNED_ENTRIES}
             },
             "required":["path"],
