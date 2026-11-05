@@ -681,8 +681,11 @@ function App() {
                   <p>{item.description}</p>
                   <dl>
                     <dt>Operation</dt><dd><code>{item.id}</code> · v{item.version}</dd>
-                    <dt>Required information</dt>
-                    <dd>{item.inputFields.length ? item.inputFields.join(', ') : 'None'}</dd>
+                    <dt>Request schema</dt>
+                    <dd><code>{JSON.stringify(item.requestSchema)}</code></dd>
+                    <dt>Result schema</dt>
+                    <dd><code>{JSON.stringify(item.resultSchema)}</code></dd>
+                    <dt>Errors</dt><dd><code>{JSON.stringify(item.errorSchema)}</code></dd>
                     <dt>Before use</dt><dd>{item.precondition}</dd>
                     <dt>Evidence</dt><dd>{item.evidence}</dd>
                   </dl>
