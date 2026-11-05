@@ -570,6 +570,67 @@ impl TaskStore {
 }
 
 #[cfg(test)]
+mod terminal_notification_tests{
+    use super::*;
+    #[test]
+    fn every_terminal_outcome_produces_scoped_durable_notice(){
+        let dir=std::env::temp_dir().join(format!(
+            "lu-notices-{}-{:?}",std::process::id(),std::thread::current().id()
+        ));
+        let _=std::fs::remove_file(&dir);
+        let store=TaskStore::open(&dir).unwrap();
+        let cases=["done","failed","cancel","timeout","restart","launch-failed"];
+        for id in cases{
+            store.create(id,Some("c-owner"),None).unwrap();
+            if id!="launch-failed"{store.start(id).unwrap();}
+            match id{
+                "done"=>store.complete(id).unwrap(),
+                "failed"=>store.fail(id).unwrap(),
+                "cancel"=>store.cancelled(id).unwrap(),
+                "timeout"=>store.timed_out(id).unwrap(),
+                "restart"=>{assert_eq!(store.reconcile_interrupted().unwrap(),1);},
+                _=>store.fail_pending(id).unwrap(),
+            };
+        }
+        let notices=store.pending_notices_for_workspace("c-owner",32).unwrap();
+        assert_eq!(notices.len(),6);
+        let states=notices.iter().map(|n|n.state).collect::<Vec<_>>();
+        assert!(states.contains(&TaskState::Completed));
+        assert!(states.contains(&TaskState::Failed));
+        assert!(states.contains(&TaskState::Cancelled));
+        assert!(states.contains(&TaskState::TimedOut));
+        assert!(states.contains(&TaskState::Interrupted));
+        assert_eq!(store.pending_notices_for_workspace("c-other",32).unwrap().len(),0);
+        assert!(store.acknowledge_terminal_notice(notices[0].sequence,"c-other")
+            .unwrap()==false);
+        assert!(store.acknowledge_terminal_notice(notices[0].sequence,"c-owner")
+            .unwrap());
+        assert!(!store.acknowledge_terminal_notice(notices[0].sequence,"c-owner")
+            .unwrap());
+        drop(store);
+        let restored=TaskStore::open(&dir).unwrap();
+        assert_eq!(restored.pending_notices_for_workspace("c-owner",32)
+            .unwrap().len(),5);
+        assert_eq!(restored.pending_terminal_notices(32).unwrap().len(),5);
+        drop(restored);
+        let _=std::fs::remove_file(&dir);
+        let _=std::fs::remove_file(format!("{}-wal",dir.display()));
+        let _=std::fs::remove_file(format!("{}-shm",dir.display()));
+    }
+    #[test]
+    fn only_true_terminal_events_can_be_acknowledged(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("running",Some("owner"),None).unwrap();
+        store.start("running").unwrap();
+        store.checkpoint("running",33,"private event",b"private data").unwrap();
+        let events=store.events_after("running","owner",0,8).unwrap();
+        for event in events{
+            assert!(!store.acknowledge_terminal_notice(event.sequence,"owner").unwrap());
+        }
+        assert!(store.pending_terminal_notices(8).unwrap().is_empty());
+    }
+}
+#[cfg(test)]
 mod dashboard_tests{
     use super::*;
     #[test]
