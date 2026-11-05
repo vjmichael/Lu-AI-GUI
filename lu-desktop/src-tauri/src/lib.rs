@@ -1489,6 +1489,35 @@ async fn lu_browser_runtime_status(
     }).await.map_err(|e|format!("browser status worker failed: {e}"))?
 }
 
+/// UI-only native visibility transitions for the existing Lu-owned
+/// browser. A model can neither select another PID nor request these modes.
+async fn browser_user_window_transition(
+    state:Arc<DesktopState>,visible:bool
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    tauri::async_runtime::spawn_blocking(move||{
+        let active=state.browser_task.lock()
+            .map_err(|_|"browser task lock poisoned")?;
+        if active.as_ref().is_none_or(|task|task.starting){
+            return Err("No active user-authorized browser session".into());
+        }
+        drop(active);
+        state.browser_runtime.set_user_visible(visible)?;
+        state.browser_runtime.status(&state.browser_preferences)
+    }).await.map_err(|e|format!("browser window control failed: {e}"))?
+}
+#[tauri::command]
+async fn lu_browser_watch(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    browser_user_window_transition(Arc::clone(state.inner()),true).await
+}
+#[tauri::command]
+async fn lu_browser_hide(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    browser_user_window_transition(Arc::clone(state.inner()),false).await
+}
+
 /// User-controlled challenge completion. This is a native UI action,
 /// never a model-callable operation. The worker checks the current page
 /// and rejects unresolved CAPTCHAs/logins or off-origin redirects.
@@ -2643,6 +2672,8 @@ pub fn run() {
             lu_browser_settings,
             lu_browser_runtime_status,
             lu_browser_start,
+            lu_browser_watch,
+            lu_browser_hide,
             lu_browser_human_verified,
             lu_browser_stop,
             lu_set_browser_visibility,
