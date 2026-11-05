@@ -11,6 +11,7 @@ pub mod capabilities;
 pub mod continuity;
 pub mod editor;
 pub mod inbox;
+pub mod inventory;
 pub mod proposal;
 pub mod review;
 pub mod source_span;
