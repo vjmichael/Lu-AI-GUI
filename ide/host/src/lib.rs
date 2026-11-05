@@ -11,6 +11,7 @@ pub mod editor;
 pub mod inbox;
 pub mod proposal;
 pub mod review;
+pub mod source_span;
 pub mod wire;
 
 use std::{
