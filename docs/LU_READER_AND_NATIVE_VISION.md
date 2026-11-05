@@ -21,7 +21,7 @@ reasoning.
 |---|---|---|
 | TXT, MD, log, config, CSV/TSV, JSON/JSONL, code, YAML, TOML | Native UTF-8/UTF-16 bounded text normalization | Initial Rust core implemented |
 | HTML, XML, SVG source | Literal source reader first; optional safe semantic extraction later | Initial literal reader implemented |
-| DOCX | Container-validated Office Open XML text/paragraph/table extraction | **Not implemented** |
+| DOCX | Bounded ZIP central-directory admission; inflated `word/document.xml` text, paragraphs and tables, XML entity decoding, tracked deletion omission | **Implemented in source; native cross-platform tests pending** |
 | PDF with text layer | Page-aware selectable text extraction | **Not implemented** |
 | Scanned PDF | Render page with strict resource limits, then OCR adapter | **Not implemented** |
 | JPG, PNG, TIFF and other document photos | OCR adapter, orientation and page/region provenance | **Not implemented** |
@@ -91,8 +91,7 @@ as automatically detected.
 2. Typed Protobuf Reader invocation, host workspace-relative root capability,
    deny-by-default authorization boundary, catalog registration and rejection
    tests. **Implemented in Lu Core; desktop host integration pending.**
-3. Secure DOCX extraction including headers, tables and tracked edits,
-   with archive limits, tests and source anchors.
+3. Secure DOCX extraction from main body (paragraphs/tables and inserted text; deleted tracked text omitted), strict ZIP and XML limits, CRC, no external relationships. **Implemented and CI verification pending.** Headers/footers, comments and richer page provenance still open.
 4. PDF selectable-text extraction with page boundaries; scanned page
    detection, bounded image conversion and OCR worker.
 5. Install Reader in the desktop tool catalog with actual per-turn grants,
