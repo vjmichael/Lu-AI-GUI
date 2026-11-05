@@ -460,6 +460,50 @@ function App() {
       await invoke('lu_release_image', {imageRef:image.imageRef}).catch(() => {});
     }
   }
+  async function attachReaderDocument() {
+    // Keep the attachment in its originating chat even if the operator
+    // switches conversations while the native system picker is open.
+    const targetChat=currentChat.current||'new';
+    try {
+      const document=await invoke('lu_reader_pick_document');
+      if (!document) return;
+      const prior=pendingDrafts.current.get(targetChat);
+      const currentlyVisible=targetChat===(currentChat.current||'new');
+      const previous=prior?.files || (currentlyVisible?draftFiles.current:[]);
+      if(previous.length>=MAX_TEXT_FILES){
+        setError(`You can attach up to ${MAX_TEXT_FILES} documents per message`);
+        return;
+      }
+      const extracted=document.truncated
+        ?document.text+'\n[Reader: document text was truncated to fit the chat context]'
+        :document.text;
+      const item={
+        name:document.name,
+        size:document.bytesRead,
+        text:extracted,
+        format:document.format,
+        truncated:document.truncated,
+      };
+      const next=[...previous,item];
+      try{
+        buildSubmittedPrompt(prior?.prompt ||
+          (currentlyVisible?draftText.current:'Attachment') || 'Attachment',next);
+      }catch(error){setError(String(error));return;}
+      const old=prior||{
+        prompt:currentlyVisible?draftText.current:'',
+        images:currentlyVisible?draftImages.current:[],
+        files:previous
+      };
+      pendingDrafts.current.set(targetChat,{...old,files:next});
+      if(currentlyVisible){
+        draftFiles.current=next;
+        setTextFiles(next);
+      }
+      setError('');
+    }catch(error){
+      setError(String(error));
+    }
+  }
   async function importAttachments(files) {
     // Capture origin before a FileReader or native image admission can await.
     // A chat switch must not redirect an in-flight attachment to another draft.
@@ -684,6 +728,8 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={!loaded}
+              onClick={()=>void attachReaderDocument()}>+ Read document</button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
