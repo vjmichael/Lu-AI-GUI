@@ -86,6 +86,22 @@ async fn ide_read_git_status(
     Ok(status)
 }
 
+/// On explicit human request, compare local work with current public GitHub
+/// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
+#[tauri::command]
+async fn ide_compare_live_github(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::github_live::LiveGitHubComparison, String> {
+    let registry = Arc::clone(state.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        registry.compare_live_github(&project_id)
+    })
+    .await
+    .map_err(|_| "GITHUB_COMPARE_TASK_UNAVAILABLE".to_owned())?;
+    Ok(result)
+}
+
 /// Bounded, source-revisioned continuity from the trusted local IDE profile.
 #[tauri::command]
 async fn ide_read_project_context(
@@ -440,6 +456,7 @@ pub fn run() {
             ide_list_capabilities,
             ide_read_project_context,
             ide_read_git_status,
+            ide_compare_live_github,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
             ide_list_projects,
