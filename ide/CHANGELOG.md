@@ -2,6 +2,13 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — A3 bounded artifact/resource inventory and durable baseline (source implemented, CI open)
+- Added `host/src/inventory.rs`: read-only bounded scan of registered project subfolders `Delivered`, `dist`, `benchmarks`, `results`, selected tool/bin folders and NSIS output locations. Captures file size and SHA-256 (up to 64 MiB); skips symlinks and never executes or downloads project code.
+- Added read-only local `.git/HEAD` and loose ref/tracking-ref observation. **Not a live remote comparison or authoritative working-tree status**; packed refs/worktree pointers require later support.
+- Added `host/src/inventory_history.rs`: explicit persisted evidence baseline, restart recovery and comparison reporting matched/changed/new/missing/unverifiable inspected bytes; no forced cleanup or destructive Git operation.
+- Added human Continuity evidence display, `Record evidence snapshot` control, and two typed A2 capabilities. Added native persistence/change/symlink/toolchain/Git fixture tests and frontend contract checks.
+- **Not accepted yet:** exact-head native CI [42123874954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42123874954) still queued at last check; Windows installed UI, out-of-project resources, live GitHub and executable toolchain/installer acceptance remain open.
+
 ## 2026-11-05 — Wave A2 typed schemas and Wave A3 project continuity (source implementation)
 - Refined the capability directory for human readability: concise typed signatures, expandable full request/result/error schemas, and nested types self-contained using JSON Schema 2020-12 `$defs`. Added reference integrity tests.
 - Expanded project orientation to support both project-root documents and `ide/` subdirectory documents. Recorded successful source writes now include a structured safe relative path alongside revision digest, rather than an anonymous save.
