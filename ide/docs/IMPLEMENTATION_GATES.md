@@ -1,18 +1,23 @@
-# Lu IDE Engineering Gates — 2026-11-04
+# Lu IDE — Engineering Acceptance Subgates
 
-Status: design only, no claim of integrated implementation or sandbox verification.
+**Status:** design only as of 2026-11-04.  
+**Canonical task list:** [IDE Workspace design, Section 6 — Recommended Implementations](IDE_WORKSPACE_DESIGN.md).
 
-| Gate | Scope | Acceptance |
+The project tracks **eight implementation tasks**, not ten competing roadmap tasks. The earlier IDE-01B ... IDE-10 identifiers below are subordinate engineering gates and final acceptance checks. Progress on a gate must not be described as a completed implementation task until all stage acceptance requirements are met.
+
+| Canonical task | Related engineering gates | Required verification |
 | --- | --- | --- |
-| IDE-01B | Rust workspace registry and Protobuf boundary | Create/open/close/reopen project; host-minted handles; no JS arbitrary path; authentic user origin; Linux tests |
-| IDE-02 | Editor + project explorer | Multi-tab split editor, undo/redo, search, file tree, diff preview, reliable save/recovery |
-| IDE-03 | LSP + diagnostics | Python/Rust/C/C++/TS server adapters, lifecycle, no auto-exec untrusted, cancellation |
-| IDE-04 | Git advanced | Worktrees, staging, rebase/conflict repair, branch/review and crash-safe operations |
-| IDE-05 | Package master manager | uv, vcpkg/Conan, Cargo, JS, toolchains; detection, preview, explicit approval, verification |
-| IDE-06 | Build/test/debug + DAP | CMake/Cargo/uv etc., task log streaming, debugger attach policies, clean termination |
-| IDE-07 | Sandbox boundary | Real Linux/Windows hostile project, package hook, LSP, debug, network and file escape tests |
-| IDE-08 | Lu coding agent | Reviewable diffs, plan checkpoints, per-turn grants, verified tests, durable recovery |
-| IDE-09 | Self-development | Disposable Lu Dev process/worktree, build/test, merge proposal, rollback; live core untouched |
-| IDE-10 | Release acceptance | Installer, update/migration, performance, security, native Linux+Windows E2E |
+| 1. Rust workspace host + Protobuf interface | IDE-01B | Authenticated open/close/reopen, opaque IDs, scoped root access, lifecycle/cancel, restart |
+| 2. Linux sandbox and real execution tests | IDE-07 (Linux first; Windows parity later) | Actual hostile-worker file/secret/network/resource tests; fail-closed; no automatic execution |
+| 3. Project explorer and code editor | IDE-02 | Tabs/splits, undo/redo, search, diff, reliable save/recovery, accessibility |
+| 4. LSP, build/test and debugger integration | IDE-03, IDE-06 | Sandboxed language server, build/test worker and DAP lifecycle; stream/cancel/recover |
+| 5. Master package manager | IDE-05 | Detect/preview/approve/apply/verify for uv and C/C++ adapters first; lockfiles, hostile package hook tests; additional manager adapters in stages |
+| 6. Advanced Git and GitHub workflows | IDE-04 | Worktrees, rebase/merge conflict resolution, staging, typed operations, remote confirmations, credentials boundary |
+| 7. Lu AI coding integration | IDE-08 | Reviewable patches, real tests, authenticated per-turn grants, durable task recovery, prompt-injection adversarial cases |
+| 8. Lu self-development environment | IDE-09 | Disposable Lu Dev instance, separate worktree/processes, no stable-core changes, rollback and merge review |
 
-Sequence: IDE-01B -> IDE-07 minimal execution boundary -> IDE-02/03 -> IDE-05/06 -> IDE-04 -> IDE-08/09 -> IDE-10. Never ship package/build execution before basic containment is independently verified.
+**Cross-cutting final acceptance:** IDE-10 — native Linux and Windows security, performance, installer/upgrade, backward compatibility, end-to-end and crash-injection evidence. This is required to release the IDE but **not** a ninth task.
+
+**Dependency rule:** Do not accept executable package installs, build/test sessions, or executable LSP/DAP adapters before task 2's native isolation gates. Windows release claims remain blocked until real Windows security parity tests are complete.
+
+**Progress discipline:** Track designed, prototype, compiled, unit-tested, native-tested, and accepted separately. A passing mock is not a passing sandbox; branch isolation is not process isolation.
