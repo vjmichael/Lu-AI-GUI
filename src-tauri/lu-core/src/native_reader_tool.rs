@@ -11,7 +11,7 @@ use crate::{
         ToolOutput,CORE_CONTRACT_VERSION},
     model::{expect_fields,optional_uint,ModelToolCatalog,ModelToolCodec,
         ModelToolDefinition,ModelToolError},
-    native_reader::{read_text_bytes,ReaderFailure,MAX_READER_INPUT_BYTES},
+    native_reader::{read_selected_bytes,ReaderFailure,MAX_READER_INPUT_BYTES},
     registry::{NativeToolRegistry,RegistryError},
 };
 
@@ -36,6 +36,8 @@ pub struct ReaderRequest{
     pub offset_chars:Option<u32>,
     #[prost(bool,tag="5")]
     pub inspect_only:bool,
+    #[prost(string,tag="6")]
+    pub selector:String,
 }
 #[derive(Clone,PartialEq,Message)]
 pub struct ReaderResponse{
@@ -77,6 +79,9 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
     let max_bytes=request.max_bytes.unwrap_or(DEFAULT_BYTES);
     let max_chars=request.max_chars.unwrap_or(DEFAULT_CHARS);
     let offset=request.offset_chars.unwrap_or(0);
+    if request.selector.len()>160 || request.selector.chars().any(|ch|ch=='\0'){
+        return Err(failure("READER_INVALID_SELECTOR"));
+    }
     if request.inspect_only&&offset!=0{return Err(failure("READER_INVALID_INSPECT_REQUEST"));}
     if offset>MAX_OFFSET_CHARS{return Err(failure("READER_INVALID_OFFSET"));}
     if max_bytes==0||max_bytes>MAX_BYTES
@@ -104,11 +109,13 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
     }
     // Parse once into the bounded host extraction window, then return only
     // this invocation's authorized slice. A later tool call can page again.
-    let text=read_text_bytes(&request.path,&bytes,MAX_OFFSET_CHARS as usize)
+    let text=read_selected_bytes(&request.path,&bytes,
+        MAX_OFFSET_CHARS as usize,&request.selector)
         .map_err(|err|match err{
             ReaderFailure::UnsupportedAdapter(_)=>failure("READER_ADAPTER_UNAVAILABLE"),
             ReaderFailure::UnsupportedEncoding=>failure("READER_INVALID_ENCODING"),
             ReaderFailure::InvalidDocument=>failure("READER_INVALID_DOCUMENT"),
+            ReaderFailure::SelectorNotFound=>failure("READER_SELECTOR_NOT_FOUND"),
             ReaderFailure::TooLarge=>failure("READER_INPUT_TOO_LARGE"),
             ReaderFailure::Empty=>failure("READER_EMPTY"),
             ReaderFailure::Io=>failure("READER_FILE_UNAVAILABLE"),
@@ -162,7 +169,7 @@ impl ModelToolCodec for ReaderCodec{
     fn output_type_url(&self)->&'static str{OUTPUT_TYPE}
     fn encode(&self,args:&Map<String,Value>)
         ->Result<ProtoPayload,ModelToolError>{
-        expect_fields(args,&["path","max_bytes","max_chars","offset_chars","inspect_only"],&["path"])?;
+        expect_fields(args,&["path","max_bytes","max_chars","offset_chars","inspect_only","selector"],&["path"])?;
         let path=args.get("path").and_then(Value::as_str)
             .ok_or_else(||ModelToolError::InvalidArguments(
                 "Reader path must be a string".into()))?;
@@ -184,11 +191,18 @@ impl ModelToolCodec for ReaderCodec{
         };
         if inspect_only&&offset!=0{return Err(ModelToolError::InvalidArguments(
             "inspection must start at character offset zero".into()))}
+        let selector=match args.get("selector"){
+            None=>"",
+            Some(Value::String(s)) if s.len()<=160&&!s.contains('\0')=>s,
+            _=>return Err(ModelToolError::InvalidArguments(
+                "selector must be a string of up to 160 characters".into())),
+        };
         Ok(ProtoPayload{type_url:INPUT_TYPE.into(),
             bytes:ReaderRequest{
                 path:path.into(),max_bytes:Some(max_bytes),
                 max_chars:Some(max_chars),
                 offset_chars:Some(offset),inspect_only,
+                selector:selector.to_owned(),
             }.encode_to_vec()})
     }
     fn decode(&self,result:&ProtoPayload)->Result<Value,ModelToolError>{
@@ -236,7 +250,8 @@ pub fn register_reader(
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
             "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS},
             "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS},
-            "inspect_only":{"type":"boolean","description":"Return bounded document format and extraction size without text; then page with offset_chars"}
+            "inspect_only":{"type":"boolean","description":"Return bounded document format and extraction size without text; then page with offset_chars"},
+            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, slide:2, or page:3; inspect/read is scoped to that section"}
         },"required":["path"],"additionalProperties":false}),
         codec:Arc::new(ReaderCodec),
     }).map_err(|e|format!("{e:?}"))?;
@@ -267,7 +282,7 @@ mod tests{
         ToolInvocation{call_id:"read-call-1".into(),tool_id:TOOL_ID.into(),
             workspace_id:Some("project".into()),input:ProtoPayload{
                 type_url:INPUT_TYPE.into(),bytes:ReaderRequest{
-                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false
+                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false,selector:String::new()
                 }.encode_to_vec()}}
     }
     #[tokio::test]
@@ -307,7 +322,7 @@ mod tests{
         req.input.bytes=ReaderRequest{
             path:"sample.txt".into(),max_bytes:None,
             max_chars:Some(3),offset_chars:Some(2),
-            inspect_only:false,
+            inspect_only:false,selector:String::new(),
         }.encode_to_vec();
         let result=registry.dispatch(req.clone(),&Allow).await.unwrap();
         let response=ReaderResponse::decode(result.payload.bytes.as_slice()).unwrap();
