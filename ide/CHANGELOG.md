@@ -2,6 +2,10 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Git status native fixture stabilization
+- Changed tracked-file test fixture to have a different byte length after editing, preventing false negatives from timestamp/stat-cache resolution. This is a regression reliability change, not a new runtime feature.
+- Source `27e6dde8cf6bd12e6ea2fbe19b27c2fb8f74c89f`; [CI 42128252074](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128252074) queued at last inspection. No latest exact-SHA CI conclusion or installed Windows smoke proven.
+
 ## 2026-11-05 — Human-first Source control pane (source implemented, CI open)
 - Replaced sidebar's placeholder Source control section with a read-only local Git status view driven by `ide_read_git_status` Tauri command and versioned `git.status` registry contract.
 - Displays branch, local SHA, locally stored upstream tracking status and ahead/behind, real dirty/staged/untracked counts, and up to 120 changed paths; no fetch, push, staging, commit or project-code execution.
