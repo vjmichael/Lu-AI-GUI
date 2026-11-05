@@ -580,6 +580,18 @@ function App() {
     } catch (error) {setError(String(error));}
     finally {setStartingBrowser(false);}
   }
+  async function refreshResearchBrowser() {
+    try {setBrowserRuntime(await invoke('lu_browser_runtime_status'));}
+    catch (error) {setError(String(error));}
+  }
+  async function humanVerifiedBrowser() {
+    setError('');
+    try {
+      const report=await invoke('lu_browser_human_verified');
+      setBrowserRuntime(report);
+      setActivity('Browser verification completed; Lu may resume research');
+    } catch (error) {setError(String(error));}
+  }
   async function stopResearchBrowser() {
     setError('');
     try {
@@ -1232,7 +1244,15 @@ function App() {
             {browserRuntime?.reason || 'Checking research browser installation…'}
           </p>
           <p className="settingsNotice">This preference applies to the next browser session.
-            Native window visibility and human takeover are under development.</p>
+            Lu will reveal the same browser session when human verification is needed.</p>
+          {browserRuntime?.humanVerificationRequired && <div role="alert" className="browserChallengeNotice">
+            <strong>Human verification required</strong>
+            <p>Complete the website challenge in the visible Chromium window.
+              Lu is paused until the browser confirms it is resolved.</p>
+            <button className="subtleButton" type="button" onClick={humanVerifiedBrowser}>
+              I've completed verification
+            </button>
+          </div>}
           <label className="browserOriginLabel" htmlFor="luBrowserOrigin">
             Authorized website (HTTPS origin)
           </label>
@@ -1247,6 +1267,10 @@ function App() {
                 !browserOrigin.trim() || startingBrowser || browserRuntime?.running}
               onClick={startResearchBrowser}>
               {startingBrowser ? 'Starting browser…' : 'Authorize and start browser'}
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={refreshResearchBrowser} disabled={!browserRuntime?.running}>
+              Refresh browser status
             </button>
             <button type="button" className="subtleButton"
               onClick={stopResearchBrowser} disabled={!browserRuntime?.running}>
