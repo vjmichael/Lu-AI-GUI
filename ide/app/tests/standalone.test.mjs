@@ -201,8 +201,8 @@ test('file change conflict messages use readable language but preserve internal 
 test('successful source saves display amber confirmation without recoloring conflicts', () => {
   const web = read('../web/main.jsx');
   const css = read('../web/styles.css');
-  assert.match(web, /hint\.startsWith\('Saved '\) \? ' saveConfirmation' : ''/);
-  assert.match(web, /role="status">\{hint\}/);
+  assert.match(web, /hint\.startsWith\('Saved '\) \? ' saveConfirmation'/);
+  assert.match(web, /className="noticeContent">\{hint\}/);
   assert.match(css, /\.saveConfirmation\s*\{[^}]*color:\s*#ffe48c/);
   assert.match(css, /\.saveConfirmation\s*\{[^}]*background:\s*#332b17/);
   assert.match(css, /\.errorMsg\s*\{[^}]*background:\s*#4c2532/);
@@ -238,4 +238,19 @@ test('R3.5 standalone proposal inbox requires explicit review and never applies 
   assert.doesNotMatch(inbox, /\.save_source_file\(|std::process::Command|Command::new/);
   assert.doesNotMatch(native, /fn ide_apply_proposal|fn ide_execute_proposal/);
   assert.match(css, /\.proposalWorkspace/);
+});
+
+test('R3.7 in-file find navigates the active unsaved buffer without native IPC', () => {
+  const web = read('../web/main.jsx');
+  const editor = read('../web/code_editor.jsx');
+  const css = read('../web/styles.css');
+  assert.match(web, /key === 'f'/);
+  assert.match(web, /role="search" aria-label="Find in active file"/);
+  assert.match(web, /activeTab\.draft\.toLocaleLowerCase/);
+  assert.match(web, /aria-label="Previous match"/);
+  assert.match(web, /aria-label="Next match"/);
+  assert.match(web, /matches\.length < 10000/);
+  assert.match(editor, /scrollIntoView: true/);
+  assert.match(editor, /view\.dispatch/);
+  assert.match(css, /\.editorFindBar/);
 });
