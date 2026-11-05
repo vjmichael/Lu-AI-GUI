@@ -169,6 +169,10 @@ fn worksheet(xml:&[u8],strings:&[String],name:&str,out:&mut String)
     Ok(())
 }
 pub fn read_xlsx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
+    read_xlsx_sheet(bytes,max_chars,None)
+}
+pub fn read_xlsx_sheet(bytes:&[u8],max_chars:usize,selected:Option<&str>)
+    ->Result<ReaderText,ReaderFailure>{
     let pkg=OpenXmlPackage::new(bytes)?;
     if !pkg.has("xl/workbook.xml"){return Err(bad())}
     let relationships=relationships(pkg.part("xl/_rels/workbook.xml.rels")?)?;
@@ -201,10 +205,14 @@ pub fn read_xlsx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
         }
     }
     if sheets.is_empty(){return Err(bad())}
-    let mut out=String::new();
+    let mut out=String::new();let mut found=false;
     for (name,path) in sheets{
-        worksheet(pkg.part(&path)?,&strings,&name,&mut out)?;
+        if selected.is_none_or(|s|s==name){
+            worksheet(pkg.part(&path)?,&strings,&name,&mut out)?;
+            found=true;
+        }
     }
+    if !found{return Err(ReaderFailure::SelectorNotFound)}
     bounded(out,ReaderFormat::Xlsx,max_chars)
 }
 fn slide_text(xml:&[u8],out:&mut String)->Result<(),ReaderFailure>{
@@ -232,6 +240,10 @@ fn slide_text(xml:&[u8],out:&mut String)->Result<(),ReaderFailure>{
     Ok(())
 }
 pub fn read_pptx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
+    read_pptx_slide(bytes,max_chars,None)
+}
+pub fn read_pptx_slide(bytes:&[u8],max_chars:usize,selected:Option<usize>)
+    ->Result<ReaderText,ReaderFailure>{
     let pkg=OpenXmlPackage::new(bytes)?;
     if !pkg.has("ppt/presentation.xml"){return Err(bad())}
     let rels=relationships(pkg.part("ppt/_rels/presentation.xml.rels")?)?;
@@ -258,11 +270,15 @@ pub fn read_pptx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
         }
     }
     if slides.is_empty(){return Err(bad())}
-    let mut out=String::new();
+    let mut out=String::new();let mut found=false;
     for (i,slide) in slides.iter().enumerate(){
-        out.push_str(&format!("\n[Slide {}]\n",i+1));
-        slide_text(pkg.part(slide)?,&mut out)?;
+        if selected.is_none_or(|n|n==i+1){
+            out.push_str(&format!("\n[Slide {}]\n",i+1));
+            slide_text(pkg.part(slide)?,&mut out)?;
+            found=true;
+        }
     }
+    if !found{return Err(ReaderFailure::SelectorNotFound)}
     bounded(out,ReaderFormat::Pptx,max_chars)
 }
 #[cfg(test)]
@@ -312,6 +328,19 @@ mod tests{
         assert!(result.text.contains("B1=42 [formula: =SUM(C1:C3); cached value may be stale]"));
         let trunc=read_xlsx(&data,12).unwrap();
         assert!(trunc.truncated);
+    }
+    #[test]
+    fn selector_reports_missing_without_returning_another_sheet(){
+        let data=make_zip(&[
+            ("[Content_Types].xml",CT),
+            ("xl/workbook.xml",r#"<workbook xmlns:r="r"><sheets><sheet name="Costs" r:id="rId1"/></sheets></workbook>"#),
+            ("xl/_rels/workbook.xml.rels",r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>"#),
+            ("xl/worksheets/sheet1.xml",r#"<worksheet><sheetData><c r="B2"><v>99</v></c></sheetData></worksheet>"#),
+        ]);
+        let result=read_xlsx_sheet(&data,100,Some("Costs")).unwrap();
+        assert!(result.text.contains("B2=99"));
+        assert_eq!(read_xlsx_sheet(&data,100,Some("Missing")),
+            Err(ReaderFailure::SelectorNotFound));
     }
     #[test]
     fn presentation_uses_actual_presentation_order_not_slide_filenames(){
