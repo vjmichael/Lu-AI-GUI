@@ -21,6 +21,7 @@ pub const OUTPUT_TYPE:&str="type.googleapis.com/lu.v1.ReaderResponse";
 const MAX_BYTES:u32=1024*1024;
 const DEFAULT_BYTES:u32=256*1024;
 const MAX_CHARS:u32=32_000;
+const MAX_OFFSET_CHARS:u32=200_000;
 const DEFAULT_CHARS:u32=16_000;
 
 #[derive(Clone,PartialEq,Message)]
@@ -31,6 +32,8 @@ pub struct ReaderRequest{
     pub max_bytes:Option<u32>,
     #[prost(uint32,optional,tag="3")]
     pub max_chars:Option<u32>,
+    #[prost(uint32,optional,tag="4")]
+    pub offset_chars:Option<u32>,
 }
 #[derive(Clone,PartialEq,Message)]
 pub struct ReaderResponse{
@@ -42,6 +45,12 @@ pub struct ReaderResponse{
     pub truncated:bool,
     #[prost(uint64,tag="4")]
     pub bytes_read:u64,
+    #[prost(uint32,tag="5")]
+    pub offset_chars:u32,
+    #[prost(uint32,optional,tag="6")]
+    pub next_offset_chars:Option<u32>,
+    #[prost(bool,tag="7")]
+    pub source_truncated:bool,
 }
 pub struct ReaderTool{
     descriptor:ToolDescriptor,
@@ -63,6 +72,8 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
     ->Result<ReaderResponse,ToolFailure>{
     let max_bytes=request.max_bytes.unwrap_or(DEFAULT_BYTES);
     let max_chars=request.max_chars.unwrap_or(DEFAULT_CHARS);
+    let offset=request.offset_chars.unwrap_or(0);
+    if offset>MAX_OFFSET_CHARS{return Err(failure("READER_INVALID_OFFSET"));}
     if max_bytes==0||max_bytes>MAX_BYTES
         ||max_chars==0||max_chars>MAX_CHARS
         ||u64::from(max_bytes)>MAX_READER_INPUT_BYTES{
@@ -86,7 +97,9 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
     if bytes.len()>max_bytes as usize{
         return Err(failure("READER_INPUT_TOO_LARGE"));
     }
-    let text=read_text_bytes(&request.path,&bytes,max_chars as usize)
+    // Parse once into the bounded host extraction window, then return only
+    // this invocation's authorized slice. A later tool call can page again.
+    let text=read_text_bytes(&request.path,&bytes,MAX_OFFSET_CHARS as usize)
         .map_err(|err|match err{
             ReaderFailure::UnsupportedAdapter(_)=>failure("READER_ADAPTER_UNAVAILABLE"),
             ReaderFailure::UnsupportedEncoding=>failure("READER_INVALID_ENCODING"),
@@ -95,10 +108,21 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
             ReaderFailure::Empty=>failure("READER_EMPTY"),
             ReaderFailure::Io=>failure("READER_FILE_UNAVAILABLE"),
         })?;
+    let all_chars=text.text.chars().count();
+    if offset as usize>all_chars{
+        return Err(failure("READER_OFFSET_BEYOND_EXTRACTED_TEXT"));
+    }
+    let end=(offset as usize).saturating_add(max_chars as usize).min(all_chars);
+    let chunk:String=text.text.chars().skip(offset as usize)
+        .take(end-offset as usize).collect();
+    let has_next=end<all_chars;
+    let next_offset_chars=if has_next{Some(end as u32)}else{None};
     Ok(ReaderResponse{
         format:format!("{:?}",text.format),
-        text:text.text,truncated:text.truncated,
+        text:chunk,truncated:has_next||text.truncated,
         bytes_read:bytes.len() as u64,
+        offset_chars:offset,next_offset_chars,
+        source_truncated:text.truncated,
     })
 }
 impl NativeTool for ReaderTool{
@@ -130,7 +154,7 @@ impl ModelToolCodec for ReaderCodec{
     fn output_type_url(&self)->&'static str{OUTPUT_TYPE}
     fn encode(&self,args:&Map<String,Value>)
         ->Result<ProtoPayload,ModelToolError>{
-        expect_fields(args,&["path","max_bytes","max_chars"],&["path"])?;
+        expect_fields(args,&["path","max_bytes","max_chars","offset_chars"],&["path"])?;
         let path=args.get("path").and_then(Value::as_str)
             .ok_or_else(||ModelToolError::InvalidArguments(
                 "Reader path must be a string".into()))?;
@@ -138,10 +162,17 @@ impl ModelToolCodec for ReaderCodec{
             "Reader requires a workspace-relative safe path".into()))?;
         let max_bytes=optional_uint(args,"max_bytes",DEFAULT_BYTES,MAX_BYTES)?;
         let max_chars=optional_uint(args,"max_chars",DEFAULT_CHARS,MAX_CHARS)?;
+        let offset=match args.get("offset_chars"){
+            None=>0,
+            Some(v)=>v.as_u64().filter(|n|*n<=u64::from(MAX_OFFSET_CHARS))
+                .ok_or_else(||ModelToolError::InvalidArguments(
+                    "offset_chars must be between 0 and 200000".into()))? as u32,
+        };
         Ok(ProtoPayload{type_url:INPUT_TYPE.into(),
             bytes:ReaderRequest{
                 path:path.into(),max_bytes:Some(max_bytes),
                 max_chars:Some(max_chars),
+                offset_chars:Some(offset),
             }.encode_to_vec()})
     }
     fn decode(&self,result:&ProtoPayload)->Result<Value,ModelToolError>{
@@ -152,7 +183,10 @@ impl ModelToolCodec for ReaderCodec{
             .map_err(|_|ModelToolError::InvalidResult(
                 "Malformed Reader response".into()))?;
         Ok(json!({"format":output.format,"text":output.text,
-            "truncated":output.truncated,"bytes_read":output.bytes_read}))
+            "truncated":output.truncated,"bytes_read":output.bytes_read,
+            "offset_chars":output.offset_chars,
+            "next_offset_chars":output.next_offset_chars,
+            "source_truncated":output.source_truncated}))
     }
 }
 /// Register Reader for a host-approved directory; registration itself does
@@ -183,7 +217,8 @@ pub fn register_reader(
         parameters:json!({"type":"object","properties":{
             "path":{"type":"string","description":"Authorized workspace-relative file path"},
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
-            "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS}
+            "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS},
+            "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS}
         },"required":["path"],"additionalProperties":false}),
         codec:Arc::new(ReaderCodec),
     }).map_err(|e|format!("{e:?}"))?;
@@ -214,7 +249,7 @@ mod tests{
         ToolInvocation{call_id:"read-call-1".into(),tool_id:TOOL_ID.into(),
             workspace_id:Some("project".into()),input:ProtoPayload{
                 type_url:INPUT_TYPE.into(),bytes:ReaderRequest{
-                    path:file.into(),max_bytes:None,max_chars:None
+                    path:file.into(),max_bytes:None,max_chars:None,offset_chars:None
                 }.encode_to_vec()}}
     }
     #[tokio::test]
