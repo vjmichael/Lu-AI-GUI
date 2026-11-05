@@ -1226,7 +1226,7 @@ async fn lu_reader_pick_document(app:AppHandle)
     tauri::async_runtime::spawn_blocking(move||{
         let selected=app.dialog().file()
             .add_filter("Reader documents",&[
-                "docx","xlsx","pptx","txt","md","markdown","csv","tsv","json",
+                "docx","xlsx","pptx","pdf","txt","md","markdown","csv","tsv","json",
                 "jsonl","log","py","rs","js","jsx","ts","tsx",
                 "xml","html","htm","yaml","yml","toml","ini","sql",
             ]).blocking_pick_file();
