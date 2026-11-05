@@ -1232,8 +1232,8 @@ async fn lu_generate_browser(
     }
     let state=Arc::clone(state.inner());
     lu_core::browser_authorized_execution::BrowserOriginScope::from_host_grant(
-        vec![origin.clone()]
-    ).map_err(|_|"Browser research requires an exact public HTTPS origin")?;
+        research_origin_scope(&origin)?.origins()
+    ).map_err(|_|"Browser research requires exact public HTTPS origins")?;
     state.browser_runtime.require_launch_ready()?;
     if state.browser_task.lock().map_err(|_|"browser task lock poisoned")?.is_some(){
         return Err("Stop the previous browser session before starting a new research turn".into());
@@ -1292,6 +1292,7 @@ async fn lu_generate_browser(
             // promote a page into an attributed research source.
             let mut verified_pages:std::collections::BTreeMap<String,String>=
                 std::collections::BTreeMap::new();
+            let approved_source_scope=research_origin_scope(&origin)?;
             // Progress, not an arbitrary model-call count, determines when
             // the initial read-only research gate stops. The whole turn also
             // has an absolute deadline; model and worker calls remain
@@ -1446,11 +1447,8 @@ async fn lu_generate_browser(
                         // Second-layer exact-origin admission. The worker and
                         // per-call native policy already enforce the origin,
                         // but final citations may only use a URL under it.
-                        let rest=page.strip_prefix(origin.as_str())
-                            .ok_or("Browser read escaped approved HTTPS origin")?;
-                        if !rest.is_empty()&&!rest.starts_with('/')
-                            &&!rest.starts_with('?')&&!rest.starts_with('#'){
-                            return Err("Browser read escaped approved HTTPS origin".into());
+                        if !approved_source_scope.allows(page){
+                            return Err("Browser read escaped approved HTTPS origins".into());
                         }
                         let text=result.pointer("/result/browser_result/result/text")
                             .and_then(serde_json::Value::as_str)
@@ -2076,6 +2074,21 @@ async fn run_authenticated_browser_model_turn(
 /// The trusted host chooses an authenticated USER turn from the journal;
 /// a web page or model cannot forge one with a message string.
 #[tauri::command]
+/// UI supplies a *candidate* list, never a grant. The native host validates
+/// every exact origin and asks the human to approve the complete immutable set.
+fn research_origin_scope(input:&str)
+    ->Result<lu_core::browser_authorized_execution::BrowserOriginScope,String>{
+    use lu_core::browser_authorized_execution::BrowserOriginScope;
+    if input.len()>2048{return Err("Research origin list is too long".into());}
+    let parts:Vec<String>=input.split([',',';','\n'])
+        .map(str::trim).map(str::to_owned).collect();
+    if parts.is_empty()||parts.len()>8||parts.iter().any(String::is_empty){
+        return Err("Specify between one and eight exact HTTPS origins".into());
+    }
+    BrowserOriginScope::from_host_grant(parts)
+        .map_err(|_|"Invalid or non-public HTTPS browser origin".into())
+}
+
 async fn start_browser_for_turn(
     app:AppHandle,
     state:Arc<DesktopState>,
@@ -2088,8 +2101,7 @@ async fn start_browser_for_turn(
         conversation_authority::{AuthorizedCapability,TaskAuthority},
         contracts::ToolEffect,
     };
-    let scope=BrowserOriginScope::from_host_grant(vec![origin])
-        .map_err(|_|"Invalid or non-public HTTPS browser origin")?;
+    let scope=research_origin_scope(&origin)?;
     if state.chats.trusted_user_turn_text(&chat_id,&user_turn_id).is_none(){
         return Err("Browser task must bind a persisted authenticated user turn".into());
     }
