@@ -3,6 +3,10 @@
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
 ## 2026-11-05 — Wave A2 typed schemas and Wave A3 project continuity (source implementation)
+- Refined the capability directory for human readability: concise typed signatures, expandable full request/result/error schemas, and nested types self-contained using JSON Schema 2020-12 `$defs`. Added reference integrity tests.
+- Expanded project orientation to support both project-root documents and `ide/` subdirectory documents. Recorded successful source writes now include a structured safe relative path alongside revision digest, rather than an anonymous save.
+- Latest source CI [42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) was queued at last check; no exact-source pass/fail has yet been observed.
+
 - Replaced loose input names/result labels with fully typed JSON Schema contract definitions for native request/result shapes, including nested project/file/span/review/proposal records and explicit error schema. Descriptor schema version increased from 1 to 2; contracts remain discovery-only.
 - Implemented host-owned bounded `development-ledger.jsonl` in IDE app data, recording successful native project lifecycle and explicit source save observations with revision when available. Added `ide_read_project_context` and human Continuity screen for recent events and revisioned project note excerpts.
 - Context distinguishes human/AI-readable project docs from trusted host observations, labels project text untrusted, and marks remote Git, artifacts and toolchains uninspected/unverified. No Lu bridge, shell execution, automatic save or package operations.
