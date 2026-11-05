@@ -48,6 +48,8 @@ function App() {
   const [contextBusy, setContextBusy] = useState(false);
   const [gitStatus, setGitStatus] = useState(null);
   const [gitBusy, setGitBusy] = useState(false);
+  const [githubBusy, setGithubBusy] = useState(false);
+  const [githubComparison, setGithubComparison] = useState(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
@@ -130,6 +132,7 @@ function App() {
       return;
     }
     setGitBusy(true);
+    setGithubComparison(null); // A local refresh invalidates any prior live comparison.
     setProblem('');
     try {
       setGitStatus(await invoke('ide_read_git_status', { projectId: activeProject.projectId }));
@@ -137,6 +140,21 @@ function App() {
       setGitStatus(null);
       setProblem('Could not inspect source control: ' + String(error));
     } finally { setGitBusy(false); }
+  }
+
+  async function compareLiveGitHub() {
+    if (!activeProject?.projectId || githubBusy) return;
+    setGithubBusy(true);
+    setGithubComparison(null);
+    setProblem('');
+    try {
+      const observed = await invoke('ide_compare_live_github', {
+        projectId: activeProject.projectId,
+      });
+      setGithubComparison(observed);
+    } catch (error) {
+      setProblem('Could not compare with GitHub: ' + String(error));
+    } finally { setGithubBusy(false); }
   }
 
   async function refreshContext() {
@@ -763,6 +781,37 @@ function App() {
               </div>
               {gitStatus.truncated && <p role="status">
                 More than 120 changed files were found. The visible list is truncated.</p>}
+              <div className="continuityCapture">
+                <h3>Compare with live GitHub</h3>
+                <button type="button" className="ghostBtn"
+                  disabled={githubBusy || gitBusy}
+                  onClick={() => compareLiveGitHub()}>
+                  {githubBusy ? 'Checking GitHub…' : 'Check GitHub'}
+                </button>
+              </div>
+              <p>This explicitly checks the current head of a public GitHub origin branch.
+                It does not fetch files into your project, use credentials, or modify Git.</p>
+              {githubComparison && <div className="continuityDocument" aria-label="Live GitHub comparison">
+                <p><strong>{githubComparison.state.replaceAll('_', ' ')}</strong>
+                  {githubComparison.repository && <> · <code>{githubComparison.repository}</code></>}
+                  {githubComparison.branch && <> / <code>{githubComparison.branch}</code></>}
+                </p>
+                {githubComparison.githubHead && <p>GitHub branch commit:
+                  <code> {githubComparison.githubHead}</code></p>}
+                <p>Local HEAD vs GitHub: <strong>
+                  {githubComparison.localVsGithub.replaceAll('_', ' ')}</strong></p>
+                <p>Stored tracking ref vs GitHub: <strong>
+                  {githubComparison.trackingVsGithub.replaceAll('_', ' ')}</strong></p>
+                <p>Local worktree: <strong>{githubComparison.worktree.replaceAll('_', ' ')}</strong>
+                  {githubComparison.dirtyFileCount !== null &&
+                    <> · Changed/untracked files: {githubComparison.dirtyFileCount}</>}</p>
+                {githubComparison.checkedUnixSeconds !== null &&
+                  <p>Checked: {new Date(githubComparison.checkedUnixSeconds * 1000).toLocaleString()}</p>}
+                {githubComparison.errorCode && <p role="status">
+                  GitHub could not be verified: {githubComparison.errorCode.replaceAll('_', ' ')}</p>}
+                <p>Commit differences do not establish ancestry. GitHub evidence can become stale
+                  after the check. Public, unauthenticated API only.</p>
+              </div>}
             </div>}
           </section>
         : isContinuity
