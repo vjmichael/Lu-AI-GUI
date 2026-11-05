@@ -129,7 +129,7 @@ This **eight-stage sequence is the official Lu IDE task list**. Existing IDE-01B
 
 | Task | Status as of 2026-11-04 | Scope | Minimum acceptance |
 | --- | --- | --- | --- |
-| **1. Rust workspace host + Protobuf interface** | Not started | Host workspace registry; trusted picker; opaque handles; lifecycle; Lu Core authority/journal integration | Linux tests prove open/close/reopen, path scoping, authenticated caller, durable state, cancel |
+| **1. Rust workspace host + Protobuf interface** | In progress — Rust crate compiled, 8 Linux tests pass; native Tauri integration still open | Host workspace registry; trusted picker; opaque handles; lifecycle; Lu Core authority/journal integration | Linux tests prove open/close/reopen, path scoping, authenticated caller, durable state, cancel |
 | **2. Linux sandbox and real execution tests** | Not started | OS isolation launcher, worker supervision, path/network/secret denial, quotas, adversarial harness | Real hostile-process tests on Linux; no silent unisolated fallback; logs and receipts; Windows strategy recorded |
 | **3. Project explorer and code editor** | Not started | Human-first multi-file editor, search, tabs/splits, safe save, diff preview, shortcuts | Large project usability, undo/redo, recovery, no project auto-execution |
 | **4. LSP, build/test and debugger integration** | Not started | LSP/DAP adapters; terminal/task runner; streaming diagnostics; run configs | Representative Python/C++/Rust/JS projects; bounded build/test/debug workers; cancellation and crash cleanup |
@@ -172,4 +172,4 @@ External references (implementation guidance, not blanket certification):
 - Linux Landlock: https://docs.kernel.org/userspace-api/landlock.html
 
 ---
-**Document control:** Changes to the eight task definitions or security invariants should update this document and its related subgate checklist in the same IDE-branch review. Do not label unverified features “complete.”
+**Implementation evidence:** [IDE-01B host implementation and Linux CI results](IDE_01B_IMPLEMENTATION_EVIDENCE.md).\n\n**Document control:** Changes to the eight task definitions or security invariants should update this document and its related subgate checklist in the same IDE-branch review. Do not label unverified features “complete.”
