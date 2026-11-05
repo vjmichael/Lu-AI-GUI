@@ -92,4 +92,12 @@ not yet operationally useful through Lu's installed GUI.
   false readiness, proper provenance, task completion, authorization
   violations, and human clarification burden.
 
+**Windows CI distinction:** The default-branch full Lu Core currently fails to compile
+on Windows because the inference backend calls the missing
+`Job::assign_and_resume_suspended` method. This is an unrelated, pre-existing
+worker-containment interface mismatch. The dedicated Windows test harness
+compiles the actual production operational-memory module and runs the same
+resource tests independently. It does not make full Core Windows compilation
+or installed-desktop acceptance green.
+
 A source test pass is not installed desktop acceptance.
