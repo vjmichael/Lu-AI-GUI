@@ -170,6 +170,35 @@ fn parse_literal(b:&[u8],pos:&mut usize)->Result<String,ReaderFailure>{
     if nest!=0{return Err(bad())}
     decode_pdf_string(&bytes)
 }
+fn hex_nibble(b:u8)->Option<u8>{
+    match b{
+        b'0'..=b'9'=>Some(b-b'0'),
+        b'a'..=b'f'=>Some(b-b'a'+10),
+        b'A'..=b'F'=>Some(b-b'A'+10),
+        _=>None,
+    }
+}
+fn parse_hex_string(bytes:&[u8],pos:&mut usize)->Result<String,ReaderFailure>{
+    if bytes.get(*pos)!=Some(&b'<') || bytes.get(*pos+1)==Some(&b'<'){
+        return Err(unsupported())
+    }
+    *pos+=1;
+    let mut decoded=Vec::new();let mut high=None;
+    let mut closed=false;
+    while *pos<bytes.len(){
+        let b=bytes[*pos];*pos+=1;
+        if b==b'>'{closed=true;break}
+        if is_ws(b){continue}
+        let nibble=hex_nibble(b).ok_or_else(unsupported)?;
+        if let Some(upper)=high.take(){
+            decoded.push((upper<<4)|nibble);
+        }else{high=Some(nibble)}
+        if decoded.len()>MAX_PAGE_CONTENT{return Err(ReaderFailure::TooLarge)}
+    }
+    if !closed{return Err(bad())}
+    if let Some(upper)=high{decoded.push(upper<<4)}
+    decode_pdf_string(&decoded)
+}
 fn decode_pdf_string(bytes:&[u8])->Result<String,ReaderFailure>{
     if bytes.starts_with(&[0xfe,0xff]){
         if (bytes.len()-2)%2!=0{return Err(unsupported())}
@@ -200,7 +229,10 @@ fn text_stream(bytes:&[u8])->Result<String,ReaderFailure>{
                 at+=1;
                 while at<bytes.len()&&!boundary(bytes[at]){at+=1}
             },
-            b'<' =>return Err(unsupported()), // hex / encoding-specific glyphs
+            b'<' =>{
+                let text=parse_hex_string(bytes,&mut at)?;
+                if inside{operands.push(text)}
+            },
             b @ _ if !boundary(b)=>{
                 let start=at;
                 while at<bytes.len()&&!boundary(bytes[at]){at+=1}
@@ -295,6 +327,15 @@ mod tests{
             assert!(read.text.contains("[Page 1]"));
             assert!(read.text.contains("Hello (PDF) world"));
         }
+    }
+    #[test]
+    fn pdf_hex_text_operators_use_actual_ascii_or_utf16_bytes(){
+        let ascii=b"BT <48656c6c6f20776f726c64> Tj ET";
+        let text=read_pdf_text(&fixture(ascii,false),100).unwrap();
+        assert!(text.text.contains("Hello world"));
+        let utf16=b"BT <FEFF00480069> Tj ET";
+        let text=read_pdf_text(&fixture(utf16,true),100).unwrap();
+        assert!(text.text.contains("Hi"));
     }
     #[test]
     fn scanned_textless_page_and_binary_glyphs_fail_closed(){
