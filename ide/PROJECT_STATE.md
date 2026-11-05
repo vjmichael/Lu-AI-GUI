@@ -23,6 +23,14 @@
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
+## Wave A2 — Semantic Capability Registry (implementation source, verification pending)
+
+- Added `host/src/capabilities.rs`: static, versioned list of **16 existing native operations**, each with stable semantic ID, actual Tauri command name, typed input-field names, effect class, precondition, result type, expected evidence and bounded-call cancellation note.
+- Added read-only `ide_list_capabilities` Tauri endpoint. It lists descriptors only, **does not dispatch operations or authorize effects**, and does not open any Lu bridge.
+- Added a human **Capabilities** section showing the host-owned catalog. Frontend test checks exact parity between the registered Tauri command names and descriptor list, excluding the descriptor endpoint itself.
+- `source.save` is classified as a disk write and remains explicit/human-owned; proposal staging is data only. Existing editor and project UX retained.
+- **Status:** code committed; exact-head CI, native Windows interactive acceptance and installer verification **not yet established**. No local `Delivered` inspection.
+
 ## Wave A1 source-reference UI and CI repair — 2026-11-05
 
 - CI [42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705): Windows desktop **passed**, frontend **passed**, Linux native job **failed due to `cargo fmt --check` formatting differences**. Rust tests had completed before formatting failed. This was not a source-span behavioral failure.
