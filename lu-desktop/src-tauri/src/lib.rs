@@ -155,6 +155,7 @@ struct DesktopState {
     images: Mutex<HashMap<String, PinnedImage>>,
     generation_queue: Arc<GenerationQueue>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
+    background_tasks: Arc<lu_core::tasks::TaskStore>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -433,7 +434,16 @@ impl DesktopState {
                 .attach_projector(&model_ref, projector)
                 .map_err(|e| format!("saved projector binding: {e:?}"))?;
         }
+        let background_tasks=Arc::new(lu_core::tasks::TaskStore::open(
+            &root.join("lu-background-tasks.sqlite")
+        ).map_err(|_|"Background task store unavailable")?);
+        // Startup owns the application-local SQLite store exclusively.
+        // Old RUNNING records are marked interrupted rather than presented
+        // to the operator as phantom live workers after a restart.
+        background_tasks.reconcile_interrupted()
+            .map_err(|_|"Background task startup reconciliation failed")?;
         Ok(Self {
+            background_tasks,
             models_dir,
             catalog_path,
             chats: ChatStore::open(&root)?,
@@ -963,6 +973,30 @@ struct ChatListView {
     chats: Vec<ChatSummary>,
     folders: Vec<ChatFolder>,
 }
+/// Native host operator view; this is not a model tool invocation.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct BackgroundTaskView {
+    task_id:String,
+    workspace_id:Option<String>,
+    state:String,
+    progress:u8,
+    detail:String,
+    last_heartbeat:Option<String>,
+    updated_at:String,
+}
+#[tauri::command]
+fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
+    ->Result<Vec<BackgroundTaskView>,String>{
+    let tasks=state.background_tasks.dashboard(100)
+        .map_err(|_|"Background task overview unavailable")?;
+    Ok(tasks.into_iter().map(|task|BackgroundTaskView{
+        task_id:task.task_id,workspace_id:task.workspace_id,
+        state:format!("{:?}",task.state).to_uppercase(),
+        progress:task.progress,detail:task.detail,
+        last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
+    }).collect())
+}
 #[tauri::command]
 fn lu_chats(state: State<'_, Arc<DesktopState>>) -> Result<ChatListView, String> {
     let (chats, folders) = state.chats.list()?;
@@ -1056,6 +1090,7 @@ pub fn run() {
             lu_generate,
             lu_history,
             lu_chats,
+            lu_background_tasks,
             lu_new_chat,
             lu_new_folder,
             lu_favorite_chat,
