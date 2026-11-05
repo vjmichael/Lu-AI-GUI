@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "de5a6843652b1667cf9324bee0cbdbcd425028f7",
+  "sourceCommitBeforeLock": "3d066cb143a37fa6930c1220ed7ab776daf4fcde",
   "trackedFileCount": 316,
   "files": [
     {
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
-      "blob": "6957b26825abd2a616e32d889324d48d4d6031fa"
+      "blob": "83ec8bc4fea189304a7e40dcd9e56b0f3536904a"
     },
     {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
@@ -1113,7 +1113,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/linux_device_hints.rs",
-      "blob": "6322f67e645751d5568f5bb1d1cf79d277770b2d"
+      "blob": "9284bcb23ac34f07838fde5a302752337b7f6e67"
     },
     {
       "path": "src-tauri/lu-core/tests/linux_gpu_nodes.rs",
