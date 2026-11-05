@@ -1,8 +1,8 @@
 //! Conservative PDF text-layer adapter for classic PDFs.
 //! This is not a general PDF renderer. It supports bounded, indirect page
 //! content streams, uncompressed or zlib-flated, and basic Tj/TJ text runs.
-//! Unsupported encodings, encryption, object streams, nested page trees,
-//! image-only pages and complex layouts return an explicit error.
+//! Unsupported encodings, encryption, object streams, excessively deep/cyclic
+//! page trees, image-only pages and complex layouts return an explicit error.
 //! It never runs embedded JavaScript, launches a renderer or fetches URLs.
 use crate::native_reader::{ReaderFailure,ReaderFormat,ReaderText,MAX_READER_OUTPUT_CHARS};
 use flate2::read::ZlibDecoder;
@@ -134,6 +134,66 @@ fn parse_page_ids(dict:&[u8])->Result<Vec<usize>,ReaderFailure>{
     if ids.is_empty(){return Err(unsupported())}
     Ok(ids)
 }
+// Resolve the page tree from the actual Catalog, not by collecting every
+// /Pages object. Ordinary producer PDFs use nested trees. Traversal is
+// bounded, checks parent links, rejects duplicate/cyclic nodes and verifies
+// declared page counts before extracting any page text.
+const MAX_PAGE_TREE_DEPTH:usize=16;
+fn pdf_type_is(dict:&[u8],kind:&[u8])->bool{
+    let Some(value)=value_after(dict,b"/Type") else{return false};
+    let mut pos=0;skip_ws(value,&mut pos);
+    value.get(pos..pos+kind.len())==Some(kind)
+        &&value.get(pos+kind.len()).is_none_or(|b|boundary(*b))
+}
+fn collect_page_ids(objects:&BTreeMap<usize,PdfObject>)
+    ->Result<Vec<usize>,ReaderFailure>{
+    let mut catalogs=objects.iter()
+        .filter(|(_,obj)|pdf_type_is(&obj.dictionary,b"/Catalog"));
+    let (_,catalog)=catalogs.next().ok_or_else(unsupported)?;
+    if catalogs.next().is_some(){return Err(unsupported())}
+    let root=object_ref(&catalog.dictionary,b"/Pages").ok_or_else(unsupported)?;
+    fn visit(
+        id:usize,parent:Option<usize>,depth:usize,
+        objects:&BTreeMap<usize,PdfObject>,
+        visited:&mut std::collections::BTreeSet<usize>,
+        pages:&mut Vec<usize>,
+    )->Result<(),ReaderFailure>{
+        if depth>MAX_PAGE_TREE_DEPTH||!visited.insert(id){
+            return Err(unsupported())
+        }
+        let node=objects.get(&id).ok_or_else(bad)?;
+        if parent.is_some()
+            &&object_ref(&node.dictionary,b"/Parent")!=parent{
+            return Err(unsupported())
+        }
+        if pdf_type_is(&node.dictionary,b"/Page"){
+            if parent.is_none(){return Err(unsupported())}
+            pages.push(id);
+            if pages.len()>MAX_PAGES{return Err(ReaderFailure::TooLarge)}
+            return Ok(())
+        }
+        if !pdf_type_is(&node.dictionary,b"/Pages"){
+            return Err(unsupported())
+        }
+        let kids=parse_page_ids(&node.dictionary)?;
+        let before=pages.len();
+        for child in kids{
+            visit(child,Some(id),depth+1,objects,visited,pages)?;
+        }
+        // A tree's /Count is the total *leaf* count, including nested kids.
+        let count=value_after(&node.dictionary,b"/Count")
+            .and_then(|rest|{let mut at=0;integer(rest,&mut at)})
+            .ok_or_else(unsupported)?;
+        if count!=pages.len()-before{return Err(unsupported())}
+        Ok(())
+    }
+    let mut visited=std::collections::BTreeSet::new();
+    let mut pages=Vec::new();
+    visit(root,None,0,objects,&mut visited,&mut pages)?;
+    if pages.is_empty(){return Err(unsupported())}
+    Ok(pages)
+}
+
 fn parse_literal(b:&[u8],pos:&mut usize)->Result<String,ReaderFailure>{
     if b.get(*pos)!=Some(&b'('){return Err(bad())}
     *pos+=1;
@@ -268,18 +328,14 @@ pub fn read_pdf_page(bytes:&[u8],max_chars:usize,selected:Option<usize>)
         bytes.windows(10).any(|w|w==b"/ObjStm"){
         return Err(unsupported())
     }
-    let roots=objects.iter().filter(|(_,obj)|
-        obj.dictionary.windows(12).any(|w|w==b"/Type /Pages"))
-        .map(|(_,obj)|&obj.dictionary).collect::<Vec<_>>();
-    if roots.len()!=1{return Err(unsupported())}
-    let page_ids=parse_page_ids(roots[0])?;
+    let page_ids=collect_page_ids(&objects)?;
     let mut text=String::new();
     let mut found=false;
     for (index,id) in page_ids.iter().enumerate(){
         if selected.is_some_and(|page|page!=index+1){continue}
         found=true;
         let page=objects.get(id).ok_or_else(bad)?;
-        if !page.dictionary.windows(12).any(|w|w==b"/Type /Page "){
+        if !pdf_type_is(&page.dictionary,b"/Page"){
             return Err(unsupported())
         }
         let stream_id=object_ref(&page.dictionary,b"/Contents")
