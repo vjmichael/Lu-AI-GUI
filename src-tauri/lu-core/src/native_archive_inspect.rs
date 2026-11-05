@@ -319,7 +319,7 @@ pub fn register_archive_inspection_tool(
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_archive_list".into(),
         native_tool_id: LIST.into(),
-        description: "Inspect a ZIP archive's member names and declared sizes without extracting.".into(),
+        description: "Inspect a ZIP archive or ISO9660 disc image; list bounded metadata without mounting or extracting.".into(),
         parameters: json!({
             "type": "object",
             "properties": {
