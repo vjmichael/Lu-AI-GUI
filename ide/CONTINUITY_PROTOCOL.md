@@ -2,6 +2,10 @@
 
 **Purpose:** Prevent cross-conversation rediscovery and false claims that GitHub, a working directory, a build artifact and an installed application are interchangeable. Use this protocol for Lu IDE; copy/adapt it to Lu, NVP, Cognitum and Single-Galaxy independently.
 
+## AI-first use of the ledger
+
+The ledger is an authoritative **index of what was observed**, not an authority grant or a claim that current resources remain usable. AI should discover precise object/revision identities, consult the relevant evidence, verify present resources, then propose action with preconditions and expected evidence. See [AI-first IDE requirements](docs/AI_FIRST_IDE_DESIGN.md). Historical facts and AI summaries cannot supersede current human decisions, native host verification or original sources.
+
 ## Required project documents
 
 - `PROJECT_STATE.md`: short, **current** status; next work, branch, exact implementation commit, verification matrix, blockers, local/Git divergence, artifact manifest, dependencies.
