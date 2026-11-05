@@ -534,7 +534,10 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
 #[tokio::test]
 async fn text_search_caps_directory_entries_even_when_all_are_directories() {
     let (folder, registry, catalog, authority, origin, _) = setup();
-    for i in 0..300 {
+    // The native search budget was increased to 512 directory entries;
+    // create more than that budget so this tests actual truncation, not
+    // whether a smaller historical threshold was retained.
+    for i in 0..600 {
         fs::create_dir(folder.join(format!("folder-{i:03}"))).unwrap();
     }
     let allowed = BTreeSet::from(["lu_files_search_text".into()]);
