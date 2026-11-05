@@ -17,7 +17,11 @@ fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String) {
     ));
     let project = root.join("project");
     fs::create_dir_all(project.join("src")).unwrap();
-    fs::write(project.join("src/main.rs"), "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+    fs::write(
+        project.join("src/main.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
     let id = registry
         .register_from_native_picker(&mut Picker(Some(project)))
@@ -41,12 +45,22 @@ fn review_is_read_only_and_requires_correct_revision() {
     assert!(!preview.truncated);
     assert_eq!(preview.expected_revision, original.revision);
     assert_ne!(preview.proposed_revision, original.revision);
-    assert!(preview.lines.iter().any(|line| line.kind == "added" && line.text.contains("goodbye")));
+    assert!(preview
+        .lines
+        .iter()
+        .any(|line| line.kind == "added" && line.text.contains("goodbye")));
     // A review is purely advisory; it cannot modify disk or start a process.
-    assert_eq!(fs::read_to_string(root.join("project/src/main.rs")).unwrap(), original.text);
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/main.rs")).unwrap(),
+        original.text
+    );
     assert!(fs::read_dir(root.join("project/src"))
         .unwrap()
-        .all(|entry| !entry.unwrap().file_name().to_string_lossy().starts_with(".lu-ide-")));
+        .all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".lu-ide-")));
     let no_change = registry
         .review_source_change(&id, "src/main.rs", &original.revision, &original.text)
         .unwrap();
@@ -83,7 +97,12 @@ fn stale_version_and_invalid_paths_cannot_be_reviewed() {
     );
     assert_eq!(
         registry
-            .review_source_change(&id, "src/main.rs", &old.revision, &"x".repeat(512 * 1024 + 1))
+            .review_source_change(
+                &id,
+                "src/main.rs",
+                &old.revision,
+                &"x".repeat(512 * 1024 + 1)
+            )
             .unwrap_err()
             .code(),
         "FILE_TOO_LARGE"
