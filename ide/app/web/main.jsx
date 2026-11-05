@@ -56,25 +56,26 @@ function App() {
 
   function discardProjectTabs(projectId) {
     const affected = tabs.filter(tab => tab.projectId === projectId);
-    if (affected.some(tab => tab.dirty) &&
-      !window.confirm('Discard unsaved changes in this project?')) return false;
     affected.forEach(tab => editorStates.current.delete(tab.key));
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
     }
-    return true;
   }
 
   async function operation(command, args) {
     if (pending || savingKey) return;
-    if (command === 'ide_close_project' && !discardProjectTabs(args.projectId)) return;
+    if (command === 'ide_close_project' &&
+      tabs.some(tab => tab.projectId === args.projectId && tab.dirty) &&
+      !window.confirm('Discard unsaved changes in this project?')) return;
     setPending(true);
     setProblem('');
     setHint('');
     try {
       const next = await invoke(command, args);
       setProjects(next);
+      // Do not discard unsaved buffers until the native close succeeds.
+      if (command === 'ide_close_project') discardProjectTabs(args.projectId);
       if (command === 'ide_choose_project') {
         setHint('Project selection complete. No scripts or project tools were executed.');
       }
