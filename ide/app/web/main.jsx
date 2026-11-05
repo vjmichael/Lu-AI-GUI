@@ -8,6 +8,7 @@ const sections = [
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
+  { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
   { id: 'source', title: 'Source control', glyph: '⑂', pending: true },
   { id: 'tasks', title: 'Build & tests', glyph: '▶', pending: true },
@@ -43,6 +44,8 @@ function App() {
   const [inboxBusy, setInboxBusy] = useState(false);
   const [capabilityCatalog, setCapabilityCatalog] = useState(null);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
+  const [projectContext, setProjectContext] = useState(null);
+  const [contextBusy, setContextBusy] = useState(false);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
 
@@ -52,6 +55,7 @@ function App() {
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
+  const isContinuity = section === 'continuity';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Search is local to the active unsaved editor buffer, never the filesystem.
   const matches = [];
@@ -113,6 +117,26 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  async function refreshContext() {
+    if (!activeProject?.projectId) {
+      setProjectContext(null);
+      return;
+    }
+    setContextBusy(true);
+    setProblem('');
+    try {
+      const latest = await invoke('ide_read_project_context', {
+        projectId: activeProject.projectId,
+      });
+      setProjectContext(latest);
+    } catch (error) {
+      setProjectContext(null);
+      setProblem('Could not read project continuity: ' + String(error));
+    } finally {
+      setContextBusy(false);
+    }
   }
 
   async function refreshCapabilities() {
@@ -558,7 +582,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -573,8 +597,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
+          <h1>{isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
+            isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
             isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
             isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
             'Choose projects without executing their code.'}</p>
@@ -583,7 +608,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -659,6 +684,46 @@ function App() {
             </div>
           </div>
         </section>
+        : isContinuity
+        ? <section className="workspaceContent continuityWorkspace" aria-label="Project continuity">
+            <div className="sectionHeading">
+              <h2>Development ledger</h2>
+              <span>{projectContext?.events.length ?? 0} recent recorded events</span>
+            </div>
+            <p className="capabilityNotice">
+              Local IDE observations are historical evidence, not execution authority.
+              Project notes are untrusted source content; missing Git, toolchain, and
+              artifact checks are explicitly not verified.
+            </p>
+            {!activeProject && <p>Open a project to inspect its development context.</p>}
+            {contextBusy && <p role="status">Reading project history…</p>}
+            {!contextBusy && projectContext && <div className="continuityBody">
+              <p><strong>{projectContext.projectName}</strong> · Project ID <code>{projectContext.projectId}</code></p>
+              <p>Remote Git: <strong>{projectContext.remoteGitState.replaceAll('_', ' ')}</strong>
+                {' · '} Local artifacts: <strong>{projectContext.localArtifacts.replaceAll('_', ' ')}</strong>
+                {' · '} Toolchains: <strong>{projectContext.currentToolchainReadiness.replaceAll('_', ' ')}</strong></p>
+              <h3>Recent host observations</h3>
+              {projectContext.events.length === 0 && <p>No development events recorded by this IDE yet.</p>}
+              <div className="continuityEvents">
+                {projectContext.events.map(item => <article key={item.eventId} className="continuityEvent">
+                  <strong>{item.operation.replaceAll('_', ' ')}</strong>
+                  <span>{new Date(item.observedUnixSeconds * 1000).toLocaleString()}</span>
+                  <p>{item.summary}</p>
+                  {item.sourceRevision && <code>Revision: {item.sourceRevision}</code>}
+                </article>)}
+              </div>
+              <h3>Project orientation documents</h3>
+              {projectContext.documents.map(item => <article key={item.relativePath} className="continuityDocument">
+                <div className="capabilityHeading">
+                  <strong>{item.relativePath}</strong>
+                  <span>{item.availability.replaceAll('_', ' ')}</span>
+                </div>
+                {item.sourceRevision && <p>Saved revision <code>{item.sourceRevision}</code></p>}
+                {item.excerpt && <pre>{item.excerpt}</pre>}
+                {item.excerptTruncated && <p>Excerpt limited to 1,200 characters. Open the file for full content.</p>}
+              </article>)}
+            </div>}
+          </section>
         : isCapabilities
         ? <section className="workspaceContent capabilityWorkspace" aria-label="IDE capability directory">
             <div className="sectionHeading">
