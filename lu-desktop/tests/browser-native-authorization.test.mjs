@@ -93,3 +93,35 @@ test('user Watch/Hide uses the owned Chromium session and not model-facing tools
   assert.ok(ui.includes("browserMode === 'always-visible'"));
   assert.ok(!host.includes('fn lu_browser_window_by_pid('));
 });
+
+test('browser research enters the same queued durable turn as ordinary chat',()=>{
+  assert.ok(host.includes('async fn lu_generate_browser('));
+  assert.ok(host.includes('state.generation_queue.enqueue('));
+  assert.ok(host.includes('state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?'));
+  assert.ok(host.includes('ticket.wait_for_slot()?'));
+  assert.ok(host.includes('start_browser_for_turn('));
+  assert.ok(host.includes('gid.clone()'));
+  assert.ok(host.includes('state.chats.append_browser_observation('));
+  assert.ok(host.includes('supervisor.run_reserved_browser_function_calls('));
+  assert.ok(host.includes('supervisor.run_reserved_with_history('));
+  assert.ok(host.includes('state.chats.complete(&chat_id,&gid)?'));
+  assert.ok(host.includes('state.browser_authority.revoke_task(&grant.task_id)'));
+  assert.ok(host.includes('if !collected_read{'));
+  assert.ok(ui.includes("invoke('lu_generate_browser'"));
+});
+test('queued browser CAPTCHA recovery requires real human takeover',()=>{
+  assert.ok(host.includes('phase:"needs-human"'));
+  assert.ok(host.includes('if ticket.cancelled()'));
+  assert.ok(host.includes('human_verification_required'));
+  assert.ok(host.includes('Duration::from_secs(600)'));
+  assert.ok(host.includes('Browser closed during human verification'));
+  assert.ok(ui.includes("invoke('lu_browser_human_verified')"));
+});
+test('browser research cannot silently opt ordinary chat into tool use',()=>{
+  assert.ok(ui.includes('const [browserResearch, setBrowserResearch] = useState(false)'));
+  assert.ok(ui.includes("Research with Lu browser (read only)"));
+  assert.ok(ui.includes("await invoke('lu_generate'"));
+  assert.ok(ui.includes("await invoke('lu_generate_browser'"));
+  assert.ok(ui.includes('Native approval is required for each research turn.'));
+  assert.ok(host.includes('Browser research requires an exact public HTTPS origin'));
+});
