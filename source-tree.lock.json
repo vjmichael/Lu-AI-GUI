@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0e61b852b74632098eb54345928ac332f00aab58",
-  "trackedFileCount": 316,
+  "sourceCommitBeforeLock": "e414870777e2c443f3186fa48d8aea5068548650",
+  "trackedFileCount": 318,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -721,7 +721,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "4c4290758c6c4f5a2d10aff0b4a1b560783b0c13"
+      "blob": "415cd54daadc08ce0b352dbe8610af8806791db4"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -850,6 +850,10 @@
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
       "blob": "fd4fc31066f0e489fb518196cae06ae6df4882f9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
+      "blob": "039126f574a36a2da14b5979b20718e505e4f3b9"
     },
     {
       "path": "src-tauri/lu-core/src/ownership_store.rs",
@@ -1170,6 +1174,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_tool_lifecycle.rs",
       "blob": "166e81b712ef6ab6bf3a14565fd19742057cf7a3"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_workspace_read_turn.rs",
+      "blob": "308068328ad61c24a879dcf5c7a448107737f33d"
     },
     {
       "path": "src-tauri/lu-core/tests/ownership_store.rs",
