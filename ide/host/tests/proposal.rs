@@ -1,21 +1,28 @@
-use std::{fs, path::PathBuf};
-use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use lu_ide_workspace::proposal::{ProposalEnvelope, ProposedEdit};
+use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use std::{fs, path::PathBuf};
 
 struct Picker(Option<PathBuf>);
 impl NativeDirectoryPicker for Picker {
-    fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> { Ok(self.0.take()) }
+    fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+        Ok(self.0.take())
+    }
 }
 fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String) {
     let root = std::env::temp_dir().join(format!(
-        "lu-ide-proposal-{}-{:016x}", std::process::id(), rand::random::<u64>()
+        "lu-ide-proposal-{}-{:016x}",
+        std::process::id(),
+        rand::random::<u64>()
     ));
     fs::create_dir_all(root.join("project/src")).unwrap();
     fs::write(root.join("project/src/first.rs"), "fn first() {}\n").unwrap();
     fs::write(root.join("project/src/second.rs"), "fn second() {}\n").unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-    let id = registry.register_from_native_picker(&mut Picker(Some(root.join("project"))))
-        .unwrap().unwrap().project_id;
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(root.join("project"))))
+        .unwrap()
+        .unwrap()
+        .project_id;
     (root, registry, id)
 }
 
@@ -49,8 +56,14 @@ fn untrusted_two_file_proposal_reviews_without_writes() {
     assert_eq!(reviews.len(), 2);
     assert_eq!(reviews[0].added_lines, 1);
     assert_eq!(reviews[1].added_lines, 1);
-    assert_eq!(fs::read_to_string(root.join("project/src/first.rs")).unwrap(), first.text);
-    assert_eq!(fs::read_to_string(root.join("project/src/second.rs")).unwrap(), second.text);
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/first.rs")).unwrap(),
+        first.text
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/second.rs")).unwrap(),
+        second.text
+    );
     assert!(!root.join("project/marker").exists());
     fs::remove_dir_all(root).unwrap();
 }
@@ -80,8 +93,17 @@ fn stale_one_file_causes_whole_review_request_to_fail_closed() {
             },
         ],
     };
-    assert_eq!(envelope.review(&registry).unwrap_err().code(), "FILE_CHANGED_ON_DISK");
-    assert_eq!(fs::read_to_string(root.join("project/src/first.rs")).unwrap(), first.text);
-    assert_eq!(fs::read_to_string(root.join("project/src/second.rs")).unwrap(), "modified externally\n");
+    assert_eq!(
+        envelope.review(&registry).unwrap_err().code(),
+        "FILE_CHANGED_ON_DISK"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/first.rs")).unwrap(),
+        first.text
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("project/src/second.rs")).unwrap(),
+        "modified externally\n"
+    );
     fs::remove_dir_all(root).unwrap();
 }
