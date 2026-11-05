@@ -19,6 +19,10 @@ Read [AI-first IDE design](docs/AI_FIRST_IDE_DESIGN.md) and [IDE-specific contri
 
 New `AIW-IDE-01` documentation is **design and orientation only**. Next independent gates include reliable line/span+revision identity (including unsaved buffers) and IDE-owned resource/artifact verification; no bridge activation is permitted yet.
 
+## Wave A1 saved-source identity (new code, unverified)
+
+`host/src/source_span.rs` adds `read_source_span` backed by the existing capability-safe text preview. The standalone Tauri command `ide_read_source_span` requires project ID, relative path, exact saved file revision and bounded one-based line range; returns line text, UTF-8 byte offsets and line-ending identity. Rejects stale disk SHA and invalid ranges. `host/tests/source_span.rs` contains native regression cases. **This source has not yet passed native CI or Windows installed acceptance, and cannot reference unsaved editor buffers.** No Lu bridge activated. See [current state](PROJECT_STATE.md).
+
 ## Current user-verified Windows milestones
 
 - **R1:** standalone Windows IDE launches, displays project registration shell and shows "Lu connection: Not connected".
