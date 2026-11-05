@@ -10,6 +10,26 @@ concurrency:
   group: lu-ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  diagnose-desktop-lock:
+    name: Audit exact desktop Cargo.lock drift (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve exact desktop lockfile delta without accepting mutation
+        shell: pwsh
+        run: |
+          cargo metadata --format-version 1 --manifest-path lu-desktop/src-tauri/Cargo.toml | Out-Null
+          $diff = git diff -- lu-desktop/src-tauri/Cargo.lock
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Cargo.lock diff' }
+          if ($diff) {
+            Write-Output $diff
+            throw 'DESKTOP_CARGO_LOCK_DRIFT: copy the exact required diff into source; do not compile a mutated checkout as accepted'
+          }
+          Write-Output 'DESKTOP_CARGO_LOCK_MATCH: Cargo left the checked-in desktop lockfile unchanged'
   source-identity:
     runs-on: ubuntu-latest
     steps:

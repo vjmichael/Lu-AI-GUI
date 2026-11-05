@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e2d276a22679512af6b65c347140f3c697c8a71b",
+  "sourceCommitBeforeLock": "36b9bbd1cde1cff4eaf92293d691eca322b664b7",
   "trackedFileCount": 288,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "ec231eb33f844f26fc4ef918864005b43e241a36"
+      "blob": "c5528a8155e4222be1563a004fc3c545943a42e8"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -221,7 +221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "f0f6c134b125705ea81d6097efa5fdd01ca1a346"
+      "blob": "4314c65c2758f1d68cc84aedb60a47a438c41bd8"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
