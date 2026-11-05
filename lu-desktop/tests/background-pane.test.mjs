@@ -34,6 +34,18 @@ test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(css.includes('.backgroundPaneBackdrop'));
   assert.ok(css.includes('.backgroundTaskProgress'));
 });
+test('real native file-scan worker connects the system picker to the pane',()=>{
+  assert.ok(host.includes('async fn lu_background_scan_file('));
+  assert.ok(host.includes('lu_background_scan_file,'));
+  assert.ok(host.includes('.blocking_pick_file()'));
+  assert.ok(host.includes('std::env::current_exe()'));
+  assert.ok(host.includes('progress_protocol:true'));
+  assert.ok(host.includes('processes.start_host_approved(plan)'));
+  assert.ok(ui.includes("await invoke('lu_background_scan_file')"));
+  assert.ok(ui.includes('Scan media file…'));
+  assert.ok(ui.includes('not video content analysis'));
+  assert.ok(css.includes('.backgroundScanLaunch'));
+});
 test('host overview has no checkpoint or output path fields',()=>{
   const start=host.indexOf('struct BackgroundTaskView {');
   const end=host.indexOf('#[tauri::command]',start);
