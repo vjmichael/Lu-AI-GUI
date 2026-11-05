@@ -197,7 +197,7 @@ fn inspect(root:&Dir,request:proto::ArchiveListRequest)
         }
         let manifest=crate::native_linux_archive::inspect_linux_archive(
             root,&request.path,max as usize
-        ).map_err(|e|refuse("ARCHIVE_INVALID",&format!("Linux archive inspection failed: {e:?}")))?;
+        ).map_err(|_|refuse("ARCHIVE_INVALID","Linux archive inspection failed validation"))?;
         return Ok(ToolOutput{payload:ProtoPayload{
             type_url:OUTPUT.into(),
             bytes:proto::ArchiveListResult {
