@@ -111,3 +111,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 .backgroundTaskCancel{margin-top:12px;border:1px solid #ac6f5f;border-radius:7px;background:#482b31;color:#ffd7cf;font-size:12px;padding:9px 12px}
 .backgroundTaskCancel:hover,.backgroundTaskCancel:focus-visible{background:#61353b;border-color:#e59983}
+
+.backgroundScanLaunch{padding:15px 18px;display:flex;align-items:flex-start;gap:9px;flex-direction:column;border-bottom:1px solid #30435b}
+.backgroundScanLaunch small{color:#91a9bf;font-size:11px;line-height:1.5}
