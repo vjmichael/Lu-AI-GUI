@@ -224,16 +224,24 @@ impl IdeProposalInbox {
             return Err(InboxError::NotApproved);
         }
         let reviews = entry.review(registry)?;
-        if reviews.iter().any(|review| review.truncated || !review.counts_exact) {
+        if reviews
+            .iter()
+            .any(|review| review.truncated || !review.counts_exact)
+        {
             return Err(InboxError::PreviewIncomplete);
         }
         Ok(ApprovedStaging {
             summary: entry.summary(inbox_id),
-            edits: entry.envelope.edits.iter().map(|edit| StagingEdit {
-                relative_path: edit.relative_path.clone(),
-                expected_revision: edit.expected_revision.clone(),
-                proposed_text: edit.proposed_text.clone(),
-            }).collect(),
+            edits: entry
+                .envelope
+                .edits
+                .iter()
+                .map(|edit| StagingEdit {
+                    relative_path: edit.relative_path.clone(),
+                    expected_revision: edit.expected_revision.clone(),
+                    proposed_text: edit.proposed_text.clone(),
+                })
+                .collect(),
         })
     }
 
