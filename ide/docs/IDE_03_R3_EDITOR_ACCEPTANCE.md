@@ -35,7 +35,11 @@
 
 **User-facing R3 package:** `Lu-IDE-Standalone-R3-Code-Editor.zip`, containing the executable, `README-R3.txt` and disposable `R3TestProject`. ZIP SHA-256: `4c7ef595d5d0d119faceaebc65410ffc8a3489d327286fb080e661ec948e0816`. Archive integrity test passed.
 
-**Manual Windows R3 editor acceptance remains pending.** Compile success and test success do not certify actual keyboard/edit/save behavior in the user's Windows session.
+**Windows R3 manual smoke acceptance — partially passed (November 4, 2026, America/Phoenix):** The user supplied two real Windows R3 screenshots with both `src/hello.py` and `src/app.rs` open as tabs, displaying user-edited content with **Saved** indicators. The user explicitly confirmed editing and saving, then closing the project folder and reopening the files with changes retained. This is sufficient to record **PASS** for the basic multi-tab open/edit/save/close/reopen persistence workflow.
+
+**New visual finding — OPEN:** In both screenshots the CodeMirror gutter's line numbers appear stacked above the text and syntax highlighting appears absent; the earlier `style-src 'self'` CSP likely blocked CodeMirror's dynamically injected styles. CodeMirror provides `EditorView.cspNonce`; a Tauri-injected nonce carrier and matching facet have been committed as a security-preserving fix. The fix requires its own CI and Windows UI verification; **do not mark gutter/highlighting accepted yet**.
+
+**Remaining manual gates:** Undo/redo persistence on tab switch, external-file conflict rejection, close/reload confirmation, binary/oversized rejection, Windows reparse point and metadata edge cases, and crash recovery remain unverified.
 
 ## Remaining safety and correctness limitations
 
