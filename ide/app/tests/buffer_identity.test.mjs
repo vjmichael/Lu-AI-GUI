@@ -8,21 +8,27 @@ import {
 
 const base = 'a'.repeat(64);
 const create = text => EditorState.create({ doc: text });
+const createCrLf = text => EditorState.create({
+  doc: text, extensions: [EditorState.lineSeparator.of('\r\n')],
+});
 const original = () => newBufferIdentity('p-12345', 'src/example.rs', base,
   '11223344-5566-7788-99aa-bbccddeeff00');
 
 test('unsaved draft has a distinct immutable ID and correct CRLF/Unicode offsets', () => {
   const identity = original();
-  const state = create('α\r\n😀z\nlast');
-  const ref = captureBufferSpan(identity, state, 3, 6);
+  const state = createCrLf('α\r\n😀z\r\nlast');
+  const from = state.doc.line(2).from;
+  const to = state.doc.line(2).to;
+  const ref = captureBufferSpan(identity, state, from, to);
   assert.equal(ref.bufferRevision, 0);
   assert.equal(ref.baseDiskRevision, base);
   assert.equal(ref.startLine, 2);
   assert.equal(ref.endLine, 2);
   assert.equal(ref.startColumnUtf16, 1);
   assert.equal(ref.endColumnUtf16, 4);
-  assert.equal(ref.fromByte, 4); // 2-byte alpha, CRLF, then emoji
+  assert.equal(ref.fromByte, 4); // 2-byte alpha followed by CRLF
   assert.equal(ref.toByte, 9);
+  assert.equal(state.doc.toString(), 'α\r\n😀z\r\nlast');
   assert.equal(ref.text, '😀z');
   assert.equal(ref.lifetime, 'current_editor_session_only');
   assert.equal(resolveBufferSpan(ref, identity, state).status, 'current');
