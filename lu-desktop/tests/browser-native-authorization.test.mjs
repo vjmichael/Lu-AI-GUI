@@ -65,3 +65,20 @@ test('host internal model calls use only the active trusted turn and read-only c
   assert.ok(host.includes('tools.model_catalog.decode_result('));
   assert.ok(!host.includes('fn lu_browser_execute('));
 });
+
+test('human verification can only be resumed by native user control',()=>{
+  assert.ok(host.includes('async fn lu_browser_human_verified('));
+  assert.ok(host.includes('state.browser_runtime.resolve_human_verification()?'));
+  assert.ok(ui.includes("invoke('lu_browser_human_verified')"));
+  assert.ok(ui.includes('browserRuntime?.humanVerificationRequired'));
+  assert.ok(ui.includes('Complete the website challenge in the visible Chromium window.'));
+  assert.ok(ui.includes("invoke('lu_browser_runtime_status')"));
+  assert.ok(!host.includes('fn lu_browser_human_solve('));
+});
+test('actual browser tool-call path reads persisted USER turn and supervised model',()=>{
+  assert.ok(host.includes('async fn run_authenticated_browser_model_turn('));
+  assert.ok(host.includes('state.chats.trusted_user_turn_text(chat_id,user_turn_id)'));
+  assert.ok(host.includes('supervisor.reserve_generation_with_history('));
+  assert.ok(host.includes('supervisor.run_reserved_browser_function_calls('));
+  assert.ok(host.includes('dispatch_authenticated_browser_model_call('));
+});
