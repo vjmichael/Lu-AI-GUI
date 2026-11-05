@@ -109,10 +109,21 @@ fn summarize_change(old: &str, proposed: &str) -> DiffSummary {
         let new_range = first.new_range().start..last.new_range().end;
         let old_lines = old_range.end - old_range.start;
         let new_lines = new_range.end - new_range.start;
-        let old_start = if old_lines == 0 { old_range.start } else { old_range.start + 1 };
-        let new_start = if new_lines == 0 { new_range.start } else { new_range.start + 1 };
+        let old_start = if old_lines == 0 {
+            old_range.start
+        } else {
+            old_range.start + 1
+        };
+        let new_start = if new_lines == 0 {
+            new_range.start
+        } else {
+            new_range.start + 1
+        };
         let mut hunk = ReviewHunk {
-            header: format!("@@ -{},{} +{},{} @@", old_start, old_lines, new_start, new_lines),
+            header: format!(
+                "@@ -{},{} +{},{} @@",
+                old_start, old_lines, new_start, new_lines
+            ),
             old_start,
             old_lines,
             new_start,
@@ -126,7 +137,9 @@ fn summarize_change(old: &str, proposed: &str) -> DiffSummary {
                     || emitted_bytes.saturating_add(text.len()) > MAX_REVIEW_OUTPUT_BYTES
                 {
                     truncated = true;
-                    if !hunk.lines.is_empty() { hunks.push(hunk); }
+                    if !hunk.lines.is_empty() {
+                        hunks.push(hunk);
+                    }
                     break 'group;
                 }
                 let kind = match change.tag() {
@@ -146,7 +159,13 @@ fn summarize_change(old: &str, proposed: &str) -> DiffSummary {
         }
         hunks.push(hunk);
     }
-    DiffSummary { hunks, removed_lines, added_lines, counts_exact: true, truncated }
+    DiffSummary {
+        hunks,
+        removed_lines,
+        added_lines,
+        counts_exact: true,
+        truncated,
+    }
 }
 
 impl IdeWorkspaceRegistry {
@@ -205,12 +224,14 @@ mod tests {
         assert_eq!((summary.removed_lines, summary.added_lines), (2, 2));
         assert!(summary.counts_exact);
         assert!(!summary.truncated);
-        assert!(summary.hunks[0].lines.iter().any(|line|
-            line.kind == "removed" && line.old_line == Some(4)
-        ));
-        assert!(summary.hunks[1].lines.iter().any(|line|
-            line.kind == "added" && line.new_line == Some(30)
-        ));
+        assert!(summary.hunks[0]
+            .lines
+            .iter()
+            .any(|line| line.kind == "removed" && line.old_line == Some(4)));
+        assert!(summary.hunks[1]
+            .lines
+            .iter()
+            .any(|line| line.kind == "added" && line.new_line == Some(30)));
         assert!(summary.hunks[0].header.starts_with("@@ -"));
     }
 
@@ -220,9 +241,15 @@ mod tests {
         assert_eq!((summary.removed_lines, summary.added_lines), (1, 1));
         assert_eq!(summary.hunks.len(), 1);
         let lines = &summary.hunks[0].lines;
-        assert_eq!(lines.iter().filter(|line| line.kind == "removed").count(), 1);
+        assert_eq!(
+            lines.iter().filter(|line| line.kind == "removed").count(),
+            1
+        );
         assert_eq!(lines.iter().filter(|line| line.kind == "added").count(), 1);
-        assert_eq!(lines.iter().filter(|line| line.kind == "context").count(), 3);
+        assert_eq!(
+            lines.iter().filter(|line| line.kind == "context").count(),
+            3
+        );
     }
 
     #[test]
@@ -255,6 +282,9 @@ mod tests {
     fn pure_insert_at_start_has_correct_empty_old_range() {
         let summary = summarize_change("first\n", "new\nfirst\n");
         assert_eq!((summary.removed_lines, summary.added_lines), (0, 1));
-        assert!(summary.hunks[0].lines.iter().any(|l| l.kind == "added" && l.new_line == Some(1)));
+        assert!(summary.hunks[0]
+            .lines
+            .iter()
+            .any(|l| l.kind == "added" && l.new_line == Some(1)));
     }
 }
