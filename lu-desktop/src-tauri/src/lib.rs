@@ -889,8 +889,8 @@ async fn lu_generate(
                 );
                 for notice in &notifications{
                     model_prompt.push_str(&format!(
-                        "Task {} ended: {:?}; {}% recorded.\\n",
-                        notice.task_id,notice.state,notice.progress
+                        "Task {} ended: {}; {}% recorded.\\n",
+                        notice.task_id,notice.state.as_str(),notice.progress
                     ));
                 }
                 model_prompt.push_str("[End Lu host events]");
