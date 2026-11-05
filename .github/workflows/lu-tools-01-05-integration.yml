@@ -50,6 +50,16 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - name: Bind trusted Git executable (Linux fixtures)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+      - name: Bind trusted Git executable (Windows fixtures)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $git = (Get-Command git.exe -ErrorAction Stop).Source
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
       - name: Native Rust Core tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture
       - name: Checked hostile archive/member tests
@@ -64,6 +74,24 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - name: Stage CI-only nonfunctional Tauri engine resource files
+        shell: pwsh
+        run: |
+          # Compilation only; never an installable or valid inference engine.
+          $root = 'lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build real React UI for Tauri compile
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
       - name: Check full Tauri desktop compile
         run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
       - name: Compile Windows desktop Rust tests
@@ -79,8 +107,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install pinned UI dependencies
-        run: npm ci
+      - name: Install UI dependencies using existing Lu fallback
+        run: if test -f package-lock.json; then npm ci; else npm install --no-audit --no-fund; fi
         working-directory: lu-desktop
       - name: Bundle both file edits and Reader/background UI
         run: npm run build
