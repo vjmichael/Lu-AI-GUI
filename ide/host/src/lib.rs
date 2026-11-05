@@ -226,9 +226,21 @@ pub struct IdeWorkspaceRegistry {
 }
 
 impl IdeWorkspaceRegistry {
+    /// Convenience constructor for isolated host instances and tests.
+    /// The installed Lu desktop MUST call open_with_registry with its shared
+    /// native tool registry; no alternate authorization engine is introduced.
     pub fn open(catalog: PathBuf) -> Result<Self, IdeError> {
+        Self::open_with_registry(catalog, NativeToolRegistry::new())
+    }
+
+    /// Registers the IDE workspace in Lu's existing host-owned registry.
+    /// This registers metadata only; it never starts workers or grants tools.
+    pub fn open_with_registry(
+        catalog: PathBuf,
+        registry: NativeToolRegistry,
+    ) -> Result<Self, IdeError> {
         let records = read_catalog(&catalog)?;
-        let core = WorkspaceHost::new(NativeToolRegistry::new());
+        let core = WorkspaceHost::new(registry);
         core.register_workspace(
             ModuleManifest {
                 id: MODULE_ID.into(),
