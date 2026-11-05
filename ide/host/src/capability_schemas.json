@@ -1137,6 +1137,139 @@
         "truncated",
         "liveRemote"
       ]
+    },
+    "LiveGitHubComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "state": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "github_public_rest_explicit_check"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storedTrackingHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "githubHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localVsGithub": {
+          "type": "string"
+        },
+        "trackingVsGithub": {
+          "type": "string"
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "dirtyFileCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responseAuthenticated": {
+          "type": "boolean",
+          "const": false
+        },
+        "githubDataVerifiedAsCurrent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "state",
+        "source",
+        "repository",
+        "branch",
+        "checkedUnixSeconds",
+        "localHead",
+        "storedTrackingHead",
+        "githubHead",
+        "localVsGithub",
+        "trackingVsGithub",
+        "worktree",
+        "dirtyFileCount",
+        "errorCode",
+        "responseAuthenticated",
+        "githubDataVerifiedAsCurrent"
+      ]
     }
   },
   "operations": {
@@ -1576,6 +1709,24 @@
       },
       "result": {
         "$ref": "#/$defs/GitWorktreeInspection"
+      }
+    },
+    "git.compareLive": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/LiveGitHubComparison"
       }
     }
   }
