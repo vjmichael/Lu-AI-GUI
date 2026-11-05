@@ -1,120 +1,50 @@
-# Lu IDE — Current authoritative project state
+# Lu IDE — Current project state (authoritative handoff)
 
-**Updated:** 2026-11-05 (America/Phoenix). **Project:** standalone Lu IDE, not Lu Core.
-**Repository:** `vjmichael/Lu-AI-GUI`
-**Development branch:** `ide/workspace-development`
-**Last inspected implementation HEAD before continuity documentation:** `eb0aefdb1f4e954044b353e64b8e308d13b0e6f6`
-**Working tree / local delivery folder:** UNKNOWN — **not inspected in this session**.
-**Local ahead/behind remote:** UNKNOWN — never assume a remote checkout is the most complete copy.
-**Live Lu integration:** DEFERRED by user; contract work may proceed independently, but the IDE must run without Lu.
+**Observed date:** 2026-11-05 (America/Phoenix)  
+**Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
+**Last inspected implementation source SHA:** `7d27dc236e61648a85d6d088210c7ac2fee1a7e7`  
+**Current source validation:** [Standalone IDE CI run 42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) — Windows in progress, frontend/Linux queued at last inspection; **do not claim it passed**.  
+**Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
+**Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
-## Evidence grades
+## Current status by capability
 
-| Area | Implemented | GitHub source | Automated tests | Native Windows GUI | Installer/artifact |
-| --- | --- | --- | --- | --- | --- |
-| R3 editor, project lifecycle | Yes | Yes | Prior CI reported; see handoff | User accepted earlier R3 milestones | Prior artifacts in linked evidence; availability must be rechecked |
-| R3.4 diff/review | Yes | Yes | Prior CI passed; see handoff | User accepted interactive multi-hunk smoke | Prior unsigned Windows artifact documented |
-| R3.5 proposal inbox | Yes | Yes | Prior CI passed; see handoff | User reported functional flow; hostile gates still open | Prior build references in handoff; reverify availability |
-| R3.6 success banner | Yes | Yes | Regression assertions added, **exact-head run unverified** | **Not yet tested by user** | **No R3.6 package verified** |
-| R3.7 in-file Find | Yes | Yes | [Exact-source CI 42069988384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42069988384) **passed** at `eb0aefdb` | **Not yet tested by user** | **No R3.7 package verified** |
-| Wave A1 disk source spans | Source implemented | Yes | Native tests added, **not yet run** | **Not yet tested by user** | None |
-| Find and Replace | No | No | No | No | No |
-| Live Lu↔IDE connection | Deferred | No | No | No | No |
-
-**WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
-
-## Wave A2 typed contracts + Wave A3 continuity (new source, acceptance open)
-
-- Most recent exact-source CI request: [run 42122003384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42122003384) for `7d27dc236e61648a85d6d088210c7ac2fee1a7e7`, **queued at last inspection**. Prior push-triggered runs were superseded/cancelled; cancellation is not test failure or success.
-- Typed result schemas are now independently resolvable via embedded JSON Schema 2020-12 `$defs`, not just unresolved type labels; human Capabilities cards show compact input/result signatures with optional full schema expansion.
-- The continuity service recognizes root and `ide/` project-orientation documents, and host-observed saves now include both validated relative source path and saved SHA-256 revision. Remote Git, local packages and toolchain readiness remain uninspected; a local event is not a verified build receipt.
-
-
-- **A2:** capability registry schema version 2 uses `host/src/capability_schemas.json` with fully typed JSON Schema request and result shapes, nested definitions and error schema. Advertises **17 implemented native commands** (including new read-only continuity endpoint), not future Git/toolchain/build capabilities. The Capabilities screen displays request/result/error contracts; type and command-parity regression checks added.
-- **A3:** app-profile `development-ledger.jsonl` with host-recorded project registration/open/close/unregister and explicit source-save observations (bounded record length; sync-to-disk). New `ide_read_project_context` is read-only, returning the latest 40 project events plus bounded revision-tagged excerpts from `PROJECT_STATE.md`, `CHANGELOG.md`, `ENGINEERING_HANDOFF.md`, `AGENTS.md` if present inside the opened project.
-- **Human UX:** Continuity screen now displays observed events, source-document revisions and explicit remote Git/artifact/toolchain unknowns. Project notes are untrusted content, not instructions, and no Lu connection or project code execution is introduced.
-- **Important limit:** ledger observations are best-effort breadcrumbs, **not** an authoritative effect journal, Git reconciliation or a proof of test/package success. Host-only append errors are logged, not surfaced as failed saves (which would invite duplicate retries). Full crash-proof effect journaling and artifact inventory remain open gates.
-- **Status:** source and regression tests committed. Exact-head Linux/frontend/Windows checks, installed Windows UI, and true local/remote artifact reconciliation remain to verify.
-
-## Wave A2 — Semantic Capability Registry (implementation source, verification pending)
-
-- A2 source verification run: [GitHub Actions 42114104448](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42114104448) for implementation SHA `0a33585cee694764507bca153baa0f334dd4f035`, queued at last inspection; **no pass/fail conclusion yet**.
-
-
-- Added `host/src/capabilities.rs`: static, versioned list of **16 existing native operations**, each with stable semantic ID, actual Tauri command name, typed input-field names, effect class, precondition, result type, expected evidence and bounded-call cancellation note.
-- Added read-only `ide_list_capabilities` Tauri endpoint. It lists descriptors only, **does not dispatch operations or authorize effects**, and does not open any Lu bridge.
-- Added a human **Capabilities** section showing the host-owned catalog. Frontend test checks exact parity between the registered Tauri command names and descriptor list, excluding the descriptor endpoint itself.
-- `source.save` is classified as a disk write and remains explicit/human-owned; proposal staging is data only. Existing editor and project UX retained.
-- **Status:** code committed; exact-head CI, native Windows interactive acceptance and installer verification **not yet established**. No local `Delivered` inspection.
-
-## Wave A1 source-reference UI and CI repair
-
-- **Follow-up exact-source CI passed** for `467775e4766cb6e42a00aefec114fa4f76d592e7`: Linux host, Windows desktop, frontend all succeeded in [run 42075298457](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42075298457). Physical Windows user acceptance of source-reference clipboard remains open.
- — 2026-11-05
-
-- CI [42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705): Windows desktop **passed**, frontend **passed**, Linux native job **failed due to `cargo fmt --check` formatting differences**. Rust tests had completed before formatting failed. This was not a source-span behavioral failure.
-- Formatting corrections applied to `host/src/source_span.rs` and `host/tests/source_span.rs`, based on actual Rust CI formatter diff; **new exact-head CI still required**.
-- Human-facing **Copy source reference** added to the editor toolbar. It tracks the active cursor's line, rejects dirty buffers, calls `ide_read_source_span` against the saved SHA-256 before copying an exact project/path/revision/line/byte span, and reports a human-readable stale-file conflict. It performs no file write and does not enable the Lu bridge.
-- New frontend regression assertions accompany the UI. **Clipboard behavior on installed Windows remains unverified**. The operation refers to the **saved disk file**, not any unsaved CodeMirror draft.
-- Current completion classification: **source implemented; verification pending exact-head CI and physical Windows UX**. No new installer identified.
-
-## Wave A1 — first host implementation (source only)
-
-- [GitHub Actions 42074135705](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42074135705) started for source commit `15f4b99c`: frontend passed; at last check Windows desktop still running and Linux host queued. **No complete Wave A1 acceptance claim.**
-
-- Added `host/src/source_span.rs`: bounded 120-line, 32 KiB read-only disk source spans using existing capability-relative file preview and mandatory SHA-256 revision match.
-- Each reply includes project ID, normalized relative path, saved revision, one-based line numbers, precise UTF-8 byte offsets and LF/CRLF/none terminator types. The last blank line after a final newline is addressable.
-- New `ide_read_source_span` Tauri command and `host/tests/source_span.rs` native regression fixtures. This command is **not yet a displayed human code-reference UI, not unsaved buffer snapshots and not an AI bridge**.
-- Tests authored for Unicode, CRLF, trailing blanks, stale file, invalid range/path/revision, closed projects and symlink refusal. **Execution and CI status unknown/not run.**
-- Follow-up work: compile and verify on Linux/Windows; add a human-friendly “Copy source reference” interaction based on this same host API; extend snapshots to unsaved CodeMirror buffers without treating UI text as trusted disk state.
-
-## Capability-first redesign — IDE-ARCH-02 (design-only)
-
-- Approved as development direction: [Capability-first architecture](docs/CAPABILITY_FIRST_ARCHITECTURE.md). This supersedes the old strictly linear stage order but preserves eight canonical stage acceptance IDs.
-- Seven service boundaries planned: workspace registry, revision-aware source snapshots, host semantic capability registry, resource inventory, durable development ledger/context index, effect/evidence journal, gated execution supervisor.
-- Human UI uses the same authoritative host operations that a future approved AI client could use. **No Lu runtime bridge is active or required.**
-- Wave A first: **A1 source-span/revision API → A2 bounded capability descriptors → A3 continuity read model**, then B human editor hardening, C read-only Git and inventory, D worker security, E/F development workflows, G deferred AI integration.
-- **Status:** architecture redesign committed; **Wave A1 saved-disk span service has now been written as source**, while remaining planned services/APIs are **not implemented**. Source tests, native Windows validation and installer acceptance **not run for redesign**.
-
-## AI-first architectural reconciliation — AIW-IDE-01
-
-- **Designed / documented, not implemented:** [AI-first IDE requirements](docs/AI_FIRST_IDE_DESIGN.md), [IDE contributor orientation](AGENTS.md) and links in the canonical design.
-- Read verified sources: Lu [v1.0 reconciliation](../docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md) LU-AIW-01 and [draft PR #28](https://github.com/vjmichael/Lu-AI-GUI/pull/28), `LU-OPMEM-01A`. PR #28 is **draft / source-only**; its SQLite ledger is not integrated into the IDE or current Lu desktop preflight.
-- Highest-value standalone gates: revision-aware human/AI source spans, a host-owned verified resource/artifact inventory, concise task context/ledger indexing, and typed host capability descriptors. **These are future gates**, not completed R3.x features.
-- User decision preserved: live Lu↔IDE connection **DEFERRED**. Design contracts independently; retain all review, staging and explicit Save boundaries.
-- Exact-head CI / native Windows acceptance for this new documentation: **not run**. Local project/package inventory remains UNKNOWN.
-
-## Continuity enforcement state
-
-- PCP-01 docs and CI PR gate added on this branch. **Not yet verified by a passing workflow run.**
-- To prevent bypass on protected branches, set the `continuity` job as a required status check (repository administrator operation); simply adding a workflow does not make a check mandatory for merges.
-- CI compares the full PR base-to-head diff and requires substantive entries in `ide/CHANGELOG.md` and `ide/PROJECT_STATE.md` for source changes. This is syntactic enforcement; reviewers must check accuracy of evidence and artifacts.
-
-## Work to resume next
-
-1. **Verify Wave A1 host span implementation** on Linux/Windows, including native host tests, Tauri build and exact-head CI. Then connect human source-reference UI without weakening explicit Save. A1 does not yet represent unsaved buffer revisions.
-2. **Reconcile branch and local copies**: identify all checkouts / `Delivered` folders / generated Windows packages, capture source roots, hashes and output locations. This step requires access to the relevant local filesystem; no remote connector can certify unseen files.
-3. **Verify R3.6/R3.7**: run `cd ide/app && npm run check`, native host tests and Windows Tauri build. Review exact-head CI outcomes and test Find/navigation + banner dismissal on Windows. Resolve failures before calling either release-accepted.
-4. **Next standalone editor feature: Find and Replace**, with explicit editor-buffer edits, undo support and no implicit Save. Keep all Lu bridge activation deferred.
-5. Work on source control and build/test UX only under the documented authorization/security gates. No untrusted execution on project-open.
-
-## Artifact manifest — do not infer missing paths
-
-| Artifact | Source or expected location | Verified existence now? | Verification |
+| Milestone | Source | Verification | User acceptance |
 | --- | --- | --- | --- |
-| Repository source | GitHub, `ide/workspace-development` | Yes, connector read | Fetch exact HEAD before editing |
-| Windows R3.5 unsigned release | GitHub Actions release reference in `ENGINEERING_HANDOFF.md` | Prior evidence only | Re-fetch run, artifact, checksum before offering a download |
-| R3.6 or R3.7 installer | UNKNOWN | **No** | Do not claim an installer exists |
-| Local NSIS tooling / `Delivered` directory | UNKNOWN | **No** | Enumerate real filesystem; record absolute path and checksum |
-| Windows installation used for user screenshots | User machine, path unknown | User screenshot confirms application UI, path not verified | User Windows acceptance only |
+| R1–R3 project registration, explorer, CodeMirror, explicit save | Implemented | Earlier CI and Windows user smoke; see [handoff](ENGINEERING_HANDOFF.md) | Earlier core editor milestones accepted |
+| R3.4 multi-hunk review and revision conflicts | Implemented | Earlier native CI accepted; see [R3.4](docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md) | Earlier Windows smoke accepted |
+| R3.5 proposal inbox and editor-only staging | Implemented | Earlier native matrix passed; see [R3.5](docs/IDE_07_R35_PROPOSAL_INBOX.md) | User reported working staging flow; full hostile gates open |
+| R3.6 success banner, R3.7 Find in File | Implemented | [Source CI 42069988384](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42069988384) passed for R3.7 SHA `eb0aefd` | New GUI acceptance still open |
+| A1 saved-file source spans, Copy Source Reference | Implemented | [CI 42075298457](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42075298457) Linux/frontend/Windows passed for SHA `467775e` | New clipboard UX still open |
+| **A2 typed Semantic Capability Registry** | **Implemented**: 17 real host operations, JSON Schema v2, nested definitions, Capabilities UI | **Exact-source CI pending** on latest code | Windows installed UX open |
+| **A3 Development Ledger and Context Read Model** | **Initial runtime implemented**: host app-profile JSONL event history, bounded project context and Continuity UI | **Exact-source CI pending** on latest code | Windows installed UX open |
+| A3 verified local resources, artifact paths, real Git divergence | **Not implemented** | Not tested | Open |
+| Live Lu connector, worker execution, LSP/build/test/package | **Deferred/not implemented as IDE runtime** | Not tested | Open |
 
-## Safety and scope
+## A2 — Typed contracts actually implemented
 
-- Human-owned edits; approval is not authority to save; proposals are data, not commands.
-- Editing, reviewing and staging do not execute project code.
-- Do not change Lu Core for standalone IDE milestones.
-- Never equate GitHub, local workspace, CI artifacts, or user-installed build versions without evidence.
+- **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
+- Host-created, versioned descriptors for **17 existing** project, source, review, save, proposal and continuity operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
+- UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
 
-## Continuation links
+## A3 — Current, narrowly scoped first slice
 
-[Chronological changes](CHANGELOG.md) · [Engineering handoff](ENGINEERING_HANDOFF.md) · [Continuity rules](CONTINUITY_PROTOCOL.md) · [Implementation gates](docs/IMPLEMENTATION_GATES.md).
+- **Source:** `host/src/continuity.rs`, `host/tests/continuity.rs`, standalone Tauri `ide_read_project_context`, React Continuity screen.
+- Private app-profile `development-ledger.jsonl` receives **best-effort host observations after successful actions**: project register/open/close/unregister and explicit revision-checked source save. Saved events include **validated relative source path** and saved SHA-256 revision. No project root or absolute local path stored in event.
+- The read model requires an **active registered project**, returns at most **40 recent events** and eight bounded root/`ide/` orientation document slots with exact saved revisions and excerpts. Project-authored documents are labeled **untrusted_project_text**.
+- Remote Git state: `not_inspected`. Local artifacts: `not_inspected`. Toolchain readiness: `not_verified`. These remain **honest unknowns**, not false missing/ready claims.
+- **Limitations:** Observations are NOT crash-safe effect receipts, verified CI results, operational resource probes, Git reconciliation or authoritative build history. Failed ledger appends are logged separately and do not convert a successful file write into a retryable failure. A corrupt ledger fails closed on read. True effect journaling, richer provenance, resource inventory and local/remote reconciliation remain open.
+
+## Next unblocked tasks (order matters)
+
+1. **Close exact-source CI:** Linux Rust unit tests, `cargo fmt --check`, frontend build/tests and Windows Tauri/native checks for A2/A3; fix actual failures before claiming acceptance. Then test Capabilities and Continuity screens on a Windows build. No new installer is verified.
+2. **A3 follow-up:** trustworthy resource and artifact inventory with host read-only probes, actual file SHA/version/OS checks, build/test/benchmark receipt references and explicit verified/changed/missing states. Avoid downloading known tools before probing.
+3. **Project reconciliation:** inspect *real* local worktrees, `Delivered` folders, remote HEAD/PRs, benchmarks and package hashes. Classify `LOCAL_ONLY`, `REMOTE_ONLY`, `MATCHED`, `DIVERGED` or `UNVERIFIED`; no destructive merges without human consent.
+4. **Standalone editor hardening:** Find/Replace and unsaved-buffer revision identities; retain approved proposal staging, explicit Save and host revision checks.
+5. **Execution security before LSP/build/test/package workers:** OS containment and user authorization gates remain mandatory; future Lu integration remains deferred.
+
+## Handoff and artifact truth
+
+- [Chronological changelog](CHANGELOG.md), [continuity protocol](CONTINUITY_PROTOCOL.md), [engineering handoff](ENGINEERING_HANDOFF.md), [capability-first architecture](docs/CAPABILITY_FIRST_ARCHITECTURE.md).
+- Repository branch source was inspected using the GitHub connector. No local checkout or user Windows filesystem was inspected. **No R3.6–A3 Windows installer or local NSIS package has been verified in this session.**
+- Do not infer that a Git commit is a tested build, that a CI success is an installed launch, or that historical resource memory authorizes execution.
