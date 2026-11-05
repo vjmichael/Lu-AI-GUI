@@ -21,7 +21,7 @@ New `AIW-IDE-01` documentation is **design and orientation only**. Next independ
 
 ## A3 inventory acceptance and honest scope (latest)
 
-The app can inspect selected, registered project roots, observe hashes for bounded output/benchmark files, detect local loose Git reference differences, and create durable user-requested snapshots for comparison across restarts. It now includes nested benchmark manifest excerpts with provenance, total 128 MiB digest budget, and two typed inventory capabilities (19 native catalog operations total). **No live GitHub check, no dirty-worktree verification, no global Windows package search, no executable toolchain readiness, no installer acceptance.** Latest source CI [42124467605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124467605) queued at last check. Native/Windows runtime verification remains required.
+The app can inspect selected, registered project roots, including direct root-level installer candidates when an existing `Delivered` directory is registered through the native picker, observe hashes for bounded output/benchmark files, detect local loose Git reference differences, and create durable user-requested snapshots for comparison across restarts. It now includes nested benchmark manifest excerpts with provenance, total 128 MiB digest budget, and two typed inventory capabilities (19 native catalog operations total). **No live GitHub check, no dirty-worktree verification, no global Windows package search, no executable toolchain readiness, no installer acceptance.** Latest source CI [42124780433](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42124780433) queued at last check. Native/Windows runtime verification remains required.
 
 ## A3 inventory and baseline continuation (2026-11-05)
 
