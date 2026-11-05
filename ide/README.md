@@ -32,6 +32,10 @@ npm run tauri:dev
 
 `ide/app` is designed to run on Linux and Windows. GitHub CI is a portable build check; real installed-app launch, native picker tests and hostile-code sandbox acceptance are separately required. Opening a project runs **no scripts**. R3 adds CodeMirror editing and Ctrl+S, guarded by source revision hashes and bounded native writes. Unsaved buffers remain memory-only; see [R3 editor acceptance](docs/IDE_03_R3_EDITOR_ACCEPTANCE.md). There are no executable project workers in this phase.
 
+## Development continuity (required)
+
+Start new work at [PROJECT_STATE.md](PROJECT_STATE.md), then [CHANGELOG.md](CHANGELOG.md) and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md). Do not assume GitHub is ahead of an uninspected local folder. IDE implementation PRs are checked by `.github/workflows/ide-continuity.yml` for accompanying changelog/current-state updates. A repository rule requiring that check is still needed for unbypassable enforcement. The latest R3.6/R3.7 source is not yet a verified Windows package; live Lu integration is deferred.
+
 ## Documents
 
 - **Start here when resuming development:** [Engineering handoff and verified gates](ENGINEERING_HANDOFF.md).
