@@ -102,6 +102,9 @@ pub fn read_text_bytes(
         return Err(ReaderFailure::TooLarge);
     }
     let format=classify(filename,&bytes[..bytes.len().min(16)]);
+    if format==ReaderFormat::Pdf{
+        return crate::native_reader_pdf::read_pdf_text(bytes,max_chars);
+    }
     if format==ReaderFormat::Docx{
         return crate::native_reader_docx::read_docx_bytes(bytes,max_chars);
     }
@@ -111,7 +114,7 @@ pub fn read_text_bytes(
     if format==ReaderFormat::Pptx{
         return crate::native_reader_office::read_pptx(bytes,max_chars);
     }
-    if matches!(format,ReaderFormat::Pdf|ReaderFormat::Image
+    if matches!(format,ReaderFormat::Image
         |ReaderFormat::Unknown){
         return Err(ReaderFailure::UnsupportedAdapter(format));
     }
@@ -151,7 +154,7 @@ mod tests{
     #[test]
     fn rejects_binary_spoof_and_does_not_fake_pdf_docx_or_ocr(){
         assert_eq!(read_text_bytes("a.txt",b"%PDF-1.7",100),
-            Err(ReaderFailure::UnsupportedAdapter(ReaderFormat::Pdf)));
+            Err(ReaderFailure::InvalidDocument));
         assert_eq!(read_text_bytes("a.docx",b"PK\x03\x04bad",100),
             Err(ReaderFailure::InvalidDocument));
         assert_eq!(read_text_bytes("a.png",b"\x89PNG\r\n\x1a\n",100),
