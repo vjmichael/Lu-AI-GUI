@@ -31,7 +31,7 @@ R3.3 adds a **read-only change-review foundation**, *not* an AI connection:
 - `host/tests/review.rs` checks no filesystem effect, stale revision refusal, traversal, symlink denial and size limits.
 - `app/tests/standalone.test.mjs` checks command allowlists, review UI, and no executable or arbitrary patch apply path.
 
-**R3.3 CI:** [standalone acceptance workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml). The first run's tests passed but its Rust formatter check failed; exact rustfmt patches were committed. Latest candidate run at the time of writing: [41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363). A Windows R3.3 release build was triggered in [41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831). **Check final statuses before claiming success.** New user Windows interaction has NOT yet been accepted.
+**R3.3 verified:** [Windows/Linux/frontend acceptance 41981163363](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981163363) **passed** (33 Rust tests, frontend, Windows Tauri); [unsigned Windows R3.3 release 41981333831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41981333831) **passed**. The EXE SHA-256 and portable ZIP are recorded in [R3.3 evidence](docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md). **Interactive Windows R3.3 review-dialog acceptance remains pending.**
 
 ## Source map
 
