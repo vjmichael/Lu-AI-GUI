@@ -17,7 +17,7 @@ const MAX_EXTRACT_BYTES:u64=1024*1024;
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub enum IsoError {
     BadName, NotFile, NotFound, InvalidImage, UnsupportedFeature,
-    TooLarge, DuplicateEntry, UnsafeEntry, Io(String), Publish(AtomicWriteError),
+    TooLarge, DuplicateEntry, UnsafeEntry, SourceChanged, Io(String), Publish(AtomicWriteError),
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct IsoEntry{
@@ -202,10 +202,7 @@ pub fn inspect_iso(root:&Dir,source:&str,max_entries:usize)->Result<IsoManifest,
 /// authorized source image, member name, target and target directory separately.
 /// File size is <=1 MiB until the streamed writer receives durable
 /// interruption/reconciliation integration. No auto-replay of uncertain writes.
-pub fn extract_iso_file_new(
-    source_root:&Dir,source:&str,member:&str,
-    destination:&Dir,new_name:&str,host_stage_id:&str,
-)->Result<WriteReceipt,IsoError>{
+fn member_bytes(source_root:&Dir,source:&str,member:&str)->Result<Vec<u8>,IsoError>{
     let (manifest,mut file)=enumerate(source_root,source)?;
     let chosen=manifest.entries.iter().find(|e|e.path==member)
         .ok_or(IsoError::NotFound)?;
@@ -214,6 +211,36 @@ pub fn extract_iso_file_new(
     let mut bytes=vec![0u8;chosen.bytes as usize];
     file.seek(SeekFrom::Start(chosen.extent*SECTOR)).map_err(fail)?;
     file.read_exact(&mut bytes).map_err(fail)?;
+    Ok(bytes)
+}
+pub fn iso_member_digest(
+    source_root:&Dir,source:&str,member:&str
+)->Result<String,IsoError>{
+    use sha2::{Digest,Sha256};
+    let bytes=member_bytes(source_root,source,member)?;
+    Ok(format!("{:x}",Sha256::digest(&bytes)))
+}
+/// An exact hash is checked again against bytes actually published. It is
+/// not a grant; the trusted host must independently authorize it.
+pub fn extract_iso_file_new_checked(
+    source_root:&Dir,source:&str,member:&str,
+    destination:&Dir,new_name:&str,host_stage_id:&str,
+    approved_sha256:&str,
+)->Result<WriteReceipt,IsoError>{
+    use sha2::{Digest,Sha256};
+    let bytes=member_bytes(source_root,source,member)?;
+    if format!("{:x}",Sha256::digest(&bytes))!=approved_sha256 {
+        return Err(IsoError::SourceChanged)
+    }
     create_new_atomic_in_dir(destination,new_name,host_stage_id,&bytes)
         .map_err(IsoError::Publish)
+}
+pub fn extract_iso_file_new(
+    source_root:&Dir,source:&str,member:&str,
+    destination:&Dir,new_name:&str,host_stage_id:&str,
+)->Result<WriteReceipt,IsoError>{
+    let digest=iso_member_digest(source_root,source,member)?;
+    extract_iso_file_new_checked(
+        source_root,source,member,destination,new_name,host_stage_id,&digest
+    )
 }
