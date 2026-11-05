@@ -515,3 +515,17 @@ message LinuxArchiveWriteResult {
   string sha256 = 3;
   uint32 member_count = 4;
 }
+
+// Wave 2: exact-authorized, selected ZIP member extraction into a NEW target.
+message ZipExtractRequest {
+  string archive_name = 1;
+  string member_path = 2;
+  string target_name = 3;
+  string expected_sha256 = 4;
+}
+message ZipExtractResult {
+  string target_name = 1;
+  string member_path = 2;
+  uint64 bytes_written = 3;
+  string sha256 = 4;
+}
