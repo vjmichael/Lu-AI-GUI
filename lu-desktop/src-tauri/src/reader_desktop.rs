@@ -202,6 +202,25 @@ pub(crate) async fn lu_reader_ask_document(
 mod tests{
     use super::*;
     #[test]
+    fn saved_user_message_is_required_for_reader_turn_capability(){
+        let root=std::env::temp_dir().join(next_id("lu-reader-turn-verifier-"));
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let verifier=PersistedTurnVerifier{
+            chats:&store,conversation_id:&chat.chat_id,
+            user_turn_id:"g-verified",expected_prompt:"Review this document",
+        };
+        assert!(!verifier.verify_user_turn(&chat.chat_id,"g-verified"));
+        store.append_user(&chat.chat_id,"Review this document").unwrap();
+        assert!(verifier.verify_user_turn(&chat.chat_id,"g-verified"));
+        assert!(!verifier.verify_user_turn(&chat.chat_id,"g-other"));
+        assert!(!verifier.verify_user_turn("c-different","g-verified"));
+        store.append_user(&chat.chat_id,"Different question").unwrap();
+        assert!(!verifier.verify_user_turn(&chat.chat_id,"g-verified"));
+        drop(store);
+        let _=fs::remove_dir_all(root);
+    }
+    #[test]
     fn reader_dialog_cannot_be_replaced_by_a_model_supplied_path(){
         assert_eq!(lu_core::native_reader_tool::TOOL_ID,"lu.reader.read");
         assert!(lu_core::native_reader_turn::READER_MODEL_TOOL_NAME.starts_with("lu_reader_"));
