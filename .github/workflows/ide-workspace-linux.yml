@@ -31,12 +31,5 @@ jobs:
         run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
       - name: Install rustfmt
         run: rustup component add rustfmt --toolchain 1.88.0
-      - name: Format IDE host source in disposable runner
-        run: cargo fmt --manifest-path ide/host/Cargo.toml
-      - name: Reconcile formatter output without CI write credentials
-        run: |
-          for f in ide/host/src/lib.rs ide/host/src/wire.rs ide/host/tests/lifecycle.rs ide/host/build.rs; do
-            echo "LU_IDE_FMT_BEGIN $f"
-            cat "$f"
-            echo "LU_IDE_FMT_END $f"
-          done
+      - name: Verify committed Rust formatting
+        run: cargo fmt --manifest-path ide/host/Cargo.toml -- --check
