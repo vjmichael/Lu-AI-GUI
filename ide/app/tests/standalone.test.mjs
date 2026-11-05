@@ -129,3 +129,9 @@ test('Remove from IDE only delists catalog and confirms disk folders are retaine
   const method = host.split('pub fn unregister(&self, id: &str)')[1].split('pub fn projects(&self)')[0];
   assert.doesNotMatch(method, /remove_dir|remove_file|remove_dir_all|Command::new/);
 });
+
+test('project cards keep normal column width after registrations shrink', () => {
+  const css = read('../web/styles.css');
+  assert.match(css, /\.projectGrid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,/);
+  assert.doesNotMatch(css, /\.projectGrid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,/);
+});
