@@ -28,7 +28,8 @@ test('unsaved draft has a distinct immutable ID and correct CRLF/Unicode offsets
   assert.equal(ref.endColumnUtf16, 4);
   assert.equal(ref.fromByte, 4); // 2-byte alpha followed by CRLF
   assert.equal(ref.toByte, 9);
-  assert.equal(state.doc.toString(), 'α\r\n😀z\r\nlast');
+  assert.equal(state.sliceDoc(), 'α\r\n😀z\r\nlast');
+  assert.equal(state.doc.toString(), 'α\n😀z\nlast');
   assert.equal(ref.text, '😀z');
   assert.equal(ref.lifetime, 'current_editor_session_only');
   assert.equal(resolveBufferSpan(ref, identity, state).status, 'current');
