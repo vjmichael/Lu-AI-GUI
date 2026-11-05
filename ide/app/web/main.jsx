@@ -1233,7 +1233,9 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
-              <div className="editorInfoBar">Edits stay in memory until Save.
+              <div className="editorInfoBar">Draft revision
+                {' '}{bufferIdentities.current.get(activeTab.key)?.revision ?? 0}
+                {' · '} Session-only source identity · Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
               </div>
             </> : <div className="sourcePreviewEmpty">
