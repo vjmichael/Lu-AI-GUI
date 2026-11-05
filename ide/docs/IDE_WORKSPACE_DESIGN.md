@@ -129,8 +129,8 @@ This **eight-stage sequence is the official Lu IDE task list**. Existing IDE-01B
 
 | Task | Status as of 2026-11-04 | Scope | Minimum acceptance |
 | --- | --- | --- | --- |
-| **1. Standalone Rust host + Protobuf lifecycle interface** | In progress — host and standalone Tauri/React shell implemented; Windows desktop validation pending | Independent IDE project registry; native picker; opaque IDs; restart lifecycle; future Lu bridge only by separate contract | Linux and Windows native checks; standalone app compile and real picker acceptance; no mandatory Lu dependency |
-| **2. Linux sandbox and real execution tests** | In progress — fail-closed fixed-probe crate committed; real kernel verification pending | OS isolation launcher, worker supervision, path/network/secret denial, quotas, adversarial harness | Real hostile-process tests on Linux; no silent unisolated fallback; logs and receipts; Windows strategy recorded |
+| **1. Standalone Rust host + Protobuf lifecycle interface** | In progress — Windows/Linux compile/tests passed; unsigned Windows alpha built; installed UI/picker acceptance pending | Independent IDE project registry; native picker; opaque IDs; restart lifecycle; future Lu bridge only by separate contract | Linux and Windows native checks; standalone app compile and real picker acceptance; no mandatory Lu dependency |
+| **2. Linux sandbox and real execution tests** | In progress — 5/5 real Linux kernel isolation/timeout probes passed; quotas, full worker supervision and Windows containment pending | OS isolation launcher, worker supervision, path/network/secret denial, quotas, adversarial harness | Real hostile-process tests on Linux; no silent unisolated fallback; logs and receipts; Windows strategy recorded |
 | **3. Project explorer and code editor** | Not started | Human-first multi-file editor, search, tabs/splits, safe save, diff preview, shortcuts | Large project usability, undo/redo, recovery, no project auto-execution |
 | **4. LSP, build/test and debugger integration** | Not started | LSP/DAP adapters; terminal/task runner; streaming diagnostics; run configs | Representative Python/C++/Rust/JS projects; bounded build/test/debug workers; cancellation and crash cleanup |
 | **5. Master package manager** | Not started | uv and Python envs; vcpkg/Conan and C/C++ toolchains; Cargo, JS, Go/JVM/.NET adapters in staged rollout | Detect/preview/approve/apply/verify; lockfiles; no install-on-open; blocked malicious hooks; offline/recovery scenarios |
@@ -173,6 +173,6 @@ External references (implementation guidance, not blanket certification):
 - Linux Landlock: https://docs.kernel.org/userspace-api/landlock.html
 
 ---
-**Implementation evidence:** [IDE-01B host implementation and Linux CI results](IDE_01B_IMPLEMENTATION_EVIDENCE.md).
+**Implementation evidence:** [IDE-01B standalone host](IDE_01B_IMPLEMENTATION_EVIDENCE.md), [installed Windows acceptance checklist](IDE_01B_MANUAL_DESKTOP_ACCEPTANCE.md), and [IDE-02 Linux kernel sandbox probes](IDE_02_SECURITY_PROBE_EVIDENCE.md).
 
 **Document control:** Changes to the eight task definitions or security invariants should update this document and its related subgate checklist in the same IDE-branch review. Do not label unverified features “complete.”
