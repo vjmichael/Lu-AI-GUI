@@ -80,9 +80,12 @@ impl OpenXmlPackage{
             }
             let raw_name=slice_at(bytes,at+46,name_len)?;
             let name=std::str::from_utf8(raw_name).map_err(|_|malformed())?;
-            if name.is_empty()||name.len()>512||name.contains('\\')||
+            let directory=name.ends_with('/');
+            let clean_name=if directory{&name[..name.len()-1]}else{name};
+            if clean_name.is_empty()||name.len()>512||name.contains('\\')||
                name.contains('\0')||name.starts_with('/')||
-               name.split('/').any(|s|s=="."||s==".."||s.is_empty()){
+               clean_name.split('/').any(|s|s=="."||s==".."||s.is_empty())||
+               (directory && (packed!=0 || unpacked!=0)){
                 return Err(malformed())
             }
             let lower=name.to_ascii_lowercase();
@@ -115,7 +118,9 @@ impl OpenXmlPackage{
             if part.len()!=unpacked||crc32fast::hash(&part)!=crc{
                 return Err(malformed())
             }
-            if parts.insert(name.to_owned(),part).is_some(){return Err(malformed())}
+            if !directory && parts.insert(name.to_owned(),part).is_some(){
+                return Err(malformed())
+            }
             at+=entry_size;
         }
         if at!=eocd{return Err(malformed())}
