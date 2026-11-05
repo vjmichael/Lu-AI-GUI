@@ -1,0 +1,38 @@
+syntax = "proto3";
+package lu.ide.v1;
+
+// IDE-01B: *UI/host* lifecycle messages, NOT worker execution commands.
+// No message contains a filesystem path, shell command, executable, grant,
+// conversation ID or secret. A native picker supplies the project root.
+message WorkspaceRequest {
+  uint32 protocol_version = 1;
+  string request_id = 2; // Correlation only; never an authorization credential.
+  oneof operation {
+    ListProjects list = 3;
+    SelectDirectory select = 4; // Triggers trusted native OS directory picker.
+    ReopenProject reopen = 5;
+    CloseProject close = 6;
+  }
+}
+message ListProjects {}
+message SelectDirectory {}
+message ReopenProject { string project_id = 1; }
+message CloseProject { string project_id = 1; }
+
+message ProjectView {
+  string project_id = 1; // Opaque host-generated ID.
+  string display_name = 2; // Leaf name only, not an absolute path.
+  bool active = 3;
+  bool available = 4;
+}
+message ProjectList { repeated ProjectView projects = 1; }
+message WorkspaceFailure { string code = 1; }
+message WorkspaceReply {
+  uint32 protocol_version = 1;
+  string request_id = 2;
+  oneof outcome {
+    ProjectList projects = 3;
+    ProjectView project = 4;
+    WorkspaceFailure failure = 5;
+  }
+}
