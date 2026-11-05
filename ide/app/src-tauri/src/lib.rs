@@ -51,8 +51,8 @@ fn summarize(registry: &IdeWorkspaceRegistry) -> Result<Vec<ProjectSummary>, Str
 // receipts. A failed ledger append never turns a successful file save into a
 // retryable failed write (which could lead to duplicate effects).
 fn observe(ledger: &DevelopmentLedger, project_id: &str, operation: &str,
-    summary: &str, revision: Option<&str>) {
-    if let Err(err) = ledger.record(project_id, operation, summary, revision) {
+    summary: &str, revision: Option<&str>, source_path: Option<&str>) {
+    if let Err(err) = ledger.record(project_id, operation, summary, revision, source_path) {
         eprintln!("IDE continuity observation unavailable: {}", err.code());
     }
 }
@@ -117,7 +117,7 @@ async fn ide_choose_project(
             .map_err(|error| stable_error(&error).to_string())?;
         if let Some(ref project) = selected {
             observe(&ledger, &project.project_id, "project.register",
-                "Project registered through native picker", None);
+                "Project registered through native picker", None, None);
         }
         summarize(&registry)
     })
@@ -137,7 +137,7 @@ async fn ide_open_project(
         registry
             .reopen(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
-        observe(&ledger, &project_id, "project.open", "Project reopened", None);
+        observe(&ledger, &project_id, "project.open", "Project reopened", None, None);
         summarize(&registry)
     })
     .await
@@ -156,7 +156,7 @@ async fn ide_close_project(
         registry
             .close(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
-        observe(&ledger, &project_id, "project.close", "Project closed", None);
+        observe(&ledger, &project_id, "project.close", "Project closed", None, None);
         summarize(&registry)
     })
     .await
@@ -177,7 +177,7 @@ async fn ide_unregister_project(
         registry
             .unregister(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
-        observe(&ledger, &project_id, "project.unregister", "Project removed from IDE catalog", None);
+        observe(&ledger, &project_id, "project.unregister", "Project removed from IDE catalog", None, None);
         summarize(&registry)
     })
     .await
@@ -276,7 +276,7 @@ async fn ide_save_source_file(
             .save_source_file(&project_id, &relative_path, &expected_revision, &text)
             .map_err(|error| error.code().to_owned())?;
         observe(&ledger, &project_id, "source.save",
-            "Source saved with revision check", Some(&saved.revision));
+            "Source saved with revision check", Some(&saved.revision), Some(&relative_path));
         Ok(saved)
     })
     .await
