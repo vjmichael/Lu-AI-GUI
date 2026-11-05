@@ -97,6 +97,24 @@ function App() {
     !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
   useEffect(() => {
+    if (!browserResearch) return;
+    let mounted=true;
+    let polling=false;
+    const poll=async()=>{
+      if (polling) return;
+      polling=true;
+      try{
+        const state=await invoke('lu_browser_runtime_status');
+        if (mounted) setBrowserRuntime(state);
+      }catch{/* Browser status remains informational, not authorization. */}
+      finally{polling=false;}
+    };
+    void poll();
+    const timer=setInterval(()=>{void poll();},1800);
+    return ()=>{mounted=false;clearInterval(timer);};
+  },[browserResearch]);
+
+  useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) { setModelLoadSeconds(0); return; }
     const started = Date.now();
     setModelLoadSeconds(0);
@@ -1179,6 +1197,16 @@ function App() {
           <small>Restored {latestRestored.restoredBytes} bytes · SHA-256: {latestRestored.restoredSha256}</small>
           <small>New rollback effect: {latestRestored.rollbackEffectId}</small>
           <small>The prior edited bytes were retained as a separate rollback backup.</small>
+        </section>}
+        {browserRuntime?.humanVerificationRequired && <section
+          className="browserChallengeNotice" role="alert" aria-live="polite">
+          <strong>Research paused for human verification</strong>
+          <p>Complete the challenge in Lu's visible Chromium window.
+            The current research turn will resume only after native verification.</p>
+          <button type="button" className="subtleButton"
+            onClick={humanVerifiedBrowser}>I've completed verification</button>
+          <button type="button" className="subtleButton"
+            onClick={refreshResearchBrowser}>Check status</button>
         </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
