@@ -387,6 +387,29 @@ mod tests{
     }
     #[cfg(unix)]
     #[test]
+    fn actual_owned_worker_deadline_is_a_timed_out_terminal_event(){
+        let executable=PathBuf::from("/bin/sleep").canonicalize().unwrap();
+        let mut sha=Sha256::new();
+        sha.update(fs::read(&executable).unwrap());
+        let digest=format!("{:x}",sha.finalize());
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        manager.start_host_approved(TrustedWorkerPlan{
+            task_id:"deadline1".into(),workspace_id:"c-task-chat".into(),
+            executable,expected_sha256:digest,
+            args:vec![OsString::from("30")],
+            progress_protocol:false,max_runtime_seconds:Some(1),
+        }).unwrap();
+        std::thread::sleep(Duration::from_millis(1250));
+        assert_eq!(manager.poll().unwrap(),1);
+        assert!(!manager.can_cancel("deadline1"));
+        assert_eq!(store.get("deadline1").unwrap().unwrap().state,TaskState::TimedOut);
+        let notices=store.pending_notices_for_workspace("c-task-chat",8).unwrap();
+        assert_eq!(notices.len(),1);
+        assert_eq!(notices[0].state,TaskState::TimedOut);
+    }
+    #[cfg(unix)]
+    #[test]
     fn real_supervised_worker_can_be_cancelled_without_touching_other_job(){
         let sleep=PathBuf::from("/bin/sleep");
         if !sleep.is_file(){return;}
