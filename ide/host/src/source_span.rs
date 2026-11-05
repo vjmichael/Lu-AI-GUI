@@ -59,10 +59,16 @@ impl SourceSpanError {
     }
 }
 impl From<BrowserError> for SourceSpanError {
-    fn from(value: BrowserError) -> Self { Self::Browser(value) }
+    fn from(value: BrowserError) -> Self {
+        Self::Browser(value)
+    }
 }
 
-fn extract_lines(text: &str, first: usize, last: usize) -> Result<(usize, Vec<SourceLine>), SpanError> {
+fn extract_lines(
+    text: &str,
+    first: usize,
+    last: usize,
+) -> Result<(usize, Vec<SourceLine>), SpanError> {
     if first == 0 || last < first || last - first >= MAX_SPAN_LINES {
         return Err(SpanError::InvalidRange);
     }
@@ -74,15 +80,30 @@ fn extract_lines(text: &str, first: usize, last: usize) -> Result<(usize, Vec<So
     for chunk in text.split_inclusive('\n') {
         let has_lf = chunk.ends_with('\n');
         let has_crlf = chunk.ends_with("\r\n");
-        let stripped = if has_crlf { &chunk[..chunk.len()-2] }
-            else if has_lf { &chunk[..chunk.len()-1] } else { chunk };
+        let stripped = if has_crlf {
+            &chunk[..chunk.len() - 2]
+        } else if has_lf {
+            &chunk[..chunk.len() - 1]
+        } else {
+            chunk
+        };
         if number >= first && number <= last {
             selected_bytes += stripped.len();
-            if selected_bytes > MAX_SPAN_BYTES { return Err(SpanError::TooLarge); }
+            if selected_bytes > MAX_SPAN_BYTES {
+                return Err(SpanError::TooLarge);
+            }
             lines.push(SourceLine {
-                line_number: number, text: stripped.to_string(),
-                start_byte: start, end_byte: start + stripped.len(),
-                newline: if has_crlf { "crlf" } else if has_lf { "lf" } else { "none" },
+                line_number: number,
+                text: stripped.to_string(),
+                start_byte: start,
+                end_byte: start + stripped.len(),
+                newline: if has_crlf {
+                    "crlf"
+                } else if has_lf {
+                    "lf"
+                } else {
+                    "none"
+                },
             });
         }
         start += chunk.len();
@@ -91,35 +112,55 @@ fn extract_lines(text: &str, first: usize, last: usize) -> Result<(usize, Vec<So
     // Empty files contain line 1; a file ending in a newline has a final empty line.
     if text.is_empty() || text.ends_with('\n') {
         if number >= first && number <= last {
-            lines.push(SourceLine { line_number: number, text: String::new(),
-                start_byte: text.len(), end_byte: text.len(), newline: "none" });
+            lines.push(SourceLine {
+                line_number: number,
+                text: String::new(),
+                start_byte: text.len(),
+                end_byte: text.len(),
+                newline: "none",
+            });
         }
         number += 1;
     }
     let total = number - 1;
-    if last > total { return Err(SpanError::InvalidRange); }
+    if last > total {
+        return Err(SpanError::InvalidRange);
+    }
     Ok((total, lines))
 }
 impl IdeWorkspaceRegistry {
     /// Read only the requested lines from the currently saved disk revision.
     /// The expected SHA-256 is required to prevent citing a changed file.
     /// Unsaved CodeMirror buffers are distinct and not represented here.
-    pub fn read_source_span(&self, project_id: &str, relative_path: &str,
-        expected_revision: &str, first_line: usize, last_line: usize
+    pub fn read_source_span(
+        &self,
+        project_id: &str,
+        relative_path: &str,
+        expected_revision: &str,
+        first_line: usize,
+        last_line: usize,
     ) -> Result<SourceSpan, SourceSpanError> {
-        if expected_revision.len() != 64 ||
-            !expected_revision.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if expected_revision.len() != 64
+            || !expected_revision.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(SourceSpanError::Browser(BrowserError::InvalidRevision));
         }
         let preview = self.preview_source_file(project_id, relative_path)?;
         if preview.revision != expected_revision {
             return Err(SourceSpanError::Browser(BrowserError::Conflict));
         }
-        let (total_lines, lines) = extract_lines(&preview.text, first_line, last_line)
-            .map_err(SourceSpanError::Span)?;
-        Ok(SourceSpan { schema_version: 1, project_id: preview.project_id,
-            relative_path: preview.relative_path, revision: preview.revision,
-            first_line, last_line, total_lines, lines })
+        let (total_lines, lines) =
+            extract_lines(&preview.text, first_line, last_line).map_err(SourceSpanError::Span)?;
+        Ok(SourceSpan {
+            schema_version: 1,
+            project_id: preview.project_id,
+            relative_path: preview.relative_path,
+            revision: preview.revision,
+            first_line,
+            last_line,
+            total_lines,
+            lines,
+        })
     }
 }
 #[cfg(test)]
@@ -152,9 +193,21 @@ mod tests {
     }
     #[test]
     fn rejects_overlong_or_out_of_bounds_requests() {
-        assert_eq!(extract_lines("a", 0, 1).unwrap_err(), SpanError::InvalidRange);
-        assert_eq!(extract_lines("a", 1, 2).unwrap_err(), SpanError::InvalidRange);
-        assert_eq!(extract_lines("a", 1, 121).unwrap_err(), SpanError::InvalidRange);
-        assert_eq!(extract_lines(&"x".repeat(MAX_SPAN_BYTES + 1), 1, 1).unwrap_err(), SpanError::TooLarge);
+        assert_eq!(
+            extract_lines("a", 0, 1).unwrap_err(),
+            SpanError::InvalidRange
+        );
+        assert_eq!(
+            extract_lines("a", 1, 2).unwrap_err(),
+            SpanError::InvalidRange
+        );
+        assert_eq!(
+            extract_lines("a", 1, 121).unwrap_err(),
+            SpanError::InvalidRange
+        );
+        assert_eq!(
+            extract_lines(&"x".repeat(MAX_SPAN_BYTES + 1), 1, 1).unwrap_err(),
+            SpanError::TooLarge
+        );
     }
 }
