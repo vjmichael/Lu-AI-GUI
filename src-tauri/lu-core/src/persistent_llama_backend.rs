@@ -214,6 +214,16 @@ impl InferenceBackend for PersistentLlamaBackend {
     fn process_id(&self) -> Option<u32> {
         self.pid()
     }
+    fn generate_browser_function_calls(
+        &mut self,
+        request:&GenerationRequest,
+        admitted_read_schemas:&[serde_json::Value],
+        cancel:&Cancellation,
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,String>{
+        PersistentLlamaBackend::generate_browser_function_calls(
+            self,request,admitted_read_schemas,cancel
+        )
+    }
     fn load(&mut self, admitted: &AdmittedModel) -> Result<(), String> {
         self.load_with_projector(admitted, None)
     }
