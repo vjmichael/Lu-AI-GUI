@@ -37,6 +37,8 @@ pub enum Probe {
     ReadOnlyWorkspace,
     /// Assert an isolated process cannot connect to an external address.
     NetworkIsolation,
+    /// Fixed long-running probe; host must terminate on deadline.
+    TimeoutContainment,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -51,8 +53,16 @@ fn safe_workspace(workspace: &Path) -> Result<PathBuf, SandboxError> {
         return Err(SandboxError::UnsafeWorkspace);
     }
     let canonical = fs::canonicalize(workspace).map_err(|_| SandboxError::UnsafeWorkspace)?;
-    // Never allow a test to expose all of the filesystem as the workspace.
-    if canonical.parent().is_none() || canonical == Path::new("/usr") {
+    // Never treat broad system or home roots as a project. Subdirectories of
+    // an explicitly user-selected development root are a separate grant.
+    const FORBIDDEN_ROOTS: &[&str] = &[
+        "/", "/usr", "/etc", "/home", "/root", "/proc", "/sys", "/dev",
+        "/run", "/var", "/tmp", "/bin", "/lib", "/lib64", "/sbin", "/opt",
+    ];
+    if FORBIDDEN_ROOTS
+        .iter()
+        .any(|candidate| canonical == Path::new(candidate))
+    {
         return Err(SandboxError::UnsafeWorkspace);
     }
     Ok(canonical)
@@ -95,6 +105,7 @@ fn fixed_probe_args(probe: Probe) -> Vec<OsString> {
             "-c",
             "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(0 if s.connect_ex(('1.1.1.1',53)) != 0 else 1)",
         ],
+        Probe::TimeoutContainment => &["/bin/sh", "-c", "sleep 10"],
     };
     values.iter().map(OsString::from).collect()
 }
@@ -103,7 +114,7 @@ fn mount_system_path(args: &mut Vec<OsString>, path: &str) {
     // Keep the basic Linux runtime visible for trusted *fixed probes* only.
     // Canonicalizing the source collapses /bin and /lib symlinks to /usr.
     if let Ok(real) = fs::canonicalize(path) {
-        if real.is_dir() {
+        if real.is_dir() && (real.starts_with("/usr") || real == Path::new(path)) {
             args.extend(["--ro-bind".into(), real.into_os_string(), path.into()]);
         }
     }
@@ -113,6 +124,7 @@ fn arguments(workspace: &Path, probe: Probe) -> Result<Vec<OsString>, SandboxErr
     let root = safe_workspace(workspace)?;
     let mut args: Vec<OsString> = [
         "--unshare-all",
+        "--disable-userns",
         "--die-with-parent",
         "--new-session",
         "--clearenv",
@@ -214,6 +226,12 @@ mod tests {
             Err(SandboxError::UnsafeWorkspace)
         ));
         assert!(safe_workspace(Path::new("/some/path/that/does/not/exist")).is_err());
+        for broad_root in ["/usr", "/etc", "/home", "/tmp", "/var"] {
+            assert!(matches!(
+                safe_workspace(Path::new(broad_root)),
+                Err(SandboxError::UnsafeWorkspace)
+            ));
+        }
     }
 
     #[test]
@@ -226,6 +244,7 @@ mod tests {
             .map(|x| x.to_string_lossy().to_string())
             .collect();
         assert!(normalized.contains(&"--unshare-all".to_owned()));
+        assert!(normalized.contains(&"--disable-userns".to_owned()));
         assert!(normalized.contains(&"--new-session".to_owned()));
         assert!(normalized.contains(&"--die-with-parent".to_owned()));
         assert!(normalized.contains(&"--clearenv".to_owned()));
