@@ -11,17 +11,17 @@
 
 ## 1. Mission, goals and constraints
 
-Lu IDE Workspace is an optional, professional integrated development environment within the Lu desktop application. It must be useful for ordinary human software development and provide Lu with supervised capabilities to read, reason about, edit, build, test, debug, review and maintain software. The longer-term goal is a **disposable Lu Dev instance** capable of safely working on Lu itself.
+Lu IDE Workspace is a **standalone desktop application** in the same Git repository as Lu. It is not hosted by Lu's Tauri window and does not require Lu running. It must be useful for ordinary human software development and provide Lu with supervised capabilities to read, reason about, edit, build, test, debug, review and maintain software. The longer-term goal is a **disposable Lu Dev instance** capable of safely working on Lu itself.
 
 Goals:
 - Open existing projects with an effective, keyboard-accessible human IDE: explorer, multi-tab/split editor, search, diagnostics, symbol navigation, integrated source control, tasks, terminal, debugging, testing and project settings.
-- Make Lu an assistive coding agent using the **same** trusted authorization, native tool host, durable journal, worker supervisor and model/memory infrastructure as Lu Core.
+- Integrate with Lu later using an **optional, versioned, mutually authenticated out-of-process interface**. Lu and the IDE retain separate authority. A Lu request is a proposal, not an IDE permission.
 - Provide one **master package and toolchain manager** that coordinates the appropriate native package managers for Python, C/C++, Rust, JavaScript/TypeScript, Go, JVM, .NET and future ecosystems.
 - Treat untrusted projects, dependency installers, build tools, test suites, language servers, debuggers, extensions and generated shell commands as potentially malicious executable content.
 - Develop and test first in the local Linux environment; preserve Windows as an independently tested target. Do not require Docker, a separate Git repository, or a complicated end-user installation.
 - Keep GitHub as source control and optional CI. Local builds, OS-level tests and measured evidence are required for acceptance.
 
-Non-goals for the first version: a replacement for every language compiler or dependency resolver, guaranteed malware-free execution, a full extension marketplace, mandatory cloud services, or merging IDE work into the accepted Lu Core alpha before integration tests.
+Non-goals for the first version: a replacement for every language compiler or dependency resolver, guaranteed malware-free execution, a full extension marketplace, mandatory cloud services, or embedding IDE code into the accepted Lu Core alpha.
 
 ## 2. Repository ownership and development boundary
 
@@ -30,16 +30,16 @@ All IDE development is in **vjmichael/Lu-AI-GUI**, branch **ide/workspace-develo
 | Owner | Responsibilities |
 | --- | --- |
 | Lu Core | Models and inference; ANSF/SQLite memory; authenticated human-turn identity; per-turn grants; native tool registry; host/worker Protobuf IPC; effect journal; worker lifecycle, cancel/recovery; basic Git functions. |
-| IDE DLC | Source editor, project explorer, LSP/DAP integrations, workspace registry, package/toolchain orchestration, build/test/run configurations, advanced Git and GitHub UX, coding-agent workflow, Lu Dev workspaces. |
+| Standalone IDE | Own Tauri executable and project catalog; source editor, explorer, LSP/DAP, package orchestration, build/test/run configurations, advanced Git and GitHub, and its own OS-supervised workers. |
 | OS execution layer | Verified Linux and Windows isolation primitives, quotas and process supervision; no untrusted worker should inherit host secrets or unneeded rights. |
 
-**Branch isolation is not OS isolation.** No change may bypass the host permission broker because it lives in an IDE-only branch. Merge to main only after Lu-compatible interface review, tests and regression evidence. Existing Lu data, authorization semantics and accepted alpha artifacts must be preserved.
+**Branch isolation is not OS isolation.** The IDE is a different process and future trust domain. It must implement its own verifiable host permissions and process containment. A future bridge to Lu must validate both sides' authority; it cannot inherit permissions just because both programs share a repository. Do not modify Lu's main desktop to embed the IDE. Merge to main only after cross-app compatibility, security review, and acceptance.
 
 ### Proposed layout
 
-- **ide/ui/** — React/Tauri workspace views and editor integration.
-- **ide/host/** — Rust workspace registry, project filesystem handles, Git services, manager adapters and host validation.
-- **ide/proto/** — versioned IPC request/event messages and compatibility tests.
+- **ide/app/** — independently launchable Tauri/React desktop and future editor UI.
+- **ide/host/** — standalone Rust project catalog (currently metadata only), future root handles, Git services, manager adapters and host validation.
+- **ide/proto/** — local IDE versioned Protobuf lifecycle and future optional Lu bridge contracts.
 - **ide/workers/** — managed, restricted LSP/DAP/build/test/install/Git workers.
 - **ide/tests/** — fixtures, cross-platform integration and adversarial OS security tests.
 - **ide/docs/** — architecture, security model, manager contracts, design decisions, acceptance.
@@ -54,7 +54,7 @@ Provide project tree with scalable indexing/ignore rules; file tabs/splits; synt
 Evaluate **Monaco** and **CodeMirror** for editor UI rather than writing a syntax engine from scratch. Use **Language Server Protocol (LSP)** for language intelligence and **Debug Adapter Protocol (DAP)** for debugging, with process isolation for the servers/adapters themselves. These are design choices pending small prototypes; do not claim all languages have equal support.
 
 ### Host-service boundaries
-The React WebView is not the authority for filesystem access or worker execution. A trusted OS directory picker registers a workspace; the host mints opaque workspace/file/job identifiers. Requests pass through versioned Rust and Protobuf contracts, verify the originating human turn or UI gesture, resolve the exact target and permitted effect, and then reach a host-supervised worker. Untrusted source text, LSP results, terminal logs and model-generated plans cannot grant new authority.
+The React WebView is not the authority for filesystem access or worker execution. A trusted OS directory picker registers a workspace; the host mints opaque workspace/file/job identifiers. Local UI requests pass through a trusted Tauri command into the standalone Rust host; the host verifies user scope and permitted effects before a future OS-supervised worker can run. Lu-originated requests will additionally require authentication and explicit grants at the optional inter-app bridge. Untrusted source text, LSP results, terminal logs and model-generated plans cannot grant new authority.
 
 Workspace lifecycle:
 
@@ -129,13 +129,13 @@ This **eight-stage sequence is the official Lu IDE task list**. Existing IDE-01B
 
 | Task | Status as of 2026-11-04 | Scope | Minimum acceptance |
 | --- | --- | --- | --- |
-| **1. Rust workspace host + Protobuf interface** | In progress — Rust crate compiled, 9 Linux tests pass; native Tauri integration still open | Host workspace registry; trusted picker; opaque handles; lifecycle; Lu Core authority/journal integration | Linux tests prove open/close/reopen, path scoping, authenticated caller, durable state, cancel |
+| **1. Standalone Rust host + Protobuf lifecycle interface** | In progress — host and standalone Tauri/React shell implemented; Windows desktop validation pending | Independent IDE project registry; native picker; opaque IDs; restart lifecycle; future Lu bridge only by separate contract | Linux and Windows native checks; standalone app compile and real picker acceptance; no mandatory Lu dependency |
 | **2. Linux sandbox and real execution tests** | Not started | OS isolation launcher, worker supervision, path/network/secret denial, quotas, adversarial harness | Real hostile-process tests on Linux; no silent unisolated fallback; logs and receipts; Windows strategy recorded |
 | **3. Project explorer and code editor** | Not started | Human-first multi-file editor, search, tabs/splits, safe save, diff preview, shortcuts | Large project usability, undo/redo, recovery, no project auto-execution |
 | **4. LSP, build/test and debugger integration** | Not started | LSP/DAP adapters; terminal/task runner; streaming diagnostics; run configs | Representative Python/C++/Rust/JS projects; bounded build/test/debug workers; cancellation and crash cleanup |
 | **5. Master package manager** | Not started | uv and Python envs; vcpkg/Conan and C/C++ toolchains; Cargo, JS, Go/JVM/.NET adapters in staged rollout | Detect/preview/approve/apply/verify; lockfiles; no install-on-open; blocked malicious hooks; offline/recovery scenarios |
 | **6. Advanced Git and GitHub workflows** | Not started | Worktrees, staging, history, rebase/cherry-pick/conflicts, PR/CI, remote credentials | Rehearsal fixtures; destructive-action confirmation; recoverable conflicts; no ambient secret leaks |
-| **7. Lu AI coding integration** | Not started | Agent plans, diff proposals, per-turn tool grants, test/error feedback and task durability | End-to-end code change with review, verified tests, prompt-injection rejection and cancel/restart recovery |
+| **7. Optional Lu AI coding integration** | Not started | Authenticated out-of-process bridge, agent plans, diff proposals, independent IDE grants, test feedback and durable task recovery | End-to-end code change with review, verified tests, prompt-injection rejection and cancel/restart recovery |
 | **8. Lu self-development environment** | Not started | Disposable Lu Dev instance/worktree, isolated build/test, version comparison and human-approved update | Stable Lu unaffected by failed build; terminate/rollback; merge proposal only after test evidence |
 
 **Execution order:** 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8. Some research or read-only prototyping may overlap, but **no package/build/test/executable extension feature is accepted before Stage 2's minimal verified containment**. Stage 8 does not automatically authorize self-modification of the running Lu binary. Windows native sandbox parity, installer/upgrade tests and release hardening are mandatory cross-stage acceptance and final release gates, not an additional numbered task.
@@ -145,15 +145,16 @@ For each task: (a) design/API and threat analysis; (b) implement on dedicated ID
 
 ## 7. Decisions, dependencies and open questions
 
-**Decided:** one repository; dedicated IDE branch; IDE separate from Lu Core; advanced Git in IDE, basic Git in Core; one manager-of-managers; offline-capable local-first workflow; no automatic execution of new projects; host authorization and OS-backed isolation before executable automation; local Linux development and Windows acceptance; human approval for high-impact changes.
+**Decided:** one repository; dedicated IDE branch; **independent IDE executable with optional Lu bridge**, not a Lu-embedded DLC; advanced Git in IDE, basic Git in Core; one manager-of-managers; offline-capable local-first workflow; no automatic execution of new projects; host authorization and OS-backed isolation before executable automation; local Linux development and Windows acceptance; human approval for high-impact changes.
 
 **To prototype/evaluate:** Monaco versus CodeMirror; first language server/debug adapter bundle; Linux isolation availability per distro; Windows restricted process architecture; package manager provisioning and signed executable provenance; extension policy; remote auth broker; exact versioned Lu DLC ABI/Protobuf messages; useful project-level trust UX. None of these should silently override existing Lu Core policies.
 
-**Dependencies:** Lu Core's authenticated user turns, Protobuf host/worker framework, durable effect journal, process supervisor, native file operations, and existing Git primitives. If any are unavailable or incomplete in the checked-out branch, identify the gap before adding parallel implementations.
+**Dependencies:** The IDE runs and registers projects without Lu Core. Before enabling executable workers, it needs its own OS-backed sandbox, per-operation grants, durable effects and cancellation. The optional future Lu bridge must negotiate versions and require verified peer authentication and independent authorization; it must not directly reuse in-process Lu Core objects.
 
 ## 8. Reference documentation and research
 
 Internal:
+- [Standalone app and optional Lu bridge — ADR-0001](ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md)
 - [IDE architecture](ARCHITECTURE.md)
 - [Package and toolchain orchestrator](PACKAGE_ORCHESTRATOR.md)
 - [Execution security model](SECURITY_MODEL.md)
@@ -172,4 +173,6 @@ External references (implementation guidance, not blanket certification):
 - Linux Landlock: https://docs.kernel.org/userspace-api/landlock.html
 
 ---
-**Implementation evidence:** [IDE-01B host implementation and Linux CI results](IDE_01B_IMPLEMENTATION_EVIDENCE.md).\n\n**Document control:** Changes to the eight task definitions or security invariants should update this document and its related subgate checklist in the same IDE-branch review. Do not label unverified features “complete.”
+**Implementation evidence:** [IDE-01B host implementation and Linux CI results](IDE_01B_IMPLEMENTATION_EVIDENCE.md).
+
+**Document control:** Changes to the eight task definitions or security invariants should update this document and its related subgate checklist in the same IDE-branch review. Do not label unverified features “complete.”
