@@ -312,9 +312,16 @@ pub fn generate_browser_tool_stream_body(
         let event=parse_tool_sse_frame(frame)
             .map_err(|_|"invalid browser tool SSE event")?;
         let done=matches!(event,ToolStreamEvent::Done);
+        let stopped=matches!(event,ToolStreamEvent::Stop);
         if let Some(calls)=collector.absorb(event)
             .map_err(|_|"invalid or unadvertised browser tool call")?{
             completed=Some(calls);
+        }
+        if stopped {
+            // Only a clean model stop, not an unfinished stream, signals
+            // no further tool calls. Host checks evidence before finalizing.
+            if completed.is_some(){return Err("conflicting browser stream endings".into());}
+            completed=Some(Vec::new());
         }
         if done {
             if completed.is_none(){
@@ -391,6 +398,23 @@ mod tests {
             sock.write_all(&response).unwrap();
         });
         (port, handle)
+    }
+    #[test]
+    fn browser_tool_stream_accepts_clean_stop_but_not_bare_done() {
+        let natural=b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        let (port,handle)=fixture(response(&[natural]),false);
+        let tools=generate_browser_tool_stream_body(port,&"ab".repeat(32),
+            "{}",Duration::from_secs(10),||false,
+            ["lu_browser_read".into()].into());
+        handle.join().unwrap();
+        assert!(tools.unwrap().is_empty());
+        let bare=b"data: [DONE]\n\n";
+        let (port,handle)=fixture(response(&[bare]),false);
+        let result=generate_browser_tool_stream_body(port,&"ab".repeat(32),
+            "{}",Duration::from_secs(10),||false,
+            ["lu_browser_read".into()].into());
+        handle.join().unwrap();
+        assert!(result.is_err());
     }
     #[test]
     fn streamed_image_request_reassembles_arbitrary_sse_chunks() {
