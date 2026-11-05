@@ -485,8 +485,8 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
         let mut attempted=HashSet::<(String,i64)>::new();
         loop {
             std::thread::sleep(Duration::from_millis(500));
-            // Do not keep the desktop alive after shutdown.
-            if app.get_webview_window("main").is_none(){break;}
+            // The native task supervisor must not depend on a visible
+            // WebView. The OS terminates this host thread when Lu exits.
             let _=state.background_processes.poll();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
                 pushed_cursor,128
