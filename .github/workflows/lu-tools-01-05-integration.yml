@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: lu-tools-01-05-native
+  group: lu-tools-01-05-native-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   lock-audit:
