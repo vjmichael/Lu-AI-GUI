@@ -30,6 +30,10 @@ function App() {
   const [images, setImages] = useState([]);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const [backgroundPaneOpen,setBackgroundPaneOpen] = useState(false);
+  const [backgroundTasks,setBackgroundTasks] = useState([]);
+  const [backgroundError,setBackgroundError] = useState('');
+  const [backgroundFilter,setBackgroundFilter] = useState('active');
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [error, setError] = useState('');
@@ -68,6 +72,10 @@ function App() {
   const visibleJob = chatId ? jobs[chatId] : null;
   const visibleStream = visibleJob?.text ?? '';
   const chatBusy = Boolean(visibleJob);
+  const activeBackgroundTasks=backgroundTasks.filter(task=>
+    ['PENDING','RUNNING','PAUSED'].includes(task.state));
+  const shownBackgroundTasks=backgroundFilter==='active'
+    ?activeBackgroundTasks:backgroundTasks;
   // An in-flight checkpoint is already visible in the live stream buffer.
   // Do not render that same unfinished assistant text twice after chat switch.
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
@@ -88,6 +96,26 @@ function App() {
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
   }
+  async function refreshBackgroundTasks() {
+    try {
+      const items=await invoke('lu_background_tasks');
+      setBackgroundTasks(Array.isArray(items)?items:[]);
+      setBackgroundError('');
+    } catch (error) {
+      setBackgroundError(String(error));
+    }
+  }
+  useEffect(()=>{
+    if (!backgroundPaneOpen) return undefined;
+    let alive=true;
+    const refresh=()=>{if(alive) void refreshBackgroundTasks();};
+    refresh();
+    // UI polling queries Lu's local store, not the model or a worker.
+    // Future host event pushes can replace this lightweight refresh.
+    const timer=setInterval(refresh,2500);
+    return ()=>{alive=false;clearInterval(timer);};
+  },[backgroundPaneOpen]);
+
   async function refreshChats() {
     const list = await invoke('lu_chats');
     setChats(list.chats);
@@ -500,6 +528,9 @@ function App() {
       <div className="sidebarFooter">
         <div className="runtimeStatus"><span className="statusDot" data-ready={loaded}></span><strong>{loaded ? 'Model loaded' : working && activity.startsWith('Loading') ? 'Loading model…' : 'No model loaded'}</strong></div>
         <small>{loaded ? loadedModel?.filename : 'Select a model from the chat header'}</small>
+        <button className="settingsButton" onClick={() => setBackgroundPaneOpen(true)}>
+          ◷ Background Tasks {activeBackgroundTasks.length ? '· '+activeBackgroundTasks.length : ''}
+        </button>
         <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </div>
     </aside>
@@ -584,6 +615,56 @@ function App() {
       </div>
     </main>
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
+    {backgroundPaneOpen && <div className="backgroundPaneBackdrop" role="presentation"
+      onClick={()=>setBackgroundPaneOpen(false)}>
+      <aside className="backgroundPane" role="dialog" aria-modal="true"
+        aria-label="Background Tasks" onClick={e=>e.stopPropagation()}>
+        <header className="backgroundPaneHeader">
+          <div><h2>Background Tasks</h2><small>Monitored by Lu — no model polling</small></div>
+          <button className="quietIcon" aria-label="Close Background Tasks"
+            onClick={()=>setBackgroundPaneOpen(false)}>×</button>
+        </header>
+        <div className="backgroundPaneToolbar">
+          <div className="backgroundPaneFilters" aria-label="Task history filter">
+            <button className={backgroundFilter==='active'?'selected':''}
+              onClick={()=>setBackgroundFilter('active')}>Active ({activeBackgroundTasks.length})</button>
+            <button className={backgroundFilter==='all'?'selected':''}
+              onClick={()=>setBackgroundFilter('all')}>Recent</button>
+          </div>
+          <button className="subtleButton" onClick={()=>void refreshBackgroundTasks()}
+            aria-label="Refresh background tasks">Refresh</button>
+        </div>
+        {backgroundError && <p className="backgroundPaneError" role="alert">{backgroundError}</p>}
+        <div className="backgroundPaneList" aria-live="off">
+          {shownBackgroundTasks.map(task=><article className="backgroundTask" key={task.taskId}>
+            <div className="backgroundTaskHeading">
+              <strong title={task.taskId}>{task.taskId}</strong>
+              <span className={'backgroundTaskStatus state-'+task.state.toLowerCase()}>{task.state}</span>
+            </div>
+            {task.workspaceId && <small>Workspace: {task.workspaceId}</small>}
+            <p>{task.detail || 'No progress details yet'}</p>
+            <div className="backgroundTaskProgress" role="progressbar"
+              aria-label={'Progress for '+task.taskId} aria-valuemin={0}
+              aria-valuemax={100} aria-valuenow={task.progress}>
+              <span style={{width:Math.max(0,Math.min(100,task.progress))+'%'}}/>
+            </div>
+            <div className="backgroundTaskFoot">
+              <span>{task.progress}% recorded</span><span>Updated: {task.updatedAt || 'unknown'}</span>
+            </div>
+            {['INTERRUPTED','FAILED'].includes(task.state) &&
+              <p className="backgroundTaskWarning">Requires review before retrying.</p>}
+          </article>)}
+          {!shownBackgroundTasks.length && !backgroundError &&
+            <p className="backgroundPaneEmpty">
+              {backgroundFilter==='active'?'No active background tasks.':'No background task history yet.'}
+            </p>}
+        </div>
+        <footer className="backgroundPaneFooter">
+          Pause, resume and cancel will appear when native worker controls are verified.
+          Ordinary progress updates do not invoke the AI model.
+        </footer>
+      </aside>
+    </div>}
     {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <header><div><h2>Settings</h2><small>Local model management</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
