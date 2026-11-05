@@ -1,6 +1,6 @@
 //! Real OS probe for IDE Task 2. No project program can be selected.
-use std::{fs, process::ExitCode, time::Duration};
 use lu_ide_linux_sandbox::{run_probe, Probe};
+use std::{fs, process::ExitCode, time::Duration};
 
 fn main() -> ExitCode {
     let dir = std::env::temp_dir().join(format!("lu-ide-probe-{}", std::process::id()));
@@ -18,7 +18,10 @@ fn main() -> ExitCode {
     for case in cases {
         match run_probe(&dir, case, Duration::from_secs(5)) {
             Ok(result) => {
-                println!("ISOLATION_PROBE_PASS: {:?} exit={}", result.probe, result.exit_code);
+                println!(
+                    "ISOLATION_PROBE_PASS: {:?} exit={}",
+                    result.probe, result.exit_code
+                );
                 passed += 1;
             }
             Err(error) => {
@@ -32,7 +35,10 @@ fn main() -> ExitCode {
         println!("ISOLATION_PROBES: {passed}/{} passed", cases.len());
         ExitCode::SUCCESS
     } else {
-        eprintln!("ISOLATION_PROBES: {passed}/{} passed; do not enable workers", cases.len());
+        eprintln!(
+            "ISOLATION_PROBES: {passed}/{} passed; do not enable workers",
+            cases.len()
+        );
         ExitCode::FAILURE
     }
 }
