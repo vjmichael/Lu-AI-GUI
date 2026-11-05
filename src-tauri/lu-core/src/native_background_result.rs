@@ -74,8 +74,8 @@ fn terminal(state: TaskState) -> bool {
     )
 }
 
-fn scoped_task_id(invocation: &ToolInvocation, bytes: &[u8])
-    -> Result<(String, &str), ToolFailure>
+fn scoped_task_id<'a>(invocation: &'a ToolInvocation, bytes: &[u8])
+    -> Result<(String, &'a str), ToolFailure>
 {
     let requested = ResultRequest::decode(bytes)
         .map_err(|_| failure("INVALID_TASK_RESULT_REQUEST", false))?;
