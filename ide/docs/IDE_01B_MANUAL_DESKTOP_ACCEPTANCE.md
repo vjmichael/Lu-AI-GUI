@@ -3,6 +3,15 @@
 **Status:** **pending actual human desktop validation**, as of 2026-11-04.
 This checklist is for the independent **Lu IDE** executable, not the Lu chat application.
 
+## Verified unsigned alpha artifact
+
+- Windows release build: https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41966041935
+- Packaged ZIP: `Lu-IDE-Windows-Alpha.zip` (single `lu-ide-desktop.exe`).
+- ZIP SHA-256: `4fd520c093d85cbeaab4f8527f8ab555cecdd4b80abbd9aaabb9121b60966cd4`.
+- EXE SHA-256: `0562fc3dab1c4b4d5ae0a242d43656c539cd7cf2822945b066ad11050cf8fbdb`.
+- The ZIP was inspected: the executable is a Windows PE file with `MZ` header, size 9,974,272 bytes.
+- **Unsigned**, not an installer, not manually launched in Windows desktop acceptance; Windows may display publisher warnings. Do not treat this as a production-security claim.
+
 ## Setup
 
 1. Obtain the unsigned Windows alpha executable from the [standalone executable CI workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-alpha-windows.yml) after a successful run, or compile `ide/app` locally with Rust 1.90 and Node 22.
