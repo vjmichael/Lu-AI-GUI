@@ -8,6 +8,7 @@
 
 pub mod browser;
 pub mod capabilities;
+pub mod continuity;
 pub mod editor;
 pub mod inbox;
 pub mod proposal;
