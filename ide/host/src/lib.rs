@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod browser;
+pub mod editor;
 pub mod wire;
 
 use std::{
@@ -217,6 +218,8 @@ pub struct IdeWorkspaceRegistry {
     catalog: PathBuf,
     records: Mutex<BTreeMap<String, ProjectRecord>>,
     active: Mutex<BTreeSet<String>>,
+    // Serialize IDE-origin writes. External edits are guarded by revisions.
+    save_lock: Mutex<()>,
 }
 
 impl IdeWorkspaceRegistry {
@@ -228,6 +231,7 @@ impl IdeWorkspaceRegistry {
             catalog,
             records: Mutex::new(records),
             active: Mutex::new(BTreeSet::new()),
+            save_lock: Mutex::new(()),
         })
     }
 
