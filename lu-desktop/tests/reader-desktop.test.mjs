@@ -23,7 +23,7 @@ test('Reader attachments remain in originating chat and respect the 16k prompt c
   assert.ok(ui.includes('buildSubmittedPrompt(prior?.prompt'));
   assert.ok(ui.includes('MAX_TEXT_FILES'));
   assert.ok(ui.includes('document.truncated'));
-  assert.ok(ui.includes('Read document'));
+  assert.ok(ui.includes('Read file'));
 });
 
 test('Reader attachment context uses the model UTF-8 byte budget, not JS code-unit length',()=>{
