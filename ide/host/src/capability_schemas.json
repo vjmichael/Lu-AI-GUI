@@ -773,7 +773,10 @@
         },
         "toolchainReadiness": {
           "type": "string",
-          "const": "not_verified"
+          "enum": [
+            "not_verified",
+            "present_unverified"
+          ]
         },
         "executionPerformed": {
           "type": "boolean",
