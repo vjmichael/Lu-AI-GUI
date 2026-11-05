@@ -54,6 +54,7 @@ function App() {
   const [browserMode, setBrowserMode] = useState(null);
   const [browserRuntime, setBrowserRuntime] = useState(null);
   const [browserOrigin, setBrowserOrigin] = useState('');
+  const [browserResearch, setBrowserResearch] = useState(false);
   const [startingBrowser, setStartingBrowser] = useState(false);
   const [savingBrowserMode, setSavingBrowserMode] = useState(false);
   const [latestCreated, setLatestCreated] = useState(null);
@@ -670,6 +671,11 @@ function App() {
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
+    if (browserResearch && (!browserRuntime?.launchReady || !browserOrigin.trim() ||
+        images.length || textFiles.length)) {
+      setError('Browser research requires a reviewed runtime, HTTPS origin and a text-only prompt.');
+      return;
+    }
     const input = prompt.trim();
     let submitted;
     try { submitted = buildSubmittedPrompt(input, textFiles); }
@@ -699,10 +705,15 @@ function App() {
     let completed = false;
     let cancelled = false;
     try {
-      const output = await invoke('lu_generate', {
-        sessionId: runtime.sessionId, chatId: activeId,
-        prompt: submitted, imageRefs: refs, maxNewTokens: 512
-      });
+      const output = browserResearch
+        ? await invoke('lu_generate_browser', {
+            sessionId: runtime.sessionId, chatId: activeId,
+            prompt: submitted, origin: browserOrigin.trim(), maxNewTokens: 512
+          })
+        : await invoke('lu_generate', {
+            sessionId: runtime.sessionId, chatId: activeId,
+            prompt: submitted, imageRefs: refs, maxNewTokens: 512
+          });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
     } catch (error) {
@@ -1185,6 +1196,22 @@ function App() {
             placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Load a GGUF model first…'} disabled={!loaded}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
+          <div className="browserResearchComposer">
+            <label>
+              <input type="checkbox" checked={browserResearch}
+                onChange={e => setBrowserResearch(e.target.checked)}
+                disabled={!browserRuntime?.launchReady || chatBusy}/>
+              Research with Lu browser (read only)
+            </label>
+            {browserResearch && <span>
+              <input type="url" aria-label="Research website origin"
+                placeholder="https://example.com" maxLength={256}
+                value={browserOrigin}
+                onChange={e => setBrowserOrigin(e.target.value)}
+                disabled={chatBusy}/>
+              <small>Native approval is required for each research turn.</small>
+            </span>}
+          </div>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
@@ -1192,7 +1219,11 @@ function App() {
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
+              : <button className="primaryButton" type="submit"
+                  disabled={working || !loaded || !prompt.trim() ||
+                    (browserResearch && (!browserRuntime?.launchReady ||
+                      !browserOrigin.trim() || images.length > 0 || textFiles.length > 0))}>
+                  {browserResearch ? 'Research' : 'Send'}</button>}
           </div></form>}
       </div>
     </main>
