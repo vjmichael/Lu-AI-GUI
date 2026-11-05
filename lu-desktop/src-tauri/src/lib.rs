@@ -1468,10 +1468,23 @@ async fn lu_generate_browser(
                 }
                 Ok(())
             };
-            supervisor.run_reserved_with_history(
+            let generation_result=supervisor.run_reserved_with_history(
                 &sid,&gid,&rid,final_prompt,max_new_tokens,Vec::new(),forward
-            ).map_err(|e|format!("browser research answer generation: {e:?}"))?;
-            if ticket.cancelled(){return Err("Cancelled browser research".into());}
+            );
+            if let Err(error)=generation_result{
+                // Preserve the last partial output even if cancellation or a
+                // worker crash happened before the next 512-byte checkpoint.
+                if !answer.is_empty(){
+                    state.chats.append_progress(&chat_id,&gid,&answer)?;
+                }
+                return Err(format!("browser research answer generation: {error:?}"));
+            }
+            if ticket.cancelled(){
+                if !answer.is_empty(){
+                    state.chats.append_progress(&chat_id,&gid,&answer)?;
+                }
+                return Err("Cancelled browser research".into());
+            }
             if answer.trim().is_empty(){
                 return Err("Browser research continuation returned no answer".into());
             }
