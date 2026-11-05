@@ -29,7 +29,13 @@
 
 **Later check:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41973439474 — Rust tests passed after the fix, with only formatting failures. The Rust 1.88 formatting output was committed separately.
 
-**Latest exact revision:** Check https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/ide-standalone.yml for final R3 green matrix. Do not inherit a success from an earlier SHA.
+**Successful R3 matrix:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41973884203 — **23/23 Linux Rust tests passed**, `cargo fmt --check` passed, **7/7 frontend tests passed**, and **Windows Rust host tests plus standalone Tauri `cargo check` passed**. Tested source SHA: `81dc6651f6d1050f7c78ee61f5bef86b93ee28be`.
+
+**Successful R3 optimized Windows release:** https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41973964084 — unsigned 10,408,448-byte Windows PE executable (original artifact `lu-ide-code-editor-windows-alpha-r3`). EXE SHA-256: `2725961ebaa8936ba595e2b0b0af15ad93f6d59b037c5efd1f0a2e8df3197390`.
+
+**User-facing R3 package:** `Lu-IDE-Standalone-R3-Code-Editor.zip`, containing the executable, `README-R3.txt` and disposable `R3TestProject`. ZIP SHA-256: `4c7ef595d5d0d119faceaebc65410ffc8a3489d327286fb080e661ec948e0816`. Archive integrity test passed.
+
+**Manual Windows R3 editor acceptance remains pending.** Compile success and test success do not certify actual keyboard/edit/save behavior in the user's Windows session.
 
 ## Remaining safety and correctness limitations
 
