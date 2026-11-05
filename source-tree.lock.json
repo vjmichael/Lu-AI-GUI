@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4b5dfb32ac5f307ac09673f5c1035500a2928c74",
+  "sourceCommitBeforeLock": "6d30aa6666e6b3a2f7663c3edc731e664f4dff84",
   "trackedFileCount": 337,
   "files": [
     {
@@ -793,7 +793,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_inspect.rs",
-      "blob": "6b10f71191334f7cfa255fdfd5b97211d273e901"
+      "blob": "4c6f2d050691bf5e6630f8d614b10b4c6329e2f1"
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
@@ -857,7 +857,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_linux_archive_tool.rs",
-      "blob": "d481f262cc20d7eb252b3989babd993daf67c691"
+      "blob": "83e0217a41e65791cabc6b8ff33f7fe29005868c"
     },
     {
       "path": "src-tauri/lu-core/src/native_reader.rs",
