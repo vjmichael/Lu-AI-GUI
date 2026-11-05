@@ -35,6 +35,7 @@ function App() {
   const [backgroundError,setBackgroundError] = useState('');
   const [backgroundFilter,setBackgroundFilter] = useState('active');
   const [backgroundTerminalNotice,setBackgroundTerminalNotice] = useState(null);
+  const [autoBackgroundContinuation,setAutoBackgroundContinuation] = useState(false);
   const [working, setWorking] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [error, setError] = useState('');
@@ -110,6 +111,29 @@ function App() {
       setBackgroundError(String(error));
     }
   }
+  useEffect(()=>{
+    let alive=true;
+    if (!chatId){
+      setAutoBackgroundContinuation(false);
+      return ()=>{alive=false;};
+    }
+    invoke('lu_background_auto_continue',{chatId,enabled:null})
+      .then(value=>{if(alive)setAutoBackgroundContinuation(Boolean(value));})
+      .catch(error=>{if(alive)setBackgroundError(String(error));});
+    return ()=>{alive=false;};
+  },[chatId]);
+  async function changeAutoBackgroundContinuation(checked){
+    if (!chatId)return;
+    try{
+      const saved=await invoke('lu_background_auto_continue',{
+        chatId,enabled:Boolean(checked)
+      });
+      setAutoBackgroundContinuation(Boolean(saved));
+      setBackgroundError('');
+    }catch(error){
+      setBackgroundError(String(error));
+    }
+  }
   async function cancelBackgroundTask(taskId) {
     try {
       await invoke('lu_background_cancel', {taskId});
@@ -177,7 +201,7 @@ function App() {
   useEffect(() => {
     let alive = true;
     let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {},
-        stopBackground = () => {};
+        stopBackground = () => {}, stopFinished = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -196,6 +220,19 @@ function App() {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
     }).then(fn => { if (alive) stopToken = fn; else fn(); });
+    listen('lu-generation-finish', e=>{
+      if (!alive || !e.payload?.chatId)return;
+      const {chatId:finishedChat,generationId}=e.payload;
+      setJobs(prev=>prev[finishedChat]?.generationId===generationId
+        ?removeJob(prev,finishedChat):prev);
+      // Native auto turns aren't initiated by a WebView invoke. Read their
+      // journaled assistant output, including after a background tab switch.
+      if (currentChat.current===finishedChat){
+        invoke('lu_history',{chatId:finishedChat})
+          .then(items=>{if(alive&&currentChat.current===finishedChat)setHistory(items);})
+          .catch(()=>{});
+      }
+    }).then(fn=>{if(alive)stopFinished=fn;else fn();});
     listen('lu-background-terminal', e => {
       if (!alive || !e.payload?.taskId) return;
       // This event comes from the native host's persisted terminal ledger.
@@ -203,7 +240,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopBackground(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopBackground(); stopFinished(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -664,6 +701,15 @@ function App() {
           <button className="quietIcon" aria-label="Close Background Tasks"
             onClick={()=>setBackgroundPaneOpen(false)}>×</button>
         </header>
+        <div className="backgroundContinuationPreference">
+          <label>
+            <input type="checkbox" disabled={!chatId}
+              checked={Boolean(chatId&&autoBackgroundContinuation)}
+              onChange={e=>void changeAutoBackgroundContinuation(e.target.checked)}/>
+            Automatically notify this conversation's AI when a task ends
+          </label>
+          <small>Off by default. When enabled, Lu may start a short AI reply after completion, failure, cancellation, interruption, or timeout. Does not grant tool permissions or load a model.</small>
+        </div>
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"
             onClick={()=>void startMediaFileScan()}>
