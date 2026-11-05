@@ -36,7 +36,7 @@ test("update is idempotent; check rejects changed heads without overwriting manu
     assert.match(saved, /KEEP THIS APPROVAL WORDING/);
     assert.match(saved, /Human status\nNot tested/);
     assert.match(saved, /lu\/file-reader/);
-    assert.match(saved, /File \| Reader &lt;untrusted&gt;/);
+    assert.ok(saved.includes("File \\| Reader &lt;untrusted&gt;"));
     assert.equal(invoke(["--check", ...flags]).status, 0);
     assert.equal(invoke(["--update", ...flags]).status, 0);
     assert.equal(fs.readFileSync(file, "utf8"), saved);
