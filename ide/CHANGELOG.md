@@ -2,6 +2,12 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Wave A2 typed schemas and Wave A3 project continuity (source implementation)
+- Replaced loose input names/result labels with fully typed JSON Schema contract definitions for native request/result shapes, including nested project/file/span/review/proposal records and explicit error schema. Descriptor schema version increased from 1 to 2; contracts remain discovery-only.
+- Implemented host-owned bounded `development-ledger.jsonl` in IDE app data, recording successful native project lifecycle and explicit source save observations with revision when available. Added `ide_read_project_context` and human Continuity screen for recent events and revisioned project note excerpts.
+- Context distinguishes human/AI-readable project docs from trusted host observations, labels project text untrusted, and marks remote Git, artifacts and toolchains uninspected/unverified. No Lu bridge, shell execution, automatic save or package operations.
+- Added native ledger restart/corruption/access tests and JS typed schema/command-parity/context checks. **Source written; exact-head CI and installed Windows acceptance still open.** Ledger is a best-effort orientation record, not an effect journal.
+
 ## 2026-11-05 — Wave A2 Semantic Capability Registry (implemented source; acceptance pending)
 - Added bounded, versioned, host-authored descriptions of 16 real standalone IDE commands in `host/src/capabilities.rs`; effect class, input names, preconditions, evidence and error/continuation documentation remain separate from actual execution authorization.
 - Exposed read-only `ide_list_capabilities` and a human Capabilities directory; added Rust validation and frontend command-parity assertion.
