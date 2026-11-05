@@ -42,7 +42,7 @@ jobs:
       - name: Diagnose kernel response to nested-userns lockout
         run: |
           bwrap --help | grep -E -- '--disable-userns|--unshare-all' || true
-          if bwrap --unshare-all --disable-userns --die-with-parent --new-session --clearenv --ro-bind /usr /usr --proc /proc --dev /dev --tmpfs /tmp --dir /home -- /usr/bin/true; then
+          if bwrap --unshare-all --unshare-user --disable-userns --die-with-parent --new-session --clearenv --ro-bind /usr /usr --proc /proc --dev /dev --tmpfs /tmp --dir /home -- /usr/bin/true; then
             echo "NESTED_USERNS_DIAGNOSTIC: bwrap accepted the requested flags"
           else
             echo "NESTED_USERNS_DIAGNOSTIC: bwrap rejected this combination; do not enable workers"
