@@ -1217,7 +1217,7 @@ fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
     let tasks=state.background_tasks.dashboard(100)
         .map_err(|_|"Background task overview unavailable")?;
     Ok(tasks.into_iter().map(|task|BackgroundTaskView{
-        task_id:task.task_id,workspace_id:task.workspace_id,
+        task_id:task.task_id.clone(),workspace_id:task.workspace_id,
         state:task.state.as_str().to_owned(),
         progress:task.progress,detail:task.detail,
         last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
