@@ -55,6 +55,10 @@ fn metadata() -> Vec<CapabilityMeta> {
                 "Read-only comparison of latest bounded project evidence with saved baseline.",
                 "read", "open project; baseline optional",
                 "matched/changed/missing/new/unverifiable observed bytes"),
+            capability!("git.compareLive", "ide_compare_live_github", "Compare with live GitHub",
+                "Explicit read-only HTTPS check against the public GitHub origin branch head.",
+                "network_read", "human request, supported public github.com origin, exact registered project",
+                "remote commit SHA and checked time; independently labeled local and dirty state"),
             capability!("git.status", "ide_read_git_status", "Inspect source control",
                 "Read local Git modified, staged and untracked paths with trusted native libgit2.",
                 "read", "registered open project; no network or Git write",
@@ -167,7 +171,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 20);
+        assert_eq!(catalog.capabilities.len(), 21);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -190,9 +194,9 @@ mod tests {
             assert!(item.result_schema.get("type").is_some()
                 || item.result_schema.get("$ref").is_some());
             assert!(matches!(item.effect,
-                "read" | "session_write" | "catalog_write" | "file_write"));
+                "read" | "network_read" | "session_write" | "catalog_write" | "file_write"));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 25);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 26);
     }
 
     #[test]
