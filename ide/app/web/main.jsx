@@ -346,7 +346,8 @@ function App() {
       </header>
       {problem && <div className="errorMsg appError" role="alert">{problem}
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
-      {hint && <p className="successMsg appMessage" role="status">{hint}</p>}
+      {hint && <p className={'successMsg appMessage' +
+        (hint.startsWith('Saved ') ? ' saveConfirmation' : '')} role="status">{hint}</p>}
       {!isExplorer
         ? <section aria-label="Projects" className="workspaceContent">
           <div className="sectionHeading"><h2>Registered projects</h2>
