@@ -31,7 +31,7 @@ use crate::{
     tasks::{TaskState, TaskStore},
 };
 
-pub const RESULT_ID: &str = "lu.background.result";
+pub const RESULT_ID: &str = "lu.background_receipt.get";
 pub const RESULT_INPUT_TYPE: &str = "type.googleapis.com/lu.v1.BackgroundTaskResultRequest";
 pub const RESULT_OUTPUT_TYPE: &str = "type.googleapis.com/lu.v1.BackgroundTaskResultReply";
 const MAX_ENVELOPE_BYTES: usize = 256;
@@ -233,7 +233,7 @@ pub fn register_model_background_observation(
         output_type_url: RESULT_OUTPUT_TYPE.into(),
     };
     registry.register(ModuleManifest {
-        id: "lu.background.receipts".into(),
+        id: "lu.background_receipt".into(),
         display_name: "Lu background terminal receipts".into(),
         contract_version: CORE_CONTRACT_VERSION,
         kind: ModuleKind::Core,
