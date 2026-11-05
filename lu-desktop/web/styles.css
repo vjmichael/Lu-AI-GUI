@@ -114,3 +114,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 .backgroundScanLaunch{padding:15px 18px;display:flex;align-items:flex-start;gap:9px;flex-direction:column;border-bottom:1px solid #30435b}
 .backgroundScanLaunch small{color:#91a9bf;font-size:11px;line-height:1.5}
+
+.backgroundGlobalNotice{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 17px;border:0;border-bottom:1px solid #68859a;background:#2d4963;color:#edf4fe;width:100%;cursor:pointer}
+.backgroundGlobalNotice:hover,.backgroundGlobalNotice:focus-visible{background:#375874}
+.backgroundGlobalNotice small{font-size:11px;color:#c6d9ec}
+.backgroundTerminalBanner{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px 16px;background:#293f54;color:#e1effb;border-bottom:1px solid #59748c;font-size:12px}
+.backgroundTerminalBanner span{flex:1;min-width:0;overflow-wrap:anywhere}
