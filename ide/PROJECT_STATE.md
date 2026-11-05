@@ -22,6 +22,14 @@
 
 **WARNING:** The ledger describes observed evidence at this checkpoint; Git commits alone never establish local build success.
 
+## Capability-first redesign — IDE-ARCH-02 (design-only)
+
+- Approved as development direction: [Capability-first architecture](docs/CAPABILITY_FIRST_ARCHITECTURE.md). This supersedes the old strictly linear stage order but preserves eight canonical stage acceptance IDs.
+- Seven service boundaries planned: workspace registry, revision-aware source snapshots, host semantic capability registry, resource inventory, durable development ledger/context index, effect/evidence journal, gated execution supervisor.
+- Human UI uses the same authoritative host operations that a future approved AI client could use. **No Lu runtime bridge is active or required.**
+- Wave A first: **A1 source-span/revision API → A2 bounded capability descriptors → A3 continuity read model**, then B human editor hardening, C read-only Git and inventory, D worker security, E/F development workflows, G deferred AI integration.
+- **Status:** documentation redesign committed; new services/APIs are **not implemented by this change**. Source tests, native Windows validation and installer acceptance **not run for redesign**.
+
 ## AI-first architectural reconciliation — AIW-IDE-01
 
 - **Designed / documented, not implemented:** [AI-first IDE requirements](docs/AI_FIRST_IDE_DESIGN.md), [IDE contributor orientation](AGENTS.md) and links in the canonical design.
@@ -38,10 +46,11 @@
 
 ## Work to resume next
 
-1. **Reconcile branch and local copies**: identify all checkouts / `Delivered` folders / generated Windows packages, capture source roots, hashes and output locations. This step requires access to the relevant local filesystem; no remote connector can certify unseen files.
-2. **Verify R3.6/R3.7**: run `cd ide/app && npm run check`, native host tests and Windows Tauri build. Review exact-head CI outcomes and test Find/navigation + banner dismissal on Windows. Resolve failures before calling either release-accepted.
-3. **Next standalone feature: Find and Replace**, with explicit editor-buffer edits, undo support and no implicit Save. Keep all Lu bridge activation deferred.
-4. Work on source control and build/test UX only under the documented authorization/security gates. No untrusted execution on project-open.
+1. **Begin IDE-ARCH-02 Wave A1 host source-span API**, preserving existing human editor and revision-checked Save. Before changing code, inspect actual branch HEAD and available local workspace; do not rewrite unseen local work.
+2. **Reconcile branch and local copies**: identify all checkouts / `Delivered` folders / generated Windows packages, capture source roots, hashes and output locations. This step requires access to the relevant local filesystem; no remote connector can certify unseen files.
+3. **Verify R3.6/R3.7**: run `cd ide/app && npm run check`, native host tests and Windows Tauri build. Review exact-head CI outcomes and test Find/navigation + banner dismissal on Windows. Resolve failures before calling either release-accepted.
+4. **Next standalone editor feature: Find and Replace**, with explicit editor-buffer edits, undo support and no implicit Save. Keep all Lu bridge activation deferred.
+5. Work on source control and build/test UX only under the documented authorization/security gates. No untrusted execution on project-open.
 
 ## Artifact manifest — do not infer missing paths
 
