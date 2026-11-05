@@ -624,6 +624,46 @@ mod tests {
         std::env::temp_dir().join(id("lu-conversation-test-"))
     }
     #[test]
+    fn browser_observations_are_durable_but_never_assistant_roles(){
+        let root=root();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let generation=id("g-");
+        store.append_user_with_turn_id(&chat.chat_id,&generation,
+            "Research this public website").unwrap();
+        let hash=store.append_browser_observation(&chat.chat_id,&generation,
+            "browser-call-1","lu_browser_read",
+            r#"{"source_is_untrusted":true,"text":"sample page"}"#).unwrap();
+        assert_eq!(hash.len(),64);
+        let before=store.history(&chat.chat_id).unwrap();
+        assert_eq!(before.len(),1);
+        assert_eq!(before[0].role,"user");
+        drop(store);
+        let restored=ChatStore::open(&root).unwrap();
+        let entries=restored.browser_observations(&chat.chat_id,&generation).unwrap();
+        assert_eq!(entries.len(),1);
+        assert_eq!(entries[0].1,hash);
+        assert!(entries[0].2.contains("sample page"));
+        assert_eq!(restored.history(&chat.chat_id).unwrap().len(),1);
+        restored.append_progress(&chat.chat_id,&generation,"Answer with citations").unwrap();
+        restored.complete(&chat.chat_id,&generation).unwrap();
+        assert_eq!(restored.history(&chat.chat_id).unwrap()[1].text,
+            "Answer with citations");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn browser_observation_rejects_unknown_effects_and_oversize(){
+        let root=root();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let generation=id("g-");
+        assert!(store.append_browser_observation(&chat.chat_id,&generation,
+            "call","lu_browser_interact","clicked").is_err());
+        assert!(store.append_browser_observation(&chat.chat_id,&generation,
+            "call","lu_browser_read",&"A".repeat(12*1024+1)).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn survives_restart_and_keeps_chats_separate() {
         let root = root();
         let s = ChatStore::open(&root).unwrap();
