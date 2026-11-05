@@ -51,3 +51,11 @@ Do not equate passing file/string assertions, having a Protobuf descriptor or re
 7. Only after all relevant gates pass, promote the integrated source into the release branch.
 
 Known limitation: no working Rust toolchain is available in the current container, and GitHub Actions runs observed for this head were queued, so code publication is **not** compilation or test success.
+
+## Wave 1 consolidation repair — 2026-11-05
+- Consolidated feature ancestry: #34 → #38 → #39 → #40 → #41 → #42. Source from #36 and #37 is integrated through #40's ancestry; separate drafts are not claimed merged into alpha.
+- `lu/tools-linux-archives-20261105` is the Wave 1 candidate, not the stable release branch.
+- Repaired missing `pub mod native_linux_archive_tool;` export. The Linux archive Protobuf request/receipt definitions and paired create/extract native tool definitions now reside in the same source tree.
+- Added `.github/workflows/lu-wave1-native-tools.yml` to require explicit source module exports and test all consolidated native areas on Linux and Windows; Linux CI installs real xz, bzip2, and zstd command backends.
+- Source-tree inventory is re-pinned after each committed code/workflow change. Exact-head native build and installed-app acceptance remain separate gates.
+- **Not Wave 1 closed:** require exact-head GitHub source lock, Linux and Windows compilation and tests; fix any reported failures; then reconcile draft branch topology. Never treat queued CI as pass.
