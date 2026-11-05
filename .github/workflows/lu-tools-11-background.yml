@@ -1,10 +1,11 @@
 name: Lu TOOLS-11 background task status
 on:
   push:
-    branches: ['lu/tools-11-*']
+    branches: ['lu/tools-11-*', 'lu/reader-*']
   pull_request:
     paths:
       - 'src-tauri/lu-core/src/native_background_status.rs'
+      - 'src-tauri/lu-core/src/native_reader_pdf.rs'
       - 'src-tauri/lu-core/src/tasks.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - '.github/workflows/lu-tools-11-background.yml'
