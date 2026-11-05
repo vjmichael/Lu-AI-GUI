@@ -1002,6 +1002,62 @@ struct BackgroundTaskView {
     updated_at:String,
     can_cancel:bool,
 }
+/// Native file-picker admission. The model never selects the executable,
+/// file path or task ID, and the same Lu installation performs the scan as
+/// a separately supervised process without loading any AI model.
+#[tauri::command]
+async fn lu_background_scan_file(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+)->Result<Option<String>,String>{
+    let processes=Arc::clone(&state.background_processes);
+    tauri::async_runtime::spawn_blocking(move||{
+        let file=app.dialog().file()
+            .add_filter("Media", &["mp4","mkv","mov","webm","avi",
+                "mp3","wav","flac","m4a","ogg"])
+            .blocking_pick_file();
+        let Some(file)=file else{return Ok(None);};
+        let requested=file.into_path().map_err(|_|"Invalid media file location")?;
+        let meta=fs::symlink_metadata(&requested)
+            .map_err(|_|"Selected media file is unavailable")?;
+        if !meta.file_type().is_file()||meta.len()==0{
+            return Err("Choose a non-empty regular media file".into());
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{
+                return Err("Media file reparse points are not supported".into());
+            }
+        }
+        let input=requested.canonicalize().map_err(|_|"Invalid media file")?;
+        let executable=std::env::current_exe()
+            .map_err(|_|"Cannot locate installed Lu executable")?;
+        // This digest is computed from the running installed app, then
+        // reverified independently by the child-process supervisor.
+        let mut image=File::open(&executable).map_err(|_|"Lu executable unavailable")?;
+        let mut hash=Sha256::new();
+        let mut buffer=[0u8;65536];
+        loop{
+            let n=image.read(&mut buffer).map_err(|_|"Cannot verify Lu executable")?;
+            if n==0{break;}
+            hash.update(&buffer[..n]);
+        }
+        let plan=lu_core::native_background_process::TrustedWorkerPlan{
+            task_id:next_id("scan-"),
+            workspace_id:"local-media".into(),
+            executable,
+            expected_sha256:format!("{:x}",hash.finalize()),
+            args:vec!["--lu-file-scan-worker".into(),input.into_os_string()],
+            progress_protocol:true,
+        };
+        let task_id=plan.task_id.clone();
+        processes.start_host_approved(plan)
+            .map_err(|e|format!("Media scan could not start: {e:?}"))?;
+        Ok(Some(task_id))
+    }).await.map_err(|_|"Native media picker unavailable")?
+}
+
 #[tauri::command]
 fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
     ->Result<Vec<BackgroundTaskView>,String>{
@@ -1141,6 +1197,7 @@ pub fn run() {
             lu_history,
             lu_chats,
             lu_background_tasks,
+            lu_background_scan_file,
             lu_background_cancel,
             lu_new_chat,
             lu_new_folder,
