@@ -98,7 +98,7 @@ impl ToolAuthorizer for ExactLinuxCreatePolicy<'_>{
         let r=proto::LinuxArchiveCreateRequest::decode(call.input.bytes.as_slice())
             .map_err(|_|deny())?;
         if r.encode_to_vec()!=call.input.bytes||r.archive_name!=self.archive_name
-            || r.input_names!=self.input_names || r.expected_sha256!=self.expected_sha256 {
+            || r.input_names.as_slice()!=self.input_names || r.expected_sha256!=self.expected_sha256 {
             return Err(deny())
         }
         let (_,observed)=preview_linux_archive(
