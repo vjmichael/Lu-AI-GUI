@@ -6,6 +6,7 @@ on:
     paths:
       - 'src-tauri/lu-core/src/native_background_status.rs'
       - 'src-tauri/lu-core/src/native_background_result.rs'
+      - 'src-tauri/lu-core/src/native_background_control.rs'
       - 'src-tauri/lu-core/src/tasks.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - '.github/workflows/lu-tools-11-background.yml'
@@ -36,6 +37,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_status -- --nocapture
       - name: Verify model-visible scoped background status and terminal receipts
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_result -- --nocapture
+      - name: Verify host-bound model start and cancel authority and real-worker tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_control -- --nocapture
       - name: Verify DOCX archive and XML security cases
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_docx -- --nocapture
       - name: Verify OpenDocument ODS and ODP extraction
