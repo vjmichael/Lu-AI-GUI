@@ -481,3 +481,17 @@ message SpreadsheetCreateResult {
   uint64 bytes_written = 2;
   string sha256 = 3;
 }
+
+// One ISO-9660 regular file to a new, host-approved destination.
+// The member digest is a preview integrity condition, never authorization.
+message IsoExtractRequest {
+  string source_name = 1;
+  string member_path = 2;
+  string target_name = 3;
+  string expected_sha256 = 4;
+}
+message IsoExtractResult {
+  string target_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
