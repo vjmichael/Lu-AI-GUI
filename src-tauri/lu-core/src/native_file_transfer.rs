@@ -183,7 +183,7 @@ pub fn trash_in_dirs(
     root: &Dir, trash: &Dir, source: &str, host_trash_id: &str
 ) -> Result<TrashReceipt, TransferError> {
     if !plain_filename(source) { return Err(TransferError::InvalidName); }
-    if !valid_stage_id(host_trash_id) { return Err(TransferError::InvalidStage); }
+    if !stage_id_ok(host_trash_id) { return Err(TransferError::InvalidStage); }
     let trash_entry = format!("lu-trash-{host_trash_id}");
     check_target_absent(trash, &trash_entry)?;
     let file = verify(root, source)?;
@@ -205,7 +205,7 @@ pub fn restore_from_trash_in_dirs(
 ) -> Result<TransferReceipt, TransferError> {
     if !plain_filename(&receipt.original)
         || !receipt.trash_entry.starts_with("lu-trash-")
-        || !valid_stage_id(receipt.trash_entry.trim_start_matches("lu-trash-"))
+        || !stage_id_ok(receipt.trash_entry.trim_start_matches("lu-trash-"))
         || receipt.sha256.len() != 64
         || !receipt.sha256.bytes().all(|b| b.is_ascii_hexdigit())
     {
