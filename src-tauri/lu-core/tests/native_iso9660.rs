@@ -196,3 +196,35 @@ async fn iso_extraction_requires_exact_grant_and_durable_receipt(){
     drop(journal);drop(catalog);drop(registry);drop(directory);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn streams_large_iso_member_and_rejects_changed_preview_hash(){
+    use lu_core::native_iso9660::{
+        iso_member_digest,extract_iso_file_new_checked,
+    };
+    let (root,dir)=fixture();
+    let amount=1_250_000usize;
+    let sectors=((21*S+amount+S-1)/S) as u32;
+    let mut data=image_with_name(b"PAYLOAD.BIN;1");
+    data.resize(sectors as usize*S,0);
+    lebe32(&mut data[16*S+80..16*S+88],sectors);
+    // Root directory contains the two special entries, both 34 bytes.
+    let entry_size_offset=20*S+68+10;
+    lebe32(&mut data[entry_size_offset..entry_size_offset+8],amount as u32);
+    data[21*S..21*S+amount].fill(0x5a);
+    fs::write(root.join("large.iso"),data).unwrap();
+    let digest=iso_member_digest(&dir,"large.iso","PAYLOAD.BIN").unwrap();
+    assert_eq!(extract_iso_file_new_checked(
+        &dir,"large.iso","PAYLOAD.BIN",&dir,"output.bin",
+        "transaction-123456789",&"0".repeat(64)
+    ).unwrap_err(),IsoError::SourceChanged);
+    assert!(!root.join("output.bin").exists());
+    let receipt=extract_iso_file_new_checked(
+        &dir,"large.iso","PAYLOAD.BIN",&dir,"output.bin",
+        "transaction-987654321",&digest
+    ).unwrap();
+    assert_eq!(receipt.bytes_written,amount);
+    assert_eq!(fs::metadata(root.join("output.bin")).unwrap().len(),amount as u64);
+    assert_eq!(fs::read(root.join("output.bin")).unwrap(),vec![0x5a;amount]);
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
