@@ -1,0 +1,31 @@
+name: IDE continuity ledger gate
+
+on:
+  pull_request:
+    paths:
+      - 'ide/**'
+      - '.github/workflows/ide-standalone.yml'
+      - '.github/workflows/ide-alpha-windows.yml'
+      - '.github/workflows/ide-sandbox-linux.yml'
+      - '.github/workflows/ide-continuity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  continuity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify development ledger accompanies IDE implementation
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 ide/scripts/check_continuity.py "$BASE_SHA" "$HEAD_SHA"
+      - name: Manual-run informational result
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "PCP-01 enforcement runs on pull requests."
