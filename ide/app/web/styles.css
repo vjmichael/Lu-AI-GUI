@@ -175,3 +175,7 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .continuityEvent span{color:#a6bed2;font-size:11px;margin-left:12px}
 .continuityEvent p{margin:6px 0}
 .continuityDocument pre{overflow:auto;max-height:180px;white-space:pre-wrap;word-break:break-word;padding:10px;border-radius:5px;background:#0d1a2a;color:#e1ecf6}
+
+.capabilitySchemaDetails{margin-top:12px;color:#b8d6eb;font-size:11px}
+.capabilitySchemaDetails summary{cursor:pointer;padding:7px;border:1px solid #42617c;border-radius:5px}
+.capabilitySchemaDetails pre{max-height:250px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0d1a2a;border-radius:5px;padding:10px}
