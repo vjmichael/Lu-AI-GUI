@@ -1,6 +1,6 @@
 # Lu Core — Reader Tool and Native Vision Capability Routing
 
-Status: **In progress.** Bounded text, initial DOCX, XLSX and PPTX extraction, typed Reader registration and a native file picker are in source. Exact-head Windows/Linux testing and installed desktop acceptance remain open. PDF, OCR, full structured range/paged reading and format compatibility are not yet implemented.
+Status: **In progress.** Bounded text, initial DOCX, XLSX and PPTX extraction, typed Reader registration and a native file picker are in source. Exact-head Windows/Linux testing and installed desktop acceptance remain open. basic PDF text-layer reading and character-offset paging are implemented in source; OCR, complex PDF support, native workbook range/slide selection and legacy format compatibility remain open.
 
 ## Decision
 
@@ -22,7 +22,7 @@ reasoning.
 | TXT, MD, log, config, CSV/TSV, JSON/JSONL, code, YAML, TOML | Native UTF-8/UTF-16 bounded text normalization | Initial Rust core implemented |
 | HTML, XML, SVG source | Literal source reader first; optional safe semantic extraction later | Initial literal reader implemented |
 | DOCX | Bounded ZIP central-directory admission; inflated `word/document.xml` text, paragraphs and tables, XML entity decoding, tracked deletion omission | **Implemented in source; native cross-platform tests pending** |
-| PDF with text layer | Page-aware selectable text extraction | **Not implemented** |
+| PDF with text layer | Conservative classic PDF page contents, ASCII/UTF-16BE text strings and plain/Flate-compressed text operators; emits [Page N] anchors | **Limited adapter in source; not comprehensive** |
 | Scanned PDF | Render page with strict resource limits, then OCR adapter | **Not implemented** |
 | JPG, PNG, TIFF and other document photos | OCR adapter, orientation and page/region provenance | **Not implemented** |
 | XLSX | Initial workbook/worksheet order, cells, shared strings, raw formulas and stored cached values; chunk/range paging not yet present | **Implemented in source; CI pending** |
@@ -34,9 +34,9 @@ reasoning.
 | ODT, RTF, EPUB and legacy DOC | Separate vetted format adapters | **Not implemented** |
 | Encrypted, corrupted, unsupported and unknown | Explicit error; never claim successful extraction | Required |
 
-The `lu-core::native_reader` module handles supported TXT, DOCX, XLSX, PPTX
+The `lu-core::native_reader` module handles supported TXT, DOCX, XLSX, PPTX, basic PDF
 and other text formats, returning source-anchored text. It deliberately rejects
-unsupported PDF, image OCR, legacy/binary Office and unverified package types;
+complex/scanned PDF, image OCR, legacy/binary Office and unverified package types;
 no skipped format is silently claimed as extracted. **A native Reader registry entry and model schema are implemented** in `lu-core::native_reader_tool`; the desktop must still install it into the authorized per-turn tool catalog.
 MIME/signature validation and host-authorized file handles belong in the
 admission layer; filename extensions alone are insufficient.
@@ -143,10 +143,17 @@ as automatically detected.
 5. Presentation adapters: initial PPTX ordered slides and textual runs.
    **Implemented in source; CI pending.** Notes, tables, nontextual visual
    elements and ODP/PPT/PPTM/PPSX compatibility remain open.
-6. PDF selectable-text extraction with page boundaries; scanned page
-   detection, bounded image conversion and OCR worker.
-7. Install Reader in the desktop tool catalog with actual per-turn grants,
-   chunk paging, provenance and user-facing file selection.
+6. Basic classic PDF text-layer extraction with page anchors and compressed
+   stream decoding. **Implemented in source and Linux CI verified**; complex
+   fonts, object streams and scanned pages explicitly unsupported. Full PDF
+   parser and robust page selection/render/OCR remain open.
+7. Progressive Reader: one typed tool now supports bounded
+   `inspect_only` preflight and `offset_chars` / `max_chars` paging,
+   with explicit `next_offset_chars`, source truncation and total
+   extracted character count. Desktop picker supports document attachments.
+   **Implemented in source; latest CI pending.** Per-turn model tool
+   registration in actual desktop inference, true page/range selection
+   and long-document streaming beyond the 200K extraction cap remain open.
 8. Vision session probe and backend capability attestation, per-model
    invalidation and native-vision-first routing integration.
 9. Cross-format fixture tests, malicious/oversized documents, Windows/Linux
