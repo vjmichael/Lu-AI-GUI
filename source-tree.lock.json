@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3d066cb143a37fa6930c1220ed7ab776daf4fcde",
+  "sourceCommitBeforeLock": "8c8f40abbbffe09b7e223ff4b7e2cdd44802ff7e",
   "trackedFileCount": 316,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "ec231eb33f844f26fc4ef918864005b43e241a36"
+      "blob": "ec364bdf647a1a1297a8bad6cb430cb34c2d49e8"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
-      "blob": "83ec8bc4fea189304a7e40dcd9e56b0f3536904a"
+      "blob": "f43446a043dbe6b19a06ed96d605cf1ed12083d8"
     },
     {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
@@ -225,7 +225,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "fd9547d248570de69c87b7993985369ce8de0c88"
+      "blob": "346460a48f3a68af184e693b849729d0e77b4d08"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -337,7 +337,7 @@
     },
     {
       "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
-      "blob": "144bc27879456c9521bbe09b0206a7795b4e4208"
+      "blob": "cceaa2f55313631970dec5883f17af8b21b73025"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -1189,7 +1189,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/policy_native.rs",
-      "blob": "bf0727f9c9b556cf110e50210d170b7d388ada20"
+      "blob": "d80cf56cd891770a4e733ead6ba1ce679f953963"
     },
     {
       "path": "src-tauri/lu-core/tests/protobuf_wire.rs",
