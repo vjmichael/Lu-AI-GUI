@@ -42,6 +42,39 @@ fn valid_id(id:&str)->bool{
     !id.is_empty()&&id.len()<=128
       &&id.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))
 }
+/// Host-side notification decision. The model is never tasked with
+/// heartbeat polling. Desktop may enqueue these as trusted context only
+/// when a session is ready; no agent inference or permission is triggered.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct HostTaskNotice{
+    pub sequence:i64,
+    pub task_id:String,
+    pub kind:String,
+    pub message:String,
+}
+pub fn host_task_notices_after(
+    store:&TaskStore,task_id:&str,workspace_id:&str,after:i64
+)->Result<Vec<HostTaskNotice>,crate::tasks::TaskStoreError>{
+    let events=store.events_after(task_id,workspace_id,after,128)?;
+    Ok(events.into_iter().filter_map(|event|{
+        // CHECKPOINT/heartbeat/status changes are for Lu UI, not the model.
+        // Only decisive outcomes need reasoning or user-facing synthesis.
+        let kind=match event.event.as_str(){
+            "COMPLETED"=>"TASK_COMPLETED",
+            "FAILED"=>"TASK_FAILED",
+            "INTERRUPTED"=>"TASK_INTERRUPTED",
+            _=>return None,
+        };
+        Some(HostTaskNotice{
+            sequence:event.sequence,task_id:event.task_id,
+            kind:kind.into(),message:format!(
+                "Background task {}: {} ({}%).",
+                kind,event.detail,event.progress
+            ),
+        })
+    }).collect())
+}
+
 pub struct BackgroundStatusTool{
     descriptor:ToolDescriptor,
     store:Arc<TaskStore>,
@@ -165,6 +198,23 @@ mod tests{
         assert!(registry.dispatch(request,&Authorize).await.is_err());
         assert!(registry.dispatch(call("missing",Some("owner")),&Authorize).await.is_err());
         assert!(registry.dispatch(call("t2",Some("other")),&Authorize).await.is_err());
+    }
+    #[test]
+    fn host_notices_are_terminal_only_and_workspace_bound(){
+        let store=TaskStore::open(std::path::Path::new(":memory:")).unwrap();
+        store.create("video1",Some("media-work"),None).unwrap();
+        store.start("video1").unwrap();
+        store.checkpoint("video1",10,"Decoding",b"private-checkpoint").unwrap();
+        store.heartbeat("video1").unwrap();
+        assert!(host_task_notices_after(&store,"video1","media-work",0).unwrap().is_empty());
+        store.checkpoint("video1",80,"Analyzing audio",b"checkpoint").unwrap();
+        store.complete("video1").unwrap();
+        let notes=host_task_notices_after(&store,"video1","media-work",0).unwrap();
+        assert_eq!(notes.len(),1);
+        assert_eq!(notes[0].kind,"TASK_COMPLETED");
+        assert!(!notes[0].message.contains("private-checkpoint"));
+        assert!(host_task_notices_after(&store,"video1","other",0).unwrap().is_empty());
+        assert!(host_task_notices_after(&store,"video1","media-work",notes[0].sequence).unwrap().is_empty());
     }
     #[test]
     fn interrupted_state_remains_observation_not_auto_restart(){
