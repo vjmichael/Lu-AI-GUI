@@ -476,7 +476,9 @@ function App() {
           <div className="reviewHeader">
             <div>
               <h2>Review changes</h2>
-              <p>{review.relativePath} · {review.removedLines} removed, {review.addedLines} added</p>
+              <p>{review.relativePath} · {review.countsExact
+                ? review.removedLines + ' removed, ' + review.addedLines + ' added'
+                : 'Diff exceeds safe processing limits'} · {review.hunks.length} visible hunk(s)</p>
             </div>
             <button type="button" className="ghostBtn"
               onClick={() => setReview(null)}>Close review</button>
@@ -487,15 +489,30 @@ function App() {
             independent approval before the IDE applies them.
           </p>
           <div className="reviewLines" aria-label="Proposed source changes">
-            {review.lines.map((line, index) =>
-              <div key={index} className={'reviewLine ' + line.kind}>
-                <span aria-hidden="true">{line.kind === 'added' ? '+' :
-                  line.kind === 'removed' ? '−' : ' '}</span>
-                <code>{line.text.endsWith('\n') ? line.text.slice(0, -1) : line.text}
-                  {!line.text.endsWith('\n') && <span className="reviewNoNewline"> [no newline]</span>}
-                </code>
-              </div>)}
+            {review.hunks.map((hunk, hunkIndex) =>
+              <section className="reviewHunk" key={hunkIndex}
+                aria-label={'Diff hunk ' + (hunkIndex + 1)}>
+                <div className="reviewHunkHeader">{hunk.header}</div>
+                {hunk.lines.map((line, lineIndex) =>
+                  <div key={lineIndex} className={'reviewLine ' + line.kind}>
+                    <span className="reviewOldNumber" title="Original line">
+                      {line.oldLine ?? ''}
+                    </span>
+                    <span className="reviewNewNumber" title="Proposed line">
+                      {line.newLine ?? ''}
+                    </span>
+                    <span className="reviewMark" aria-hidden="true">
+                      {line.kind === 'added' ? '+' : line.kind === 'removed' ? '−' : ' '}
+                    </span>
+                    <code>{line.text.endsWith('\n') ? line.text.slice(0, -1) : line.text}
+                      {!line.text.endsWith('\n') &&
+                        <span className="reviewNoNewline"> [no newline]</span>}
+                    </code>
+                  </div>)}
+              </section>)}
             {review.unchanged && <p>No differences from the saved version.</p>}
+            {!review.unchanged && review.hunks.length === 0 &&
+              <p>Diff too large to render safely. Review the source in the editor.</p>}
           </div>
           {review.truncated && <p className="reviewWarning" role="alert">
             Preview truncated to prevent excessive output. Save from this review is
