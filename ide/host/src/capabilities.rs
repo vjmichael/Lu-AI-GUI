@@ -47,6 +47,10 @@ type CapabilityMeta = (&'static str, &'static str, &'static str,
 
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
+            capability!("continuity.read", "ide_read_project_context", "Read project continuity",
+                "Read bounded host observations and revisioned untrusted project notes.",
+                "read", "registered and active project",
+                "historical events, document revisions and explicitly unknown external state"),
             capability!("project.list", "ide_list_projects", "List projects",
                 "Read IDE-registered project summaries.", "read", "IDE host available", "registered project summaries"),
             capability!("project.select", "ide_choose_project", "Choose project folder",
@@ -139,7 +143,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 16);
+        assert_eq!(catalog.capabilities.len(), 17);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -164,7 +168,7 @@ mod tests {
             assert!(matches!(item.effect,
                 "read" | "session_write" | "catalog_write" | "file_write"));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 13);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 16);
     }
 
     #[test]
