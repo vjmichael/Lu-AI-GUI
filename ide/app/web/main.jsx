@@ -775,6 +775,7 @@ function App() {
                   <p>{inventoryComparison.baselineCount} recorded snapshot(s) ·
                     Latest baseline: {new Date(inventoryComparison.baselineUnixSeconds * 1000).toLocaleString()}
                     {' · '} Local Git HEAD: {inventoryComparison.localGitHeadChange.replaceAll('_', ' ')}
+                    {' · '} Worktree vs baseline: {inventoryComparison.gitWorktreeChange.replaceAll('_', ' ')}
                     {' · '} Live remote: {inventoryComparison.liveRemote.replaceAll('_', ' ')}</p>
                   {inventoryComparison.entries.length === 0 &&
                     <p>No files were present in either scanned inventory.</p>}
