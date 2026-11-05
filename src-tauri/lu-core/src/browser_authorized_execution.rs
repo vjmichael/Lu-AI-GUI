@@ -63,6 +63,9 @@ fn valid_origin(raw:&str)->bool{
       &&host.contains('.')&&!host.ends_with(".local")
       &&!host.ends_with(".internal")&&!host.ends_with(".localhost")
       &&!host.bytes().any(|b|b.is_ascii_uppercase())
+      &&host.split('.').all(|label|!label.is_empty()&&label.len()<=63
+          &&label.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+          &&label.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric))
       &&host.rsplit('.').next().is_some_and(|tld|
           tld.len()>=2&&tld.bytes().all(|b|b.is_ascii_lowercase()))
 }
@@ -220,6 +223,25 @@ mod tests {
             "https://127.0.0.1/private","https://papers.example@evil.test/"] {
             assert!(!s.allows(url),"{url}");
         }
+    }
+    #[test]
+    fn multi_origin_grant_is_exact_and_cannot_implicitly_expand(){
+        let approved=BrowserOriginScope::from_host_grant(vec![
+            "https://papers.example".into(),"https://catalog.example".into()
+        ]).unwrap();
+        assert!(approved.allows("https://papers.example/article"));
+        assert!(approved.allows("https://catalog.example/record"));
+        for url in ["https://other.example/","https://papers.example.evil.test/",
+            "http://catalog.example/","https://user@catalog.example/",
+            "https://catalog.example:8443/"]{
+            assert!(!approved.allows(url),"{url}");
+        }
+        for origin in ["https://a..example","https://-bad.example",
+            "https://bad-.example"]{
+            assert!(BrowserOriginScope::from_host_grant(vec![origin.into()]).is_err());
+        }
+        let mut oversized=vec!["https://host.example".to_string();33];
+        assert!(BrowserOriginScope::from_host_grant(std::mem::take(&mut oversized)).is_err());
     }
     #[test]
     fn interaction_is_not_downgraded_to_read_authority(){
