@@ -90,6 +90,7 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
         .map_err(|err|match err{
             ReaderFailure::UnsupportedAdapter(_)=>failure("READER_ADAPTER_UNAVAILABLE"),
             ReaderFailure::UnsupportedEncoding=>failure("READER_INVALID_ENCODING"),
+            ReaderFailure::InvalidDocument=>failure("READER_INVALID_DOCUMENT"),
             ReaderFailure::TooLarge=>failure("READER_INPUT_TOO_LARGE"),
             ReaderFailure::Empty=>failure("READER_EMPTY"),
             ReaderFailure::Io=>failure("READER_FILE_UNAVAILABLE"),
@@ -178,7 +179,7 @@ pub fn register_reader(
     let mut catalog=ModelToolCatalog::new();
     catalog.insert(registry,ModelToolDefinition{
         name:"lu_reader_read".into(),native_tool_id:TOOL_ID.into(),
-        description:"Extract bounded text from approved TXT, MD, JSON, CSV, configuration and source files. PDF, DOCX, and OCR require separate Reader adapters.".into(),
+        description:"Extract bounded text from approved TXT, MD, DOCX, JSON, CSV, configuration and source files. PDF and image OCR require separate Reader adapters.".into(),
         parameters:json!({"type":"object","properties":{
             "path":{"type":"string","description":"Authorized workspace-relative file path"},
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
