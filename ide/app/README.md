@@ -16,7 +16,11 @@ cargo run --manifest-path src-tauri/Cargo.toml
 
 The desktop application is registered as `org.lu.ide` and stores its project catalog in its own OS app-data directory. It has no dependency on the `lu-desktop` executable or its model files.
 
-The app currently offers project selection, status, close, reopen, persistent registration, **read-only folder navigation and UTF-8 source preview**. In Projects, click **Explore** on an active project, browse subfolders and select a text file. Editing/saving, package manager, terminal, debugger, advanced Git, AI coding, and an active Lu connection are **not yet implemented**. These features will be developed against the eight-stage plan in `ide/docs/IDE_WORKSPACE_DESIGN.md`.
+The app currently offers project selection, close, reopen, registration removal (which **never deletes on-disk folders**), a project explorer, and a multi-tab **CodeMirror editor** for UTF-8 source. In Projects, click **Edit** on an active project, browse a folder, open source tabs, make human-owned edits, and press **Ctrl+S** or **Save**. Saves are size-bounded, capability-relative and revision-checked; if a file changed outside the IDE, your draft remains unsaved instead of silently overwriting the disk version. The editor maintains per-tab undo histories.
+
+**R3.3 candidate:** **Review changes** produces a bounded, read-only change summary before an optional separate **Save reviewed changes** action. Truncated reviews cannot be saved from the review dialog. This is a foundation for future Lu coding proposals; it is **not an active Lu bridge** or an AI-generated patch. See [change-review limitations and tests](../docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md).
+
+Package manager, terminal, debugger, advanced Git, AI coding connection, multi-file agent plans and an active Lu connection are **not yet implemented**. These features follow the eight-stage plan in [the IDE design](../docs/IDE_WORKSPACE_DESIGN.md).
 
 ## Security
 
@@ -31,4 +35,4 @@ The separate `ide/sandbox` crate has passed limited Linux isolation probes, but 
 - UI: `npm run check`
 - GitHub: `.github/workflows/ide-standalone.yml`
 
-An actual installed desktop launch and end-to-end OS dialog test remain separate acceptance gates.
+The user's previous Windows R3.2 launch/edit/remove smoke tests passed; R3.3 change-review interaction and remaining adversarial save/security gates require new revision-specific Windows acceptance.
