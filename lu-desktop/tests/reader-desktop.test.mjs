@@ -5,14 +5,15 @@ import {buildSubmittedPrompt} from '../web/attachment_drafts.mjs';
 
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+const readerHost=readFileSync(new URL('../src-tauri/src/reader_desktop.rs',import.meta.url),'utf8');
 
 test('native Reader file selection is host-mediated and file path never supplied by WebView',()=>{
   assert.ok(host.includes('async fn lu_reader_pick_document(app:AppHandle)'));
-  assert.ok(host.includes('blocking_pick_file()'));
+  assert.ok(readerHost.includes('blocking_pick_file()'));
   assert.ok(host.includes('lu_core::native_reader::read_text_bytes'));
-  assert.ok(host.includes('MAX_PICK_BYTES:u64=8*1024*1024'));
-  assert.ok(host.includes('meta.file_type().is_file()'));
-  assert.ok(host.includes('read_to_end(&mut bytes)'));
+  assert.ok(host.includes('pick_reader_bytes(&app,8*1024*1024)'));
+  assert.ok(readerHost.includes('meta.file_type().is_file()'));
+  assert.ok(readerHost.includes('read_to_end(&mut bytes)'));
   assert.ok(host.includes('lu_reader_pick_document,'));
   assert.ok(ui.includes("invoke('lu_reader_pick_document')"));
   assert.ok(!ui.includes("invoke('lu_reader_pick_document',{path:"));
@@ -32,4 +33,20 @@ test('Reader attachment context uses the model UTF-8 byte budget, not JS code-un
     /16,384-byte/);
   assert.match(buildSubmittedPrompt('Summarize',[{name:'notes.docx',text:'hello'}]),
     /notes.docx/);
+});
+
+test('Ask Reader routes exactly one native-picker document through the supervised read-only model turn',()=>{
+  assert.ok(host.includes('lu_reader_ask_document,'));
+  assert.ok(readerHost.includes('fn lu_reader_ask_document('));
+  assert.ok(readerHost.includes('ReaderTurnSession::new('));
+  assert.ok(readerHost.includes('ModelTurnJournal::open('));
+  assert.ok(readerHost.includes('run_journaled('));
+  assert.ok(readerHost.includes('if result.tool_calls==0'));
+  assert.ok(readerHost.includes('ticket.wait_for_slot()?'));
+  assert.ok(host.includes('reader.cancellation.cancel()'));
+  assert.ok(host.includes('reader.current_step.lock()'));
+  assert.ok(ui.includes("invoke('lu_reader_ask_document',{"));
+  assert.ok(ui.includes('Ask Reader</button>'));
+  assert.ok(!ui.includes("invoke('lu_reader_ask_document',{path:"));
+  assert.ok(!ui.includes("invoke('lu_reader_ask_document',{filePath:"));
 });
