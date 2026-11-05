@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::IdeWorkspaceRegistry;
 
 const MAX_BYTES: u64 = 1024 * 1024;
-const MAX_PROJECTS: usize = 32;
+const MAX_BASELINES: usize = 64;
 
 #[derive(Debug)]
 pub enum SnapshotError {
@@ -72,6 +72,7 @@ pub struct InventoryComparison {
     pub schema_version: u32,
     pub project_id: String,
     pub baseline_present: bool,
+    pub baseline_count: usize,
     pub baseline_unix_seconds: Option<u64>,
     pub discovery_complete: bool,
     pub entries: Vec<ArtifactComparison>,
@@ -121,7 +122,7 @@ impl InventorySnapshots {
         }
         let doc: SnapshotFile =
             serde_json::from_slice(&bytes).map_err(|_| SnapshotError::Corrupt)?;
-        if doc.schema_version != 1 || doc.baselines.len() > MAX_PROJECTS
+        if doc.schema_version != 1 || doc.baselines.len() > MAX_BASELINES
             || doc.baselines.iter().any(|b| b.artifacts.len() > 80)
         {
             return Err(SnapshotError::Corrupt);
@@ -180,8 +181,8 @@ impl InventorySnapshots {
         };
         let _guard = self.lock.lock().map_err(|_| SnapshotError::Unavailable)?;
         let mut baselines = self.read()?;
-        baselines.retain(|b| b.project_id != project_id);
-        if baselines.len() >= MAX_PROJECTS {
+        // Preserve previous observations; never silently replace history.
+        if baselines.len() >= MAX_BASELINES {
             return Err(SnapshotError::TooLarge);
         }
         baselines.push(baseline.clone());
@@ -197,7 +198,9 @@ impl InventorySnapshots {
         let current = registry.inspect_project_evidence(project_id)
             .map_err(|_| SnapshotError::ProjectUnavailable)?;
         let _guard = self.lock.lock().map_err(|_| SnapshotError::Unavailable)?;
-        let prior = self.read()?.into_iter().find(|b| b.project_id == project_id);
+        let recorded = self.read()?;
+        let baseline_count = recorded.iter().filter(|b| b.project_id == project_id).count();
+        let prior = recorded.into_iter().rev().find(|b| b.project_id == project_id);
         let mut entries = Vec::new();
         let mut git_state = "baseline_missing";
         let mut baseline_time = None;
@@ -246,6 +249,7 @@ impl InventorySnapshots {
             schema_version: 1,
             project_id: project_id.to_owned(),
             baseline_present: prior.is_some(),
+            baseline_count,
             baseline_unix_seconds: baseline_time,
             discovery_complete: current.discovery_complete,
             entries,
