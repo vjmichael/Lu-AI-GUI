@@ -1,5 +1,5 @@
 //! A first-party Reader tool for authorized workspace text documents.
-//! Unsupported PDFs, DOCX and image files deliberately return an adapter
+//! Unsupported PDF and OCR/image files deliberately return an adapter
 //! error until their audited parsers are installed. No MCP or OS shell.
 use cap_std::{ambient_authority,fs::Dir};
 use prost::Message;
@@ -179,7 +179,7 @@ pub fn register_reader(
     let mut catalog=ModelToolCatalog::new();
     catalog.insert(registry,ModelToolDefinition{
         name:"lu_reader_read".into(),native_tool_id:TOOL_ID.into(),
-        description:"Extract bounded text from approved TXT, MD, DOCX, JSON, CSV, configuration and source files. PDF and image OCR require separate Reader adapters.".into(),
+        description:"Read authorized TXT, MD, DOCX, XLSX cells/formulas, PPTX slides, JSON, CSV, config and source files. PDF and image OCR are not yet supported.".into(),
         parameters:json!({"type":"object","properties":{
             "path":{"type":"string","description":"Authorized workspace-relative file path"},
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
