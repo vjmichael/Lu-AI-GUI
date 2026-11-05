@@ -9,8 +9,7 @@
 #![forbid(unsafe_code)]
 use std::{
     ffi::OsString,
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -105,11 +104,7 @@ fn mount_system_path(args: &mut Vec<OsString>, path: &str) {
     // Canonicalizing the source collapses /bin and /lib symlinks to /usr.
     if let Ok(real) = fs::canonicalize(path) {
         if real.is_dir() {
-            args.extend([
-                "--ro-bind".into(),
-                real.into_os_string(),
-                path.into(),
-            ]);
+            args.extend(["--ro-bind".into(), real.into_os_string(), path.into()]);
         }
     }
 }
@@ -214,7 +209,10 @@ mod tests {
 
     #[test]
     fn dangerous_roots_and_missing_paths_are_rejected() {
-        assert!(matches!(safe_workspace(Path::new("/")), Err(SandboxError::UnsafeWorkspace)));
+        assert!(matches!(
+            safe_workspace(Path::new("/")),
+            Err(SandboxError::UnsafeWorkspace)
+        ));
         assert!(safe_workspace(Path::new("/some/path/that/does/not/exist")).is_err());
     }
 
@@ -223,14 +221,21 @@ mod tests {
         let scratch = std::env::temp_dir().join(format!("lu-ide-sbx-{}", std::process::id()));
         fs::create_dir_all(&scratch).unwrap();
         let args = arguments(&scratch, Probe::NamespaceSetup).unwrap();
-        let normalized: Vec<String> = args.iter().map(|x| x.to_string_lossy().to_string()).collect();
+        let normalized: Vec<String> = args
+            .iter()
+            .map(|x| x.to_string_lossy().to_string())
+            .collect();
         assert!(normalized.contains(&"--unshare-all".to_owned()));
         assert!(normalized.contains(&"--new-session".to_owned()));
         assert!(normalized.contains(&"--die-with-parent".to_owned()));
         assert!(normalized.contains(&"--clearenv".to_owned()));
         assert!(normalized.contains(&"--ro-bind".to_owned()));
-        assert!(!normalized.iter().any(|x| x == "--bind" || x == "--share-net"));
-        assert!(!normalized.iter().any(|x| x == "/root" || x.starts_with("/home/")));
+        assert!(!normalized
+            .iter()
+            .any(|x| x == "--bind" || x == "--share-net"));
+        assert!(!normalized
+            .iter()
+            .any(|x| x == "/root" || x.starts_with("/home/")));
         assert!(normalized.iter().any(|x| x == "/workspace"));
         fs::remove_dir_all(scratch).unwrap();
     }
@@ -245,7 +250,10 @@ mod tests {
         fs::create_dir_all(&real).unwrap();
         let link = base.join("link");
         symlink(&real, &link).unwrap();
-        assert!(matches!(safe_workspace(&link), Err(SandboxError::UnsafeWorkspace)));
+        assert!(matches!(
+            safe_workspace(&link),
+            Err(SandboxError::UnsafeWorkspace)
+        ));
         fs::remove_dir_all(base).unwrap();
     }
 }
