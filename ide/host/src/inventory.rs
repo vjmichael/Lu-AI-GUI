@@ -17,7 +17,7 @@ use crate::{
 const MAX_CANDIDATES: usize = 80;
 const MAX_HASH_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GIT_REF_BYTES: u64 = 1024;
-const DISCOVERY_DIRS: [&str; 10] = [
+const DISCOVERY_DIRS: [&str; 15] = [
     "Delivered",
     "artifacts",
     "benchmarks",
@@ -28,6 +28,11 @@ const DISCOVERY_DIRS: [&str; 10] = [
     "ide/dist",
     "ide/app/src-tauri/target/release/bundle/nsis",
     "target/release/bundle/nsis",
+    "tools",
+    "bin",
+    "ide/tools",
+    ".venv/Scripts",
+    ".venv/bin",
 ];
 
 #[derive(Debug, Serialize)]
@@ -146,6 +151,12 @@ fn category(path: &str) -> &'static str {
     let lower = path.to_ascii_lowercase();
     if lower.contains("bench") || lower.contains("/results/") || lower.starts_with("results/") {
         "benchmark_or_result_evidence"
+    } else if lower.starts_with("tools/")
+        || lower.starts_with("bin/")
+        || lower.starts_with("ide/tools/")
+        || lower.starts_with(".venv/")
+    {
+        "toolchain_candidate"
     } else if lower.ends_with(".exe") || lower.ends_with(".msi")
         || lower.ends_with(".deb") || lower.ends_with(".rpm")
         || lower.ends_with(".appimage") {
@@ -256,7 +267,11 @@ impl IdeWorkspaceRegistry {
             discovery_complete: complete,
             files,
             git,
-            toolchain_readiness: "not_verified",
+            toolchain_readiness: if files.iter().any(|file| file.category == "toolchain_candidate") {
+                "present_unverified"
+            } else {
+                "not_verified"
+            },
             execution_performed: false,
         })
     }
