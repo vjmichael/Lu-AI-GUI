@@ -466,7 +466,7 @@ impl DesktopState {
         let store_weak=Arc::downgrade(&background_tasks);
         let app_events=app.clone();
         std::thread::spawn(move||{
-            let mut published=HashSet::<i64>::new();
+            let mut published_cursor=0i64;
             loop {
                 std::thread::sleep(Duration::from_millis(500));
                 let (Some(processes),Some(store))=(
@@ -475,22 +475,24 @@ impl DesktopState {
                 // Lu, not model inference, observes real workers and posts
                 // terminal events from the durable SQLite notification inbox.
                 let _=processes.poll();
-                if let Ok(events)=store.pending_terminal_notices(128) {
+                if let Ok(events)=store.pending_terminal_notices_after(
+                    published_cursor,128
+                ) {
                     for notice in events {
-                        if published.insert(notice.sequence) {
-                            let conversation=if notice.workspace_id.starts_with("c-"){
-                                Some(notice.workspace_id)
-                            }else{None};
-                            let _=app_events.emit("lu-background-terminal",
-                                BackgroundTerminalEvent{
-                                    sequence:notice.sequence,
-                                    task_id:notice.task_id,
-                                    chat_id:conversation,
-                                    state:notice.state.as_str().to_owned(),
-                                    progress:notice.progress,
-                                    detail:notice.detail,
-                                });
-                        }
+                        let conversation=if notice.workspace_id.starts_with("c-"){
+                            Some(notice.workspace_id)
+                        }else{None};
+                        let seq=notice.sequence;
+                        if app_events.emit("lu-background-terminal",
+                            BackgroundTerminalEvent{
+                                sequence:seq,
+                                task_id:notice.task_id,
+                                chat_id:conversation,
+                                state:notice.state.as_str().to_owned(),
+                                progress:notice.progress,
+                                detail:notice.detail,
+                            }).is_err(){break;}
+                        published_cursor=seq;
                     }
                 }
             }
