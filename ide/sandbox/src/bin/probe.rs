@@ -1,5 +1,5 @@
 //! Real OS probe for IDE Task 2. No project program can be selected.
-use lu_ide_linux_sandbox::{run_probe, Probe};
+use lu_ide_linux_sandbox::{run_probe, Probe, SandboxError};
 use std::{fs, process::ExitCode, time::Duration};
 
 fn main() -> ExitCode {
@@ -30,15 +30,26 @@ fn main() -> ExitCode {
             }
         }
     }
+    // A long-running fixture must be killed and reaped by the host deadline.
+    // This does not by itself prove all descendant cleanup or cgroup quotas.
+    match run_probe(
+        &dir,
+        Probe::TimeoutContainment,
+        Duration::from_millis(250),
+    ) {
+        Err(SandboxError::TimedOut) => {
+            println!("ISOLATION_PROBE_PASS: TimeoutContainment");
+            passed += 1;
+        }
+        outcome => eprintln!("ISOLATION_PROBE_FAIL: TimeoutContainment: {outcome:?}"),
+    }
     let _ = fs::remove_dir_all(dir);
-    if passed == cases.len() {
-        println!("ISOLATION_PROBES: {passed}/{} passed", cases.len());
+    let total = cases.len() + 1;
+    if passed == total {
+        println!("ISOLATION_PROBES: {passed}/{total} passed");
         ExitCode::SUCCESS
     } else {
-        eprintln!(
-            "ISOLATION_PROBES: {passed}/{} passed; do not enable workers",
-            cases.len()
-        );
+        eprintln!("ISOLATION_PROBES: {passed}/{total} passed; do not enable workers");
         ExitCode::FAILURE
     }
 }
