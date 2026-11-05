@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e79fc25cd0576bdad48eed8d6d2906489b7df611",
-  "trackedFileCount": 284,
+  "sourceCommitBeforeLock": "57538827a2d89294715e4dcde00ddb6c09ea0bc5",
+  "trackedFileCount": 315,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -12,12 +12,24 @@
       "blob": "27121b635612fff1928503af7263a4776beaa04c"
     },
     {
+      "path": ".github/workflows/lu-tools-01-05-integration.yml",
+      "blob": "6957b26825abd2a616e32d889324d48d4d6031fa"
+    },
+    {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
       "blob": "1e61281d885cfd9364f44b8d58581e69b525ba19"
     },
     {
       "path": ".github/workflows/lu-tools-03-git.yml",
       "blob": "0ce08682f0ff5f8b7fc22bcb33c6a9dd5a84b7b7"
+    },
+    {
+      "path": ".github/workflows/lu-tools-04-archive.yml",
+      "blob": "a774d9dbcd76441586ee3afc3cdb5706065b186a"
+    },
+    {
+      "path": ".github/workflows/lu-tools-11-background.yml",
+      "blob": "e63b996bcb56eab50291557819ef93bfb1d21df1"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -80,6 +92,14 @@
       "blob": "653f3f11ba20b234130b11b539dc1ec62a3e0079"
     },
     {
+      "path": "docs/LU_READER_AND_NATIVE_VISION.md",
+      "blob": "58e17df46d87820237c51b461420a0d552f6a5dd"
+    },
+    {
+      "path": "docs/LU_READER_CLOSEOUT.md",
+      "blob": "34c48025fbfc1402e14f4804a1e4e1cfc5a33f49"
+    },
+    {
       "path": "docs/LU_V1_01_WINDOWS_ICON_IMPORT_DEV_20261103.md",
       "blob": "9aa609c5a8612489d5e08e326bca24638c0dfeee"
     },
@@ -108,12 +128,24 @@
       "blob": "f3e469f886448553d8308a6eb27f1f94336dd6fe"
     },
     {
+      "path": "docs/TOOLS_04_ARCHIVE_INSPECTION_DESIGN_20261104.md",
+      "blob": "ca8c82f1c9f91c34d146e1199d847b65b7c25bb2"
+    },
+    {
+      "path": "docs/TOOLS_11_HOST_SUPERVISION.md",
+      "blob": "d62bd195292e197f4e65a430fa01c18eb534e243"
+    },
+    {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
       "blob": "7c31ec4219a6df1733586e3feb4d34eb9db0fd99"
     },
     {
       "path": "docs/WRITE_01E_DURABLE_EDIT_TRANSACTION_20261103.md",
       "blob": "c22e026a0efe8be1e8dc6a1a8da39c2cdbadee64"
+    },
+    {
+      "path": "docs/WRITE_01E_EXACT_EDIT_APPROVAL_20261103.md",
+      "blob": "059141c168eff1d3296c4477f256c8e4d5d86b5a"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -237,11 +269,15 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
-      "blob": "08bcd6da38cf5a552209734a3473b67bd3b98137"
+      "blob": "ea8eaa074f36df983b69b413035c8f4537c6061b"
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
       "blob": "cd43312fff8784a870ff1f60c408f52ada739bb7"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/file_scan_worker.rs",
+      "blob": "a013cc499b13179b74a196cd49ce8733a253d5e3"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
@@ -249,7 +285,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "0fae7f96cb46b3fc59cc02450d0836c334496b3b"
+      "blob": "fa4e623849cdce7ca878a2c8142186348b7511ff"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -257,7 +293,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/main.rs",
-      "blob": "5ed67b8dc575a8b565d27f8c1669e4bc77181e36"
+      "blob": "f50cc3ed7bb20e7c4f7faeb470bea4bd0f856f4b"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -280,6 +316,10 @@
       "blob": "56737c40451dfeb7e8838098310c124326654e31"
     },
     {
+      "path": "lu-desktop/src-tauri/src/reader_desktop.rs",
+      "blob": "7000622e5590b9d20f36125fb0c579093282f600"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
       "blob": "5936bebd94754c80b029cf2b6cad95628c659740"
     },
@@ -290,6 +330,14 @@
     {
       "path": "lu-desktop/src-tauri/tauri.conf.json",
       "blob": "2fd8ddaa4b524a67d830f8ba49052fa223c933ad"
+    },
+    {
+      "path": "lu-desktop/tests/background-pane.test.mjs",
+      "blob": "dee51a606a359617afe774067276c27a07b7ccac"
+    },
+    {
+      "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
+      "blob": "144bc27879456c9521bbe09b0206a7795b4e4208"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -316,6 +364,14 @@
       "blob": "c719361d9176e77dad7643cbc57bda4384686f67"
     },
     {
+      "path": "lu-desktop/tests/native-file-scan/Cargo.toml",
+      "blob": "3464097266e93409990f3e170e2269e1341cca90"
+    },
+    {
+      "path": "lu-desktop/tests/native-file-scan/src/main.rs",
+      "blob": "0a6b446ffb3efb2d19f8212198a10a4c3ce17614"
+    },
+    {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
       "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
     },
@@ -338,6 +394,10 @@
     {
       "path": "lu-desktop/tests/r21-image-ux.test.mjs",
       "blob": "72604fc2d0cd400e4f345ee4a986320f1ff8a020"
+    },
+    {
+      "path": "lu-desktop/tests/reader-desktop.test.mjs",
+      "blob": "30c9260c0bd45b59368c391f736330bb0ec3115e"
     },
     {
       "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
@@ -381,7 +441,7 @@
     },
     {
       "path": "lu-desktop/web/attachment_drafts.mjs",
-      "blob": "926ff4a34b6c52e0a4c1d6b1d91d3e0022b5d706"
+      "blob": "fcbe6f578f5856b28522c89b4c4e587ac6ff0540"
     },
     {
       "path": "lu-desktop/web/chat_ui_behavior.mjs",
@@ -405,7 +465,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "52b6bb199c9e5aca1b8fab20d84b4130b45683f3"
+      "blob": "7935334d1903f9ef7988af61e5b93a9e58e454d8"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -421,7 +481,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "c18dd5545e39c2915dc7ed97436406aadb6a979b"
+      "blob": "f742e44940d9f2c82269200dd14c0dbc7630da04"
     },
     {
       "path": "scripts/source-identity.mjs",
@@ -437,7 +497,7 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
-      "blob": "6c96e6aa0aa0d2b2a0875511ab960faa397cac74"
+      "blob": "cc9feeadee52f82cd55d1bf30327b364f215df3d"
     },
     {
       "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
@@ -481,7 +541,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "983335a6f6c2149dd878da7c4190ca80d523f07c"
+      "blob": "d1a25d686811c40164877d9a75c0e6ccc465e706"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -661,7 +721,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "cd8c27780f0d225f9e0adff25717b5e839969d89"
+      "blob": "4c4290758c6c4f5a2d10aff0b4a1b560783b0c13"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -708,8 +768,28 @@
       "blob": "46d3c4105580551056209132db2bd3c30510726b"
     },
     {
+      "path": "src-tauri/lu-core/src/native_archive_inspect.rs",
+      "blob": "21ca367d72f5b0c147977404e3fb124d24db53c0"
+    },
+    {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
       "blob": "611b18bb7d65ddc85c31a6c9ba7dc445a36727d3"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_background_control.rs",
+      "blob": "a54cdc195385962fb8f50d46ea0d73d3f43d6bfe"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_background_process.rs",
+      "blob": "d91a417daed303b520491ae196deb2a11396a6f9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_background_result.rs",
+      "blob": "f3534c468fb10bd739854c3f296f3272a5e36db6"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_background_status.rs",
+      "blob": "ab633743e01f2780a3d5ba6b51f6c998eada713f"
     },
     {
       "path": "src-tauri/lu-core/src/native_chat_ids.rs",
@@ -734,6 +814,38 @@
     {
       "path": "src-tauri/lu-core/src/native_git_inspect.rs",
       "blob": "34a784371ca65e46f65159a037560a2402d434ff"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader.rs",
+      "blob": "39216ad9a30a521552a6bda14047ce73b9b2224c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_docx.rs",
+      "blob": "0ef32b9dda8577ee36352a9ffa610693974f12fd"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_odf.rs",
+      "blob": "fa658316275027ba8e2a30cfcef5511780ea9808"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_office.rs",
+      "blob": "696544007ccb4b3dd973a3e8870845986a163a25"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_openxml.rs",
+      "blob": "f1d88f6c0b82cb7bb65dd02b95c05392b754a2c9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_pdf.rs",
+      "blob": "f73bdba8fce0d244c75a9b592396d032495f32b5"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_tool.rs",
+      "blob": "3e786720891c9e0924329f89b0ed6828c12e46da"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_turn.rs",
+      "blob": "d158482c5ce5aba6527b02a2b0bb1afcca006c8c"
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
@@ -784,6 +896,10 @@
       "blob": "72d177558c238e1227bc8b4e0090a7daf75076a5"
     },
     {
+      "path": "src-tauri/lu-core/src/reversible_edit.rs",
+      "blob": "0aa4cef5279f65236710dddc289c731068972f04"
+    },
+    {
       "path": "src-tauri/lu-core/src/rollback_approval_ledger.rs",
       "blob": "d25a51944edc77eaab21b341995011b8884424ac"
     },
@@ -793,11 +909,15 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "330c46f0b7ee4dc4ee1e7642f27f66f6888c3785"
+      "blob": "f5406d7b492d0e82fe299b0ec411ba7a8e1992ba"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "a2c0e5bc9a93fc3e7c6e182d86883b26cb864365"
+      "blob": "508941283bec8178351d4f3b98fb9794eb2c4f72"
+    },
+    {
+      "path": "src-tauri/lu-core/src/vision_routing.rs",
+      "blob": "72f57d779ba76a5ee170be357ac56bf0045dc501"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
@@ -1020,6 +1140,10 @@
       "blob": "4fe055f30a30fe010bc663066d2e226c49740bd8"
     },
     {
+      "path": "src-tauri/lu-core/tests/native_archive_inspect.rs",
+      "blob": "dfe3e60e4824f49d90b9a3e6e98f322026ebd918"
+    },
+    {
       "path": "src-tauri/lu-core/tests/native_atomic_write.rs",
       "blob": "7f5c875aa5eb95a98cdd8e547d09afc450a55a70"
     },
@@ -1129,7 +1253,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "5eac4d785d25a723a486e5eb39ce925e95c9d759"
+      "blob": "1a9ad1380dd291924349bf1dc453b154ddc3545f"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
