@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7cf217eb949f9364e23ab590697f0075f9909849",
+  "sourceCommitBeforeLock": "fcbd4c316918690bb10d271a28d5b5afe40cda71",
   "trackedFileCount": 329,
   "files": [
     {
@@ -1205,7 +1205,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_spreadsheet_create.rs",
-      "blob": "474b41eec042336fbadee4d3662e7c26f6b4b63a"
+      "blob": "5e0c12f20302fbcc36bb68e80ac85e0c73a0a829"
     },
     {
       "path": "src-tauri/lu-core/tests/native_spreadsheet_tool_authority.rs",
