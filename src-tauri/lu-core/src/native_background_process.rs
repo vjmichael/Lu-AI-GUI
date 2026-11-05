@@ -294,7 +294,7 @@ mod tests{
         store.create("media123",Some("media"),None).unwrap();
         store.start("media123").unwrap();
         let digest="a".repeat(64);
-        let frames=format!("P\\t0\\t20\\nP\\t10\\t20\\nP\\t20\\t20\\nD\\t{digest}\\n");
+        let frames=format!("P\t0\t20\nP\t10\t20\nP\t20\t20\nD\t{digest}\n");
         assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123"));
         let record=store.get("media123").unwrap().unwrap();
         assert_eq!(record.progress,100);
@@ -308,12 +308,12 @@ mod tests{
     fn invalid_and_truncated_worker_reports_cannot_complete(){
         use std::io::Cursor;
         for frames in [
-            "P\\t0\\t100\\nP\\t100\\t100\\n",
-            "P\\t100\\t100\\nP\\t50\\t100\\n",
-            "P\\t100\\t100\\nD\\tnot-a-sha256\\n",
-            "P\\t2\\t1\\n",
-            "P\\t0\\t0\\n",
-            "P\\t5\\t10\\nD\\t",
+            "P\t0\t100\nP\t100\t100\n",
+            "P\t100\t100\nP\t50\t100\n",
+            "P\t100\t100\nD\tnot-a-sha256\n",
+            "P\t2\t1\n",
+            "P\t0\t0\n",
+            "P\t5\t10\nD\t",
         ]{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create("t",Some("w"),None).unwrap();
