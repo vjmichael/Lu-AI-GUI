@@ -147,14 +147,18 @@ pub fn generate_image_chat_stream(
 
 /// The JSON format here is strictly the external llama.cpp HTTP contract.
 /// Host / worker / model authority remains carried through Lu's Protobuf IPC.
-pub fn generate_chat_stream_body(
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+enum FrameDisposition {Continue,Done}
+/// Shared authenticated transport and chunk framing. The handler validates
+/// the semantic SSE payload; no arbitrary function text is ever executed.
+fn stream_chat_frames(
     port: u16,
     api_key: &str,
     body: &str,
     timeout: Duration,
     cancelled: impl Fn() -> bool,
-    mut on_text: impl FnMut(String) -> Result<(), String>,
-) -> Result<(), String> {
+    mut on_frame: impl FnMut(&[u8]) -> Result<FrameDisposition,String>,
+) -> Result<(),String> {
     if port == 0
         || api_key.len() != 64
         || !api_key.bytes().all(|b| b.is_ascii_hexdigit())
@@ -220,7 +224,6 @@ pub fn generate_chat_stream_body(
     let mut events: Vec<u8> = Vec::new();
     let mut streamed = 0usize;
     let mut complete = false;
-    let mut emitted = 0usize;
     while !complete {
         let size = read_line_bounded(&mut reader, 128, &cancelled, deadline)?;
         let size = String::from_utf8_lossy(&size);
@@ -246,27 +249,80 @@ pub fn generate_chat_stream_body(
             return Err("oversized multimodal SSE event".into());
         }
         while let Some(frame) = next_frame(&mut events) {
-            match parse_chat_sse_frame(&frame).map_err(|_| "invalid multimodal chat event")? {
-                ChatEvent::Text(text) => {
-                    emitted = emitted.saturating_add(text.len());
-                    if emitted > MAX_STREAM_BYTES {
-                        return Err("multimodal text output limit exceeded".into());
-                    }
-                    on_text(text)?;
-                }
-                ChatEvent::Continue => {}
-                ChatEvent::Done => {
-                    complete = true;
-                    break;
-                }
+            if on_frame(&frame)? == FrameDisposition::Done {
+                complete = true;
+                break;
             }
         }
     }
     check(&cancelled, deadline)?;
-    if !complete || emitted == 0 {
-        return Err("multimodal engine did not finish with nonempty text".into());
+    if !complete {
+        return Err("multimodal engine stream did not complete".into());
     }
     Ok(())
+}
+
+/// Original text-only generation path: strictly preserve its nonempty reply
+/// contract. Tool frames are not interpreted as model prose or executable
+/// instructions in this path.
+pub fn generate_chat_stream_body(
+    port:u16,
+    api_key:&str,
+    body:&str,
+    timeout:Duration,
+    cancelled:impl Fn()->bool,
+    mut on_text:impl FnMut(String)->Result<(),String>,
+)->Result<(),String>{
+    let mut emitted=0usize;
+    stream_chat_frames(port,api_key,body,timeout,cancelled,|frame|{
+        match parse_chat_sse_frame(frame).map_err(|_|"invalid multimodal chat event")?{
+            ChatEvent::Text(text)=>{
+                emitted=emitted.saturating_add(text.len());
+                if emitted>MAX_STREAM_BYTES{return Err("multimodal text output limit exceeded".into());}
+                on_text(text)?;
+                Ok(FrameDisposition::Continue)
+            }
+            ChatEvent::Continue=>Ok(FrameDisposition::Continue),
+            ChatEvent::Done=>Ok(FrameDisposition::Done),
+        }
+    })?;
+    if emitted==0{return Err("multimodal engine did not finish with nonempty text".into());}
+    Ok(())
+}
+
+/// Structured function calls are collected in isolation from the text stream.
+pub fn generate_browser_tool_stream_body(
+    port:u16,
+    api_key:&str,
+    body:&str,
+    timeout:Duration,
+    cancelled:impl Fn()->bool,
+    allowed_names:std::collections::BTreeSet<String>,
+)->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,String>{
+    use crate::browser_tool_stream::{
+        parse_tool_sse_frame,BrowserToolCallCollector,ToolStreamEvent,
+    };
+    if allowed_names.is_empty()||allowed_names.len()>2
+        ||allowed_names.iter().any(|x|x!="lu_browser_read"){
+        return Err("browser tool stream has no approved read capability".into());
+    }
+    let mut collector=BrowserToolCallCollector::new(allowed_names);
+    let mut completed=None;
+    stream_chat_frames(port,api_key,body,timeout,cancelled,|frame|{
+        let event=parse_tool_sse_frame(frame)
+            .map_err(|_|"invalid browser tool SSE event")?;
+        let done=matches!(event,ToolStreamEvent::Done);
+        if let Some(calls)=collector.absorb(event)
+            .map_err(|_|"invalid or unadvertised browser tool call")?{
+            completed=Some(calls);
+            return Ok(FrameDisposition::Done);
+        }
+        if done {
+            return Err("browser-enabled turn finished without approved tool calls".into());
+        }
+        Ok(FrameDisposition::Continue)
+    })?;
+    completed.ok_or_else(||"browser tool stream did not return approved calls".into())
 }
 
 #[cfg(test)]
