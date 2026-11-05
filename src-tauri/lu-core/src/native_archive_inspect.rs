@@ -71,7 +71,7 @@ fn safe_relative_name(value: &str, archive_member: bool) -> Result<PathBuf, Tool
     Ok(PathBuf::from(value))
 }
 
-fn inspect(root: &Dir, request: proto::ArchiveListRequest)
+fn inspect_zip(root: &Dir, request: proto::ArchiveListRequest)
     -> Result<ToolOutput, ToolFailure>
 {
     let max_entries = request.max_entries.unwrap_or(DEFAULT_ENTRIES);
@@ -179,6 +179,46 @@ fn inspect(root: &Dir, request: proto::ArchiveListRequest)
     })
 }
 
+
+fn inspect(root:&Dir,request:proto::ArchiveListRequest)
+    ->Result<ToolOutput,ToolFailure>
+{
+    if request.path.to_ascii_lowercase().ends_with(".zip"){
+        return inspect_zip(root,request)
+    }
+    if !request.path.to_ascii_lowercase().ends_with(".iso"){
+        return Err(refuse("ARCHIVE_FORMAT_UNSUPPORTED","Supported inspection formats: ZIP, ISO9660"))
+    }
+    let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
+    if !(1..=MAX_RETURNED_ENTRIES).contains(&max){
+        return Err(refuse("ARCHIVE_LIMIT","Invalid archive listing limit"))
+    }
+    let path=safe_relative_name(&request.path,false)?;
+    // ISO parser takes a flat, explicitly approved image name; no model
+    // supplied directory is followed through this adapter.
+    if path.components().count()!=1 {
+        return Err(refuse("INVALID_ARCHIVE_PATH","ISO image must be in approved directory"))
+    }
+    let iso=crate::native_iso9660::inspect_iso(root,&request.path,max as usize)
+        .map_err(|_|refuse("ARCHIVE_INVALID","ISO image rejected or exceeds safety limits"))?;
+    Ok(ToolOutput{payload:ProtoPayload{
+        type_url:OUTPUT.into(),
+        bytes:proto::ArchiveListResult {
+            entries:iso.entries.into_iter().map(|e|proto::ArchiveEntry {
+                path:e.path,
+                kind:if e.is_directory{"directory".into()}else{"file".into()},
+                compressed_bytes:e.bytes, // ISO9660 members are stored, not compressed.
+                declared_uncompressed_bytes:e.bytes,
+                crc32:0, // ISO9660 has no per-file CRC32; never infer one.
+            }).collect(),
+            truncated:iso.truncated,
+            total_entries:iso.total_entries as u64,
+            total_declared_uncompressed_bytes:iso.declared_bytes,
+            archive_bytes:iso.image_bytes,
+        }.encode_to_vec(),
+    }})
+}
+
 struct ArchiveListing {
     descriptor: ToolDescriptor,
     root: Arc<Dir>,
@@ -212,8 +252,8 @@ impl ModelToolCodec for ArchiveCodec {
             .ok_or_else(|| ModelToolError::InvalidArguments("path must be text".into()))?;
         safe_relative_name(path, false)
             .map_err(|_| ModelToolError::InvalidArguments("unsafe archive path".into()))?;
-        if !path.to_ascii_lowercase().ends_with(".zip") {
-            return Err(ModelToolError::InvalidArguments("ZIP format required".into()));
+        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") {
+            return Err(ModelToolError::InvalidArguments("ZIP or ISO format required".into()));
         }
         let max_entries = optional_uint(args, "max_entries", DEFAULT_ENTRIES, MAX_RETURNED_ENTRIES)?;
         let message = proto::ArchiveListRequest {
@@ -237,7 +277,7 @@ impl ModelToolCodec for ArchiveCodec {
             "total_entries": data.total_entries,
             "total_declared_uncompressed_bytes": data.total_declared_uncompressed_bytes,
             "archive_bytes": data.archive_bytes,
-            "note": "This is untrusted ZIP metadata only; no member contents were verified or extracted."
+            "note": "Untrusted ZIP or ISO9660 metadata only. ISO fields have no CRC32 and are not proof of content validation; no extraction occurred."
         }))
     }
 }
@@ -259,7 +299,7 @@ pub fn register_archive_inspection_tool(
         .map_err(|_| "trusted archive workspace root cannot be opened")?);
     let descriptor = ToolDescriptor {
         id: LIST.into(),
-        display_name: "List ZIP contents (metadata only)".into(),
+        display_name: "List ZIP / ISO9660 contents (metadata only)".into(),
         effect: ToolEffect::ReadWorkspace,
         input_type_url: INPUT.into(),
         output_type_url: OUTPUT.into(),
@@ -283,7 +323,7 @@ pub fn register_archive_inspection_tool(
         parameters: json!({
             "type": "object",
             "properties": {
-                "path": {"type":"string","description":"ZIP filename relative to the approved workspace"},
+                "path": {"type":"string","description":"ZIP or ISO filename relative to the approved workspace"},
                 "max_entries":{"type":"integer","minimum":1,"maximum":MAX_RETURNED_ENTRIES}
             },
             "required":["path"],
