@@ -96,11 +96,11 @@ function App() {
   function confirmUnregister(project) {
     if (pending || savingKey || explorerPending) return;
     const hasDirty = tabs.some(tab => tab.projectId === project.projectId && tab.dirty);
-    const message = 'Remove "' + project.displayName + '" from Lu IDE?\\n\\n' +
+    const message = 'Remove "' + project.displayName + '" from Lu IDE?\n\n' +
       'The original project folder and ALL files on disk will be kept. ' +
-      'Only the IDE registration will be removed.\\n\\n' +
+      'Only the IDE registration will be removed.\n\n' +
       'You can add the folder again using Open folder.' +
-      (hasDirty ? '\\n\\nWARNING: Unsaved edits in its open tabs will be discarded.' : '');
+      (hasDirty ? '\n\nWARNING: Unsaved edits in its open tabs will be discarded.' : '');
     if (window.confirm(message)) {
       void operation('ide_unregister_project', { projectId: project.projectId });
     }
