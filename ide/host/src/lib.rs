@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod browser;
+pub mod capabilities;
 pub mod editor;
 pub mod inbox;
 pub mod proposal;
