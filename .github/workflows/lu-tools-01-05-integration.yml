@@ -113,6 +113,8 @@ jobs:
       - name: Bundle both file edits and Reader/background UI
         run: npm run build
         working-directory: lu-desktop
+      - name: Build actual production scanner acceptance worker
+        run: cargo build --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
       - name: Run UI regressions
         run: npm run test:ui
         working-directory: lu-desktop

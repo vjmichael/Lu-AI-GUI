@@ -47,6 +47,9 @@ jobs:
           if test -f package-lock.json; then npm ci; else npm install --no-audit --no-fund; fi
       - run: npm run build
       - run: npm run check
+      - name: Build actual production scanner acceptance worker
+        working-directory: ..
+        run: cargo build --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
       - run: npm run test:ui
   chat-journal-portable:
     name: Portable native chat journal security tests

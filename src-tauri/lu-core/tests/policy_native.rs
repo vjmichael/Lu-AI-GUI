@@ -197,5 +197,10 @@ async fn host_accessibility_does_not_mint_task_authority() {
         registry.dispatch(request, &policy).await,
         Err(DispatchError::Denied(_))
     ));
+    // Native file tools hold an opened directory capability. Explicitly
+    // release both the model catalog and tool registry before deleting the
+    // fixture: Windows correctly refuses removal of still-open directories.
+    drop(catalog);
+    drop(registry);
     fs::remove_dir_all(root).unwrap();
 }

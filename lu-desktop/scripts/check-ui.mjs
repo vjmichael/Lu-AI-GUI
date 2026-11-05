@@ -28,7 +28,7 @@ const tests = [
   ['quick unload model supported', ui.includes('quickEject') && ui.includes('Unload active model')],
   ['model supplied think blocks rendered', ui.includes('splitModelOutput') && ui.includes('Model reasoning')],
   ['cancellation journal preserves interrupted reply', store.includes('message.cancelled = true')],
-  ['conversation history carried as typed Protobuf turns', host.includes('prompt_context::typed_history(&events[..events.len() - 1], &prompt)') && host.includes('let events = state.chats.history(&chat_id)?')],
+  ['conversation history carried as typed Protobuf turns', host.includes('let history = if origin==GenerationOrigin::Human{') && host.includes('prompt_context::typed_history(&events[..events.len()-1],&prompt)') && host.includes('prompt_context::typed_history(&events,&prompt)') && host.includes('let events = state.chats.history(&chat_id)?')],
   ['queued generations do not stop unrelated chat work', /generation_queue\s*\.enqueue\(/.test(host) && ui.includes('visibleJob')],
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],

@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join,resolve} from 'node:path';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 
-const executable=process.env.LU_BACKGROUND_WORKER_TEST_EXE || resolve('lu-desktop/tests/native-file-scan/target/debug/lu-file-scan-worker-acceptance' + (process.platform==='win32'?'.exe':''));
+// Resolve against this test file, not process.cwd(): CI runs from lu-desktop.
+// The executable is compiled from the EXACT production scanner module.
+const executable=process.env.LU_BACKGROUND_WORKER_TEST_EXE || fileURLToPath(new URL('./native-file-scan/target/debug/lu-file-scan-worker-acceptance' + (process.platform==='win32'?'.exe':''),import.meta.url));
 function launch(args){
   const result=spawnSync(executable,args,{encoding:'utf8',timeout:60_000,
     maxBuffer:256*1024,windowsHide:true,env:{...process.env}});
