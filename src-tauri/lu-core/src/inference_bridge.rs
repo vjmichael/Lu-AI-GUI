@@ -221,6 +221,38 @@ impl<B: InferenceBackend> InferenceBridge<B> {
     }
     /// This is called from a host-owned worker thread. Cancellation must use a
     /// separately accessible cloned token, NOT a mutex held by this generator.
+    /// Typed browser function proposals from a host-reserved generation.
+    /// These are never executable commands until a separate scoped native
+    /// registry validates and dispatches them. Never parse freeform prose.
+    pub fn generate_browser_function_calls(
+        &mut self,
+        frame:&proto::InferenceFrame,
+        cancel:Cancellation,
+        admitted_read_schemas:&[serde_json::Value],
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,BridgeError>{
+        validate_frame(frame)?;
+        let Some(proto::inference_frame::Body::Generate(request))=frame.body.as_ref()
+          else{return Err(BridgeError::WrongOperation);};
+        if request.session_id!=self.session_id{
+            return Err(BridgeError::UnauthorizedSession);
+        }
+        if !request.images.is_empty(){return Err(BridgeError::UnsupportedModality);}
+        if self.host.phase()!=EnginePhase::Ready{
+            return Err(BridgeError::Engine(EngineError::NotLoaded));
+        }
+        let generation=GenerationRequest{
+            history:request.history.iter().map(|turn|
+                crate::inference_host::ChatTurn{
+                    role:turn.role.clone(),text:turn.text.clone(),
+                }
+            ).collect(),
+            prompt:request.prompt.clone(),
+            max_new_tokens:request.max_new_tokens,
+        };
+        self.host.generate_browser_function_calls(
+            generation,admitted_read_schemas,cancel
+        ).map_err(BridgeError::Engine)
+    }
     pub fn generate(
         &mut self,
         frame: &proto::InferenceFrame,

@@ -51,6 +51,12 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
+  const [browserMode, setBrowserMode] = useState(null);
+  const [browserRuntime, setBrowserRuntime] = useState(null);
+  const [browserOrigin, setBrowserOrigin] = useState('');
+  const [browserResearch, setBrowserResearch] = useState(false);
+  const [startingBrowser, setStartingBrowser] = useState(false);
+  const [savingBrowserMode, setSavingBrowserMode] = useState(false);
   const [latestCreated, setLatestCreated] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
@@ -90,6 +96,24 @@ function App() {
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
     !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
+  useEffect(() => {
+    if (!browserResearch) return;
+    let mounted=true;
+    let polling=false;
+    const poll=async()=>{
+      if (polling) return;
+      polling=true;
+      try{
+        const state=await invoke('lu_browser_runtime_status');
+        if (mounted) setBrowserRuntime(state);
+      }catch{/* Browser status remains informational, not authorization. */}
+      finally{polling=false;}
+    };
+    void poll();
+    const timer=setInterval(()=>{void poll();},1800);
+    return ()=>{mounted=false;clearInterval(timer);};
+  },[browserResearch]);
+
   useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) { setModelLoadSeconds(0); return; }
     const started = Date.now();
@@ -174,6 +198,12 @@ function App() {
         if (alive && list.length) await switchChat(list[0].chatId);
         if (alive) invoke('lu_document_settings')
           .then(value => {if (alive) setDocumentSettings(value);})
+          .catch(error => {if (alive) setError(String(error));});
+        if (alive) invoke('lu_browser_settings')
+          .then(mode => {if (alive) setBrowserMode(mode);})
+          .catch(error => {if (alive) setError(String(error));});
+        if (alive) invoke('lu_browser_runtime_status')
+          .then(info => {if (alive) setBrowserRuntime(info);})
           .catch(error => {if (alive) setError(String(error));});
       } catch (error) { if (alive) setError(String(error)); }
     })();
@@ -556,6 +586,58 @@ function App() {
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
   }
+  async function startResearchBrowser() {
+    if (!chatId || startingBrowser || !browserRuntime?.launchReady) return;
+    setError('');
+    setStartingBrowser(true);
+    try {
+      const view = await invoke('lu_browser_start', {
+        chatId, origin:browserOrigin.trim()
+      });
+      setBrowserRuntime(view);
+      setActivity('Research browser authorized for this conversation');
+    } catch (error) {setError(String(error));}
+    finally {setStartingBrowser(false);}
+  }
+  async function refreshResearchBrowser() {
+    try {setBrowserRuntime(await invoke('lu_browser_runtime_status'));}
+    catch (error) {setError(String(error));}
+  }
+  async function changeBrowserWatch(visible) {
+    setError('');
+    try {
+      const mode=visible ? 'lu_browser_watch' : 'lu_browser_hide';
+      setBrowserRuntime(await invoke(mode));
+      setActivity(visible ? 'Research browser visible' : 'Research browser hidden');
+    } catch (error) {setError(String(error));}
+  }
+  async function humanVerifiedBrowser() {
+    setError('');
+    try {
+      const report=await invoke('lu_browser_human_verified');
+      setBrowserRuntime(report);
+      setActivity('Browser verification completed; Lu may resume research');
+    } catch (error) {setError(String(error));}
+  }
+  async function stopResearchBrowser() {
+    setError('');
+    try {
+      await invoke('lu_browser_stop');
+      setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+      setActivity('Research browser stopped');
+    } catch (error) {setError(String(error));}
+  }
+  async function saveBrowserVisibility(mode) {
+    if (savingBrowserMode || (mode !== 'automatic' && mode !== 'always-visible')) return;
+    setSavingBrowserMode(true);
+    setError('');
+    try {
+      const saved = await invoke('lu_set_browser_visibility', {mode});
+      setBrowserMode(saved);
+      setActivity('Browser preference saved');
+    } catch (error) { setError(String(error)); }
+    finally { setSavingBrowserMode(false); }
+  }
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -607,6 +689,11 @@ function App() {
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
+    if (browserResearch && (!browserRuntime?.launchReady || !browserOrigin.trim() ||
+        images.length || textFiles.length)) {
+      setError('Browser research requires a reviewed runtime, HTTPS origin and a text-only prompt.');
+      return;
+    }
     const input = prompt.trim();
     let submitted;
     try { submitted = buildSubmittedPrompt(input, textFiles); }
@@ -636,10 +723,15 @@ function App() {
     let completed = false;
     let cancelled = false;
     try {
-      const output = await invoke('lu_generate', {
-        sessionId: runtime.sessionId, chatId: activeId,
-        prompt: submitted, imageRefs: refs, maxNewTokens: 512
-      });
+      const output = browserResearch
+        ? await invoke('lu_generate_browser', {
+            sessionId: runtime.sessionId, chatId: activeId,
+            prompt: submitted, origin: browserOrigin.trim(), maxNewTokens: 512
+          })
+        : await invoke('lu_generate', {
+            sessionId: runtime.sessionId, chatId: activeId,
+            prompt: submitted, imageRefs: refs, maxNewTokens: 512
+          });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
     } catch (error) {
@@ -1106,6 +1198,16 @@ function App() {
           <small>New rollback effect: {latestRestored.rollbackEffectId}</small>
           <small>The prior edited bytes were retained as a separate rollback backup.</small>
         </section>}
+        {browserRuntime?.humanVerificationRequired && <section
+          className="browserChallengeNotice" role="alert" aria-live="polite">
+          <strong>Research paused for human verification</strong>
+          <p>Complete the challenge in Lu's visible Chromium window.
+            The current research turn will resume only after native verification.</p>
+          <button type="button" className="subtleButton"
+            onClick={humanVerifiedBrowser}>I've completed verification</button>
+          <button type="button" className="subtleButton"
+            onClick={refreshResearchBrowser}>Check status</button>
+        </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
@@ -1122,6 +1224,22 @@ function App() {
             placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Load a GGUF model first…'} disabled={!loaded}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
+          <div className="browserResearchComposer">
+            <label>
+              <input type="checkbox" checked={browserResearch}
+                onChange={e => setBrowserResearch(e.target.checked)}
+                disabled={!browserRuntime?.launchReady || chatBusy}/>
+              Research with Lu browser (read only)
+            </label>
+            {browserResearch && <span>
+              <input type="text" aria-label="Research HTTPS origins"
+                placeholder="https://example.com, https://archive.example.org" maxLength={2048}
+                value={browserOrigin}
+                onChange={e => setBrowserOrigin(e.target.value)}
+                disabled={chatBusy}/>
+              <small>Enter 1–8 exact HTTPS origins, separated by commas. Lu asks for native approval of the entire list on every research turn; websites cannot add permissions.</small>
+            </span>}
+          </div>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
@@ -1129,7 +1247,11 @@ function App() {
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
+              : <button className="primaryButton" type="submit"
+                  disabled={working || !loaded || !prompt.trim() ||
+                    (browserResearch && (!browserRuntime?.launchReady ||
+                      !browserOrigin.trim() || images.length > 0 || textFiles.length > 0))}>
+                  {browserResearch ? 'Research' : 'Send'}</button>}
           </div></form>}
       </div>
     </main>
@@ -1161,6 +1283,81 @@ function App() {
           </div>
           <p className="settingsNotice">Lu saves only after reviewing the exact file contents and destination.
             Modifying existing files requires a separate validated edit/backup pipeline.</p>
+        </section>}
+        {advancedSettingsOpen && <section className="advancedDocumentSettings"
+          aria-label="Browser visibility settings">
+          <h3>Research browser</h3>
+          <p>Lu uses headed Chromium and Playwright for research. The browser mode
+            changes window visibility only; it does not authorize browsing or network access.</p>
+          <fieldset className="browserVisibilityChoices" disabled={savingBrowserMode || browserMode === null}>
+            <legend>When Lu launches its browser</legend>
+            <label>
+              <input type="radio" name="browser-visibility" value="automatic"
+                checked={browserMode === 'automatic'}
+                onChange={() => saveBrowserVisibility('automatic')}/>
+              <span><strong>Automatic (default)</strong>
+                <small>Keep Chromium hidden while Lu browses. Reveal the same session
+                  when human verification is required.</small></span>
+            </label>
+            <label>
+              <input type="radio" name="browser-visibility" value="always-visible"
+                checked={browserMode === 'always-visible'}
+                onChange={() => saveBrowserVisibility('always-visible')}/>
+              <span><strong>Always visible</strong>
+                <small>Watch Lu browse automatically without taking your mouse or keyboard.</small></span>
+            </label>
+          </fieldset>
+          <p role="status" className="settingsNotice">
+            {browserRuntime?.reason || 'Checking research browser installation…'}
+          </p>
+          <p className="settingsNotice">This preference applies to the next browser session.
+            Lu will reveal the same browser session when human verification is needed.</p>
+          {browserRuntime?.humanVerificationRequired && <div role="alert" className="browserChallengeNotice">
+            <strong>Human verification required</strong>
+            <p>Complete the website challenge in the visible Chromium window.
+              Lu is paused until the browser confirms it is resolved.</p>
+            <button className="subtleButton" type="button" onClick={humanVerifiedBrowser}>
+              I've completed verification
+            </button>
+          </div>}
+          <label className="browserOriginLabel" htmlFor="luBrowserOrigin">
+            Authorized websites (1–8 exact HTTPS origins)
+          </label>
+          <input id="luBrowserOrigin" className="browserOriginInput"
+            type="text" placeholder="https://example.com, https://archive.example.org"
+            value={browserOrigin} maxLength={2048}
+            onChange={event => setBrowserOrigin(event.target.value)}
+            disabled={browserRuntime?.running || startingBrowser}/>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={!browserRuntime?.launchReady || !chatId ||
+                !browserOrigin.trim() || startingBrowser || browserRuntime?.running}
+              onClick={startResearchBrowser}>
+              {startingBrowser ? 'Starting browser…' : 'Authorize and start browser'}
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={() => changeBrowserWatch(true)}
+              disabled={!browserRuntime?.running ||
+                browserRuntime?.windowVisibility === 'VISIBLE'}>
+              Watch browser
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={() => changeBrowserWatch(false)}
+              disabled={!browserRuntime?.running ||
+                browserRuntime?.humanVerificationRequired ||
+                browserRuntime?.windowVisibility !== 'VISIBLE' ||
+                browserMode === 'always-visible'}>
+              Hide browser
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={refreshResearchBrowser} disabled={!browserRuntime?.running}>
+              Refresh browser status
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={stopResearchBrowser} disabled={!browserRuntime?.running}>
+              Stop research browser
+            </button>
+          </div>
         </section>}
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>

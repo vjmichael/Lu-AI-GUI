@@ -47,6 +47,31 @@ pub struct Cancellation {
     flag: Arc<AtomicBool>,
 }
 impl Cancellation {
+    /// Preserve the same Ready->Generating->Ready phase and cancellation
+    /// ownership as ordinary text turns. This does not execute tools.
+    pub fn generate_browser_function_calls(
+        &mut self,
+        request:GenerationRequest,
+        admitted_read_schemas:&[serde_json::Value],
+        cancel:Cancellation,
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,EngineError>{
+        if self.phase!=EnginePhase::Ready{return Err(EngineError::NotLoaded);}
+        if request.prompt.trim().is_empty()
+            || request.prompt.len()>4*1024*1024
+            || !(1..=32768).contains(&request.max_new_tokens){
+            return Err(EngineError::InvalidRequest);
+        }
+        if cancel.is_cancelled(){return Err(EngineError::Cancelled);}
+        self.phase=EnginePhase::Generating;
+        self.cancellation=Some(cancel.clone());
+        let outcome=self.backend.generate_browser_function_calls(
+            &request,admitted_read_schemas,&cancel
+        );
+        self.cancellation=None;
+        self.phase=EnginePhase::Ready;
+        if cancel.is_cancelled(){return Err(EngineError::Cancelled);}
+        outcome.map_err(EngineError::Backend)
+    }
     pub fn cancel(&self) {
         self.flag.store(true, Ordering::Release);
     }
@@ -89,6 +114,16 @@ pub trait InferenceBackend {
         cancel: &Cancellation,
         emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), String>;
+    /// Browser-specific structured function calls. Unsupported backends fail
+    /// closed; no prose fallback or parsing of assistant text is permitted.
+    fn generate_browser_function_calls(
+        &mut self,
+        _request:&GenerationRequest,
+        _admitted_read_schemas:&[serde_json::Value],
+        _cancel:&Cancellation,
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,String>{
+        Err("backend does not implement structured browser function calls".into())
+    }
 }
 pub struct InferenceHost<B: InferenceBackend> {
     backend: B,
@@ -348,6 +383,37 @@ mod tests {
         assert_eq!(host.phase(), EnginePhase::Ready);
         host.unload().unwrap();
         assert_eq!(host.phase(), EnginePhase::Idle);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn unsupported_browser_backend_fails_without_corrupting_engine_state(){
+        let root=std::env::temp_dir().join(format!("lu-browser-host-{}",std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut file=fs::File::create(root.join("test.gguf")).unwrap();
+        file.write_all(b"GGUF").unwrap();
+        file.write_all(&3u32.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(file);
+        let mut admission=ModelAdmissionManager::new();
+        admission.admit(&root,"test.gguf").unwrap();
+        let mut host=InferenceHost::new(FakeBackend{loaded:false});
+        host.load(admission.current().unwrap()).unwrap();
+        let request=GenerationRequest{
+            history:Vec::new(),prompt:"Research this question".into(),
+            max_new_tokens:48,
+        };
+        let refused=host.generate_browser_function_calls(
+            request.clone(),&[],Cancellation::default()
+        );
+        assert!(matches!(refused,Err(EngineError::Backend(_))));
+        assert_eq!(host.phase(),EnginePhase::Ready);
+        let cancel=Cancellation::default();
+        cancel.cancel();
+        assert_eq!(host.generate_browser_function_calls(request,&[],cancel),
+            Err(EngineError::Cancelled));
+        assert_eq!(host.phase(),EnginePhase::Ready);
+        host.unload().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

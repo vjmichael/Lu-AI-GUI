@@ -1,0 +1,186 @@
+name: Lu TOOLS-10 verifiable web research
+on:
+  push:
+    branches:
+      - 'lu/tools-10-*'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/web_*.rs'
+      - 'src-tauri/lu-core/workers/lu_browser_worker.mjs'
+      - 'tests/lu-browser-worker.test.mjs'
+      - 'source-tree.lock.json'
+      - '.github/workflows/lu-tools-10-web-research.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tools10-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-research:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # This repository deliberately tests an exact frozen source tree.
+          # GitHub's synthetic PR merge commit changes tracked blobs without
+          # regenerating that lock; verify the true PR head instead.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native source-level research security tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_ -- --nocapture
+      - name: Persistent browser settings tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences -- --nocapture
+      - name: Browser visibility state and platform adapter tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings -- --nocapture
+      - name: Host-authorized visibility bridge tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_host_bridge -- --nocapture
+      - name: Host-owned Chromium launcher and CDP admission tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_chromium_launcher -- --nocapture
+      - name: Native browser worker supervisor tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
+      - name: Browser child-process ownership tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_process_owner -- --nocapture
+      - name: Linux X11 adapter parser tests
+        if: runner.os == 'Linux'
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_window_x11 -- --nocapture
+      - name: Windows owned-child window FFI tests
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib browser_window -- --nocapture
+      - name: 180-source evidence and CAPTCHA persistence acceptance
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance -- --nocapture
+      - name: Offline reviewed Chromium packaging acceptance
+        run: node --test lu-desktop/tests/browser-staging.test.mjs
+      - name: Browser capability scope and effect admission
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution -- --nocapture
+      - name: Browser model schemas and Protobuf operation parity
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_model_codec -- --nocapture
+      - name: Scoped native browser registry and per-call revocation tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_browser_tool -- --nocapture
+      - name: Streamed llama.cpp browser function-call assembly and denial
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_tool_stream -- --nocapture
+      - name: Real SSE clean-stop and malformed no-call rejection
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_tool_stream_accepts_clean_stop_but_not_bare_done -- --nocapture
+      - name: Model tool-stop protocol collector regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib clean_stop_is_distinct_from_truncated_or_bare_done -- --nocapture
+      - name: Read-only llama.cpp model tool request admission
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_model_request -- --nocapture
+      - name: Desktop browser setting native wiring fixtures
+        run: node --test lu-desktop/tests/browser-visibility-settings.test.mjs
+      - name: Native desktop browser permission and package lifecycle tests
+        run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
+      - name: Browser protocol and human takeover fixtures
+        run: node --test tests/lu-browser-worker.test.mjs
+      - name: Source identity
+        run: git rev-parse HEAD
+
+  browser-candidate:
+    name: CI browser binaries and hash manifest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # This repository deliberately tests an exact frozen source tree.
+          # GitHub's synthetic PR merge commit changes tracked blobs without
+          # regenerating that lock; verify the true PR head instead.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen source tree
+        run: node scripts/verify-source-tree.mjs
+      - name: Install exact Playwright 1.64.1 package
+        run: npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock --ignore-scripts playwright@1.64.1
+      - name: Download full headed Chromium and Linux dependencies
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --with-deps --no-shell chromium
+          else
+            node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          fi
+      - name: Provision trusted X11 window helper
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xdotool
+      - name: Build content-inventoried browser candidate
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            export LU_BROWSER_XDOTOOL="$(command -v xdotool)"
+          fi
+          node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+      - name: Verify candidate inventory and deliberate non-release status
+        run: node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+      - name: Real candidate headed browser and human handoff (Linux Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node --test lu-desktop/tests/browser-ci-executable.test.mjs
+      - name: Candidate Chromium binary self-identification (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $browser = "out/lu-browser-candidate/chrome.exe"
+          if (-not (Test-Path $browser)) { throw "Candidate Chromium executable missing" }
+          & $browser --version
+          if ($LASTEXITCODE -ne 0) { throw "Candidate Chromium could not start" }
+      - name: Upload Chromium Node Playwright candidate with manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-browser-candidate-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: out/lu-browser-candidate/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 1
+
+  real-chromium:
+    name: Linux real Chromium headed smoke (Xvfb)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # This repository deliberately tests an exact frozen source tree.
+          # GitHub's synthetic PR merge commit changes tracked blobs without
+          # regenerating that lock; verify the true PR head instead.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source
+        run: node scripts/verify-source-tree.mjs
+      - name: Provision pinned Playwright in isolated worker directory
+        run: npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock playwright@1.64.1
+      - name: Provision real Chromium (not Docker)
+        run: cd src-tauri/lu-core/workers && npx playwright install --with-deps chromium
+      - name: Headed Chromium lifecycle and screenshot acceptance
+        run: xvfb-run -a node --test tests/lu-browser-real.test.mjs
+      - name: Real Lu-owned X11 window control prerequisites
+        run: sudo apt-get install -y xdotool
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native Rust host owns headed Chromium and switches visibility
+        shell: bash
+        run: |
+          CHROMIUM="$(node --input-type=module -e "import {chromium} from './src-tauri/lu-core/workers/node_modules/playwright/index.mjs'; console.log(chromium.executablePath())")"
+          LU_BROWSER_NATIVE_ACCEPTANCE=1 \
+          LU_BROWSER_CHROMIUM="$CHROMIUM" \
+          LU_BROWSER_NODE="$(command -v node)" \
+          LU_BROWSER_XDOTOOL="$(command -v xdotool)" \
+            xvfb-run -a cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance -- --nocapture
+

@@ -147,14 +147,18 @@ pub fn generate_image_chat_stream(
 
 /// The JSON format here is strictly the external llama.cpp HTTP contract.
 /// Host / worker / model authority remains carried through Lu's Protobuf IPC.
-pub fn generate_chat_stream_body(
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+enum FrameDisposition {Continue,Done}
+/// Shared authenticated transport and chunk framing. The handler validates
+/// the semantic SSE payload; no arbitrary function text is ever executed.
+fn stream_chat_frames(
     port: u16,
     api_key: &str,
     body: &str,
     timeout: Duration,
     cancelled: impl Fn() -> bool,
-    mut on_text: impl FnMut(String) -> Result<(), String>,
-) -> Result<(), String> {
+    mut on_frame: impl FnMut(&[u8]) -> Result<FrameDisposition,String>,
+) -> Result<(),String> {
     if port == 0
         || api_key.len() != 64
         || !api_key.bytes().all(|b| b.is_ascii_hexdigit())
@@ -220,7 +224,6 @@ pub fn generate_chat_stream_body(
     let mut events: Vec<u8> = Vec::new();
     let mut streamed = 0usize;
     let mut complete = false;
-    let mut emitted = 0usize;
     while !complete {
         let size = read_line_bounded(&mut reader, 128, &cancelled, deadline)?;
         let size = String::from_utf8_lossy(&size);
@@ -246,27 +249,89 @@ pub fn generate_chat_stream_body(
             return Err("oversized multimodal SSE event".into());
         }
         while let Some(frame) = next_frame(&mut events) {
-            match parse_chat_sse_frame(&frame).map_err(|_| "invalid multimodal chat event")? {
-                ChatEvent::Text(text) => {
-                    emitted = emitted.saturating_add(text.len());
-                    if emitted > MAX_STREAM_BYTES {
-                        return Err("multimodal text output limit exceeded".into());
-                    }
-                    on_text(text)?;
-                }
-                ChatEvent::Continue => {}
-                ChatEvent::Done => {
-                    complete = true;
-                    break;
-                }
+            if on_frame(&frame)? == FrameDisposition::Done {
+                complete = true;
+                break;
             }
         }
     }
     check(&cancelled, deadline)?;
-    if !complete || emitted == 0 {
-        return Err("multimodal engine did not finish with nonempty text".into());
+    if !complete {
+        return Err("multimodal engine stream did not complete".into());
     }
     Ok(())
+}
+
+/// Original text-only generation path: strictly preserve its nonempty reply
+/// contract. Tool frames are not interpreted as model prose or executable
+/// instructions in this path.
+pub fn generate_chat_stream_body(
+    port:u16,
+    api_key:&str,
+    body:&str,
+    timeout:Duration,
+    cancelled:impl Fn()->bool,
+    mut on_text:impl FnMut(String)->Result<(),String>,
+)->Result<(),String>{
+    let mut emitted=0usize;
+    stream_chat_frames(port,api_key,body,timeout,cancelled,|frame|{
+        match parse_chat_sse_frame(frame).map_err(|_|"invalid multimodal chat event")?{
+            ChatEvent::Text(text)=>{
+                emitted=emitted.saturating_add(text.len());
+                if emitted>MAX_STREAM_BYTES{return Err("multimodal text output limit exceeded".into());}
+                on_text(text)?;
+                Ok(FrameDisposition::Continue)
+            }
+            ChatEvent::Continue=>Ok(FrameDisposition::Continue),
+            ChatEvent::Done=>Ok(FrameDisposition::Done),
+        }
+    })?;
+    if emitted==0{return Err("multimodal engine did not finish with nonempty text".into());}
+    Ok(())
+}
+
+/// Structured function calls are collected in isolation from the text stream.
+pub fn generate_browser_tool_stream_body(
+    port:u16,
+    api_key:&str,
+    body:&str,
+    timeout:Duration,
+    cancelled:impl Fn()->bool,
+    allowed_names:std::collections::BTreeSet<String>,
+)->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,String>{
+    use crate::browser_tool_stream::{
+        parse_tool_sse_frame,BrowserToolCallCollector,ToolStreamEvent,
+    };
+    if allowed_names.is_empty()||allowed_names.len()>2
+        ||allowed_names.iter().any(|x|x!="lu_browser_read"){
+        return Err("browser tool stream has no approved read capability".into());
+    }
+    let mut collector=BrowserToolCallCollector::new(allowed_names);
+    let mut completed=None;
+    stream_chat_frames(port,api_key,body,timeout,cancelled,|frame|{
+        let event=parse_tool_sse_frame(frame)
+            .map_err(|_|"invalid browser tool SSE event")?;
+        let done=matches!(event,ToolStreamEvent::Done);
+        let stopped=matches!(event,ToolStreamEvent::Stop);
+        if let Some(calls)=collector.absorb(event)
+            .map_err(|_|"invalid or unadvertised browser tool call")?{
+            completed=Some(calls);
+        }
+        if stopped {
+            // Only a clean model stop, not an unfinished stream, signals
+            // no further tool calls. Host checks evidence before finalizing.
+            if completed.is_some(){return Err("conflicting browser stream endings".into());}
+            completed=Some(Vec::new());
+        }
+        if done {
+            if completed.is_none(){
+                return Err("browser-enabled turn finished without approved tool calls".into());
+            }
+            return Ok(FrameDisposition::Done);
+        }
+        Ok(FrameDisposition::Continue)
+    })?;
+    completed.ok_or_else(||"browser tool stream did not return approved calls".into())
 }
 
 #[cfg(test)]
@@ -333,6 +398,23 @@ mod tests {
             sock.write_all(&response).unwrap();
         });
         (port, handle)
+    }
+    #[test]
+    fn browser_tool_stream_accepts_clean_stop_but_not_bare_done() {
+        let natural=b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        let (port,handle)=fixture(response(&[natural]),false);
+        let tools=generate_browser_tool_stream_body(port,&"ab".repeat(32),
+            "{}",Duration::from_secs(10),||false,
+            ["lu_browser_read".into()].into());
+        handle.join().unwrap();
+        assert!(tools.unwrap().is_empty());
+        let bare=b"data: [DONE]\n\n";
+        let (port,handle)=fixture(response(&[bare]),false);
+        let result=generate_browser_tool_stream_body(port,&"ab".repeat(32),
+            "{}",Duration::from_secs(10),||false,
+            ["lu_browser_read".into()].into());
+        handle.join().unwrap();
+        assert!(result.is_err());
     }
     #[test]
     fn streamed_image_request_reassembles_arbitrary_sse_chunks() {
@@ -433,6 +515,52 @@ mod tests {
         handle.join().unwrap();
         assert!(err.contains("HTTP 400"));
         assert!(!err.contains("secret-image-content"));
+    }
+    #[test]
+    fn actual_authenticated_sse_transport_delivers_fragmented_browser_tool_calls(){
+        let first=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-browser-1","type":"function",
+            "function":{"name":"lu_browser_read",
+                "arguments":"{\"operation\":\"navigate\","}
+        }]}}]});
+        let second=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"function":{"arguments":"\"url\":\"https://example.com\"}"}
+        }]}}]});
+        let end=serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]});
+        let stream=format!(
+            "data: {}\\n\\ndata: {}\\n\\ndata: {}\\n\\ndata: [DONE]\\n\\n",
+            first,second,end
+        ).replace("\\n","\n");
+        let parts=[&stream.as_bytes()[..31],&stream.as_bytes()[31..]];
+        let (port,handle)=fixture(response(&parts),false);
+        let allowed=std::collections::BTreeSet::from(["lu_browser_read".into()]);
+        let calls=generate_browser_tool_stream_body(
+            port,&"ab".repeat(32),r#"{"stream":true,"tools":[{"type":"function"}]}"#,
+            Duration::from_secs(5),||false,allowed
+        ).unwrap();
+        handle.join().unwrap();
+        assert_eq!(calls.len(),1);
+        assert_eq!(calls[0].tool_name,"lu_browser_read");
+        assert_eq!(calls[0].arguments_json,
+            r#"{"operation":"navigate","url":"https://example.com"}"#);
+    }
+    #[test]
+    fn browser_tool_stream_requires_final_done_frame(){
+        let first=serde_json::json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-browser-1","type":"function",
+            "function":{"name":"lu_browser_read",
+                "arguments":"{\"operation\":\"read\"}"}
+        }]}}]});
+        let end=serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]});
+        let stream=format!("data: {}\\n\\ndata: {}\\n\\n",first,end)
+            .replace("\\n","\n");
+        let (port,handle)=fixture(response(&[stream.as_bytes()]),false);
+        let result=generate_browser_tool_stream_body(
+            port,&"ab".repeat(32),"{}",Duration::from_secs(5),||false,
+            std::collections::BTreeSet::from(["lu_browser_read".into()])
+        );
+        handle.join().unwrap();
+        assert!(result.is_err());
     }
     #[test]
     fn text_generation_uses_chat_completions_not_raw_completion() {

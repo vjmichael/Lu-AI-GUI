@@ -59,6 +59,16 @@ enum Event {
     AssistantProgress { generation_id: String, text: String }, // cumulative checkpoint.
     AssistantCompleted { generation_id: String },
     AssistantCancelled { generation_id: String },
+    /// Persisted untrusted browser observation from a host-dispatched native
+    /// tool. The journal record is not an assistant/user role and cannot
+    /// authorize more browsing. Digest is over the complete bounded extract.
+    BrowserObservation {
+        generation_id:String,
+        call_id:String,
+        tool_name:String,
+        content_sha256:String,
+        text:String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -393,6 +403,29 @@ impl ChatStore {
 
     /// Verify only an exact persisted User turn from an existing host-owned
     /// conversation. Unknown, old imported, duplicate or corrupted turns fail.
+    /// Host-only lookup for the latest durable authenticated USER turn.
+    /// Legacy imported turns and model text cannot authenticate tool tasks.
+    /// Refuse corrupt or duplicate journal rows rather than guessing.
+    pub fn latest_authenticated_user_turn_id(&self, chat_id:&str)->Option<String>{
+        if !valid_id(chat_id,"c-"){return None;}
+        let catalog=self.inner.lock().ok()?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){return None;}
+        let path=self.chat_path(chat_id);
+        if fs::metadata(&path).ok()?.len()>MAX_LOG{return None;}
+        let file=File::open(&path).ok()?;
+        let mut seen=HashSet::new();
+        let mut latest=None;
+        for line in BufReader::new(file).lines(){
+            let line=line.ok()?;
+            if line.is_empty(){return None;}
+            let event:Event=serde_json::from_str(&line).ok()?;
+            if let Event::User{user_turn_id:Some(id),..}=event{
+                if !valid_id(&id,"g-")||!seen.insert(id.clone()){return None;}
+                latest=Some(id);
+            }
+        }
+        latest
+    }
     pub fn trusted_user_turn_text(&self, chat_id: &str, user_turn_id: &str) -> Option<String> {
         if !valid_id(chat_id, "c-") || !valid_id(user_turn_id, "g-") { return None; }
         let catalog = self.inner.lock().ok()?;
@@ -413,6 +446,59 @@ impl ChatStore {
             }
         }
         found
+    }
+    pub fn append_browser_observation(
+        &self,chat_id:&str,generation_id:&str,call_id:&str,
+        tool_name:&str,text:&str
+    )->Result<String,String>{
+        use sha2::{Digest,Sha256};
+        if !valid_id(generation_id,"g-")||call_id.is_empty()
+          ||call_id.len()>128
+          ||!call_id.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-')
+          ||tool_name!="lu_browser_read"
+          ||text.is_empty()||text.len()>12*1024
+          ||text.chars().any(|c|c=='\\0'){
+            return Err("invalid or oversized browser observation".into());
+        }
+        let hash=format!("{:x}",Sha256::digest(text.as_bytes()));
+        self.append_assistant(chat_id,Event::BrowserObservation{
+            generation_id:generation_id.into(),call_id:call_id.into(),
+            tool_name:tool_name.into(),content_sha256:hash.clone(),
+            text:text.into(),
+        })?;
+        Ok(hash)
+    }
+    pub fn browser_observations(
+        &self,chat_id:&str,generation_id:&str
+    )->Result<Vec<(String,String,String)>,String>{
+        use sha2::{Digest,Sha256};
+        if !valid_id(generation_id,"g-"){return Err("invalid browser generation identity".into());}
+        let catalog=self.inner.lock().map_err(|_|"chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){
+            return Err("unknown conversation".into());
+        }
+        let file=File::open(self.chat_path(chat_id)).map_err(|e|e.to_string())?;
+        let mut entries=Vec::new();
+        let mut calls=HashSet::new();
+        for line in BufReader::new(file).lines(){
+            let line=line.map_err(|e|e.to_string())?;
+            let event:Event=serde_json::from_str(&line)
+                .map_err(|_|"corrupt conversation evidence journal")?;
+            if let Event::BrowserObservation{
+                generation_id:id,call_id,tool_name,content_sha256,text
+            }=event{
+                if id==generation_id{
+                    if tool_name!="lu_browser_read"||text.len()>12*1024
+                       ||format!("{:x}",Sha256::digest(text.as_bytes()))!=content_sha256
+                       ||!calls.insert(call_id.clone()){
+                        return Err("browser evidence integrity failure".into());
+                    }
+                    entries.push((call_id,content_sha256,text));
+                    if entries.len()>16{return Err("too many browser observations".into());}
+                }
+            }
+        }
+        Ok(entries)
     }
     pub fn append_progress(
         &self,
@@ -520,6 +606,10 @@ impl ChatStore {
                         }
                     }
                 }
+                Event::BrowserObservation{..} => {
+                    // Never present a browser/tool result as an assistant
+                    // message or future trusted conversation instruction.
+                }
             }
         }
         let result = result.into_iter().flatten().collect();
@@ -532,6 +622,46 @@ mod tests {
     use super::*;
     fn root() -> PathBuf {
         std::env::temp_dir().join(id("lu-conversation-test-"))
+    }
+    #[test]
+    fn browser_observations_are_durable_but_never_assistant_roles(){
+        let root=root();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let generation=id("g-");
+        store.append_user_with_turn_id(&chat.chat_id,&generation,
+            "Research this public website").unwrap();
+        let hash=store.append_browser_observation(&chat.chat_id,&generation,
+            "browser-call-1","lu_browser_read",
+            r#"{"source_is_untrusted":true,"text":"sample page"}"#).unwrap();
+        assert_eq!(hash.len(),64);
+        let before=store.history(&chat.chat_id).unwrap();
+        assert_eq!(before.len(),1);
+        assert_eq!(before[0].role,"user");
+        drop(store);
+        let restored=ChatStore::open(&root).unwrap();
+        let entries=restored.browser_observations(&chat.chat_id,&generation).unwrap();
+        assert_eq!(entries.len(),1);
+        assert_eq!(entries[0].1,hash);
+        assert!(entries[0].2.contains("sample page"));
+        assert_eq!(restored.history(&chat.chat_id).unwrap().len(),1);
+        restored.append_progress(&chat.chat_id,&generation,"Answer with citations").unwrap();
+        restored.complete(&chat.chat_id,&generation).unwrap();
+        assert_eq!(restored.history(&chat.chat_id).unwrap()[1].text,
+            "Answer with citations");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn browser_observation_rejects_unknown_effects_and_oversize(){
+        let root=root();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let generation=id("g-");
+        assert!(store.append_browser_observation(&chat.chat_id,&generation,
+            "call","lu_browser_interact","clicked").is_err());
+        assert!(store.append_browser_observation(&chat.chat_id,&generation,
+            "call","lu_browser_read",&"A".repeat(12*1024+1)).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn survives_restart_and_keeps_chats_separate() {
