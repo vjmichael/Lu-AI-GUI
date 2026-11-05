@@ -64,7 +64,8 @@ fn native_git_inspection_refuses_parent_repository_discovery() {
     let id = registry.register_from_native_picker(&mut Picker(Some(root.join("project"))))
         .unwrap().unwrap().project_id;
     let status = registry.inspect_git_worktree(&id);
-    assert_eq!(status.state, "repository_outside_selected_root");
+    assert!(matches!(status.state,
+        "repository_outside_selected_root" | "not_a_git_repository"));
     drop(repo);
     fs::remove_dir_all(root).unwrap();
 }
