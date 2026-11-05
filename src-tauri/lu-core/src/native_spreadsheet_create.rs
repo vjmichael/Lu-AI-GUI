@@ -91,8 +91,8 @@ fn csv_cell(value:&CellValue)->String {
         CellValue::Text(t)=> {
             // A CSV has no trusted typed formula channel. Block spreadsheet
             // formula injection by explicitly forcing suspicious text literal.
-            let first=t.trim_start_matches([' ','\t','\r','\n']);
-            if first.starts_with(['=','+','-','@']) {format!("'{t}")} else {t.clone()}
+            let first=t.trim_start_matches(|ch:char| matches!(ch,' '| '\t' | '\r' | '\n'));
+            if matches!(first.chars().next(),Some('='|'+'|'-'|'@')) {format!("'{t}")} else {t.clone()}
         },
         CellValue::Number(n)=>n.to_string(),
         CellValue::Boolean(b)=>if *b{"TRUE".into()}else{"FALSE".into()},
