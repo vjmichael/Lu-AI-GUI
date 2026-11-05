@@ -232,6 +232,10 @@ pub struct SupervisorModelStep<'a, B: InferenceBackend + Send + 'static> {
     /// Host-minted, path-free identifier (not model-provided).
     turn_nonce: String,
     index: u32,
+    /// Host-only notification of the actual backend generation identifier.
+    /// Lets the desktop cancel a multi-step tool turn without allowing the
+    /// model to invent or select process/generation identities.
+    step_start: Option<std::sync::Arc<dyn Fn(&str)+Send+Sync>>,
 }
 
 impl<'a, B: InferenceBackend + Send + 'static> SupervisorModelStep<'a, B> {
@@ -254,7 +258,14 @@ impl<'a, B: InferenceBackend + Send + 'static> SupervisorModelStep<'a, B> {
             session_id,
             turn_nonce,
             index: 0,
+            step_start: None,
         })
+    }
+    pub fn with_step_start_observer(
+        mut self, observer:std::sync::Arc<dyn Fn(&str)+Send+Sync>
+    )->Self{
+        self.step_start=Some(observer);
+        self
     }
 }
 
@@ -277,6 +288,8 @@ impl<B: InferenceBackend + Send + 'static> ModelStepGenerator for SupervisorMode
         self.index += 1;
         let generation_id = format!("g-{}-{}", self.turn_nonce, self.index);
         let request_id = format!("r-{}-{}", self.turn_nonce, self.index);
+        if let Some(notify)=&self.step_start{notify(&generation_id);}
+        if cancel.is_cancelled(){return Err(NativeGenerationError::Cancelled);}
         let mut output = String::new();
         let mut finished = false;
         let mut malformed = false;

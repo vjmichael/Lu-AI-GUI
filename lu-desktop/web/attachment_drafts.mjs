@@ -10,7 +10,8 @@ export function textFileSection(file) {
 export function buildSubmittedPrompt(prompt,files=[]) {
   const value=String(prompt||'').trim()+files.map(textFileSection).join('');
   if (!String(prompt||'').trim()) throw Error('Type a question or instruction before sending.');
-  if(value.length>MAX_SUBMITTED_PROMPT)throw Error('The message and attached text exceed the 16,384-character limit.');
+  if(new TextEncoder().encode(value).byteLength>MAX_SUBMITTED_PROMPT)
+    throw Error('The message and attached text exceed the 16,384-byte model input limit.');
   return value;
 }
 export function attachmentSummary(file) {

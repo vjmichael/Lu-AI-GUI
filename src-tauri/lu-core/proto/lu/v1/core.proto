@@ -98,6 +98,26 @@ message SearchTextResult {
   uint32 scanned_directories = 4;
 }
 
+// TOOLS-04: host-scoped, read-only ZIP manifest inspection. Never extracts.
+message ArchiveListRequest {
+  string path = 1;            // approved-root-relative ZIP filename
+  optional uint32 max_entries = 2;
+}
+message ArchiveEntry {
+  string path = 1;
+  string kind = 2;            // "file" or "directory"
+  uint64 compressed_bytes = 3;
+  uint64 declared_uncompressed_bytes = 4;
+  uint32 crc32 = 5;
+}
+message ArchiveListResult {
+  repeated ArchiveEntry entries = 1;
+  bool truncated = 2;
+  uint64 total_entries = 3;
+  uint64 total_declared_uncompressed_bytes = 4;
+  uint64 archive_bytes = 5;
+}
+
 // TOOLS-03: host-authorized native Git inspection. The model supplies only
 // read limits and (for diff) a workspace-relative path. It never supplies a
 // Git command, Git executable, repository root, ref or permission token.
