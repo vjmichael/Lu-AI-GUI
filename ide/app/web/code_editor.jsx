@@ -67,7 +67,7 @@ export function createEditorState(text, filename, onChange, onSelectionChange) {
       }, { dark: true }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
-          onChange(update.state, update.state.doc.toString());
+          onChange(update.state, update.state.sliceDoc());
         } else if (update.selectionSet) {
           // Keep exact selection/caret for session-only source references
           // without recreating the parent editor state or changing the draft.
@@ -120,7 +120,7 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     // Reject plans computed for a different editor document, including stale
     // asynchronous/UI-state requests. Never reconstruct the EditorState here:
     // dispatching one transaction preserves CodeMirror undo/redo history.
-    if (view.state.doc.toString() !== replaceRequest.expectedDraft) {
+    if (view.state.sliceDoc() !== replaceRequest.expectedDraft) {
       replaceCallback.current?.(replaceRequest.nonce, false);
       return;
     }
