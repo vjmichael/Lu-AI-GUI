@@ -63,9 +63,15 @@ pub struct ReaderResponse{
     #[prost(string,tag="9")]
     pub source_sha256:String,
 }
+enum ReaderSource{
+    Workspace(Arc<Dir>),
+    /// Host-copied, immutable bytes. The model sees only a virtual filename,
+    /// never the original OS path or an ambient filesystem capability.
+    Pinned{ filename:String, bytes:Arc<Vec<u8>> },
+}
 pub struct ReaderTool{
     descriptor:ToolDescriptor,
-    root:Arc<Dir>,
+    source:Arc<ReaderSource>,
 }
 fn failure(code:&str)->ToolFailure{
     ToolFailure::new(code,code,false)
@@ -79,7 +85,7 @@ fn relative_path(raw:&str)->Result<PathBuf,ToolFailure>{
     }
     Ok(PathBuf::from(raw))
 }
-fn read_authorized(root:&Dir,request:ReaderRequest)
+fn read_authorized(source:&ReaderSource,request:ReaderRequest)
     ->Result<ReaderResponse,ToolFailure>{
     let max_bytes=request.max_bytes.unwrap_or(DEFAULT_BYTES);
     let max_chars=request.max_chars.unwrap_or(DEFAULT_CHARS);
@@ -95,23 +101,37 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
         return Err(failure("READER_INVALID_LIMIT"));
     }
     let path=relative_path(&request.path)?;
-    let meta=root.symlink_metadata(&path)
-        .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
-    if meta.file_type().is_symlink()||!meta.is_file(){
-        return Err(failure("READER_UNSAFE_FILE"));
-    }
-    let mut file=root.open(&path)
-        .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
-    if !file.metadata().map_err(|_|failure("READER_FILE_UNAVAILABLE"))?
-        .is_file(){
-        return Err(failure("READER_UNSAFE_FILE"));
-    }
-    let mut bytes=Vec::new();
-    file.by_ref().take(u64::from(max_bytes)+1).read_to_end(&mut bytes)
-        .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
-    if bytes.len()>max_bytes as usize{
-        return Err(failure("READER_INPUT_TOO_LARGE"));
-    }
+    let bytes=match source{
+        ReaderSource::Workspace(root)=>{
+            let meta=root.symlink_metadata(&path)
+                .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
+            if meta.file_type().is_symlink()||!meta.is_file(){
+                return Err(failure("READER_UNSAFE_FILE"));
+            }
+            let mut file=root.open(&path)
+                .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
+            if !file.metadata().map_err(|_|failure("READER_FILE_UNAVAILABLE"))?
+                .is_file(){
+                return Err(failure("READER_UNSAFE_FILE"));
+            }
+            let mut bytes=Vec::new();
+            file.by_ref().take(u64::from(max_bytes)+1).read_to_end(&mut bytes)
+                .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
+            if bytes.len()>max_bytes as usize{
+                return Err(failure("READER_INPUT_TOO_LARGE"));
+            }
+            bytes
+        },
+        ReaderSource::Pinned{filename,bytes}=>{
+            if &request.path!=filename{
+                return Err(failure("READER_FILE_NOT_GRANTED"));
+            }
+            if bytes.len()>max_bytes as usize{
+                return Err(failure("READER_INPUT_TOO_LARGE"));
+            }
+            (**bytes).clone()
+        },
+    };
     let source_sha256=format!("{:x}",Sha256::digest(&bytes));
     if !request.expected_source_sha256.is_empty() &&
        request.expected_source_sha256!=source_sha256{
@@ -154,7 +174,7 @@ fn read_authorized(root:&Dir,request:ReaderRequest)
 impl NativeTool for ReaderTool{
     fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
     fn invoke(&self,invocation:ToolInvocation)->ToolFuture<'_>{
-        let root=Arc::clone(&self.root);
+        let source=Arc::clone(&self.source);
         Box::pin(async move{
             if invocation.tool_id!=TOOL_ID
                 ||invocation.input.type_url!=INPUT_TYPE
@@ -166,7 +186,7 @@ impl NativeTool for ReaderTool{
             if request.encode_to_vec()!=invocation.input.bytes{
                 return Err(failure("READER_NONCANONICAL_PROTOBUF"));
             }
-            let result=tokio::task::spawn_blocking(move||read_authorized(&root,request))
+            let result=tokio::task::spawn_blocking(move||read_authorized(&source,request))
                 .await.map_err(|_|failure("READER_WORKER_UNAVAILABLE"))??;
             Ok(ToolOutput{payload:ProtoPayload{
                 type_url:OUTPUT_TYPE.into(),bytes:result.encode_to_vec(),
@@ -250,6 +270,30 @@ pub fn register_reader(
     if !root.is_dir(){return Err("Reader root is not a directory".into());}
     let root=Arc::new(Dir::open_ambient_dir(root,ambient_authority())
         .map_err(|_|"Cannot open Reader root")?);
+    register_reader_source(registry,ReaderSource::Workspace(root))
+}
+/// Register exactly one document chosen and copied by the trusted host.
+/// The model never sees the source path and cannot open neighboring files.
+/// Use a fresh registry per approved turn and let the conversation authority
+/// revoke dispatch independently; a catalog is *not* a permission.
+pub fn register_reader_pinned(
+    registry:&NativeToolRegistry,filename:&str,bytes:Vec<u8>
+)->Result<ModelToolCatalog,String>{
+    let path=relative_path(filename).map_err(|_|"Invalid pinned document name")?;
+    if path.components().count()!=1||bytes.is_empty()||bytes.len()>MAX_BYTES as usize{
+        return Err("Pinned Reader requires one safe file <=1 MiB".into());
+    }
+    let ext=crate::native_reader::classify(filename,&bytes[..bytes.len().min(16)]);
+    if matches!(ext,crate::native_reader::ReaderFormat::Unknown){
+        return Err("Unrecognized pinned document format".into());
+    }
+    register_reader_source(registry,ReaderSource::Pinned{
+        filename:filename.to_owned(),bytes:Arc::new(bytes),
+    })
+}
+fn register_reader_source(
+    registry:&NativeToolRegistry,source:ReaderSource
+)->Result<ModelToolCatalog,String>{
     let descriptor=ToolDescriptor{
         id:TOOL_ID.into(),display_name:"Read document text".into(),
         effect:ToolEffect::ReadWorkspace,
@@ -260,7 +304,7 @@ pub fn register_reader(
         contract_version:CORE_CONTRACT_VERSION,
         kind:ModuleKind::Core,tools:vec![descriptor.clone()],
         panels:vec![],workflows:vec![],
-    },vec![Arc::new(ReaderTool{descriptor,root}) as Arc<dyn NativeTool>])
+    },vec![Arc::new(ReaderTool{descriptor,source:Arc::new(source)}) as Arc<dyn NativeTool>])
         .map_err(|e:RegistryError|format!("{e:?}"))?;
     let mut catalog=ModelToolCatalog::new();
     catalog.insert(registry,ModelToolDefinition{
@@ -306,6 +350,28 @@ mod tests{
                 type_url:INPUT_TYPE.into(),bytes:ReaderRequest{
                     path:file.into(),max_bytes:None,max_chars:None,offset_chars:None,inspect_only:false,selector:String::new(),expected_source_sha256:String::new()
                 }.encode_to_vec()}}
+    }
+    #[tokio::test]
+    async fn pinned_document_never_opens_other_paths_or_mutated_disk_content(){
+        let path=workspace();let _=std::fs::remove_dir_all(&path);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("memo.md"),"secret disk contents").unwrap();
+        let registry=NativeToolRegistry::new();
+        let _catalog=register_reader_pinned(
+            &registry,"memo.md",b"approved immutable snapshot".to_vec()).unwrap();
+        let response=registry.dispatch(invocation("memo.md"),&Allow).await.unwrap();
+        let parsed=ReaderResponse::decode(response.payload.bytes.as_slice()).unwrap();
+        assert_eq!(parsed.text,"approved immutable snapshot");
+        std::fs::write(path.join("memo.md"),"modified disk contents").unwrap();
+        let response=registry.dispatch(invocation("memo.md"),&Allow).await.unwrap();
+        let parsed=ReaderResponse::decode(response.payload.bytes.as_slice()).unwrap();
+        assert_eq!(parsed.text,"approved immutable snapshot");
+        assert!(registry.dispatch(invocation("other.md"),&Allow).await.is_err());
+        assert!(registry.dispatch(invocation("../memo.md"),&Allow).await.is_err());
+        assert!(registry.dispatch(invocation("memo.md"),&Deny).await.is_err());
+        assert!(register_reader_pinned(&NativeToolRegistry::new(),
+            "../memo.md",b"secret".to_vec()).is_err());
+        let _=std::fs::remove_dir_all(path);
     }
     #[tokio::test]
     async fn source_fingerprint_rejects_mutation_between_reader_pages(){
