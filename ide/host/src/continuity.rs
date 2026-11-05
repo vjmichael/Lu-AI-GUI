@@ -11,7 +11,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{browser::{validate_relative, BrowserError}, IdeWorkspaceRegistry};
+use crate::{browser::{validate_relative, BrowserError}, inventory::EvidenceInventory, IdeWorkspaceRegistry};
 
 const MAX_LEDGER_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 40;
@@ -86,6 +86,7 @@ pub struct ProjectContext {
     pub current_toolchain_readiness: &'static str,
     pub events: Vec<DevelopmentEvent>,
     pub documents: Vec<ContextDocument>,
+    pub inventory: EvidenceInventory,
 }
 
 pub struct DevelopmentLedger {
@@ -248,15 +249,17 @@ impl DevelopmentLedger {
             };
             documents.push(doc);
         }
+        let inventory = registry.inspect_project_evidence(project_id)
+            .map_err(|_| ContinuityError::Unavailable)?;
         Ok(ProjectContext {
             schema_version: 1,
             project_id: project_id.to_owned(),
             project_name: project.display_name,
             source: "local_standalone_host",
-            remote_git_state: "not_inspected",
-            local_artifacts: "not_inspected",
+            remote_git_state: "not_queried",
+            local_artifacts: "bounded_scan",
             current_toolchain_readiness: "not_verified",
-            events, documents,
+            events, documents, inventory,
         })
     }
 }
