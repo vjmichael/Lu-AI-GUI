@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ce3b46b977e0339bac5c4a8b5fd927e8ce56c20c",
+  "sourceCommitBeforeLock": "99a3bf36ce34aca86f6caace4ea0c12523399e0c",
   "trackedFileCount": 323,
   "files": [
     {
@@ -269,7 +269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "4b7ba503c127b6aa487ac248104946626f21297a"
+      "blob": "6471929c90f39c4fe7a51c6dd40ccef5c2a0bd03"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "f554b8ce4864f65ee780fe1edf926681b78814ad"
+      "blob": "ef095321ecb0efb2023918fe69fe2e69bfa3d634"
     },
     {
       "path": "lu-desktop/tests/browser-staging.test.mjs",
