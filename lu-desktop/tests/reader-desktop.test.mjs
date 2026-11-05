@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {buildSubmittedPrompt} from '../web/attachment_drafts.mjs';
 
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
@@ -23,4 +24,12 @@ test('Reader attachments remain in originating chat and respect the 16k prompt c
   assert.ok(ui.includes('MAX_TEXT_FILES'));
   assert.ok(ui.includes('document.truncated'));
   assert.ok(ui.includes('Read document'));
+});
+
+test('Reader attachment context uses the model UTF-8 byte budget, not JS code-unit length',()=>{
+  const unicode='🦈'.repeat(4400);
+  assert.throws(()=>buildSubmittedPrompt('Read this',[{name:'marine.docx',text:unicode}]),
+    /16,384-byte/);
+  assert.match(buildSubmittedPrompt('Summarize',[{name:'notes.docx',text:'hello'}]),
+    /notes.docx/);
 });
