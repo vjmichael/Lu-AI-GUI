@@ -7,6 +7,7 @@ const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
+  { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
   { id: 'source', title: 'Source control', glyph: '⑂', pending: true },
   { id: 'tasks', title: 'Build & tests', glyph: '▶', pending: true },
@@ -40,6 +41,8 @@ function App() {
   const [proposals, setProposals] = useState([]);
   const [proposalDetail, setProposalDetail] = useState(null);
   const [inboxBusy, setInboxBusy] = useState(false);
+  const [capabilityCatalog, setCapabilityCatalog] = useState(null);
+  const [capabilityBusy, setCapabilityBusy] = useState(false);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
 
@@ -48,6 +51,7 @@ function App() {
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
+  const isCapabilities = section === 'capabilities';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Search is local to the active unsaved editor buffer, never the filesystem.
   const matches = [];
@@ -109,6 +113,18 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  async function refreshCapabilities() {
+    setCapabilityBusy(true);
+    setProblem('');
+    try {
+      setCapabilityCatalog(await invoke('ide_list_capabilities'));
+    } catch (error) {
+      setProblem('Could not inspect IDE capabilities: ' + String(error));
+    } finally {
+      setCapabilityBusy(false);
+    }
   }
 
   async function refreshProposals() {
@@ -542,7 +558,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -557,8 +573,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
+          <h1>{isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
+            isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
             isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
             'Choose projects without executing their code.'}</p>
         </div>
@@ -566,7 +583,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -642,6 +659,36 @@ function App() {
             </div>
           </div>
         </section>
+        : isCapabilities
+        ? <section className="workspaceContent capabilityWorkspace" aria-label="IDE capability directory">
+            <div className="sectionHeading">
+              <h2>Available host operations</h2>
+              <span>{capabilityCatalog?.capabilities?.length ?? 0} capabilities · Schema {capabilityCatalog?.schemaVersion ?? '—'}</span>
+            </div>
+            <p className="capabilityNotice">
+              This directory describes operations already supported by the IDE.
+              It does not run them, grant permissions, or connect to Lu.
+              File saves still require an explicit human action.
+            </p>
+            {capabilityBusy && <p role="status">Loading capabilities…</p>}
+            {!capabilityBusy && capabilityCatalog && <div className="capabilityGrid">
+              {capabilityCatalog.capabilities.map(item =>
+                <article key={item.id} className="capabilityCard">
+                  <div className="capabilityHeading">
+                    <h3>{item.title}</h3>
+                    <span className="capabilityEffect">{item.effect.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>{item.description}</p>
+                  <dl>
+                    <dt>Operation</dt><dd><code>{item.id}</code> · v{item.version}</dd>
+                    <dt>Required information</dt>
+                    <dd>{item.inputFields.length ? item.inputFields.join(', ') : 'None'}</dd>
+                    <dt>Before use</dt><dd>{item.precondition}</dd>
+                    <dt>Evidence</dt><dd>{item.evidence}</dd>
+                  </dl>
+                </article>)}
+            </div>}
+          </section>
         : !isExplorer
         ? <section aria-label="Projects" className="workspaceContent">
           <div className="sectionHeading"><h2>Registered projects</h2>
