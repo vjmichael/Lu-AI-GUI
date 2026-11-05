@@ -106,7 +106,7 @@ test('browser research enters the same queued durable turn as ordinary chat',()=
   assert.ok(host.includes('supervisor.run_reserved_with_history('));
   assert.ok(host.includes('state.chats.complete(&chat_id,&gid)?'));
   assert.ok(host.includes('state.browser_authority.revoke_task(&grant.task_id)'));
-  assert.ok(host.includes('if distinct_urls.len()<2{'));
+  assert.ok(host.includes('if verified_pages.is_empty(){'));
   assert.ok(ui.includes("invoke('lu_generate_browser'"));
 });
 test('queued browser CAPTCHA recovery requires real human takeover',()=>{
@@ -122,15 +122,15 @@ test('browser research cannot silently opt ordinary chat into tool use',()=>{
   assert.ok(ui.includes("Research with Lu browser (read only)"));
   assert.ok(ui.includes("await invoke('lu_generate'"));
   assert.ok(ui.includes("await invoke('lu_generate_browser'"));
-  assert.ok(ui.includes('Native approval is required for each research turn.'));
-  assert.ok(host.includes('Browser research requires an exact public HTTPS origin'));
+  assert.ok(ui.includes('Lu asks for native approval of the entire list'));
+  assert.ok(host.includes('Browser research requires exact public HTTPS origins'));
 });
 
 test('browser research is progress-driven rather than capped at four rounds or eight reads',()=>{
   assert.ok(host.includes('let research_deadline=std::time::Instant::now()'));
   assert.ok(host.includes('Browser research deadline exceeded before verified reading'));
   assert.ok(host.includes('round=round.saturating_add(1)'));
-  assert.ok(host.includes('if collected_read{break;}'));
+  assert.ok(host.includes('if verified_pages.is_empty(){'));
   assert.ok(host.includes('if observed.len()>6{observed.remove(0);}'));
   assert.ok(host.includes('state.chats.append_browser_observation('));
   assert.ok(host.includes('if !seen.insert(fingerprint)'));
@@ -145,14 +145,14 @@ test('multi-page research requires distinct browser-confirmed source URLs',()=>{
   assert.ok(host.includes('result.pointer("/result/browser_result/result/text")'));
   assert.ok(host.includes('if matches!(actual_status,Some("READ"|"ACCESSIBILITY"))'));
   assert.ok(host.includes('Browser read escaped approved HTTPS origins'));
-  assert.ok(host.includes('if unique_urls.len()>=2{break;}'));
-  assert.ok(host.includes('if distinct_urls.len()<2{'));
+  assert.ok(host.includes('if !verified_pages.is_empty(){break;'));
+  assert.ok(host.includes('if verified_pages.is_empty(){'));
   assert.ok(host.includes('source_records:Vec<String>=verified_pages.into_values().collect()'));
   assert.ok(!host.includes('if collected_read{break;}'));
 });
 test('source summaries do not turn navigation into evidence or consume unbounded model context',()=>{
   assert.ok(host.includes('if calls.is_empty(){'));
-  assert.ok(host.includes('Browser research stopped before two distinct verified pages'));
+  assert.ok(host.includes('Browser research stopped without a readable source'));
   assert.ok(host.includes('if !verified_pages.contains_key(&identity){'));
   assert.ok(host.includes('if text.len().saturating_add(fragment.len())>14*1024'));
   assert.ok(host.includes('Do not cite or claim to have assessed their contents.'));
