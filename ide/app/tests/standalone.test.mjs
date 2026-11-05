@@ -20,13 +20,14 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   assert.ok(calls.includes('ide_open_project'));
   assert.ok(calls.includes('ide_list_source_directory'));
   assert.ok(calls.includes('ide_preview_source_file'));
+  assert.ok(calls.includes('ide_review_source_change'));
   assert.ok(calls.includes('ide_save_source_file'));
   assert.ok(calls.includes('ide_unregister_project'));
 
   assert.deepEqual([...new Set(calls)].sort(), [
     'ide_choose_project', 'ide_close_project', 'ide_list_projects',
     'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
-    'ide_save_source_file', 'ide_unregister_project'
+    'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project'
   ]);
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -134,4 +135,24 @@ test('project cards keep normal column width after registrations shrink', () => 
   const css = read('../web/styles.css');
   assert.match(css, /\.projectGrid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,/);
   assert.doesNotMatch(css, /\.projectGrid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,/);
+});
+
+test('bounded change reviews are explicit and independent of AI execution', () => {
+  const web = read('../web/main.jsx');
+  const native = read('../src-tauri/src/lib.rs');
+  const host = read('../../host/src/review.rs');
+  assert.match(web, /ide_review_source_change/);
+  assert.match(web, /Review changes/);
+  assert.match(web, /Save reviewed changes/);
+  assert.match(web, /review\.truncated/);
+  assert.match(web, /tab\.draft !== review\.draft/);
+  assert.match(web, /tab\.revision !== review\.expectedRevision/);
+  assert.match(web, /saveTab\(tab\)/);
+  assert.match(native, /fn ide_review_source_change/);
+  assert.match(native, /\.review_source_change\(&project_id, &relative_path, &expected_revision, &proposed_text\)/);
+  assert.match(host, /const MAX_REVIEW_LINES: usize = 240/);
+  assert.match(host, /const MAX_REVIEW_OUTPUT_BYTES: usize = 32 \* 1024/);
+  assert.match(host, /self\.preview_source_file\(project_id, relative_path\)/);
+  assert.doesNotMatch(web, /dangerouslySetInnerHTML/);
+  assert.doesNotMatch(host, /Command::new|std::process::Command|\.save_source_file\(/);
 });
