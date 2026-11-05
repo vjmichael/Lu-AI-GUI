@@ -108,8 +108,13 @@ impl PremiseStore {
           ||!bound(quote,4096)||!bound(implication,4096){
             return Err(PremiseError::Invalid);
         }
-        if !ledger.has_verified_passage(source_id,quote)?
-          || !ledger.eligible_for_reviewed_bibliography(source_id)? {
+        // Missing, inaccessible or unverified source material is not
+        // positive research evidence; normalize those admission failures to
+        // Unverified rather than leaking source-lookup details into the
+        // premise review path.
+        let verified=ledger.has_verified_passage(source_id,quote).unwrap_or(false);
+        if !verified
+            || !ledger.eligible_for_reviewed_bibliography(source_id).unwrap_or(false) {
             return Err(PremiseError::Unverified);
         }
         if relation==ResearchRelation::Unrelated && strength==ClaimStrength::CausallyEstablished {
