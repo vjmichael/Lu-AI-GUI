@@ -621,7 +621,7 @@
           "items": {
             "$ref": "#/$defs/ContextDocument"
           },
-          "maxItems": 8
+          "maxItems": 12
         },
         "inventory": {
           "$ref": "#/$defs/EvidenceInventory"
