@@ -6,6 +6,10 @@ on:
       - 'lu-desktop/scripts/stage-browser-runtime.mjs'
       - 'scripts/stage-research-windows.ps1'
       - 'lu-desktop/src-tauri/src/research_desktop.rs'
+      - 'lu-desktop/tests/research-source-route.test.mjs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'src-tauri/lu-core/src/web_research_evidence.rs'
       - 'lu-desktop/tests/browser-ci-candidate.test.mjs'
       - 'lu-desktop/tests/browser-ci-executable.test.mjs'
       - 'src-tauri/lu-core/workers/lu_browser_worker.mjs'
@@ -27,6 +31,7 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
+      - run: node --test lu-desktop/tests/research-source-route.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
   browser-candidate:
     needs: source
