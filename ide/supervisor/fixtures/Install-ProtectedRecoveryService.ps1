@@ -68,13 +68,21 @@ $created=$false
 try {
   # The account is NOT LocalSystem. The restricted service SID protects
   # its private evidence; interactive Users have no ACL grants.
-  $args=@('create',$serviceName,'type=','own','start=','demand',
-    'obj=','NT AUTHORITY\LocalService','binPath=','"'+$serviceExe+'"',
-    'DisplayName=','Lu IDE Recovery Broker')
+  # PowerShell's automatic $args must never be used for native command
+  # splatting. In the Windows 2022 CI run, sc.exe saw malformed arguments
+  # (1639) rather than a CreateServiceW denial.
+  # Supply each sc option name and value as separate native argv entries.
+  # For Program Files paths, preserve the quotes in the service registry
+  # ImagePath; on CI's no-space path, avoid unneeded literal quote layers.
+  $binaryPathArgument=if ($serviceExe.Contains(' ')) {
+    '"' + $serviceExe + '"'
+  } else { $serviceExe }
+  $scArgs=@('create',$serviceName,'binPath=',$binaryPathArgument,
+    'type=','own','start=','demand','obj=','NT AUTHORITY\LocalService')
   # Preserve the native SCM error code and Win32 message. Hiding this
   # output previously reduced a real Windows 2022 failure to an opaque
   # "SCM service creation failed" even though the pinned build succeeded.
-  $scOutput=@(& sc.exe @args 2>&1 | ForEach-Object { [string]$_ })
+  $scOutput=@(& sc.exe @scArgs 2>&1 | ForEach-Object { [string]$_ })
   $scExit=$LASTEXITCODE
   if ($scExit -ne 0) {
     throw ("DENIED: SCM service creation failed (exit={0}): {1}" -f
