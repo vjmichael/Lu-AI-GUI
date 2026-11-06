@@ -2391,14 +2391,34 @@ function App() {
                 )}</ul>}
               <button type="button" disabled={observeNotes.length===0}
                 onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
-              {observeHandoff&&<div role="status" className="observeHandoff">
-                <strong>Main-model handoff prepared · not executed</strong>
-                <small>Verified failures: {observeHandoff.verifiedFailures} ·
-                  Unverified indicators: {observeHandoff.unverifiedIndicators}.
-                  {observeHandoff.recommendation}.</small>
-                <small>The main model has not run. Source changes, tests and
-                  application control still require separate host authorization.</small>
-              </div>}
+              {observeHandoff?.sessionId===observeView.sessionId&&
+                <div role="status" className="observeHandoff">
+                  <strong>Observed evidence prepared for human review</strong>
+                  <small>{observeHandoff.sourceNoteCount} bounded native records.
+                    Independently verified test failures: {observeHandoff.verifiedFailures};
+                    unverified indicators: {observeHandoff.unverifiedIndicators}.</small>
+                  <small>Review SHA-256: {observeHandoff.reviewSha256}</small>
+                  <textarea readOnly rows={8} aria-label="Read-only native observation handoff"
+                    value={observeHandoff.reviewDraft}/>
+                  <div className="settingsActions">
+                    <button type="button" disabled={!chatId||working||chatBusy}
+                      onClick={()=>{
+                        const draft=observeHandoff.reviewDraft;
+                        if(!draft||observeHandoff.sessionId!==observeView.sessionId)return;
+                        setPrompt(prev=>prev?(prev+'\n\n'+draft):draft);
+                        setObserveHandoff(null);
+                        setActivity('Observation briefing added to chat draft. Review and press Send when ready.');
+                      }}>
+                      Add observed evidence to chat draft
+                    </button>
+                    <button type="button" onClick={()=>setObserveHandoff(null)}>
+                      Dismiss briefing
+                    </button>
+                  </div>
+                  <small>Nothing is sent automatically. These records never establish
+                    verified GUI correctness or grant source editing, OS access,
+                    or further tools; ordinary per-turn approval still applies.</small>
+                </div>}
             </div>}
         </section>}
         {wave2FileBusy && <section className="readProposalCard" role="status"
