@@ -353,7 +353,7 @@ impl ModelToolCodec for ArchiveCodec {
             "total_entries": data.total_entries,
             "total_declared_uncompressed_bytes": data.total_declared_uncompressed_bytes,
             "archive_bytes": data.archive_bytes,
-            "note": "Archive metadata only. TAR, ISO and compressed streams have no per-member CRC32; zero is not proof of integrity. No extraction occurred."
+            "note": "Read-only listing; CPIO/additive CRC, TAR, DEB, ar, ISO and compressed streams do not expose ZIP CRC32. A zero CRC32 field is NOT integrity proof. No installation, script execution or filesystem extraction occurred."
         }))
     }
 }
@@ -375,7 +375,7 @@ pub fn register_archive_inspection_tool(
         .map_err(|_| "trusted archive workspace root cannot be opened")?);
     let descriptor = ToolDescriptor {
         id: LIST.into(),
-        display_name: "List ZIP / ISO9660 contents (metadata only)".into(),
+        display_name: "Inspect approved archive and package contents (read-only)".into(),
         effect: ToolEffect::ReadWorkspace,
         input_type_url: INPUT.into(),
         output_type_url: OUTPUT.into(),
