@@ -1246,6 +1246,60 @@ async fn lu_research_openalex(
     }
 }
 
+/// Independently corroborate ONE already-discovered lead against Crossref.
+/// The trusted local evidence ledger supplies the DOI; the UI/model can
+/// only select its previously discovered OpenAlex source ID.
+#[tauri::command]
+async fn lu_research_crossref(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String
+)->Result<research_desktop::ResearchCorroborationView,String>{
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+       ||source_id.chars().any(char::is_control){
+        return Err("Select an existing OpenAlex research lead".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for research")?;
+    if !state.research.available(){
+        return Err("Reviewed Lu HTTPS research runtime not installed".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let id=source_id.clone();
+        move||app.dialog().message(format!(
+            "Ask the public Crossref catalog to corroborate this previously \
+             discovered research record?\n\n{}\n\n\
+             Lu will use only the DOI already stored for this chat. \
+             Exact title/author/DOI agreement verifies bibliographic metadata, \
+             NOT a document passage or citation. No model network grant is created.",id
+        )).title("Lu — Authorize Crossref metadata check")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Check Crossref".into(),"Cancel".into()
+        )).blocking_show()
+    }).await.map_err(|_|"Native research metadata approval unavailable")?;
+    if !approved{return Err("Research metadata check cancelled".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-metadata-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research metadata task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research metadata task could not start")?;
+    let worker=Arc::clone(&owner.research);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.corroborate_crossref(&chat_id,&source_id)
+    ).await.map_err(|_|"Research metadata worker unavailable").and_then(|x|x);
+    match result{
+        Ok(checked)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Research metadata receipt could not be finalized")?;
+            Ok(checked)
+        }
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(error)
+        }
+    }
+}
+
 /// Human-picked new PNG only: no path or edit authority is exposed to the
 /// model. Current attachment bytes must be host-admitted and still pinned.
 #[tauri::command]
@@ -4029,6 +4083,7 @@ pub fn run() {
             lu_browser_runtime_status,
             lu_research_available,
             lu_research_openalex,
+            lu_research_crossref,
             lu_browser_start,
             lu_browser_set_visible,
             lu_browser_human_verified,
