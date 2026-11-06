@@ -1368,6 +1368,119 @@ fn lu_research_verify_document_passage(
     state.research.verify_document_passage(&chat_id,&source_id,&quote)
 }
 
+/// All campaign pages share one user-approved fixed OpenAlex query and 120
+/// unique DOI ceiling; no Browser/tool/network grant is created for the model.
+#[tauri::command]
+async fn lu_research_campaign_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,query:String,candidate_ceiling:u32
+)->Result<research_desktop::ResearchCampaignView,String>{
+    if query.trim().is_empty()||query.len()>512||query.chars().any(char::is_control)
+        ||!(1..=120).contains(&candidate_ceiling){
+        return Err("Research campaign query or ceiling invalid".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted conversation for Research")?;
+    if !state.research.available(){
+        return Err("Pinned research HTTPS runtime unavailable".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=query.clone();
+        move||app.dialog().message(format!(
+            "Run an OpenAlex research campaign for this conversation?\n\n\
+             Query: {}\nMaximum distinct DOI leads: {}\n\
+             Maximum search pages: five.\n\n\
+             A fixed public catalog endpoint is read-only. Each page is \
+             checkpointed in this conversation's SQLite. The model gets \
+             no general Browser permission, and discoveries are NOT verified \
+             citations.",query,candidate_ceiling
+        )).title("Lu — Authorize bounded Research campaign")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Run bounded research".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Research campaign approval unavailable")?;
+    if !approved{return Err("Research campaign cancelled by user".into());}
+    let owner=Arc::clone(state.inner());
+    let id=next_id("research-campaign-");
+    let worker=Arc::clone(&owner.research);
+    let _=worker.create_campaign(&chat_id,&id,&query,candidate_ceiling)?;
+    let task_id=next_id("research-job-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research campaign task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research campaign task could not start")?;
+    let lookup_chat=chat_id.clone();
+    let lookup_id=id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.run_campaign(&chat_id,&id)
+    ).await.map_err(|_|"Research campaign worker unavailable").and_then(|x|x);
+    match result{
+        Ok(value)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Research campaign completion receipt unavailable")?;
+            Ok(value)
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            // Even failed steps leave durable status; a blocked campaign can
+            // be inspected and explicitly resumed, not silently retried.
+            owner.research.campaign_status(&lookup_chat,&lookup_id)
+                .or(Err(error))
+        }
+    }
+}
+#[tauri::command]
+fn lu_research_campaigns(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<research_desktop::ResearchCampaignView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.campaigns(&chat_id)
+}
+#[tauri::command]
+fn lu_research_campaign_cancel(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,campaign_id:String
+)->Result<research_desktop::ResearchCampaignView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.cancel_campaign(&chat_id,&campaign_id)
+}
+#[tauri::command]
+async fn lu_research_campaign_resume(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,campaign_id:String
+)->Result<research_desktop::ResearchCampaignView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    if !state.research.available(){
+        return Err("Pinned research HTTPS runtime unavailable".into());
+    }
+    let prior=state.research.campaign_status(&chat_id,&campaign_id)?;
+    if !matches!(prior.state.as_str(),"PAUSED"|"BLOCKED"|"RUNNING"){
+        return Err("Research campaign is not resumable".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=prior.query.clone();
+        move||app.dialog().message(format!(
+            "Resume the saved OpenAlex search from its last checkpoint?\n\n\
+             Query: {}\nCandidate ceiling: {}\nNext page: {}\n\n\
+             No prior Browser/model permission will be reused.",
+            query,prior.candidate_ceiling,prior.next_page
+        )).title("Lu — Reauthorize Research continuation")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Resume Research".into(),"Cancel".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Research resume approval unavailable")?;
+    if !approved{return Err("Research resume cancelled by user".into());}
+    let owner=Arc::clone(state.inner());
+    let worker=Arc::clone(&owner.research);
+    let _=worker.resume_campaign(&chat_id,&campaign_id)?;
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.run_campaign(&chat_id,&campaign_id)
+    ).await.map_err(|_|"Research continuation worker unavailable").and_then(|x|x);
+    result
+}
+
 /// Independently corroborate ONE already-discovered lead against Crossref.
 /// The trusted local evidence ledger supplies the DOI; the UI/model can
 /// only select its previously discovered OpenAlex source ID.
@@ -4265,6 +4378,10 @@ pub fn run() {
             lu_research_crossref,
             lu_research_retrieve_document,
             lu_research_verify_document_passage,
+            lu_research_campaign_start,
+            lu_research_campaigns,
+            lu_research_campaign_resume,
+            lu_research_campaign_cancel,
             lu_browser_start,
             lu_browser_set_visible,
             lu_browser_human_verified,
