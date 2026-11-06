@@ -60,7 +60,7 @@ if (!$allowUnsigned -and (!$serviceExe.StartsWith($programFiles+'\',
   throw 'DENIED: release executables must be installed under Program Files'
 }
 $programData=[Environment]::GetFolderPath('CommonApplicationData')
-$root=Join-Path $programData 'LuIDE\RecoveryBroker'
+$root=Join-Path $programData 'LuIDERecoveryBroker'
 if (Test-Path -LiteralPath $root) { throw 'DENIED: existing broker evidence directory; do not adopt unknown ACLs' }
 $serviceSid='NT SERVICE\LuIdeRecoveryBroker'
 $system='NT AUTHORITY\SYSTEM'
