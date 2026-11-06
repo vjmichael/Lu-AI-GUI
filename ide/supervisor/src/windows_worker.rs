@@ -8,16 +8,17 @@
 //! feature in a distributed IDE build.
 use crate::{
     snapshot::{verify_input, PublishedInput},
+    windows_cap_tree::{audit_tree, digest_tree, publish_into_native_parent},
+    windows_broker::{BrokerLease, TrustedBroker},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
-use sha2::{Digest, Sha256};
 use std::{
-    ffi::{OsStr, OsString},
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    ffi::OsStr,
+    fs::{self},
+    io,
     mem::size_of,
-    os::windows::{ffi::{OsStrExt, OsStringExt}, fs::OpenOptionsExt, io::AsRawHandle},
+    os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
     sync::{atomic::{AtomicBool, Ordering}, Arc},
@@ -32,7 +33,6 @@ use windows_sys::Win32::{
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath},
         PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenAppContainerSid, TokenIsAppContainer,
     },
-    Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
     System::{
         Com::CoTaskMemFree,
         JobObjects::{
@@ -59,12 +59,8 @@ const MAX_BUNDLE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_OUTPUT_FILES: usize = 6000;
 const MAX_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_OUTPUT_FILE_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_DEPTH: usize = 48;
-const MAX_SINGLE_INPUT: u64 = 1024 * 1024 * 1024;
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
-const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const JOB_OBJECT_TERMINATE_ACCESS: u32 = 0x0008;
 const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
@@ -125,8 +121,6 @@ fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     Ok(wstr(&format!("Local\\LuIdeD7-{id}-{}", &hash[..16])))
 }
 
-#[derive(Default)]
-struct TreeCounter { files: usize, bytes: u64 }
 fn clean_meta(path: &Path) -> Result<fs::Metadata, SupervisorError> {
     let m = fs::symlink_metadata(path).map_err(io_denied)?;
     use std::os::windows::fs::MetadataExt;
@@ -134,127 +128,6 @@ fn clean_meta(path: &Path) -> Result<fs::Metadata, SupervisorError> {
         return Err(denied());
     }
     Ok(m)
-}
-fn clean_part(name: &OsStr) -> Result<(), SupervisorError> {
-    let text = name.to_str().ok_or_else(denied)?;
-    if text.is_empty() || text == "." || text == ".."
-        || text.len() > 240 || text.contains(':') || text.contains('"')
-        || text.chars().any(char::is_control) { return Err(denied()); }
-    Ok(())
-}
-fn checked_file_identity(file: &File, allow_directory: bool) -> Result<(u32, u64, u64), SupervisorError> {
-    let metadata = file.metadata().map_err(io_denied)?;
-    if !(metadata.is_file() || (allow_directory && metadata.is_dir())) {
-        return Err(denied());
-    }
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
-        return Err(denied());
-    }
-    // A hard link is not a reparse point and can alias a sensitive file
-    // outside the approved tree. Reject files with any second name.
-    if metadata.is_file() && info.nNumberOfLinks != 1 { return Err(denied()); }
-    let id = ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64;
-    Ok((info.dwVolumeSerialNumber, id, metadata.len()))
-}
-fn read_regular(path: &Path) -> Result<File, SupervisorError> {
-    if !clean_meta(path)?.is_file() { return Err(denied()); }
-    let mut options = OpenOptions::new();
-    options.read(true).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    let file = options.open(path).map_err(io_denied)?;
-    checked_file_identity(&file, false)?;
-    Ok(file)
-}
-fn directory_identity(path: &Path) -> Result<(File, (u32, u64, u64)), SupervisorError> {
-    if !clean_meta(path)?.is_dir() { return Err(denied()); }
-    let mut options = OpenOptions::new();
-    options.read(true).custom_flags(
-        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
-    );
-    let directory = options.open(path).map_err(io_denied)?;
-    let id = checked_file_identity(&directory, true)?;
-    Ok((directory, id))
-}
-// Deterministic SHA-256 of every relative path, size and content. Every
-// source and staged toolchain file is compared, and all reparse points denied.
-fn tree_transfer(
-    src: &Path,
-    dest: Option<&Path>,
-    depth: usize,
-    prefix: &Path,
-    count: &mut TreeCounter,
-    hash: &mut Sha256,
-    max_files: usize,
-    max_bytes: u64,
-) -> Result<(), SupervisorError> {
-    if depth > MAX_DEPTH { return Err(denied()); }
-    // A live OS handle pins this directory's identity across enumeration.
-    // Path-based child traversal still requires additional hostile rename
-    // acceptance before a same-user adversary is in the supported threat model.
-    let (_directory, directory_before) = directory_identity(src)?;
-    if let Some(dst) = dest { fs::create_dir_all(dst).map_err(io_denied)?; }
-    let mut children = fs::read_dir(src)
-        .map_err(io_denied)?
-        .collect::<Result<Vec<_>,_>>()
-        .map_err(io_denied)?;
-    children.sort_by_key(|x| x.file_name());
-    for child in children {
-        let name = child.file_name();
-        clean_part(&name)?;
-        let file = child.path();
-        let rel = prefix.join(&name);
-        let meta = clean_meta(&file)?;
-        let dst = dest.map(|d| d.join(&name));
-        if meta.is_dir() {
-            tree_transfer(&file, dst.as_deref(), depth + 1, &rel,
-                count, hash, max_files, max_bytes)?;
-        } else if meta.is_file() {
-            count.files += 1;
-            count.bytes = count.bytes.checked_add(meta.len()).ok_or_else(denied)?;
-            if count.files > max_files || count.bytes > max_bytes || meta.len() > MAX_SINGLE_INPUT {
-                return Err(denied());
-            }
-            let mut reader = read_regular(&file)?;
-            let before = reader.metadata().map_err(io_denied)?;
-            if before.len() != meta.len() { return Err(denied()); }
-            let mut writer = if let Some(d) = dst.as_deref() {
-                Some(OpenOptions::new().write(true).create_new(true).open(d).map_err(io_denied)?)
-            } else { None };
-            let mut item_hash = Sha256::new();
-            let mut bytes = 0_u64;
-            let mut buffer = [0_u8; 64 * 1024];
-            loop {
-                let n = reader.read(&mut buffer).map_err(io_denied)?;
-                if n == 0 { break; }
-                bytes = bytes.checked_add(n as u64).ok_or_else(denied)?;
-                if bytes > meta.len() { return Err(denied()); }
-                item_hash.update(&buffer[..n]);
-                if let Some(out) = writer.as_mut() { out.write_all(&buffer[..n]).map_err(io_denied)?; }
-            }
-            if bytes != meta.len() { return Err(denied()); }
-            let after = reader.metadata().map_err(io_denied)?;
-            if after.len() != meta.len() || after.modified().map_err(io_denied)?
-                != before.modified().map_err(io_denied)? { return Err(denied()); }
-            checked_file_identity(&reader, false)?;
-            if let Some(out) = writer.as_mut() { out.sync_all().map_err(io_denied)?; }
-            let relative = rel.to_str().ok_or_else(denied)?.replace('\\', "/");
-            hash.update(relative.as_bytes()); hash.update([0]);
-            hash.update(bytes.to_le_bytes());
-            hash.update(format!("{:x}", item_hash.finalize()).as_bytes());
-            hash.update([0]);
-        } else { return Err(denied()); }
-    }
-    let (_after, directory_after) = directory_identity(src)?;
-    if directory_before != directory_after { return Err(denied()); }
-    Ok(())
-}
-fn digest_tree(root: &Path, destination: Option<&Path>,
-    max_files: usize, max_bytes: u64) -> Result<String, SupervisorError> {
-    let mut counter = TreeCounter::default();
-    let mut hash = Sha256::new();
-    tree_transfer(root, destination, 0, Path::new(""), &mut counter,
-        &mut hash, max_files, max_bytes)?;
-    Ok(format!("{:x}", hash.finalize()))
 }
 /// Internal native-host helper to bind a provisioned offline bundle to an
 /// exact JobPlan. No executable path, bundle path or digest is accepted from
@@ -281,41 +154,34 @@ fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str) -> Result<(), Sup
     }
     if !clean_meta(&bundle.join("lib"))?.is_dir()
         || !clean_meta(&bundle.join("cargo-home"))?.is_dir() { return Err(denied()); }
-    if digest_tree(bundle, Some(dest), MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)? != expected {
+    let parent = dest.parent().ok_or_else(denied)?;
+    let name = dest.file_name().ok_or_else(denied)?;
+    let (_, copied_hash) = publish_into_native_parent(
+        bundle, parent, name, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES,
+        1024 * 1024 * 1024
+    )?;
+    if copied_hash != expected {
         return Err(SupervisorError::WrongProjectOrSource);
-    }
-    if digest_tree(dest, None, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)? != expected {
-        return Err(denied());
     }
     Ok(())
 }
 fn stage_workspace(input: &PublishedInput, dest: &Path)
     -> Result<(), SupervisorError> {
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
-    digest_tree(&input.root, Some(dest), 12_000, 512 * 1024 * 1024)?;
+    let parent = dest.parent().ok_or_else(denied)?;
+    let name = dest.file_name().ok_or_else(denied)?;
+    let (_, staged_hash) = publish_into_native_parent(
+        &input.root, parent, name, 12_000, 512 * 1024 * 1024,
+        64 * 1024 * 1024
+    )?;
+    if staged_hash != input.seal.source_sha256 {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
     let staged = PublishedInput { root: dest.to_path_buf(), seal: input.seal.clone() };
     verify_input(&staged).map_err(|_| denied())
 }
 fn output_seal(root: &Path) -> Result<(u64, String), SupervisorError> {
-    if !clean_meta(root)?.is_dir() { return Err(denied()); }
-    let mut counter = TreeCounter::default();
-    let mut hash = Sha256::new();
-    tree_transfer(root, None, 0, Path::new(""), &mut counter,
-        &mut hash, MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES)?;
-    // MAX_SINGLE_INPUT in transfer is larger than output per-file policy.
-    // Check independent per-file quota via another bounded metadata walk.
-    fn check(dir: &Path, depth: usize) -> Result<(), SupervisorError> {
-        if depth > MAX_DEPTH { return Err(denied()); }
-        for entry in fs::read_dir(dir).map_err(io_denied)? {
-            let p = entry.map_err(io_denied)?.path();
-            let m = clean_meta(&p)?;
-            if m.is_dir() { check(&p, depth + 1)?; }
-            else if !m.is_file() || m.len() > MAX_OUTPUT_FILE_BYTES { return Err(denied()); }
-        }
-        Ok(())
-    }
-    check(root, 0)?;
-    Ok((counter.bytes, format!("{:x}", hash.finalize())))
+    audit_tree(root, None, MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES)
 }
 
 /// Publish only fully scanned, size-limited output from a terminated kernel
@@ -331,15 +197,16 @@ fn publish_output(
     let source = fs::canonicalize(child_output).map_err(io_denied)?;
     if parent.starts_with(&source) || source.starts_with(&parent) { return Err(denied()); }
     let (bytes, original_hash) = output_seal(child_output)?;
-    let destination = parent.join(id);
-    fs::create_dir(&destination).map_err(io_denied)?; // existing job = deny
-    let copied = digest_tree(child_output, Some(&destination),
-        MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES)?;
-    let (published_bytes, published_hash) = output_seal(&destination)?;
-    if original_hash != copied || copied != published_hash || bytes != published_bytes {
+    // The native parent and newly created job directory are pinned by
+    // cap_std handles until all bytes have been copied and re-sealed.
+    let (published_bytes, published_hash) = publish_into_native_parent(
+        child_output, &parent, OsStr::new(id),
+        MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES
+    )?;
+    if original_hash != published_hash || bytes != published_bytes {
         return Err(denied());
     }
-    Ok((destination, published_bytes, published_hash))
+    Ok((parent.join(id), published_bytes, published_hash))
 }
 
 struct AppProfile { name: Vec<u16>, sid: PSID }
@@ -642,7 +509,8 @@ pub fn execute_windows_worker(
     supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
     current_host_observed_head: &str,
     input: &PublishedInput, trusted_offline_toolchain_root: &Path,
-    trusted_native_output_parent: &Path, cancel: &WindowsCancellation,
+    trusted_native_output_parent: &Path, trusted_broker: &TrustedBroker,
+    cancel: &WindowsCancellation,
 ) -> Result<WindowsExecutionResult, SupervisorError> {
     if !valid_job_id(job_id) || plan.source_head != current_host_observed_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -674,10 +542,26 @@ pub fn execute_windows_worker(
             io::Error::other("no native journal parent")
         }).and_then(fs::canonicalize)).map_err(io_denied)?;
     if journal_canonical.starts_with(&local) { return Err(denied()); }
+    // D7C: revalidate the exact bytes to be executed immediately before
+    // consuming one-shot authority. This is deliberately performed against
+    // the AppContainer-owned staged copy, not the original project path.
+    // The native profile still requires OS ACL hardening against hostile
+    // same-account write access before production acceptance.
+    let final_input = PublishedInput {
+        root: workspace.clone(),
+        seal: input.seal.clone(),
+    };
+    verify_input(&final_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
     let plan_hash = supervisor.inspect()?.into_iter()
         .find(|x| x.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?.plan_sha256;
     let job = Job::create(job_id, &plan_hash, plan)?;
     if !proof().complete() { return Err(denied()); }
+    // Independent kernel Job holder MUST acknowledge readiness and fsync
+    // its own witness before the one-shot grant can be consumed.
+    let mut broker = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_broker)?;
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     let (process, thread) = match launch_appcontainer(
         &profile, &job, &exe, &mut command, &workspace, &env
@@ -695,6 +579,13 @@ pub fn execute_windows_worker(
             return Err(reason);
         }
     };
+    // The separate broker must remain live across the suspended child
+    // admission. A dead broker cannot be waved through as containment.
+    if !broker.alive() {
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
     // Record the contained process BEFORE ResumeThread, so a host crash in
     // this window is quarantined rather than falsely accepted as success.
     if let Err(reason) = supervisor.native_mark_running(job_id) {
@@ -728,6 +619,11 @@ pub fn execute_windows_worker(
         if waited != WAIT_TIMEOUT {
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(denied());
+        }
+        if !broker.alive() {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
         }
         let request = cancel.0.load(Ordering::SeqCst);
         if request || begin.elapsed().as_millis() >= plan.runtime_limit_ms as u128
@@ -780,6 +676,9 @@ pub fn execute_windows_worker(
             reaped, publication.is_some(),
             publication.as_ref().map(|(_, _, sha)| sha.as_str()))?
     };
+    // Only after the supervisor terminal receipt is durable and the
+    // kernel Job is verified empty may the recovery keeper be released.
+    broker.release_empty()?;
     let (output_root, output_bytes, output_sha256) =
         publication.unwrap_or((PathBuf::new(), 0, String::new()));
     Ok(WindowsExecutionResult {
@@ -803,7 +702,17 @@ pub fn reconcile_windows_interrupted(supervisor: &Supervisor, id: &str)
     ) };
     let job = Job { handle: Handle::new(raw).map_err(|_| SupervisorError::Quarantined)? };
     let mut terminator = JobTerminator { job: &job, id, hash: &state.plan_sha256 };
-    supervisor.reconcile_interrupted_with(id, &mut terminator)
+    let summary = supervisor.reconcile_interrupted_with(id, &mut terminator)?;
+    // The OS process tree was independently reaped and the supervisor
+    // recovery receipt is durable. Only now hint that the keeper may
+    // relinquish its named handle; failure is not proof of an unsafe tree
+    // and simply leaves the broker to expire its bounded recovery hold.
+    if summary.phase == JobPhase::Cancelled && !summary.requires_reconciliation {
+        let _ = crate::windows_broker::release_after_verified_recovery(
+            id, &state.plan_sha256
+        );
+    }
+    Ok(summary)
 }
 
 #[cfg(test)]

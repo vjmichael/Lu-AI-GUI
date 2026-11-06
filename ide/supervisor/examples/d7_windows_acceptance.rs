@@ -7,15 +7,40 @@
 fn main() { eprintln!("DENIED: Windows-only native acceptance"); std::process::exit(2); }
 
 #[cfg(windows)]
+fn require_independent_broker_release(
+    root: &std::path::Path,
+    job_id: &str,
+    hash: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use lu_ide_execution_supervisor::windows_broker::inspect_untrusted_witness;
+    use std::{thread, time::{Duration, Instant}};
+    let start = Instant::now();
+    loop {
+        if let Ok(states) = inspect_untrusted_witness(root, job_id, hash) {
+            if states.first().map(String::as_str) == Some("ready")
+                && states.last().map(String::as_str) == Some("released_empty") {
+                return Ok(());
+            }
+        }
+        if start.elapsed() >= Duration::from_secs(8) {
+            return Err("DENIED: independent broker did not fsync normal release".into());
+        }
+        thread::sleep(Duration::from_millis(40));
+    }
+}
+
+#[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         snapshot::publish_input,
+        windows_broker::TrustedBroker,
         windows_worker::{
             execute_windows_worker, trusted_offline_toolchain_digest, WindowsCancellation,
         },
         JobPhase, JobPlan, Supervisor,
     };
-    use std::{env, fs, path::PathBuf};
+    use std::{env, fs, io::Read, path::PathBuf};
+    use sha2::{Digest, Sha256};
 
     // Fixed acceptance modes only. No caller-selected project executable,
     // arguments, environment, source or toolchain plan can be injected.
@@ -40,9 +65,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project = root.join("project");
     let stage_parent = root.join("stage");
     let native_outputs = root.join("native-output");
+    let broker_receipts = root.join("independent-broker-receipts");
+    let broker_bin = PathBuf::from(
+        env::var_os("LU_IDE_D7_BROKER_EXE")
+            .ok_or("DENIED: fixed Windows recovery broker must be provisioned")?
+    );
+    if !broker_bin.is_absolute() { return Err("DENIED: broker path must be absolute".into()); }
+    // The acceptance harness self-measures this test binary. Production
+    // host must instead supply an independently reviewed installation pin.
+    let mut reader = fs::File::open(&broker_bin)?;
+    let mut hasher = Sha256::new();
+    let mut bytes = [0_u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut bytes)?;
+        if n == 0 { break; }
+        hasher.update(&bytes[..n]);
+    }
+    let broker_pin = format!("{:x}", hasher.finalize());
+    let native_broker = TrustedBroker {
+        executable: broker_bin,
+        expected_sha256: broker_pin,
+        private_witness_directory: broker_receipts.clone(),
+    };
     fs::create_dir_all(project.join("src"))?;
     fs::create_dir(&stage_parent)?;
     fs::create_dir(&native_outputs)?;
+    fs::create_dir(&broker_receipts)?;
     fs::write(project.join("Cargo.toml"),
         "[package]\nname = \"d7_acceptance\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")?;
     fs::write(project.join("Cargo.lock"),
@@ -79,8 +127,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let result = execute_windows_worker(
         &supervisor, &prepared.job_id, &plan, &plan.source_head, &input, &bundle,
-        &native_outputs, &cancellation
+        &native_outputs, &native_broker, &cancellation
     ).map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
+    // A completed or cancelled worker also needs an independent process's
+    // fsynced Ready -> ReleasedEmpty record, not just the supervisor journal.
+    // This verifies protocol behavior; same-account receipts remain untrusted
+    // as a standalone recovery authority.
+    require_independent_broker_release(
+        &broker_receipts, &prepared.job_id, &prepared.plan_sha256
+    )?;
     if cancel_mode {
         if result.summary.phase != JobPhase::Cancelled
             || result.output_root.is_dir()
