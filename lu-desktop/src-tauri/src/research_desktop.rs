@@ -111,6 +111,27 @@ fn parse_crossref_metadata(
     })
 }
 
+/// Crossref's DOI-checked work record may independently specify a landing
+/// URL. It is NOT proof of full-text access; later Browser evidence must
+/// match this *exact* final HTTPS URL to qualify for a linked quote proof.
+fn crossref_publisher_url(bytes:&[u8],expected_doi:&str)->Option<String>{
+    let json:serde_json::Value=serde_json::from_slice(bytes).ok()?;
+    let work=json.get("message")?;
+    if work.get("DOI").and_then(|v|v.as_str()).and_then(canonical_doi)
+        .as_deref()!=Some(expected_doi){return None;}
+    let url=work.get("URL")?.as_str()?;
+    if !url.starts_with("https://")||url.len()>2048
+        ||url.contains('@')||url.contains('\\')
+        ||url.chars().any(char::is_whitespace){
+        return None;
+    }
+    let authority=url.strip_prefix("https://")?.split(&['/','?','#'][..]).next()?;
+    if authority.is_empty()||authority.contains(':')||!authority.contains('.') {
+        return None;
+    }
+    Some(url.to_owned())
+}
+
 pub(crate) struct ResearchDesktop{
     root:PathBuf,
     curl:PathBuf,
@@ -344,14 +365,23 @@ impl ResearchDesktop{
         }
         let record=parse_crossref_metadata(&response.bytes,&doi,&response.canonical_url)
             .map_err(str::to_owned)?;
+        let publisher_url=crossref_publisher_url(&response.bytes,&doi);
+        let catalog_sha256=format!("{:x}",Sha256::digest(&response.bytes));
         match ledger.corroborate(source_id,&record){
-            Ok(())=>Ok(ResearchCorroborationView{
+            Ok(())=>{
+                if let Some(url)=publisher_url.as_deref(){
+                    ledger.bind_crossref_publisher_url(
+                        source_id,url,&catalog_sha256
+                    ).map_err(|_|"Crossref publisher-link receipt was rejected")?;
+                }
+                Ok(ResearchCorroborationView{
                 source_id:source_id.to_owned(),
                 verification_status:"metadata_corroborated",
                 record_url:record.record_url,
                 citation_verified:false,
-                message:"Independent metadata matches the discovered lead. No source passage or quotation is verified.",
-            }),
+                message:"Independent metadata matches the discovered lead. Publisher URL is recorded only when independently supplied by Crossref; no passage or citation is yet verified.",
+                })
+            },
             Err(EvidenceError::MetadataMismatch)=>Ok(ResearchCorroborationView{
                 source_id:source_id.to_owned(),
                 verification_status:"metadata_mismatch",
@@ -425,6 +455,23 @@ mod tests{
         assert!(parse_crossref_metadata(malformed.as_bytes(),"10.1234/study1",
             "https://api.crossref.org/works/10.1234%2Fstudy1").is_err());
         assert_eq!(encode_doi_component("10.1234/study1"),"10.1234%2Fstudy1");
+    }
+    #[test]
+    fn crossref_publisher_link_is_independent_and_doi_checked(){
+        let matched=serde_json::json!({"message":{
+            "DOI":"10.1234/study",
+            "URL":"https://publisher.example/articles/study",
+            "title":["Study"],"author":[{"given":"J","family":"Doe"}]
+        }}).to_string();
+        assert_eq!(crossref_publisher_url(matched.as_bytes(),"10.1234/study"),
+            Some("https://publisher.example/articles/study".into()));
+        assert!(crossref_publisher_url(matched.as_bytes(),"10.1234/other").is_none());
+        let bad=matched.replace("https://publisher.example/articles/study",
+            "https://alice@publisher.example/articles/study");
+        assert!(crossref_publisher_url(bad.as_bytes(),"10.1234/study").is_none());
+        let missing=matched.replace("https://publisher.example/articles/study",
+            "http://publisher.example/articles/study");
+        assert!(crossref_publisher_url(missing.as_bytes(),"10.1234/study").is_none());
     }
     #[test]
     fn no_unbounded_research_pagination_or_hidden_runtime(){
