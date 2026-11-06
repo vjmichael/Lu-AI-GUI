@@ -18,7 +18,7 @@ use crate::{
     native_atomic_write::AtomicWriteError,
     registry::NativeToolRegistry,wire::proto,
 };
-pub const TOOL_ID:&str="lu.office.revision.create";
+pub const TOOL_ID:&str="lu.office.revisions.create";
 pub const MODEL_NAME:&str="lu_office_create_revision";
 pub const INPUT:&str="type.googleapis.com/lu.v1.OfficeRevisionRequest";
 pub const OUTPUT:&str="type.googleapis.com/lu.v1.OfficeRevisionResult";
