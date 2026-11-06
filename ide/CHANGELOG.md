@@ -2,6 +2,12 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — IDE-BUF-01 unsaved-buffer identity (draft PR #43)
+- Added session-only revisioned CodeMirror buffer identities, one-based source line/UTF-16 column and UTF-8 byte span references. IDs rotate on reopen/reload/proposal staging; every doc change, including undo, increments revision. Successful Save rebases the last verified disk SHA, preserving any newer dirty text.
+- Human **Copy draft reference** computes draft SHA-256 in the WebView and rejects changed revisions after asynchronous digest. References are informational and session-only, not a native disk handle or new AI permission.
+- Added pure JS behavior tests, React/CodeMirror integration checks, explicit volatile revision in status bar and docs [IDE-BUF-01](docs/IDE_BUFFER_REFERENCES.md).
+- Separate [draft PR #43](https://github.com/vjmichael/Lu-AI-GUI/pull/43) and isolated PR CI; [acceptance run 42132079821](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42132079821) queued at last inspection. Windows GUI and installer acceptance open.
+
 ## 2026-11-05 — Wave B1 Find and Replace (source committed)
 - Implemented Ctrl+H Find and Replace in human editor with literal case-sensitive/insensitive search, Replace One, confirmation-gated Replace All, and an explicit scan cap that refuses incomplete bulk edits.
 - Changes apply only to the active unsaved CodeMirror buffer in one undoable transaction, with an expected-document check and consumed nonce to avoid accidental reapplication on remount. Explicit human Save and revision conflict handling remain authoritative; no new native file-write API.

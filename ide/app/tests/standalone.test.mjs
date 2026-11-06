@@ -247,7 +247,7 @@ test('R3.7 in-file find navigates the active unsaved buffer without native IPC',
   const css = read('../web/styles.css');
   assert.match(web, /key === 'f'/);
   assert.match(web, /role="search" aria-label="Find in active file"/);
-  assert.match(web, /locateMatches\(activeTab\?\.draft/);
+  assert.match(web, /locateMatches\(activeEditorState\?\.doc\.toString\(\)/);
   assert.match(web, /aria-label="Previous match"/);
   assert.match(web, /aria-label="Next match"/);
   assert.match(read('../web/find_replace.js'), /MAX_FIND_MATCHES = 10000/);
@@ -371,7 +371,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger', 'snapshots'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
@@ -470,11 +470,32 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(web, /aria-label="Replacement text"/);
   assert.match(web, /aria-label="Replace current match"/);
   assert.match(web, /aria-label="Replace all matches"/);
-  assert.match(web, /planReplacement\(activeTab\.draft/);
+  assert.match(web, /planReplacement\(searchText/);
   assert.match(web, /window\.confirm\(/);
   assert.match(web, /Draft only · Undo available · Save required/);
   assert.match(web, /replaceRequest=\{replaceRequest\?\.tabKey/);
   assert.match(editor, /view\.dispatch\(\{ changes, scrollIntoView: true \}\)/);
   assert.match(editor, /expectedDraft/);
   assert.doesNotMatch(planner, /invoke\(|window\.fetch|\.writeText\(/);
+});
+
+test('Wave B2 draft source identity is distinct from saved-disk authority', () => {
+  const web = read('../web/main.jsx');
+  const editor = read('../web/code_editor.jsx');
+  const identity = read('../web/buffer_identity.js');
+  assert.match(web, /crypto\.randomUUID\(\)/);
+  assert.match(web, /crypto\.subtle\.digest\('SHA-256'/);
+  assert.match(web, /function copyDraftReference\(tab\)/);
+  assert.match(editor, /aria-label="Source code editor"/);
+  assert.match(web, /Copy draft reference/);
+  assert.match(web, /resolveBufferSpan\(snapshot, latestIdentity, latestState\)/);
+  assert.match(web, /bufferIdentities\.current\.delete\(key\)/);
+  assert.match(web, /newBufferIdentity\(/);
+  assert.match(web, /advanceBufferIdentity\(previous\)/);
+  assert.match(web, /rebaseBufferAfterSave\(buffer, saveStartedBuffer, saved\.revision\)/);
+  assert.match(identity, /savedRevision,/);
+  assert.match(editor, /onSelectionChange\?\.\(update\.state\)/);
+  assert.match(identity, /stale_buffer_reference/);
+  assert.match(identity, /lifetime=session-only/);
+  assert.doesNotMatch(identity, /invoke\(|fetch\(|navigator\.clipboard/);
 });

@@ -38,8 +38,14 @@ function languageExtension(filename) {
  * undo history, cursor, and selection when the user switches tabs.
  * The state is never sent across the Tauri IPC boundary automatically.
  */
-export function createEditorState(text, filename, onChange) {
+export function createEditorState(text, filename, onChange, onSelectionChange) {
   const syntax = languageExtension(filename);
+  // Keep uniform CRLF/CR files byte-for-byte stable across opening and Save.
+  // CodeMirror otherwise normalizes all line endings to LF by default.
+  const withoutCrLf = text.replace(/\r\n/g, '');
+  const separator = text.includes('\r\n') && !/[\r\n]/.test(withoutCrLf)
+    ? '\r\n'
+    : text.includes('\r') && !text.includes('\n') ? '\r' : '\n';
   // Tauri rewrites the nonce on this bundled <style> element and its CSP
   // policy for each WebView. CodeMirror's dynamic StyleModule uses that same
   // nonce rather than relaxing script-src or enabling unsafe-inline CSS.
@@ -49,6 +55,7 @@ export function createEditorState(text, filename, onChange) {
     doc: text,
     extensions: [
       basicSetup,
+      EditorState.lineSeparator.of(separator),
       ...(styleNonce ? [EditorView.cspNonce.of(styleNonce)] : []),
       oneDark,
       EditorView.lineWrapping,
@@ -60,7 +67,11 @@ export function createEditorState(text, filename, onChange) {
       }, { dark: true }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
-          onChange(update.state, update.state.doc.toString());
+          onChange(update.state, update.state.sliceDoc());
+        } else if (update.selectionSet) {
+          // Keep exact selection/caret for session-only source references
+          // without recreating the parent editor state or changing the draft.
+          onSelectionChange?.(update.state);
         }
       }),
       ...(syntax ? [syntax] : []),
@@ -109,7 +120,7 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     // Reject plans computed for a different editor document, including stale
     // asynchronous/UI-state requests. Never reconstruct the EditorState here:
     // dispatching one transaction preserves CodeMirror undo/redo history.
-    if (view.state.doc.toString() !== replaceRequest.expectedDraft) {
+    if (view.state.sliceDoc() !== replaceRequest.expectedDraft) {
       replaceCallback.current?.(replaceRequest.nonce, false);
       return;
     }
