@@ -18,6 +18,7 @@ pub mod github_live;
 pub mod proposal;
 pub mod review;
 pub mod source_span;
+pub mod project_search;
 pub mod wire;
 
 use std::{
