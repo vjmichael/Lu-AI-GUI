@@ -684,3 +684,13 @@ message WebFetchResult { string source_url = 1; uint32 http_status = 2; string c
 message WebAcademicSearchRequest { string query = 1; uint32 page = 2; }
 message WebAcademicSearchLead { string provider = 1; string provider_id = 2; string doi = 3; string title = 4; string authors = 5; string catalog_url = 6; }
 message WebAcademicSearchResult { repeated WebAcademicSearchLead leads = 1; uint32 page = 2; optional uint32 next_page = 3; string observed_sha256 = 4; bool leads_verified = 5; }
+
+// TOOLS-C-BATCH: the host alone constructs and authorizes this receipt.
+// A batch is not APPLIED until every archived subtree is independently rehashed.
+message ArchiveBatchExtractReceipt {
+  string group_name = 1;
+  uint32 archive_count = 2;
+  uint64 file_count = 3;
+  uint64 expanded_bytes = 4;
+  string manifest_sha256 = 5;
+}
