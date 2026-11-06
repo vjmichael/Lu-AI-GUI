@@ -75,8 +75,36 @@ fn ci_probe_denied_pipe_access() {
     {
         return;
     }
+    // Correlate the installer-approved TokenUser with the native host
+    // process without logging the account SID or making it an authorization
+    // input. Only the kernel pipe DACL and authenticated service decide.
+    if let Some(expected) = std::env::var_os("LU_IDE_D7_DIAGNOSTIC_HOST_SID") {
+        match expected.to_str() {
+            Some(text) if security::ci_diagnostic_user_sid_matches(text) => {
+                acceptance_trace("pipe_diag_host_sid_matches_installer")
+            }
+            _ => acceptance_trace("pipe_diag_host_sid_differs_from_installer"),
+        }
+    } else {
+        acceptance_trace("pipe_diag_installer_sid_not_supplied");
+    }
     const READ_CONTROL_ACCESS: u32 = 0x0002_0000;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0000_0080;
     for (desired, allowed, denied_status, other_status) in [
+        (0, "pipe_diag_zero_access_opened", "pipe_diag_zero_access_denied",
+            "pipe_diag_zero_access_other_failure"),
+        (
+            SYNCHRONIZE,
+            "pipe_diag_sync_only_allowed",
+            "pipe_diag_sync_only_access_denied",
+            "pipe_diag_sync_only_other_failure",
+        ),
+        (
+            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            "pipe_diag_read_attrs_allowed",
+            "pipe_diag_read_attrs_access_denied",
+            "pipe_diag_read_attrs_other_failure",
+        ),
         (
             FILE_READ_DATA | SYNCHRONIZE,
             "pipe_diag_read_allowed",

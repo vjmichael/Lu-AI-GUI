@@ -581,6 +581,13 @@ pub fn authenticate_client(
 /// must have protected DACLs granting only SYSTEM and this service SID.
 /// No broad user, administrator, or inherited ACE can be silently adopted.
 
+/// Debug/CI-only identity correlation for the approved installer account.
+pub(crate) fn ci_diagnostic_user_sid_matches(value: &str) -> bool {
+    validate_approved_host_user_sid(value).is_ok()
+        && current_token_user_sid()
+            .map(|actual| actual == value)
+            .unwrap_or(false)
+}
 fn current_token_user_sid() -> Result<String, SupervisorError> {
     let mut raw = ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {

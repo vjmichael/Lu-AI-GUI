@@ -53,6 +53,11 @@ $allowUnsigned=$CiAcceptanceUnsigned -and $env:GITHUB_ACTIONS -eq 'true' -and
 if ($CiAcceptanceUnsigned -and !$allowUnsigned) {
   throw 'DENIED: unsigned acceptance only on disposable GitHub Actions runner'
 }
+if ($allowUnsigned) {
+  # This ephemeral variable is a diagnostic correlation only. The SCM service
+  # will still reject a wrong actual TokenUser, PID or executable hash.
+  $env:LU_IDE_D7_DIAGNOSTIC_HOST_SID=$ApprovedHostUserSid
+}
 if (!$allowUnsigned) {
   foreach ($item in @($serviceExe,$hostExe)) {
     $sig=Get-AuthenticodeSignature -LiteralPath $item
