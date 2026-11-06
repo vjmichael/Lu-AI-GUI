@@ -23,12 +23,12 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, HANDLE, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
                  WAIT_OBJECT_0, WAIT_TIMEOUT},
-    Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
+    Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
     System::{
         JobObjects::{OpenJobObjectW, QueryInformationJobObject, TerminateJobObject,
             JobObjectBasicAccountingInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION},
         Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PeekNamedPipe,
-            PIPE_ACCESS_DUPLEX, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
+            PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
             PIPE_REJECT_REMOTE_CLIENTS},
         Services::{RegisterServiceCtrlHandlerExW, SetServiceStatus,
             StartServiceCtrlDispatcherW, SERVICE_RUNNING, SERVICE_START_PENDING,
