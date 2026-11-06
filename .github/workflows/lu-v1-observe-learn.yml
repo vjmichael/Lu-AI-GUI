@@ -7,6 +7,9 @@ on:
       - 'src-tauri/lu-core/src/native_observe_scope.rs'
       - 'src-tauri/lu-core/src/native_gui_verification.rs'
       - 'src-tauri/lu-observe-capture-worker/**'
+      - 'scripts/package-observe-capture-windows.ps1'
+      - 'lu-desktop/src-tauri/tauri.observe.capture.conf.json'
+      - 'docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md'
       - 'docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md'
       - 'lu-desktop/**'
       - 'src-tauri/lu-core/src/lib.rs'
@@ -29,6 +32,11 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
+      - name: Check optional Windows WGC installer resource overlay syntax
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.observe.capture.conf.json'));if(x.bundle.resources['resources/lu-observe-capture-worker.exe']!=='lu-observe-capture-worker.exe')process.exit(1)"
+          grep -Fq 'LU_OBSERVE_CAPTURE_WORKER_SHA256' scripts/package-observe-capture-windows.ps1
       - run: grep -Fx 'pub mod native_observe_learn;' src-tauri/lu-core/src/lib.rs
   native-linux:
     needs: source

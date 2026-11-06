@@ -26,3 +26,10 @@ The dedicated `.github/workflows/lu-v1-observe-learn.yml` now builds the actual 
 5. Every GUI PASS/FAIL must still be independently correlated with exact source, running binary SHA and an effect/test receipt (OBSERVE-GUI-VERIFY-04). Capturing a frame alone cannot validate a Lu build.
 
 **Release gate remains OPEN:** no claim that Lu can already see the desktop or that self-building GUI automation is complete. This is real native capture source code and a host-supervised execution path awaiting Windows CI/installed verification.
+
+
+## Optional pinned Windows package-build path
+
+`scripts/package-observe-capture-windows.ps1` builds the reviewed worker on the Windows build host, hashes the exact EXE, stages it next to the compiled Lu binary (non-installer) and injects the digest through `LU_OBSERVE_CAPTURE_WORKER_SHA256`. With `-BuildInstaller`, it invokes the Tauri v2 CLI using `lu-desktop/src-tauri/tauri.observe.capture.conf.json`, an opt-in resource overlay which places the EXE next to Lu.exe inside the NSIS installation. Normal alpha builds do not silently include an unverified placeholder binary. The full installer requires existing inference-engine resources, trusted NSIS/Tauri tools and native installed verification, which remain open. This script is for CI/release engineering and does not ask the end user to compile Lu.
+
+The worker's transitive dependency graph and generated Cargo.lock must be reviewed and committed before reproducible release acceptance. An exact worker digest is recorded in the build; it is never accepted from user/model input at runtime.

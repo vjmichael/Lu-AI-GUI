@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c8ee58af515e7f121e9fd4f1c2eeab04036e0ef8",
-  "trackedFileCount": 421,
+  "sourceCommitBeforeLock": "214d48af160e28c1ed84f3ee4930b32c84f6e582",
+  "trackedFileCount": 423,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "1c949ac0796ee8b8c02ff2343c2bd633278dfa65"
+      "blob": "bca58825364e49faa064e6d7f7105ba86939c93b"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -97,7 +97,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "538de7efc3267dc581c7bf0c1eeb8e94d61442c2"
+      "blob": "f2dabce41eb97d8b7f948ef7a13f7f46646d486a"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "b8b72c36426ebfa63bc1483babf035d74a095507"
+      "blob": "5d0b5e65a2e16135e67943a5bcb0be15ff93714c"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -448,6 +448,10 @@
       "blob": "6ced7911032b2e745f0ad32d976afe85556067f4"
     },
     {
+      "path": "lu-desktop/src-tauri/tauri.observe.capture.conf.json",
+      "blob": "985203f8ecc564c77215643fccd545563994d63a"
+    },
+    {
       "path": "lu-desktop/tests/background-pane.test.mjs",
       "blob": "dee51a606a359617afe774067276c27a07b7ccac"
     },
@@ -610,6 +614,10 @@
     {
       "path": "lu-desktop/web/styles.css",
       "blob": "f14613d6d07c45bf63ab34860da6ca8d2c009e53"
+    },
+    {
+      "path": "scripts/package-observe-capture-windows.ps1",
+      "blob": "06d5aecb2cc583c5023714c9593a003691a5b35a"
     },
     {
       "path": "scripts/source-identity.mjs",
