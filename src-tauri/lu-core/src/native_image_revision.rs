@@ -169,6 +169,41 @@ pub fn transform_admitted_image(
         width,height,mime_type:"image/png",output_png:png,
     })
 }
+/// An in-memory, nondestructive image edit assembly. The undo/redo UI
+/// changes only this list; no intermediate PNG is ever written to disk.
+/// The final output retains its ORIGINAL admitted source identity even
+/// though each operation is applied to the preceding staged pixels.
+pub fn transform_admitted_image_sequence(
+    source:&PinnedImage,operations:&[ImageRevisionOperation]
+)->Result<ImageRevision,ImageRevisionError>{
+    if operations.is_empty()||operations.len()>12{
+        return Err(ImageRevisionError::InvalidOperation);
+    }
+    let mut current=source.clone();
+    let origin_ref=source.image_ref.clone();
+    let origin_sha=source.sha256.iter().map(|b|format!("{b:02x}")).collect::<String>();
+    let mut final_result=None;
+    for (index,operation) in operations.iter().enumerate(){
+        let mut result=transform_admitted_image(&current,*operation)?;
+        result.base_ref=origin_ref.clone();
+        result.base_sha256=origin_sha.clone();
+        if index+1<operations.len(){
+            if result.output_png.len()>MAX_IMAGE_BYTES{
+                return Err(ImageRevisionError::TooLarge);
+            }
+            let digest=Sha256::digest(&result.output_png);
+            let mut sha256=[0u8;32];
+            sha256.copy_from_slice(&digest);
+            current=PinnedImage{
+                image_ref:format!("img-{}",digest[..16]
+                    .iter().map(|b|format!("{b:02x}")).collect::<String>()),
+                mime_type:"image/png",sha256,bytes:result.output_png.clone(),
+            };
+        }
+        final_result=Some(result);
+    }
+    final_result.ok_or(ImageRevisionError::InvalidOperation)
+}
 #[cfg(test)]
 mod tests{
     use super::*;
