@@ -458,6 +458,14 @@ impl DesktopState {
         let owner = lu_core::desktop_owner::DesktopOwner::acquire(
             &root.join("desktop-owner.sqlite")
         ).map_err(|e| format!("Lu app data directory already in use or unavailable: {e:?}"))?;
+        // Under DesktopOwner's exclusive process lease, previous image
+        // PREPARED exports are UNCERTAIN. Never replay a selected Save path.
+        let mut image_history=lu_core::native_image_revision_history::ImageRevisionLedger::open(
+            &root.join("lu-image-revisions.sqlite")
+        ).map_err(|e|format!("Image revision history unavailable: {e:?}"))?;
+        image_history.reconcile_interrupted()
+            .map_err(|e|format!("Image revision restart recovery failed: {e:?}"))?;
+        drop(image_history);
         let effects = lu_core::journal::EffectJournal::open(
             &root.join("native-effects.sqlite")
         ).map_err(|e| format!("effect journal unavailable: {e:?}"))?;
@@ -1350,11 +1358,61 @@ async fn lu_image_workspace_export(
     }).await.map_err(|_|"Native image destination picker unavailable")?;
     let Some(selected)=selected else{return Ok(None)};
     let destination=selected.into_path().map_err(|_|"Image destination is not a local file")?;
-    // Recompute using the same pinned bytes after the native picker. Paths
-    // from the web/model never enter this export function.
-    tauri::async_runtime::spawn_blocking(move||
-        image_workspace_desktop::write_new_revision(&source,edit,&destination)
-    ).await.map_err(|_|"Image export worker unavailable")?.map(Some)
+    // The independent durable intent precedes the first filesystem write.
+    // An interrupted export remains UNCERTAIN across restart, never replayed.
+    let root=app.path().app_data_dir()
+        .map_err(|_|"Image history directory unavailable")?;
+    let revision_id=next_id("image-rev-");
+    let name=destination.file_name().and_then(|v|v.to_str())
+        .ok_or("Image output filename unavailable")?.to_owned();
+    let intended=lu_core::native_image_revision_history::ImageRevisionHistoryRow{
+        id:revision_id.clone(),base_ref:image.base_ref.clone(),
+        base_sha256:image.base_sha256.clone(),
+        revision_sha256:image.revision_sha256.clone(),
+        file_name:name,width:image.width,height:image.height,
+        recorded_bytes:0,state:"PREPARED".into(),
+    };
+    tauri::async_runtime::spawn_blocking(move||{
+        use lu_core::native_image_revision_history::ImageRevisionLedger;
+        let mut journal=ImageRevisionLedger::open(&root.join("lu-image-revisions.sqlite"))
+            .map_err(|e|format!("Image revision ledger unavailable: {e:?}"))?;
+        journal.prepare(&chat_id,&intended)
+            .map_err(|e|format!("Image revision intent not persisted: {e:?}"))?;
+        match image_workspace_desktop::write_new_revision(&source,edit,&destination){
+            Ok(saved)=>{
+                if saved.revision_sha256!=intended.revision_sha256
+                   ||saved.base_sha256!=intended.base_sha256
+                   ||saved.width!=intended.width||saved.height!=intended.height{
+                    let _=journal.uncertain(&chat_id,&revision_id);
+                    return Err("Export identity differed from reviewed revision; outcome uncertain".into());
+                }
+                journal.applied(&chat_id,&revision_id,
+                    &saved.revision_sha256,saved.bytes_written as u64)
+                    .map_err(|_|"Image created but durable history receipt is uncertain")?;
+                Ok(Some(saved))
+            }
+            Err(error)=>{
+                let _=journal.uncertain(&chat_id,&revision_id);
+                Err(error)
+            }
+        }
+    }).await.map_err(|_|"Image export worker unavailable")?
+}
+
+/// Read-only, chat-scoped immutable export receipts. APPLIED records mean
+/// verified at write time; they do not claim that the file still exists.
+#[tauri::command]
+fn lu_image_workspace_history(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<lu_core::native_image_revision_history::ImageRevisionHistoryRow>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for image history")?;
+    let root=app.path().app_data_dir()
+        .map_err(|_|"Image history directory unavailable")?;
+    let ledger=lu_core::native_image_revision_history::ImageRevisionLedger::open(
+        &root.join("lu-image-revisions.sqlite")
+    ).map_err(|_|"Image revision history unavailable")?;
+    ledger.history(&chat_id,32).map_err(|_|"Image history could not be read".into())
 }
 
 /// Native operator preference. No worker launch, model tool or network grant.
@@ -4070,6 +4128,7 @@ pub fn run() {
             lu_load_diagnostics,
             lu_vision_capability,
             lu_image_workspace_export,
+            lu_image_workspace_history,
             lu_environment_status,
             lu_observe_start,
             lu_observe_status,
