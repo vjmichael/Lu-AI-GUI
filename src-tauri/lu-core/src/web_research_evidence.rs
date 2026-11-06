@@ -86,6 +86,19 @@ pub struct BrowserEvidenceRecord {
     pub excerpt_truncated:bool,
     pub observed_text_bytes:usize,
 }
+/// Evidence of one exact quotation in the retained Browser snapshot.
+/// A publisher-linked match proves an independently corroborated catalog
+/// record pointed to that *exact URL*, not that a full paper was downloaded.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct BrowserPassageProof {
+    pub generation_id:String,
+    pub call_id:String,
+    pub source_url:String,
+    pub observed_sha256:String,
+    pub exact_quote:String,
+    pub source_id:Option<String>,
+    pub publisher_link_matched:bool,
+}
 pub struct EvidenceLedger { connection: Connection }
 fn bounded(value: &str, cap: usize) -> bool {
     !value.trim().is_empty() && value.len() <= cap && !value.chars().any(char::is_control)
@@ -128,6 +141,20 @@ impl EvidenceLedger {
                CHECK(excerpt_truncated IN (0,1)),
              observed_text_bytes INTEGER NOT NULL,
              PRIMARY KEY(generation_id,call_id)
+           );
+           CREATE TABLE IF NOT EXISTS research_publisher_links(
+             source_id TEXT PRIMARY KEY NOT NULL REFERENCES research_sources(id),
+             publisher_url TEXT NOT NULL,
+             catalog_response_sha256 TEXT NOT NULL
+           );
+           CREATE TABLE IF NOT EXISTS research_browser_passage_proofs(
+             generation_id TEXT NOT NULL,
+             call_id TEXT NOT NULL,
+             source_id TEXT NOT NULL,
+             quote TEXT NOT NULL,
+             observed_sha256 TEXT NOT NULL,
+             publisher_link_matched INTEGER NOT NULL CHECK(publisher_link_matched IN (0,1)),
+             PRIMARY KEY(generation_id,call_id,source_id,quote)
            );
            CREATE TABLE IF NOT EXISTS research_frontier(
              source_id TEXT PRIMARY KEY REFERENCES research_sources(id),
@@ -383,6 +410,89 @@ impl EvidenceLedger {
             })
         ).optional()?.ok_or(EvidenceError::Missing)
     }
+    /// Called only by the host after separately fetching and validating the
+    /// independent Crossref work record. A DOI resolver redirect is NOT
+    /// evidence of a publisher match: the actual Browser URL must equal this
+    /// exact catalog-provided HTTPS URL for a linked passage proof.
+    pub fn bind_crossref_publisher_url(
+        &mut self,source_id:&str,publisher_url:&str,catalog_sha256:&str
+    )->Result<(),EvidenceError>{
+        if self.status(source_id)?!=SourceStatus::MetadataCorroborated
+            ||!bounded(publisher_url,2048)||!publisher_url.starts_with("https://")
+            ||publisher_url.chars().any(char::is_whitespace)
+            ||publisher_url.contains('\\')||publisher_url.contains('@')
+            ||catalog_sha256.len()!=64
+            ||!catalog_sha256.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err(EvidenceError::Invalid);
+        }
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_publisher_links
+             (source_id,publisher_url,catalog_response_sha256) VALUES (?1,?2,?3)",
+            params![source_id,publisher_url,catalog_sha256]
+        )?;
+        let existing:(String,String)=self.connection.query_row(
+            "SELECT publisher_url,catalog_response_sha256 FROM research_publisher_links
+             WHERE source_id=?1",[source_id],|r|Ok((r.get(0)?,r.get(1)?))
+        )?;
+        if existing.0!=publisher_url||existing.1!=catalog_sha256 {
+            return Err(EvidenceError::Invalid);
+        }
+        Ok(())
+    }
+    /// An exact substring proof against *retained* Browser text. Caller
+    /// cannot supply a replacement URL, page body, model paraphrase or hash.
+    /// Catalog matching is a separate tier and requires the independently
+    /// fetched publisher link to equal the Browser's actual final URL.
+    pub fn prove_browser_passage(
+        &mut self,generation_id:&str,call_id:&str,quotation:&str,
+        publisher_source_id:Option<&str>
+    )->Result<BrowserPassageProof,EvidenceError>{
+        if !bounded(quotation,2048)||quotation.len()<4
+            ||quotation.contains('\0') {
+            return Err(EvidenceError::Invalid);
+        }
+        let source=self.browser_observation(generation_id,call_id)?;
+        if !source.excerpt.contains(quotation){return Err(EvidenceError::PassageNotFound);}
+        let linked=if let Some(id)=publisher_source_id {
+            if !bounded(id,128)
+                ||!matches!(self.status(id)?,SourceStatus::MetadataCorroborated
+                    |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+                return Err(EvidenceError::NotCorroborated);
+            }
+            let url:Option<String>=self.connection.query_row(
+                "SELECT publisher_url FROM research_publisher_links WHERE source_id=?1",
+                [id],|r|r.get(0)
+            ).optional()?;
+            if url.as_deref()!=Some(source.url.as_str()){
+                return Err(EvidenceError::MetadataMismatch);
+            }
+            true
+        } else {false};
+        let source_id=publisher_source_id.unwrap_or("");
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_browser_passage_proofs
+             (generation_id,call_id,source_id,quote,observed_sha256,
+              publisher_link_matched) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![generation_id,call_id,source_id,quotation,
+                source.observed_sha256,i64::from(linked)]
+        )?;
+        let stored:(String,i64)=self.connection.query_row(
+            "SELECT observed_sha256,publisher_link_matched
+             FROM research_browser_passage_proofs
+             WHERE generation_id=?1 AND call_id=?2 AND source_id=?3 AND quote=?4",
+            params![generation_id,call_id,source_id,quotation],
+            |r|Ok((r.get(0)?,r.get(1)?))
+        )?;
+        if stored.0!=source.observed_sha256||stored.1!=i64::from(linked){
+            return Err(EvidenceError::Invalid);
+        }
+        Ok(BrowserPassageProof{
+            generation_id:generation_id.into(),call_id:call_id.into(),
+            source_url:source.url,observed_sha256:source.observed_sha256,
+            exact_quote:quotation.into(),source_id:publisher_source_id.map(str::to_owned),
+            publisher_link_matched:linked,
+        })
+    }
     /// Read a bounded, most-recent-first list of observations for one
     /// already chat-scoped SQLite ledger. Never join this with the
     /// bibliographic research_sources table or inherit its citation status.
@@ -588,6 +698,51 @@ mod browser_evidence_tests {
         let _=std::fs::remove_file(&path);
         let _=std::fs::remove_file(path.with_extension("sqlite-wal"));
         let _=std::fs::remove_file(path.with_extension("sqlite-shm"));
+    }
+    #[test]
+    fn excerpt_quote_is_not_academic_citation_and_false_quote_is_rejected(){
+        let mut l=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        l.observe_browser_text("g-claim","browser-call-claim","https://paper.example/article",
+            "READ","The findings were mixed and uncertain.",false).unwrap();
+        assert!(matches!(l.prove_browser_passage("g-claim","browser-call-claim",
+            "Invented finding",None),Err(EvidenceError::PassageNotFound)));
+        let proof=l.prove_browser_passage("g-claim","browser-call-claim",
+            "findings were mixed",None).unwrap();
+        assert!(!proof.publisher_link_matched);
+        assert_eq!(proof.source_id,None);
+        assert_eq!(proof.source_url,"https://paper.example/article");
+    }
+    #[test]
+    fn independently_bound_publisher_url_must_match_exact_browser_final_url(){
+        let mut l=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        l.discover(&Candidate{id:"paper-1".into(),title:"Study".into(),
+            author:"Researcher".into(),identifier:"10.1234/study".into()}).unwrap();
+        l.observe_browser_text("g-claim","browser-call-claim",
+            "https://paper.example/article","READ",
+            "A carefully qualified conclusion.",false).unwrap();
+        assert!(l.prove_browser_passage("g-claim","browser-call-claim",
+            "qualified conclusion",Some("paper-1")).is_err());
+        l.corroborate("paper-1",&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1234/study".into(),
+            title:"Study".into(),author:"Researcher".into(),
+            identifier:"10.1234/study".into()
+        }).unwrap();
+        assert!(l.prove_browser_passage("g-claim","browser-call-claim",
+            "qualified conclusion",Some("paper-1")).is_err());
+        let digest="f".repeat(64);
+        l.bind_crossref_publisher_url("paper-1","https://paper.example/different",&digest).unwrap();
+        assert!(matches!(l.prove_browser_passage("g-claim","browser-call-claim",
+            "qualified conclusion",Some("paper-1")),Err(EvidenceError::MetadataMismatch)));
+        assert!(l.bind_crossref_publisher_url("paper-1",
+            "https://paper.example/article",&digest).is_err());
+        l.observe_browser_text("g-second","browser-call-second",
+            "https://paper.example/different","READ","A second real passage.",false).unwrap();
+        let proof=l.prove_browser_passage("g-second","browser-call-second",
+            "second real passage",Some("paper-1")).unwrap();
+        assert!(proof.publisher_link_matched);
+        assert_eq!(proof.source_id.as_deref(),Some("paper-1"));
+        assert_eq!(l.status("paper-1").unwrap(),SourceStatus::MetadataCorroborated);
+        assert!(!l.eligible_for_reviewed_bibliography("paper-1").unwrap());
     }
     #[test]
     fn browser_receipts_reject_unowned_and_non_read_claims(){
