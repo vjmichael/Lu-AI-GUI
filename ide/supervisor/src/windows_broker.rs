@@ -497,6 +497,12 @@ pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
     loop {
         let owner_wait = unsafe { WaitForSingleObject(owner.0, 0) };
         if owner_wait == WAIT_OBJECT_0 {
+            // A same-session process might have signalled the public
+            // recovery event BEFORE the crash. Reset it now, so it cannot
+            // release the keeper without a post-cleanup reconciliation.
+            if unsafe { ResetEvent(release.0) } == 0 {
+                return Err(denied());
+            }
             receipts.record("owner_exited")?;
             receipts.record("kill_requested")?;
             let killed = terminate_and_check(job.0);
