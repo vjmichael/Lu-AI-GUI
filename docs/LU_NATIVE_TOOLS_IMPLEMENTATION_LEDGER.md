@@ -1,8 +1,39 @@
 # Lu Core native tools — implementation and acceptance ledger
 Updated: 2026-11-06
-Source integration branch: `lu/v1-observe-learn-20261106` (draft PR #61, stacked on Wave 4 #59, Wave 3 #57 and Wave 2 source)
+Source integration branch: `lu/tool-completion-waves-20261106` (new source-development descendant of draft PR #61; older draft PRs are not release merges and their CI is not gating development)
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
+## Latest implementation snapshot — Waves C, E, F (2026-11-06)
+
+**Use THIS section before the older authoritative/source-reconciliation tables below.** Branch: lu/tool-completion-waves-20261106, based on draft PR #61. The user's instruction was SOURCE FIRST, skip testing and stale GitHub housekeeping. All code below was committed on this development branch. No assertion of native CI, physical Windows acceptance, NSIS installation or universal format support is justified.
+
+| Wave | Source and desktop work committed | What remains or is deliberately unsupported | Acceptance |
+| --- | --- | --- | --- |
+| C — Archives and documents | OS-approved **1–8 archive group** with complete preview and independent per-member SHA-256 preflight; max 512 MiB total expanded, 4096 entries and 900 KiB review manifest; no-overwrite output, explicit cancellation, native confirmation, typed Protobuf journal and read-only recovery; exact source-pinned Word and PPTX whole-run replacements into NEW documents with source+output hash checking and durable receipt | No promise for encrypted/split 7z/RAR, exotic ISO/UDF, macro/signed/encrypted OOXML, styled-run-spanning replacement, broad chart/complex layout changes; multi-archive publication not all-or-nothing atomic | SOURCE INTEGRATED; NATIVE/INSTALLED OPEN |
+| E — Observe & Learn | OFF-default Lu-only semantic observation plus native supervisor error notes and Windows frame-digest receipt; human-reviewable, session-scoped enumerated evidence brief with SHA-256; explicit UI action stages it as chat DRAFT without automatically starting a model, giving tools, or claiming verified GUI success | Actual independent external-app pixel-grounding, verified OS test receipts, mini-model autonomous observation, repair agent/memory promotion must use separately scoped future workflows | SOURCE INTEGRATED FOR SAFE HANDOFF; NATIVE/INSTALLED OPEN |
+| F — Host lifecycle and recovery | Host-cancellable HTTPS worker for campaign pagination, Crossref and documents; direct document cancellation and no post-cancel citation promotion; native task completion/cancellation after worker termination; archive batch/preflight cancellation; OCR bounded concurrent IO, killed/reaped deadline and pinned engine+language data; Word/PPTX/batch archive intent journal and exact read-only restart reconciliation | Independent native Windows process containment, concurrency/race fixtures, real credential/license packaging, repeated long research runs, multi-chat crash restart and full installed-app acceptance | SOURCE INTEGRATED FOR THESE PATHS; NATIVE/INSTALLED OPEN |
+
+**No code area was declared release-verified.** Existing generic read/write/trash, ZIP/TAR/RPM/7z/ISO, basic Excel/Office, JSON/Protobuf, Git, Background Tasks, Vision, Browser, Research and model lifecycle remain in the prior source snapshot unless explicitly extended here. This batch deliberately did not stop or repair old PR/CI pipelines.
+
+### New code paths, trust boundaries and operator behavior
+
+- Core: native_archive_batch, native_archive_tree cancellable preflight, native_office_replace_all presentation planner, web_http_fetch host cancellation, native_ocr pinned data and subprocess completion.
+- Desktop: archive_batch_desktop native-selected previews; lu_review_archive_batch, lu_confirm_archive_batch, lu_deny_archive_batch, and cancellation via the existing archive-run registry; lu_office_word_replace_all and lu_office_presentation_replace_all sharing exactly the same pick/approve/journal/recheck routine; lu_research_cancel_document, and Research resume/review task receipts; ObserveHost review_draft and its explicit draft-insertion UI.
+- Recovery: wave2_recovery schema 3 adds approved ArchiveBatchManifest and verifies output group, child markers, every file digest and exact batch receipt after restart. Word and PowerPoint new-file effects are also indexed. Journal state and actual filesystem integrity are reported separately; UNKNOWN/UNCERTAIN is never silently upgraded to APPLIED or retried.
+- Model-supplied URL/path/executable data is NEVER trusted to acquire authority. OCR transcription, Browser excerpts, observer notes and Research discoveries carry explicit provenance and cannot independently certify claims or application correctness.
+
+### Forward acceptance checklist, deliberately deferred to GH CI
+
+1. Compile exact new Lu Core/Desktop revision on Windows and Linux, repair any Rust/JS/type/Protobuf mismatches and regenerate pinned Cargo locks as needed.
+2. Native no-overwrite archive batch, unsafe members, symlink/reparse, tree tamper and interruption/reconciliation acceptance.
+3. DOCX/PPTX exact-run revision fidelity, unchanged OOXML parts, crash/ACL/source replacement and reportable journal receipts.
+4. Independent native Observe notes, image capture worker/process cleanup, pause/stop/expiry revocation and opt-in model handoff.
+5. Real network cancellation including blocked DNS/transport, concurrent source review and task-state reconciliation.
+6. Pinned OCR packaging/licenses and hung worker termination, physical Windows multi-chat GGUF/Vulkan acceptance, installed NSIS install/restart/uninstall.
+
+**Development checkpoint:** The planned bounded source changes for C/E/F are committed; broader unsupported formats/visual autonomy remain product expansion rather than hidden claims of completion. CI is still a separate release gate.
+
+---
 ## Current authoritative tool-area status — 2026-11-06 source/CI reconciliation
 
 **This snapshot supersedes the earlier "CURRENT TOOL-AREA STATUS" table below wherever implementation scope or CI status differs.** Historical wave notes remain intact to preserve provenance. Repository: `vjmichael/Lu-AI-GUI`; integration branch `lu/v1-observe-learn-20261106`; original exact source head inspected: `683e188e2dc66e65d98f3af3ebdda934df2bd590`. The primary branch graph remains draft #44 (Wave 2) → draft #57 (Wave 3) → draft #59 (Wave 4) → draft #61 (tools, Browser/Research and Observe), stacked on earlier Wave 1. **None of those draft PRs is a stable alpha or a release merge.**
