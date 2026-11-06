@@ -50,6 +50,18 @@ pub(crate) struct ResearchBrowserEvidenceView {
     pub verification_status:&'static str,
     pub citation_verified:bool,
 }
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchQuoteProofView {
+    pub source_url:String,
+    pub observed_sha256:String,
+    pub exact_quote:String,
+    pub publisher_source_id:Option<String>,
+    pub publisher_link_matched:bool,
+    pub document_accessed:bool,
+    pub citation_verified:bool,
+    pub message:&'static str,
+}
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct ResearchCorroborationView{
@@ -319,6 +331,49 @@ impl ResearchDesktop{
             }).collect())
     }
 
+    /// A human reviews a proposed direct quotation from one previously
+    /// observed Browser call. An optional academic source ID must already be
+    /// Crossref-corroborated and have its independently fetched publisher URL
+    /// exactly equal to the recorded final Browser URL.
+    pub(crate) fn verify_browser_quote(
+        &self,chat_id:&str,generation_id:&str,call_id:&str,quote:&str,
+        publisher_source_id:Option<&str>
+    )->Result<ResearchQuoteProofView,String>{
+        if !safe_id(chat_id)||quote.len()>2048||quote.trim().is_empty(){
+            return Err("Invalid conversation or quote".into());
+        }
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger is not a regular file".into());
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let proof=ledger.prove_browser_passage(
+            generation_id,call_id,quote,publisher_source_id
+        ).map_err(|err|format!("Exact Browser passage proof refused: {err:?}"))?;
+        Ok(ResearchQuoteProofView{
+            source_url:proof.source_url,
+            observed_sha256:proof.observed_sha256,
+            exact_quote:proof.exact_quote,
+            publisher_source_id:proof.source_id,
+            publisher_link_matched:proof.publisher_link_matched,
+            document_accessed:false,
+            citation_verified:false,
+            message:if proof.publisher_link_matched {
+                "Exact quotation matched the retained Browser excerpt and a Crossref-corroborated publisher URL. This does NOT attest the complete scholarly document or factual interpretation."
+            }else{
+                "Exact quotation matched the retained Browser excerpt only. No independent publication or scholarly citation was verified."
+            },
+        })
+    }
+
     /// User-approved metadata corroboration of one already-persisted
     /// OpenAlex lead. No arbitrary URL, DOI or model-selected authority.
     /// A successful result is ONLY bibliographic corroboration.
@@ -422,6 +477,29 @@ mod tests{
         assert!(host.record_browser_read("c-../escape","g-1","browser-call-2",
             "https://archive.example/article","READ","test",false).is_err());
         drop(first);
+        let _=std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn exact_browser_quote_is_not_an_automatically_verified_scholarly_citation(){
+        let dir=std::env::temp_dir().join(format!("lu-quote-{}-{}",
+            std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let host=ResearchDesktop::new(dir.join("unused-resources"),dir.clone());
+        host.record_browser_read("c-first","g-quote","browser-call-quote",
+            "https://archive.example/article","READ",
+            "Observed actual quote in this source.",false).unwrap();
+        let proof=host.verify_browser_quote("c-first","g-quote","browser-call-quote",
+            "actual quote",None).unwrap();
+        assert_eq!(proof.source_url,"https://archive.example/article");
+        assert!(!proof.publisher_link_matched);
+        assert!(!proof.document_accessed);
+        assert!(!proof.citation_verified);
+        assert!(host.verify_browser_quote("c-first","g-quote","browser-call-quote",
+            "invented quote",None).is_err());
+        assert!(host.verify_browser_quote("c-other","g-quote","browser-call-quote",
+            "actual quote",None).is_err());
+        assert!(host.verify_browser_quote("c-first","g-quote","browser-call-quote",
+            "actual quote",Some("invented-study")).is_err());
         let _=std::fs::remove_dir_all(dir);
     }
     #[test]
