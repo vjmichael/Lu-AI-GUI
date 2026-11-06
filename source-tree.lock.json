@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "276a5d07d08dcd203c0d9962553a42e5a56654f7",
+  "sourceCommitBeforeLock": "dcc3d116f64861a393414a891f5e9e84d0b0e75c",
   "trackedFileCount": 395,
   "files": [
     {
@@ -41,7 +41,7 @@
     },
     {
       "path": ".github/workflows/lu-wave3-conversation-tools.yml",
-      "blob": "83f69e8267ac5b58bd85f2ca939252f0718cf106"
+      "blob": "5e9b525bcd033cd897ab9f660025bc6b953b84df"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "01eb4cdc3d31302911c13fff89ecd3f1f1ad948d"
+      "blob": "6384b8877fa728a508bb80d67ea87b6cc66dbadb"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -165,7 +165,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE3_NORMAL_CONVERSATION.md",
-      "blob": "ad9c7c53079324f2cc3eec67cb91a6d34bb4d808"
+      "blob": "ca3e092120b81f38c4121d0d22a9b41f06bc25a5"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -385,7 +385,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reader_desktop.rs",
-      "blob": "eff99c7701534f32859463b6fe8f1e1c9625fa13"
+      "blob": "090fdbe27b25e4cdce516b02e451a216b8f626df"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -1021,7 +1021,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_reader_turn.rs",
-      "blob": "d158482c5ce5aba6527b02a2b0bb1afcca006c8c"
+      "blob": "be6d60037fbfe9dc9d410490f4190baef4b9b2c7"
     },
     {
       "path": "src-tauri/lu-core/src/native_rpm.rs",

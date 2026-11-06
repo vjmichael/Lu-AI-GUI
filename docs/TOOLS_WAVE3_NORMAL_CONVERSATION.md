@@ -54,3 +54,7 @@ No claim of full Wave 3 completion, native green CI, or release acceptance.
 - Clear current-user reading requests (e.g. **Summarize this PDF**, **Inspect the Excel spreadsheet**) now offer the existing native document picker directly from normal Send. They use the exact preexisting authenticated Reader turn, pinned/source-hashed document bytes, bounded Protobuf model tool, revocation, per-chat cancellation and real model-turn journal.
 - The previously separate Ask Reader command is a wrapper of the same host entrypoint, not a duplicate backend. Explanatory prompts, writes, negations, folders, attachments and injected model-control tokens cannot trigger this route. Users can deny the native picker without granting anything.
 - Document tool selection still requires the genuine human-picked file; neither a model answer nor the WebView supplies an OS path or opens arbitrary files.
+
+## WAVE3-READER-02: live Reader dispatch evidence
+- Reader's actual model-to-native Protobuf dispatch is now observable through the same trusted `ToolDispatchCheckpoint` path used by Workspace. The desktop emits only a fixed `model_step`, `tool_started` or `tool_returned` status for the exact chat and generation—never document content, path, tool arguments or identity tokens.
+- Existing native Reader cancellation still targets the host-owned active backend step and ends with journaled cancellation plus per-turn permission revocation. A cancelled model response is never promoted to a successful assistant answer.

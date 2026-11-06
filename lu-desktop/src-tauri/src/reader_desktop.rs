@@ -5,12 +5,16 @@
 use super::*;
 use lu_core::{
     conversation_authority::TrustedUserTurnVerifier,
+    agent_tool_loop::ToolDispatchCheckpoint,
     inference_host::Cancellation,
     model_turn_journal::ModelTurnJournal,
     native_reader_turn::ReaderTurnSession,
     supervised_tool_generation::SupervisorModelStep,
 };
 use std::sync::{Arc,Mutex};
+#[derive(Clone,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+struct ReaderToolProgress{chat_id:String,generation_id:String,phase:String}
 
 #[derive(Clone)]
 pub(crate) struct ReaderRunControl{
@@ -187,10 +191,18 @@ pub(crate) async fn ask_reader_for_chat(
                 &host.catalog_path.with_file_name("lu-reader-turn-audit.sqlite"))
                 .map_err(|e|format!("Reader audit unavailable: {e:?}"))?;
             let step_ref=Arc::clone(&current_step);
+            let report_app=event_app.clone();
+            let report_chat=chat_id.clone();
+            let report_generation=gid.clone();
             let step_observer=Arc::new(move|id:&str|{
                 if let Ok(mut current)=step_ref.lock(){
                     *current=Some(id.to_owned());
                 }
+                let _=report_app.emit("lu-native-tool-progress",ReaderToolProgress{
+                    chat_id:report_chat.clone(),
+                    generation_id:report_generation.clone(),
+                    phase:"model_step".into(),
+                });
             });
             let mut model=SupervisorModelStep::new(
                 &host.supervisor,session_id.clone(),gid.clone())
@@ -208,9 +220,23 @@ pub(crate) async fn ask_reader_for_chat(
                  question only after reading the document. User question: {}",
                 virtual_filename,prompt,
             );
+            let dispatch_app=event_app.clone();
+            let dispatch_chat=chat_id.clone();
+            let dispatch_generation=gid.clone();
+            let observe=move|event:ToolDispatchCheckpoint|{
+                let phase=match event{
+                    ToolDispatchCheckpoint::Entered=>"tool_started",
+                    ToolDispatchCheckpoint::Returned=>"tool_returned",
+                };
+                let _=dispatch_app.emit("lu-native-tool-progress",ReaderToolProgress{
+                    chat_id:dispatch_chat.clone(),
+                    generation_id:dispatch_generation.clone(),
+                    phase:phase.into(),
+                });
+            };
             let result=tauri::async_runtime::block_on(
-                reader_turn.run_journaled(
-                    &reader_prompt,&mut model,&cancellation,&journal))
+                reader_turn.run_journaled_observed(
+                    &reader_prompt,&mut model,&cancellation,&journal,&observe))
                 .map_err(|e|format!("Reader tool turn: {e:?}"))?;
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled Reader generation".into())

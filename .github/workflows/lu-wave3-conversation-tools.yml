@@ -110,6 +110,7 @@ jobs:
       - name: Test normal Send user-turn admission and action proposal guards
         run: |
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib workspace_desktop::tests -- --nocapture
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reader_desktop::tests -- --nocapture
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_action_proposal::tests -- --nocapture
       - name: Check desktop native context and no lockfile drift
         shell: bash

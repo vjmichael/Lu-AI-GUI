@@ -12,7 +12,7 @@ use std::{
 };
 use prost::Message;
 use crate::{
-    agent_tool_loop::{NativeToolTurn,ToolTurnError},
+    agent_tool_loop::{NativeToolTurn,ToolTurnError,ToolDispatchCheckpoint},
     contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
     conversation_authority::{
         AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
@@ -24,7 +24,7 @@ use crate::{
     native_reader_tool::{register_reader_pinned,ReaderRequest,TOOL_ID,INPUT_TYPE},
     registry::NativeToolRegistry,
     supervised_tool_generation::{
-        run_supervised_native_turn_journaled,ModelStepGenerator,
+        run_supervised_native_turn_journaled_observed,ModelStepGenerator,
         NativeGenerationError,NativeTurnReport,NativeTurnServices,
     },
 };
@@ -123,22 +123,25 @@ impl ReaderTurnSession{
     /// Only the final, verified answer may be appended to chat history.
     /// This method does not silently send output to any conversation.
     pub async fn run_journaled(
-        &mut self,user_text:&str,
-        model:&mut dyn ModelStepGenerator,
-        cancel:&Cancellation,
-        journal:&ModelTurnJournal,
+        &mut self,user_text:&str,model:&mut dyn ModelStepGenerator,
+        cancel:&Cancellation,journal:&ModelTurnJournal,
+    )->Result<NativeTurnReport,NativeGenerationError>{
+        self.run_journaled_observed(user_text,model,cancel,journal,&|_|{}).await
+    }
+    /// Content-free model/tool observation for a host-owned Reader turn.
+    pub async fn run_journaled_observed(
+        &mut self,user_text:&str,model:&mut dyn ModelStepGenerator,
+        cancel:&Cancellation,journal:&ModelTurnJournal,
+        observe:&(dyn Fn(ToolDispatchCheckpoint)+Send+Sync),
     )->Result<NativeTurnReport,NativeGenerationError>{
         let services=NativeTurnServices{
-            catalog:&self.catalog,
-            registry:&self.registry,
-            authority:&self.authority,
-            host_policy:&self.policy,
+            catalog:&self.catalog,registry:&self.registry,
+            authority:&self.authority,host_policy:&self.policy,
         };
-        let result=run_supervised_native_turn_journaled(
-            user_text,&mut self.turn,model,&services,cancel,journal,
+        let result=run_supervised_native_turn_journaled_observed(
+            user_text,&mut self.turn,model,&services,cancel,journal,observe,
         ).await;
-        // A successful model final answer does not preserve the capability
-        // for later messages. A failed/cancelled call also loses authority.
+        // Success, failure and cancellation revoke the one-turn grant.
         let _=self.authority.revoke_task(&self.task_id);
         result
     }
