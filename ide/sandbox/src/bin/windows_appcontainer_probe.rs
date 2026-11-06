@@ -291,10 +291,12 @@ mod windows {
                     None if err.kind() == io::ErrorKind::ConnectionRefused => 1397,
                     None => 1396,
                 };
-                eprintln!("NETWORK_PROBE_DENIED_UNVERIFIED code={exit} kind={:?} error={err}",
-                    err.kind());
+                eprintln!(
+                    "NETWORK_PROBE_DENIED_UNVERIFIED code={exit} kind={:?} error={err}",
+                    err.kind()
+                );
                 Ok(Some(exit))
-            },
+            }
         }
     }
 
