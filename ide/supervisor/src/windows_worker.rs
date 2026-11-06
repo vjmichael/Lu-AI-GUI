@@ -969,9 +969,10 @@ where
     // happens until the entire bundle has been sealed and checked.
     let profile = AppProfile::create(job_id)?;
     acceptance_trace("appcontainer_profile_created");
-    // Host-only, debug-only and disposable native CI only: exact freshly
-    // minted profile SID, never an all-AppContainer device ACL expansion.
-    let mut nul_lease = crate::windows_null_device::ci_scoped_nul_access(profile.sid)?;
+    // Remain disabled throughout sealing, costly toolchain staging and
+    // approval. The sole CI-only NUL lease may be granted later, after the
+    // protected broker has fsynced its independent OS Job witness.
+    let mut nul_lease: Option<crate::windows_null_device::CiNullLease> = None;
     let local = profile.local_state()?;
     let workspace = local.join("workspace");
     let toolchain = local.join("toolchain");
@@ -1046,6 +1047,10 @@ where
     // its own witness before the one-shot grant can be consumed.
     let mut broker = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_broker)?;
     acceptance_trace("protected_broker_fsync_ready");
+    // Debug/CI-only: grant precisely this new package SID the minimum NUL
+    // read/write rights for Cargo's nested rustc spawn. This device ACE is
+    // never set by a production worker and is revoked before terminal receipt.
+    nul_lease = crate::windows_null_device::ci_scoped_nul_access(profile.sid)?;
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     acceptance_trace("one_use_grant_consumed");
     let (process, thread) = match launch_appcontainer(
