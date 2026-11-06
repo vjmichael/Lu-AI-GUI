@@ -326,6 +326,7 @@ impl NativeLspRuntime {
         if active.project_id!=request.project_id
             ||active.relative_path!=request.relative_path
             ||active.saved_revision!=request.expected_revision
+            ||active.source.language_id!=request.language_id
             ||request.buffer_revision<active.source.buffer_revision {
             return Err("LSP_SOURCE_SCOPE_MISMATCH".into());
         }
