@@ -9,7 +9,7 @@ use std::{
 use serde::Serialize;
 use sha2::{Digest,Sha256};
 use lu_core::{
-    web_http_fetch::SecureHttpFetcher,
+    web_http_fetch::{SecureHttpFetcher,FetchError},
     web_research_evidence::{Candidate,EvidenceLedger,EvidenceError,SourceStatus,TrustedBibliography,ResearchCampaignStatus},
     web_research_planner::canonical_doi,
     web_research_analysis::{AnalysisStore,Interpretation,Stance},
@@ -278,6 +278,7 @@ pub(crate) struct ResearchCampaignReviewView{
 }
 pub(crate) struct ResearchDesktop{
     active_campaigns:Mutex<HashMap<String,Arc<AtomicBool>>>,
+    active_documents:Mutex<HashMap<String,Arc<AtomicBool>>>,
     root:PathBuf,
     curl:PathBuf,
     expected_sha256:Option<&'static str>,
@@ -318,6 +319,7 @@ impl ResearchDesktop{
         let filename="curl";
         Self{
             active_campaigns:Mutex::new(HashMap::new()),
+            active_documents:Mutex::new(HashMap::new()),
             root:app_data.join("lu-research-evidence"),
             curl:resources.join("lu-research").join(filename),
             expected_sha256:option_env!("LU_RESEARCH_CURL_SHA256"),
@@ -511,10 +513,47 @@ impl ResearchDesktop{
     /// Host-approved NetworkRead for one already corroborated catalog URL.
     /// Redirect hops are individually HTTPS/DNS pinned by SecureHttpFetcher.
     /// This does not let the model supply a source URL or executable.
+    /// A direct user-picked document task owns one cancellable HTTPS worker.
+    /// Campaign reviews hold their own process lease and use the same
+    /// lower-level cancellable redirect fetcher.
     pub(crate) fn retrieve_document(
         &self,chat_id:&str,source_id:&str
     )->Result<ResearchDocumentView,String>{
-        self.retrieve_document_admitted(chat_id,source_id,None)
+        if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
+            ||source_id.len()>128{
+            return Err("Invalid source identity for document retrieval".into());
+        }
+        let key=format!("{chat_id}:{source_id}");
+        let cancel=Arc::new(AtomicBool::new(false));
+        {
+            let mut active=self.active_documents.lock()
+                .map_err(|_|"Document worker lease unavailable")?;
+            if active.contains_key(&key){
+                return Err("This document is already being retrieved".into());
+            }
+            active.insert(key.clone(),Arc::clone(&cancel));
+        }
+        let result=self.retrieve_document_admitted(
+            chat_id,source_id,Some(cancel.as_ref())
+        );
+        if let Ok(mut active)=self.active_documents.lock(){
+            active.remove(&key);
+        }
+        result
+    }
+    pub(crate) fn cancel_document(
+        &self,chat_id:&str,source_id:&str
+    )->Result<bool,String>{
+        if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
+            ||source_id.len()>128{
+            return Err("Invalid document cancellation identity".into());
+        }
+        let key=format!("{chat_id}:{source_id}");
+        let active=self.active_documents.lock()
+            .map_err(|_|"Document cancellation unavailable")?;
+        let Some(flag)=active.get(&key) else{return Ok(false)};
+        flag.store(true,Ordering::Release);
+        Ok(true)
     }
     fn retrieve_document_admitted(
         &self,chat_id:&str,source_id:&str,cancel:Option<&AtomicBool>
@@ -552,9 +591,18 @@ impl ResearchDesktop{
             None=>fetcher.fetch_document_chain(
                 &catalog_url,MAX_RESEARCH_DOCUMENT_BYTES
             ),
-        }.map_err(|_|"Document HTTPS retrieval or redirect attestation refused")?;
+        }.map_err(|e|match e{
+            FetchError::Cancelled=>"Research document retrieval cancelled by user",
+            _=>"Document HTTPS retrieval or redirect attestation refused",
+        })?;
+        if cancel.is_some_and(|flag|flag.load(Ordering::Acquire)){
+            return Err("Research document retrieval cancelled by user".into());
+        }
         let document=extract_research_document(&chain.final_page.bytes)
             .map_err(|_|"Fetched document is unreadable, unsupported or exceeds extraction limits")?;
+        if cancel.is_some_and(|flag|flag.load(Ordering::Acquire)){
+            return Err("Research document retrieval cancelled by user".into());
+        }
         let proof=ledger.record_document_retrieval(
             source_id,&catalog_url,&chain.final_page.canonical_url,
             &document.raw_sha256,&chain.chain_sha256,document.kind.code(),
