@@ -1,0 +1,57 @@
+name: IDE D7C Windows capability-rooted worker staging
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-d7c-windows-capability.yml'
+  push:
+    branches: ['ide/wave-d7c-race-safe-native-worker-20261106']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d7c-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capability-worker-windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Compile feature-gated worker and capability traversal
+        run: cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --all-targets
+      - name: Test concurrent junction swaps, output publication, and journal denial
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker -- --nocapture
+      - name: Run repeat hostile directory-swap test
+        shell: pwsh
+        run: |
+          for ($n = 0; $n -lt 3; $n++) {
+            cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker hostile_concurrent_child_rename_cannot_escape_pinned_root -- --exact --nocapture
+            if ($LASTEXITCODE -ne 0) { throw "D7C OS race iteration $n failed" }
+          }
+      - name: Require exact Rust formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+      - name: Assert no fallback to ambient-path tree copying
+        shell: pwsh
+        run: |
+          $worker = Get-Content ide/supervisor/src/windows_worker.rs -Raw
+          $tree = Get-Content ide/supervisor/src/windows_cap_tree.rs -Raw
+          $desktop = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          if ($worker -match 'fn tree_transfer' -or $worker -match 'fn directory_identity') {
+            throw 'Old ambient-path tree copier reintroduced'
+          }
+          if ($tree -notmatch 'Dir::from_std_file' -or $tree -notmatch 'FollowSymlinks::No' -or
+              $tree -notmatch 'publish_into_native_parent') {
+            throw 'Missing handle-rooted security boundary'
+          }
+          if ($desktop -match 'execute_windows_worker|ide_run_job|ide_launch_worker|ide_execute_job') {
+            throw 'Unaccepted native worker exposed to installed IDE'
+          }
