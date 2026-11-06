@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b1932dbfa8c80326aba12e0b93ed5b1ceb8e9b2d",
+  "sourceCommitBeforeLock": "578e1753151be0c1d97267b1a10c81931e666540",
   "trackedFileCount": 395,
   "files": [
     {
@@ -257,7 +257,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "2e86535a670f4b76a9dcd56d29037a7ec656a6b4"
+      "blob": "fb046f93c5b615fc435d747d14d31920bc4a50b7"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -545,7 +545,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "157645d41bd14e1cfa4cea7b68cef95c5ef3536f"
+      "blob": "b82e08f89fae34b8b4bba79cb7f6980c7b05284e"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

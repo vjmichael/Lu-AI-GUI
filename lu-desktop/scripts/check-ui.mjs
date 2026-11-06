@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 const ui = readFileSync(new URL('../web/main.jsx', import.meta.url), 'utf8');
 const host = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+const workspaceHost = readFileSync(new URL('../src-tauri/src/workspace_desktop.rs', import.meta.url), 'utf8');
 const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
@@ -15,7 +16,7 @@ const tests = [
   ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
     ui.includes("listen('lu-native-turn-capabilities'") &&
     ui.includes('Read-only native tools for this turn') &&
-    host.includes('turn.capabilities()')],
+    workspaceHost.includes('turn.capabilities()')],
   ['Wave 3 live tool status follows trusted dispatch checkpoints and stays chat-scoped',
     ui.includes("listen('lu-native-tool-progress'") &&
     ui.includes('Lu · using approved native tool') &&
