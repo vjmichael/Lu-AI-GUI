@@ -57,6 +57,17 @@ const tests = [
     host.includes('fn lu_deny_document_create(') &&
     host.includes('document_create_reviews: document_create_desktop::DocumentCreateQueue') &&
     host.includes('state.document_create_reviews.consume(')],
+  ['existing Office revisions use native source and output pickers, complete change review and independent approval',
+    ui.includes("invoke('lu_review_office_revision'") &&
+    ui.includes("invoke('lu_confirm_office_revision'") &&
+    ui.includes("invoke('lu_deny_office_revision'") &&
+    ui.includes('officeRevisionReview.unaffectedParts.map') &&
+    ui.includes('disabled={!officeRevisionReviewed || officeRevisionBusy}') &&
+    host.includes('fn lu_review_office_revision(') &&
+    host.includes('fn lu_confirm_office_revision(') &&
+    host.includes('fn lu_deny_office_revision(') &&
+    host.includes('office_revision_reviews: office_revision_desktop::OfficeRevisionQueue') &&
+    host.includes('state.office_revision_reviews.consume(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
