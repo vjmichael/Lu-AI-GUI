@@ -294,6 +294,47 @@ pub fn publish_input(
         "lu_ide_host_tests" => "ide/host/Cargo.toml",
         _ => return Err(SnapshotError::InvalidName),
     };
+    publish_with_manifest(source_root, private_stage_parent, manifest_relative_path)
+}
+
+/// E2: a language server analyses one exact native-verified file while the
+/// entire bounded workspace is sealed. The active file's content digest
+/// supplies the manifest binding; no Cargo project is required for C/Python.
+/// This path is an identity checked by the host, NOT execution authority.
+pub fn publish_lsp_input(
+    source_root: &Path,
+    private_stage_parent: &Path,
+    active_relative_file: &str,
+    server_id: &str,
+) -> Result<PublishedInput, SnapshotError> {
+    if active_relative_file.is_empty() || active_relative_file.len() > 1024
+        || active_relative_file.contains('\\') || active_relative_file.contains(':')
+        || active_relative_file.chars().any(char::is_control) {
+        return Err(SnapshotError::InvalidName);
+    }
+    let relative = Path::new(active_relative_file);
+    if !relative.components().all(|part| matches!(part, Component::Normal(_))) {
+        return Err(SnapshotError::InvalidName);
+    }
+    let extension = relative.extension().and_then(|x| x.to_str())
+        .unwrap_or("").to_ascii_lowercase();
+    let supported = match server_id {
+        "rust-analyzer" => matches!(extension.as_str(), "rs"),
+        "clangd" => matches!(extension.as_str(), "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx"),
+        "ruff" | "pyright" => matches!(extension.as_str(), "py" | "pyi"),
+        "typescript-language-server" => matches!(extension.as_str(), "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs"),
+        _ => false,
+    };
+    if !supported { return Err(SnapshotError::InvalidName); }
+    // Host must resolve this file against its active registered project and
+    // unsaved buffer version before calling; snapshot takes only disk bytes.
+    publish_with_manifest(source_root, private_stage_parent, active_relative_file)
+}
+fn publish_with_manifest(
+    source_root: &Path,
+    private_stage_parent: &Path,
+    manifest_relative_path: &str,
+) -> Result<PublishedInput, SnapshotError> {
     check_dir(source_root)?;
     check_dir(private_stage_parent)?;
     let canonical_root = fs::canonicalize(source_root).map_err(|_| SnapshotError::InvalidRoot)?;
@@ -490,4 +531,28 @@ mod tests {
         ));
         fs::remove_dir_all(project.parent().unwrap()).unwrap();
     }
+    #[test]
+    fn lsp_snapshot_binds_an_active_c_file_not_an_arbitrary_project_manifest() {
+        let root = std::env::temp_dir().join(format!("lu-e2-source-{}", uid()));
+        let project = root.join("project");
+        let stage = root.join("stage");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&stage).unwrap();
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&stage, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        fs::write(project.join("main.c"), b"int main(void) { return 0; }\n").unwrap();
+        let input = publish_lsp_input(&project, &stage, "main.c", "clangd").unwrap();
+        assert_eq!(input.seal.manifest_relative_path, "main.c");
+        assert!(verify_input(&input).is_ok());
+        fs::write(input.root.join("main.c"), b"changed").unwrap();
+        assert!(verify_input(&input).is_err());
+        assert!(matches!(publish_lsp_input(&project, &stage, "../main.c", "clangd"),
+            Err(SnapshotError::InvalidName)));
+        assert!(matches!(publish_lsp_input(&project, &stage, "main.c", "rust-analyzer"),
+            Err(SnapshotError::InvalidName)));
+        let _ = fs::remove_dir_all(&root);
+    }
+
 }
