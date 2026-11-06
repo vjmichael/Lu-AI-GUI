@@ -22,6 +22,7 @@ use serde::{Deserialize,Serialize};
 const ARCHIVE_BATCH_TOOL_ID:&str="lu.archive.batch_extract";
 const ARCHIVE_BATCH_OUTPUT:&str="type.googleapis.com/lu.v1.ArchiveBatchExtractReceipt";
 const WORD_REPLACE_TOOL_ID:&str="lu.office.word_replace_all";
+const PPTX_REPLACE_TOOL_ID:&str="lu.office.presentation_replace_all";
 const MAX_RECORDS:usize=2048;
 const MAX_RECORD_BYTES:u64=1024*1024;
 fn effect_id(s:&str)->bool{
@@ -32,7 +33,8 @@ fn sha_ok(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
 }
 fn known_tool(s:&str)->bool{
-    s==ARCHIVE_BATCH_TOOL_ID||s==WORD_REPLACE_TOOL_ID||matches!(s,
+    s==ARCHIVE_BATCH_TOOL_ID||s==WORD_REPLACE_TOOL_ID
+        ||s==PPTX_REPLACE_TOOL_ID||matches!(s,
         native_archive_tree_tool::TOOL_ID|
         native_docx_tool::TOOL_ID|
         native_pptx_tool::TOOL_ID|
@@ -45,6 +47,7 @@ fn expected_output(s:&str)->Option<&'static str>{
     match s{
         ARCHIVE_BATCH_TOOL_ID=>Some(ARCHIVE_BATCH_OUTPUT),
         WORD_REPLACE_TOOL_ID=>Some(native_office_revision_tool::OUTPUT),
+        PPTX_REPLACE_TOOL_ID=>Some(native_office_revision_tool::OUTPUT),
         native_archive_tree_tool::TOOL_ID=>Some(native_archive_tree_tool::OUTPUT),
         native_docx_tool::TOOL_ID=>Some(native_docx_tool::OUTPUT),
         native_pptx_tool::TOOL_ID=>Some(native_pptx_tool::OUTPUT),
@@ -239,6 +242,7 @@ impl Wave2OperationLedger{
                 r.file_name==rec.target_name&&r.sha256==rec.approved_sha256
             },
             WORD_REPLACE_TOOL_ID|
+            PPTX_REPLACE_TOOL_ID|
             native_office_revision_tool::TOOL_ID|
             native_office_batch_tool::TOOL_ID=>{
                 let Ok(r)=proto::OfficeRevisionResult::decode(data.as_slice())
