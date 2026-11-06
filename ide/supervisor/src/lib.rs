@@ -24,6 +24,8 @@ mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_worker;
 pub mod snapshot;
+#[cfg(feature = "lsp-transport")]
+mod lsp_transport;
 
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
