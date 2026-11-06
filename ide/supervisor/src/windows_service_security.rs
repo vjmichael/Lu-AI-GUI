@@ -32,7 +32,6 @@ use windows_sys::Win32::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
             ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT,
-            SE_KERNEL_OBJECT,
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
@@ -347,9 +346,12 @@ pub fn verify_created_pipe_security(
     let mut dacl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
     if unsafe {
+        // Named-pipe handles are FILE objects for the Windows security
+        // object-type API, not generic SE_KERNEL_OBJECT handles. Querying
+        // the wrong type could falsely reject an otherwise protected pipe.
         GetSecurityInfo(
             pipe,
-            SE_KERNEL_OBJECT as i32,
+            SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION,
             ptr::null_mut(),
             ptr::null_mut(),
