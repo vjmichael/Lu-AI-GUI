@@ -93,7 +93,8 @@ fn installation(app:&AppHandle,server_id:&str)->Result<Installation,String>{
 pub fn installed_languages(app:&AppHandle)->Vec<String> {
     let mut result=Vec::new();
     if installation(app,"clangd").is_ok(){
-        result.extend(["c","cpp"].map(str::to_owned));
+        result.push("c".into());
+        result.push("cpp".into());
     }
     if installation(app,"rust-analyzer").is_ok(){
         result.push("rust".into());
