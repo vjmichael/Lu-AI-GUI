@@ -61,6 +61,7 @@ function App() {
   const [researchResult,setResearchResult]=useState(null);
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
+  const [researchDocumentActive,setResearchDocumentActive]=useState(null);
   const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
   const [researchCampaignReviewByChat,setResearchCampaignReviewByChat]=useState({});
   const [researchCampaignRowsByChat,setResearchCampaignRowsByChat]=useState({});
@@ -435,6 +436,7 @@ function App() {
     if(!chatId||researchBusy||!researchAvailable)return;
     const selectedChat=chatId;
     setResearchBusy(true);setResearchError('');
+    setResearchDocumentActive({chatId:selectedChat,sourceId});
     try{
       const document=await invoke('lu_research_retrieve_document',{
         chatId:selectedChat,sourceId
@@ -443,7 +445,21 @@ function App() {
         ...old,[selectedChat+'|'+sourceId]:document
       }));
     }catch(error){setResearchError(String(error));}
-    finally{setResearchBusy(false);}
+    finally{
+      setResearchDocumentActive(null);setResearchBusy(false);
+    }
+  }
+  async function cancelResearchDocument(){
+    const active=researchDocumentActive;
+    if(!active||!chatId||active.chatId!==chatId)return;
+    try{
+      const requested=await invoke('lu_research_cancel_document',{
+        chatId:active.chatId,sourceId:active.sourceId
+      });
+      if(requested){
+        setResearchError('Document retrieval cancellation requested; native worker will be reaped before task completion.');
+      }
+    }catch(error){setResearchError(String(error));}
   }
   async function verifyResearchDocumentPassage(sourceId){
     if(!chatId||researchBusy)return;
@@ -3914,6 +3930,12 @@ function App() {
                 <button type="button" disabled={researchBusy||!researchAvailable}
                   onClick={()=>void retrieveResearchDocument(l.sourceId)}>
                   Retrieve bounded PDF/HTML document
+                </button>}
+              {researchDocumentActive?.chatId===chatId
+                &&researchDocumentActive?.sourceId===l.sourceId&&
+                <button type="button" disabled={!researchBusy}
+                  onClick={()=>void cancelResearchDocument()}>
+                  Cancel active HTTPS document read
                 </button>}
               {researchDocumentsByChat[chatId+'|'+l.sourceId]&&
                 <div className="researchResults" aria-label="Retrieved research document">
