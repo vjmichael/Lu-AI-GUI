@@ -552,6 +552,81 @@ pub async fn execute_approved_restore(
 mod tests{
     use super::*;
     #[test]
+    fn journal_applied_receipt_is_required_for_restore_and_restart_survival(){
+        use lu_core::{
+            contracts::{ToolInvocation,ToolOutput,ProtoPayload},
+            native_file_transfer::{trash_checked_in_dirs,restore_from_trash_in_dirs},
+            registry::ToolResponse,
+        };
+        let root=std::env::temp_dir().join(format!(
+            "lu-trash-receipt-test-{}",crate::next_id("t-")
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path=root.join("consented.txt");
+        fs::write(&path,b"durable custody").unwrap();
+        let q=TrashReviewQueue::default();
+        let id=crate::next_id("review-");
+        let review=q.stage("original-chat",&id,&path).unwrap();
+        let pinned=q.inspect("original-chat",&id).unwrap();
+        let store=TrashCustodyStore::new(&root).unwrap();
+        let effect=crate::next_id("g-");
+        store.before_trash("original-chat",&effect,&pinned).unwrap();
+        let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+        assert!(store.restore_candidate("original-chat",&effect,&journal).is_err());
+        let call=ToolInvocation{
+            call_id:effect.clone(),tool_id:TRASH_ID.into(),
+            workspace_id:Some("test-scope".into()),
+            input:ProtoPayload{
+                type_url:TRASH_INPUT.into(),
+                bytes:proto::FileTrashRequest{
+                    source_name:"consented.txt".into(),
+                    expected_sha256:review.sha256.clone(),
+                }.encode_to_vec(),
+            },
+        };
+        journal.prepare(&call).unwrap();
+        journal.mark_executing(&effect).unwrap();
+        let receipt=trash_checked_in_dirs(
+            &pinned.source_root,&store.trash,
+            "consented.txt",&effect,&review.sha256,
+        ).unwrap();
+        assert!(!path.exists());
+        assert!(store.restore_candidate("wrong-chat",&effect,&journal).is_err());
+        let result:ToolResponse=Ok(ToolOutput{payload:ProtoPayload{
+            type_url:TRASH_OUTPUT.into(),
+            bytes:proto::FileTrashResult{
+                original_name:receipt.original.clone(),
+                trash_entry:receipt.trash_entry.clone(),
+                bytes:receipt.bytes,sha256:receipt.sha256.clone(),
+            }.encode_to_vec(),
+        }});
+        let signed=wire::encode_reply(&effect,&result).unwrap();
+        journal.mark_applied(&effect,&signed).unwrap();
+        let restarted=TrashCustodyStore::new(&root).unwrap();
+        let list=restarted.list("original-chat",&journal).unwrap();
+        assert_eq!(list.len(),1);
+        assert_eq!(list[0].status,"AVAILABLE");
+        let (_,from_journal,original)=restarted
+            .restore_candidate("original-chat",&effect,&journal).unwrap();
+        assert_eq!(from_journal,receipt);
+        let restore_id=crate::next_id("g-");
+        restarted.before_restore("original-chat",&effect,&restore_id).unwrap();
+        assert!(restarted.restore_candidate("original-chat",&effect,&journal).is_err());
+        assert_eq!(restarted.list("original-chat",&journal).unwrap()[0].status,
+            "RESTORE_NEEDS_REVIEW");
+        let restored=restore_from_trash_in_dirs(&original,&restarted.trash,&receipt)
+            .unwrap();
+        assert_eq!(restored.sha256,review.sha256);
+        assert_eq!(fs::read(&path).unwrap(),b"durable custody");
+        // Recovery state remains uncertain until the restore journal receipt
+        // is committed; completed effects cannot be inferred from file names.
+        assert_eq!(restarted.list("original-chat",&journal).unwrap()[0].status,
+            "RESTORE_NEEDS_REVIEW");
+        drop(original);drop(restarted);drop(store);drop(pinned);drop(q);drop(journal);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn custody_intents_survive_restart_but_never_authorize_replay(){
         let root=std::env::temp_dir().join(format!(
             "lu-trash-desktop-test-{}",crate::next_id("t-")
