@@ -371,7 +371,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger', 'snapshots'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
@@ -492,7 +492,8 @@ test('Wave B2 draft source identity is distinct from saved-disk authority', () =
   assert.match(web, /bufferIdentities\.current\.delete\(key\)/);
   assert.match(web, /newBufferIdentity\(/);
   assert.match(web, /advanceBufferIdentity\(previous\)/);
-  assert.match(web, /savedRevision: saved\.revision/);
+  assert.match(web, /rebaseBufferAfterSave\(buffer, saveStartedBuffer, saved\.revision\)/);
+  assert.match(identity, /savedRevision,/);
   assert.match(editor, /onSelectionChange\?\.\(update\.state\)/);
   assert.match(identity, /stale_buffer_reference/);
   assert.match(identity, /lifetime=session-only/);
