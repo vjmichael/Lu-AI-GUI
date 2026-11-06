@@ -70,7 +70,12 @@ fn contains_sid(acl: *mut ACL, sid: PSID) -> Result<bool, SupervisorError> {
             return Err(denied());
         }
         let ace = unsafe { &*(ptr_ace as *const ACCESS_ALLOWED_ACE) };
-        if ace.Header.AceType == 0 && ace.Header.AceSize >= size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+        // Both ACCESS_ALLOWED and ACCESS_DENIED ACEs carry the SID at the
+        // same offset. An existing deny is also a collision: this fixture
+        // must never adopt, overwrite or revoke another policy's ACE.
+        if (ace.Header.AceType == 0 || ace.Header.AceType == 1)
+            && ace.Header.AceSize >= size_of::<ACCESS_ALLOWED_ACE>() as u16
+        {
             let ace_sid = (&ace.SidStart as *const u32).cast_mut().cast::<c_void>();
             if unsafe { EqualSid(ace_sid, sid) } != 0 {
                 return Ok(true);
