@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D verification extension — real protected Cargo and hostile service-loss (2026-11-06)
+
+- Added a third D7D native Windows CI job exercising the **actual** \`d7_windows_acceptance\` offline Cargo check and cancellation with \`protected-recovery-service\` and an independently installed SCM service. The app itself still exposes no Run button.
+- Added a fourth Windows job forcibly killing the separate protected service while the approved fixture owner and fixed contained child are alive, requiring host-side liveness detection and Job kill, and denying restart recovery when the old named Job is absent.
+- Corrected restricted-service pipe SDDL to use a protected DACL without forcing SYSTEM ownership from the LocalService process; pre-acceptance source repair, not a Windows OS pass.
+- **Wave D cannot be marked accepted:** current exact-head CI remains queued; prior D6 live-loopback probe returned \`1099\` (no raw network error, not WSAEACCES), Linux delegated cgroup acceptance, signed installer and actual installed Windows E2E remain separate gates. No worker is enabled in desktop. See \`ide/supervisor/D7D_PROTECTED_SERVICE_ACCEPTANCE.md\` and PR #63.
+
 ## Wave D7D — Restricted Windows recovery service (2026-11-06)
 
 - **Source branch / PR:** \`ide/wave-d7d-protected-windows-recovery-service-20261106\`, draft PR #63 stacked on D7C PR #62. This is NOT native Windows or installed-desktop acceptance.
