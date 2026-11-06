@@ -1906,6 +1906,45 @@ async fn lu_research_campaign_review(
     }
 }
 
+/// Read-only per-DOI research provenance, bounded to 120 campaign items.
+#[tauri::command]
+fn lu_research_campaign_review_rows(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,campaign_id:String
+)->Result<Vec<research_desktop::ResearchCampaignReviewItem>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a valid Research conversation")?;
+    state.research.campaign_review_rows(&chat_id,&campaign_id)
+}
+/// Only the user can release one failed/incomplete DOI outcome for another
+/// bounded approved attempt; this does not auto-fetch or grant a model URL.
+#[tauri::command]
+async fn lu_research_campaign_retry_source(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,campaign_id:String,source_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a valid Research conversation")?;
+    let _=state.research.campaign_status(&chat_id,&campaign_id)?;
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/"){
+        return Err("Select an existing DOI source for retry".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let id=source_id.clone();
+        move||app.dialog().message(format!(
+            "Make the recorded failed/incomplete source eligible for another \
+             separately approved publisher review?\n\n{}\n\n\
+             This action itself performs NO network request. Previous \
+             source verification status and immutable evidence are retained.",
+            id
+        )).title("Lu — Review Research retry")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Permit retry".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Research retry approval unavailable")?;
+    if !approved{return Ok(false);}
+    state.research.retry_campaign_review(&chat_id,&campaign_id,&source_id)?;
+    Ok(true)
+}
 /// Explicit human-authored claim. A native source recheck is mandatory:
 /// HTML/browser quotations are NOT full-document evidence, and model text
 /// cannot self-approve scientific interpretations.
@@ -4966,6 +5005,8 @@ pub fn run() {
             lu_research_campaign_resume,
             lu_research_campaign_cancel,
             lu_research_campaign_review,
+            lu_research_campaign_review_rows,
+            lu_research_campaign_retry_source,
             lu_research_add_claim,
             lu_research_claims,
             lu_research_export_report,
