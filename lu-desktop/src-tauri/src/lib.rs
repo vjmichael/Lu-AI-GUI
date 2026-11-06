@@ -7,6 +7,7 @@ pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
 mod background_context;
 mod environment_context;
+mod vision_context;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -911,6 +912,41 @@ fn lu_release_image(
 
 /// A diagnostic snapshot can be polled while the blocking engine load runs.
 /// It does not query the engine, acquire the model catalog lock, or expose paths.
+/// Host-only model vision diagnostics. Catalog/projector admission alone does
+/// not prove native visual inference; no actual image probe is yet recorded.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct VisionCapabilityView{
+    session_id:Option<String>,
+    model_ref:Option<String>,
+    status:&'static str,
+    detail:&'static str,
+}
+#[tauri::command]
+fn lu_vision_capability(
+    state:State<'_,Arc<DesktopState>>
+)->Result<VisionCapabilityView,String>{
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Vision model status unavailable")?;
+    let loaded=runtime.session_id.is_some()&&runtime.model_ref.is_some();
+    let models=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    let projector=runtime.model_ref.as_ref().is_some_and(|id|
+        models.iter().any(|m|&m.model_ref==id&&m.projector_attached)
+    );
+    let evidence=vision_context::session_evidence(loaded,projector);
+    Ok(VisionCapabilityView{
+        session_id:runtime.session_id,model_ref:runtime.model_ref,
+        status:vision_context::availability_label(evidence),
+        detail:if !loaded{
+            "No loaded model. Native visual understanding unavailable."
+        }else if !projector{
+            "The loaded model has no admitted MMProj for image requests."
+        }else{
+            "MMProj admitted; native visual reasoning remains unverified until a real host-scoped image probe succeeds."
+        },
+    })
+}
+
 #[tauri::command]
 fn lu_load_diagnostics(state: State<'_, Arc<DesktopState>>) -> Result<LoadTraceView, String> {
     let trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
@@ -1121,6 +1157,16 @@ async fn generate_internal(
         .map_err(|e| format!("status: {e:?}"))?;
     if runtime.session_id.as_deref() != Some(session_id.as_str()) {
         return Err("model session changed; reload before submitting".into());
+    }
+    // Reject impossible image turns BEFORE queuing or journaling a user
+    // message; an admitted projector still does not equal proven vision.
+    if !images.is_empty(){
+        let models=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+        let admitted=runtime.model_ref.as_ref().is_some_and(|id|
+            models.iter().any(|m|&m.model_ref==id&&m.projector_attached)
+        );
+        vision_context::image_preflight(runtime.session_id.is_some(),admitted)
+            .map_err(str::to_owned)?;
     }
     let generation_id = next_id("g-");
     let request_id = next_id("req-");
@@ -3404,6 +3450,7 @@ pub fn run() {
             lu_release_image,
             lu_load_model,
             lu_load_diagnostics,
+            lu_vision_capability,
             lu_unload_model,
             lu_cancel,
             lu_generate,

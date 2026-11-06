@@ -7,6 +7,11 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 4 vision status is host-attested and never claims projector presence is a successful probe',
+    host.includes('fn lu_vision_capability(') &&
+    host.includes('vision_context::image_preflight(') &&
+    ui.includes("invoke('lu_vision_capability')") &&
+    ui.includes('Vision: {visionCapability.status}')],
   ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
     ui.includes('Image Workspace · read-only preview') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&

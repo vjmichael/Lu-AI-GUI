@@ -30,6 +30,7 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
+  const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -2488,6 +2489,14 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={!loaded}
+              title="Inspect native vision status without claiming MMProj presence proves visual understanding"
+              onClick={()=>void invoke('lu_vision_capability')
+                .then(setVisionCapability).catch(e=>setError(String(e)))}>Check vision</button>
+            {visionCapability?.sessionId===runtime.sessionId && visionCapability?.modelRef===runtime.modelRef &&
+              <span className="composerHelp" role="status">
+                Vision: {visionCapability.status} · {visionCapability.detail}
+              </span>}
             <button type="button" className="subtleButton"
               disabled={!chatId || wave2RecoveryBusy}
               title="Read-only durable history of approved archives, documents and file operations"

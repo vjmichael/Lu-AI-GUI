@@ -269,3 +269,6 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **WAVE4-IMAGE-WS-01 SOURCE IMPLEMENTED (2026-11-06):** Carried original Image Workspace intent guard and tests from draft PR #35 into the active Wave 4 source, correcting C0 character validation. Normal Lu composer now offers a zoomable READ-ONLY preview of an already admitted draft PNG/JPEG image, with no file edits or implicit model authority. CI UI source check and intent geometry tests included. Persisted image viewer, host revision lookup/grants, crash-safe immutable editor, AI edit backend and installed acceptance remain OPEN.
+
+
+**WAVE4-VISION-01 SOURCE IMPLEMENTED (2026-11-06):** Normal chat image Send now preflights current loaded-model projector admission before creating durable user turn. New native "Check vision" status surfaces per-session verified/unverified/unavailable via existing vision_routing policy; no live image probe is yet published, so MMProj alone returns UNVERIFIED, never a false VERIFIED vision capability. Actual pixel-grounded probe and backend attestation, model-change revocation, Linux/Windows native CI and installed MMProj remain OPEN.
