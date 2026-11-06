@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO2/WO3 code closeout continuation (2026-11-06): capability-rooted quota scanning replaces mutable 40-ms output hashing; final full hash/seal still post-Job. Corrected `cap_fs_ext::OsMetadataExt` native E0624; added bounded cancel-vs-walltime-vs-output traces. CI-only D7D exact-user DACL control and current TokenUser diagnostic isolate protected service access denial without weakening ACL. Protected recovery service handler concurrency capped at 12 with RAII session release, keeping held kernel Jobs from being dropped on client flooding. Applied native Rustfmt exact diffs. All actual pinned Cargo and SCM hostile acceptance remain open; see `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
 - IDE WO2/WO3 active native repairs (2026-11-06): separated mutable output live quota from post-reap immutable output seal; bounded scans at 250 ms and kept cancellation at 40 ms; fixed `cap_fs_ext::OsMetadataExt` native compiler `E0624`. D7C rooted rename acceptance now tests byte identity for either/both safe aliases; independent D7B crash witness captures native stderr on admission failure. D7D CI-only native client identity/pipe-rights probes and a disposable exact-ACL access self-check isolate genuine LocalService pipe admission denial without security bypass. Pinned Cargo, SCM recovery and release NUL remain OPEN; see `docs/IDE_WORK_BATCH_02_20261106.md`.
 
 

@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO2/WO3 active Windows repairs — no release acceptance (2026-11-06)
+
+See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md): live compiler output now uses capability-rooted metadata quota scan at 250 ms, while final full content seal requires a reaped kernel Job; fixed native cap-fs Windows metadata `E0624`, applied actual Rustfmt deltas. D7D installed restricted SCM still requires native pipe admission: exact host SID/pipe-rights diagnostics and a disposable identical-DACL control were added. Service now caps independent handler threads at 12 so pipe instance exhaustion cannot terminate its protected Job keeper. Prior native AppContainer/Job admission passed; real pinned Cargo success, protected service crash/restart and production NUL permission lifecycle remain **OPEN**. No enabled release worker.
+
+
 ### WO2/WO3 active closeout — live native Cargo quota and exact SCM pipe denial (2026-11-06)
 
 The [batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md) records new Windows source work: capability-rooted live **metadata** quota scans during mutable Cargo writes (250 ms) while immutable content seal remains post-Job exit, Windows cap-fs `E0624` compiler repair, bounded native cancellation diagnostics, and confined in-root rename test. D7D protected SCM pipe denial now has exact host TokenUser diagnostics and a disposable same-ACL pipe control; production pipe DACL, host binary/hash and restricted LocalService identity were **not** loosened. Earlier exact native AppContainer and worker-containment probes pass; pinned Cargo success and D7D service host-crash/restart **do not**. Production NUL permission lifecycle is unimplemented. Draft PR #65, no release activation.
