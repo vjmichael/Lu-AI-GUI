@@ -27,6 +27,7 @@ mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod archive_desktop;
+mod archive_batch_desktop;
 mod archive_process_worker;
 pub use archive_process_worker::run_archive_process_worker;
 mod document_create_desktop;
@@ -213,6 +214,7 @@ struct DesktopState {
     edit_proposals: edit_proposal::EditProposalQueue,
     native_actions: native_action_proposal::ActionProposalQueue,
     archive_reviews: archive_desktop::ArchiveReviewQueue,
+    archive_batch_reviews: archive_batch_desktop::ArchiveBatchQueue,
     archive_runs: archive_desktop::ArchiveRunRegistry,
     document_create_reviews: document_create_desktop::DocumentCreateQueue,
     office_revision_reviews: office_revision_desktop::OfficeRevisionQueue,
@@ -632,6 +634,7 @@ impl DesktopState {
             edit_proposals: edit_proposal::EditProposalQueue::default(),
             native_actions: native_action_proposal::ActionProposalQueue::default(),
             archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
+            archive_batch_reviews: archive_batch_desktop::ArchiveBatchQueue::default(),
             archive_runs: archive_desktop::ArchiveRunRegistry::default(),
             document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
             office_revision_reviews: office_revision_desktop::OfficeRevisionQueue::default(),
@@ -3391,6 +3394,157 @@ fn lu_open_created_folder(
     }
 }
 
+/// Select 1–8 archives exclusively through native OS pickers. This is only
+/// a pinned, read-only whole-tree preview; UI members are presented before
+/// a separate human confirmation. No model-supplied path is accepted.
+#[tauri::command]
+async fn lu_review_archive_batch(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<archive_batch_desktop::ArchiveBatchView>,String>{
+    let owner=Arc::clone(state.inner());
+    owner.chats.history(&chat_id)?;
+    let picked=tauri::async_runtime::spawn_blocking(move||{
+        let files=app.dialog().file().blocking_pick_files()
+            .map(|items|items.into_iter()
+                .map(|p|p.into_path().map_err(|e|e.to_string()))
+                .collect::<Result<Vec<_>,_>>()).transpose()?;
+        let Some(files)=files else{return Ok(None)};
+        if files.is_empty()||files.len()>8{
+            return Err("Select 1–8 archives for one batch".to_string());
+        }
+        let folder=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(folder.map(|dest|(files,dest)))
+    }).await.map_err(|_|"Native archive batch picker unavailable")??;
+    let Some((files,destination))=picked else{return Ok(None)};
+    let review_id=next_id("ab-");
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        let guard=owner.archive_runs.register(&chat_id,&review_id)?;
+        owner.archive_batch_reviews.stage(
+            &chat_id,&review_id,&files,&destination,&guard.cancellation()
+        )
+    }).await.map_err(|_|"Archive batch preflight worker unavailable")??;
+    Ok(Some(result))
+}
+#[tauri::command]
+fn lu_deny_archive_batch(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,review_id:String
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.archive_batch_reviews.deny(&chat_id,&review_id)
+}
+/// Publish a bounded group under ONE human-approved new directory. Any
+/// source divergence, partial file, interruption, or completion-marker
+/// mismatch becomes an UNCERTAIN journal state. Never replay on restart.
+#[tauri::command]
+async fn lu_confirm_archive_batch(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String
+)->Result<Option<archive_batch_desktop::ArchiveBatchResultView>,String>{
+    let owner=Arc::clone(state.inner());
+    owner.chats.history(&chat_id)?;
+    let original=owner.archive_batch_reviews.inspect(&chat_id,&review_id)?;
+    let view=original.view();
+    let mut lines=String::new();
+    for item in &view.items{
+        lines.push_str(&format!(
+            "{} → {} ({} files; {} expanded bytes; SHA-256 {})\n",
+            item.source,item.output_folder,item.files,
+            item.expanded_bytes,item.manifest_sha256
+        ));
+    }
+    let modal=format!(
+        "Publish {} fully reviewed archive trees into ONE new group folder?\n\n\
+         Destination: {}\n\
+         Total files: {}; expanded bytes: {}\n\
+         Group manifest SHA-256: {}\n\n{}\n\
+         Originals remain intact. Nothing overwrites an existing folder. \
+         On interruption the incomplete group is retained for manual \
+         reconciliation, not automatically retried or deleted.",
+        view.archive_count,view.group_display,
+        view.total_files,view.total_bytes,view.manifest_sha256,lines
+    );
+    let approved=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(modal)
+            .title("Lu — Confirm complete archive batch")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Extract reviewed batch".into(),"Cancel".into()
+            )).blocking_show()
+    ).await.map_err(|_|"Archive batch approval unavailable")?;
+    if !approved{
+        owner.archive_batch_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None);
+    }
+    let pinned=owner.archive_batch_reviews.consume(&chat_id,&review_id)?;
+    if !pinned.matches(&original){
+        return Err("Archive batch changed during native review".into());
+    }
+    let effect_id=next_id("archive-batch-");
+    let turn_id=next_id("g-");
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        use prost::Message;
+        use lu_core::{
+            contracts::{ProtoPayload,ToolInvocation},
+            journal::PrepareOutcome,
+        };
+        let guard=owner.archive_runs.register(&chat_id,&review_id)?;
+        owner.chats.append_user_with_turn_id(
+            &chat_id,&turn_id,&format!(
+                "User approved NEW archive group {}, {} sources and {} entries. \
+                 Source tree batch SHA-256 {}. Manual review required after any interrupted effect.",
+                view.group_name,view.archive_count,
+                view.total_files,view.manifest_sha256
+            )
+        )?;
+        let approved_manifest=pinned.plan();
+        let call=ToolInvocation{
+            call_id:effect_id.clone(),
+            tool_id:"lu.archive.batch_extract".into(),
+            workspace_id:Some(format!("{chat_id}:{turn_id}")),
+            input:ProtoPayload{
+                type_url:"type.googleapis.com/lu.v1.HostArchiveBatchIntent".into(),
+                bytes:serde_json::to_vec(approved_manifest)
+                    .map_err(|_|"Archive batch intent serialization failed")?,
+            },
+        };
+        if owner.effects.prepare(&call)
+            .map_err(|_|"Could not persist approved archive batch")?
+            !=PrepareOutcome::New{
+            return Err("Archive batch review cannot be reused".into());
+        }
+        owner.effects.mark_executing(&effect_id)
+            .map_err(|_|"Archive batch journal could not begin")?;
+        let receipt=match pinned.execute(&guard.cancellation()){
+            Ok(receipt)=>receipt,
+            Err(error)=>{
+                let _=owner.effects.mark_uncertain(&effect_id);
+                return Err(error);
+            }
+        };
+        let message=proto::ArchiveBatchExtractReceipt{
+            group_name:receipt.group_name.clone(),
+            archive_count:receipt.archive_count as u32,
+            file_count:receipt.file_count as u64,
+            expanded_bytes:receipt.total_bytes,
+            manifest_sha256:receipt.sha256.clone(),
+        };
+        let reply=proto::ToolReply{
+            call_id:effect_id.clone(),
+            output_type_url:"type.googleapis.com/lu.v1.ArchiveBatchExtractReceipt".into(),
+            outcome:Some(proto::tool_reply::Outcome::Output(message.encode_to_vec())),
+        };
+        owner.effects.mark_applied(&effect_id,&reply.encode_to_vec())
+            .map_err(|_|"Archive batch files created but journal needs reconciliation")?;
+        Ok(archive_batch_desktop::ArchiveBatchResultView{
+            group_name:receipt.group_name,archive_count:receipt.archive_count,
+            total_files:receipt.file_count,total_bytes:receipt.total_bytes,
+            manifest_sha256:receipt.sha256,effect_call_id:effect_id,
+            source_archives_preserved:true,
+        })
+    }).await.map_err(|_|"Archive batch writer unavailable")??;
+    Ok(Some(result))
+}
+
 /// Separate native source and destination dialogs. The model and WebView
 /// never provide actual OS paths. The result is only an INERT full-tree
 /// preview, not permission to create files.
@@ -5050,6 +5204,9 @@ pub fn run() {
             lu_review_document_create,
             lu_confirm_document_create,
             lu_deny_document_create,
+            lu_review_archive_batch,
+            lu_confirm_archive_batch,
+            lu_deny_archive_batch,
             lu_review_archive_tree,
             lu_confirm_archive_tree,
             lu_cancel_archive_tree,
