@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "00896ff18b34fcb712852cfbe8165fece59038c0",
+  "sourceCommitBeforeLock": "8c8dc9774fc5bb95633bd52292f00794c1351516",
   "trackedFileCount": 466,
   "files": [
     {
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "0c844c009d14dcacc9097d1d5dfcd9d262055207"
+      "blob": "218ef38bc0010485d4b21bd7e209ca089f225d5b"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -509,7 +509,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-ci-executable.test.mjs",
-      "blob": "a93c07770e4e31eca39b60a4e3ffd4f8c48c1533"
+      "blob": "f098556060bfa66ca04be60f18384d8df81743e8"
     },
     {
       "path": "lu-desktop/tests/browser-model-read.test.mjs",
