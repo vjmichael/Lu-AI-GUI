@@ -377,3 +377,79 @@ test('failed challenge inspection never permits screenshot or accessibility outp
     await session.close();
   }
 });
+
+
+test('visible password form triggers human handoff even with neutral page text',async()=>{
+  let visible=true;
+  const page={
+    url:()=> 'https://archive.example/account',
+    locator:selector=>selector==='body'
+      ?{innerText:async()=> 'Welcome to the archive'}
+      :{first:()=>({isVisible:async()=>selector==='input[type="password"]'&&visible})}
+  };
+  const native=nativeWindow();
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/private',
+    chromiumProvider:{launchPersistentContext:async()=>({
+      route:async()=>{},pages:()=>[page],close:async()=>{}
+    })},
+    windowController:native
+  });
+  await session.start();
+  const gated=await session.execute({op:'read'});
+  assert.equal(gated.status,'NEEDS_HUMAN');
+  assert.equal(gated.reason,'LOGIN_REQUIRED');
+  assert.deepEqual(native.calls.map(x=>x.visible),[false,true]);
+  await assert.rejects(session.execute({op:'accessibility'}),e=>e.code==='NEEDS_HUMAN');
+  await assert.rejects(session.execute({op:'human_resolved'}),
+    e=>e.code==='CHALLENGE_STILL_PRESENT');
+  visible=false;
+  assert.equal((await session.execute({op:'human_resolved'})).status,'RESUMED');
+  assert.equal((await session.execute({op:'read'})).status,'READ');
+  await session.close();
+});
+test('visible embedded CAPTCHA is not missed by plain body-text detection',async()=>{
+  let challengeVisible=true;
+  const page={
+    url:()=> 'https://archive.example/article',
+    locator:selector=>selector==='body'
+      ?{innerText:async()=> 'Article title and abstract'}
+      :{first:()=>({isVisible:async()=>selector.includes('recaptcha/api2/bframe')&&challengeVisible})}
+  };
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/private',
+    chromiumProvider:{launchPersistentContext:async()=>({
+      route:async()=>{},pages:()=>[page],close:async()=>{}
+    })},
+    windowController:nativeWindow()
+  });
+  await session.start();
+  const gated=await session.execute({op:'read'});
+  assert.equal(gated.status,'NEEDS_HUMAN');
+  assert.equal(gated.reason,'CAPTCHA_REQUIRED');
+  challengeVisible=false;
+  assert.equal((await session.execute({op:'human_resolved'})).status,'RESUMED');
+  await session.close();
+});
+test('unavailable challenge-state probe refuses to release page text',async()=>{
+  const page={
+    url:()=> 'https://archive.example/article',
+    goto:async()=>({status:()=>200}),
+    locator:selector=>selector==='body'
+      ?{innerText:async()=> 'Potential private article text'}
+      :{first:()=>({isVisible:async()=>{throw new Error('DOM detached')}})}
+  };
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/private',
+    chromiumProvider:{launchPersistentContext:async()=>({
+      route:async()=>{},pages:()=>[page],close:async()=>{}
+    })},
+    windowController:nativeWindow()
+  });
+  await session.start();
+  await assert.rejects(session.execute({op:'navigate',url:'https://archive.example/article'}),
+    e=>e.code==='CHALLENGE_STATE_UNAVAILABLE');
+  await assert.rejects(session.execute({op:'read'}),
+    e=>e.code==='CHALLENGE_STATE_UNAVAILABLE');
+  await session.close();
+});
