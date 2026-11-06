@@ -9,10 +9,14 @@
 use crate::{
     snapshot::{verify_input, PublishedInput},
     windows_cap_tree::{audit_tree, digest_tree, publish_into_native_parent},
-    windows_broker::{BrokerLease, TrustedBroker},
+    windows_broker::TrustedBroker,
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
+#[cfg(feature = "protected-recovery-service")]
+use crate::windows_service_client::ServiceLease as BrokerLease;
+#[cfg(not(feature = "protected-recovery-service"))]
+use crate::windows_broker::BrokerLease;
 use std::{
     ffi::OsStr,
     fs::{self},
@@ -709,9 +713,12 @@ pub fn reconcile_windows_interrupted(supervisor: &Supervisor, id: &str)
     // relinquish its named handle; failure is not proof of an unsafe tree
     // and simply leaves the broker to expire its bounded recovery hold.
     if summary.phase == JobPhase::Cancelled && !summary.requires_reconciliation {
+        #[cfg(not(feature = "protected-recovery-service"))]
         let _ = crate::windows_broker::release_after_verified_recovery(
             id, &state.plan_sha256
         );
+        // Protected service retains its own kernel witness until bounded
+        // hold expiry; it does not honor same-user named release Events.
     }
     Ok(summary)
 }
