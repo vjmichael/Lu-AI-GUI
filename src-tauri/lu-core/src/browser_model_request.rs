@@ -34,7 +34,7 @@ pub fn build_read_only_browser_tool_request(
     }
     let enum_values=schema.pointer("/function/parameters/properties/operation/enum")
         .and_then(Value::as_array).ok_or(BrowserToolRequestError::InvalidSchema)?;
-    let expected=["navigate","read","status","accessibility","screenshot"];
+    let expected=["navigate","read","status","accessibility"];
     if enum_values.len()!=expected.len()||expected.iter().any(|name|
         !enum_values.iter().any(|v|v.as_str()==Some(*name))){
         return Err(BrowserToolRequestError::InvalidSchema);
