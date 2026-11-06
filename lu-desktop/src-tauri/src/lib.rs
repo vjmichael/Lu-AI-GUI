@@ -10,6 +10,7 @@ mod environment_context;
 mod vision_context;
 mod observe_desktop;
 mod native_browser_host;
+mod browser_model_desktop;
 mod research_desktop;
 mod image_workspace_desktop;
 mod load_trace;
@@ -196,6 +197,10 @@ struct ActiveBrowserGrant {
     task_id:String,
     chat_id:String,
     user_turn_id:String,
+    origins:Vec<String>,
+    /// Active or queued structured browser-model generation. Revocation
+    /// must cancel the model slot as well as the owned Chromium process.
+    active_read:Option<(String,String)>, // (model session ID, generation ID)
     starting:bool,
 }
 struct DesktopState {
@@ -1111,7 +1116,8 @@ async fn lu_browser_start(
         }
         *state=Some(ActiveBrowserGrant{
             task_id:task_id.clone(),chat_id:chat_id.clone(),
-            user_turn_id:turn_id,starting:true,
+            user_turn_id:turn_id,origins:allowed.clone(),
+            active_read:None,starting:true,
         });
     }
     let launch_owner=Arc::clone(&owner);
@@ -1186,6 +1192,13 @@ async fn lu_browser_stop(
             .map_err(|_|"Browser grant unavailable")?.take();
         let revoked=grant.as_ref().map(|g|
             owner.browser_authority.revoke_task(&g.task_id));
+        if let Some((session_id,generation_id))=grant.as_ref()
+            .and_then(|g|g.active_read.as_ref()){
+            // Stop is also a soft interrupt of the model-owned read step;
+            // queued jobs do not cancel an unrelated active generation.
+            let _=owner.generation_queue.cancel(session_id,generation_id);
+            let _=owner.supervisor.cancel(session_id,generation_id,&next_id("req-"));
+        }
         let stopped=owner.browser_runtime.stop();
         if let Some(Err(e))=revoked{
             return Err(format!("Browser stopped but grant revocation failed: {e:?}"));
@@ -4153,6 +4166,7 @@ pub fn run() {
             lu_browser_set_visible,
             lu_browser_human_verified,
             lu_browser_stop,
+            browser_model_desktop::lu_browser_model_read,
             lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,
