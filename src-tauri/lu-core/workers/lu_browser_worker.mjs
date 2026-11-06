@@ -243,6 +243,11 @@ export class BrowserSession {
       if (op === 'back') await this.page.goBack({waitUntil:'domcontentloaded',timeout:15000});
       else await this.page.goForward({waitUntil:'domcontentloaded',timeout:15000});
       approvedUrl(this.page.url(),this.origins);
+      // History navigation can land on an authentication or CAPTCHA gate;
+      // do not silently continue autonomous browsing in that state.
+      const text=await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const challenge=challengeKind(text);
+      if(challenge) return this.#requestHuman(challenge);
       return {status:'NAVIGATED',url:this.page.url()};
     }
     if (op === 'accessibility') {
