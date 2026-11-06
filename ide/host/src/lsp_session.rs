@@ -573,4 +573,59 @@ mod tests {
         assert!(s.receive(b"Content-Length: 0\r\n\r\n").is_err());
         assert_eq!(s.phase(),LspPhase::Failed);
     }
+    #[test]
+    fn real_clangd_17_wire_replays_diagnostics_hover_definition_and_safe_completion() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../fixtures/clangd17_real_wire.json"
+        )).unwrap();
+        let uri = fixture["uri"].as_str().unwrap();
+        let text = fixture["initialText"].as_str().unwrap();
+        let changed = fixture["changedText"].as_str().unwrap();
+        let messages = &fixture["messages"];
+        let mut session = LspSession::new("clangd").unwrap();
+        session.initialize().unwrap();
+        session.receive(&encode_frame(&json!({"jsonrpc":"2.0","id":1,
+            "result":{"capabilities":{}}})).unwrap()).unwrap();
+        let mut source = DiagnosticSource {
+            project_id: format!("ide-{}", "c".repeat(32)),
+            file_id: "file_clangd".into(), disk_sha256: "d".repeat(64),
+            buffer_revision: 1, language_id: "c".into(),
+        };
+        session.did_open(source.clone(), uri, text).unwrap();
+        let (diags, _) = session.receive(
+            &encode_frame(&messages["diagnostics"]).unwrap()
+        ).unwrap();
+        assert_eq!(diags, vec![LspEvent::Diagnostics(vec![])]);
+        let at_symbol = Position { line: 1, character: 27 };
+        session.request("hover", &source, at_symbol.clone()).unwrap();
+        session.request("definition", &source, at_symbol).unwrap();
+        let (hover, _) = session.receive(
+            &encode_frame(&messages["hover"]).unwrap()
+        ).unwrap();
+        assert!(matches!(&hover[0], LspEvent::Hover(text) if text.contains("addition")));
+        let (definition, _) = session.receive(
+            &encode_frame(&messages["definition"]).unwrap()
+        ).unwrap();
+        assert!(matches!(&definition[0], LspEvent::Definition(Some(_))));
+        let old = source.clone();
+        source.buffer_revision = 2;
+        session.did_change(&old, source.clone(), changed).unwrap();
+        session.request("completion", &source,
+            Position { line: 1, character: 28 }).unwrap();
+        let (completions, _) = session.receive(
+            &encode_frame(&messages["completion"]).unwrap()
+        ).unwrap();
+        let LspEvent::Completions(items) = &completions[0] else {
+            panic!("real clangd completion was not interpreted");
+        };
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].insert_text, "addition");
+        assert_eq!(items[0].replace_from_utf16, position_to_utf16(
+            changed, &Position { line: 1, character: 24 }
+        ));
+        assert_eq!(items[0].replace_to_utf16, position_to_utf16(
+            changed, &Position { line: 1, character: 28 }
+        ));
+    }
+
 }
