@@ -50,6 +50,7 @@ No individual unit-test result is an automatic alpha PASS for its end-to-end gat
 | Documents | Native PDF/DOCX/text parsing, filename + provenance, extraction limits, chunk/citation controls, restart-safe attachments, and negative/security tests |
 | Native tools | Secure read/write/search/move/trash/restore/archive/git/code/JSON validation/OCR tools staged by capability; atomic effects and exact authorization; do not bypass the OS broker |
 | Agent and tasks | Durable task identities, live progress, background worker supervision, pause/stop/retry, replay-safe effect journal and actionable failure classification |
+| Observe & Learn (v1.0 release gate) | Explicit per-app desktop observation and GUI test evidence; default OFF, visible user controls, session leases, short-lived redacted snapshots, event-driven brief/deep inference, approved ANSF learning, separate training consent, crash recovery and installed Windows acceptance. See docs/LU_OBSERVE_LEARN_V1.md. |
 | Model manager | Explicit multi-model catalog, MMProj capability checks, Vulkan/CPU settings, safe unload/reload, stable resource usage and no automatic weight loading |
 | GUI foundation | Rename/delete/restore chats and folders, attachments, accessible keyboard controls, virtualized large transcripts, response actions, theme preferences; reference Jan/LM Studio behavior without importing Jan runtime |
 | Runtime security | Cross-platform IPC, OS containment for worker classes, scoped filesystem/network permissions, hostile-input tests and operational audit |

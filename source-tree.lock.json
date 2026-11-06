@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2f90fc7b3569dc18d28387b0f4852950e95de8f9",
-  "trackedFileCount": 410,
+  "sourceCommitBeforeLock": "575149d35d7b287955dcb601695c537ad0142471",
+  "trackedFileCount": 413,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -30,6 +30,10 @@
     {
       "path": ".github/workflows/lu-tools-11-background.yml",
       "blob": "e63b996bcb56eab50291557819ef93bfb1d21df1"
+    },
+    {
+      "path": ".github/workflows/lu-v1-observe-learn.yml",
+      "blob": "112bd44cfa9bfd45754712253522d6fa06f2f6b8"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -93,11 +97,15 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "96f4193e5e7c38adfa25dea25522f61d8d1bd447"
+      "blob": "193b16c3b04fc3ef2b314e8ed147efde669d886d"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
       "blob": "f9e15064a8f22f8d2a8e2e9f30ef033066a33931"
+    },
+    {
+      "path": "docs/LU_OBSERVE_LEARN_V1.md",
+      "blob": "1e5ca85ebf9480054818041d287a84725cb46647"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -109,7 +117,7 @@
     },
     {
       "path": "docs/LU_R22_STRUCTURED_CHAT_AND_ALPHA_V1_ROADMAP.md",
-      "blob": "653f3f11ba20b234130b11b539dc1ec62a3e0079"
+      "blob": "4629a62a602d5fd80ab59ce50e02f530f6513310"
     },
     {
       "path": "docs/LU_READER_AND_NATIVE_VISION.md",
@@ -841,7 +849,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "f81255f8086ae0d366fffe484951dfc701cb371d"
+      "blob": "ab5a3279ee60591100fed5f9739c0993b5bd5739"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1006,6 +1014,10 @@
     {
       "path": "src-tauri/lu-core/src/native_linux_archive_tool.rs",
       "blob": "83e0217a41e65791cabc6b8ff33f7fe29005868c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_observe_learn.rs",
+      "blob": "4b62d89208f37a2e208b7a77d2c96a0c1a5a0a73"
     },
     {
       "path": "src-tauri/lu-core/src/native_office_batch_tool.rs",

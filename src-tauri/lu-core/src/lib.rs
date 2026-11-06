@@ -29,6 +29,7 @@ pub mod web_research_sufficiency;
 pub mod web_research_maturity;
 pub mod web_research_planner;
 pub mod native_capability_inventory;
+pub mod native_observe_learn;
 pub mod ce_approval;
 pub mod ce_broker;
 pub mod ce_packages;
