@@ -180,3 +180,20 @@ New implementation sources:
 - `docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md` records exact limits/compatibility and remaining capabilities. Wave 2 native Linux/Windows CI now requires these tests and source exports.
 
 **Still open in Step 2:** fully working 7z/RAR compressed engines, RPM native inspect/extract, LZ4 and legacy package/archive variants, Windows-native xz/bzip2/zstd decoders, UDF ISO, broad richer Office formats and full-fidelity edits. The existing Linux external codec pathway is not equivalent to Windows in-process format parity. Exact-head compiler/behavioral CI has not been accepted. Do NOT mark this format-completeness phase finished yet.
+
+## Wave 2 Step 2 — Advanced formats and richer Office edits (development source)
+
+Implementation sources committed in this pass:
+- Native Windows/Linux libarchive ABI bridge: native_libarchive.rs. Dynamic trusted-library loading, bounded in-memory 7z/RAR decoder, bounded XZ/Bzip2/Zstd native encode/decode; Windows verifies its app-owned DLL manifest, then uses LoadLibraryExW restricted dependency flags. Linux uses fixed OS-owned .so paths with fixed-path decoder fallback only if backend missing.
+- native_seven_rar.rs: accepts 7z and RAR/RAR5 bounded unencrypted, regular-file/directory entries. Integrates with native_archive_inspect.rs, native_archive_tree.rs and native archive desktop selection/approval. Rejects links, devices, path traversal, duplicate aliases, unsupported encryption and unsafe/oversized output.
+- native_rpm.rs: strict RPM v3/v4 lead/signature/main indexed header parsing; CPIO format, gzip/xz/bzip2/zstd or uncompressed payload; expanded output isolated under payload/ namespace. DOES NOT verify digital package signatures, install packages or execute scripts.
+- scripts/stage-lu-native-codecs.ps1, Tauri resource mapping and pinned vcpkg Windows CI: stage native DLLs, all codec dependency DLLs, SHA-256 manifest and available license notices into Lu's NSIS resource directory. Placeholder README without actual staged DLLs is NOT runtime acceptance.
+- Richer OOXML revision rendering: native_office_revision.rs now supports ordered 1–32 exact changes as one new package, with entire original/revised SHA and unchanged-part checks; simple Excel inlineStr text values can be changed without touching shared strings or formulas. Unsupported rich XML, signed/macro packages and cross-file links are rejected.
+- Typed model/Protobuf API: native_office_batch_tool.rs and OfficeBatchPatch/OfficeBatchRevisionRequest; ExactBatchPolicy re-renders the entire original/revised package before host write authority.
+- Native UI: office_batch_desktop.rs, Tauri native pick/preview/confirm/deny commands, complete React batch editor and changed/unchanged-part review, new-version output only and persisted Wave 2 operation-intent recovery; adds cell_text option to single-revision and batch UI.
+- Native fixture tests: real 7z and upstream BSD RAR5 compressed/RAR4 rejection test data, native codec filter-id and encode/decode roundtrip tests, constructed RPM/CPIO gzip payload with real extraction, new Office batch per-turn durable authorization, DOCX/XLSX multi-field and safe XLSX inline text tests, native desktop denial/review tests. Wave 2 CI now requires the suites on Linux/Windows, pinned Windows codec staging and desktop React/Tauri builds.
+- Exact implementation, limits and verification obligations: docs/TOOLS_WAVE2_ADVANCED_FORMATS_AND_OFFICE.md.
+
+**Not accepted/remaining limitations:** encrypted/password-protected or multi-volume RAR/7z; arbitrary unsupported RPM payload modes; verification of RPM signatures; full rich-object, chart, macro, external-link, formula or template preservation/editing in Office files; native codec worker resource isolation and cancellation; exact-head Windows and Linux passing CI; real installed NSIS artifact with codec DLLs and human confirmation/cancellation/restart validation. Source only is not evidence of completed release acceptance.
+
+No Step 3 recovery hardening or Step 4 native final acceptance is claimed.
