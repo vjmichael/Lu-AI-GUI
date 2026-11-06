@@ -133,8 +133,9 @@ pub fn available_servers() -> &'static [LanguageServerDescriptor] {
 pub fn servers_for_language(language_id: &str) -> Vec<LanguageServerDescriptor> {
     if language_id.len() > 32
         || language_id.is_empty()
-        || !language_id.bytes().all(|b| b.is_ascii_lowercase())
-            && !language_id.bytes().all(|b| b.is_ascii_alphanumeric())
+        || !language_id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
     {
         return Vec::new();
     }
