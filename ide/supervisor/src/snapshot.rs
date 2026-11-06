@@ -307,25 +307,42 @@ pub fn publish_lsp_input(
     active_relative_file: &str,
     server_id: &str,
 ) -> Result<PublishedInput, SnapshotError> {
-    if active_relative_file.is_empty() || active_relative_file.len() > 1024
-        || active_relative_file.contains('\\') || active_relative_file.contains(':')
-        || active_relative_file.chars().any(char::is_control) {
+    if active_relative_file.is_empty()
+        || active_relative_file.len() > 1024
+        || active_relative_file.contains('\\')
+        || active_relative_file.contains(':')
+        || active_relative_file.chars().any(char::is_control)
+    {
         return Err(SnapshotError::InvalidName);
     }
     let relative = Path::new(active_relative_file);
-    if !relative.components().all(|part| matches!(part, Component::Normal(_))) {
+    if !relative
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
+    {
         return Err(SnapshotError::InvalidName);
     }
-    let extension = relative.extension().and_then(|x| x.to_str())
-        .unwrap_or("").to_ascii_lowercase();
+    let extension = relative
+        .extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     let supported = match server_id {
         "rust-analyzer" => matches!(extension.as_str(), "rs"),
-        "clangd" => matches!(extension.as_str(), "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx"),
+        "clangd" => matches!(
+            extension.as_str(),
+            "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx"
+        ),
         "ruff" | "pyright" => matches!(extension.as_str(), "py" | "pyi"),
-        "typescript-language-server" => matches!(extension.as_str(), "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs"),
+        "typescript-language-server" => matches!(
+            extension.as_str(),
+            "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs"
+        ),
         _ => false,
     };
-    if !supported { return Err(SnapshotError::InvalidName); }
+    if !supported {
+        return Err(SnapshotError::InvalidName);
+    }
     // Host must resolve this file against its active registered project and
     // unsaved buffer version before calling; snapshot takes only disk bytes.
     publish_with_manifest(source_root, private_stage_parent, active_relative_file)
@@ -538,7 +555,8 @@ mod tests {
         let stage = root.join("stage");
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&stage).unwrap();
-        #[cfg(unix)] {
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&stage, fs::Permissions::from_mode(0o700)).unwrap();
         }
