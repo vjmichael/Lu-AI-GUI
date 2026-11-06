@@ -23,6 +23,7 @@ jobs:
       - run: node scripts/verify-source-tree.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs
       - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
+      - run: node --test lu-desktop/tests/research-citation-enforcement.test.mjs
       - run: node --test lu-desktop/tests/image-workspace-history.test.mjs
       - run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
       - run: grep -Fq 'WorkspaceReadTurnSession::new_git(' lu-desktop/src-tauri/src/workspace_desktop.rs
@@ -47,6 +48,7 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_citation
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
@@ -74,6 +76,7 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_citation
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
