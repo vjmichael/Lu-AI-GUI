@@ -17,6 +17,7 @@ mod prompt_context;
 mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
+mod archive_desktop;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -181,6 +182,7 @@ struct DesktopState {
     write_proposals: write_proposal::WriteProposalQueue,
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
     edit_proposals: edit_proposal::EditProposalQueue,
+    archive_reviews: archive_desktop::ArchiveReviewQueue,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
@@ -560,6 +562,7 @@ impl DesktopState {
             write_proposals: write_proposal::WriteProposalQueue::default(),
             write_approval_ledger: write_approvals,
             edit_proposals: edit_proposal::EditProposalQueue::default(),
+            archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
             rollback_approval_ledger: rollback_approvals,
@@ -1815,6 +1818,85 @@ fn lu_open_created_folder(
     }
 }
 
+/// Separate native source and destination dialogs. The model and WebView
+/// never provide actual OS paths. The result is only an INERT full-tree
+/// preview, not permission to create files.
+#[tauri::command]
+async fn lu_review_archive_tree(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+)->Result<Option<archive_desktop::ArchiveReviewView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let picked=tauri::async_runtime::spawn_blocking(move||{
+        let source=app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        let Some(source)=source else{return Ok(None)};
+        let destination=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(destination.map(|folder|(source,folder)))
+    }).await.map_err(|e|format!("Archive picker failed: {e}"))??;
+    let Some((source,destination))=picked else{return Ok(None)};
+    let review_id=next_id("ar-");
+    let view=tauri::async_runtime::spawn_blocking(move||{
+        state.archive_reviews.stage(&chat_id,&review_id,&source,&destination)
+    }).await.map_err(|e|format!("Archive preview worker failed: {e}"))??;
+    Ok(Some(view))
+}
+
+/// The user must review all members inside Lu and then approve the exact
+/// source/manifest/new destination in a native confirmation dialog.
+/// A cancelled/failed attempt never silently resumes or retries.
+#[tauri::command]
+async fn lu_confirm_archive_tree(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<archive_desktop::ArchiveCreatedView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let original=state.archive_reviews.inspect(&chat_id,&review_id)?;
+    let view=original.view_for_modal();
+    let modal=format!(
+        "Extract this archive to a NEW folder? Existing folders will NEVER be replaced.\n\nSource: {}\nNew folder: {}\nFiles: {}\nExpanded bytes: {}\nComplete tree SHA-256: {}\n\nReview every member in Lu first. Approval is single-use. A failed or interrupted extraction requires manual recovery and is never automatically retried.",
+        view.source_display,view.destination_display,view.files,
+        view.total_bytes,view.manifest_sha256,
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(modal)
+            .title("Lu — Confirm exact archive extraction")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Extract into new folder".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Archive confirmation failed: {e}"))?;
+    if !confirmed{
+        state.archive_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let pinned=state.archive_reviews.consume(&chat_id,&review_id)?;
+    if !pinned.same_as(&original){
+        return Err("Archive review changed during confirmation; refused".into())
+    }
+    let user_turn_id=next_id("g-");
+    let effect_id=next_id("g-");
+    let result=archive_desktop::execute_reviewed_archive_tree(
+        &state.chats,&state.effects,&chat_id,
+        &user_turn_id,&effect_id,&pinned
+    ).await?;
+    Ok(Some(result))
+}
+#[tauri::command]
+fn lu_deny_archive_tree(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.archive_reviews.deny(&chat_id,&review_id)
+}
+
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
@@ -2625,6 +2707,9 @@ pub fn run() {
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
+            lu_review_archive_tree,
+            lu_confirm_archive_tree,
+            lu_deny_archive_tree,
             lu_review_write_destination,
             lu_confirm_write,
             lu_deny_write,
