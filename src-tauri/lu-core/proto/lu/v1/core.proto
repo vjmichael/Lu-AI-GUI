@@ -574,3 +574,17 @@ message PptxCreateResult {
   uint64 bytes_written = 2;
   string sha256 = 3;
 }
+
+// Extract a validated ZIP or TAR-family tree into one NEW directory.
+// The manifest digest and path are approval inputs, not permissions.
+message ArchiveTreeExtractRequest {
+  string source_name = 1;
+  string target_folder = 2;
+  string approved_manifest_sha256 = 3;
+}
+message ArchiveTreeExtractResult {
+  string target_folder = 1;
+  uint32 files_extracted = 2;
+  uint64 bytes_extracted = 3;
+  string manifest_sha256 = 4;
+}
