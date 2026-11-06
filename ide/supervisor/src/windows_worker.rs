@@ -965,6 +965,15 @@ where
     }
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
     acceptance_trace("input_seal_verified");
+    // A normal installed Windows IDE must NOT silently launch real Cargo
+    // into an AppContainer whose nested Stdio::Null cannot open NUL. Until a
+    // crash-safe privileged NUL provisioning protocol is accepted, only the
+    // explicit disposable CI feature can run this native build executor.
+    // Reject before creating an OS profile, protected service lease or grant.
+    if !crate::windows_null_device::native_cargo_nul_compatibility_enabled() {
+        acceptance_trace("native_cargo_nul_capability_unverified");
+        return Err(SupervisorError::NoContainment);
+    }
     // No AppContainer creation, one-shot grant consumption or process launch
     // happens until the entire bundle has been sealed and checked.
     let profile = AppProfile::create(job_id)?;

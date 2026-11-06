@@ -490,6 +490,11 @@ fn hold_for_recovery(
     witness.record("hold_expired")?;
     Ok(())
 }
+fn recovery_state_allows_attempt(state: u8) -> bool {
+    // A recovery request may start only after tree_empty (1), or retry the
+    // already-fsynced protected reply (3). No execution or pending fsync.
+    matches!(state, 1 | 3)
+}
 fn recover(
     pipe: HANDLE,
     request: &Admission,
@@ -502,7 +507,7 @@ fn recover(
         .cloned()
         .ok_or_else(denied)?;
     let state = active.load(Ordering::Acquire);
-    if !matches!(state, 1 | 3) {
+    if !recovery_state_allows_attempt(state) {
         // 0=not reaped, 2=another request still waiting for fsync.
         return Err(denied());
     }
@@ -825,10 +830,11 @@ mod tests {
         // Original owner running (0), fully reaped and ready (1), request
         // racing with fsync (2), and protected fsynced reply (3). The actual
         // response path additionally reopens the original kernel Job.
-        assert!(!matches!(0_u8, 1 | 3));
-        assert!(matches!(1_u8, 1 | 3));
-        assert!(!matches!(2_u8, 1 | 3));
-        assert!(matches!(3_u8, 1 | 3));
+        assert!(!recovery_state_allows_attempt(0));
+        assert!(recovery_state_allows_attempt(1));
+        assert!(!recovery_state_allows_attempt(2));
+        assert!(recovery_state_allows_attempt(3));
+        assert!(!recovery_state_allows_attempt(u8::MAX));
     }
     #[test]
     fn wire_denies_unknown_fields() {

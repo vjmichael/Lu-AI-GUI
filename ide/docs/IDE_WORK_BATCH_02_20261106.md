@@ -46,3 +46,8 @@ The signed service pipe still returned `pipe_open_access_denied` in real Windows
 - D7D service now retains its *original*, proven-empty named Job for a bounded 60-second replay window after fsyncing `recovered_release`. If a properly authenticated host loses the first response, a fresh nonce may receive the same state only after the service independently reopens that still-live Job, confirms zero active processes and checks the protected evidence root. Unknown/unreaped/in-flight states still fail closed. This corrects a restart liveness gap without accepting file-only recovery.
 - The disposable `ci-native-null-lease` feature now triggers a compile-time error when enabled in a non-debug/release build. This does not make the global NUL ACE lifecycle safe for production; proper privileged crash-safe cleanup remains open.
 - These are committed source changes only, and no Windows native acceptance is implied before exact-head OS CI proves the retry, identity and containment behavior.
+
+### Fail-closed release admission (2026-11-06)
+
+- Native Windows Cargo now refuses admission **before creating the AppContainer profile, Job, service lease or one-shot grant** unless the separately compiled disposable-CI NUL compatibility path is enabled in a debug runner with an absolute `RUNNER_TEMP`. This prevents an installed build from consuming permission or reporting a misleading Cargo exit 101 when nested `rustc` cannot access `NUL`. It deliberately preserves the release blocker until a privileged, crash-recoverable per-job device-access service is independently implemented and accepted.
+- The D7D bounded recovery ACK retry acceptance test now exercises the same state predicate as production recovery, including rejecting pending/unwitnessed phases.

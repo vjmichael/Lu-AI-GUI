@@ -187,14 +187,22 @@ impl Drop for CiNullLease {
         }
     }
 }
-pub(crate) fn ci_scoped_nul_access(sid: PSID) -> Result<Option<CiNullLease>, SupervisorError> {
-    let enabled = cfg!(feature = "ci-native-null-lease")
+/// Native Cargo is intentionally unshippable while its nested Rust process
+/// requires a machine-global NUL device ACL policy. The temporary, single-SID
+/// compatibility path is reserved for explicit, disposable CI builds only.
+pub(crate) fn native_cargo_nul_compatibility_enabled() -> bool {
+    cfg!(feature = "ci-native-null-lease")
         && cfg!(debug_assertions)
         && std::env::var_os("LU_IDE_D7_CI_ALLOW_EXACT_NUL").as_deref()
             == Some(std::ffi::OsStr::new("1"))
         && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(std::ffi::OsStr::new("true"))
-        && std::env::var_os("CI").as_deref() == Some(std::ffi::OsStr::new("true"));
-    if !enabled {
+        && std::env::var_os("CI").as_deref() == Some(std::ffi::OsStr::new("true"))
+        && std::env::var_os("RUNNER_TEMP")
+            .filter(|p| std::path::Path::new(p).is_absolute())
+            .is_some()
+}
+pub(crate) fn ci_scoped_nul_access(sid: PSID) -> Result<Option<CiNullLease>, SupervisorError> {
+    if !native_cargo_nul_compatibility_enabled() {
         return Ok(None);
     }
     if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
