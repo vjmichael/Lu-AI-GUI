@@ -306,6 +306,28 @@ async fn ide_list_execution_intents(
         .await.map_err(|_| "EXECUTION_LIST_UNAVAILABLE".to_owned())?
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguageWorkerStatus {
+    ready: bool,
+    code: &'static str,
+    detail: &'static str,
+}
+
+/// Native admission is deliberately NOT represented by the presence of an
+/// LSP binary, an open project, or a catalog entry. D7D must first prove
+/// independent service and worker confinement in native Windows acceptance.
+/// A future E2 host broker will replace this fail-closed status only after
+/// independently attested process + permission evidence.
+#[tauri::command]
+async fn ide_lsp_worker_status() -> LanguageWorkerStatus {
+    LanguageWorkerStatus {
+        ready: false,
+        code: "LSP_PROTECTED_WORKER_UNVERIFIED",
+        detail: "Language servers are catalogued, but protected process admission and installed Windows acceptance are still pending.",
+    }
+}
+
 /// Read-only descriptions of known free/open-source LSP servers.
 /// No PATH search, installation, process spawn, worker grant or IPC occurs.
 #[tauri::command]
@@ -617,6 +639,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
             ide_list_language_servers,
+            ide_lsp_worker_status,
             ide_prepare_execution_intent,
             ide_decide_execution_intent,
             ide_list_execution_intents,
