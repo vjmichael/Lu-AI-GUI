@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — C4 frontend registry CI repair
+- C3 CI found a macro matcher regression: rustfmt moved `capability!` arguments across lines, causing an empty match set despite 24 registered operations. Fixed the JS test regex and added an explicit 24-operation assertion. Native registry/Tauri parity inspected; no host behavior or permissions changed.
+- C4 exact-head CI remains pending following this source update. C3 fix also committed independently.
+
 ## 2026-11-05 — Wave C4 evidence reconciliation (source implementation)
 - Added a read-only evidence matrix to Continuity. Uses existing native host results to classify local Git cleanliness, stored tracking refs, live remote (not queried), bounded artifact hashes/baselines, host events, project-note task claims, CI, installed desktop acceptance and toolchain usability **without promoting guesses to verified status**.
 - Explicitly preserves partial scans, truncated change lists, contradictory dirty counts, absent baselines and unknown remote state. The development checkpoint JSON now includes the same bounded conservative reconciliation, but excludes untrusted source/document excerpts.

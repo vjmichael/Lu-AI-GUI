@@ -274,9 +274,10 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const tauri = read('../src-tauri/src/lib.rs');
   const web = read('../web/main.jsx');
   const css = read('../web/styles.css');
-  const commands = [...registry.matchAll(/capability!\("[^"]+",\s*"(ide_[a-z_]+)"/g)]
+  const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
+  assert.equal(commands.length, 24, 'capability macro declarations must be found');
   assert.equal(new Set(commands).size, commands.length);
   const declared = registered.filter(value => value !== 'ide_list_capabilities');
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());

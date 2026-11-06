@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### C4 frontend CI regression repair (2026-11-05)
+- Earlier C3 exact-head run 42145804942: Linux native and Windows desktop succeeded, frontend failed a **test-only** capability-registry regex expecting same-line Rust macro arguments. Updated the contract assertion to support multiline rustfmt and require 24 nonempty commands. Direct catalog/Tauri parity: 24=24, no missing or duplicate commands.
+- Wave C3 source was separately repaired at `efe731d874e11309f4646d150827a723ed9932f7`. This C4 stacked branch carries the same test repair independently. Latest C4 exact-head CI, installed Windows UI acceptance and toolchain execution remain open.
+
 ## Wave C4 — Development evidence reconciliation (2026-11-05)
 
 - **Implemented in source on independent branch** `ide/wave-c4-evidence-reconciliation-20261105`, based on exact Wave C3 SHA `2572fa445d31d265b0ef27ef52a1dd4a09156326`. No Lu bridge or executable worker.
