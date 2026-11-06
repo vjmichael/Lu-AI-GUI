@@ -221,6 +221,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         result.summary.phase, result.exit_code, result.timed_out,
         result.output_bytes, result.output_sha256.len() == 64,
     );
+    if result.exit_code != Some(0)
+        && cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE")
+            .as_deref() == Some(std::ffi::OsStr::new("1"))
+    {
+        // The acceptance source is synthetic, not a user's project. Only
+        // report a small sanitized prefix of the OS-contained Cargo log,
+        // after the kernel tree is empty and the output seal is published.
+        let path = result.output_root.join("cargo-diagnostics.log");
+        if let Ok(metadata) = fs::symlink_metadata(&path) {
+            if metadata.is_file() && !metadata.file_type().is_symlink()
+                && metadata.len() <= 64 * 1024
+            {
+                if let Ok(bytes) = fs::read(&path) {
+                    let diagnostic = String::from_utf8_lossy(
+                        &bytes[..bytes.len().min(4096)]
+                    ).chars()
+                        .filter(|c| c.is_ascii_graphic() || *c == '\n'
+                            || *c == '\t' || *c == '\r')
+                        .collect::<String>();
+                    eprintln!("NATIVE_CARGO_DIAGNOSTICS_BEGIN");
+                    eprintln!("{diagnostic}");
+                    eprintln!("NATIVE_CARGO_DIAGNOSTICS_END");
+                }
+            }
+        }
+    }
     if result.summary.phase != JobPhase::Completed
         || result.exit_code != Some(0)
         || result.output_sha256.len() != 64
