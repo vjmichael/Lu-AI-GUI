@@ -702,7 +702,17 @@ pub fn reconcile_windows_interrupted(supervisor: &Supervisor, id: &str)
     ) };
     let job = Job { handle: Handle::new(raw).map_err(|_| SupervisorError::Quarantined)? };
     let mut terminator = JobTerminator { job: &job, id, hash: &state.plan_sha256 };
-    supervisor.reconcile_interrupted_with(id, &mut terminator)
+    let summary = supervisor.reconcile_interrupted_with(id, &mut terminator)?;
+    // The OS process tree was independently reaped and the supervisor
+    // recovery receipt is durable. Only now hint that the keeper may
+    // relinquish its named handle; failure is not proof of an unsafe tree
+    // and simply leaves the broker to expire its bounded recovery hold.
+    if summary.phase == JobPhase::Cancelled && !summary.requires_reconciliation {
+        let _ = crate::windows_broker::release_after_verified_recovery(
+            id, &state.plan_sha256
+        );
+    }
+    Ok(summary)
 }
 
 #[cfg(test)]
