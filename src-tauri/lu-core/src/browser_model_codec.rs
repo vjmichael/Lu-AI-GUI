@@ -147,6 +147,22 @@ mod tests{
         assert!(codec.encode(&invalid).is_err());
     }
     #[test]
+    fn model_read_catalog_excludes_screenshot_bytes_and_interactive_controls(){
+        let codec=BrowserModelCodec(BrowserModelKind::Read);
+        let schema=codec.schema();
+        let allowed=schema.pointer("/properties/operation/enum")
+            .and_then(Value::as_array).unwrap();
+        assert_eq!(allowed.len(),4);
+        assert!(allowed.iter().all(|op|op.as_str()!=Some("screenshot")));
+        for name in ["screenshot","click","type","show_browser","hide_browser"]{
+            let request=json!({"operation":name});
+            assert!(codec.encode(request.as_object().unwrap()).is_err());
+        }
+        for name in ["navigate","read","status","accessibility"]{
+            assert!(allowed.iter().any(|op|op.as_str()==Some(name)));
+        }
+    }
+    #[test]
     fn interactive_ops_cannot_be_encoded_as_network_read(){
         let read=BrowserModelCodec(BrowserModelKind::Read);
         let interact=BrowserModelCodec(BrowserModelKind::Interact);
