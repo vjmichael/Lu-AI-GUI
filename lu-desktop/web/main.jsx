@@ -35,6 +35,8 @@ function App() {
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
   const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
+  const [ocrBusy,setOcrBusy]=useState(false);
+  const [ocrObservation,setOcrObservation]=useState(null);
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
   const [observeNotes,setObserveNotes] = useState([]);
@@ -508,6 +510,15 @@ function App() {
       setImageHistoryView({chatId:sourceChat,rows:Array.isArray(rows)?rows:[]});
     }catch(e){setError(String(e));}
     finally{setImageHistoryBusy(false);}
+  }
+  async function readOfflineImageText(){
+    if(!chatId||ocrBusy)return;
+    setOcrBusy(true);setOcrObservation(null);setError('');
+    try{
+      const result=await invoke('lu_ocr_read_selected_image',{chatId});
+      if(result)setOcrObservation({chatId,...result});
+    }catch(e){setError(String(e));}
+    finally{setOcrBusy(false);}
   }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
@@ -3100,6 +3111,28 @@ function App() {
             onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.min(3,+(v.zoom+0.25).toFixed(2))}))}>Zoom in</button>
           <button type="button" onClick={()=>setImageViewer(null)}>Close</button>
         </footer>
+        <div className="imageRevisionForm" aria-label="Offline image text extraction">
+          <strong>Offline OCR — review only</strong>
+          <small>Select a PNG/JPEG using the native file picker. Lu will use only an
+            approved bundled OCR runtime; no images are sent to a web service.
+            Recognized text may be inaccurate and is never treated as a verified passage.</small>
+          <button type="button" onClick={()=>void readOfflineImageText()}
+            disabled={ocrBusy||!chatId}>
+            {ocrBusy?'Recognizing from selected image…':'Choose image and extract text'}
+          </button>
+          {ocrObservation?.chatId===chatId&&<div>
+            <small>Unverified OCR · source SHA-256 {ocrObservation.sourceSha256}
+              · text SHA-256 {ocrObservation.textSha256}</small>
+            <textarea readOnly rows={5} aria-label="Review unverified OCR transcription"
+              value={ocrObservation.text}/>
+            <button type="button" onClick={()=>{
+              setPrompt(p=>p+(p?'\n\n':'')+
+                '[User-reviewed OCR transcription — verify against original image]\n'+
+                ocrObservation.text);
+              setOcrObservation(null);
+            }}>Insert reviewed OCR text into draft</button>
+          </div>}
+        </div>
         <div className="imageRevisionForm" aria-label="Deterministic image revision export">
           <small>Original stays unchanged. Native approval and a NEW PNG destination are required.
             Solid masks remove pixels in the exported file; mosaics are visual effects, not secure redaction.
