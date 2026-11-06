@@ -1751,6 +1751,7 @@ function App() {
                 <option value="slide_text">PowerPoint slide text</option>
                 <option value="cell_number">Excel numeric cell</option>
                 <option value="cell_boolean">Excel boolean cell</option>
+                <option value="cell_text">Excel inline text cell</option>
               </select>
             </label>
             {(patch.kind==='word_text'||patch.kind==='slide_text') &&
@@ -1864,6 +1865,7 @@ function App() {
               <option value="slide_text">PowerPoint: slide text run</option>
               <option value="cell_number">Excel: numeric cell</option>
               <option value="cell_boolean">Excel: boolean cell</option>
+              <option value="cell_text">Excel: inline text cell</option>
             </select>
           </label>
           {(officePatch.kind==='word_text' || officePatch.kind==='slide_text') && <label className="editReviewAck">
