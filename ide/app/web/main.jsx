@@ -841,7 +841,7 @@ function App() {
                 More than 120 changed files were found. The visible list is truncated.</p>}
               <div className="continuityCapture">
                 <h3>Review local differences and commits</h3>
-                <row className="gitReviewControls">
+                <div className="gitReviewControls">
                   <label htmlFor="git-diff-scope">Diff source</label>
                   <select id="git-diff-scope" value={gitDiffScope}
                     disabled={gitEvidenceBusy}
@@ -858,7 +858,7 @@ function App() {
                     onClick={() => loadGitEvidence()}>
                     {gitEvidenceBusy ? 'Inspecting…' : 'Inspect diff and history'}
                   </button>
-                </row>
+                </div>
               </div>
               <p>Local-only evidence. Untracked file contents are not included in patch text.
                 Diff previews are capped at 64 KiB and may be incomplete. No Git command is executed.</p>
