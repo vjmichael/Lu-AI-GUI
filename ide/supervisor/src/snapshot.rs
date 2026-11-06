@@ -570,19 +570,19 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(
-                input.root.join("main.c"),
-                fs::Permissions::from_mode(0o600),
-            )
-            .unwrap();
+            fs::set_permissions(input.root.join("main.c"), fs::Permissions::from_mode(0o600))
+                .unwrap();
         }
         fs::write(input.root.join("main.c"), b"changed").unwrap();
         assert!(verify_input(&input).is_err());
-        assert!(matches!(publish_lsp_input(&project, &stage, "../main.c", "clangd"),
-            Err(SnapshotError::InvalidName)));
-        assert!(matches!(publish_lsp_input(&project, &stage, "main.c", "rust-analyzer"),
-            Err(SnapshotError::InvalidName)));
+        assert!(matches!(
+            publish_lsp_input(&project, &stage, "../main.c", "clangd"),
+            Err(SnapshotError::InvalidName)
+        ));
+        assert!(matches!(
+            publish_lsp_input(&project, &stage, "main.c", "rust-analyzer"),
+            Err(SnapshotError::InvalidName)
+        ));
         let _ = fs::remove_dir_all(&root);
     }
-
 }
