@@ -24,6 +24,27 @@ function splitsSurrogate(doc, position) {
     adjacent.charCodeAt(1) >= 0xDC00 && adjacent.charCodeAt(1) <= 0xDFFF;
 }
 
+/**
+ * Rebase a successful disk Save only onto the editor instance that initiated
+ * it. A reopened/staged/reloaded tab can reuse the same key and path but is a
+ * different authority boundary; its buffer ID must not be rebound.
+ */
+export function rebaseBufferAfterSave(current, started, savedRevision) {
+  if (!current || !started || current.bufferId !== started.bufferId ||
+      current.projectId !== started.projectId ||
+      current.relativePath !== started.relativePath ||
+      current.savedRevision !== started.savedRevision ||
+      !/^[a-f0-9]{64}$/i.test(savedRevision)) {
+    return { status: 'replaced_buffer', identity: current ?? null };
+  }
+  return {
+    status: 'rebased',
+    identity: Object.freeze({
+      ...advanceBufferIdentity(current), savedRevision,
+    }),
+  };
+}
+
 // CodeMirror columns/positions are UTF-16. Byte offsets are UTF-8;
 // columns are one-based UTF-16 units, not Unicode grapheme indices.
 export function captureBufferSpan(identity, editorState, from, to) {
