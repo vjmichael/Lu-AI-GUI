@@ -13,7 +13,7 @@ use crate::windows_service_client::ServiceLease as BrokerLease;
 use crate::{
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
-    windows_cap_tree::{audit_tree, digest_tree, publish_into_native_parent},
+    windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
@@ -1112,6 +1112,7 @@ where
     let begin = Instant::now();
     let mut timed_out = false;
     let mut stopped = false;
+    let mut unstable_output_since: Option<Instant> = None;
     let exit_code = loop {
         let waited = unsafe { WaitForSingleObject(process.0, LOOP_DELAY.as_millis() as u32) };
         if waited == WAIT_OBJECT_0 {
@@ -1132,11 +1133,29 @@ where
             return Err(SupervisorError::Quarantined);
         }
         let request = cancel.0.load(Ordering::SeqCst);
-        if request
-            || begin.elapsed().as_millis() >= plan.runtime_limit_ms as u128
-            || output_seal(&output).is_err()
-        {
-            timed_out = !request;
+        let deadline_exceeded = begin.elapsed().as_millis() >= plan.runtime_limit_ms as u128;
+        // A live Cargo tree is mutable. Check quota, reparse and hardlink
+        // containment WITHOUT hashing concurrently modified file bytes.
+        // An unstable scan gets only a short bounded grace, never a pass.
+        let output_invalid = match live_output_quota(
+            &output,
+            MAX_OUTPUT_FILES,
+            MAX_OUTPUT_BYTES,
+            MAX_OUTPUT_FILE_BYTES,
+        ) {
+            Ok(true) => {
+                unstable_output_since = None;
+                false
+            }
+            Ok(false) => {
+                let started = unstable_output_since.get_or_insert_with(Instant::now);
+                started.elapsed() >= Duration::from_secs(3)
+            }
+            Err(_) => true, // structural violation or quota exceeded
+        };
+        if request || deadline_exceeded || output_invalid {
+            // An output policy denial is NOT evidence of a runtime timeout.
+            timed_out = deadline_exceeded;
             stopped = true;
             let mut terminator = JobTerminator {
                 job: &job,

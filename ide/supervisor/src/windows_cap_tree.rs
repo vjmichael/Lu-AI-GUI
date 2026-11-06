@@ -230,6 +230,112 @@ fn visit(
     Ok(())
 }
 
+/// Live, capability-rooted *metadata* quota check for a tree that Cargo is
+/// still mutating. The final output seal MUST always use audit_tree AFTER the
+/// kernel Job is empty. Hashing changing rustc scratch files every 40 ms
+/// cannot certify immutable output and causes false cancellation.
+/// Returns false only for short-lived concurrent filesystem changes (deleted
+/// names, sharing conflicts); structural violations and quota overruns deny.
+fn live_visit(
+    source: &Dir,
+    depth: usize,
+    budget: &mut Budget,
+    file_limit: usize,
+    byte_limit: u64,
+    item_limit: u64,
+) -> Result<bool, SupervisorError> {
+    if depth > MAX_DEPTH {
+        return Err(denied());
+    }
+    let mut stable = true;
+    let entries = source.entries().map_err(|_| denied())?;
+    for next in entries {
+        let name = match next {
+            Ok(entry) => entry.file_name(),
+            Err(_) => {
+                stable = false;
+                continue;
+            }
+        };
+        clean_name(&name)?;
+        let metadata = match source.symlink_metadata(&name) {
+            Ok(meta) => meta,
+            Err(_) => {
+                stable = false; // Rust may have atomically renamed a file.
+                continue;
+            }
+        };
+        if metadata.file_type().is_symlink()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
+            return Err(denied());
+        }
+        if metadata.is_dir() {
+            let child = match checked_child_dir(source, &name) {
+                Ok(child) => child,
+                Err(_) => {
+                    stable = false; // active creation / deletion
+                    continue;
+                }
+            };
+            stable &= live_visit(
+                &child,
+                depth + 1,
+                budget,
+                file_limit,
+                byte_limit,
+                item_limit,
+            )?;
+        } else if metadata.is_file() {
+            budget.files = budget.files.checked_add(1).ok_or_else(denied)?;
+            budget.bytes = budget.bytes.checked_add(metadata.len()).ok_or_else(denied)?;
+            if budget.files > file_limit
+                || budget.bytes > byte_limit
+                || metadata.len() > item_limit
+                || metadata.len() > MAX_ITEM_BYTES
+            {
+                return Err(denied());
+            }
+            // Independent handle/open + no-follow checks catch hard links,
+            // reparse swaps and nonregular files. Sharing violations during
+            // a compiler write are transient: NEVER treat this scan as a seal.
+            let mut options = OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            match source.open_with(&name, &options) {
+                Ok(opened) => match valid_leaf(&opened.into_std()) {
+                    Ok((size, _)) if size == metadata.len() => {}
+                    Ok(_) | Err(_) => stable = false,
+                },
+                Err(_) => stable = false,
+            }
+        } else {
+            return Err(denied());
+        }
+    }
+    Ok(stable)
+}
+
+/// Prevent a rapidly changing compiler-output tree from invalidating the
+/// immutable final-seal protocol. A false result must be retried with a
+/// bounded grace period, not converted to permanent success. Never publish
+/// on this live check: publication runs audit_tree after Job exit.
+pub(crate) fn live_output_quota(
+    root: &Path,
+    max_files: usize,
+    max_bytes: u64,
+    max_file_bytes: u64,
+) -> Result<bool, SupervisorError> {
+    let pinned = safe_root(root)?;
+    live_visit(
+        &pinned,
+        0,
+        &mut Budget::default(),
+        max_files,
+        max_bytes,
+        max_file_bytes,
+    )
+}
+
 /// Whole tree hash, optionally copy to an empty native-private destination.
 /// Caller must supply an exclusively created output parent, not project paths.
 pub(crate) fn audit_tree(
@@ -409,6 +515,31 @@ mod tests {
             "D7C accepted {accepted}/24 race attempts; all accepted trees equal pinned input"
         );
         let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn live_cargo_output_quota_is_not_an_immutable_seal() {
+        let base = std::env::temp_dir().join(format!(
+            "lu-cap-live-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(base.join("target")).unwrap();
+        let file = base.join("target").join("scratch.rmeta");
+        fs::write(&file, b"changing").unwrap();
+        assert!(live_output_quota(&base, 4, 100, 100).unwrap());
+        // A live metadata scan does not certify any content digest; that
+        // happens after kernel Job exit, using the immutable output seal.
+        let old_digest = digest_tree(&base, None, 4, 100).unwrap();
+        fs::write(&file, b"different contents").unwrap();
+        assert!(live_output_quota(&base, 4, 100, 100).unwrap());
+        assert_ne!(old_digest, digest_tree(&base, None, 4, 100).unwrap());
+        assert!(live_output_quota(&base, 4, 2, 100).is_err());
+        assert!(live_output_quota(&base, 4, 100, 2).is_err());
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
