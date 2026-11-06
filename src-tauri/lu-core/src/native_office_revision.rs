@@ -31,6 +31,7 @@ pub enum OfficeRevisionEdit {
     SlideRun {slide_number:usize,text_index:usize,expected_old:String,new_text:String},
     CellNumber {sheet_number:usize,address:String,expected_old:f64,new_number:f64},
     CellBoolean {sheet_number:usize,address:String,expected_old:bool,new_boolean:bool},
+    CellInlineText {sheet_number:usize,address:String,expected_old:String,new_text:String},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub enum OfficeRevisionError {
@@ -176,6 +177,62 @@ fn xml_cell(text:&str,address:&str,expected:&str,new:&str,kind:&str)
     output.extend_from_slice(text[end..].as_bytes());
     Ok(output)
 }
+/// Only single-run inlineStr worksheet text is editable. SharedStrings,
+/// rich-text runs, hyperlinks, formulas and cached values are NOT rewritten.
+fn xml_inline_cell(
+    text:&str,address:&str,expected:&str,new:&str
+)->Result<Vec<u8>,OfficeRevisionError>{
+    if address.is_empty()||address.len()>8||
+        !address.bytes().all(|b|b.is_ascii_uppercase()||b.is_ascii_digit())||
+        !address.bytes().any(|b|b.is_ascii_digit())||
+        !text_ok(expected)||!text_ok(new){
+        return Err(OfficeRevisionError::InvalidTarget)
+    }
+    let mut reader=Reader::from_str(text);
+    let mut changed=None;
+    let mut events=0usize;
+    loop{
+        events+=1;
+        if events>200_000{return Err(OfficeRevisionError::TooLarge)}
+        match reader.read_event().map_err(|_|OfficeRevisionError::InvalidPackage)?{
+            Event::Start(ref e) if elem_name(e.name().as_ref())==b"c"=>{
+                if value_attr(e,b"r")?.as_deref()==Some(address){
+                    if changed.is_some(){return Err(OfficeRevisionError::AmbiguousTarget)}
+                    if value_attr(e,b"t")?.as_deref()!=Some("inlineStr"){
+                        return Err(OfficeRevisionError::UnsupportedCell)
+                    }
+                    let from=reader.buffer_position() as usize;
+                    let span=reader.read_to_end(e.name())
+                        .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+                    let to=span.end as usize;
+                    let inner=text.get(from..to).ok_or(OfficeRevisionError::InvalidPackage)?;
+                    // Refuse rich/phonetic markup, more than one text run and
+                    // any calculation/external extension metadata.
+                    if inner.contains("<f")||inner.contains(":f")||
+                        inner.contains("<r>")||inner.contains("<r ")||
+                        inner.contains("<rPh")||inner.contains("<ext")||
+                        !inner.contains("<is>")||!inner.contains("</is>"){
+                        return Err(OfficeRevisionError::UnsupportedCell)
+                    }
+                    let rendered=xml_text(inner,b"t",0,expected,new)?;
+                    // Only one t run is allowed, not part of a rich string.
+                    let runs=inner.matches("<t").count()+inner.matches(":t").count();
+                    if runs!=1{return Err(OfficeRevisionError::UnsupportedCell)}
+                    changed=Some((from,to,rendered));
+                }
+            },
+            Event::DocType(_)=>return Err(OfficeRevisionError::UnsafePackage),
+            Event::Eof=>break,
+            _=>{},
+        }
+    }
+    let (from,to,rendered)=changed.ok_or(OfficeRevisionError::NotFound)?;
+    let mut out=Vec::new();
+    out.extend_from_slice(text[..from].as_bytes());
+    out.extend_from_slice(&rendered);
+    out.extend_from_slice(text[to..].as_bytes());
+    Ok(out)
+}
 fn target_path(edit:&OfficeRevisionEdit)->Result<String,OfficeRevisionError>{
     match edit{
         OfficeRevisionEdit::WordRun{..}=>Ok("word/document.xml".into()),
@@ -183,6 +240,7 @@ fn target_path(edit:&OfficeRevisionEdit)->Result<String,OfficeRevisionError>{
             =>Ok(format!("ppt/slides/slide{slide_number}.xml")),
         OfficeRevisionEdit::CellNumber{sheet_number,..}
         |OfficeRevisionEdit::CellBoolean{sheet_number,..}
+        |OfficeRevisionEdit::CellInlineText{sheet_number,..}
             if (1..=256).contains(sheet_number)
             =>Ok(format!("xl/worksheets/sheet{sheet_number}.xml")),
         _=>Err(OfficeRevisionError::InvalidTarget),
@@ -207,6 +265,9 @@ fn edit_part(edit:&OfficeRevisionEdit,content:&[u8])
         OfficeRevisionEdit::CellBoolean{address,expected_old,new_boolean,..}=>{
             xml_cell(source,address,if *expected_old{"1"}else{"0"},
                 if *new_boolean{"1"}else{"0"},"b")
+        },
+        OfficeRevisionEdit::CellInlineText{address,expected_old,new_text,..}=>{
+            xml_inline_cell(source,address,expected_old,new_text)
         },
     }
 }
@@ -339,7 +400,8 @@ pub fn render_office_revision_batch(
             OfficeRevisionEdit::WordRun{text_index,..}|
             OfficeRevisionEdit::SlideRun{text_index,..}=>format!("{part}:text:{text_index}"),
             OfficeRevisionEdit::CellNumber{address,..}|
-            OfficeRevisionEdit::CellBoolean{address,..}=>format!("{part}:cell:{address}"),
+            OfficeRevisionEdit::CellBoolean{address,..}|
+            OfficeRevisionEdit::CellInlineText{address,..}=>format!("{part}:cell:{address}"),
         };
         if !targets.insert(unique){return Err(OfficeRevisionError::AmbiguousTarget)}
         part_paths.insert(part);
