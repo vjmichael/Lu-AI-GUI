@@ -34,7 +34,7 @@ pub(crate) fn trusted_staged_file_uri(path: &Path) -> Result<String, SupervisorE
 const MAX_CHUNK: usize = 16 * 1024;
 const MAX_PENDING_OUTPUT: usize = MAX_MESSAGE + 256;
 const READ_WAIT: Duration = Duration::from_millis(400);
-const MAX_SESSION_LIFETIME: Duration = Duration::from_secs(10 * 60);
+const MAX_SESSION_LIFETIME: Duration = Duration::from_secs(5 * 60);
 const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 
 /// A trusted native worker adapter must own both ends of its OS-restricted
