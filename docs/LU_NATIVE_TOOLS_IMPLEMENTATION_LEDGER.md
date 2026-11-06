@@ -1,7 +1,7 @@
 # Lu Core native tools — implementation and acceptance ledger
-Updated: 2026-11-05
-Source integration branch: `lu/tools-all-source-consolidation-20261105` (PR #40)
-Status: DEVELOPMENT SOURCE. **WAVE2-RECOVERY-03 = SOURCE-IMPLEMENTED; exact-head native and installed Windows acceptance PENDING.** No claim of stable v1.0 or installed Windows acceptance.
+Updated: 2026-11-06
+Source integration branch: `lu/v1-observe-learn-20261106` (draft PR #61, stacked on Wave 4 #59, Wave 3 #57 and Wave 2 source)
+Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
 ## Non-negotiable acceptance states
 - **Source** = a named implementation exists and has source review coverage.
@@ -338,3 +338,21 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 **ENVIRONMENT / VISION:** Existing host-native environment status remains read-only and distinguishes detected CPU/platform hints from actually verified GPU backend execution. Loaded MMProj remains an admitted projector, not a proved visual understanding session. No synthetic backend/vision success is claimed. Native/installed GGUF acceptance still OPEN.
 
 **IMAGE WORKSPACE:** Recheck of newly exported immutable PNG revisions now explicitly removes the newly created output if reopening or digest validation fails, rather than leaving an unverified image revision as a successful artifact. Existing crop/resize, no-clobber and source preservation remain. Persistent revision graph, masks/annotation and full installed Windows acceptance still OPEN.
+
+## 2026-11-06 integration reconciliation — do not rebuild implemented tools
+
+Following the Lu Dev 28–31 review, the actual integrated tree contains the previously developed Wave 2 archive/document/custody and Wave 3 normal-chat/Reader/Git/authorization work. Earlier comments that Wave 2 advanced format engines, archive cancellation/recovery, spreadsheet/Office revisions, or Wave 3 semantic discovery and live tool progress were *not yet implemented* are historical, not current missing-source claims. Source implementation is not the same as verified completeness.
+
+**Concrete fixed native/CI regressions:** Reader and Workspace assertions were updated to the real `run_journaled_observed` API instead of looking for removed `run_journaled`. The opened-directory identity test now uses actual Unix rename semantics and a distinct Windows directory handle without attempting an invalid Win32 rename while the original cap-std directory is held open. All three source fixes were carried into the current source lock. Native compilation/test re-run remains required, not assumed green.
+
+**Wave 2 branch ancestry:** Wave 2 PR #44 and Observe PR #61 have diverged by six commits in graph history. Critical tool registration IDs and libarchive files compared at the two exact heads were **byte-identical** (file transfer, trash/restore, Office revision, ZIP registration, and libarchive). Do not cherry-pick/rewrite blindly; compare concrete file blobs and behavioral evidence before any deliberate branch reconciliation. Do not merge while native verification is unproven.
+
+**RESEARCH-03A–D SOURCE ADDED:** The chat-specific EvidenceLedger now has an exact source-ID-to-immutable-DOI lookup. A new separately consented native Crossref request retrieves bibliographic metadata ONLY from that stored DOI via the hash-pinned HTTPS transport, rejects wrong Crossref DOI, and applies the existing strict matching rule for title, authors and identifier. It persists MATCH or MISMATCH in the existing ledger. React displays the difference and does **not** promote metadata to a verified passage, quotation or citation. This is useful actual functionality but not a complete document retrieval/verified-source workflow.
+
+**RESEARCH-04A–F SOURCE ADDED:** Separate user consent for each OpenAlex page (1–5), bounded to a maximum of 125 **discovery candidates** (not 125 citations), server-supplied next-page evidence, exact-chat display isolation and Next/Previous controls. Added Core candidate lookup regression, Crossref fixture parser tests, UI/host source contract and required CI source step. Real network behavior, metadata matching on varied real providers, browser-accessed text, citations and normal-conversation Research routing remain OPEN.
+
+**Browser status:** The reviewed, installed Chromium package is still absent. Host-owned window custody, typed NetworkRead / NetworkWrite separation and native human-challenge handling exist. The full PR #26 model/browser research loop is NOT yet integrated into the active PR #61 normal Send execution path; the model/browser source test from the original draft must not be made falsely green by removing missing-function assertions.
+
+**Other known genuine gaps:** deterministic Image Workspace crop/resize/new-file export exists, but durable revision history, undo, masks/annotations and semantically guided editing are not done; real semantic multimodal image-grounding and reliable OCR need backend evidence; Observe & Learn has native WGC one-shot and content-minimized notes but not source-attested redacted frames or a complete independent GUI test runner; rich Office object preservation and unsupported archive variants remain outside the bounded implementations. Git status/log/diff, Background task state, Environment basics, tools 01–05 and Wave 3 scoped routing are source-built, not missing.
+
+**Deferred acceptance only:** physical Windows native WGC/Browser/Research compilation and installed NSIS candidate; real GGUF/MMProj/backend, model-turn and interruption evidence still require execution. Source should continue to improve without representing an unexecuted gate as PASSED or a draft as the stable alpha.
