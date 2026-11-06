@@ -7,6 +7,84 @@ fn main() {
         std::process::exit(1);
     }
 }
+/// CI-only independent access check on a throwaway native pipe with the
+/// exact same DACL as the restricted SCM service. This is NOT authentication,
+/// and cannot replace an actual kernel-verified service round trip.
+#[cfg(all(windows, feature = "protected-recovery-service"))]
+fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
+    use lu_ide_execution_supervisor::windows_service_security::{ws, PipeSecurity};
+    use rand::{rngs::OsRng, RngCore};
+    use std::ptr;
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_DUPLEX},
+        System::Pipes::{
+            CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_REJECT_REMOTE_CLIENTS,
+            PIPE_TYPE_MESSAGE, PIPE_WAIT,
+        },
+    };
+    if std::env::var_os("GITHUB_ACTIONS").as_deref()
+        != Some(std::ffi::OsStr::new("true"))
+        || std::env::var_os("CI").as_deref() != Some(std::ffi::OsStr::new("true"))
+    {
+        return Ok(());
+    }
+    let expected_sid = std::env::var("LU_IDE_D7_DIAGNOSTIC_HOST_SID")
+        .map_err(|_| "DENIED: installer host token test SID absent in CI")?;
+    let acl = PipeSecurity::new(&expected_sid).map_err(|e| e.code().to_string())?;
+    let mut random = [0u8; 16];
+    OsRng.fill_bytes(&mut random);
+    let nonce: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    let endpoint = ws(&format!(r"\\.\pipe\LuIdeD7AclProbe{nonce}"));
+    // The only server is the test fixture's own protected, unique instance.
+    const FIRST_INSTANCE: u32 = 0x0008_0000;
+    let server = unsafe {
+        CreateNamedPipeW(
+            endpoint.as_ptr(),
+            PIPE_ACCESS_DUPLEX | FIRST_INSTANCE,
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+            1,
+            4096,
+            4096,
+            0,
+            &acl.attributes,
+        )
+    };
+    if server.is_null() || server == INVALID_HANDLE_VALUE {
+        return Err(format!("DENIED: exact-user CI pipe creation Win32={}", unsafe {
+            GetLastError()
+        }));
+    }
+    // Match the production client precisely: no broad pipe-create right,
+    // no privileged alternate identity and no forged service response.
+    const FILE_READ_DATA: u32 = 0x0000_0001;
+    const FILE_WRITE_DATA: u32 = 0x0000_0002;
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const SECURITY_QOS: u32 = 0x0012_0000;
+    let client = unsafe {
+        CreateFileW(
+            endpoint.as_ptr(),
+            FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE,
+            0,
+            ptr::null(),
+            OPEN_EXISTING,
+            SECURITY_QOS,
+            ptr::null_mut(),
+        )
+    };
+    let failure = if client.is_null() || client == INVALID_HANDLE_VALUE {
+        Some(unsafe { GetLastError() })
+    } else {
+        unsafe { CloseHandle(client); }
+        None
+    };
+    unsafe { CloseHandle(server); }
+    if let Some(error) = failure {
+        return Err(format!("DENIED: exact-user CI pipe self-check Win32={error}"));
+    }
+    eprintln!("D7D_PIPE_CI_SELF_PROBE=exact_acl_client_opened");
+    Ok(())
+}
 #[cfg(all(windows, feature = "protected-recovery-service"))]
 fn smoke() -> Result<(), String> {
     use lu_ide_execution_supervisor::{
@@ -42,6 +120,7 @@ fn smoke() -> Result<(), String> {
         "job-{}",
         nonce.iter().map(|b| format!("{b:02x}")).collect::<String>()
     );
+    ci_exact_user_pipe_dacl_probe()?;
     let plan = "a".repeat(64);
     let name = ws(&format!("Global\\LuIdeD7-{id}-{}", &plan[..16]));
     let acl = JobSecurity::new().map_err(|e| e.code())?;
