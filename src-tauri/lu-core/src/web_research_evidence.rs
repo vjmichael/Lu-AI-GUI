@@ -114,6 +114,17 @@ pub struct DocumentRetrievalProof {
     pub truncated:bool,
     pub document_accessed:bool,
 }
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct ResearchCampaignStatus {
+    pub id:String,
+    pub query:String,
+    pub state:String,
+    pub next_page:u32,
+    pub candidate_ceiling:u32,
+    pub distinct_dois:u32,
+    pub completed_pages:u32,
+    pub blocked_reason:Option<String>,
+}
 pub struct EvidenceLedger { connection: Connection }
 fn bounded(value: &str, cap: usize) -> bool {
     !value.trim().is_empty() && value.len() <= cap && !value.chars().any(char::is_control)
@@ -156,6 +167,27 @@ impl EvidenceLedger {
                CHECK(excerpt_truncated IN (0,1)),
              observed_text_bytes INTEGER NOT NULL,
              PRIMARY KEY(generation_id,call_id)
+           );
+           CREATE TABLE IF NOT EXISTS research_campaigns(
+             id TEXT PRIMARY KEY,
+             query TEXT NOT NULL,
+             candidate_ceiling INTEGER NOT NULL CHECK(candidate_ceiling BETWEEN 1 AND 120),
+             next_page INTEGER NOT NULL CHECK(next_page BETWEEN 1 AND 6),
+             state TEXT NOT NULL CHECK(state IN ('READY','RUNNING','PAUSED','BLOCKED','DONE','CANCELLED')),
+             blocked_reason TEXT
+           );
+           CREATE TABLE IF NOT EXISTS research_campaign_pages(
+             campaign_id TEXT NOT NULL REFERENCES research_campaigns(id),
+             page INTEGER NOT NULL,
+             response_sha256 TEXT NOT NULL,
+             PRIMARY KEY(campaign_id,page)
+           );
+           CREATE TABLE IF NOT EXISTS research_campaign_leads(
+             campaign_id TEXT NOT NULL REFERENCES research_campaigns(id),
+             doi TEXT NOT NULL,
+             source_id TEXT NOT NULL REFERENCES research_sources(id),
+             first_page INTEGER NOT NULL,
+             PRIMARY KEY(campaign_id,doi)
            );
            CREATE TABLE IF NOT EXISTS research_document_observations(
              source_id TEXT NOT NULL REFERENCES research_sources(id),
@@ -471,6 +503,149 @@ impl EvidenceLedger {
         }
         Ok(())
     }
+    fn campaign_safe_id(id:&str)->bool{
+        id.starts_with("research-campaign-")&&id.len()<=128
+            &&id.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'-'||c==b'_')
+    }
+    /// User-created, capped, chat-scoped search program. No network grant.
+    pub fn create_campaign(
+        &mut self,id:&str,query:&str,ceiling:u32
+    )->Result<ResearchCampaignStatus,EvidenceError>{
+        if !Self::campaign_safe_id(id)||!bounded(query,512)
+            ||!(1..=120).contains(&ceiling){return Err(EvidenceError::Invalid);}
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_campaigns
+             (id,query,candidate_ceiling,next_page,state)
+             VALUES (?1,?2,?3,1,'READY')",
+            params![id,query,ceiling]
+        )?;
+        let status=self.campaign_status(id)?;
+        if status.query!=query||status.candidate_ceiling!=ceiling{
+            return Err(EvidenceError::Invalid);
+        }
+        Ok(status)
+    }
+    pub fn campaign_status(&self,id:&str)
+        ->Result<ResearchCampaignStatus,EvidenceError>{
+        if !Self::campaign_safe_id(id){return Err(EvidenceError::Invalid);}
+        self.connection.query_row(
+            "SELECT id,query,state,next_page,candidate_ceiling,
+             (SELECT COUNT(*) FROM research_campaign_leads WHERE campaign_id=?1),
+             (SELECT COUNT(*) FROM research_campaign_pages WHERE campaign_id=?1),
+             blocked_reason FROM research_campaigns WHERE id=?1",
+            [id],|r|Ok(ResearchCampaignStatus{
+                id:r.get(0)?,query:r.get(1)?,state:r.get(2)?,
+                next_page:r.get::<_,i64>(3)? as u32,
+                candidate_ceiling:r.get::<_,i64>(4)? as u32,
+                distinct_dois:r.get::<_,i64>(5)? as u32,
+                completed_pages:r.get::<_,i64>(6)? as u32,
+                blocked_reason:r.get(7)?,
+            })
+        ).optional()?.ok_or(EvidenceError::Missing)
+    }
+    /// A crash in RUNNING does not advance pagination; an explicit host
+    /// resume may safely re-run that same read-only page.
+    pub fn claim_campaign_page(
+        &mut self,id:&str
+    )->Result<Option<(String,u32,u32)>,EvidenceError>{
+        if !Self::campaign_safe_id(id){return Err(EvidenceError::Invalid);}
+        let before=self.campaign_status(id)?;
+        if before.state=="DONE"||before.state=="CANCELLED"{return Ok(None);}
+        if before.state=="BLOCKED"{return Err(EvidenceError::Invalid);}
+        if before.next_page>5{return Ok(None);}
+        let changed=self.connection.execute(
+            "UPDATE research_campaigns SET state='RUNNING'
+             WHERE id=?1 AND state IN ('READY','PAUSED','RUNNING')",[id]
+        )?;
+        if changed!=1{return Err(EvidenceError::Invalid);}
+        Ok(Some((before.query,before.next_page,
+            before.candidate_ceiling.saturating_sub(before.distinct_dois))))
+    }
+    pub fn finish_campaign_page(
+        &mut self,id:&str,page:u32,response_sha256:&str,
+        discovered:&[Candidate],provider_has_next:bool
+    )->Result<ResearchCampaignStatus,EvidenceError>{
+        if !Self::campaign_safe_id(id)||!(1..=5).contains(&page)
+            ||discovered.len()>25||response_sha256.len()!=64
+            ||!response_sha256.bytes().all(|c|c.is_ascii_hexdigit()){
+            return Err(EvidenceError::Invalid);
+        }
+        let state=self.campaign_status(id)?;
+        if state.state!="RUNNING"||state.next_page!=page {
+            return Err(EvidenceError::Invalid);
+        }
+        for lead in discovered{
+            if !bounded(&lead.id,128)||!bounded(&lead.title,1024)
+                ||!bounded(&lead.author,512)
+                ||crate::web_research_planner::canonical_doi(&lead.identifier).is_none(){
+                return Err(EvidenceError::Invalid);
+            }
+        }
+        let tx=self.connection.transaction()?;
+        tx.execute(
+            "INSERT INTO research_campaign_pages
+             (campaign_id,page,response_sha256) VALUES (?1,?2,?3)",
+            params![id,page,response_sha256]
+        )?;
+        let mut count=state.distinct_dois;
+        for lead in discovered{
+            if count>=state.candidate_ceiling{break;}
+            let doi=crate::web_research_planner::canonical_doi(&lead.identifier)
+                .ok_or(EvidenceError::Invalid)?;
+            tx.execute(
+                "INSERT OR IGNORE INTO research_sources
+                 (id,title,author,identifier,status)
+                 VALUES (?1,?2,?3,?4,'DISCOVERED')",
+                params![&lead.id,&lead.title,&lead.author,&lead.identifier]
+            )?;
+            count+=tx.execute(
+                "INSERT OR IGNORE INTO research_campaign_leads
+                 (campaign_id,doi,source_id,first_page)
+                 VALUES (?1,?2,?3,?4)",
+                params![id,doi,&lead.id,page]
+            )? as u32;
+        }
+        let done=count>=state.candidate_ceiling||!provider_has_next||page>=5;
+        tx.execute(
+            "UPDATE research_campaigns SET next_page=?2,state=?3,blocked_reason=NULL
+             WHERE id=?1 AND state='RUNNING'",
+            params![id,page+1,if done{"DONE"}else{"PAUSED"}]
+        )?;
+        tx.commit()?;
+        self.campaign_status(id)
+    }
+    pub fn block_campaign(&mut self,id:&str,reason:&str)
+        ->Result<(),EvidenceError>{
+        if !Self::campaign_safe_id(id)||!matches!(reason,
+            "FETCH_FAILED"|"RATE_LIMIT"|"POLICY_DENIED"|"DOCUMENT_UNAVAILABLE"){
+            return Err(EvidenceError::Invalid);
+        }
+        let changed=self.connection.execute(
+            "UPDATE research_campaigns SET state='BLOCKED',blocked_reason=?2
+             WHERE id=?1 AND state='RUNNING'",params![id,reason]
+        )?;
+        if changed!=1{return Err(EvidenceError::Invalid);}
+        Ok(())
+    }
+    pub fn resume_campaign(&mut self,id:&str)->Result<(),EvidenceError>{
+        if !Self::campaign_safe_id(id){return Err(EvidenceError::Invalid);}
+        let changed=self.connection.execute(
+            "UPDATE research_campaigns SET state='PAUSED',blocked_reason=NULL
+             WHERE id=?1 AND state='BLOCKED'",[id]
+        )?;
+        if changed!=1{return Err(EvidenceError::Invalid);}
+        Ok(())
+    }
+    pub fn cancel_campaign(&mut self,id:&str)->Result<(),EvidenceError>{
+        if !Self::campaign_safe_id(id){return Err(EvidenceError::Invalid);}
+        let changed=self.connection.execute(
+            "UPDATE research_campaigns SET state='CANCELLED'
+             WHERE id=?1 AND state NOT IN ('DONE','CANCELLED')",[id]
+        )?;
+        if changed!=1{return Err(EvidenceError::Invalid);}
+        Ok(())
+    }
+
     /// Only the independently fetched Crossref landing URL is a host-owned
     /// retrieval seed. The model cannot supply a replacement source URL.
     pub fn publisher_url_for_source(
@@ -858,6 +1033,46 @@ mod browser_evidence_tests {
         assert!(!proof.publisher_link_matched);
         assert_eq!(proof.source_id,None);
         assert_eq!(proof.source_url,"https://paper.example/article");
+    }
+    #[test]
+    fn research_campaign_can_checkpoint_120_distinct_dois_without_faking_verification(){
+        let mut l=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        let id="research-campaign-120";
+        let initial=l.create_campaign(id,"cognition research",120).unwrap();
+        assert_eq!(initial.state,"READY");
+        for page in 1..=5u32{
+            let (_,next,remaining)=l.claim_campaign_page(id).unwrap().unwrap();
+            assert_eq!(next,page);
+            assert_eq!(remaining,120-(page-1)*25);
+            let works=(0..25u32).map(|n|Candidate{
+                id:format!("https://openalex.org/W{}",page*100+n),
+                title:format!("Study {page}-{n}"),author:"A Researcher".into(),
+                identifier:format!("10.1234/{}-{}",page,n)
+            }).collect::<Vec<_>>();
+            let result=l.finish_campaign_page(id,page,&"b".repeat(64),
+                &works,page<5).unwrap();
+            assert_eq!(result.distinct_dois,(page*25).min(120));
+            assert_eq!(result.state,if page==5{"DONE"}else{"PAUSED"});
+        }
+        assert_eq!(l.campaign_status(id).unwrap().completed_pages,5);
+        assert_eq!(l.status("https://openalex.org/W100").unwrap(),SourceStatus::Discovered);
+        assert!(l.claim_campaign_page(id).unwrap().is_none());
+    }
+    #[test]
+    fn campaign_failed_page_recovery_does_not_invent_progress(){
+        let mut l=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        l.create_campaign("research-campaign-fail","my inquiry",120).unwrap();
+        let page=l.claim_campaign_page("research-campaign-fail").unwrap().unwrap();
+        assert_eq!(page.1,1);
+        let resumed=l.claim_campaign_page("research-campaign-fail").unwrap().unwrap();
+        assert_eq!(resumed.1,1);
+        assert_eq!(l.campaign_status("research-campaign-fail").unwrap().completed_pages,0);
+        l.block_campaign("research-campaign-fail","RATE_LIMIT").unwrap();
+        assert!(l.claim_campaign_page("research-campaign-fail").is_err());
+        l.resume_campaign("research-campaign-fail").unwrap();
+        assert_eq!(l.claim_campaign_page("research-campaign-fail").unwrap().unwrap().1,1);
+        l.cancel_campaign("research-campaign-fail").unwrap();
+        assert!(l.claim_campaign_page("research-campaign-fail").unwrap().is_none());
     }
     #[test]
     fn full_text_access_requires_nontruncated_pdf_and_exact_catalog_url(){
