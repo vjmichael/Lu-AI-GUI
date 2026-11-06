@@ -97,7 +97,7 @@ async fn existing_word_document_gets_exact_approved_non_destructive_revision(){
         &registry,&journal,request(wrong,"office-denied-001"),origin.clone(),&fence
     ).await,Err(DispatchError::Denied(_))));
     assert!(!root.join("unapproved.docx").exists());
-    let exact=request(approved,"office-approved-001");
+    let exact=request(approved.clone(),"office-approved-001");
     let output=auth.dispatch_bound_durable(
         &registry,&journal,exact.clone(),origin.clone(),&fence
     ).await.unwrap();
