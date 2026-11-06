@@ -105,6 +105,7 @@ mod platform{
 }
 type New=unsafe extern "C" fn()->*mut c_void;
 type Free=unsafe extern "C" fn(*mut c_void)->i32;
+type EntryFree=unsafe extern "C" fn(*mut c_void);
 type One=unsafe extern "C" fn(*mut c_void)->i32;
 type OpenMemory=unsafe extern "C" fn(*mut c_void,*const c_void,usize)->i32;
 type Next=unsafe extern "C" fn(*mut c_void,*mut *mut c_void)->i32;
@@ -350,10 +351,10 @@ pub fn compress_raw(
             return Err(NativeArchiveError::NativeFailure)
         }
         let entry_new:New=lib.required(b"archive_entry_new\0")?;
-        let entry_free:Free=lib.required(b"archive_entry_free\0")?;
+        let entry_free:EntryFree=lib.required(b"archive_entry_free\0")?;
         let entry=entry_new();
         if entry.is_null(){return Err(NativeArchiveError::NativeFailure)}
-        struct Entry(*mut c_void,Free);
+        struct Entry(*mut c_void,EntryFree);
         impl Drop for Entry{fn drop(&mut self){unsafe{(self.1)(self.0);}}}
         let entry=Entry(entry,entry_free);
         let set_name:SetPath=lib.required(b"archive_entry_set_pathname\0")?;
