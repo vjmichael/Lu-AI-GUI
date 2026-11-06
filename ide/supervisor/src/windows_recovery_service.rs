@@ -93,6 +93,7 @@ struct InstalledConfig {
     expected_service_sha256: String,
     expected_host_sha256: String,
     expected_host_executable: PathBuf,
+    approved_host_user_sid: String,
     evidence_root: PathBuf,
     endpoint: String,
     acceptance_unsigned: bool,
@@ -132,6 +133,7 @@ impl InstalledConfig {
             || fs::canonicalize(&config.evidence_root).map_err(|_| denied())?
                 != fs::canonicalize(&root).map_err(|_| denied())?
             || !config.expected_host_executable.is_absolute()
+            || security::validate_approved_host_user_sid(&config.approved_host_user_sid).is_err()
         {
             return Err(denied());
         }
@@ -527,6 +529,7 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         request.owner_creation,
         &config.expected_host_executable,
         &config.expected_host_sha256,
+        &config.approved_host_user_sid,
     )?;
     if request.operation == "recover" {
         return recover(pipe, &request, config);
@@ -648,21 +651,8 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
     STARTUP_STAGE.store(10, Ordering::Relaxed);
     let config = InstalledConfig::read()?;
     STARTUP_STAGE.store(20, Ordering::Relaxed);
-    let acl = security::PipeSecurity::new()?;
+    let acl = security::PipeSecurity::new(&config.approved_host_user_sid)?;
     STARTUP_STAGE.store(30, Ordering::Relaxed);
-    let mut running = SERVICE_STATUS {
-        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-        dwCurrentState: SERVICE_RUNNING,
-        dwControlsAccepted: 0,
-        dwWin32ExitCode: 0,
-        dwServiceSpecificExitCode: 0,
-        dwCheckPoint: 0,
-        dwWaitHint: 0,
-    };
-    if unsafe { SetServiceStatus(status_handle, &mut running) } == 0 {
-        return Err(denied());
-    }
-    STARTUP_STAGE.store(40, Ordering::Relaxed);
     let mut first = true;
     loop {
         // PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE prevent remote
@@ -681,7 +671,23 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
             )
         })?;
         STARTUP_STAGE.store(50, Ordering::Relaxed);
-        first = false;
+        if first {
+            // SCM RUNNING must not precede actual protected pipe creation.
+            let running = SERVICE_STATUS {
+                dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+                dwCurrentState: SERVICE_RUNNING,
+                dwControlsAccepted: 0,
+                dwWin32ExitCode: 0,
+                dwServiceSpecificExitCode: 0,
+                dwCheckPoint: 0,
+                dwWaitHint: 0,
+            };
+            if unsafe { SetServiceStatus(status_handle, &running) } == 0 {
+                return Err(denied());
+            }
+            first = false;
+            STARTUP_STAGE.store(40, Ordering::Relaxed);
+        }
         if unsafe { ConnectNamedPipe(pipe.0, ptr::null_mut()) } == 0
             && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED
         {
@@ -695,6 +701,7 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
             expected_service_sha256: config.expected_service_sha256.clone(),
             expected_host_sha256: config.expected_host_sha256.clone(),
             expected_host_executable: config.expected_host_executable.clone(),
+            approved_host_user_sid: config.approved_host_user_sid.clone(),
             evidence_root: config.evidence_root.clone(),
             endpoint: config.endpoint.clone(),
             acceptance_unsigned: config.acceptance_unsigned,

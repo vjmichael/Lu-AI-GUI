@@ -276,8 +276,20 @@ pub struct PipeSecurity {
     descriptor: OwnedSid,
     pub attributes: SECURITY_ATTRIBUTES,
 }
+pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorError> {
+    if value.len() > 160
+        || !value.starts_with("S-1-5-21-")
+        || value.split('-').count() != 8
+        || !value.split('-').skip(4).all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err(denied());
+    }
+    let _parsed = parse_sid(value)?;
+    Ok(())
+}
 impl PipeSecurity {
-    pub fn new() -> Result<Self, SupervisorError> {
+    pub fn new(approved_user_sid: &str) -> Result<Self, SupervisorError> {
+        validate_approved_host_user_sid(approved_user_sid)?;
         // 0x00100003: SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA.
         // Does NOT include FILE_APPEND_DATA / FILE_CREATE_PIPE_INSTANCE.
         // The service must NOT try to assign SYSTEM as an object owner: it
@@ -286,8 +298,9 @@ impl PipeSecurity {
         // No BA grant on the IPC endpoint: administrators are machine TCB
         // but do not need to connect as a desktop worker.
         let sddl = format!(
-            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
-            sid_of_service()?
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})",
+            sid_of_service()?,
+            approved_user_sid
         );
         let mut descriptor = ptr::null_mut();
         if unsafe {
@@ -389,7 +402,9 @@ pub fn authenticate_client(
     asserted_creation: u64,
     approved_host_path: &Path,
     approved_host_sha256: &str,
+    approved_host_user_sid: &str,
 ) -> Result<VerifiedClientLease, SupervisorError> {
+    validate_approved_host_user_sid(approved_host_user_sid)?;
     let mut pid = 0_u32;
     if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0
         || pid == 0
@@ -438,7 +453,10 @@ pub fn authenticate_client(
         return Err(denied());
     }
     let owner_token = Handle::new(owner_token)?;
-    if !token_user_equal(client_token.0, owner_token.0)? {
+    let approved = parse_sid(approved_host_user_sid)?;
+    if !token_user_equal(client_token.0, owner_token.0)?
+        || !token_user_is(client_token.0, approved.0)?
+    {
         return Err(denied());
     }
     let mut in_container = 0_u32;
@@ -676,11 +694,17 @@ mod tests {
     use super::*;
     #[test]
     fn client_pipe_dacl_does_not_allow_pipe_instance_creation() {
+        let sid = "S-1-5-21-11-22-33-1001";
+        validate_approved_host_user_sid(sid).unwrap();
         let template = format!(
-            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
-            "S-1-5-80-1-2-3-4-5"
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})",
+            "S-1-5-80-1-2-3-4-5", sid
         );
-        assert!(template.contains("0x00100003;;;IU"));
+        assert!(template.contains("0x00100003;;;S-1-5-21-11-22-33-1001"));
+        assert!(!template.contains(";;;IU"));
+        assert!(!template.contains(";;;AU"));
+        assert!(validate_approved_host_user_sid("S-1-5-18").is_err());
+        assert!(validate_approved_host_user_sid("S-1-5-32-544").is_err());
         assert!(!template.contains(";;;WD"));
         assert!(!template.contains(";;;AN"));
     }
