@@ -38,7 +38,8 @@ function App() {
   const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
   const [ocrBusy,setOcrBusy]=useState(false);
   const [ocrObservation,setOcrObservation]=useState(null);
-  const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
+  const [visionCapability,setVisionCapability] = useState(null);
+  const [visionProbeBusy,setVisionProbeBusy]=useState(false); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
   const [observeNotes,setObserveNotes] = useState([]);
   const [observeHandoff,setObserveHandoff] = useState(null);
@@ -543,6 +544,15 @@ function App() {
       if(receipt)setWordReplaceReceipt(receipt);
     }catch(e){setError(String(e));}
     finally{setWordReplaceBusy(false);}
+  }
+  async function verifyNativeVision(){
+    if(!chatId||!loaded||visionProbeBusy)return;
+    setVisionProbeBusy(true);setVisionCapability(null);setError('');
+    try{
+      const result=await invoke('lu_vision_run_probe',{chatId});
+      setVisionCapability(result);
+    }catch(e){setError(String(e));}
+    finally{setVisionProbeBusy(false);}
   }
   async function readOfflineImageText(){
     if(!chatId||ocrBusy)return;
@@ -3057,6 +3067,12 @@ function App() {
               title="Inspect native vision status without claiming MMProj presence proves visual understanding"
               onClick={()=>void invoke('lu_vision_capability')
                 .then(setVisionCapability).catch(e=>setError(String(e)))}>Check vision</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId||!loaded||visionProbeBusy||working}
+              title="Native approval; submit private synthetic pixel images to the actually loaded GGUF/MMProj backend"
+              onClick={()=>void verifyNativeVision()}>
+              {visionProbeBusy?'Running pixel probe…':'Verify vision with real images'}
+            </button>
             {visionCapability?.sessionId===runtime.sessionId && visionCapability?.modelRef===runtime.modelRef &&
               <span className="composerHelp" role="status">
                 Vision: {visionCapability.status} · {visionCapability.detail}
