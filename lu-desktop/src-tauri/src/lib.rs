@@ -1599,6 +1599,62 @@ fn lu_deny_native_action_proposal(
     state.native_actions.deny(&proposal_id,&chat_id)
         .map_err(|e|format!("Cannot deny native review proposal: {e:?}"))
 }
+/// Read-only, bounded summary of real GGUF tool-loop audit records.
+/// It carries NO raw prompt, model output, source file, bytes or capability.
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct NativeToolActivityView{
+    task_id:String,
+    source:String,
+    recorded_at:String,
+    state:String,
+    model_responses:u32,
+    tool_feedback:u32,
+    rejected_events:u32,
+    repaired_responses:u32,
+}
+#[tauri::command]
+fn lu_tool_turn_history(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+)->Result<Vec<NativeToolActivityView>,String>{
+    state.chats.history(&chat_id)?;
+    let mut entries=Vec::new();
+    for (source,file) in [
+        ("Workspace","lu-workspace-read-audit.sqlite"),
+        ("Reader","lu-reader-turn-audit.sqlite"),
+    ]{
+        let path=state.catalog_path.with_file_name(file);
+        // Reading history must never create a fake audit database.
+        if !path.exists(){continue}
+        let metadata=fs::symlink_metadata(&path)
+            .map_err(|_|"Tool audit store inaccessible")?;
+        if !metadata.is_file()||metadata.file_type().is_symlink(){
+            return Err("Tool audit store is not a regular file".into())
+        }
+        let journal=lu_core::model_turn_journal::ModelTurnJournal::open(&path)
+            .map_err(|_|"Tool audit store could not be validated")?;
+        let observed=journal.summaries_for_conversation(&chat_id,32)
+            .map_err(|_|"Tool audit read failed")?;
+        for evidence in observed{
+            let state=if evidence.generation_failures>0{"FAILED"}
+                else if evidence.rejections>0{"REJECTED"}
+                else if evidence.final_answers>0{"COMPLETED"}
+                else{"INCOMPLETE_OR_INTERRUPTED"};
+            entries.push(NativeToolActivityView{
+                task_id:evidence.task_id,
+                source:source.into(),recorded_at:evidence.last_at,
+                state:state.into(),model_responses:evidence.model_outputs,
+                tool_feedback:evidence.tool_feedback,
+                rejected_events:evidence.rejections,
+                repaired_responses:evidence.repaired_replies,
+            });
+        }
+    }
+    entries.sort_by(|a,b|b.recorded_at.cmp(&a.recorded_at)
+        .then_with(||a.task_id.cmp(&b.task_id)));
+    entries.truncate(40);
+    Ok(entries)
+}
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WriteProposalEvent {
@@ -3308,6 +3364,7 @@ pub fn run() {
             lu_inspect_text_file,
             lu_approve_read_proposal,
             lu_accept_native_action_proposal,
+            lu_tool_turn_history,
             lu_deny_native_action_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,

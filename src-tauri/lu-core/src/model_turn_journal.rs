@@ -74,6 +74,22 @@ pub struct ModelAuditRecord {
     pub repair: Option<String>,
 }
 
+/// A read-only, content-free projection of the persisted model/tool audit.
+/// Raw model output, file contents, prompts and provider parameters are not
+/// serialized into operator UI evidence.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct ModelTurnAuditSummary{
+    pub task_id:String,
+    pub last_at:String,
+    pub last_sequence:i64,
+    pub model_outputs:u32,
+    pub tool_feedback:u32,
+    pub host_routes:u32,
+    pub rejections:u32,
+    pub generation_failures:u32,
+    pub final_answers:u32,
+    pub repaired_replies:u32,
+}
 pub struct ModelTurnJournal {
     connection: Mutex<Connection>,
 }
@@ -185,6 +201,45 @@ impl ModelTurnJournal {
         Ok(connection.last_insert_rowid())
     }
 
+    /// Recent per-task tool evidence for a single authenticated conversation.
+    /// SQLite groups before returning: no model text/arguments cross this API.
+    /// An entry proves recorded model/tool activity, never an authorized effect.
+    pub fn summaries_for_conversation(
+        &self,conversation_id:&str,limit:usize,
+    )->Result<Vec<ModelTurnAuditSummary>,ModelAuditError>{
+        Self::validate_origin(conversation_id,"read-only-summary")?;
+        if limit==0||limit>64{return Err(ModelAuditError::InvalidOrigin)}
+        let connection=self.connection.lock().map_err(|_|ModelAuditError::Poisoned)?;
+        let mut statement=connection.prepare(
+            "SELECT task_id,MAX(created_at),MAX(sequence),
+             SUM(CASE WHEN kind='MODEL_OUTPUT' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN kind='TOOL_FEEDBACK' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN kind='HOST_ROUTE_SELECTED' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN kind='REJECTED' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN kind='GENERATION_FAILURE' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN kind='FINAL_ANSWER' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN repair IS NOT NULL THEN 1 ELSE 0 END)
+             FROM lu_model_boundary_audit WHERE conversation_id=?1
+             GROUP BY task_id ORDER BY MAX(sequence) DESC LIMIT ?2"
+        )?;
+        let rows=statement.query_map(params![conversation_id,limit as i64],|row|{
+            Ok(ModelTurnAuditSummary{
+                task_id:row.get(0)?,last_at:row.get(1)?,
+                last_sequence:row.get(2)?,
+                model_outputs:row.get::<_,i64>(3)?.clamp(0,u32::MAX as i64) as u32,
+                tool_feedback:row.get::<_,i64>(4)?.clamp(0,u32::MAX as i64) as u32,
+                host_routes:row.get::<_,i64>(5)?.clamp(0,u32::MAX as i64) as u32,
+                rejections:row.get::<_,i64>(6)?.clamp(0,u32::MAX as i64) as u32,
+                generation_failures:row.get::<_,i64>(7)?.clamp(0,u32::MAX as i64) as u32,
+                final_answers:row.get::<_,i64>(8)?.clamp(0,u32::MAX as i64) as u32,
+                repaired_replies:row.get::<_,i64>(9)?.clamp(0,u32::MAX as i64) as u32,
+            })
+        })?;
+        let mut summaries=Vec::new();
+        for row in rows{summaries.push(row?)}
+        Ok(summaries)
+    }
+
     pub fn events_for(
         &self,
         conversation_id: &str,
@@ -218,5 +273,46 @@ impl ModelTurnJournal {
             });
         }
         Ok(events)
+    }
+}
+
+#[cfg(test)]
+mod wave3_summary_tests{
+    use super::*;
+    #[test]
+    fn content_free_audit_survives_restart_and_never_leaks_other_chats(){
+        let dir=std::env::temp_dir().join(format!(
+            "lu-wave3-audit-{}-{}",std::process::id(),"summary"
+        ));
+        let _=std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db=dir.join("audit.sqlite");
+        {
+            let ledger=ModelTurnJournal::open(&db).unwrap();
+            ledger.append("chat-a","task-a",ModelAuditKind::UserRequest,
+                "private user secret",None).unwrap();
+            ledger.append("chat-a","task-a",ModelAuditKind::ModelOutput,
+                r#"{"secret":"private file bytes"}"#,None).unwrap();
+            ledger.append("chat-a","task-a",ModelAuditKind::ToolFeedback,
+                "tool result: private data",None).unwrap();
+            ledger.append("chat-a","task-a",ModelAuditKind::FinalAnswer,
+                "private answer",None).unwrap();
+            ledger.append("chat-b","task-b",ModelAuditKind::ToolFeedback,
+                "other chat data",None).unwrap();
+        }
+        let ledger=ModelTurnJournal::open(&db).unwrap();
+        let summary=ledger.summaries_for_conversation("chat-a",8).unwrap();
+        assert_eq!(summary.len(),1);
+        assert_eq!(summary[0].task_id,"task-a");
+        assert_eq!(summary[0].tool_feedback,1);
+        assert_eq!(summary[0].final_answers,1);
+        assert_eq!(summary[0].model_outputs,1);
+        assert_eq!(ledger.summaries_for_conversation("chat-b",8).unwrap().len(),1);
+        assert!(ledger.summaries_for_conversation("chat-a",0).is_err());
+        let debug=format!("{summary:?}");
+        assert!(!debug.contains("secret"));
+        assert!(!debug.contains("private"));
+        assert!(!debug.contains("chat-b"));
+        drop(ledger);std::fs::remove_dir_all(dir).unwrap();
     }
 }

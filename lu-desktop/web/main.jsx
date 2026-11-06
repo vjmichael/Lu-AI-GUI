@@ -36,6 +36,9 @@ function App() {
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
   const [editProposals, setEditProposals] = useState({});
   const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
+  const [toolActivityOpen,setToolActivityOpen]=useState(false);
+  const [toolHistoryByChat,setToolHistoryByChat]=useState({});
+  const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
   const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
   const [editRecovery, setEditRecovery] = useState([]);
   const [editObservations, setEditObservations] = useState({});
@@ -571,6 +574,16 @@ function App() {
     });
   }
 
+  async function refreshToolActivity(targetChat=chatId){
+    if (!targetChat)return;
+    setToolHistoryBusy(true);
+    try{
+      const entries=await invoke('lu_tool_turn_history',{chatId:targetChat});
+      setToolHistoryByChat(prev=>({...prev,[targetChat]:entries||[]}));
+    }catch(error){
+      if (currentChat.current===targetChat)setError('Tool evidence unavailable: '+String(error));
+    }finally{setToolHistoryBusy(false)}
+  }
   async function refreshWriteRecovery(targetChat = chatId) {
     if (!targetChat) { setWriteRecovery([]); return; }
     const records = await invoke('lu_write_recovery', {chatId: targetChat});
@@ -1697,6 +1710,34 @@ function App() {
                   onClick={()=>void rejectNativeActionProposal(proposal)}>Deny</button>
               </div>
             </section>)}
+        {toolActivityOpen && <section className="readProposalCard"
+          role="region" aria-label="Read-only native tool activity">
+          <strong>Native tool activity</strong>
+          <small>Host-recorded Reader and Workspace tool-turn evidence. No
+            permission is restored by inspecting this history; write effects
+            remain in the separate File operations recovery panel.</small>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={toolHistoryBusy}
+              onClick={()=>void refreshToolActivity(chatId)}>
+              {toolHistoryBusy?'Refreshing…':'Refresh tool activity'}
+            </button>
+            <button type="button" className="subtleButton"
+              onClick={()=>setToolActivityOpen(false)}>Close</button>
+          </div>
+          {(toolHistoryByChat[chatId]||[]).length===0&&
+            <small>No persisted native model/tool events in this conversation.</small>}
+          {(toolHistoryByChat[chatId]||[]).map(item=>
+            <div key={item.source+':'+item.taskId} className="readProposalCard"
+              role="group" aria-label={'Tool audit '+item.taskId}>
+              <strong>{item.source} — {item.state.replaceAll('_',' ')}</strong>
+              <small>{item.recordedAt} · Task {item.taskId}</small>
+              <small>{item.modelResponses} model responses ·
+                {item.toolFeedback} tool results ·
+                {item.rejectedEvents} rejections ·
+                {item.repairedResponses} structured repairs</small>
+            </div>)}
+        </section>}
         {(wave2RecoveryByChat[chatId] || []).length > 0 && <section
           className="readProposalCard" role="region" aria-label="Durable Wave 2 operation recovery">
           <strong>File and document operation history</strong>
@@ -2479,6 +2520,12 @@ function App() {
             {workspaceToolsNextSend && <span className="composerHelp" role="status">
               Next Send will open a native folder picker. Read-only access is granted for that turn only.
             </span>}
+            <button type="button" className="subtleButton"
+              disabled={!chatId}
+              title="Inspect actual persisted Reader/Workspace model tool loops without replaying effects"
+              onClick={()=>{setToolActivityOpen(v=>!v);void refreshToolActivity(chatId);}}>
+              {toolActivityOpen?'Hide tool activity':'Tool activity'}
+            </button>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
