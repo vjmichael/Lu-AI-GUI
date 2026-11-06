@@ -41,6 +41,19 @@ pub struct EvidenceRow {
     pub source_id:String, pub thesis_claim:String, pub direct_quote:String,
     pub stance:String, pub reasoning:String, pub status:String,
 }
+/// Grouped claim matrix. Counts are distinct *catalog source IDs*, not
+/// assumed independent research lineages. Interpretation is never a fact.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct ClaimDebate {
+    pub thesis_claim:String,
+    pub supports:Vec<EvidenceRow>,
+    pub challenges:Vec<EvidenceRow>,
+    pub complicates:Vec<EvidenceRow>,
+    pub distinct_catalog_sources:usize,
+    pub unresolved_disagreement:bool,
+    pub interpretation_verified:bool,
+    pub reason_codes:Vec<&'static str>,
+}
 fn clean(s:&str,max:usize)->bool {
     !s.trim().is_empty() && s.len()<=max && !s.chars().any(char::is_control)
 }
@@ -106,6 +119,54 @@ impl AnalysisStore {
         }
         Ok(verified)
     }
+    /// Rechecks every stored source passage and content hash before deriving
+    /// stance summaries. Counterevidence is exposed instead of outvoted by
+    /// frequency or paraphrased into a fabricated majority conclusion.
+    pub fn summarize_claims(
+        &self,ledger:&EvidenceLedger
+    )->Result<Vec<ClaimDebate>,AnalysisError>{
+        use std::collections::{BTreeMap,BTreeSet};
+        let mut groups=BTreeMap::<String,ClaimDebate>::new();
+        for row in self.export_rechecked(ledger)? {
+            let key=row.thesis_claim.clone();
+            let item=groups.entry(key.clone()).or_insert_with(||ClaimDebate{
+                thesis_claim:key,supports:Vec::new(),challenges:Vec::new(),
+                complicates:Vec::new(),distinct_catalog_sources:0,
+                unresolved_disagreement:false,interpretation_verified:false,
+                reason_codes:Vec::new(),
+            });
+            match row.stance.as_str(){
+                "SUPPORTS"=>item.supports.push(row),
+                "CHALLENGES"=>item.challenges.push(row),
+                "COMPLICATES"=>item.complicates.push(row),
+                _=>return Err(AnalysisError::Invalid),
+            }
+        }
+        for item in groups.values_mut(){
+            let sources=item.supports.iter().chain(item.challenges.iter())
+                .chain(item.complicates.iter())
+                .map(|e|e.source_id.as_str()).collect::<BTreeSet<_>>();
+            item.distinct_catalog_sources=sources.len();
+            item.unresolved_disagreement=!item.challenges.is_empty()
+                ||!item.complicates.is_empty();
+            item.reason_codes.push("MODEL_INTERPRETATIONS_NOT_FACTS");
+            if item.distinct_catalog_sources<2{
+                item.reason_codes.push("FEWER_THAN_TWO_DISTINCT_CATALOG_SOURCES");
+            }
+            if item.challenges.is_empty(){
+                item.reason_codes.push("NO_RECORDED_COUNTEREVIDENCE");
+            }
+            if item.unresolved_disagreement{
+                item.reason_codes.push("OPEN_CONFLICT_OR_QUALIFICATION");
+            }
+            if item.supports.iter().chain(item.challenges.iter())
+                .chain(item.complicates.iter())
+                .any(|e|e.status!="HUMAN_REVIEWED"){
+                item.reason_codes.push("HUMAN_INTERPRETATION_REVIEW_PENDING");
+            }
+        }
+        Ok(groups.into_values().collect())
+    }
     pub fn classify_source(&mut self,ledger:&EvidenceLedger,id:&str,
         category:SourceClass)->Result<(),AnalysisError>{
         if !clean(id,128) || !ledger.eligible_for_reviewed_bibliography(id)? {
@@ -152,10 +213,22 @@ impl AnalysisStore {
                 "page_number_verified":false
             }));
         }
+        let debates=self.summarize_claims(ledger)?
+            .into_iter().map(|c|serde_json::json!({
+                "thesis_claim":c.thesis_claim,
+                "supports":c.supports.len(),
+                "challenges":c.challenges.len(),
+                "complicates":c.complicates.len(),
+                "distinct_catalog_sources":c.distinct_catalog_sources,
+                "unresolved_disagreement":c.unresolved_disagreement,
+                "interpretation_verified":false,
+                "reason_codes":c.reason_codes,
+            })).collect::<Vec<_>>();
         Ok(serde_json::json!({
             "schema":"lu.research.evidence.v1",
             "source_count_in_matrix":entries.len(),
             "interpretations_are_not_independently_verified":true,
+            "claims":debates,
             "entries":entries,
         }))
     }
@@ -188,6 +261,29 @@ mod tests {
         }).unwrap();
         ledger.store_accessed_text("s1","Original evidence is nuanced.").unwrap();
         ledger.verify_passage("s1","full-text","evidence is nuanced").unwrap();
+    }
+    #[test]
+    fn conflicting_verified_quotes_remain_visible_without_majority_truth_claim(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        source(&mut ledger);
+        let mut analysis=AnalysisStore::open(Path::new(":memory:")).unwrap();
+        analysis.add_interpretation(&ledger,Interpretation{
+            source_id:"s1",thesis_claim:"The finding generalizes",
+            direct_quote:"evidence is nuanced",stance:Stance::Supports,
+            reasoning:"The paper cautiously supports transfer."
+        }).unwrap();
+        analysis.add_interpretation(&ledger,Interpretation{
+            source_id:"s1",thesis_claim:"The finding generalizes",
+            direct_quote:"evidence is nuanced",stance:Stance::Challenges,
+            reasoning:"The same excerpt may qualify the scope."
+        }).unwrap();
+        let rows=analysis.summarize_claims(&ledger).unwrap();
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0].distinct_catalog_sources,1);
+        assert!(rows[0].unresolved_disagreement);
+        assert!(!rows[0].interpretation_verified);
+        assert!(rows[0].reason_codes.contains(
+            &"FEWER_THAN_TWO_DISTINCT_CATALOG_SOURCES"));
     }
     #[test]
     fn unsourced_or_invented_claims_cannot_enter_report(){
