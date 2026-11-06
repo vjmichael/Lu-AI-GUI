@@ -891,7 +891,7 @@ mod tests {
         let outside = root.join("outside");
         fs::create_dir_all(&source).unwrap();
         fs::create_dir_all(&outside).unwrap();
-        fs::write(source.join("Cargo.toml"), b"[package]\\nname=\\"x\\"").unwrap();
+        fs::write(source.join("Cargo.toml"), b"package metadata").unwrap();
         fs::write(outside.join("Cargo.toml"), b"OUTSIDE").unwrap();
         let before = digest_tree(&source, None, 100, 100_000).unwrap();
         fs::rename(&source, root.join("source-moved")).unwrap();
