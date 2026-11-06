@@ -45,6 +45,7 @@ pub(crate) struct ResearchBrowserEvidenceView {
     pub call_id:String,
     pub source_url:String,
     pub observed_sha256:String,
+    pub excerpt:String,
     pub excerpt_truncated:bool,
     pub verification_status:&'static str,
     pub citation_verified:bool,
@@ -255,10 +256,46 @@ impl ResearchDesktop{
             call_id:observed.call_id,
             source_url:observed.url,
             observed_sha256:observed.observed_sha256,
+            excerpt:observed.excerpt,
             excerpt_truncated:observed.excerpt_truncated,
             verification_status:"browser_observed_untrusted",
             citation_verified:false,
         })
+    }
+
+    /// Read-only UI evidence inventory. Does not depend on curl availability,
+    /// never creates a ledger merely to display an empty list and returns
+    /// only records from the selected conversation's own SQLite.
+    pub(crate) fn browser_evidence(
+        &self,chat_id:&str
+    )->Result<Vec<ResearchBrowserEvidenceView>,String>{
+        if !safe_id(chat_id){return Err("Select a trusted conversation".into());}
+        let root=match fs::symlink_metadata(&self.root){
+            Ok(m)=>m,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(vec![]),
+            Err(_)=>return Err("Research evidence directory unavailable".into()),
+        };
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory is not trusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=match fs::symlink_metadata(&db){
+            Ok(m)=>m,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(vec![]),
+            Err(_)=>return Err("Research evidence ledger unavailable".into())
+        };
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger is untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db).map_err(|_|"Research evidence unavailable")?;
+        ledger.recent_browser_observations(24)
+            .map_err(|_|"Research Browser evidence could not be read".into())
+            .map(|observed|observed.into_iter().map(|record|ResearchBrowserEvidenceView{
+                generation_id:record.generation_id,call_id:record.call_id,
+                source_url:record.url,observed_sha256:record.observed_sha256,
+                excerpt:record.excerpt,excerpt_truncated:record.excerpt_truncated,
+                verification_status:"browser_observed_untrusted",citation_verified:false,
+            }).collect())
     }
 
     /// User-approved metadata corroboration of one already-persisted
@@ -343,6 +380,10 @@ mod tests{
         let first=EvidenceLedger::open(
             &dir.join("lu-research-evidence/c-first.sqlite")).unwrap();
         assert!(first.has_browser_excerpt("g-1","browser-call-1","observed web").unwrap());
+        let listed=host.browser_evidence("c-first").unwrap();
+        assert_eq!(listed.len(),1);
+        assert_eq!(listed[0].excerpt,"The observed web content");
+        assert!(host.browser_evidence("c-second").unwrap().is_empty());
         assert!(matches!(EvidenceLedger::open(
             &dir.join("lu-research-evidence/c-second.sqlite")).unwrap()
             .browser_observation("g-1","browser-call-1"),Err(EvidenceError::Missing)));
@@ -350,6 +391,7 @@ mod tests{
             "https://archive.example/other","READ","The observed web content",false).is_err());
         assert!(host.record_browser_read("c-../escape","g-1","browser-call-2",
             "https://archive.example/article","READ","test",false).is_err());
+        drop(first);
         let _=std::fs::remove_dir_all(dir);
     }
     #[test]
