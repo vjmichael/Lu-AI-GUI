@@ -12,7 +12,7 @@
 //! that can replace the trusted *root before it is opened*, alter the native
 //! journal, or modify the AppContainer profile's ACLs.
 use crate::SupervisorError;
-use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt, OsMetadataExt};
 use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{
