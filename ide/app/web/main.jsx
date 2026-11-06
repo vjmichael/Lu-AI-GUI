@@ -1033,6 +1033,10 @@ function App() {
     if (savingKey === key) return;
     if (selected.dirty && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
+    if (lspSession?.projectId === selected.projectId &&
+        lspSession.relativePath === selected.relativePath) {
+      void stopLspSession();
+    }
     editorStates.current.delete(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
@@ -1047,6 +1051,10 @@ function App() {
     if (!tab || savingKey || reviewPending) return;
     setReview(null);
     if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
+    if (lspSession?.projectId === tab.projectId &&
+        lspSession.relativePath === tab.relativePath) {
+      await stopLspSession();
+    }
     setExplorerPending(true);
     setProblem('');
     try {
@@ -1086,6 +1094,10 @@ function App() {
         ...item, revision: saved.revision, savedText: content,
         dirty: item.draft !== content,
       } : item));
+      if (lspSession?.projectId === tab.projectId &&
+          lspSession.relativePath === tab.relativePath) {
+        await stopLspSession();
+      }
       setHint('Saved ' + tab.relativePath + ' to disk.');
       return true;
     } catch (error) {
