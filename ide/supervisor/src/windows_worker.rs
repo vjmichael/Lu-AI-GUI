@@ -8,7 +8,7 @@
 //! feature in a distributed IDE build.
 use crate::{
     snapshot::{verify_input, PublishedInput},
-    windows_cap_tree::{audit_tree, digest_tree},
+    windows_cap_tree::{audit_tree, digest_tree, publish_into_native_parent},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
@@ -185,15 +185,16 @@ fn publish_output(
     let source = fs::canonicalize(child_output).map_err(io_denied)?;
     if parent.starts_with(&source) || source.starts_with(&parent) { return Err(denied()); }
     let (bytes, original_hash) = output_seal(child_output)?;
-    let destination = parent.join(id);
-    fs::create_dir(&destination).map_err(io_denied)?; // existing job = deny
-    let copied = digest_tree(child_output, Some(&destination),
-        MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES)?;
-    let (published_bytes, published_hash) = output_seal(&destination)?;
-    if original_hash != copied || copied != published_hash || bytes != published_bytes {
+    // The native parent and newly created job directory are pinned by
+    // cap_std handles until all bytes have been copied and re-sealed.
+    let (published_bytes, published_hash) = publish_into_native_parent(
+        child_output, &parent, OsStr::new(id),
+        MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES
+    )?;
+    if original_hash != published_hash || bytes != published_bytes {
         return Err(denied());
     }
-    Ok((destination, published_bytes, published_hash))
+    Ok((parent.join(id), published_bytes, published_hash))
 }
 
 struct AppProfile { name: Vec<u16>, sid: PSID }
