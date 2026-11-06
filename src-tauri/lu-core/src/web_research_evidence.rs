@@ -73,6 +73,19 @@ pub struct CitationRecord {
     pub record_url: Option<String>,
     pub content_sha256: Option<String>,
 }
+/// Browser text is a host-observed, untrusted website snapshot. It is NOT
+/// corroborated bibliographic metadata or a reviewed academic citation.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct BrowserEvidenceRecord {
+    pub generation_id:String,
+    pub call_id:String,
+    pub url:String,
+    pub observation_kind:String,
+    pub observed_sha256:String,
+    pub excerpt:String,
+    pub excerpt_truncated:bool,
+    pub observed_text_bytes:usize,
+}
 pub struct EvidenceLedger { connection: Connection }
 fn bounded(value: &str, cap: usize) -> bool {
     !value.trim().is_empty() && value.len() <= cap && !value.chars().any(char::is_control)
@@ -102,6 +115,19 @@ impl EvidenceLedger {
              locator TEXT NOT NULL,
              quote TEXT NOT NULL,
              PRIMARY KEY(source_id, locator, quote)
+           );
+           CREATE TABLE IF NOT EXISTS research_browser_observations(
+             generation_id TEXT NOT NULL,
+             call_id TEXT NOT NULL,
+             source_url TEXT NOT NULL,
+             observation_kind TEXT NOT NULL
+               CHECK(observation_kind IN ('READ','ACCESSIBILITY')),
+             observed_sha256 TEXT NOT NULL,
+             excerpt TEXT NOT NULL,
+             excerpt_truncated INTEGER NOT NULL
+               CHECK(excerpt_truncated IN (0,1)),
+             observed_text_bytes INTEGER NOT NULL,
+             PRIMARY KEY(generation_id,call_id)
            );
            CREATE TABLE IF NOT EXISTS research_frontier(
              source_id TEXT PRIMARY KEY REFERENCES research_sources(id),
@@ -287,6 +313,85 @@ impl EvidenceLedger {
         }
         Ok(())
     }
+    /// Called ONLY after a trusted Browser worker's read/accessibility
+    /// response has been admitted by the host's active per-turn grant and
+    /// post-redirect HTTPS origin scope. Never accept a model-supplied page,
+    /// URL, hash or citation status as a replacement for that response.
+    ///
+    /// The excerpt is bounded; the digest covers the full observed text.
+    /// This cannot promote any academic candidate to DOCUMENT_ACCESSED or
+    /// PASSAGE_VERIFIED. Identity is immutable per (generation, native call).
+    pub fn observe_browser_text(
+        &mut self,generation_id:&str,call_id:&str,source_url:&str,
+        kind:&str,text:&str,worker_truncated:bool
+    )->Result<BrowserEvidenceRecord,EvidenceError>{
+        let safe_id=|value:&str,prefix:&str|{
+            value.starts_with(prefix)&&value.len()<=128
+                &&value.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'||b==b'_')
+        };
+        if !safe_id(generation_id,"g-")||!safe_id(call_id,"browser-call-")
+            ||!bounded(source_url,2048)||!source_url.starts_with("https://")
+            ||source_url.chars().any(char::is_whitespace)
+            ||!matches!(kind,"READ"|"ACCESSIBILITY")
+            ||text.trim().is_empty()||text.len()>524_288
+            ||text.chars().any(|c|c=='\0'||(c.is_control()&&c!='\n'&&c!='\r'&&c!='\t')){
+            return Err(EvidenceError::Invalid);
+        }
+        let excerpt:String=text.chars().take(8192).collect();
+        let excerpt_truncated=worker_truncated||excerpt.len()<text.len();
+        let sha=digest(text.as_bytes());
+        let expected=BrowserEvidenceRecord{
+            generation_id:generation_id.into(),call_id:call_id.into(),
+            url:source_url.into(),observation_kind:kind.into(),
+            observed_sha256:sha,excerpt,
+            excerpt_truncated,observed_text_bytes:text.len(),
+        };
+        // INSERT OR IGNORE only provides idempotency when an existing receipt
+        // matches *every* field. A reused call id cannot rewrite history.
+        self.connection.execute("INSERT OR IGNORE INTO research_browser_observations
+            (generation_id,call_id,source_url,observation_kind,observed_sha256,
+             excerpt,excerpt_truncated,observed_text_bytes)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![generation_id,call_id,source_url,kind,
+                &expected.observed_sha256,&expected.excerpt,
+                i64::from(excerpt_truncated),text.len() as i64])?;
+        let stored=self.browser_observation(generation_id,call_id)?;
+        if stored!=expected{return Err(EvidenceError::Invalid);}
+        Ok(stored)
+    }
+    /// Inspect only the exact bounded snapshot admitted by the native host,
+    /// never live page state or model prose.
+    pub fn browser_observation(
+        &self,generation_id:&str,call_id:&str
+    )->Result<BrowserEvidenceRecord,EvidenceError>{
+        if !generation_id.starts_with("g-")||!call_id.starts_with("browser-call-")
+            ||generation_id.len()>128||call_id.len()>128
+            ||generation_id.bytes().any(|b|!b.is_ascii_alphanumeric()&&b!=b'-'&&b!=b'_')
+            ||call_id.bytes().any(|b|!b.is_ascii_alphanumeric()&&b!=b'-'&&b!=b'_'){
+            return Err(EvidenceError::Invalid);
+        }
+        self.connection.query_row(
+            "SELECT source_url,observation_kind,observed_sha256,excerpt,
+             excerpt_truncated,observed_text_bytes FROM research_browser_observations
+             WHERE generation_id=?1 AND call_id=?2",
+            params![generation_id,call_id],|row|Ok(BrowserEvidenceRecord{
+                generation_id:generation_id.into(),call_id:call_id.into(),
+                url:row.get(0)?,observation_kind:row.get(1)?,
+                observed_sha256:row.get(2)?,excerpt:row.get(3)?,
+                excerpt_truncated:row.get::<_,i64>(4)?==1,
+                observed_text_bytes:row.get::<_,i64>(5)? as usize,
+            })
+        ).optional()?.ok_or(EvidenceError::Missing)
+    }
+    /// Exact quotation appears in retained Browser excerpt, not a validated
+    /// publication. The returned boolean MUST NOT be treated as a
+    /// bibliographic PASSAGE_VERIFIED status.
+    pub fn has_browser_excerpt(&self,generation_id:&str,call_id:&str,quotation:&str)
+      ->Result<bool,EvidenceError>{
+        if !bounded(quotation,4096){return Err(EvidenceError::Invalid);}
+        Ok(self.browser_observation(generation_id,call_id)?
+            .excerpt.contains(quotation))
+    }
     pub fn record(&self, id: &str) -> Result<CitationRecord, EvidenceError> {
         let record = self.connection.query_row(
             "SELECT title,status,record_url,content_sha256 FROM research_sources WHERE id=?1",
@@ -409,4 +514,56 @@ mod tests {
         assert_eq!(ledger.status("source-1").unwrap(),SourceStatus::Inaccessible);
     }
 
+}
+
+
+#[cfg(test)]
+mod browser_evidence_tests {
+    use super::*;
+    #[test]
+    fn browser_reads_are_immutable_observations_not_bibliographic_verification(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        ledger.discover(&Candidate{
+            id:"paper-1".into(),title:"Study".into(),
+            author:"Author".into(),identifier:"10.1234/example".into()
+        }).unwrap();
+        let captured=ledger.observe_browser_text("g-1","browser-call-1",
+            "https://archive.example/article","READ","A genuine extracted passage",false).unwrap();
+        assert_eq!(captured.observed_sha256,digest(b"A genuine extracted passage"));
+        assert!(ledger.has_browser_excerpt("g-1","browser-call-1","extracted passage").unwrap());
+        assert!(!ledger.has_browser_excerpt("g-1","browser-call-1","fabricated").unwrap());
+        assert!(!ledger.eligible_for_reviewed_bibliography("paper-1").unwrap());
+        assert_eq!(ledger.status("paper-1").unwrap(),SourceStatus::Discovered);
+        assert_eq!(ledger.observe_browser_text("g-1","browser-call-1",
+            "https://archive.example/article","READ","A genuine extracted passage",false)
+            .unwrap(),captured);
+        assert!(matches!(ledger.observe_browser_text("g-1","browser-call-1",
+            "https://archive.example/changed","READ","A genuine extracted passage",false),
+            Err(EvidenceError::Invalid)));
+        assert!(matches!(ledger.browser_observation("g-2","browser-call-1"),
+            Err(EvidenceError::Missing)));
+    }
+    #[test]
+    fn browser_receipts_reject_unowned_and_non_read_claims(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        for (generation,call,url,kind,text) in [
+            ("wrong","browser-call-1","https://example.org","READ","Text"),
+            ("g-1","call-1","https://example.org","READ","Text"),
+            ("g-1","browser-call-1","http://example.org","READ","Text"),
+            ("g-1","browser-call-1","https://example.org","NAVIGATED","Text"),
+            ("g-1","browser-call-1","https://example.org","READ",""),
+            ("g-1","browser-call-1","https://example.org","READ","Bad\0Text"),
+            ("g-1","browser-call-1","https://example.org\nbad","READ","Text"),
+        ]{
+            assert!(matches!(ledger.observe_browser_text(
+                generation,call,url,kind,text,false),Err(EvidenceError::Invalid)));
+        }
+        let long="X".repeat(9000);
+        let saved=ledger.observe_browser_text("g-2","browser-call-2",
+            "https://archive.example/long","ACCESSIBILITY",&long,true).unwrap();
+        assert_eq!(saved.excerpt.chars().count(),8192);
+        assert!(saved.excerpt_truncated);
+        assert_eq!(saved.observed_text_bytes,9000);
+        assert!(!ledger.has_browser_excerpt("g-2","browser-call-2","Not present").unwrap());
+    }
 }
