@@ -36,7 +36,8 @@ use windows_sys::Win32::{
         SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenIsAppContainer, TokenUser,
     },
     System::{
-        Pipes::{GetNamedPipeClientProcessId, ImpersonateNamedPipeClient},
+        Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId,
+            ImpersonateNamedPipeClient},
         Threading::{GetCurrentProcess, GetCurrentThread, GetProcessTimes,
             OpenProcess, QueryFullProcessImageNameW},
     },
@@ -323,6 +324,48 @@ impl JobSecurity {
             descriptor: owned,
         })
     }
+}
+
+
+/// Client-side server attestation. A spoofed, same-user pipe instance cannot
+/// claim to be the recovery service merely by echoing a nonce. Kernel PID,
+/// fixed installed image and restricted Windows service token all must match.
+pub fn authenticate_service_server(
+    pipe: HANDLE, approved_service_path: &Path, service_sha256: &str,
+) -> Result<(), SupervisorError> {
+    let mut pid = 0u32;
+    if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 || pid == 0 {
+        return Err(denied());
+    }
+    let server = Handle::new(unsafe {
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
+    })?;
+    let mut text = vec![0u16; 32768];
+    let mut length = text.len() as u32;
+    if unsafe { QueryFullProcessImageNameW(server.0, 0, text.as_mut_ptr(), &mut length) } == 0
+        || length == 0 { return Err(denied()); }
+    let observed = Path::new(&String::from_utf16(&text[..length as usize])
+        .map_err(|_| denied())?).to_path_buf();
+    let expected = fs::canonicalize(approved_service_path).map_err(|_| denied())?;
+    let observed = fs::canonicalize(observed).map_err(|_| denied())?;
+    if !observed.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()) {
+        return Err(denied());
+    }
+    hash_executable(&expected, service_sha256)?;
+    let mut raw = ptr::null_mut();
+    if unsafe { OpenProcessToken(server.0, TOKEN_QUERY, &mut raw) } == 0 {
+        return Err(denied());
+    }
+    let token = Handle::new(raw)?;
+    let service = parse_sid(&sid_of_service()?)?;
+    let local = parse_sid("S-1-5-19")?;
+    for sid in [service.0, local.0] {
+        let mut present = 0;
+        if unsafe { CheckTokenMembership(token.0, sid, &mut present) } == 0
+            || present == 0 { return Err(denied()); }
+    }
+    if unsafe { IsTokenRestricted(token.0) } == 0 { return Err(denied()); }
+    Ok(())
 }
 
 pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> {
