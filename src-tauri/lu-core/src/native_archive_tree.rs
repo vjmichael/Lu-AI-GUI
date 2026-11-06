@@ -271,18 +271,93 @@ pub fn extract_archive_tree_new(
         manifest_sha256:manifest.sha256,
     })
 }
-/// Post-crash read-only observation. A completion marker is NOT sufficient
-/// by itself; the trusted host must rehash files and compare against the exact
-/// approved manifest before declaring a recovered effect successful.
+/// Read-only post-crash reconciliation. The trusted host must keep the
+/// approved manifest in its durable journal. A marker alone is NEVER proof:
+/// verify every file's digest, every directory, and reject extra entries.
 pub fn observe_tree_completion(
-    parent:&Dir,folder_name:&str,approved_sha256:&str,
+    parent:&Dir,folder_name:&str,approved:&TreeManifest,
 )->Result<bool,TreeExtractError>{
-    if !safe_base(folder_name)||!valid_hash(approved_sha256){
+    if !safe_base(folder_name)||!valid_hash(&approved.sha256){
         return Err(TreeExtractError::InvalidName)
     }
     let folder=parent.open_dir(folder_name).map_err(io)?;
-    let mut bytes=String::new();
+    let mut marker=String::new();
     let f=folder.open(MARKER).map_err(io)?;
-    f.take(65).read_to_string(&mut bytes).map_err(io)?;
-    Ok(bytes==approved_sha256)
+    f.take(65).read_to_string(&mut marker).map_err(io)?;
+    if marker!=approved.sha256{return Ok(false)}
+    let mut expected=BTreeMap::<String,Option<&TreeManifestEntry>>::new();
+    for entry in &approved.entries{
+        if !safe_part(&entry.path){return Err(TreeExtractError::UnsafeMember)}
+        let components:Vec<_>=entry.path.split('/').collect();
+        let mut prefix=String::new();
+        for (i,component) in components.iter().enumerate(){
+            if i>0{prefix.push('/')}
+            prefix.push_str(component);
+            let is_last=i+1==components.len();
+            let value=if is_last{Some(entry)}else{None};
+            expected.entry(prefix.to_lowercase()).or_insert(value);
+        }
+    }
+    let mut observed=BTreeSet::new();
+    let mut total=0u64;
+    let result=verify_existing_directory(
+        &folder,"",0,&expected,&mut observed,&mut total
+    )?;
+    Ok(result && observed.len()==expected.len() &&
+        total==approved.total_bytes)
+}
+fn verify_existing_directory(
+    root:&Dir,prefix:&str,depth:usize,
+    expected:&BTreeMap<String,Option<&TreeManifestEntry>>,
+    observed:&mut BTreeSet<String>,total:&mut u64,
+)->Result<bool,TreeExtractError>{
+    if depth>MAX_DEPTH{return Err(TreeExtractError::TooLarge)}
+    for entry in root.read_dir(".").map_err(io)?{
+        let entry=entry.map_err(io)?;
+        let name=entry.file_name();
+        let Some(name)=name.to_str() else {return Ok(false)};
+        if prefix.is_empty()&&name==MARKER{continue}
+        if !safe_base(name){return Ok(false)}
+        let path=if prefix.is_empty(){name.to_owned()}else{
+            format!("{prefix}/{name}")
+        };
+        let key=path.to_lowercase();
+        let Some(spec)=expected.get(&key) else {return Ok(false)};
+        if !observed.insert(key){return Ok(false)}
+        let meta=root.symlink_metadata(name).map_err(io)?;
+        if meta.file_type().is_symlink(){return Ok(false)}
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{return Ok(false)}
+        }
+        if meta.is_dir(){
+            if spec.is_some_and(|s|!s.is_directory){return Ok(false)}
+            let child=root.open_dir(name).map_err(io)?;
+            if !verify_existing_directory(
+                &child,&path,depth+1,expected,observed,total
+            )?{return Ok(false)}
+        }else if meta.is_file(){
+            let Some(spec)=spec else{return Ok(false)};
+            if spec.is_directory||meta.len()!=spec.uncompressed_bytes ||
+                meta.len()>MAX_FILE as u64 {return Ok(false)}
+            let mut file=root.open(name).map_err(io)?;
+            let mut hasher=Sha256::new();
+            let mut count=0u64;
+            let mut buffer=[0u8;64*1024];
+            loop{
+                let n=file.read(&mut buffer).map_err(io)?;
+                if n==0{break}
+                count=count.checked_add(n as u64).ok_or(TreeExtractError::TooLarge)?;
+                if count>MAX_FILE as u64{return Ok(false)}
+                hasher.update(&buffer[..n]);
+            }
+            if count!=spec.uncompressed_bytes ||
+                format!("{:x}",hasher.finalize())!=spec.sha256 {
+                return Ok(false)
+            }
+            *total=total.checked_add(count).ok_or(TreeExtractError::TooLarge)?;
+            if *total>MAX_TOTAL as u64{return Ok(false)}
+        }else{return Ok(false)}
+    }
+    Ok(true)
 }
