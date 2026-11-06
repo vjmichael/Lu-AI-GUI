@@ -35,6 +35,11 @@ jobs:
           grep -Fx 'pub mod native_docx_create;' src-tauri/lu-core/src/lib.rs
           grep -Fx 'pub mod native_docx_tool;' src-tauri/lu-core/src/lib.rs
           grep -Fx 'pub mod native_file_transfer_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_office_revision;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_pptx_create;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_pptx_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_archive_tree;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_archive_tree_tool;' src-tauri/lu-core/src/lib.rs
   native:
     needs: source
     runs-on: ${{ matrix.os }}
@@ -66,6 +71,11 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_docx_create -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_docx_tool_authority -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_file_transfer_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_office_revision -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_pptx_create -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_pptx_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_tree -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_tree_authority -- --nocapture
       - name: No lockfile drift
         shell: bash
         run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock
