@@ -12,6 +12,8 @@
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
+pub mod windows_broker;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_worker;
