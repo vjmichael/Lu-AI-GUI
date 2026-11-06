@@ -27,6 +27,14 @@ Source control is now a real sidebar section using typed `git.status` and native
 
 Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
 
+## Wave C5 — Exact-head public CI evidence (source implementation)
+ 
+Standalone IDE Source control provides an explicit, bounded, unauthenticated public GitHub Actions lookup for the currently registered local Git HEAD. The native Rust inspector accepts only recognized github.com origin forms, fixed api.github.com TLS endpoints with redirects disabled, and matching workflow paths, run SHAs and mandatory job receipts. Results are commit-level evidence only. No installed UI acceptance, dirty-worktree equivalence, task acceptance, build worker or Lu integration is implied. Reconciliation and exported checkpoints may reuse only a cached same-SHA, same-project checked receipt, without automatic GitHub reads. [Design and test limits](docs/IDE_WAVE_C5_EXACT_HEAD_CI.md).
+
+## Wave C — Read-only development truth (in development)
+
+Feature branch `ide/wave-c-development-truth-20261105` adds `git.diff` (bounded staged and worktree patch), `git.history` (30 local commits), and `resource.probe` (current file bytes/digest at a scoped relative path) to the standalone host, typed capabilities and human Source control/Continuity panels. A file digest does not establish executable readiness. Local history/tracking and public GitHub observations retain separate provenance. No executable worker, arbitrary filesystem access, repo mutation or Lu integration. [Design/limits](docs/IDE_WAVE_C_DEVELOPMENT_TRUTH.md). Source implemented; native CI and Windows installed acceptance open.
+
 ## Wave B1 human Find and Replace
 
 The standalone editor now has Ctrl+H and a Find/Replace bar: bounded literal case-sensitive/insensitive matching with correct CodeMirror UTF-16 offsets, Replace One or confirmed Replace All. Replacement is an unsaved **single CodeMirror transaction**, not a host write; saved file revision checks remain unchanged. The operation checks expected draft and consumes its nonce so remounting a tab does not replay it. New JS tests live in `app/tests/find_replace.test.mjs`.

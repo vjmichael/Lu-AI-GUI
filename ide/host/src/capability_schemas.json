@@ -1270,6 +1270,422 @@
         "responseAuthenticated",
         "githubDataVerifiedAsCurrent"
       ]
+    },
+    "GitDiffEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "staged",
+            "worktree"
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "filesChanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "patch": {
+          "type": "string"
+        },
+        "patchBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "untrackedExcluded": {
+          "type": "boolean",
+          "const": true
+        },
+        "sourceTrust": {
+          "type": "string",
+          "const": "untrusted_local_git_text"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "scope",
+        "localHead",
+        "filesChanged",
+        "patch",
+        "patchBytes",
+        "truncated",
+        "untrackedExcluded",
+        "sourceTrust",
+        "liveRemote"
+      ]
+    },
+    "GitHistoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commitSha": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "parentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "committedUnixSeconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "commitSha",
+        "summary",
+        "parentCount",
+        "committedUnixSeconds"
+      ]
+    },
+    "GitHistoryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commits": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "#/$defs/GitHistoryEntry"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "localHead",
+        "commits",
+        "truncated",
+        "liveRemote"
+      ]
+    },
+    "ProjectResourceProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "missing_in_registered_project",
+            "not_regular_file",
+            "present_unhashed_over_limit",
+            "changed_during_probe",
+            "bytes_observed"
+          ]
+        },
+        "byteLength": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modifiedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        },
+        "executableUsable": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "lastTrustedExecution": {
+          "type": "string",
+          "const": "not_inspected"
+        },
+        "inspectionScope": {
+          "type": "string",
+          "const": "registered_project_only"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "relativePath",
+        "state",
+        "byteLength",
+        "sha256",
+        "modifiedUnixSeconds",
+        "digestStatus",
+        "executableUsable",
+        "lastTrustedExecution",
+        "inspectionScope"
+      ]
+    },
+    "ExactHeadCiEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "public_github_actions_explicit_read"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "checkedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflows": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "workflow": {
+                "type": "string"
+              },
+              "runId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "headSha": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runStatus": {
+                "type": "string"
+              },
+              "conclusion": {
+                "type": "string"
+              },
+              "jobs": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "conclusion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "status",
+                    "conclusion"
+                  ]
+                }
+              },
+              "verdict": {
+                "type": "string"
+              },
+              "jobsTruncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "workflow",
+              "runId",
+              "runUrl",
+              "headSha",
+              "runStatus",
+              "conclusion",
+              "jobs",
+              "verdict",
+              "jobsTruncated"
+            ]
+          }
+        },
+        "runsListingPartial": {
+          "type": "boolean"
+        },
+        "localHeadChangedDuringCheck": {
+          "type": "boolean"
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "taskCompletionAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        },
+        "credentialsUsed": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "source",
+        "repository",
+        "localHead",
+        "worktree",
+        "checkedUnixSeconds",
+        "verdict",
+        "errorCode",
+        "workflows",
+        "runsListingPartial",
+        "localHeadChangedDuringCheck",
+        "installationAcceptance",
+        "taskCompletionAcceptance",
+        "credentialsUsed"
+      ]
     }
   },
   "operations": {
@@ -1727,6 +2143,92 @@
       },
       "result": {
         "$ref": "#/$defs/LiveGitHubComparison"
+      }
+    },
+    "git.diff": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "worktree"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "scope"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitDiffEvidence"
+      }
+    },
+    "git.history": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitHistoryEvidence"
+      }
+    },
+    "resource.probe": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectResourceProbe"
+      }
+    },
+    "git.ciExactHead": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ExactHeadCiEvidence"
       }
     }
   }

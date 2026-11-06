@@ -196,3 +196,10 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .editorFindOption{color:#c8dceb;font-size:11px;display:flex;align-items:center;gap:5px;white-space:nowrap}
 .editorFindOption input{min-width:auto;max-width:none;flex:none}
 @media(max-width:750px){.editorFindBar,.editorReplaceBar{flex-wrap:wrap}.editorFindCount{white-space:normal}}
+
+/* Wave C: explicit human read-only development evidence. */
+.gitReviewControls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.gitReviewControls label{font-size:12px;color:#bad2e7}
+.gitReviewControls select{background:#102137;color:#eef7ff;border:1px solid #506c87;border-radius:6px;padding:7px}
+.gitPatchPreview{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:380px;font:12px Consolas,"Cascadia Code",monospace;background:#091523;color:#e7eff8;padding:12px;border-radius:6px}
+.continuityEvent button.ghostBtn{align-self:flex-start;max-width:max-content;margin-top:6px}

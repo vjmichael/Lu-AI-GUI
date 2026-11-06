@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github'
+    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github', 'ide_read_exact_head_ci', 'ide_read_git_diff', 'ide_read_git_history', 'ide_probe_project_resource'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -274,9 +274,10 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const tauri = read('../src-tauri/src/lib.rs');
   const web = read('../web/main.jsx');
   const css = read('../web/styles.css');
-  const commands = [...registry.matchAll(/capability!\("[^"]+",\s*"(ide_[a-z_]+)"/g)]
+  const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
+  assert.equal(commands.length, 25, 'capability macro declarations must be found');
   assert.equal(new Set(commands).size, commands.length);
   const declared = registered.filter(value => value !== 'ide_list_capabilities');
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
@@ -296,7 +297,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 21);
+  assert.equal(Object.keys(schemas.operations).length, 25);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -371,7 +372,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger', 'snapshots'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
@@ -477,4 +478,28 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(editor, /view\.dispatch\(\{ changes, scrollIntoView: true \}\)/);
   assert.match(editor, /expectedDraft/);
   assert.doesNotMatch(planner, /invoke\(|window\.fetch|\.writeText\(/);
+});
+
+test('Wave C native development truth: diff/history/probe use typed read-only host calls', () => {
+  const ui = read('../web/main.jsx');
+  const native = read('../src-tauri/src/lib.rs');
+  const git = read('../../host/src/git_evidence.rs');
+  const probe = read('../../host/src/resource_probe.rs');
+  const schema = JSON.parse(read('../../host/src/capability_schemas.json'));
+  for (const command of ['ide_read_git_diff', 'ide_read_git_history',
+    'ide_probe_project_resource']) {
+    assert.match(native, new RegExp('async fn ' + command));
+    assert.ok(ui.includes("invoke('" + command + "'"), command);
+  }
+  assert.equal(schema.operations['git.diff'].result.$ref, '#/$defs/GitDiffEvidence');
+  assert.equal(schema.operations['git.history'].result.$ref, '#/$defs/GitHistoryEvidence');
+  assert.equal(schema.operations['resource.probe'].result.$ref, '#/$defs/ProjectResourceProbe');
+  assert.equal(schema.operations['git.diff'].request.properties.scope.enum.length, 2);
+  assert.match(ui, /aria-label="Local Git patch"/);
+  assert.match(ui, /aria-label="Current resource evidence"/);
+  assert.match(git, /registered_git_root\(project_id\)/);
+  assert.match(git, /MAX_PATCH_BYTES: usize = 64 \* 1024/);
+  assert.match(probe, /source_capability\(project_id\)/);
+  assert.match(probe, /executable_usable: "not_tested"/);
+  assert.doesNotMatch(git + probe, /std::process::Command|Command::new|\.fetch\(/);
 });
