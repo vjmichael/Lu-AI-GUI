@@ -25,7 +25,7 @@ fn probe_observes_actual_file_bytes_then_missing_and_changed_resource() {
     fs::write(target.join("sample.exe"), b"fixture binary is not executable").unwrap();
     let first = registry.probe_project_resource(&id, "Delivered/sample.exe").unwrap();
     assert_eq!(first.state, "bytes_observed");
-    assert_eq!(first.byte_length, Some(32));
+    assert_eq!(first.byte_length, Some(b"fixture binary is not executable".len() as u64));
     assert_eq!(first.sha256.as_ref().unwrap().len(), 64);
     assert_eq!(first.executable_usable, "not_tested");
     fs::write(target.join("sample.exe"), b"changed fixture bytes longer").unwrap();
