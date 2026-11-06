@@ -70,6 +70,39 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// Read local Git diff hunks only, in the exact registered project root.
+/// Scope is strictly "staged" or "worktree"; there are no mutation actions.
+#[tauri::command]
+async fn ide_read_git_diff(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    scope: String,
+) -> Result<lu_ide_workspace::git_evidence::GitDiffEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_diff(&project_id, &scope)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "GIT_DIFF_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Read recent local commits. No remote fetch, arbitrary rev expressions,
+/// hooks, shell commands or repository writes.
+#[tauri::command]
+async fn ide_read_git_history(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_evidence::GitHistoryEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_history(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "GIT_HISTORY_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read-only Git source control status of an already selected workspace.
 /// No subprocess, model bridge, network operation, or repository mutation.
 #[tauri::command]
@@ -456,6 +489,8 @@ pub fn run() {
             ide_list_capabilities,
             ide_read_project_context,
             ide_read_git_status,
+            ide_read_git_diff,
+            ide_read_git_history,
             ide_compare_live_github,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
