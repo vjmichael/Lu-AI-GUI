@@ -9,7 +9,8 @@ use serde::Serialize;
 use sha2::{Digest,Sha256};
 use lu_core::{
     web_http_fetch::SecureHttpFetcher,
-    web_research_evidence::{Candidate,EvidenceLedger},
+    web_research_evidence::{Candidate,EvidenceLedger,EvidenceError,SourceStatus,TrustedBibliography},
+    web_research_planner::canonical_doi,
     web_search_openalex::search_openalex,
 };
 
@@ -34,6 +35,68 @@ pub(crate) struct ResearchSearchView{
     pub leads:Vec<ResearchLeadView>,
     pub message:&'static str,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCorroborationView{
+    pub source_id:String,
+    pub verification_status:&'static str,
+    pub record_url:String,
+    pub citation_verified:bool,
+    pub message:&'static str,
+}
+/// Percent-encode a host-selected, ledger-stored DOI as a Crossref path
+/// segment. Model/UI input never supplies a network URL or a replacement DOI.
+fn encode_doi_component(doi:&str)->String{
+    let mut out=String::new();
+    for b in doi.bytes(){
+        if b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'|b'.'|b'~'){
+            out.push(char::from(b));
+        }else{
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+/// Crossref's metadata is independent bibliographic evidence, never
+/// evidence that a full text was obtained or a quotation actually occurs.
+fn parse_crossref_metadata(
+    bytes:&[u8],expected_doi:&str,record_url:&str
+)->Result<TrustedBibliography,&'static str>{
+    if bytes.len()>1024*1024{return Err("Crossref response too large");}
+    let json:serde_json::Value=serde_json::from_slice(bytes)
+        .map_err(|_|"Crossref returned invalid JSON")?;
+    let work=json.get("message").ok_or("Crossref work missing")?;
+    let doi=work.get("DOI").and_then(|v|v.as_str())
+        .and_then(canonical_doi).ok_or("Crossref DOI missing")?;
+    if doi!=expected_doi{return Err("Crossref DOI identity mismatch");}
+    let title=work.get("title").and_then(|v|v.as_array())
+        .and_then(|v|v.first()).and_then(|v|v.as_str())
+        .ok_or("Crossref title unavailable")?;
+    if title.trim().is_empty()||title.len()>1024||title.chars().any(char::is_control){
+        return Err("Crossref title invalid");
+    }
+    let authors=work.get("author").and_then(|v|v.as_array())
+        .ok_or("Crossref authors unavailable")?;
+    if authors.is_empty()||authors.len()>128{return Err("Crossref authors invalid");}
+    let mut names=Vec::new();
+    for a in authors {
+        let given=a.get("given").and_then(|v|v.as_str()).unwrap_or("");
+        let family=a.get("family").and_then(|v|v.as_str()).unwrap_or("");
+        let full=format!("{} {}",given.trim(),family.trim()).trim().to_owned();
+        if full.is_empty()||full.len()>128||full.chars().any(char::is_control){
+            return Err("Crossref author name invalid");
+        }
+        names.push(full);
+    }
+    let author=names.join("; ");
+    if author.len()>512{return Err("Crossref author list exceeds evidence bounds");}
+    Ok(TrustedBibliography{
+        record_url:record_url.to_owned(),
+        title:title.to_owned(),author,identifier:doi,
+    })
+}
+
 pub(crate) struct ResearchDesktop{
     root:PathBuf,
     curl:PathBuf,
@@ -133,6 +196,71 @@ impl ResearchDesktop{
             message:"Discovered leads only. No bibliographic corroboration, full-text passage or citation has been verified.",
         })
     }
+
+    /// User-approved metadata corroboration of one already-persisted
+    /// OpenAlex lead. No arbitrary URL, DOI or model-selected authority.
+    /// A successful result is ONLY bibliographic corroboration.
+    pub(crate) fn corroborate_crossref(
+        &self,chat_id:&str,source_id:&str
+    )->Result<ResearchCorroborationView,String>{
+        if !safe_id(chat_id)||source_id.len()>128
+          ||!source_id.starts_with("https://openalex.org/")
+          ||source_id.chars().any(char::is_control){
+            return Err("Invalid discovered research source".into());
+        }
+        if !self.available(){
+            return Err("Reviewed Lu research HTTPS runtime not installed".into());
+        }
+        let dir=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research ledger directory unavailable")?;
+        if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+            return Err("Research ledger directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let metadata=fs::symlink_metadata(&db)
+            .map_err(|_|"Existing research evidence ledger unavailable")?;
+        if !metadata.file_type().is_file()||metadata.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let discovered=ledger.discovered_candidate(source_id)
+            .map_err(|_|"This source was not discovered in this chat")?;
+        if ledger.status(source_id).map_err(|_|"Evidence status unavailable")?
+           !=SourceStatus::Discovered {
+            return Err("This source is no longer an uncorroborated lead".into());
+        }
+        let doi=canonical_doi(&discovered.identifier)
+            .ok_or("Stored source DOI is invalid")?;
+        let url=format!("https://api.crossref.org/works/{}",encode_doi_component(&doi));
+        let fetcher=SecureHttpFetcher{
+            curl_binary:&self.curl,ca_bundle:None,
+        };
+        let response=fetcher.fetch(&url)
+            .map_err(|_|"Crossref metadata retrieval unavailable")?;
+        if response.http_status!=200{
+            return Err("Crossref did not return a verified work record".into());
+        }
+        let record=parse_crossref_metadata(&response.bytes,&doi,&response.canonical_url)
+            .map_err(str::to_owned)?;
+        match ledger.corroborate(source_id,&record){
+            Ok(())=>Ok(ResearchCorroborationView{
+                source_id:source_id.to_owned(),
+                verification_status:"metadata_corroborated",
+                record_url:record.record_url,
+                citation_verified:false,
+                message:"Independent metadata matches the discovered lead. No source passage or quotation is verified.",
+            }),
+            Err(EvidenceError::MetadataMismatch)=>Ok(ResearchCorroborationView{
+                source_id:source_id.to_owned(),
+                verification_status:"metadata_mismatch",
+                record_url:record.record_url,
+                citation_verified:false,
+                message:"Independent metadata differs from discovery. This lead cannot be cited.",
+            }),
+            Err(_)=>Err("Research corroboration could not be persisted".into()),
+        }
+    }
 }
 #[cfg(test)]
 mod tests{
@@ -146,6 +274,28 @@ mod tests{
             assert!(verified_file(&candidate,expected),
                 "Windows Research client or compiled digest differs");
         }
+    }
+
+    #[test]
+    fn independent_crossref_work_metadata_must_match_exact_stored_doi(){
+        let body=serde_json::json!({"message":{
+            "DOI":"10.1234/study1",
+            "title":["A Tested Study"],
+            "author":[{"given":"Jane","family":"Doe"},{"given":"John","family":"Smith"}]
+        }}).to_string();
+        let record=parse_crossref_metadata(body.as_bytes(),"10.1234/study1",
+            "https://api.crossref.org/works/10.1234%2Fstudy1").unwrap();
+        assert_eq!(record.title,"A Tested Study");
+        assert_eq!(record.author,"Jane Doe; John Smith");
+        assert_eq!(record.identifier,"10.1234/study1");
+        assert!(parse_crossref_metadata(body.as_bytes(),"10.1234/other",
+            "https://api.crossref.org/works/10.1234%2Fother").is_err());
+        let malformed=serde_json::json!({"message":{
+            "DOI":"10.1234/study1","title":["A Tested Study"],"author":[]
+        }}).to_string();
+        assert!(parse_crossref_metadata(malformed.as_bytes(),"10.1234/study1",
+            "https://api.crossref.org/works/10.1234%2Fstudy1").is_err());
+        assert_eq!(encode_doi_component("10.1234/study1"),"10.1234%2Fstudy1");
     }
     #[test]
     fn no_runtime_or_unapproved_binary_cannot_be_research_network_authority(){
