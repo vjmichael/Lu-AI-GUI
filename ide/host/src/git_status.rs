@@ -77,7 +77,10 @@ impl IdeWorkspaceRegistry {
 
         let head = repo.head().ok();
         let local_oid = head.as_ref().and_then(|h| h.target());
-        let branch = head.as_ref().and_then(|h| h.shorthand()).map(ToOwned::to_owned);
+        let branch = head
+            .as_ref()
+            .and_then(|h| h.shorthand())
+            .map(ToOwned::to_owned);
         let mut out = unavailable("local_repository_inspected");
         out.branch = branch;
         out.local_head = local_oid.map(|oid| oid.to_string());
@@ -95,9 +98,7 @@ impl IdeWorkspaceRegistry {
                         } else {
                             "local_tracking_differs"
                         };
-                        if let Ok((ahead, behind)) =
-                            repo.graph_ahead_behind(local, upstream_oid)
-                        {
+                        if let Ok((ahead, behind)) = repo.graph_ahead_behind(local, upstream_oid) {
                             out.commits_ahead = Some(ahead);
                             out.commits_behind = Some(behind);
                         }
@@ -123,8 +124,7 @@ impl IdeWorkspaceRegistry {
             if status == Status::CURRENT {
                 continue;
             }
-            let new_file = status.contains(Status::WT_NEW)
-                || status.contains(Status::INDEX_NEW);
+            let new_file = status.contains(Status::WT_NEW) || status.contains(Status::INDEX_NEW);
             let kind = if status.intersects(Status::WT_DELETED | Status::INDEX_DELETED) {
                 "deleted"
             } else if status.intersects(Status::WT_RENAMED | Status::INDEX_RENAMED) {
@@ -139,8 +139,10 @@ impl IdeWorkspaceRegistry {
                 "other_change"
             };
             let stage = if status.intersects(
-                Status::INDEX_NEW | Status::INDEX_MODIFIED
-                    | Status::INDEX_DELETED | Status::INDEX_RENAMED
+                Status::INDEX_NEW
+                    | Status::INDEX_MODIFIED
+                    | Status::INDEX_DELETED
+                    | Status::INDEX_RENAMED
                     | Status::INDEX_TYPECHANGE,
             ) {
                 "staged_or_index"
