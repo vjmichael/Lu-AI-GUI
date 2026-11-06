@@ -127,6 +127,11 @@ function App() {
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [latestCreated, setLatestCreated] = useState(null);
+  const [archiveBatchReview,setArchiveBatchReview]=useState(null);
+  const [archiveBatchReviewed,setArchiveBatchReviewed]=useState(false);
+  const [archiveBatchBusy,setArchiveBatchBusy]=useState(false);
+  const [archiveBatchCancelRequested,setArchiveBatchCancelRequested]=useState(false);
+  const [latestArchiveBatch,setLatestArchiveBatch]=useState(null);
   const [archiveReview, setArchiveReview] = useState(null);
   const [archiveReviewed, setArchiveReviewed] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
@@ -1321,6 +1326,66 @@ function App() {
         default:throw Error('Unrecognized native operation review');
       }
     }catch(error){setError(String(error));}
+  }
+  async function reviewArchiveBatch(){
+    if(!chatId||working||chatBusy||archiveBusy||archiveBatchBusy
+       ||archiveReview||archiveBatchReview)return;
+    setArchiveBatchBusy(true);setArchiveBatchCancelRequested(false);setError('');
+    try{
+      const review=await invoke('lu_review_archive_batch',{chatId});
+      if(review){
+        setArchiveBatchReview(review);setArchiveBatchReviewed(false);
+        setActivity('Archive batch ready: inspect every member before native approval.');
+      }
+    }catch(e){setError(String(e));}
+    finally{setArchiveBatchBusy(false);}
+  }
+  async function confirmArchiveBatch(){
+    const review=archiveBatchReview;
+    if(!review||!archiveBatchReviewed||archiveBatchBusy
+       ||review.chatId!==chatId)return;
+    setArchiveBatchBusy(true);setError('');setArchiveBatchCancelRequested(false);
+    try{
+      const result=await invoke('lu_confirm_archive_batch',{
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if(result){
+        setLatestArchiveBatch({...result,chatId:review.chatId});
+        setActivity('Archive group created: '+result.groupName);
+        await refreshChats();
+        if(currentChat.current===review.chatId){
+          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+        }
+      }
+    }catch(e){
+      setError('Archive batch uncertain or refused. Do not automatically retry: '+String(e));
+    }finally{
+      setArchiveBatchReview(null);setArchiveBatchReviewed(false);
+      setArchiveBatchBusy(false);
+    }
+  }
+  async function denyArchiveBatch(){
+    const review=archiveBatchReview;
+    if(!review||archiveBatchBusy)return;
+    try{
+      await invoke('lu_deny_archive_batch',{
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+    }catch(e){setError(String(e));}
+    finally{setArchiveBatchReview(null);setArchiveBatchReviewed(false);}
+  }
+  async function cancelArchiveBatch(){
+    if(!chatId||!archiveBatchBusy||archiveBatchCancelRequested)return;
+    try{
+      const stopped=await invoke(
+        archiveBatchReview?'lu_cancel_archive_tree':'lu_cancel_archive_preview',
+        archiveBatchReview?{chatId,reviewId:archiveBatchReview.reviewId}:{chatId}
+      );
+      if(stopped){
+        setArchiveBatchCancelRequested(true);
+        setActivity('Stop requested. An incomplete published group requires manual reconciliation.');
+      }
+    }catch(e){setError(String(e));}
   }
   async function reviewArchiveTree() {
     if (!chatId || archiveBusy || working || chatBusy) return;
@@ -2830,6 +2895,60 @@ function App() {
           <small>{latestDocumentCreated.bytesWritten} bytes · SHA-256: {latestDocumentCreated.sha256}</small>
           <small>Durable effect receipt: {latestDocumentCreated.effectCallId}</small>
         </section>}
+        {archiveBatchReview?.chatId===chatId&&
+          <section className="readProposalCard editProposalCard" role="group"
+            aria-label="Review multiple archive contents">
+            <strong>Multi-archive batch — NEW group only</strong>
+            <small>Native pickers selected {archiveBatchReview.archiveCount} files.
+              Nothing has been extracted. Review every member before confirming.</small>
+            <code className="writeTarget">{archiveBatchReview.groupDisplay}</code>
+            <small>{archiveBatchReview.totalFiles} files ·
+              {' '}{archiveBatchReview.totalBytes} expanded bytes</small>
+            <small>Entire approved batch SHA-256: {archiveBatchReview.manifestSha256}</small>
+            <details open>
+              <summary>All archive members and source digests</summary>
+              {archiveBatchReview.items.map((item,i)=><div key={i}>
+                <strong>{item.source} → {item.outputFolder}</strong>
+                <small>{item.files} files · {item.expandedBytes} bytes ·
+                  {' '}{item.manifestSha256}</small>
+                <pre className="editFullText">{item.entries.map((entry,j)=>
+                  (j+1)+'. '+(entry.isDirectory?'directory':'file')+' · '+
+                  entry.path+(entry.isDirectory?'':' · '+
+                    entry.uncompressedBytes+' bytes · '+entry.sha256)
+                ).join('\n')}</pre>
+              </div>)}
+            </details>
+            <label className="editReviewAck">
+              <input type="checkbox" checked={archiveBatchReviewed}
+                onChange={e=>setArchiveBatchReviewed(e.target.checked)}/>
+              I reviewed every archive entry, all destination folders, and
+              the manual recovery rule for any partial write.
+            </label>
+            <div className="settingsActions">
+              <button type="button" className="primaryButton"
+                disabled={!archiveBatchReviewed||archiveBatchBusy}
+                onClick={()=>void confirmArchiveBatch()}>
+                Confirm entire batch using native approval
+              </button>
+              <button type="button" disabled={archiveBatchBusy}
+                onClick={()=>void denyArchiveBatch()}>Deny batch</button>
+              {archiveBatchBusy&&<button type="button"
+                disabled={archiveBatchCancelRequested}
+                onClick={()=>void cancelArchiveBatch()}>
+                {archiveBatchCancelRequested?'Stopping…':'Cancel batch'}
+              </button>}
+            </div>
+          </section>}
+        {latestArchiveBatch?.chatId===chatId&&
+          <section className="readProposalCard" role="status">
+            <strong>Archive batch extracted into {latestArchiveBatch.groupName}</strong>
+            <small>{latestArchiveBatch.archiveCount} sources ·
+              {' '}{latestArchiveBatch.totalFiles} files ·
+              {' '}{latestArchiveBatch.totalBytes} bytes</small>
+            <small>Verified batch SHA-256: {latestArchiveBatch.manifestSha256}</small>
+            <small>Durable effect: {latestArchiveBatch.effectCallId}.
+              Original archives preserved.</small>
+          </section>}
         {archiveReview?.chatId === chatId && <section className="readProposalCard editProposalCard"
           role="group" aria-label="Review complete archive extraction">
           <strong>Extract archive into a NEW folder</strong>
@@ -3179,6 +3298,19 @@ function App() {
               disabled={!chatId || working || chatBusy || archiveBusy || Boolean(archiveReview)}
               title="Use native file and folder pickers to safely review an archive and extract it into one NEW folder"
               onClick={() => void reviewArchiveTree()}>{archiveBusy ? 'Archive…' : 'Extract archive'}</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId||working||chatBusy||archiveBusy||archiveBatchBusy
+                ||Boolean(archiveReview)||Boolean(archiveBatchReview)}
+              title="Pick 1–8 archives in a native dialog; inspect every entry and approve one NEW group"
+              onClick={()=>void reviewArchiveBatch()}>
+              {archiveBatchBusy?'Reviewing batch…':'Extract archive batch'}
+            </button>
+            {archiveBatchBusy&&!archiveBatchReview&&
+              <button type="button" className="subtleButton"
+                disabled={archiveBatchCancelRequested}
+                onClick={()=>void cancelArchiveBatch()}>
+                {archiveBatchCancelRequested?'Stopping batch preview…':'Cancel batch preview'}
+              </button>}
             {archiveBusy && !archiveReview && <button type="button"
               className="subtleButton" disabled={archiveCancelRequested}
               onClick={()=>void cancelArchivePreview()}>
