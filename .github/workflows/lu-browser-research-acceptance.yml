@@ -11,6 +11,8 @@ on:
       - 'lu-desktop/web/main.jsx'
       - 'src-tauri/lu-core/src/web_research_evidence.rs'
       - 'lu-desktop/tests/browser-model-read.test.mjs'
+      - 'lu-desktop/tests/browser-research-evidence.test.mjs'
+      - 'src-tauri/lu-core/src/web_research_evidence.rs'
       - 'lu-desktop/src-tauri/src/browser_model_desktop.rs'
       - 'src-tauri/lu-core/src/inference_host.rs'
       - 'src-tauri/lu-core/src/inference_bridge.rs'
@@ -39,6 +41,7 @@ jobs:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
       - run: node --test lu-desktop/tests/research-source-route.test.mjs
+      - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
       - run: node --test lu-desktop/tests/browser-model-read.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
       - run: node --test tests/lu-browser-worker.test.mjs
