@@ -1,5 +1,7 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**WO2 pinned Windows native Cargo success (D7B exact commit 1090800):** real isolated Cargo Completed exit 0, output sealed and durable restart; real cancellation Job reaped and no output. CI-only exact-SID NUL permission does NOT finish production privilege lifecycle. **WO3 SCM service still denied at pipe open despite exact user SID match.** Native token diagnostic and nonblocking disposable pipe test added, protected service ACL preserved. See Batch 02 ledger.
+
 ### WO2/WO3 active Windows repairs — no release acceptance (2026-11-06)
 
 See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md): live compiler output now uses capability-rooted metadata quota scan at 250 ms, while final full content seal requires a reaped kernel Job; fixed native cap-fs Windows metadata `E0624`, applied actual Rustfmt deltas. D7D installed restricted SCM still requires native pipe admission: exact host SID/pipe-rights diagnostics and a disposable identical-DACL control were added. Service now caps independent handler threads at 12 so pipe instance exhaustion cannot terminate its protected Job keeper. Prior native AppContainer/Job admission passed; real pinned Cargo success, protected service crash/restart and production NUL permission lifecycle remain **OPEN**. No enabled release worker.

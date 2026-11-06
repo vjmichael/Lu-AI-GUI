@@ -19,13 +19,14 @@ use windows_sys::Win32::{
         INVALID_HANDLE_VALUE,
     },
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
+    Security::{GetTokenInformation, IsTokenRestricted, TokenIsAppContainer, TOKEN_QUERY},
     System::{
         JobObjects::{
             JobObjectBasicAccountingInformation, QueryInformationJobObject, TerminateJobObject,
             JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
         },
         Pipes::PeekNamedPipe,
-        Threading::GetCurrentProcessId,
+        Threading::{GetCurrentProcess, GetCurrentProcessId, OpenProcessToken},
     },
 };
 const FILE_READ_DATA: u32 = 0x0001;
@@ -74,6 +75,42 @@ fn ci_probe_denied_pipe_access() {
             != Some(std::ffi::OsStr::new("1"))
     {
         return;
+    }
+    // Token flags are diagnostic, not authorization: a restricted or
+    // AppContainer host may need another kernel access constraint even
+    // when TokenUser matches the installer-pinned SID. Never log SIDs.
+    let mut token_raw = ptr::null_mut();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_raw) } != 0 {
+        if let Ok(token) = Handle::new(token_raw) {
+            if unsafe { IsTokenRestricted(token.0) } != 0 {
+                acceptance_trace("pipe_diag_host_token_is_restricted");
+            } else {
+                acceptance_trace("pipe_diag_host_token_is_not_restricted");
+            }
+            let mut appcontainer = 0u32;
+            let mut returned = 0u32;
+            if unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenIsAppContainer,
+                    (&mut appcontainer as *mut u32).cast(),
+                    size_of::<u32>() as u32,
+                    &mut returned,
+                )
+            } != 0
+                && returned >= size_of::<u32>() as u32
+            {
+                if appcontainer != 0 {
+                    acceptance_trace("pipe_diag_host_token_is_appcontainer");
+                } else {
+                    acceptance_trace("pipe_diag_host_token_is_not_appcontainer");
+                }
+            } else {
+                acceptance_trace("pipe_diag_host_token_appcontainer_unknown");
+            }
+        }
+    } else {
+        acceptance_trace("pipe_diag_host_token_inspection_denied");
     }
     // Correlate the installer-approved TokenUser with the native host
     // process without logging the account SID or making it an authorization

@@ -413,7 +413,11 @@ pub fn verify_created_pipe_security(
         } else if unsafe { EqualSid(sid, user.0) } != 0 {
             // Read + write + synchronize, not FILE_CREATE_PIPE_INSTANCE (4).
             const ALLOWED: u32 = 0x0010_0003;
-            if user_found || ace.Mask & ALLOWED != ALLOWED || ace.Mask & 0x4 != 0 {
+            // Do not accept a kernel ACE with extra WRITE_DAC, WRITE_OWNER,
+            // DELETE or other rights merely because it includes the three
+            // requested client rights. The installed exact-user ACL must be
+            // *exactly* data read, data write and synchronize, no pipe creation.
+            if user_found || ace.Mask != ALLOWED {
                 return Err(denied());
             }
             user_found = true;
