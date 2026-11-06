@@ -40,3 +40,12 @@ A visible button is only a UI observation. It does not prove a native effect, a 
 The first module native_observe_learn.rs is a host-only *policy kernel*. It implements explicit scope and expiring session IDs, default OFF, pause/resume/stop/revoke, application-scope checks, optional redacted screenshot permission flag, bounded event rates and brief/deep reasoning recommendations, replay rejection, and inert reviewable learning proposals. CI includes Windows and Linux Rust tests, but the exact-head checks are not assumed green until run.
 
 This does NOT yet capture the desktop, launch an OS observer worker, identify windows, invoke a model, train/modify model weights, persist ANSF records, or test an installed GUI. Those are mandatory follow-on implementations before v1.0 acceptance. Keep Observe & Learn a distinct tool family, not a renamed Reader, Browser, Vision, or Image Workspace tool.
+
+
+## OBSERVE-LEARN-02 — host, TaskStore and ANSF integration (source only)
+
+The dedicated observer shares the existing Arc<TaskStore> and its durable statuses, with ephemeral consent and event state kept inside the already running Tauri desktop. Startup interruption and a host watchdog prevent stale observation authority after restart or expiry. No separate runtime.
+
+The native_observe_ansf bridge accepts only bounded, provenance-checked host-test results with separate human approval and writes them into the existing ANSF store. It rejects cross-chat records and duplicates. This bridge is not exposed to the WebView until there is a trusted native GUI test oracle and review UI.
+
+The current Lu application pilot will observe only explicitly approved semantic UI event indicators, not Windows desktop pixels or other applications. A renderer hint can never mark a GUI test PASS or FAIL. Brief/deep reasoning suggestions remain inert until integrated with the existing model queue. Actual Windows UI Automation and user-authorized Graphics Capture are still required before full desktop observation.

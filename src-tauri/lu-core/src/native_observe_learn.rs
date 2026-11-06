@@ -62,6 +62,11 @@ fn safe_id(s:&str)->bool {
 }
 impl Controller {
     pub fn mode(&self)->Mode {self.mode}
+    /// Existing native watchdog calls this even if the UI is silent.
+    pub fn tick(&mut self,now:u64)->Result<Mode,Error>{
+        if self.mode!=Mode::Off{self.check_expiry(now)?;}
+        Ok(self.mode)
+    }
     /// Must be invoked ONLY by trusted native host UI after explicit user
     /// consent. No Tauri/model-facing start command is provided in this slice.
     pub fn start(&mut self,grant:Consent,now:u64)->Result<(),Error>{
