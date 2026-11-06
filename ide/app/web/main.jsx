@@ -1790,10 +1790,10 @@ function App() {
         ? <section className="workspaceContent capabilityWorkspace" aria-label="Language services">
             <div className="sectionHeading">
               <h2>Language server providers</h2>
-              <span>{languageServers.length} catalogued · {lspWorker?.ready ? 'Protected worker ready' : 'Execution gated'}</span>
+              <span>{languageServers.length} catalogued · {lspWorker?.ready ? 'Pinned binaries verified · OS admission on start' : 'Execution gated'}</span>
             </div>
             <p className="capabilityNotice" role="status">
-              <strong>{lspWorker?.ready ? 'Protected worker available.' : 'Language servers are not running.'}</strong>
+              <strong>{lspWorker?.ready ? 'Reviewed local server assets available; none auto-started.' : 'Language servers are not running.'}</strong>
               {' '}{lspWorker?.detail || 'Worker state unavailable.'}
               {' '}Server discovery does not grant execution or install packages.
             </p>
