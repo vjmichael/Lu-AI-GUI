@@ -31,6 +31,7 @@ function App() {
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null);
   const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500'});
+  const [imagePlan,setImagePlan]=useState({chatId:null,imageRef:null,steps:[],redo:[]});
   const [imageExportBusy,setImageExportBusy]=useState(false);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
@@ -552,6 +553,49 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setOcrBusy(false);}
   }
+  function queueImageStep(){
+    if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
+    const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
+    const width=['rotate90','flip_h'].includes(imageEdit.mode)?
+      imageViewer.width:Number(imageEdit.width);
+    const height=['rotate90','flip_h'].includes(imageEdit.mode)?
+      imageViewer.height:Number(imageEdit.height);
+    const x=region?Number(imageEdit.x):null,y=region?Number(imageEdit.y):null;
+    const blockSize=imageEdit.mode==='pixelate'?Number(imageEdit.blockSize):null;
+    const stroke=imageEdit.mode==='rectangle'?Number(imageEdit.stroke):null;
+    const color=imageEdit.mode==='rectangle'&&/^#[0-9a-fA-F]{6}$/.test(imageEdit.color)?
+      parseInt(imageEdit.color.slice(1),16):null;
+    if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)
+      ||width<1||height<1||width>8192||height>8192
+      ||width*height>32000000
+      ||(region&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0))
+      ||(blockSize!==null&&(!Number.isSafeInteger(blockSize)||blockSize<2||blockSize>128))
+      ||(stroke!==null&&(!Number.isSafeInteger(stroke)||stroke<1||stroke>64))
+      ||(imageEdit.mode==='rectangle'&&color===null)){
+      setError('Image assembly step has invalid parameters.');return;
+    }
+    const step={operation:imageEdit.mode,x,y,width,height,blockSize,stroke,color};
+    setImagePlan(p=>{
+      const old=p.chatId===chatId&&p.imageRef===imageViewer.imageRef?
+        p.steps:[];
+      if(old.length>=12){setError('A single image assembly permits at most 12 steps.');return p;}
+      return {chatId,imageRef:imageViewer.imageRef,steps:[...old,step],redo:[]};
+    });
+  }
+  function undoImageStep(){
+    if(!chatId||!imageViewer?.imageRef)return;
+    setImagePlan(p=>{
+      if(p.chatId!==chatId||p.imageRef!==imageViewer.imageRef||!p.steps.length)return p;
+      return {...p,steps:p.steps.slice(0,-1),redo:[p.steps.at(-1),...p.redo]};
+    });
+  }
+  function redoImageStep(){
+    if(!chatId||!imageViewer?.imageRef)return;
+    setImagePlan(p=>{
+      if(p.chatId!==chatId||p.imageRef!==imageViewer.imageRef||!p.redo.length)return p;
+      return {...p,steps:[...p.steps,p.redo[0]],redo:p.redo.slice(1)};
+    });
+  }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
     const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
@@ -580,7 +624,10 @@ function App() {
         x:region?x:null,y:region?y:null,width,height,
         blockSize:imageEdit.mode==='pixelate'?blockSize:null,
         stroke:imageEdit.mode==='rectangle'?stroke:null,
-        color:imageEdit.mode==='rectangle'?hex:null
+        color:imageEdit.mode==='rectangle'?hex:null,
+        steps:imagePlan.chatId===chatId&&
+          imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length?
+          imagePlan.steps:null
       });
       if(saved){
         setImageExportReceipt(saved);
@@ -3203,6 +3250,29 @@ function App() {
             <label>Stroke width <input type="number" min="1" max="64" value={imageEdit.stroke}
               onChange={e=>setImageEdit(v=>({...v,stroke:e.target.value}))}/></label>
           </div>}
+          <div className="imageRevisionDimensions">
+            <button type="button" disabled={imageExportBusy||!chatId}
+              onClick={()=>queueImageStep()}>Add step to edit assembly</button>
+            <button type="button" disabled={imageExportBusy||imagePlan.chatId!==chatId||
+              imagePlan.imageRef!==imageViewer.imageRef||!imagePlan.steps.length}
+              onClick={()=>undoImageStep()}>Undo step</button>
+            <button type="button" disabled={imageExportBusy||imagePlan.chatId!==chatId||
+              imagePlan.imageRef!==imageViewer.imageRef||!imagePlan.redo.length}
+              onClick={()=>redoImageStep()}>Redo step</button>
+            <button type="button" disabled={imageExportBusy}
+              onClick={()=>setImagePlan({chatId,imageRef:imageViewer.imageRef,steps:[],redo:[]})}>
+              Clear assembly
+            </button>
+          </div>
+          {imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer.imageRef&&
+            imagePlan.steps.length>0&&<div aria-label="Staged immutable image edits">
+              <small>{imagePlan.steps.length} ordered operations ·
+                undo/redo changes the assembly, never the source.</small>
+              <ol>{imagePlan.steps.map((step,i)=><li key={i}>
+                {step.operation}{['crop','redact','pixelate','rectangle','resize'].includes(step.operation)?
+                  ' · '+step.width+' × '+step.height:''}
+              </li>)}</ol>
+            </div>}
           <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
             onClick={()=>void exportImageRevision()}>
             {imageExportBusy?'Awaiting native approval…':'Save new PNG revision…'}
