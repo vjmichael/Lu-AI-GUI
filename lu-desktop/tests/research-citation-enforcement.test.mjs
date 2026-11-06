@@ -33,7 +33,7 @@ test('citation audit denies model URLs, fake labels, unsupported quotations and 
   assert.match(citation,/CitationAuditError::UnsupportedQuotation/);
   assert.match(citation,/CitationAuditError::UnknownCitation/);
   assert.match(citation,/CitationAuditError::MissingCitation/);
-  assert.match(citation,/answer\.contains\("https:\/\/"\)/);
+  assert.match(citation,/lower\.contains\("https:\/\/"\)/);
   assert.match(citation,/sources\[\*n-1\]\.excerpt\.contains\(passage\)/);
   assert.match(browser,/audit_browser_research_answer\(&answer,&citation_sources\)/);
   assert.match(browser,/let appendix=render_observed_source_appendix\(&citation_sources\)/);
