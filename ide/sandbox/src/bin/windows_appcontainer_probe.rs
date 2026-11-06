@@ -343,6 +343,20 @@ mod windows {
         }
     }
 
+    fn terminate_unassigned_child(child: &Handle) -> io::Result<()> {
+        // A CREATE_SUSPENDED child rejected by Job assignment is NOT a Job
+        // member. TerminateJobObject alone would leave this orphan alive.
+        if unsafe { windows_sys::Win32::System::Threading::TerminateProcess(child.0, 103) } == 0 {
+            return Err(error("TerminateProcess unassigned AppContainer child"));
+        }
+        if unsafe { WaitForSingleObject(child.0, 5000) } != WAIT_OBJECT_0 {
+            return Err(io::Error::other(
+                "unassigned AppContainer process termination not verified",
+            ));
+        }
+        Ok(())
+    }
+
     fn run() -> io::Result<()> {
         let profile = profile()?;
         let folder = container_folder(profile.sid)?;
@@ -439,23 +453,25 @@ mod windows {
             return Err(error("CreateProcessW AppContainer"));
         }
         let child_handle = Handle::checked(proc.hProcess, "AppContainer child process")?;
-        let thread_handle = Handle::checked(proc.hThread, "AppContainer child thread")?;
+        let thread_handle = match Handle::checked(proc.hThread, "AppContainer child thread") {
+            Ok(value) => value,
+            Err(reason) => {
+                terminate_unassigned_child(&child_handle)?;
+                return Err(reason);
+            }
+        };
         let job = match job() {
             Ok(value) => value,
-            Err(error) => {
-                // No suspended process may survive a failed admission.
-                unsafe {
-                    windows_sys::Win32::System::Threading::TerminateProcess(child_handle.0, 103);
-                }
-                return Err(error);
+            Err(reason) => {
+                terminate_unassigned_child(&child_handle)?;
+                return Err(reason);
             }
         };
         // SAFETY: child is still CREATE_SUSPENDED.
         if unsafe { AssignProcessToJobObject(job.0, child_handle.0) } == 0 {
-            unsafe {
-                TerminateJobObject(job.0, 100);
-            }
-            return Err(error("AssignProcessToJobObject"));
+            let reason = error("AssignProcessToJobObject");
+            terminate_unassigned_child(&child_handle)?;
+            return Err(reason);
         }
         // SAFETY: original child thread already assigned to Job Object.
         if unsafe { ResumeThread(thread_handle.0) } == u32::MAX {
