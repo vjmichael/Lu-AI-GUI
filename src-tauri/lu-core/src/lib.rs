@@ -64,6 +64,7 @@ pub mod multimodal_saved_turn;
 pub mod native_archive_inspect;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
+pub mod native_archive_tree_tool;
 pub mod native_zip_extract_tool;
 pub mod native_iso9660;
 pub mod native_linux_archive;
