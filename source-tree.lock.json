@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9a5b37bc265a7e603cb2d2602325dc8cfc03f7d6",
+  "sourceCommitBeforeLock": "06512396620f182f972d542ad809629c74fa4d0f",
   "trackedFileCount": 461,
   "files": [
     {
@@ -677,7 +677,7 @@
     },
     {
       "path": "scripts/package-observe-capture-windows.ps1",
-      "blob": "06d5aecb2cc583c5023714c9593a003691a5b35a"
+      "blob": "e30baa12ce8fa22681b9620d0d429783de4d75d1"
     },
     {
       "path": "scripts/source-identity.mjs",
