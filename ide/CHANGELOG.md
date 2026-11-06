@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-06 — Wave E1 free language-server discovery and wire protocol (draft)
+- Added standalone host catalog of eight free open-source LSP providers across Rust, C/C++, Python, JS/TS, HTML, CSS and JSON, with fixed executable hints and license/upstream identity. Discovery cannot run a program.
+- Added bounded JSON-RPC stdio framing parser/encoder, strict length/JSON-RPC envelope checks and source-revision diagnostic contract; native Rust and frontend safety tests.
+- Exposed read-only `ide_list_language_servers` Tauri command and typed `lsp.catalog` capability schema without executable grant, project access or Lu bridge. Added cross-platform E1 acceptance workflow. Wave D native containment remains open; E1 does not launch servers.
+
 ## 2026-11-06 — D7D final OS acceptance matrix expansion (still draft)
 - Extended real Windows offline Cargo acceptance example for native protected-service mode, using authenticated service-release ACK rather than reading private evidence, and added a Windows 2025 full Cargo/forced cancellation workflow.
 - Added hostile service death test: approved owner detects lost SCM broker, kills the contained Job and refuses to certify a missing original Job on restart.

@@ -1,0 +1,46 @@
+name: IDE Wave E1 open-source LSP catalog and protocol safety
+
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/src-tauri/**'
+      - 'ide/app/tests/lsp_e1.test.mjs'
+      - '.github/workflows/ide-e1-lsp-foundation.yml'
+  push:
+    branches: ['ide/wave-e1-lsp-catalog-transport-20261106']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e1-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native E1 parser and static provider catalog tests
+        run: cargo test --manifest-path ide/host/Cargo.toml lsp::tests -- --nocapture
+      - name: Host integration regression
+        run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Verify Rust formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+      - name: Verify read-only Tauri catalog and non-execution boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          node --test ide/app/tests/lsp_e1.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: E1 native frontend contract failed' }
+          $source=Get-Content 'ide/host/src/lsp.rs' -Raw
+          $desktop=Get-Content 'ide/app/src-tauri/src/lib.rs' -Raw
+          if ($source -match 'Command::new|std::process::Command' -or
+              $desktop -match 'ide_start_language_server|ide_run_job|ide_execute_job') {
+            throw 'DENIED: native LSP executor exposed before Wave D acceptance'
+          }

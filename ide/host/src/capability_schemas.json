@@ -2853,6 +2853,94 @@
       "result": {
         "$ref": "#/$defs/IntentList"
       }
+    },
+    "lsp.catalog": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "languageIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "executableBasename": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "fixedArguments": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "maxItems": 8
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "upstream": {
+              "type": "string",
+              "format": "uri"
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "stdio"
+              ]
+            },
+            "lifecycle": {
+              "type": "string",
+              "enum": [
+                "catalog_only"
+              ]
+            },
+            "executableFromDesktop": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "languageIds",
+            "executableBasename",
+            "fixedArguments",
+            "license",
+            "upstream",
+            "transport",
+            "lifecycle",
+            "executableFromDesktop"
+          ]
+        }
+      }
     }
   }
 }

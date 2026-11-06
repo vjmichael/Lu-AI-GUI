@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave E1 — Free language-server catalog and framed protocol foundation (2026-11-06)
+
+- **Source:** `ide/wave-e1-lsp-catalog-transport-20261106`, stacked on D7D PR #63. E1 is a new source-only slice and intentionally does **not** close Wave D.
+- **Open-source language servers:** native host describes rust-analyzer, clangd, Pyright, Ruff, TypeScript Language Server, and VS Code-derived HTML/CSS/JSON servers. No automatic download, installation, PATH search, process launch, Lu IPC or project execution.
+- **Protocol:** bounded incremental LSP JSON-RPC 2.0 stdio frame parser and serializer, strict Content-Length, typed disk+unsaved-buffer diagnostic identity, and non-executable `lsp.catalog` native capability exposed read-only through `ide_list_language_servers`.
+- **Tests/CI:** Rust parser/identity regressions, JS command-boundary assertions, cross-platform E1 workflow added. Source commits only; actual native CI, installed desktop LSP features and server lifecycle acceptance **not yet passed**.
+- **Next:** E2 authenticated supervisor-controlled LSP lifecycle; completion/diagnostics/hover in the human editor; eventually LSP navigation/refactoring, build/test and DAP. Block worker launch on Wave D security acceptance. See `ide/docs/IDE_WAVE_E1_LSP_FOUNDATION.md`.
+
 ## Wave D verification extension — real protected Cargo and hostile service-loss (2026-11-06)
 
 - Added a third D7D native Windows CI job exercising the **actual** \`d7_windows_acceptance\` offline Cargo check and cancellation with \`protected-recovery-service\` and an independently installed SCM service. The app itself still exposes no Run button.

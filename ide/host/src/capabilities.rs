@@ -63,6 +63,15 @@ type CapabilityMeta = (
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
         capability!(
+            "lsp.catalog",
+            "ide_list_language_servers",
+            "Discover supported free language servers",
+            "Read a fixed open-source language-server catalog; no process or project code is executed.",
+            "read",
+            "IDE host available; no project trust grant or executable permission",
+            "versioned server IDs, language coverage, license and fixed launcher hints; execution disabled"
+        ),
+        capability!(
             "job.prepare",
             "ide_prepare_execution_intent",
             "Prepare a non-executable job request",
@@ -408,7 +417,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 30);
+        assert_eq!(catalog.capabilities.len(), 31);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();

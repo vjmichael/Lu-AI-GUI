@@ -306,6 +306,13 @@ async fn ide_list_execution_intents(
         .await.map_err(|_| "EXECUTION_LIST_UNAVAILABLE".to_owned())?
 }
 
+/// Read-only descriptions of known free/open-source LSP servers.
+/// No PATH search, installation, process spawn, worker grant or IPC occurs.
+#[tauri::command]
+async fn ide_list_language_servers() -> Vec<lu_ide_workspace::lsp::LanguageServerDescriptor> {
+    lu_ide_workspace::lsp::available_servers().to_vec()
+}
+
 /// List actual host-supported operations. Discovery is not authorization.
 #[tauri::command]
 async fn ide_list_capabilities() -> lu_ide_workspace::capabilities::CapabilityCatalog {
@@ -609,6 +616,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
+            ide_list_language_servers,
             ide_prepare_execution_intent,
             ide_decide_execution_intent,
             ide_list_execution_intents,
