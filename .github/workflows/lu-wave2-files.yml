@@ -147,3 +147,5 @@ jobs:
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib file_trash_desktop::tests -- --nocapture
       - name: Native durable reversible trash custody and receipt verification
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib trash_desktop::tests -- --nocapture
+      - name: Native restart-persistent operation history and ToolReply verification
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib wave2_recovery::tests -- --nocapture
