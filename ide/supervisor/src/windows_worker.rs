@@ -100,6 +100,11 @@ pub struct WindowsExecutionResult {
 }
 
 struct Handle(HANDLE);
+// A HANDLE is an owned kernel value. Moving it between trusted native worker
+// threads does not share ownership or grant additional access. E2 pipe
+// ownership moves once into a bounded writer thread.
+#[cfg(feature = "lsp-transport")]
+unsafe impl Send for Handle {}
 impl Handle {
     fn new(raw: HANDLE) -> Result<Self, SupervisorError> {
         if raw.is_null() { Err(denied()) } else { Ok(Self(raw)) }
