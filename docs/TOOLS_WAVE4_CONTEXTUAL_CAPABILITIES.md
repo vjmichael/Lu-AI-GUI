@@ -30,3 +30,9 @@ Vision/Image Workspace: route to genuinely **verified** native vision capability
 Browser/Research: preserve human-visible controls, explicit navigation/authorization, untrusted page content, and structured evidence; the current repository does **not** contain a complete native browser engine, so do not mark these implemented or invent one.
 
 Advanced GitHub operations belong to Lu IDE DLC, not the Core Git domain.
+
+## WAVE4-BACKGROUND-01 — source integration (native acceptance pending)
+
+Explicit human status questions in normal Send reuse the existing BackgroundProcess reconciliation and durable TaskStore. A new chat-scoped SQL query filters before its limit; only host-owned task IDs, state enums and recorded percentages enter a marked GGUF context snapshot. No worker-authored text, private paths, other chat data, scheduler, new execution tool, process cancellation or authority is introduced. Native and desktop tests were added. Installed Windows GGUF and Linux/Windows CI remain pending.
+
+Browser, Research, Environment, Vision and Image Workspace remain distinct open Wave 4 domains.

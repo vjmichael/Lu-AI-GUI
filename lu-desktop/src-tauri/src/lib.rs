@@ -5,6 +5,7 @@ mod chat_store;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
+mod background_context;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -1203,6 +1204,17 @@ async fn generate_internal(
             }
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
+            }
+            // Wave 4: status context is a chat-scoped host observation.
+            // No model polling, new worker, cancellation or process grant.
+            if origin==GenerationOrigin::Human&&images.is_empty()&&
+                background_context::explicit_background_status_request(&prompt){
+                state.background_processes.poll()
+                    .map_err(|_|"Background task reconciliation unavailable")?;
+                let rows=state.background_tasks.dashboard_for_workspace(&chat_id,32)
+                    .map_err(|_|"Scoped background status unavailable")?;
+                model_prompt.push_str("\n\n");
+                model_prompt.push_str(&background_context::snapshot(&rows,&chat_id));
             }
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {

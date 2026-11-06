@@ -560,6 +560,44 @@ impl TaskStore {
         Ok(result)
     }
 
+    /// Host-only chat-scoped status: filter before limiting, not after.
+    pub fn dashboard_for_workspace(&self,workspace_id:&str,limit:usize)
+        ->Result<Vec<TaskDashboardEntry>,TaskStoreError>{
+        if !workspace_id.starts_with("c-")||workspace_id.len()>128||
+            !workspace_id.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'||b==b'_')||
+            limit==0||limit>100{
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT task_id,workspace_id,state,progress,detail,last_heartbeat,updated_at
+             FROM lu_tasks WHERE workspace_id=?1
+             ORDER BY CASE state
+               WHEN 'RUNNING' THEN 0 WHEN 'PENDING' THEN 1
+               WHEN 'PAUSED' THEN 2 WHEN 'INTERRUPTED' THEN 3
+               WHEN 'FAILED' THEN 4 WHEN 'CANCELLED' THEN 5
+               WHEN 'TIMED_OUT' THEN 6 ELSE 7 END,
+               updated_at DESC,task_id ASC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![workspace_id,limit as i64],|row|{
+            Ok((row.get::<_,String>(0)?,row.get::<_,Option<String>>(1)?,
+                row.get::<_,String>(2)?,row.get::<_,u8>(3)?,
+                row.get::<_,String>(4)?,row.get::<_,Option<String>>(5)?,
+                row.get::<_,String>(6)?))
+        })?;
+        let mut result=Vec::new();
+        for row in rows{
+            let (task_id,scope,state,progress,detail,last_heartbeat,updated_at)=row?;
+            result.push(TaskDashboardEntry{
+                task_id,workspace_id:scope,
+                state:TaskState::parse(&state).ok_or(TaskStoreError::InvalidStoredState)?,
+                progress,detail:detail.chars().take(2048).collect(),
+                last_heartbeat,updated_at,
+            });
+        }
+        Ok(result)
+    }
+
     pub fn get(&self, task_id: &str) -> Result<Option<TaskRecord>, TaskStoreError> {
         let connection = self
             .connection
@@ -738,6 +776,21 @@ mod dashboard_tests{
         assert!(!visible.contains("/secret/output"));
         assert!(store.dashboard(0).is_err());
         assert!(store.dashboard(201).is_err());
+    }
+    #[test]
+    fn chat_scoped_query_filters_before_limit(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        for n in 0..30{
+            let id=format!("foreign-{n}");
+            store.create(&id,Some("c-other"),None).unwrap();
+            store.start(&id).unwrap();
+        }
+        store.create("owned",Some("c-owner"),Some("/secret")).unwrap();
+        store.start("owned").unwrap();
+        assert_eq!(store.dashboard_for_workspace("c-owner",1).unwrap()[0].task_id,"owned");
+        assert_eq!(store.dashboard_for_workspace("c-other",2).unwrap().len(),2);
+        assert!(store.dashboard_for_workspace("local-media",2).is_err());
+        assert!(store.dashboard_for_workspace("c-owner",0).is_err());
     }
     #[test]
     fn startup_dashboard_never_presents_orphan_running_process_as_live(){

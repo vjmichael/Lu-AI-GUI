@@ -1,0 +1,89 @@
+name: Lu Wave 4 Contextual Tools
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'lu-desktop/**'
+      - 'docs/TOOLS_WAVE4_CONTEXTUAL_CAPABILITIES.md'
+      - '.github/workflows/lu-wave4-contextual-tools.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+      - run: grep -Fq 'WorkspaceReadTurnSession::new_git(' lu-desktop/src-tauri/src/workspace_desktop.rs
+      - run: grep -Fq 'dashboard_for_workspace(&chat_id,32)' lu-desktop/src-tauri/src/lib.rs
+  core-linux:
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+  core-windows:
+    needs: source
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - shell: pwsh
+        run: |
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+  desktop-ui:
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
+          npm run check
+          npm run test:ui
+  desktop-windows:
+    needs: source
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
+      - run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib workspace_desktop::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib background_context::tests
