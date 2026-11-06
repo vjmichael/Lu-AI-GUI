@@ -1,0 +1,288 @@
+//! WAVE2: bounded new-directory archive tree extraction. No existing folder
+//! is overwritten. All entry payloads are validated before filesystem writes.
+//! Non-atomic multi-file commit is journal-owned and leaves an INCOMPLETE
+//! directory after interruption; it must be observed, never auto-replayed.
+//! Reject all symlinks, devices, hardlinks, traversal, exotic ZIP methods,
+//! archive-file names colliding with the Lu completion marker.
+use std::{
+    collections::{BTreeSet,BTreeMap},
+    io::{Read,Write},
+};
+use cap_std::fs::{Dir,OpenOptions};
+use sha2::{Digest,Sha256};
+use zip::{ZipArchive,CompressionMethod};
+use crate::native_linux_archive::{
+    linux_archive_tree_members,LinuxArchiveError,
+};
+const MAX_ARCHIVE_BYTES:u64=128*1024*1024;
+const MAX_FILE:usize=64*1024*1024;
+const MAX_TOTAL:usize=256*1024*1024;
+const MAX_ENTRIES:usize=4096;
+const MAX_DEPTH:usize=16;
+const MARKER:&str=".lu-extract-complete";
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub enum TreeExtractError{
+    InvalidName,InvalidArchive,UnsafeMember,DuplicateMember,UnsupportedMethod,
+    TooLarge,TargetExists,ManifestChanged,MissingSource,
+    PublishedNeedsReconciliation,Io(String),
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TreeManifestEntry{
+    pub path:String,pub is_directory:bool,pub uncompressed_bytes:u64,
+    pub sha256:String,
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TreeManifest {
+    pub entries:Vec<TreeManifestEntry>,
+    pub file_count:usize,
+    pub total_bytes:u64,
+    pub sha256:String,
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TreeReceipt{
+    pub destination_folder:String,pub files_extracted:usize,
+    pub bytes_extracted:u64,pub manifest_sha256:String,
+}
+struct Node{path:String,is_dir:bool,bytes:Vec<u8>}
+fn io(e:std::io::Error)->TreeExtractError{TreeExtractError::Io(e.to_string())}
+fn safe_base(s:&str)->bool{
+    !s.is_empty()&&s.len()<=200&&s!="."&&s!=".."
+        &&!s.starts_with(".lu-stage-")&&!s.ends_with('.')&&!s.ends_with(' ')
+        &&!s.chars().any(|c|c.is_control()||matches!(c,'\\'|'/'|':'))
+}
+fn safe_part(s:&str)->bool{
+    !s.is_empty()&&s.len()<=1024&&!s.starts_with('/')
+        &&!s.chars().any(|c|c.is_control()||matches!(c,'\\'|':'))
+        &&s.trim_end_matches('/').split('/').count()<=MAX_DEPTH
+        &&s.trim_end_matches('/').split('/').all(|p|
+            !p.is_empty()&&p!="."&&p!=".."&&p.len()<=200
+            &&!p.starts_with(".lu-")&&!p.starts_with('-')
+            &&!p.ends_with('.')&&!p.ends_with(' ')
+            &&!p.eq_ignore_ascii_case(".git"))
+}
+fn valid_hash(s:&str)->bool{
+    s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
+}
+fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
+    if !safe_base(name)||!name.to_ascii_lowercase().ends_with(".zip"){
+        return Err(TreeExtractError::InvalidName)
+    }
+    let stat=root.symlink_metadata(name)
+        .map_err(|_|TreeExtractError::MissingSource)?;
+    if !stat.is_file()||stat.file_type().is_symlink()||stat.len()>MAX_ARCHIVE_BYTES{
+        return Err(TreeExtractError::InvalidArchive)
+    }
+    #[cfg(windows)]{
+        use std::os::windows::fs::MetadataExt;
+        if stat.file_attributes()&0x400!=0{return Err(TreeExtractError::InvalidArchive)}
+    }
+    let file=root.open(name).map_err(io)?;
+    let mut zip=ZipArchive::new(file).map_err(|_|TreeExtractError::InvalidArchive)?;
+    if zip.len()>MAX_ENTRIES||zip.has_overlapping_entries()
+        .map_err(|_|TreeExtractError::InvalidArchive)?
+        ||zip.validate_header_consistency().is_err(){
+        return Err(TreeExtractError::InvalidArchive)
+    }
+    let mut result=Vec::with_capacity(zip.len());
+    let mut total=0usize;
+    for index in 0..zip.len(){
+        let mut entry=zip.by_index(index).map_err(|_|TreeExtractError::InvalidArchive)?;
+        let raw=entry.name().trim_end_matches('/').to_owned();
+        if !safe_part(&raw)||entry.is_symlink()||entry.encrypted(){
+            return Err(TreeExtractError::UnsafeMember)
+        }
+        let mode=entry.unix_mode().unwrap_or(0)&0o170000;
+        let directory=entry.is_dir();
+        if mode!=0&&mode!=0o100000&&mode!=0o040000 ||
+            directory&&mode==0o100000 ||!directory&&mode==0o040000 {
+            return Err(TreeExtractError::UnsafeMember)
+        }
+        if !matches!(entry.compression(),CompressionMethod::Stored|CompressionMethod::Deflated){
+            return Err(TreeExtractError::UnsupportedMethod)
+        }
+        if entry.size() as usize>MAX_FILE
+            ||(entry.compressed_size()==0&&entry.size()>0)
+            ||(entry.compressed_size()>0&&entry.size()/entry.compressed_size()>1000){
+            return Err(TreeExtractError::TooLarge)
+        }
+        let mut bytes=Vec::new();
+        if !directory{
+            (&mut entry).take(MAX_FILE as u64+1).read_to_end(&mut bytes)
+                .map_err(|_|TreeExtractError::InvalidArchive)?;
+            if bytes.len()>MAX_FILE||bytes.len() as u64!=entry.size(){
+                return Err(TreeExtractError::InvalidArchive)
+            }
+            let mut crc=crc32fast::Hasher::new();
+            crc.update(&bytes);
+            if crc.finalize()!=entry.crc32(){
+                return Err(TreeExtractError::InvalidArchive)
+            }
+        }else if entry.size()>0{return Err(TreeExtractError::UnsafeMember)}
+        total=total.checked_add(bytes.len()).ok_or(TreeExtractError::TooLarge)?;
+        if total>MAX_TOTAL{return Err(TreeExtractError::TooLarge)}
+        result.push(Node{path:raw,is_dir:directory,bytes});
+    }
+    Ok(result)
+}
+fn package_linux(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
+    linux_archive_tree_members(root,name).map_err(|e|match e{
+        LinuxArchiveError::TooLarge=>TreeExtractError::TooLarge,
+        LinuxArchiveError::UnsafeEntry|LinuxArchiveError::UnsupportedEntry|
+        LinuxArchiveError::DuplicateEntry=>TreeExtractError::UnsafeMember,
+        _=>TreeExtractError::InvalidArchive,
+    }).map(|items|items.into_iter().map(|(path,is_dir,bytes)|
+        Node{path,is_dir,bytes}).collect())
+}
+fn manifest_and_nodes(root:&Dir,name:&str)->Result<(TreeManifest,Vec<Node>),TreeExtractError>{
+    let items=if name.to_ascii_lowercase().ends_with(".zip"){
+        package_zip(root,name)?
+    }else{
+        package_linux(root,name)?
+    };
+    if items.is_empty()||items.len()>MAX_ENTRIES{return Err(TreeExtractError::InvalidArchive)}
+    let mut names=BTreeSet::new();
+    let mut types=BTreeMap::new();
+    let mut count=0usize;
+    let mut total=0u64;
+    let mut entries=Vec::new();
+    for node in &items{
+        if !safe_part(&node.path)||!names.insert(node.path.to_lowercase()){
+            return Err(TreeExtractError::DuplicateMember)
+        }
+        if !node.is_dir{
+            count+=1;
+            total=total.checked_add(node.bytes.len() as u64)
+                .ok_or(TreeExtractError::TooLarge)?;
+        }
+        types.insert(node.path.to_lowercase(),node.is_dir);
+        entries.push(TreeManifestEntry{
+            path:node.path.clone(),is_directory:node.is_dir,
+            uncompressed_bytes:node.bytes.len() as u64,
+            sha256:if node.is_dir{String::new()}else{format!("{:x}",Sha256::digest(&node.bytes))},
+        });
+    }
+    if total>MAX_TOTAL as u64{return Err(TreeExtractError::TooLarge)}
+    for node in &items{
+        let mut prefix=String::new();
+        let parts:Vec<_>=node.path.split('/').collect();
+        for component in &parts[..parts.len().saturating_sub(1)]{
+            if !prefix.is_empty(){prefix.push('/')}
+            prefix.push_str(component);
+            if types.get(&prefix.to_lowercase())==Some(&false){
+                return Err(TreeExtractError::UnsafeMember)
+            }
+        }
+    }
+    // Domain-separated canonical manifest digest of the entire exact tree.
+    entries.sort_by(|a,b|a.path.cmp(&b.path));
+    let mut hasher=Sha256::new();
+    hasher.update(b"LU-ARCHIVE-TREE-MANIFEST-v1");
+    for entry in &entries{
+        for field in [
+            entry.path.as_bytes(),
+            if entry.is_directory{b"D".as_slice()}else{b"F".as_slice()},
+            entry.sha256.as_bytes(),
+        ]{
+            hasher.update((field.len() as u64).to_le_bytes());
+            hasher.update(field);
+        }
+        hasher.update(entry.uncompressed_bytes.to_le_bytes());
+    }
+    let digest=format!("{:x}",hasher.finalize());
+    Ok((TreeManifest{
+        entries,file_count:count,total_bytes:total,sha256:digest,
+    },items))
+}
+/// Read-only full-data inspection with actual CRC32/expanded data SHA hashes.
+pub fn preview_archive_tree(
+    root:&Dir,source_name:&str
+)->Result<TreeManifest,TreeExtractError>{
+    manifest_and_nodes(root,source_name).map(|(manifest,_)|manifest)
+}
+fn open_or_create_child(current:&Dir,name:&str)->Result<Dir,TreeExtractError>{
+    if !safe_base(name){return Err(TreeExtractError::UnsafeMember)}
+    match current.create_dir(name){
+        Ok(())=>{},
+        Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>{},
+        Err(e)=>return Err(io(e)),
+    }
+    let meta=current.symlink_metadata(name).map_err(io)?;
+    if !meta.is_dir()||meta.file_type().is_symlink(){
+        return Err(TreeExtractError::UnsafeMember)
+    }
+    #[cfg(windows)]{
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes()&0x400!=0{return Err(TreeExtractError::UnsafeMember)}
+    }
+    current.open_dir(name).map_err(io)
+}
+fn publish_node(root:&Dir,entry:&Node)->Result<(),TreeExtractError>{
+    let parts:Vec<&str>=entry.path.split('/').collect();
+    let mut current=root.try_clone().map_err(io)?;
+    for component in &parts[..parts.len()-1]{
+        current=open_or_create_child(&current,component)?;
+    }
+    let name=parts[parts.len()-1];
+    if entry.is_dir{
+        let _=open_or_create_child(&current,name)?;
+    }else{
+        let mut opts=OpenOptions::new();
+        opts.create_new(true).write(true);
+        let mut f=current.open_with(name,&opts).map_err(io)?;
+        f.write_all(&entry.bytes).map_err(io)?;
+        f.sync_all().map_err(io)?;
+    }
+    Ok(())
+}
+/// Strict no-clobber new-directory publication. If any write fails AFTER
+/// destination folder creation, return UNCERTAIN and retain partial contents.
+pub fn extract_archive_tree_new(
+    source:&Dir,source_name:&str,destination_parent:&Dir,new_folder:&str,
+    approved_sha256:&str,
+)->Result<TreeReceipt,TreeExtractError>{
+    if !safe_base(new_folder)||!valid_hash(approved_sha256){
+        return Err(TreeExtractError::InvalidName)
+    }
+    let (manifest,mut nodes)=manifest_and_nodes(source,source_name)?;
+    if manifest.sha256!=approved_sha256{return Err(TreeExtractError::ManifestChanged)}
+    let root=destination_parent.create_dir(new_folder).map_err(|e|
+        if e.kind()==std::io::ErrorKind::AlreadyExists{
+            TreeExtractError::TargetExists
+        }else{io(e)}
+    );
+    root?;
+    let result=(||->Result<(),TreeExtractError>{
+        let folder=destination_parent.open_dir(new_folder).map_err(io)?;
+        // Parent-first directories; files after full-tree preflight.
+        nodes.sort_by_key(|n|(if n.is_dir{0}else{1},n.path.matches('/').count()));
+        for node in &nodes{publish_node(&folder,node)?}
+        let mut opts=OpenOptions::new();
+        opts.create_new(true).write(true);
+        let mut marker=folder.open_with(MARKER,&opts).map_err(io)?;
+        marker.write_all(manifest.sha256.as_bytes()).map_err(io)?;
+        marker.sync_all().map_err(io)?;
+        Ok(())
+    })();
+    if result.is_err(){return Err(TreeExtractError::PublishedNeedsReconciliation)}
+    Ok(TreeReceipt{
+        destination_folder:new_folder.into(),
+        files_extracted:manifest.file_count,
+        bytes_extracted:manifest.total_bytes,
+        manifest_sha256:manifest.sha256,
+    })
+}
+/// Post-crash read-only observation. A completion marker is NOT sufficient
+/// by itself; the trusted host must rehash files and compare against the exact
+/// approved manifest before declaring a recovered effect successful.
+pub fn observe_tree_completion(
+    parent:&Dir,folder_name:&str,approved_sha256:&str,
+)->Result<bool,TreeExtractError>{
+    if !safe_base(folder_name)||!valid_hash(approved_sha256){
+        return Err(TreeExtractError::InvalidName)
+    }
+    let folder=parent.open_dir(folder_name).map_err(io)?;
+    let mut bytes=String::new();
+    let f=folder.open(MARKER).map_err(io)?;
+    f.take(65).read_to_string(&mut bytes).map_err(io)?;
+    Ok(bytes==approved_sha256)
+}
