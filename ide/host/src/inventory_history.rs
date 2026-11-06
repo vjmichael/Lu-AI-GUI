@@ -101,7 +101,10 @@ impl InventorySnapshots {
                 return Err(SnapshotError::Corrupt);
             }
         }
-        Ok(Self { path, lock: Mutex::new(()) })
+        Ok(Self {
+            path,
+            lock: Mutex::new(()),
+        })
     }
 
     fn read(&self) -> Result<Vec<InventoryBaseline>, SnapshotError> {
@@ -117,15 +120,18 @@ impl InventorySnapshots {
             return Err(SnapshotError::TooLarge);
         }
         let mut bytes = Vec::new();
-        File::open(&self.path).map_err(|_| SnapshotError::Unavailable)?
-            .take(MAX_BYTES + 1).read_to_end(&mut bytes)
+        File::open(&self.path)
+            .map_err(|_| SnapshotError::Unavailable)?
+            .take(MAX_BYTES + 1)
+            .read_to_end(&mut bytes)
             .map_err(|_| SnapshotError::Unavailable)?;
         if bytes.len() as u64 > MAX_BYTES {
             return Err(SnapshotError::TooLarge);
         }
         let doc: SnapshotFile =
             serde_json::from_slice(&bytes).map_err(|_| SnapshotError::Corrupt)?;
-        if doc.schema_version != 1 || doc.baselines.len() > MAX_BASELINES
+        if doc.schema_version != 1
+            || doc.baselines.len() > MAX_BASELINES
             || doc.baselines.iter().any(|b| b.artifacts.len() > 80)
         {
             return Err(SnapshotError::Corrupt);
@@ -135,18 +141,27 @@ impl InventorySnapshots {
 
     fn persist(&self, baselines: Vec<InventoryBaseline>) -> Result<(), SnapshotError> {
         let data = serde_json::to_vec(&SnapshotFile {
-            schema_version: 1, baselines,
-        }).map_err(|_| SnapshotError::Unavailable)?;
+            schema_version: 1,
+            baselines,
+        })
+        .map_err(|_| SnapshotError::Unavailable)?;
         if data.len() as u64 > MAX_BYTES {
             return Err(SnapshotError::TooLarge);
         }
         let parent = self.path.parent().ok_or(SnapshotError::Unavailable)?;
         fs::create_dir_all(parent).map_err(|_| SnapshotError::Unavailable)?;
-        let tmp = parent.join(format!(".lu-ide-evidence-{:032x}.tmp", rand::random::<u128>()));
+        let tmp = parent.join(format!(
+            ".lu-ide-evidence-{:032x}.tmp",
+            rand::random::<u128>()
+        ));
         let result = (|| {
-            let mut file = OpenOptions::new().write(true).create_new(true)
-                .open(&tmp).map_err(|_| SnapshotError::Unavailable)?;
-            file.write_all(&data).map_err(|_| SnapshotError::Unavailable)?;
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp)
+                .map_err(|_| SnapshotError::Unavailable)?;
+            file.write_all(&data)
+                .map_err(|_| SnapshotError::Unavailable)?;
             file.sync_all().map_err(|_| SnapshotError::Unavailable)?;
             fs::rename(&tmp, &self.path).map_err(|_| SnapshotError::Unavailable)?;
             Ok(())
@@ -158,32 +173,43 @@ impl InventorySnapshots {
     }
 
     /// Store exact observed hashes and locations; never claim usability.
-    pub fn capture(&self, registry: &IdeWorkspaceRegistry, project_id: &str)
-        -> Result<InventoryBaseline, SnapshotError>
-    {
-        let inventory = registry.inspect_project_evidence(project_id)
+    pub fn capture(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+    ) -> Result<InventoryBaseline, SnapshotError> {
+        let inventory = registry
+            .inspect_project_evidence(project_id)
             .map_err(|_| SnapshotError::ProjectUnavailable)?;
         if !inventory.discovery_complete {
             return Err(SnapshotError::Incomplete);
         }
         let git = registry.inspect_git_worktree(project_id);
         let observed_unix_seconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH).map_err(|_| SnapshotError::Unavailable)?
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| SnapshotError::Unavailable)?
             .as_secs();
         let baseline = InventoryBaseline {
             project_id: project_id.to_owned(),
             observed_unix_seconds,
             scope: inventory.scope.to_owned(),
-            artifacts: inventory.files.into_iter().map(|f| StoredArtifact {
-                relative_path: f.relative_path,
-                size_bytes: f.size_bytes,
-                sha256: f.sha256,
-                digest_status: f.digest_status.to_owned(),
-            }).collect(),
+            artifacts: inventory
+                .files
+                .into_iter()
+                .map(|f| StoredArtifact {
+                    relative_path: f.relative_path,
+                    size_bytes: f.size_bytes,
+                    sha256: f.sha256,
+                    digest_status: f.digest_status.to_owned(),
+                })
+                .collect(),
             local_head: git.local_head,
             local_tracking_head: git.upstream_head,
-            git_worktree_state: if git.worktree == "not_verified" { None }
-                else { Some(git.worktree.to_owned()) },
+            git_worktree_state: if git.worktree == "not_verified" {
+                None
+            } else {
+                Some(git.worktree.to_owned())
+            },
         };
         let _guard = self.lock.lock().map_err(|_| SnapshotError::Unavailable)?;
         let mut baselines = self.read()?;
@@ -198,16 +224,25 @@ impl InventorySnapshots {
 
     /// Compare an earlier host snapshot with currently inspected bytes. An
     /// incomplete scan never permits a false MISSING claim.
-    pub fn compare(&self, registry: &IdeWorkspaceRegistry, project_id: &str)
-        -> Result<InventoryComparison, SnapshotError>
-    {
-        let current = registry.inspect_project_evidence(project_id)
+    pub fn compare(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+    ) -> Result<InventoryComparison, SnapshotError> {
+        let current = registry
+            .inspect_project_evidence(project_id)
             .map_err(|_| SnapshotError::ProjectUnavailable)?;
         let git = registry.inspect_git_worktree(project_id);
         let _guard = self.lock.lock().map_err(|_| SnapshotError::Unavailable)?;
         let recorded = self.read()?;
-        let baseline_count = recorded.iter().filter(|b| b.project_id == project_id).count();
-        let prior = recorded.into_iter().rev().find(|b| b.project_id == project_id);
+        let baseline_count = recorded
+            .iter()
+            .filter(|b| b.project_id == project_id)
+            .count();
+        let prior = recorded
+            .into_iter()
+            .rev()
+            .find(|b| b.project_id == project_id);
         let mut entries = Vec::new();
         let mut git_state = "baseline_missing";
         let mut worktree_state = "baseline_missing";
@@ -226,17 +261,20 @@ impl InventorySnapshots {
                 (Some("dirty"), "dirty") => "both_dirty_not_equivalent",
                 _ => "unverifiable",
             };
-            let current_files: BTreeMap<_, _> = current.files.iter()
-                .map(|f| (f.relative_path.as_str(), f)).collect();
+            let current_files: BTreeMap<_, _> = current
+                .files
+                .iter()
+                .map(|f| (f.relative_path.as_str(), f))
+                .collect();
             for old in &baseline.artifacts {
                 let found = current_files.get(old.relative_path.as_str());
                 let status = match found {
                     None if current.discovery_complete => "missing_in_scanned_scope",
                     None => "unverifiable",
-                    Some(file) if old.sha256.is_some()
-                        && old.sha256 == file.sha256 => "matched_bytes",
-                    Some(file) if old.sha256.is_some()
-                        && file.sha256.is_some() => "changed_bytes",
+                    Some(file) if old.sha256.is_some() && old.sha256 == file.sha256 => {
+                        "matched_bytes"
+                    }
+                    Some(file) if old.sha256.is_some() && file.sha256.is_some() => "changed_bytes",
                     Some(file) if old.size_bytes != file.size_bytes => "changed_size_only",
                     _ => "present_unverifiable",
                 };
@@ -248,8 +286,10 @@ impl InventorySnapshots {
                 });
             }
             for file in &current.files {
-                if !baseline.artifacts.iter().any(|old|
-                    old.relative_path == file.relative_path)
+                if !baseline
+                    .artifacts
+                    .iter()
+                    .any(|old| old.relative_path == file.relative_path)
                 {
                     entries.push(ArtifactComparison {
                         relative_path: file.relative_path.clone(),
