@@ -34,8 +34,8 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE,
-        INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE,
+        WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Security::{
         Authorization::ConvertSidToStringSidW,
@@ -696,7 +696,9 @@ fn command_for(
 /// inside the worker's already-contained output. Kernel HANDLE_LIST blocks
 /// every unrelated native host handle, including journal and credentials.
 fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorError> {
-    if !clean_meta(output)?.is_dir() { return Err(denied()); }
+    if !clean_meta(output)?.is_dir() {
+        return Err(denied());
+    }
     let mut sec = SECURITY_ATTRIBUTES {
         nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
         lpSecurityDescriptor: ptr::null_mut(),
@@ -704,19 +706,29 @@ fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorErr
     };
     let nul = unsafe {
         CreateFileW(
-            wstr("NUL").as_ptr(), GENERIC_READ_ACCESS,
+            wstr("NUL").as_ptr(),
+            GENERIC_READ_ACCESS,
             FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
-            &mut sec, OPEN_EXISTING, 0, ptr::null_mut(),
+            &mut sec,
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
         )
     };
-    if nul.is_null() || nul == INVALID_HANDLE_VALUE { return Err(denied()); }
+    if nul.is_null() || nul == INVALID_HANDLE_VALUE {
+        return Err(denied());
+    }
     let nul = Handle::new(nul)?;
     let file = output.join("cargo-diagnostics.log");
     let diagnostics = unsafe {
         CreateFileW(
-            wide(file.as_os_str()).as_ptr(), GENERIC_WRITE_ACCESS,
-            0, &mut sec, CREATE_NEW,
-            FILE_ATTRIBUTE_NORMAL_VALUE, ptr::null_mut(),
+            wide(file.as_os_str()).as_ptr(),
+            GENERIC_WRITE_ACCESS,
+            0,
+            &mut sec,
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL_VALUE,
+            ptr::null_mut(),
         )
     };
     if diagnostics.is_null() || diagnostics == INVALID_HANDLE_VALUE {
@@ -775,11 +787,18 @@ fn launch_appcontainer(
     let inherited = [stdin_nul.0, diagnostic_log.0];
     if unsafe {
         UpdateProcThreadAttribute(
-            attrs.raw(), 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
-            inherited.as_ptr().cast(), size_of::<[HANDLE; 2]>(),
-            ptr::null_mut(), ptr::null(),
+            attrs.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
+            inherited.as_ptr().cast(),
+            size_of::<[HANDLE; 2]>(),
+            ptr::null_mut(),
+            ptr::null(),
         )
-    } == 0 { return Err(denied()); }
+    } == 0
+    {
+        return Err(denied());
+    }
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -1000,21 +1019,28 @@ where
     acceptance_trace("protected_broker_fsync_ready");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     acceptance_trace("one_use_grant_consumed");
-    let (process, thread) =
-        match launch_appcontainer(&profile, &job, &exe, &mut command, &workspace, &env, &output) {
-            Ok(value) => value,
-            Err(reason) => {
-                // An OS failure that cannot prove the suspended process was
-                // reaped is quarantined immediately. Do not falsely certify
-                // "no child executed" or permit a second job in this session.
-                if reason == SupervisorError::Quarantined {
-                    let _ = supervisor.native_quarantine_after_error(job_id);
-                } else {
-                    supervisor.native_deny_before_start(job_id, true)?;
-                }
-                return Err(reason);
+    let (process, thread) = match launch_appcontainer(
+        &profile,
+        &job,
+        &exe,
+        &mut command,
+        &workspace,
+        &env,
+        &output,
+    ) {
+        Ok(value) => value,
+        Err(reason) => {
+            // An OS failure that cannot prove the suspended process was
+            // reaped is quarantined immediately. Do not falsely certify
+            // "no child executed" or permit a second job in this session.
+            if reason == SupervisorError::Quarantined {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+            } else {
+                supervisor.native_deny_before_start(job_id, true)?;
             }
-        };
+            return Err(reason);
+        }
+    };
     // The separate broker must remain live across the suspended child
     // admission. A dead broker cannot be waved through as containment.
     acceptance_trace("suspended_appcontainer_attested");
