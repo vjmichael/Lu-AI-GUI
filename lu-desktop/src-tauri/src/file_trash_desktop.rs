@@ -23,6 +23,13 @@ fn safe_name(s:&str)->bool{!s.is_empty()&&s.len()<=240&&s!="."&&s!=".."
     &&!s.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':'))}
 fn id_ok(s:&str)->bool{(16..=128).contains(&s.len())&&s.bytes().all(|b|
     b.is_ascii_alphanumeric()||b==b'-'||b==b'_')}
+fn absent(root:&Dir,name:&str)->Result<bool,String>{
+    match root.symlink_metadata(name){
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(true),
+        Ok(_)=>Ok(false),
+        Err(_)=>Err("Cannot safely determine whether file name is occupied".into()),
+    }
+}
 fn pinned_folder(path:&Path)->Result<Arc<Dir>,String>{
     let meta=fs::symlink_metadata(path).map_err(|_|"Parent unavailable")?;
     if !meta.is_dir()||meta.file_type().is_symlink(){return Err("Linked parent rejected".into())}
@@ -130,7 +137,7 @@ impl RestoreQueue{
         let (bytes,sha)=source_digest(&root,&record.trash_entry)
             .map_err(|_|"Trashed file missing or unsafe")?;
         if bytes!=record.bytes||sha!=record.sha256||
-            root.symlink_metadata(&record.original).is_ok(){
+            !absent(&root,&record.original)?{
             return Err("Original name occupied or trashed contents changed".into())
         }
         let item=PinnedRestore{chat:chat.into(),id:id.into(),effect_id:effect_id.into(),
@@ -226,7 +233,7 @@ pub async fn apply_trash(
         let (bytes,sha)=source_digest(&review.root,&record.trash_entry)
             .map_err(|_|"Published trash entry cannot be verified")?;
         if bytes!=record.bytes||sha!=record.sha256||
-            review.root.symlink_metadata(&record.original).is_ok(){
+            !absent(&review.root,&record.original)?{
             return Err("Physical trash state does not match approved receipt".into())
         }
         ledger.confirm_trash(&record.id,chat,effects)
@@ -263,7 +270,7 @@ pub async fn apply_restore(
         let (bytes,sha)=source_digest(&review.root,&record.original)
             .map_err(|_|"Restored file cannot be rehashed")?;
         if bytes!=record.bytes||sha!=record.sha256||
-            review.root.symlink_metadata(&record.trash_entry).is_ok(){
+            !absent(&review.root,&record.trash_entry)?{
             return Err("Physical restored file differs from custody".into())
         }
         ledger.confirm_restore(&record.id,chat,effects)
@@ -289,7 +296,7 @@ pub fn history(chats:&ChatStore,ledger:&TrashCustodyLedger,
                 if let Ok(root)=pinned_folder(Path::new(&record.parent)){
                     if let Ok((bytes,sha))=source_digest(&root,&record.trash_entry){
                         if bytes==record.bytes&&sha==record.sha256&&
-                            root.symlink_metadata(&record.original).is_err(){
+                            absent(&root,&record.original).unwrap_or(false){
                             restorable=true;observation="TRASH_BYTES_MATCH_JOURNAL".into();
                         }else{observation="TRASH_CHANGED_OR_ORIGINAL_PRESENT".into();}
                     }
