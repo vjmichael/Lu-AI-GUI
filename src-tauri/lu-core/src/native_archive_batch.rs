@@ -16,6 +16,8 @@ use std::{
 };
 const MAX_ARCHIVES:usize=8;
 const MAX_GROUP_BYTES:u64=512*1024*1024;
+const MAX_GROUP_ENTRIES:usize=4096;
+const MAX_APPROVAL_MANIFEST_BYTES:usize=900_000;
 const MARKER:&str=".lu-batch-complete";
 
 pub struct BatchArchiveSource<'a>{
@@ -79,7 +81,13 @@ pub fn verify_archive_batch_plan(plan:&ArchiveBatchManifest)->bool{
     let mut names=BTreeSet::new();
     let mut files=0usize;
     let mut bytes=0u64;
+    let mut entries=0usize;
     for item in &plan.items{
+        let Some(next)=entries.checked_add(item.manifest.entries.len())else{
+            return false;
+        };
+        entries=next;
+        if entries>MAX_GROUP_ENTRIES{return false;}
         if !flat(&item.source_name)||!flat(&item.target_folder)
             ||!names.insert(item.target_folder.to_ascii_lowercase())
             ||!verify_tree_manifest(&item.manifest) {
@@ -123,6 +131,8 @@ pub fn preview_archive_batch(
     let sha256=hash_plan(&items);
     let plan=ArchiveBatchManifest{items,total_files,total_bytes,sha256};
     if !verify_archive_batch_plan(&plan){return Err(TreeExtractError::InvalidArchive);}
+    let stored=serde_json::to_vec(&plan).map_err(|_|TreeExtractError::InvalidArchive)?;
+    if stored.len()>MAX_APPROVAL_MANIFEST_BYTES{return Err(TreeExtractError::TooLarge);}
     Ok(plan)
 }
 /// A successful GROUP receipt requires every archive tree to pass its own
@@ -134,6 +144,8 @@ pub fn extract_archive_batch_new_cancellable(
     destination:&Dir,new_group:&str,cancel:&ArchiveCancellation
 )->Result<ArchiveBatchReceipt,TreeExtractError>{
     if !flat(new_group)||!verify_archive_batch_plan(plan)
+        ||serde_json::to_vec(plan).map_or(true,|b|
+            b.len()>MAX_APPROVAL_MANIFEST_BYTES)
         ||sources.len()!=plan.items.len(){
         return Err(TreeExtractError::InvalidName);
     }
@@ -187,7 +199,8 @@ pub fn extract_archive_batch_new_cancellable(
         Ok(())
     })();
     if operation.is_err(){return Err(TreeExtractError::PublishedNeedsReconciliation);}
-    if !observe_archive_batch_completion(destination,new_group,plan)?{
+    if !observe_archive_batch_completion(destination,new_group,plan)
+        .unwrap_or(false){
         return Err(TreeExtractError::PublishedNeedsReconciliation);
     }
     Ok(ArchiveBatchReceipt{
