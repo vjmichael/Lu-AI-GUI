@@ -25,7 +25,7 @@ test('RESEARCH-05 bounded nonexecuting PDF/HTML parser is invoked after fixed ne
   assert.match(desktop,/record_document_retrieval\(/);
   assert.match(evidence,/format=="PDF"&&!truncated&&final_url==pinned/);
   assert.match(host,/async fn lu_research_retrieve_document\(/);
-  assert.match(host,/Retrieve bounded PDF\/HTML document/);
+  assert.match(host,/Authorize bounded research document retrieval/);
   assert.match(ui,/Retrieve bounded PDF\/HTML document/);
 });
 
