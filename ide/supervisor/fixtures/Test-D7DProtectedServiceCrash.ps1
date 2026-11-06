@@ -91,13 +91,24 @@ try {
   if ($job -eq [IntPtr]::Zero) {
     throw 'DENIED: original named Job disappeared; service keeper not proven live'
   }
-  $accounting=New-Object 'D7DProtectedObserver+BasicAccounting'
-  $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
-  if (![D7DProtectedObserver]::QueryInformationJobObject(
-      $job,1,[ref]$accounting,$size,[IntPtr]::Zero) -or
-      $accounting.ActiveProcesses -ne 0) {
-    throw 'DENIED: retained Job is not empty'
+  # A signaled child handle can precede the kernel Job's accounting
+  # update. Poll real kernel state for up to 8s; never infer empty from PID.
+  $empty=$false
+  $deadline=[DateTime]::UtcNow.AddSeconds(8)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $accounting=New-Object 'D7DProtectedObserver+BasicAccounting'
+    $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
+    if (![D7DProtectedObserver]::QueryInformationJobObject(
+        $job,1,[ref]$accounting,$size,[IntPtr]::Zero)) {
+      throw 'DENIED: kernel Job accounting query failed'
+    }
+    if ($accounting.ActiveProcesses -eq 0) {
+      $empty=$true
+      break
+    }
+    Start-Sleep -Milliseconds 50
   }
+  if (!$empty) { throw 'DENIED: retained Job is not empty' }
   # A restarted native executable opens its own kernel handle and asks the
   # SCM service to fsync recovered_release before returning.
   & $fixture --recover $service $ExpectedServiceSha256 $jobId $plan
