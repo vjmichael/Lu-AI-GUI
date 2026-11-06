@@ -107,10 +107,13 @@ fn validate_plan(value: &JobPlan) -> bool {
     value.project_id.starts_with("ide-")
         && value.project_id.len() == 36
         && hex_sha(&value.project_id[4..], 32)
-        && matches!(
+        && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_tests" | "lu_ide_host_tests"
-        )
+        ) || (cfg!(feature = "lsp-transport") && matches!(
+            value.recipe_id.as_str(),
+            "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
+        )))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
         && hex_sha(&value.manifest_sha256, 64)
@@ -123,7 +126,15 @@ fn validate_plan(value: &JobPlan) -> bool {
         && value.process_limit <= MAX_PIDS
         && value.log_limit_bytes > 0
         && value.log_limit_bytes <= MAX_LOG_BYTES
-        && value.effect_class == "test_build_isolated"
+        && if value.recipe_id.starts_with("lsp_") {
+            cfg!(feature = "lsp-transport")
+                && value.effect_class == "language_analysis_isolated"
+                && value.runtime_limit_ms <= 5 * 60_000
+                && value.process_limit <= 4
+                && value.log_limit_bytes <= 64 * 1024
+        } else {
+            value.effect_class == "test_build_isolated"
+        }
 }
 fn fingerprint(value: &JobPlan) -> Result<String, SupervisorError> {
     let bytes = serde_json::to_vec(value).map_err(|_| SupervisorError::InvalidPlan)?;
