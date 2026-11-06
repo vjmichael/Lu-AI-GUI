@@ -77,6 +77,10 @@ function App() {
   const [officeRevisionReviewed, setOfficeRevisionReviewed] = useState(false);
   const [officeRevisionBusy, setOfficeRevisionBusy] = useState(false);
   const [latestOfficeRevision, setLatestOfficeRevision] = useState(null);
+  const [fileTransferReview, setFileTransferReview] = useState(null);
+  const [fileTransferReviewed, setFileTransferReviewed] = useState(false);
+  const [fileTransferBusy, setFileTransferBusy] = useState(false);
+  const [latestFileTransfer, setLatestFileTransfer] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -851,6 +855,61 @@ function App() {
     finally { setOfficeRevisionBusy(false); }
   }
 
+  async function reviewNativeFileTransfer(operation) {
+    if (!chatId || fileTransferBusy || fileTransferReview || working || chatBusy) return;
+    setFileTransferBusy(true);
+    setError('');
+    try {
+      const view=await invoke('lu_review_file_transfer', {chatId,operation});
+      if (view) {
+        setFileTransferReview(view);
+        setFileTransferReviewed(false);
+        setActivity('Review the exact file content hash and action before approval');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setFileTransferBusy(false); }
+  }
+  async function confirmNativeFileTransfer() {
+    if (!fileTransferReview || !fileTransferReviewed || fileTransferBusy ||
+        fileTransferReview.chatId !== chatId) return;
+    const view=fileTransferReview;
+    setFileTransferBusy(true);
+    setError('');
+    try {
+      const receipt=await invoke('lu_confirm_file_transfer', {
+        chatId:view.chatId,reviewId:view.reviewId
+      });
+      if (receipt) {
+        setLatestFileTransfer({...receipt,chatId:view.chatId});
+        setActivity('File ' + receipt.operation + ' completed: ' + receipt.targetName);
+        await refreshChats();
+        if (currentChat.current === view.chatId)
+          setHistory(await invoke('lu_history', {chatId:view.chatId}));
+      } else {
+        setActivity('File operation denied in native confirmation');
+      }
+    } catch (error) {
+      setError('File operation uncertain or rejected. Review before retrying: ' + String(error));
+    } finally {
+      setFileTransferReview(null);
+      setFileTransferReviewed(false);
+      setFileTransferBusy(false);
+    }
+  }
+  async function denyNativeFileTransfer() {
+    if (!fileTransferReview || fileTransferBusy) return;
+    setFileTransferBusy(true);
+    try {
+      await invoke('lu_deny_file_transfer', {
+        chatId:fileTransferReview.chatId,reviewId:fileTransferReview.reviewId
+      });
+      setFileTransferReview(null);
+      setFileTransferReviewed(false);
+      setActivity('File operation denied; original file preserved');
+    } catch (error) { setError(String(error)); }
+    finally { setFileTransferBusy(false); }
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1329,6 +1388,40 @@ function App() {
             </div>
           </section>
         )}
+        {fileTransferReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Review exact file copy or move">
+          <strong>{fileTransferReview.operation==='move' ? 'MOVE existing file' : 'COPY existing file'}
+            into a NEW filename</strong>
+          <small>Native-picked source:</small>
+          <code className="writeTarget">{fileTransferReview.sourceDisplay}</code>
+          <strong>Host-generated new destination (never overwrites)</strong>
+          <code className="writeTarget">{fileTransferReview.destinationDisplay}</code>
+          <small>{fileTransferReview.bytes} bytes · source SHA-256: {fileTransferReview.sourceSha256}</small>
+          <small>{fileTransferReview.removesOriginal
+            ? 'MOVE removes the original name after linking the new one. A failed unlink requires manual reconciliation.'
+            : 'COPY keeps the original file unchanged.'}</small>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={fileTransferReviewed}
+              onChange={e=>setFileTransferReviewed(e.target.checked)}/>
+            I reviewed the source, destination, SHA-256 and {fileTransferReview.operation} consequences.
+          </label>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!fileTransferReviewed || fileTransferBusy}
+              onClick={()=>void confirmNativeFileTransfer()}>Approve in native confirmation</button>
+            <button type="button" className="subtleButton" disabled={fileTransferBusy}
+              onClick={()=>void denyNativeFileTransfer()}>Deny operation</button>
+          </div>
+        </section>}
+        {latestFileTransfer?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>File {latestFileTransfer.operation} complete: {latestFileTransfer.targetName}</strong>
+          <code className="writeTarget">{latestFileTransfer.exactDestination}</code>
+          <small>{latestFileTransfer.bytes} bytes · SHA-256: {latestFileTransfer.sha256}</small>
+          <small>{latestFileTransfer.sourceRemoved
+            ? 'Original filename removed.'
+            : 'Original file retained.'} Effect receipt: {latestFileTransfer.effectCallId}</small>
+        </section>}
         {officeRevisionOpen && !officeRevisionReview && <section
           className="readProposalCard editProposalCard" role="group"
           aria-label="Prepare an existing Office document revision">
@@ -1777,6 +1870,14 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
+              title="Native-pick an existing file, review exact SHA-256 and approve a no-clobber copy"
+              onClick={()=>void reviewNativeFileTransfer('copy')}>Copy file</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
+              title="Native-pick an existing file and approve a same-directory move into a new filename"
+              onClick={()=>void reviewNativeFileTransfer('move')}>Move file</button>
             <button type="button" className="subtleButton"
               disabled={!chatId || working || chatBusy || officeRevisionBusy || Boolean(officeRevisionReview)}
               title="Revise one existing Office field while preserving original and unrelated package contents"
