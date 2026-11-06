@@ -315,7 +315,7 @@ pub struct BrokerLease {
 impl BrokerLease {
     /// Begin before any authorized worker is resumed. Does not consume a
     /// grant itself; it only holds the kernel Job in an independent process.
-    pub(crate) fn begin(
+    pub fn begin(
         job: HANDLE, id: &str, plan_hash: &str, config: &TrustedBroker,
     ) -> Result<Self, SupervisorError> {
         if !valid_id(id) || !valid_hash(plan_hash) ||
