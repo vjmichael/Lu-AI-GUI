@@ -255,7 +255,7 @@ pub fn render_office_revision(
             .ok_or(OfficeRevisionError::TooLarge)?;
         if total>MAX_PACKAGE*4{return Err(OfficeRevisionError::TooLarge)}
         let mut bytes=Vec::new();
-        part.take(MAX_PART as u64+1).read_to_end(&mut bytes)
+        (&mut part).take(MAX_PART as u64+1).read_to_end(&mut bytes)
             .map_err(|_|OfficeRevisionError::InvalidPackage)?;
         if bytes.len()>MAX_PART{return Err(OfficeRevisionError::TooLarge)}
         if name==target {
@@ -294,9 +294,9 @@ pub fn publish_office_revision_new(
     edit:&OfficeRevisionEdit,
 )->Result<WriteReceipt,OfficeRevisionError>{
     if !basename(source_name)||!basename(new_name)||source_name==new_name
-        || !source_name.to_ascii_lowercase().ends_with(".docx") &&
-           !source_name.to_ascii_lowercase().ends_with(".pptx") &&
-           !source_name.to_ascii_lowercase().ends_with(".xlsx") {
+        || ![".docx",".pptx",".xlsx"].iter().any(|ext|
+            source_name.to_ascii_lowercase().ends_with(ext) &&
+            new_name.to_ascii_lowercase().ends_with(ext)) {
         return Err(OfficeRevisionError::InvalidName)
     }
     let meta=source_dir.symlink_metadata(source_name)
