@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     ptr,
     sync::{
-        atomic::{AtomicU8, AtomicU32, Ordering},
+        atomic::{AtomicU32, AtomicU8, Ordering},
         Arc, Mutex, OnceLock,
     },
     thread,
