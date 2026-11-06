@@ -32,6 +32,8 @@ pub(crate) struct ResearchSearchView{
     pub provider:&'static str,
     pub observed_sha256:String,
     pub source_count:usize,
+    pub page:u32,
+    pub next_page:Option<u32>,
     pub leads:Vec<ResearchLeadView>,
     pub message:&'static str,
 }
@@ -148,6 +150,14 @@ impl ResearchDesktop{
     pub(crate) fn search(
         &self,chat_id:&str,query:&str
     )->Result<ResearchSearchView,String>{
+        self.search_page(chat_id,query,1)
+    }
+    /// Bound unattended pagination to five explicitly approved pages (up to
+    /// 125 discovery candidates); never claim these are verified citations.
+    pub(crate) fn search_page(
+        &self,chat_id:&str,query:&str,number:u32
+    )->Result<ResearchSearchView,String>{
+        if !(1..=5).contains(&number){return Err("Invalid research page".into());}
         if !safe_id(chat_id)||query.trim().is_empty()||query.len()>512
             ||query.chars().any(char::is_control){
             return Err("Invalid research query or conversation".into());
@@ -161,7 +171,7 @@ impl ResearchDesktop{
             curl_binary:&self.curl,
             ca_bundle:None,
         };
-        let page=search_openalex(&fetcher,query,1)
+        let page=search_openalex(&fetcher,query,number)
             .map_err(|_|"OpenAlex discovery unavailable or response invalid")?;
         fs::create_dir_all(&self.root)
             .map_err(|_|"Research evidence directory unavailable")?;
@@ -192,7 +202,8 @@ impl ResearchDesktop{
         Ok(ResearchSearchView{
             query:query.to_owned(),provider:"OpenAlex",
             observed_sha256:page.observed_sha256,
-            source_count:leads.len(),leads,
+            source_count:leads.len(),page:number,
+            next_page:page.next_page.filter(|p|*p<=5),leads,
             message:"Discovered leads only. No bibliographic corroboration, full-text passage or citation has been verified.",
         })
     }
@@ -296,6 +307,14 @@ mod tests{
         assert!(parse_crossref_metadata(malformed.as_bytes(),"10.1234/study1",
             "https://api.crossref.org/works/10.1234%2Fstudy1").is_err());
         assert_eq!(encode_doi_component("10.1234/study1"),"10.1234%2Fstudy1");
+    }
+    #[test]
+    fn no_unbounded_research_pagination_or_hidden_runtime(){
+        let host=ResearchDesktop::new(PathBuf::from("/missing"),
+            PathBuf::from("/missing"));
+        assert!(host.search_page("c-owner","research",0).is_err());
+        assert!(host.search_page("c-owner","research",6).is_err());
+        assert!(host.search_page("c-owner","research",1).is_err());
     }
     #[test]
     fn no_runtime_or_unapproved_binary_cannot_be_research_network_authority(){
