@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — Wave C4 evidence reconciliation (source implementation)
+- Added a read-only evidence matrix to Continuity. Uses existing native host results to classify local Git cleanliness, stored tracking refs, live remote (not queried), bounded artifact hashes/baselines, host events, project-note task claims, CI, installed desktop acceptance and toolchain usability **without promoting guesses to verified status**.
+- Explicitly preserves partial scans, truncated change lists, contradictory dirty counts, absent baselines and unknown remote state. The development checkpoint JSON now includes the same bounded conservative reconciliation, but excludes untrusted source/document excerpts.
+- Added `app/web/development_reconciliation.js` and `app/tests/development_reconciliation.test.mjs`; source-only, no new host command, Lu bridge, Git mutation, package action or effect grant.
+- C4 branch is independently created from Wave C3 exact SHA `2572fa445d31d265b0ef27ef52a1dd4a09156326` to avoid cancelling C3 acceptance CI. Full C4 CI/Windows installed acceptance remains open; local checkout is not inspected.
+
 ## 2026-11-05 — Wave C3 bounded development checkpoint export
 - Implemented human-initiated **Copy development checkpoint**, with fresh read-only host context + inventory comparison, strict project-ID matching, stale-request invalidation, versioned bounded JSON and explicit non-atomic/provenance limits.
 - Exports local Git state, source revision IDs, known artifact bytes/digests, baseline transitions and host event IDs, **not** source text, untrusted document excerpts, event summaries, absolute project roots, passwords, live GitHub contents or execution authority.

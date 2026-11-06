@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
+import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -97,6 +98,12 @@ function App() {
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
   const isContinuity = section === 'continuity';
+  // Advisory only: derives labels from two existing, separately observed native responses.
+  const evidenceReconciliation = activeProject?.projectId &&
+    projectContext?.projectId === activeProject.projectId &&
+    inventoryComparison?.projectId === activeProject.projectId
+      ? reconcileDevelopmentEvidence(activeProject.projectId, projectContext, inventoryComparison)
+      : null;
   const isSource = section === 'source';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
@@ -1020,6 +1027,21 @@ function App() {
             <p>Copies a bounded JSON snapshot of fresh host observations, revisions and
               explicit unknowns. Excludes source text and private root paths.
               Reads are not atomic, and copying grants no authority.</p>
+            {evidenceReconciliation &&
+              <section className="continuityDocument" aria-label="Development evidence reconciliation">
+                <h3>Development evidence — observation, not acceptance</h3>
+                <p>Separate host reads. Native Git and known artifact bytes are local observations;
+                  passing CI, installed desktop behavior and toolchain execution are not inspected here.</p>
+                <div className="continuityEvents">
+                  {evidenceReconciliation.checks.map(check =>
+                    <article className="continuityEvent" key={check.id}>
+                      <strong>{check.title}</strong>
+                      <span>{check.state.replaceAll('_', ' ')}</span>
+                      <p>{check.detail}</p>
+                      <small>Evidence: {check.provenance.replaceAll('_', ' ')}</small>
+                    </article>)}
+                </div>
+              </section>}
             {!activeProject && <p>Open a project to inspect its development context.</p>}
             {contextBusy && <p role="status">Reading project history…</p>}
             {!contextBusy && projectContext && <div className="continuityBody">

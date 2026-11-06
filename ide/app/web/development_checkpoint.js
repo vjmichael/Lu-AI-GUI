@@ -1,3 +1,5 @@
+import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
+
 // Wave C3: portable, read-only context from fresh host-backed observations.
 // Intentionally excludes source text, local absolute paths, and effect authority.
 const MAX_FILES = 24;
@@ -57,6 +59,7 @@ export function buildDevelopmentCheckpoint(projectId, context, comparison, copie
         stage: limitedText(entry.stage, 80),
       })),
     },
+    evidenceReconciliation: reconcileDevelopmentEvidence(projectId, context, comparison),
     resources: {
       provenance: 'bounded_local_project_inventory',
       discoveryComplete: inventory.discoveryComplete === true,

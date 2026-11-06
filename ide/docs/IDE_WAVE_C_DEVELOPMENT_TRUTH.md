@@ -61,3 +61,11 @@ The `lu-ide-development-checkpoint` JSON v1 contains bounded local Git worktree 
 This is a **non-atomic, time-sensitive handoff of observations**, not a consistent Git/file snapshot, verified runnable installer, CI receipt, or authorization. The copy timestamp is not a proven observation time. To use the capsule in a later conversation, re-probe current bytes and exact Git HEAD rather than treating exported claims as present truth.
 
 Source: `app/web/development_checkpoint.js`, `app/web/main.jsx`, `app/tests/development_checkpoint.test.mjs`. Acceptance: local Node helper tests passed before GitHub publication; final exact-head CI and actual installed Windows clipboard smoke **pending**.
+
+## C4 — Development evidence reconciliation (independent feature branch)
+
+The Continuity screen now presents a **read-only evidence matrix** derived from the existing, separately observed `continuity.read` and `inventory.compare` host results. It distinguishes local Git clean/dirty/unknown, stored tracking refs, explicit not-queried live remote, bounded known artifact bytes and changes, untrusted task claims in project notes, historical host events, exact-head CI not inspected, installed desktop acceptance not inspected, and toolchains not tested.
+
+No project notes are interpreted as test receipts, and no source excerpts, private roots, or external build/job claims are included. Even when all local bytes match, this matrix cannot declare a build, installer, or test verified. A changed project ID rejects the old read. Partial inventory scans and contradictory Git status produce unknown or partial states. The portable checkpoint now embeds this reconciliation in its JSON.
+
+Source: `app/web/development_reconciliation.js`, `app/web/main.jsx`, `app/web/development_checkpoint.js`, `app/tests/development_reconciliation.test.mjs`. This slice adds **no new native capability**, OS permissions, Lu bridge, Git mutations or workers. It is stacked on Wave C3 PR #47 and needs exact-head acceptance on its own PR; an installed Windows UI check remains open.
