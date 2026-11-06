@@ -129,7 +129,7 @@ fn await_empty(handle: HANDLE) -> bool {
     }
 }
 fn terminate_and_check(handle: HANDLE) -> bool {
-    unsafe { TerminateJobObject(handle, 98) } != 0 && await_empty(handle)
+    (unsafe { TerminateJobObject(handle, 98) }) != 0 && await_empty(handle)
 }
 fn witness_file(id: &str, hash: &str, root: &Path) -> Result<PathBuf, SupervisorError> {
     if !valid_id(id) || !valid_hash(hash) || !root.is_absolute() {
