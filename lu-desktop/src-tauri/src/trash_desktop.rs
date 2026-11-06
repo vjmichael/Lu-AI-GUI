@@ -151,11 +151,11 @@ impl TrashReviewQueue{
 }
 #[derive(Clone,Debug,Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
-struct CustodyIntent{
+pub(crate) struct CustodyIntent{
     schema:u32,
     chat_id:String,
     effect_call_id:String,
-    source_parent:PathBuf,
+    pub(crate) source_parent:PathBuf,
     source_name:String,
     expected_size:u64,
     sha256:String,
