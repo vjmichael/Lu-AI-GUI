@@ -21,7 +21,7 @@ mod windows {
         os::windows::ffi::{OsStrExt, OsStringExt},
         path::{Path, PathBuf},
         ptr,
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        time::{SystemTime, UNIX_EPOCH},
     };
     use windows_sys::Win32::{
         Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
@@ -228,6 +228,9 @@ mod windows {
         Ok(Profile { name, sid })
     }
 
+    // The parent checks the secret is readable before spawn. The child may
+    // report success ONLY for a genuine ACL denial, never for a missing file,
+    // malformed path, or unrelated I/O failure.
     fn child(args: &[String]) -> io::Result<Option<i32>> {
         if args.first().map(String::as_str) != Some("--appcontainer-child") {
             return Ok(None);
@@ -257,10 +260,11 @@ mod windows {
         if got == 0 || appcontainer != 1 {
             return Ok(Some(10));
         }
-        if fs::read(secret).is_ok() {
-            return Ok(Some(11));
+        match fs::read(secret) {
+            Ok(_) => Ok(Some(11)),
+            Err(err) if err.raw_os_error() == Some(5) => Ok(Some(0)),
+            Err(_) => Ok(Some(12)),
         }
-        Ok(Some(0))
     }
 
     fn job() -> io::Result<Handle> {
@@ -313,16 +317,36 @@ mod windows {
         Ok(())
     }
 
+    struct FixtureCleanup {
+        exe: PathBuf,
+        secret: PathBuf,
+    }
+    impl Drop for FixtureCleanup {
+        fn drop(&mut self) {
+            // The guard handles all error paths, including failed launch or
+            // timeout. The profile is deleted after these files are removed.
+            let _ = fs::remove_file(&self.exe);
+            let _ = fs::remove_file(&self.secret);
+        }
+    }
+
     fn run() -> io::Result<()> {
         let profile = profile()?;
         let folder = container_folder(profile.sid)?;
         let local = folder.join("LocalState");
         fs::create_dir_all(&local)?;
         let exe = local.join("lu-ide-fixed-appcontainer-probe.exe");
-        fs::copy(std::env::current_exe()?, &exe)?;
         let secret =
             std::env::temp_dir().join(format!("lu-ide-outside-secret-{}.txt", std::process::id()));
+        let cleanup = FixtureCleanup {
+            exe: exe.clone(),
+            secret: secret.clone(),
+        };
+        fs::copy(std::env::current_exe()?, &exe)?;
         fs::write(&secret, b"PRIVATE HOST TEST SECRET")?;
+        if fs::read(&secret)?.as_slice() != b"PRIVATE HOST TEST SECRET" {
+            return Err(io::Error::other("host secret preflight failed"));
+        }
         let mut caps = SECURITY_CAPABILITIES::default();
         caps.AppContainerSid = profile.sid;
         caps.Capabilities = ptr::null_mut();
@@ -354,8 +378,24 @@ mod windows {
         startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
         startup.lpAttributeList = attrs.raw();
         let mut proc = PROCESS_INFORMATION::default();
-        // A blank Win32 environment block (double NUL), no leaked secrets.
-        let env: [u16; 2] = [0, 0];
+        // Windows CreateProcessW requires a usable SystemRoot for a native
+        // AppContainer image. A double-NUL-only block produces ERROR_ENVVAR_NOT_FOUND
+        // (203) on actual Windows runners. Preserve ONLY these OS bootstrap keys.
+        // No HOME, token, credential, SSH, or project environment is inherited.
+        let system_root = std::env::var_os("SystemRoot")
+            .ok_or_else(|| io::Error::other("SystemRoot unavailable; deny launch"))?;
+        if !Path::new(&system_root).is_absolute() {
+            return Err(io::Error::other("SystemRoot is not absolute"));
+        }
+        let temp = std::env::temp_dir();
+        let env: Vec<u16> = format!(
+            "SystemRoot={}\\0TEMP={}\\0TMP={}\\0\\0",
+            system_root.to_string_lossy(),
+            temp.display(),
+            temp.display()
+        )
+        .encode_utf16()
+        .collect();
         // SAFETY: all pointers live; child cannot execute until assigned to Job.
         let launched = unsafe {
             CreateProcessW(
@@ -425,9 +465,9 @@ mod windows {
             )));
         }
         check_no_active(&job)?;
-        fs::remove_file(&exe)?;
-        fs::remove_file(&secret)?;
-        println!("PASS: zero-capability AppContainer child, denied host secret, Job Object assignment before resume");
+        fs::remove_file(&cleanup.exe)?;
+        fs::remove_file(&cleanup.secret)?;
+        println!("PASS: zero-capability AppContainer child, denied host secret with ACCESS_DENIED, Job Object assignment before resume");
         println!("UNVERIFIED: production Cargo toolchain, disk ACL races, networking hostile test, crash recovery");
         Ok(())
     }
