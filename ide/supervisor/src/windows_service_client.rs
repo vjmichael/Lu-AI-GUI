@@ -151,6 +151,44 @@ impl ServiceLease {
         Ok(())
     }
 }
+
+/// Call only after the restarted native supervisor has independently opened
+/// the ORIGINAL kernel Job, verified it empty, and fsynced its own terminal
+/// recovery receipt. The protected service independently repeats the kernel
+/// check and ACKs only after its own protected evidence is durable.
+pub fn release_after_verified_recovery(
+    id: &str, plan_hash: &str, config: &TrustedBroker,
+) -> Result<(), SupervisorError> {
+    if id.len() != 36 || !id.starts_with("job-")
+        || !id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+        || plan_hash.len() != 64
+        || !plan_hash.bytes().all(|b| b.is_ascii_hexdigit())
+        || !config.executable.is_absolute() {
+        return Err(denied());
+    }
+    let pipe = Handle::new(unsafe { CreateFileW(
+        security::ws(security::SERVICE_ENDPOINT).as_ptr(),
+        FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE, 0, ptr::null(),
+        OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
+        ptr::null_mut(),
+    ) })?;
+    security::authenticate_service_server(
+        pipe.0, &config.executable, &config.expected_sha256,
+    )?;
+    let mut nonce_bytes = [0u8; 24];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce = nonce_bytes.iter()
+        .map(|b| format!("{b:02x}")).collect::<String>();
+    let request = Admission {
+        schema: "lu.ide.d7d.admission.v1", operation: "recover",
+        job_id: id, plan_sha256: plan_hash,
+        owner_pid: unsafe { GetCurrentProcessId() },
+        owner_creation: current_owner_creation()?, nonce: &nonce,
+    };
+    write(pipe.0, &serde_json::to_vec(&request).map_err(|_| denied())?)?;
+    read(pipe.0, &nonce, "recovered_release")
+}
+
 impl Drop for ServiceLease {
     fn drop(&mut self) {
         if !self.released {
