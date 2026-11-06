@@ -30,6 +30,7 @@ function App() {
   const [projectSearchResults, setProjectSearchResults] = useState(null);
   const [projectSearchBusy, setProjectSearchBusy] = useState(false);
   const projectSearchGeneration = useRef(0);
+  const projectSearchOpenNonce = useRef(0);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [replaceVisible, setReplaceVisible] = useState(false);
@@ -526,7 +527,7 @@ function App() {
         const from = line.from + match.columnUtf16 - 1;
         const to = from + match.matchLengthUtf16;
         if (from >= line.from && to <= line.to) {
-          setFindRequest({ tabKey: key, from, to, nonce: Date.now() });
+          setFindRequest({ tabKey: key, from, to, nonce: ++projectSearchOpenNonce.current });
         }
       }
       return;
@@ -557,7 +558,7 @@ function App() {
         dirty: false, generation: 0,
       }]);
       setActiveTabKey(key);
-      setFindRequest({ tabKey: key, from, to, nonce: Date.now() });
+      setFindRequest({ tabKey: key, from, to, nonce: ++projectSearchOpenNonce.current });
       setSection('explorer');
     } catch (error) {
       setProblem('Could not open this exact saved search result: ' + String(error));
@@ -816,12 +817,14 @@ function App() {
                   setProjectSearchQuery(event.target.value);
                   setProjectSearchResults(null);
                   projectSearchGeneration.current += 1;
+                  setProjectSearchBusy(false);
                 }}/>
               <label><input type="checkbox" checked={projectSearchCase}
                 onChange={event => {
                   setProjectSearchCase(event.target.checked);
                   setProjectSearchResults(null);
                   projectSearchGeneration.current += 1;
+                  setProjectSearchBusy(false);
                 }}/> Match case</label>
               <button className="primaryBtn" type="submit"
                 disabled={!activeProject || !projectSearchQuery.trim() || projectSearchBusy}>
