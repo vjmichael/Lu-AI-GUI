@@ -19,6 +19,8 @@ default = []
 # Neither feature registers a Tauri command or an unrestricted execution API.
 linux-worker = []
 windows-worker = []
+# Explicit production opt-in; never use same-user D7C child as release authority.
+protected-recovery-service = ["windows-worker"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
