@@ -362,26 +362,33 @@ mod windows {
     }
 
     fn check_no_active(job: &Handle) -> io::Result<()> {
-        let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
-        // SAFETY: query buffer initialized and correctly sized.
-        if unsafe {
-            QueryInformationJobObject(
-                job.0,
-                JobObjectBasicAccountingInformation,
-                (&mut info as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-                ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(error("QueryInformationJobObject"));
+        // Kernel Job accounting may remain nonzero very briefly after the
+        // last child process handle signals. Poll real OS accounting, never
+        // infer tree cleanup from WaitForSingleObject on a single process.
+        let began = Instant::now();
+        loop {
+            let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+            if unsafe {
+                QueryInformationJobObject(
+                    job.0,
+                    JobObjectBasicAccountingInformation,
+                    (&mut info as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                    size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                    ptr::null_mut(),
+                )
+            } == 0 {
+                return Err(error("QueryInformationJobObject"));
+            }
+            if info.ActiveProcesses == 0 {
+                return Ok(());
+            }
+            if began.elapsed() >= Duration::from_secs(5) {
+                return Err(io::Error::other(
+                    "DENIED: AppContainer Job retained active processes after bounded reap",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(25));
         }
-        if info.ActiveProcesses != 0 {
-            return Err(io::Error::other(
-                "AppContainer Job still has active processes",
-            ));
-        }
-        Ok(())
     }
 
     struct FixtureCleanup {
