@@ -12,7 +12,7 @@ const runtime=read('../src-tauri/src/native_browser_host.rs');
 const store=read('../src-tauri/src/chat_store.rs');
 const ui=read('../web/main.jsx');
 const stage=read('../scripts/stage-browser-runtime.mjs');
-const tauri=JSON.parse(read('../src-tauri/tauri.conf.json'));
+const tauri=JSON.parse(read('../src-tauri/tauri.browser.conf.json'));
 const scoped=read('../../src-tauri/lu-core/src/native_browser_tool.rs');
 
 test('browser is bound to a persisted authenticated human turn and read-only authority',()=>{
