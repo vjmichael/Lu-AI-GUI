@@ -204,3 +204,46 @@ fn batch_rejects_ambiguous_cells_and_partial_change_without_publication(){
     assert_eq!(fs::read(root.join("source.xlsx")).unwrap(),original);
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn inline_xlsx_text_edit_preserves_worksheet_other_cells_and_rejects_rich_text(){
+    let raw=r#"<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Old &amp; text</t></is></c><c r="B1" t="n"><v>42</v></c></row></sheetData></worksheet>"#;
+    let mut writer=ZipWriter::new(Cursor::new(Vec::new()));
+    writer.start_file("xl/worksheets/sheet1.xml",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+    writer.write_all(raw.as_bytes()).unwrap();
+    writer.start_file("xl/workbook.xml",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+    writer.write_all(b"<workbook/>").unwrap();
+    let source=writer.finish().unwrap().into_inner();
+    let edited=render_office_revision(&source,&hash(&source),
+        &OfficeRevisionEdit::CellInlineText{
+            sheet_number:1,address:"A1".into(),
+            expected_old:"Old & text".into(),
+            new_text:"New <text> & value".into(),
+        }
+    ).unwrap();
+    let xml=String::from_utf8(
+        part(&edited.revised_bytes,"xl/worksheets/sheet1.xml")
+    ).unwrap();
+    assert!(xml.contains("<t>New &lt;text&gt; &amp; value</t>"));
+    assert!(xml.contains(r#"<c r="B1" t="n"><v>42</v></c>"#));
+    assert_eq!(part(&source,"xl/workbook.xml"),
+        part(&edited.revised_bytes,"xl/workbook.xml"));
+    let wrong=OfficeRevisionEdit::CellInlineText{
+        sheet_number:1,address:"A1".into(),
+        expected_old:"Wrong original".into(),new_text:"no".into(),
+    };
+    assert_eq!(render_office_revision(&source,&hash(&source),&wrong)
+        .unwrap_err(),OfficeRevisionError::SourceChanged);
+    let rich=raw.replace("<is><t>Old &amp; text</t></is>",
+        "<is><r><rPr/><t>Old &amp; text</t></r></is>");
+    let mut z=ZipWriter::new(Cursor::new(Vec::new()));
+    z.start_file("xl/worksheets/sheet1.xml",SimpleFileOptions::default()).unwrap();
+    z.write_all(rich.as_bytes()).unwrap();
+    let bytes=z.finish().unwrap().into_inner();
+    assert_eq!(render_office_revision(&bytes,&hash(&bytes),&OfficeRevisionEdit::CellInlineText{
+        sheet_number:1,address:"A1".into(),
+        expected_old:"Old & text".into(),new_text:"no".into(),
+    }).unwrap_err(),OfficeRevisionError::UnsupportedCell);
+}
