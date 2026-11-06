@@ -79,7 +79,12 @@ const SERVERS: &[LanguageServerDescriptor] = &[
     LanguageServerDescriptor {
         id: "typescript-language-server",
         label: "TypeScript Language Server",
-        language_ids: &["typescript", "typescriptreact", "javascript", "javascriptreact"],
+        language_ids: &[
+            "typescript",
+            "typescriptreact",
+            "javascript",
+            "javascriptreact",
+        ],
         executable_basename: "typescript-language-server",
         fixed_arguments: &["--stdio"],
         license: "MIT AND Apache-2.0",
@@ -166,7 +171,10 @@ impl DiagnosticSource {
             && self.project_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
             && !self.file_id.is_empty()
             && self.file_id.len() <= 128
-            && self.file_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            && self
+                .file_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
             && self.disk_sha256.len() == 64
             && self.disk_sha256.bytes().all(|b| b.is_ascii_hexdigit())
             && !servers_for_language(&self.language_id).is_empty()
@@ -201,10 +209,7 @@ pub fn valid_envelope(value: &Value) -> bool {
         let Some(method) = method.as_str() else {
             return false;
         };
-        if method.is_empty()
-            || method.len() > 128
-            || method.chars().any(char::is_control)
-        {
+        if method.is_empty() || method.len() > 128 || method.chars().any(char::is_control) {
             return false;
         }
     } else if !object.contains_key("result") && !object.contains_key("error") {
@@ -283,8 +288,8 @@ impl FrameParser {
             if end > MAX_HEADER {
                 return Err(FrameError::OversizedHeader);
             }
-            let header = std::str::from_utf8(&self.pending[..end])
-                .map_err(|_| FrameError::InvalidHeader)?;
+            let header =
+                std::str::from_utf8(&self.pending[..end]).map_err(|_| FrameError::InvalidHeader)?;
             let length = parse_length(header)?;
             let frame_len = end + 4 + length;
             if self.pending.len() < frame_len {
@@ -311,10 +316,7 @@ fn parse_length(header: &str) -> Result<usize, FrameError> {
         let (name, value) = line.split_once(':').ok_or(FrameError::InvalidHeader)?;
         let value = value.trim();
         if name.eq_ignore_ascii_case("Content-Length") {
-            if length.is_some()
-                || value.is_empty()
-                || !value.bytes().all(|b| b.is_ascii_digit())
-            {
+            if length.is_some() || value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
                 return Err(FrameError::InvalidLength);
             }
             let size: usize = value.parse().map_err(|_| FrameError::InvalidLength)?;
