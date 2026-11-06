@@ -268,7 +268,7 @@ impl Drop for WindowsLspProcess {
 /// Caller owns: (a) registered project and exact native source snapshot,
 /// (b) human one-use job grant, (c) fixed approved installed bundle digest,
 /// (d) restricted D7D service deployment. NO user-supplied executable path.
-pub(crate) fn start_windows_lsp(
+pub fn start_windows_lsp(
     supervisor: Arc<Supervisor>, job_id: &str, plan: &JobPlan,
     current_native_source_head: &str, input: &PublishedInput,
     trusted_release_bundle: &Path, trusted_service: &TrustedBroker,
@@ -345,7 +345,7 @@ pub(crate) fn start_windows_lsp(
     Ok(WindowsLspSession { gateway })
 }
 
-pub(crate) struct WindowsLspSession { gateway: LspGateway }
+pub struct WindowsLspSession { gateway: LspGateway }
 impl WindowsLspSession {
     pub fn initialize(&mut self) -> Result<(), SupervisorError> {
         self.gateway.initialize()
