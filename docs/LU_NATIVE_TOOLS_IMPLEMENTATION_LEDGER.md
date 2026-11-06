@@ -119,3 +119,20 @@ The following **development-source** areas were added after the initial ZIP/CSV/
 - React `Extract archive` action, exact member-list panel, checksum and destination display, acknowledgment, native approval, success receipt and deny paths are wired into `lu-desktop/web/main.jsx`.
 - Unit source tests validate a real ZIP preview, chat isolation, deny/review consumption, and symlink refusal. `lu-desktop/scripts/check-ui.mjs` statically asserts end-to-end native host/UI command wiring. Dedicated Wave 2 CI includes full React UI build/check/tests and Windows Tauri cargo check + native archive queue tests.
 - **Not yet accepted:** Exact-head Windows CI must actually pass; manually verify installed desktop flow with ZIP/TAR.GZ and interrupted writes. Desktop preview/approval for native Office revisions, structured DOCX/PPTX writers, spreadsheet edits, file copy/move/trash/restore are still separate gates. Model-generated proposals to these new tools remain Wave 3 normal conversation integration.
+
+### Wave 2 Step 1: Desktop Integration expanded — structured documents and file transfers
+
+Four real host-side desktop workflows now exist as development source:
+
+| Workflow | Host/Desktop implementation | Native approval boundary |
+| --- | --- | --- |
+| Extract ZIP/TAR-family archive | `archive_desktop.rs` + `Extract archive` UI shows complete member list, exact source/target folder, full-tree manifest SHA | Two native pickers, review ack, native modal, ConversationAuthority/PolicyEngine/EffectJournal; rehash actual extracted tree after publication |
+| Create Word/PowerPoint document | `document_create_desktop.rs` + `+ Document` UI includes bounded text input, DOCX/PPTX format, complete text preview, exact output filename and package hash | Host-picked destination folder, host-generated new basename, native modal, exact DOCX/PPTX content policy, persistent human turn and durable receipt; actual output rehash |
+| Revise existing DOCX/PPTX/XLSX | `office_revision_desktop.rs` + `Revise Office` UI accepts one typed field change. Native picker chooses input file and separate output folder. UI shows full before/after field change and hashes of all unchanged package parts | Host previews exact source/revision SHA; versioned new-file only, native modal and exact revision policy; post-write rehash of original and revised output |
+| Copy/move regular file | `file_transfer_desktop.rs` + `Copy file`/`Move file` UI shows source hash, original-retention consequences and host-generated NEW name | Native source picker, native consent modal, exact source/target/digest policy, durable effect; postwrite target rehash and move-source absence check |
+
+All four use ephemeral, chat-bound pending review queues, explicit deny, one-time consumption, and native (not WebView) final confirmation. React panels include complete content/member/part previews appropriate to their operation. The desktop code does not promote a model-generated plan to independent file-system authority.
+
+**Verification added:** `lu-desktop/scripts/check-ui.mjs` checks the UI/Tauri command and acknowledgment wiring. Wave 2 CI now builds the real React bundle and runs UI checks; Windows desktop CI compiles the Tauri host and invokes archive/document/Office/file-transfer review unit suites.
+
+**Step 1 remaining:** Native user interface for durable reversible trash/restore receipts; broader document operations (multi-sheet spreadsheet creation and rich presentations), accessible progress/cancellation/recovery dashboards for long operations, installed Windows UI acceptance. Full-feature model invocation from ordinary conversation remains Wave 3. The four desktop flows are source-implemented but not verified on a compiled installed build; this is NOT completion or acceptance.
