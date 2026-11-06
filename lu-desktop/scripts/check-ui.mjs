@@ -106,7 +106,7 @@ const tests = [
     ui.includes('disabled={!trashReviewed || trashBusy}') &&
     ui.includes('disabled={!restoreReviewed || trashBusy}') &&
     ui.includes('item.restorable ?') &&
-    ui.includes('MANUAL_RECONCILIATION_REQUIRED') &&
+    ui.includes('Uncertain operations require manual reconciliation') &&
     host.includes('fn lu_review_file_trash(') &&
     host.includes('fn lu_confirm_file_trash(') &&
     host.includes('fn lu_file_trash_history(') &&
