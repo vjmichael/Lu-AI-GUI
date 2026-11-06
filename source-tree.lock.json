@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "18d0e9ba8cd70766d33b05eb40ec3d4578234f6a",
+  "sourceCommitBeforeLock": "6fc8cbd075764f0ddfd0c80fa3b9d5c42bad9b54",
   "trackedFileCount": 461,
   "files": [
     {
@@ -397,7 +397,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "a01b1e97348c1b21357ee71d9d30278f6365d740"
+      "blob": "2143fc157e1e78224318c78f4ad33be585467bb2"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -453,7 +453,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
-      "blob": "a19a4b6f2dbbad05941e3898eabac0fac15e3532"
+      "blob": "e98b976d4cce070341cc4cf2f3c1781b348b5e64"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -657,7 +657,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "092e107ce1d356c4fb374820b91a1bb938e86a54"
+      "blob": "03b63dc391f0a29e25db3b10d5da4ea8a6b7e218"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
