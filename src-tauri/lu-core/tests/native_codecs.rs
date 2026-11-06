@@ -17,6 +17,9 @@ fn native_xz_bzip2_zstd_roundtrip_without_shell(){
         assert!(!encoded.is_empty());
         assert_ne!(encoded,payload);
         assert_eq!(expand_raw(codec,&encoded).unwrap(),payload);
+        // Do not accept arbitrary bytes as a RAW format if the actual
+        // requested xz/bzip2/zstd compression filter is absent.
+        assert!(expand_raw(codec,b"Uncompressed data is not a codec stream").is_err());
         let mut corrupted=encoded.clone();
         corrupted.truncate(2);
         assert!(expand_raw(codec,&corrupted).is_err());
