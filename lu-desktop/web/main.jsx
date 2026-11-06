@@ -58,6 +58,10 @@ function App() {
   const [researchError,setResearchError]=useState('');
   const [browserEvidenceByChat,setBrowserEvidenceByChat]=useState({});
   const [browserEvidenceBusy,setBrowserEvidenceBusy]=useState(false);
+  const [researchQuoteDraftByKey,setResearchQuoteDraftByKey]=useState({});
+  const [researchQuoteSourceByKey,setResearchQuoteSourceByKey]=useState({});
+  const [researchQuoteProofByKey,setResearchQuoteProofByKey]=useState({});
+  const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -273,6 +277,25 @@ function App() {
       setBrowserEvidenceByChat(old=>({...old,[selectedChat]:list}));
     }catch(e){setResearchError(String(e));}
     finally{setBrowserEvidenceBusy(false);}
+  }
+  async function verifyObservedQuote(item){
+    if(!chatId||researchQuoteBusy)return;
+    const sourceChat=chatId;
+    const key=sourceChat+'|'+item.generationId+'|'+item.callId;
+    const quote=(researchQuoteDraftByKey[key]||'').trim();
+    if(quote.length<4||quote.length>2048)return;
+    setResearchQuoteBusy(true);setResearchError('');
+    try{
+      const publisherId=(researchQuoteSourceByKey[key]||'').trim();
+      const result=await invoke('lu_research_verify_quote',{
+        chatId:sourceChat,generationId:item.generationId,callId:item.callId,
+        quote,publisherSourceId:publisherId||null
+      });
+      setResearchQuoteProofByKey(old=>({...old,[key]:result}));
+    }catch(e){
+      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
+      setResearchError(String(e));
+    }finally{setResearchQuoteBusy(false);}
   }
   async function inspectWithBrowserModel(){
     if(!chatId||!runtime.sessionId||!browserRuntime?.running||browserReadBusy)return;
@@ -3189,6 +3212,29 @@ function App() {
                 <small>{item.verificationStatus} · citation verified: no</small>
                 <pre>{item.excerpt.slice(0,1500)}</pre>
                 {item.excerptTruncated&&<small>Excerpt incomplete; only saved text can be checked.</small>}
+                <label>Exact passage from this observed excerpt
+                  <input value={researchQuoteDraftByKey[chatId+'|'+item.generationId+'|'+item.callId]||''}
+                    onChange={e=>{
+                      const key=chatId+'|'+item.generationId+'|'+item.callId;
+                      setResearchQuoteDraftByKey(old=>({...old,[key]:e.target.value}));
+                      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
+                    }} placeholder="Paste a verbatim quotation" />
+                </label>
+                <label>Optional independently corroborated OpenAlex source ID
+                  <input value={researchQuoteSourceByKey[chatId+'|'+item.generationId+'|'+item.callId]||''}
+                    onChange={e=>{
+                      const key=chatId+'|'+item.generationId+'|'+item.callId;
+                      setResearchQuoteSourceByKey(old=>({...old,[key]:e.target.value}));
+                      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
+                    }} placeholder="Only if Crossref metadata was checked" />
+                </label>
+                <button type="button" disabled={researchQuoteBusy||
+                  (researchQuoteDraftByKey[chatId+'|'+item.generationId+'|'+item.callId]||'').trim().length<4}
+                  onClick={()=>void verifyObservedQuote(item)}>
+                  Check exact source passage
+                </button>
+                {researchQuoteProofByKey[chatId+'|'+item.generationId+'|'+item.callId]&&
+                  <small>{researchQuoteProofByKey[chatId+'|'+item.generationId+'|'+item.callId].message}</small>}
               </li>)}</ul>
             </div>}
           <label htmlFor="researchQuery">Research question or subject</label>
