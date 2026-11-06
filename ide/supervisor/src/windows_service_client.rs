@@ -34,12 +34,15 @@ const SYNCHRONIZE: u32 = 0x00100000;
 const SECURITY_SQOS_PRESENT: u32 = 0x00100000;
 const SECURITY_IMPERSONATION: u32 = 0x00020000;
 const MAX_RESPONSE: usize = 2048;
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
 /// Logs only fixed admission-stage names in debug native acceptance builds.
 fn acceptance_trace(stage: &'static str) {
     if cfg!(debug_assertions)
         && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
-            == Some(std::ffi::OsStr::new("1")) {
+            == Some(std::ffi::OsStr::new("1"))
+    {
         eprintln!("PROTECTED_SERVICE_ADMISSION_STAGE={stage}");
     }
 }
@@ -67,17 +70,24 @@ fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
     acceptance_trace("connect_start");
     let began = Instant::now();
     while began.elapsed() < Duration::from_secs(8) {
-        let raw = unsafe { CreateFileW(
-            security::ws(security::SERVICE_ENDPOINT).as_ptr(),
-            FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE, 0, ptr::null(),
-            OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
-            ptr::null_mut(),
-        ) };
+        let raw = unsafe {
+            CreateFileW(
+                security::ws(security::SERVICE_ENDPOINT).as_ptr(),
+                FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE,
+                0,
+                ptr::null(),
+                OPEN_EXISTING,
+                SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
+                ptr::null_mut(),
+            )
+        };
         if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
             let pipe = Handle(raw);
             acceptance_trace("pipe_opened");
             security::authenticate_service_server(
-                pipe.0, &config.executable, &config.expected_sha256,
+                pipe.0,
+                &config.executable,
+                &config.expected_sha256,
             )?;
             acceptance_trace("server_kernel_token_and_image_authenticated");
             return Ok(pipe);
@@ -214,37 +224,63 @@ pub struct ServiceLease {
     released: bool,
 }
 impl ServiceLease {
-    pub fn begin(job: HANDLE, id: &str, plan_hash: &str,
-        config: &TrustedBroker) -> Result<Self, SupervisorError> {
-        if id.len() != 36 || !id.starts_with("job-") ||
-            !id[4..].bytes().all(|b| b.is_ascii_hexdigit()) ||
-            plan_hash.len() != 64 ||
-            !plan_hash.bytes().all(|b| b.is_ascii_hexdigit()) ||
-            !empty(job) || !config.executable.is_absolute() {
+    pub fn begin(
+        job: HANDLE,
+        id: &str,
+        plan_hash: &str,
+        config: &TrustedBroker,
+    ) -> Result<Self, SupervisorError> {
+        if id.len() != 36
+            || !id.starts_with("job-")
+            || !id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+            || plan_hash.len() != 64
+            || !plan_hash.bytes().all(|b| b.is_ascii_hexdigit())
+            || !empty(job)
+            || !config.executable.is_absolute()
+        {
             return Err(denied());
         }
-        if config.executable.file_name().and_then(|s| s.to_str())
+        if config
+            .executable
+            .file_name()
+            .and_then(|s| s.to_str())
             .map(|s| !s.eq_ignore_ascii_case("windows_recovery_service.exe"))
-            .unwrap_or(true) { return Err(denied()); }
+            .unwrap_or(true)
+        {
+            return Err(denied());
+        }
         let pipe = connect_approved(config)?;
         acceptance_trace("lease_validated_pipe");
         let mut bytes = [0u8; 24];
         OsRng.fill_bytes(&mut bytes);
         let nonce = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
         let admission = Admission {
-            schema: "lu.ide.d7d.admission.v1", operation: "admit",
-            job_id: id, plan_sha256: plan_hash,
+            schema: "lu.ide.d7d.admission.v1",
+            operation: "admit",
+            job_id: id,
+            plan_sha256: plan_hash,
             owner_pid: unsafe { GetCurrentProcessId() },
-            owner_creation: current_owner_creation()?, nonce: &nonce,
+            owner_creation: current_owner_creation()?,
+            nonce: &nonce,
         };
-        write(pipe.0, &serde_json::to_vec(&admission).map_err(|_| denied())?)?;
+        write(
+            pipe.0,
+            &serde_json::to_vec(&admission).map_err(|_| denied())?,
+        )?;
         acceptance_trace("admission_sent");
         read(pipe.0, &nonce, "ready")?;
         acceptance_trace("service_ready_fsynced");
         // Check again AFTER the service's own fsynced ready receipt.
-        if !empty(job) { return Err(denied()); }
+        if !empty(job) {
+            return Err(denied());
+        }
         acceptance_trace("empty_kernel_job_reverified");
-        Ok(Self { pipe, nonce, job, released: false })
+        Ok(Self {
+            pipe,
+            nonce,
+            job,
+            released: false,
+        })
     }
     pub fn alive(&mut self) -> bool {
         let mut available = 0u32;
