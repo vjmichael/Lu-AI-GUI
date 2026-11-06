@@ -8,12 +8,13 @@ use serde::{Deserialize, Serialize};
 use std::{
     ffi::c_void,
     mem::size_of,
-    path::Path,
     ptr,
-    time::Duration,
+    thread,
+    time::{Duration, Instant},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+    Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
+        ERROR_FILE_NOT_FOUND, ERROR_PIPE_BUSY},
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
     System::{
         JobObjects::{QueryInformationJobObject, TerminateJobObject,
@@ -39,6 +40,34 @@ impl Handle {
 impl Drop for Handle {
     fn drop(&mut self) { unsafe { CloseHandle(self.0); } }
 }
+
+fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
+    // A just-started SCM service can be running before the first pipe instance
+    // is visible. Retry only absent/busy, never ACCESS_DENIED or other errors.
+    let began = Instant::now();
+    while began.elapsed() < Duration::from_secs(8) {
+        let raw = unsafe { CreateFileW(
+            security::ws(security::SERVICE_ENDPOINT).as_ptr(),
+            FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE, 0, ptr::null(),
+            OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
+            ptr::null_mut(),
+        ) };
+        if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
+            let pipe = Handle(raw);
+            security::authenticate_service_server(
+                pipe.0, &config.executable, &config.expected_sha256,
+            )?;
+            return Ok(pipe);
+        }
+        let error = unsafe { GetLastError() };
+        if error != ERROR_FILE_NOT_FOUND && error != ERROR_PIPE_BUSY {
+            return Err(denied());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err(denied())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Admission<'a> {
@@ -68,11 +97,24 @@ fn write(pipe: HANDLE, bytes: &[u8]) -> Result<(), SupervisorError> {
     Ok(())
 }
 fn read(pipe: HANDLE, nonce: &str, required: &str) -> Result<(), SupervisorError> {
+    let began = Instant::now();
     let mut bytes = [0u8; MAX_RESPONSE];
     let mut got = 0u32;
-    if unsafe { ReadFile(pipe, bytes.as_mut_ptr(), bytes.len() as u32,
-        &mut got, ptr::null_mut()) } == 0 || got == 0 || got as usize >= bytes.len() {
-        return Err(denied());
+    loop {
+        if began.elapsed() >= Duration::from_secs(10) { return Err(denied()); }
+        let mut available = 0u32;
+        if unsafe { PeekNamedPipe(pipe, ptr::null_mut(), 0,
+            ptr::null_mut(), &mut available, ptr::null_mut()) } == 0 {
+            return Err(denied());
+        }
+        if available > 0 {
+            if available as usize >= MAX_RESPONSE { return Err(denied()); }
+            if unsafe { ReadFile(pipe, bytes.as_mut_ptr(), bytes.len() as u32,
+                &mut got, ptr::null_mut()) } == 0 || got == 0
+                || got as usize >= bytes.len() { return Err(denied()); }
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
     }
     let response: Response = serde_json::from_slice(&bytes[..got as usize])
         .map_err(|_| denied())?;
@@ -108,18 +150,10 @@ impl ServiceLease {
             !empty(job) || !config.executable.is_absolute() {
             return Err(denied());
         }
-        let path = Path::new(&config.executable);
-        if path.file_name().and_then(|s| s.to_str())
+        if config.executable.file_name().and_then(|s| s.to_str())
             .map(|s| !s.eq_ignore_ascii_case("windows_recovery_service.exe"))
             .unwrap_or(true) { return Err(denied()); }
-        let pipe = Handle::new(unsafe {
-            CreateFileW(security::ws(security::SERVICE_ENDPOINT).as_ptr(),
-                FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE, 0, ptr::null(),
-                OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
-                ptr::null_mut())
-        })?;
-        security::authenticate_service_server(pipe.0, &config.executable,
-            &config.expected_sha256)?;
+        let pipe = connect_approved(config)?;
         let mut bytes = [0u8; 24];
         OsRng.fill_bytes(&mut bytes);
         let nonce = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
@@ -166,15 +200,7 @@ pub fn release_after_verified_recovery(
         || !config.executable.is_absolute() {
         return Err(denied());
     }
-    let pipe = Handle::new(unsafe { CreateFileW(
-        security::ws(security::SERVICE_ENDPOINT).as_ptr(),
-        FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE, 0, ptr::null(),
-        OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
-        ptr::null_mut(),
-    ) })?;
-    security::authenticate_service_server(
-        pipe.0, &config.executable, &config.expected_sha256,
-    )?;
+    let pipe = connect_approved(config)?;
     let mut nonce_bytes = [0u8; 24];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = nonce_bytes.iter()
