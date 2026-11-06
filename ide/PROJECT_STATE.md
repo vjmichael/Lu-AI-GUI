@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### C3 exact-head frontend regression repair (2026-11-05)
+- [C3 frontend run 42145804942](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42145804942) failed a **test-only macro matcher**, which searched only for same-line `capability!("id", "command")` while the Rust registry is multiline. Linux native and Windows desktop checks for that predecessor passed; continuity gate passed. This is not proof of the new head.
+- Repaired the frontend contract test to accept whitespace/newlines between macro tokens, and added a strict nonzero count assertion for 24 known commands. Direct inspection confirmed **24 catalog declarations = 24 Tauri handlers**, 0 duplicate/missing entries. No runtime behavior or authority changed.
+- Latest exact-head CI after this repair and installed Windows UI remain open. No runnable installer claimed.
+
 ## Wave C3 — Portable development checkpoint (2026-11-05)
 
 - **Implemented in source on draft PR #47:** Human **Copy development checkpoint** in Continuity performs fresh parallel native context and inventory comparison reads for the exact currently selected registered project and copies bounded versioned JSON. Project IDs must match both host responses; switching projects invalidates pending requests and any stale continuity UI. Clipboard failure is surfaced, not treated as success.

@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — C3 frontend registry CI repair
+- CI found a genuine test-only failure: the `capability!` matcher assumed declarations were single-line and returned an empty list. Adjusted regex for rustfmt multiline invocation; separately asserted the expected 24 descriptors to reject vacuous equality. Verified 24 catalog/Tauri parity by parsing exact source.
+- Source behavior unchanged. Native/Windows/installed acceptance on new head pending; prior C3 Linux/Windows and continuity passes were on the predecessor only.
+
 ## 2026-11-05 — Wave C3 bounded development checkpoint export
 - Implemented human-initiated **Copy development checkpoint**, with fresh read-only host context + inventory comparison, strict project-ID matching, stale-request invalidation, versioned bounded JSON and explicit non-atomic/provenance limits.
 - Exports local Git state, source revision IDs, known artifact bytes/digests, baseline transitions and host event IDs, **not** source text, untrusted document excerpts, event summaries, absolute project roots, passwords, live GitHub contents or execution authority.
