@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE first three-work-order batch (2026-11-06): repaired Windows E2 HANDLE writer thread ownership, feature-gated native example compilation, real Tauri frontend build and interrupted recovery test; added strict child token-capability verification and bounded protected SCM pipe-denial diagnostics. Source commits `2076532`, `0e941c7`, `3c38f5e`. Native CI and protected-service acceptance remain outstanding; see `docs/IDE_WORK_BATCH_01_20261106.md`.
+
+
 - E2 exact native Windows failure repair (2026-11-06): corrected hostile inside-root child-rename **test assumptions** without permitting a junction/secret escape; applied native Windows Rustfmt 1.99 formatting to service token, AppContainer network probe and crash witness. Recorded Cargo's still-blocking AppContainer `NUL` device denial (exit 101; compiler never launched), distinguishing it from a missing rustc or a successful native sandbox check. Also identified cancelled-checkout manifest errors as cancellation artifacts. Source-only commits `940d395`, `01950f1`, `ed7c038`, `5052622`; native exact-head results and installed-app security remain open.
 
 

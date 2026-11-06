@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### First three-work-order batch — source repairs committed; native gates OPEN (2026-11-06)
+
+See [IDE batch 01](docs/IDE_WORK_BATCH_01_20261106.md). Work order 1: fixed Windows LSP writer HANDLE thread transfer (`E0277`), acceptance example feature gating (`E0432`), genuine Tauri frontend assets and post-crash preflight fixture. Work order 2: actual AppContainer child kernel token capabilities inspected; Cargo still cannot open `\\.\NUL` and the D6 network denial still lacks WSAEACCES evidence. Work order 3: added fixed-stage pipe admission triage and CI logon classification; protected SCM actual IPC and restart/recovery are **not** accepted. Commits `2076532`, `0e941c7`, `3c38f5e`. Fresh exact-head CI pending. Next unblocked work remains closing orders 1–3, then 4–6; orders 7–10 later. No unsafe worker or LSP activation.
+
+
 ### E2 Windows CI repairs — native evidence, not release acceptance (2026-11-06)
 
 PR #65 native Windows logs identify two independent defects: AppContainer Cargo cannot open Windows `\\.\NUL` for rustc child stdin (Cargo 101, compiler never started); a hostile rename test incorrectly required an unchanged *within-root directory name* while simulating an attacker. The latter test is corrected to require copied-file integrity, matching output digest and no external secret. Native Rustfmt 1.99 failures in service security and two probe fixtures were repaired. The device access problem **remains blocked** without explicit independent least-privilege OS authorization/proof. Cancelled checkout jobs had misleading manifest-not-found messages; they are not Cargo path bugs. See `ide/docs/E2_NATIVE_CI_FAILURE_TRIAGE_20261106.md` for exact jobs, commits and continuing gates. No protected LSP, signed installer or installed-app acceptance is claimed.

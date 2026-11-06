@@ -1,5 +1,13 @@
 # Lu IDE E2 native CI failure triage — 2026-11-06
 
+## Work-order batch 01 — observed failures → source repairs (2026-11-06)
+
+- WO1 `E0277` Windows owned pipe not Send, `E0432` feature-gated acceptance example, missing genuine Tauri frontendDist, protected recovery preflight test called before journal reopen. Corrected at `2076532`; source-only pending native test.
+- WO2 rustc child `Stdio::Null` opens `\\.\NUL` inside AppContainer (Cargo 101) after secure admission; actual child now checks zero `TokenCapabilities` (`3c38f5e`) while WSAEACCES-only network gate and null-device denial remain OPEN. No global ACL modification.
+- WO3 protected-service client previously ended at `connect_start`, not `pipe_opened`; new fixed debug classification of access-denied/other/timeout/attestation and CI INTERACTIVE-group presence (`0e941c7`) will identify the next native blocker. Strict service token/image/pipe identity retained. No crash-recovery acceptance claimed.
+- Full batch/remaining work: `ide/docs/IDE_WORK_BATCH_01_20261106.md`.
+
+
 ### 2026-11-06 — E2 Windows native repair pass (observed failures, acceptance still gated)
 
 - Inspected PR #65 at `1e402b3e8360bf1960e81ea7cb67368a15535d39`: D7B pinned Cargo job `128167781806` built native Windows supervisor and got a real restricted AppContainer Cargo exit 101. Actual stderr: Rust's child spawn could not open Windows `\\.\NUL` for `rustc -vV` stdin (OS error 5). The compiler child **never executed**; this is a system device-DACL boundary, not a missing Rust compiler. **Unresolved:** no AppContainer device ACL changes, elevated host-wide grant, relaxed token, fallback worker or fake pass. Re-run with only an independently reviewed, least-privilege null-device provisioning design.
