@@ -22,6 +22,7 @@ jobs:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs
+      - run: node --test lu-desktop/tests/image-workspace-history.test.mjs
       - run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
       - run: grep -Fq 'WorkspaceReadTurnSession::new_git(' lu-desktop/src-tauri/src/workspace_desktop.rs
       - run: grep -Fq 'dashboard_for_workspace(&chat_id,32)' lu-desktop/src-tauri/src/lib.rs
@@ -38,6 +39,7 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision_history::tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
@@ -64,6 +66,7 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision_history::tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
