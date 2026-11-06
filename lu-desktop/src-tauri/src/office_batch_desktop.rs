@@ -83,6 +83,11 @@ fn change(edit:&OfficeRevisionEdit)->proto::office_batch_patch::Change{
                 sheet_number:*sheet_number as u32,address:address.clone(),
                 expected_old:*expected_old,new_boolean:*new_boolean,
             }),
+        OfficeRevisionEdit::CellInlineText{sheet_number,address,expected_old,new_text}=>
+            proto::office_batch_patch::Change::CellText(proto::OfficeStringPatch{
+                sheet_number:*sheet_number as u32,address:address.clone(),
+                expected_old:expected_old.clone(),new_text:new_text.clone(),
+            }),
     }
 }
 fn change_preview(edit:&OfficeRevisionEdit)->OfficeBatchChangeView{
@@ -103,6 +108,10 @@ fn change_preview(edit:&OfficeRevisionEdit)->OfficeBatchChangeView{
             OfficeBatchChangeView{kind:"Excel boolean".into(),
                 target:format!("Sheet {sheet_number}, cell {address}"),
                 expected_old:expected_old.to_string(),new_value:new_boolean.to_string()},
+        OfficeRevisionEdit::CellInlineText{sheet_number,address,expected_old,new_text}=>
+            OfficeBatchChangeView{kind:"Excel inline text".into(),
+                target:format!("Sheet {sheet_number}, cell {address}"),
+                expected_old:expected_old.clone(),new_value:new_text.clone()},
     }
 }
 impl OfficeBatchQueue{
