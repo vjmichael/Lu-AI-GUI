@@ -66,3 +66,8 @@ Upstream API and licensing references:
 - ZIP preflight and on-disk member publication check cancellation at bounded chunks. Cancellation **before** destination folder creation is a clean no-effect refusal; cancellation **after** folder creation is reported as WRITE_UNCERTAIN and the folder is retained for read-only reconciliation.
 - No automatic replay or silent partial-folder deletion. The completion marker remains a last-write witness; native full-tree rehash remains required.
 - Backend decoders for TAR/7z/RAR/RPM currently have synchronous bounded in-memory preflight. Cancellation while those native decoders are executing is **not** preemptive; it is honored on return, before publication. Hard worker-process termination requires follow-up native containment acceptance.
+
+## Step 3 — cancellation extension and cleanup-failure reconciliation
+- Explicit pre-publication archive cancellation is recorded as FAILED only for the trusted Lu archive extractor and only for its dedicated OPERATION_CANCELLED signal. All unknown native failures and every possible partial publication remain UNCERTAIN; neither state permits replay.
+- 7z/RAR libarchive decode checks the host cancellation flag between native header and data chunks, with source reading in bounded cancellable chunks. No hostile decoder is assumed to support preemption inside one native C call.
+- Desktop archive extraction concurrency is restricted to one active approved operation to bound expanded-memory pressure. Interrupted staging cleanup in atomic new-file and copy operations now promotes cleanup failures to WRITE_UNCERTAIN instead of reporting an ordinary safe error.

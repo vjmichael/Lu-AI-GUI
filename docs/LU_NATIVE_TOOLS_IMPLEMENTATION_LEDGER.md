@@ -201,3 +201,6 @@ No Step 3 recovery hardening or Step 4 native final acceptance is claimed.
 
 ## WAVE2-RECOVERY-03 — Native archive cancellation hardening
 The archive extraction tool now accepts only a host-owned, chat-scoped, per-review cancellation token. ZIP decode and member publication have cooperative checkpoints, and the desktop exposes an explicit cancel-running-extraction action. Cancellation before directory creation fails without a write; cancellation after creation returns WRITE_UNCERTAIN and preserves partial output for journal and full-manifest reconciliation. Non-ZIP synchronous decoders still require supervised-process termination for immediate cancellation. Exact-head Windows/Linux CI and installed desktop acceptance remain open.
+
+
+WAVE2-RECOVERY-03B: DurableDispatcher now recognizes the built-in archive extractor's proven pre-publication OPERATION_CANCELLED only, journals FAILED, and still blocks replay. Other native execution failures remain UNCERTAIN. 7z/RAR source reads and libarchive member loops honor host cancellation checkpoints. Desktop archive executions are serialized to bound aggregate 256 MiB per decode. Failed staging cleanup for new-file and copy operations is classified as WRITE_UNCERTAIN. Native Windows/Linux CI and installed acceptance remain open.

@@ -17,7 +17,7 @@ use crate::native_linux_archive::{
 };
 use crate::native_cpio::{cpio_tree_members,is_cpio_name,CpioError};
 use crate::native_ar_deb::{ar_tree_members,is_ar_name,ArError};
-use crate::native_seven_rar::{seven_rar_tree_members,detect_7z_rar,SevenRarError};
+use crate::native_seven_rar::{seven_rar_tree_members_cancellable,detect_7z_rar,SevenRarError};
 use crate::native_rpm::{rpm_tree_members,RpmError};
 const MAX_ARCHIVE_BYTES:u64=128*1024*1024;
 const MAX_FILE:usize=64*1024*1024;
@@ -151,7 +151,8 @@ fn package_zip(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<Vec<Node
     }
     Ok(result)
 }
-fn package_linux(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
+fn package_linux(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<Vec<Node>,TreeExtractError>{
+    cancel.checkpoint()?;
     if name.to_ascii_lowercase().ends_with(".rpm"){
         return rpm_tree_members(root,name).map_err(|e|match e{
             RpmError::TooLarge=>TreeExtractError::TooLarge,
@@ -161,7 +162,8 @@ fn package_linux(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
             Node{path,is_dir,bytes}).collect());
     }
     if detect_7z_rar(name).is_some(){
-        return seven_rar_tree_members(root,name).map_err(|e|match e{
+        return seven_rar_tree_members_cancellable(root,name,&||cancel.is_cancelled()).map_err(|e|match e{
+            SevenRarError::Cancelled=>TreeExtractError::Cancelled,
             SevenRarError::TooLarge=>TreeExtractError::TooLarge,
             SevenRarError::UnsafeArchive|SevenRarError::EncryptedOrUnsupported=>
                 TreeExtractError::UnsafeMember,
@@ -199,7 +201,7 @@ fn manifest_and_nodes(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<(
     let items=if name.to_ascii_lowercase().ends_with(".zip"){
         package_zip(root,name,cancel)?
     }else{
-        package_linux(root,name)?
+        package_linux(root,name,cancel)?
     };
     cancel.checkpoint()?;
     if items.is_empty()||items.len()>MAX_ENTRIES{return Err(TreeExtractError::InvalidArchive)}

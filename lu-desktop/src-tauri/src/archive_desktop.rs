@@ -48,8 +48,11 @@ impl ArchiveRunRegistry{
             return Err("Invalid archive cancellation identity".into())
         }
         let mut active=self.active.lock().map_err(|_|"Archive cancellation unavailable")?;
-        if active.len()>=MAX_PENDING||active.contains_key(review){
-            return Err("Archive extraction already active or capacity reached".into())
+        // Each decoded archive may own up to 256 MiB of expanded data;
+        // serialize desktop extractions to bound peak host memory.
+        if !active.is_empty() {
+            return Err("Another archive extraction is already running".into())
+        }
         }
         let cancel=ArchiveCancellation::default();
         active.insert(review.into(),(chat.into(),cancel.clone()));
@@ -354,6 +357,7 @@ mod tests{
         assert!(!token.is_cancelled());
         assert!(registry.request_cancel("chat-one","archive-review-123456789").unwrap());
         assert!(token.is_cancelled());
+        assert!(registry.register("chat-one","archive-review-different").is_err());
         drop(handle);
         assert!(!registry.request_cancel("chat-one","archive-review-123456789").unwrap());
     }

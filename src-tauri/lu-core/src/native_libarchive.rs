@@ -21,7 +21,7 @@ pub enum NativeFormat{SevenZip,Rar,RawXz,RawBzip2,RawZstd}
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub enum NativeArchiveError{
     BackendMissing,UnsupportedFormat,CorruptArchive,EncryptedOrUnsupported,
-    MaliciousEntry,TooLarge,DuplicateEntry,InvalidName,NativeFailure,
+    MaliciousEntry,TooLarge,DuplicateEntry,InvalidName,NativeFailure,Cancelled,
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct NativeMember{pub path:String,pub is_directory:bool,pub bytes:Vec<u8>}
@@ -251,6 +251,14 @@ fn configured_reader<'a>(lib:&'a Library,format:NativeFormat)
 pub fn decode_members(
     format:NativeFormat,source:&[u8]
 )->Result<Vec<NativeMember>,NativeArchiveError>{
+    decode_members_cancellable(format,source,&||false)
+}
+/// The caller supplies a host-owned cancellation predicate, never a model
+/// argument. Checks occur before native open and between each decoded chunk.
+pub fn decode_members_cancellable(
+    format:NativeFormat,source:&[u8],cancelled:&dyn Fn()->bool
+)->Result<Vec<NativeMember>,NativeArchiveError>{
+    if cancelled(){return Err(NativeArchiveError::Cancelled)}
     if !matches!(format,NativeFormat::SevenZip|NativeFormat::Rar){
         return Err(NativeArchiveError::UnsupportedFormat)
     }
@@ -274,6 +282,7 @@ pub fn decode_members(
         let mut items=Vec::new();let mut seen=std::collections::BTreeSet::new();
         let mut total=0usize;let mut file_count=0usize;
         loop{
+            if cancelled(){return Err(NativeArchiveError::Cancelled)}
             let mut entry=ptr::null_mut();
             let status=next(read.handle,&mut entry);
             if status==1{break}
@@ -307,6 +316,7 @@ pub fn decode_members(
             let mut bytes=Vec::new();let mut buffer=[0u8;BLOCK];
             if !directory{
                 loop{
+                    if cancelled(){return Err(NativeArchiveError::Cancelled)}
                     let read_bytes=data(read.handle,buffer.as_mut_ptr().cast(),BLOCK);
                     if read_bytes<0{return Err(NativeArchiveError::CorruptArchive)}
                     if read_bytes==0{break}
@@ -325,6 +335,7 @@ pub fn decode_members(
             }
             items.push(NativeMember{path:name,is_directory:directory,bytes});
         }
+        if cancelled(){return Err(NativeArchiveError::Cancelled)}
         if file_count==0{return Err(NativeArchiveError::CorruptArchive)}
         Ok(items)
     }

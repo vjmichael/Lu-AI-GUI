@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2e08895d2d2d18df7f87f29769f8994bc468b9ff",
+  "sourceCommitBeforeLock": "d3fe12caa606e6a245086c4ed939fe95c54b3428",
   "trackedFileCount": 389,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "b159af15ea91d6525028b21dbecb73b482d0e284"
+      "blob": "11f9ba33e485ca2b52a3fa13dedf5bda1b4d263f"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE2_ADVANCED_FORMATS_AND_OFFICE.md",
-      "blob": "4e5491749a604af486e4dc98b84b72b83ec66c4e"
+      "blob": "202630ee7cfa8de7e42eea172e7717c2a6851fe6"
     },
     {
       "path": "docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md",
@@ -297,7 +297,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_desktop.rs",
-      "blob": "03d01d3f4b49d7d0dfdaa2afe038fd45dd0499ed"
+      "blob": "77e7bd2d73584c268774afdd0300a096d3b92cc3"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -733,7 +733,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/durable.rs",
-      "blob": "5125281dff152cabdf8bcc23e0a3ab6042c982ed"
+      "blob": "a4544bf5b6830ac6e40ed78c019cae94f1eeb73e"
     },
     {
       "path": "src-tauri/lu-core/src/edit_approval_ledger.rs",
@@ -849,7 +849,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
-      "blob": "91ee862152cad52d011514e43491b86583f04c04"
+      "blob": "299276f1f1a675a8a93f1cb31fdc7c36a176404b"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree_tool.rs",
@@ -857,7 +857,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
-      "blob": "611b18bb7d65ddc85c31a6c9ba7dc445a36727d3"
+      "blob": "afd1041bffd3c5a24a4d2a0c687870538b5a2e2c"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_control.rs",
@@ -909,7 +909,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
-      "blob": "376c74977d7ec48b08f89616e2d2db2209047213"
+      "blob": "c6422000a402831a9649572947f7c78938d716c2"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer_tool.rs",
@@ -937,7 +937,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_libarchive.rs",
-      "blob": "2d9f053edaa683ba6bd8edf05b7e025744d0da3b"
+      "blob": "a02a9369a474d25eb8877d53b522002ef979d9b8"
     },
     {
       "path": "src-tauri/lu-core/src/native_linux_archive.rs",
@@ -1005,7 +1005,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_seven_rar.rs",
-      "blob": "8936258c753c2bbd5452afdc3018010f3661cde6"
+      "blob": "d71b62c986de072d62311720fe6fc24324b99158"
     },
     {
       "path": "src-tauri/lu-core/src/native_spreadsheet_create.rs",
@@ -1349,7 +1349,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_tree_authority.rs",
-      "blob": "d1e4f9711cef20d97bf52dc385537c73132181a4"
+      "blob": "0b688695d756855c4800ca65de3edeff307f8a0d"
     },
     {
       "path": "src-tauri/lu-core/tests/native_atomic_write.rs",

@@ -149,10 +149,17 @@ fn copy_new_internal(
     drop(output);
     let (bytes, sha256) = match result {
         Ok(x) => x,
-        Err(e) => { let _ = root.remove_file(&stage); return Err(e); }
+        Err(e) => {
+            if root.remove_file(&stage).is_err(){
+                return Err(TransferError::PublishedNeedsReconciliation)
+            }
+            return Err(e)
+        }
     };
     if let Err(e) = root.hard_link(&stage, root, target) {
-        let _ = root.remove_file(&stage);
+        if root.remove_file(&stage).is_err(){
+            return Err(TransferError::PublishedNeedsReconciliation)
+        }
         return Err(if e.kind() == std::io::ErrorKind::AlreadyExists {
             TransferError::TargetExists
         } else { TransferError::Io(e.to_string()) });

@@ -5,12 +5,12 @@
 //! Encrypted, multi-volume, partial, damaged, link or special entries fail.
 use std::io::Read;
 use cap_std::fs::Dir;
-use crate::native_libarchive::{decode_members,NativeFormat,NativeArchiveError};
+use crate::native_libarchive::{decode_members_cancellable,NativeFormat,NativeArchiveError};
 const MAX_SOURCE:u64=128*1024*1024;
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub enum SevenRarError {
     UnsupportedFormat,NotRegular,BackendUnavailable,UnsafeArchive,
-    EncryptedOrUnsupported,TooLarge,Io(String),
+    EncryptedOrUnsupported,TooLarge,Cancelled,Io(String),
 }
 fn allowed_name(name:&str)->bool{
     !name.is_empty()&&name.len()<=240&&!name.starts_with(".lu-")
@@ -26,6 +26,12 @@ pub fn detect_7z_rar(name:&str)->Option<NativeFormat>{
 pub fn seven_rar_tree_members(
     root:&Dir,name:&str
 )->Result<Vec<(String,bool,Vec<u8>)>,SevenRarError>{
+    seven_rar_tree_members_cancellable(root,name,&||false)
+}
+pub fn seven_rar_tree_members_cancellable(
+    root:&Dir,name:&str,cancelled:&dyn Fn()->bool
+)->Result<Vec<(String,bool,Vec<u8>)>,SevenRarError>{
+    if cancelled(){return Err(SevenRarError::Cancelled)}
     let kind=detect_7z_rar(name).ok_or(SevenRarError::UnsupportedFormat)?;
     if !allowed_name(name){return Err(SevenRarError::UnsafeArchive)}
     let meta=root.symlink_metadata(name).map_err(|e|SevenRarError::Io(e.to_string()))?;
@@ -42,10 +48,17 @@ pub fn seven_rar_tree_members(
         return Err(SevenRarError::NotRegular)
     }
     let mut data=Vec::new();
-    file.take(MAX_SOURCE+1).read_to_end(&mut data)
-        .map_err(|e|SevenRarError::Io(e.to_string()))?;
-    if data.len() as u64>MAX_SOURCE{return Err(SevenRarError::TooLarge)}
-    let files=decode_members(kind,&data).map_err(|e|match e{
+    let mut stream=file.take(MAX_SOURCE+1);
+    let mut chunk=[0u8;64*1024];
+    loop{
+        if cancelled(){return Err(SevenRarError::Cancelled)}
+        let n=stream.read(&mut chunk).map_err(|e|SevenRarError::Io(e.to_string()))?;
+        if n==0{break}
+        data.extend_from_slice(&chunk[..n]);
+        if data.len() as u64>MAX_SOURCE{return Err(SevenRarError::TooLarge)}
+    }
+    let files=decode_members_cancellable(kind,&data,cancelled).map_err(|e|match e{
+        NativeArchiveError::Cancelled=>SevenRarError::Cancelled,
         NativeArchiveError::BackendMissing=>SevenRarError::BackendUnavailable,
         NativeArchiveError::TooLarge=>SevenRarError::TooLarge,
         NativeArchiveError::EncryptedOrUnsupported=>

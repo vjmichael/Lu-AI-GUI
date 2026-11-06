@@ -10,9 +10,10 @@ use lu_core::{
     },
     journal::{EffectJournal,EffectState},
     model::ModelToolCatalog,
-    native_archive_tree::{preview_archive_tree,observe_tree_completion},
+    native_archive_tree::{preview_archive_tree,observe_tree_completion,ArchiveCancellation},
     native_archive_tree_tool::{
-        register_archive_tree_extractor,ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
+        register_archive_tree_extractor,register_archive_tree_extractor_with_cancel,
+        ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
     },
     policy::{CapabilityGrant,PolicyEngine},
     registry::{DispatchError,NativeToolRegistry},
@@ -98,6 +99,30 @@ async fn full_tree_extraction_requires_exact_approved_manifest_and_reconciles(){
     assert_eq!(authority.dispatch_bound_durable(
         &registry,&journal,approved.clone(),origin.clone(),&fence
     ).await.unwrap(),out);
+    // A host cancellation before mkdir is a verified NO-EFFECT refusal, not
+    // an ambiguous partial write. Even this FAILED call cannot be auto-replayed.
+    let token=ArchiveCancellation::default();
+    token.cancel();
+    let canceled_registry=NativeToolRegistry::new();
+    let mut canceled_catalog=ModelToolCatalog::new();
+    register_archive_tree_extractor_with_cancel(
+        &canceled_registry,&mut canceled_catalog,
+        Arc::clone(&dir),Arc::clone(&dir),token
+    ).unwrap();
+    let canceled_fence=ExactArchiveTreePolicy{
+        host_policy:&policy,trusted_source:&dir,
+        source_name:"source.zip",destination_folder:"cancelled-folder",
+        manifest_sha256:&preview.sha256,
+    };
+    let cancelled=request("cancelled-folder","tree-cancelled-001");
+    assert!(matches!(authority.dispatch_bound_durable(
+        &canceled_registry,&journal,cancelled.clone(),origin.clone(),&canceled_fence
+    ).await,Err(DispatchError::Execution(ref e)) if e.code=="OPERATION_CANCELLED"));
+    assert_eq!(journal.get(&cancelled.call_id).unwrap().unwrap().state,EffectState::Failed);
+    assert!(!root.join("cancelled-folder").exists());
+    assert!(matches!(authority.dispatch_bound_durable(
+        &canceled_registry,&journal,cancelled,origin.clone(),&canceled_fence
+    ).await,Err(DispatchError::Execution(ref e)) if e.code=="EFFECT_REPLAY_BLOCKED"));
     authority.revoke_task(&origin.task_id).unwrap();
     assert!(matches!(authority.dispatch_bound_durable(
         &registry,&journal,approved,origin,&fence
