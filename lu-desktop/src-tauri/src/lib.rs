@@ -244,6 +244,7 @@ struct DesktopState {
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
     observe: Arc<observe_desktop::ObserveHost>,
+    vision_probe:Mutex<Option<vision_context::VisionProbeReceipt>>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -618,6 +619,7 @@ impl DesktopState {
         ));
         Ok(Self {
             observe,
+            vision_probe:Mutex::new(None),
             background_processes,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
@@ -1005,7 +1007,14 @@ fn lu_vision_capability(
     let projector=runtime.model_ref.as_ref().is_some_and(|id|
         models.iter().any(|m|&m.model_ref==id&&m.projector_attached)
     );
-    let evidence=vision_context::session_evidence(loaded,projector);
+    let passed=state.vision_probe.lock()
+        .map_err(|_|"Native vision probe state unavailable")?
+        .as_ref().is_some_and(|proof|
+            proof.passed
+            &&Some(&proof.session_id)==runtime.session_id.as_ref()
+            &&Some(&proof.model_ref)==runtime.model_ref.as_ref()
+        );
+    let evidence=vision_context::probe_evidence(loaded,projector,passed);
     Ok(VisionCapabilityView{
         session_id:runtime.session_id,model_ref:runtime.model_ref,
         status:vision_context::availability_label(evidence),
@@ -1013,6 +1022,8 @@ fn lu_vision_capability(
             "No loaded model. Native visual understanding unavailable."
         }else if !projector{
             "The loaded model has no admitted MMProj for image requests."
+        }else if passed{
+            "Four native image challenges passed for this exact loaded model session; verify real-task accuracy separately."
         }else{
             "MMProj admitted; native visual reasoning remains unverified until a real host-scoped image probe succeeds."
         },
