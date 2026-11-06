@@ -89,3 +89,24 @@ fn symlink_zip_source_is_denied(){
         ZipExtractError::NotRegularFile);
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn deflated_zip_stream_has_real_integrity_and_bounded_extract(){
+    let (root,dir)=fixture();
+    let mut z=ZipWriter::new(fs::File::create(root.join("deflated.zip")).unwrap());
+    z.start_file("src/compressed.txt",SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)).unwrap();
+    // Not highly repetitive: compressed size should not trip the ZIP-bomb guard.
+    let payload=(0..1024).map(|i|format!("{i:04x}-value-{}\n",i%31))
+        .collect::<String>();
+    z.write_all(payload.as_bytes()).unwrap();
+    z.finish().unwrap();
+    let digest=zip_member_sha256(&dir,"deflated.zip","src/compressed.txt").unwrap();
+    let receipt=extract_zip_member_new_checked(
+        &dir,"deflated.zip","src/compressed.txt",&dir,"compressed.txt",
+        "transaction-deflate-12345",&digest
+    ).unwrap();
+    assert_eq!(receipt.bytes_written,payload.len() as u64);
+    assert_eq!(fs::read(root.join("compressed.txt")).unwrap(),payload.as_bytes());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
