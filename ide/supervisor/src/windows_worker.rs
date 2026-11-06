@@ -9,6 +9,7 @@
 use crate::{
     snapshot::{verify_input, PublishedInput},
     windows_cap_tree::{audit_tree, digest_tree, publish_into_native_parent},
+    windows_broker::{BrokerLease, TrustedBroker},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
@@ -508,7 +509,8 @@ pub fn execute_windows_worker(
     supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
     current_host_observed_head: &str,
     input: &PublishedInput, trusted_offline_toolchain_root: &Path,
-    trusted_native_output_parent: &Path, cancel: &WindowsCancellation,
+    trusted_native_output_parent: &Path, trusted_broker: &TrustedBroker,
+    cancel: &WindowsCancellation,
 ) -> Result<WindowsExecutionResult, SupervisorError> {
     if !valid_job_id(job_id) || plan.source_head != current_host_observed_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -557,6 +559,9 @@ pub fn execute_windows_worker(
         .find(|x| x.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?.plan_sha256;
     let job = Job::create(job_id, &plan_hash, plan)?;
     if !proof().complete() { return Err(denied()); }
+    // Independent kernel Job holder MUST acknowledge readiness and fsync
+    // its own witness before the one-shot grant can be consumed.
+    let mut broker = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_broker)?;
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     let (process, thread) = match launch_appcontainer(
         &profile, &job, &exe, &mut command, &workspace, &env
@@ -574,6 +579,13 @@ pub fn execute_windows_worker(
             return Err(reason);
         }
     };
+    // The separate broker must remain live across the suspended child
+    // admission. A dead broker cannot be waved through as containment.
+    if !broker.alive() {
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
     // Record the contained process BEFORE ResumeThread, so a host crash in
     // this window is quarantined rather than falsely accepted as success.
     if let Err(reason) = supervisor.native_mark_running(job_id) {
@@ -607,6 +619,11 @@ pub fn execute_windows_worker(
         if waited != WAIT_TIMEOUT {
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(denied());
+        }
+        if !broker.alive() {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
         }
         let request = cancel.0.load(Ordering::SeqCst);
         if request || begin.elapsed().as_millis() >= plan.runtime_limit_ms as u128
@@ -659,6 +676,9 @@ pub fn execute_windows_worker(
             reaped, publication.is_some(),
             publication.as_ref().map(|(_, _, sha)| sha.as_str()))?
     };
+    // Only after the supervisor terminal receipt is durable and the
+    // kernel Job is verified empty may the recovery keeper be released.
+    broker.release_empty()?;
     let (output_root, output_bytes, output_sha256) =
         publication.unwrap_or((PathBuf::new(), 0, String::new()));
     Ok(WindowsExecutionResult {
