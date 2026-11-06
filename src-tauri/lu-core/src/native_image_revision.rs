@@ -16,6 +16,14 @@ const MAX_RESULT_BYTES:usize=16*1024*1024;
 pub enum ImageRevisionOperation{
     Crop{x:u32,y:u32,width:u32,height:u32},
     Resize{width:u32,height:u32},
+    Rotate90,
+    FlipHorizontal,
+    /// Solid rectangular privacy mask; output is always a new image.
+    Redact{x:u32,y:u32,width:u32,height:u32},
+    /// Deterministic block-average mosaic, not a security redaction.
+    Pixelate{x:u32,y:u32,width:u32,height:u32,block_size:u32},
+    /// Draw a visible annotation border over an immutable source snapshot.
+    Rectangle{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct ImageRevision{
@@ -34,6 +42,15 @@ pub enum ImageRevisionError{
 fn dimensions_allowed(w:u32,h:u32)->bool{
     w>0&&h>0&&w<=MAX_IMAGE_EDGE&&h<=MAX_IMAGE_EDGE
         &&u64::from(w)*u64::from(h)<=MAX_IMAGE_PIXELS
+}
+fn validate_region(
+    x:u32,y:u32,width:u32,height:u32,base_w:u32,base_h:u32
+)->Result<(),ImageRevisionError>{
+    if !dimensions_allowed(width,height)||x>=base_w||y>=base_h
+       ||width>base_w-x||height>base_h-y{
+        return Err(ImageRevisionError::InvalidOperation);
+    }
+    Ok(())
 }
 pub fn transform_admitted_image(
     source:&PinnedImage,operation:ImageRevisionOperation
@@ -73,9 +90,69 @@ pub fn transform_admitted_image(
             if !dimensions_allowed(width,height){
                 return Err(ImageRevisionError::InvalidOperation);
             }
-            // Deterministic, CPU-only. Lanczos3 is reproducible with the
-            // pinned image crate and does not invoke GPU inference.
             decoded.resize_exact(width,height,image::imageops::FilterType::Lanczos3)
+        }
+        ImageRevisionOperation::Rotate90=>decoded.rotate90(),
+        ImageRevisionOperation::FlipHorizontal=>decoded.fliph(),
+        ImageRevisionOperation::Redact{x,y,width,height}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            let mut image=decoded.to_rgba8();
+            for py in y..y+height {
+                for px in x..x+width {
+                    image.put_pixel(px,py,image::Rgba([0,0,0,255]));
+                }
+            }
+            DynamicImage::ImageRgba8(image)
+        }
+        ImageRevisionOperation::Pixelate{x,y,width,height,block_size}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(2..=128).contains(&block_size){
+                return Err(ImageRevisionError::InvalidOperation);
+            }
+            let mut image=decoded.to_rgba8();
+            let x_end=x+width;
+            let y_end=y+height;
+            let mut py=y;
+            while py<y_end{
+                let by=(y_end-py).min(block_size);
+                let mut px=x;
+                while px<x_end{
+                    let bx=(x_end-px).min(block_size);
+                    let mut channels=[0u64;4];
+                    for ry in py..py+by{
+                        for rx in px..px+bx{
+                            let p=image.get_pixel(rx,ry);
+                            for c in 0..4{channels[c]+=u64::from(p[c]);}
+                        }
+                    }
+                    let count=u64::from(bx)*u64::from(by);
+                    let pixel=image::Rgba([
+                        (channels[0]/count) as u8,(channels[1]/count) as u8,
+                        (channels[2]/count) as u8,(channels[3]/count) as u8
+                    ]);
+                    for ry in py..py+by{
+                        for rx in px..px+bx{image.put_pixel(rx,ry,pixel);}
+                    }
+                    px+=bx;
+                }
+                py+=by;
+            }
+            DynamicImage::ImageRgba8(image)
+        }
+        ImageRevisionOperation::Rectangle{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=64).contains(&stroke){return Err(ImageRevisionError::InvalidOperation);}
+            let mut image=decoded.to_rgba8();
+            let border=stroke.min(width).min(height);
+            for py in y..y+height{
+                for px in x..x+width{
+                    if px-x<border||py-y<border||
+                        x+width-1-px<border||y+height-1-py<border{
+                        image.put_pixel(px,py,image::Rgba([rgb[0],rgb[1],rgb[2],255]));
+                    }
+                }
+            }
+            DynamicImage::ImageRgba8(image)
         }
     };
     let (width,height)=transformed.dimensions();
