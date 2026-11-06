@@ -68,6 +68,8 @@ pub mod native_archive_tree_tool;
 pub mod native_zip_extract_tool;
 pub mod native_iso9660;
 pub mod native_linux_archive;
+pub mod native_cpio;
+pub mod native_ar_deb;
 pub mod native_linux_archive_tool;
 pub mod native_iso_extract_tool;
 pub mod native_archive_create;
