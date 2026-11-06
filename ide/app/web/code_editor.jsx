@@ -194,8 +194,15 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     const caret = view.state.selection.main.head;
     const line = view.state.doc.lineAt(caret);
     const prefix = view.state.sliceDoc(line.from, caret).match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
-    const from = caret - (prefix?.[0]?.length || 0);
-    view.dispatch({changes: {from, to: caret, insert},
+    const ranged = Number.isInteger(completionApplyRequest.replaceFrom) &&
+      Number.isInteger(completionApplyRequest.replaceTo);
+    const from = ranged ? completionApplyRequest.replaceFrom :
+      caret - (prefix?.[0]?.length || 0);
+    const to = ranged ? completionApplyRequest.replaceTo : caret;
+    if (from < line.from || from > to || to !== caret || to > view.state.doc.length) {
+      fail(); return;
+    }
+    view.dispatch({changes: {from, to, insert},
       selection: {anchor: from + insert.length}, scrollIntoView: true});
     completionCallback.current?.(completionApplyRequest.nonce, true);
     view.focus();
