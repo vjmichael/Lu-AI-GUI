@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D7C — Independent native Windows recovery keeper (2026-11-06)
+
+- **Implementation:** `ide/supervisor/src/windows_broker.rs` plus fixed `src/bin/windows_recovery_broker.rs` now implement a second native process that independently holds the named Job before worker grant consumption / resume. Exact installed binary SHA is required by native `TrustedBroker`, and the supervisor PID + kernel creation time are authenticated against its live process handle.
+- **Crash protocol:** fixed broker confirms its Job handle, fsyncs `ready` to an independent bounded hash-linked journal and acknowledges via a private parent-child pipe; the worker refuses launch or quarantines if the broker is not alive. On supervisor death the broker durably records kill intent, calls `TerminateJobObject`, verifies zero active descendants, fsyncs the observation, and retains the original named Job for up to 15 minutes for independently verifiable restart reconciliation. No automatic relaunch.
+- **Private release:** normal terminal release uses a one-use nonce on an inherited anonymous stdin pipe **after** the D3 terminal receipt and empty-Job verification; no publicly signalable normal-release event. A separate named event is accepted only after parent death plus Job cleanup, and pre-signals are reset.
+- **Adversarial fixtures:** native `d7c_broker_crash_fixture.rs` and PowerShell `Test-D7CProductionBrokerCrash.ps1` force a real parent crash from an external observer, prove child kernel exit and a still-live empty named Job, validate durable broker-event order, try a forged early release, and cleanly release the recovered keeper. Windows D7C workflow now builds/runs these fixtures; D7B offline Cargo fixture also requires an actual broker binary.
+- **Release hold:** all latest-head Windows CI and installed Windows tests still pending. The new broker is an **independent process under the host identity**, not a separately protected/attested Windows service principal, and its same-user journal hash chain cannot authenticate itself. A signed separate-identity broker service with protected ACLs / trusted IPC is still required for malicious same-user recovery authority. No desktop/Tauri Run command activated. See `ide/supervisor/D7C_WINDOWS_CAPABILITY_ACCEPTANCE.md`.
+
 ## Wave D7C — Handle-rooted Windows worker staging and publication (2026-11-06)
 
 - **Source:** `ide/wave-d7c-race-safe-native-worker-20261106`, stacked on D7B PR #60. No Tauri Run command or Lu Core bridge. Native worker remains an explicit `windows-worker` feature.
