@@ -524,6 +524,32 @@ impl ResearchDesktop{
         })
     }
 
+    pub(crate) fn campaigns(&self,chat_id:&str)
+    ->Result<Vec<ResearchCampaignView>,String>{
+        if !safe_id(chat_id){return Err("Invalid Research conversation".into());}
+        let dir=match fs::symlink_metadata(&self.root){
+            Ok(m)=>m,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(Vec::new()),
+            Err(_)=>return Err("Research evidence directory unavailable".into()),
+        };
+        if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=match fs::symlink_metadata(&db){
+            Ok(m)=>m,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(Vec::new()),
+            Err(_)=>return Err("Research evidence ledger unavailable".into()),
+        };
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.recent_campaigns(20)
+            .map_err(|_|"Research campaign inventory unavailable".into())
+            .map(|rows|rows.into_iter().map(Into::into).collect())
+    }
     /// Bounded campaign with one fixed OpenAlex query. The caller must obtain
     /// a native grant for the campaign, not accept a model-created task ID.
     pub(crate) fn create_campaign(
