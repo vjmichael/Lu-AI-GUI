@@ -34,6 +34,14 @@ jobs:
       - run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_maturity
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_planner
   core-windows:
     needs: source
     runs-on: windows-2025
@@ -48,6 +56,14 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_maturity
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_planner
   desktop-ui:
     needs: source
     runs-on: ubuntu-24.04

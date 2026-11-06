@@ -7,6 +7,11 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 4 browser preference remains a host-only render setting without navigation authority',
+    host.includes('fn lu_browser_visibility(') &&
+    host.includes('fn lu_set_browser_visibility(') &&
+    ui.includes("invoke('lu_set_browser_visibility',{mode})") &&
+    ui.includes('This preference does not launch or authorize browsing')],
   ['Wave 4 vision status is host-attested and never claims projector presence is a successful probe',
     host.includes('fn lu_vision_capability(') &&
     host.includes('vision_context::image_preflight(') &&

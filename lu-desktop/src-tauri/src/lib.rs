@@ -210,6 +210,7 @@ struct DesktopState {
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
+    browser_preferences: lu_core::browser_preferences::BrowserPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -490,6 +491,10 @@ impl DesktopState {
         approvals.reconcile_pending()
             .map_err(|e| format!("read approval startup reconciliation: {e:?}"))?;
 
+        // Host-only rendering preference; never authorizes Chromium launch.
+        let browser_preferences=lu_core::browser_preferences::BrowserPreferences::open(
+            &root.join("lu-browser-visibility.sqlite")
+        ).map_err(|e|format!("Browser preference unavailable: {e:?}"))?;
         let models_dir = root.join("lu-models");
         fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
         let engine_dir = app
@@ -605,6 +610,7 @@ impl DesktopState {
             rollback_approval_ledger: rollback_approvals,
             documents_os_dir,
             document_preferences,
+            browser_preferences,
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -945,6 +951,34 @@ fn lu_vision_capability(
             "MMProj admitted; native visual reasoning remains unverified until a real host-scoped image probe succeeds."
         },
     })
+}
+
+/// Native operator preference. No worker launch, model tool or network grant.
+#[tauri::command]
+fn lu_browser_visibility(
+    state:State<'_,Arc<DesktopState>>
+)->Result<String,String>{
+    use lu_core::browser_visibility_settings::BrowserVisibilityPreference as Mode;
+    let mode=state.browser_preferences.visibility()
+        .map_err(|_|"Browser preference unavailable")?;
+    Ok(match mode{
+        Mode::AutomaticHidden=>"automatic_hidden",
+        Mode::AlwaysVisible=>"always_visible",
+    }.to_owned())
+}
+#[tauri::command]
+fn lu_set_browser_visibility(
+    state:State<'_,Arc<DesktopState>>,mode:String
+)->Result<String,String>{
+    use lu_core::browser_visibility_settings::BrowserVisibilityPreference as Mode;
+    let value=match mode.as_str(){
+        "automatic_hidden"=>Mode::AutomaticHidden,
+        "always_visible"=>Mode::AlwaysVisible,
+        _=>return Err("Invalid browser visibility mode".into()),
+    };
+    state.browser_preferences.set_visibility(value)
+        .map_err(|_|"Unable to persist browser visibility mode")?;
+    Ok(mode)
 }
 
 #[tauri::command]
@@ -3451,6 +3485,8 @@ pub fn run() {
             lu_load_model,
             lu_load_diagnostics,
             lu_vision_capability,
+            lu_browser_visibility,
+            lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,
             lu_generate,

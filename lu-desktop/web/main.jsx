@@ -31,6 +31,8 @@ function App() {
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
+  const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
+  const [browserPreferenceError,setBrowserPreferenceError] = useState('');
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -193,6 +195,14 @@ function App() {
     return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
+  useEffect(()=>{
+    if(!settingsOpen)return;
+    let active=true;
+    invoke('lu_browser_visibility')
+      .then(mode=>{if(active){setBrowserVisibility(mode);setBrowserPreferenceError('');}})
+      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
+    return()=>{active=false;};
+  },[settingsOpen]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -2715,6 +2725,24 @@ function App() {
           <p className="settingsNotice">Lu saves only after reviewing the exact file contents and destination.
             Modifying existing files requires a separate validated edit/backup pipeline.</p>
         </section>}
+        <section className="advancedDocumentSettings" aria-label="Browser visibility settings">
+          <h3>Browser visibility</h3>
+          <p>Automatic uses a headed Chromium window hidden by default until the user is needed.
+             Always Visible is optional. This preference does not launch or authorize browsing.</p>
+          <label htmlFor="browserVisibilityMode">Window visibility</label>
+          <select id="browserVisibilityMode" value={browserVisibility}
+            onChange={e=>{
+              const mode=e.target.value;
+              invoke('lu_set_browser_visibility',{mode})
+                .then(saved=>{setBrowserVisibility(saved);setBrowserPreferenceError('');})
+                .catch(error=>setBrowserPreferenceError(String(error)));
+            }}>
+            <option value="automatic_hidden">Automatic (headed, initially hidden)</option>
+            <option value="always_visible">Always visible</option>
+          </select>
+          {browserPreferenceError&&<small role="alert">{browserPreferenceError}</small>}
+          <small>The Chromium/Playwright runtime and real visibility handoff are not yet packaged or native-accepted.</small>
+        </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
         <button className="subtleButton full" onClick={importModel} disabled={busy}>Import GGUF from another location</button>

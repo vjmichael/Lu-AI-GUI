@@ -272,3 +272,8 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **WAVE4-VISION-01 SOURCE IMPLEMENTED (2026-11-06):** Normal chat image Send now preflights current loaded-model projector admission before creating durable user turn. New native "Check vision" status surfaces per-session verified/unverified/unavailable via existing vision_routing policy; no live image probe is yet published, so MMProj alone returns UNVERIFIED, never a false VERIFIED vision capability. Actual pixel-grounded probe and backend attestation, model-change revocation, Linux/Windows native CI and installed MMProj remain OPEN.
+
+
+**WAVE4-BROWSER-01 SOURCE INTEGRATED (2026-11-06):** Reused TOOLS-10 browser preference and visibility state modules in Lu Core, wired native SQLite persistence and operator Settings UI; Automatic headed-hidden default and Always Visible choice. No worker start or external-site access, network authority, CAPTCHA handoff, or bundled runtime. Native Windows/Linux CI and real installed browser acceptance remain OPEN.
+
+**WAVE4-RESEARCH-01 CORE SOURCE INTEGRATED (2026-11-06):** Reused six TOOLS-10 verified evidence/planner/thesis-premise/sufficiency/maturity modules in Lu Core and added tests to both native OS CI gates. This is offline citation/provenance infrastructure, NOT live research or ordinary chat web integration; HTTPS providers, user-turn scoped Research workflow and Browser/Research E2E remain OPEN.

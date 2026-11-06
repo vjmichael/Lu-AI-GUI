@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4e9fe1ce6b29586948f592ce46494f0ed8f43c1e",
+  "sourceCommitBeforeLock": "2f90fc7b3569dc18d28387b0f4852950e95de8f9",
   "trackedFileCount": 410,
   "files": [
     {
@@ -45,7 +45,7 @@
     },
     {
       "path": ".github/workflows/lu-wave4-contextual-tools.yml",
-      "blob": "670cc43e76ed3e69905a35dd7eb2d916469690b2"
+      "blob": "f8b32704472458c9b4d642f3a2790011c9061422"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -93,7 +93,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "4928a392359aad0fd0a0143f388dfca7cc766f81"
+      "blob": "96f4193e5e7c38adfa25dea25522f61d8d1bd447"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -173,7 +173,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE4_CONTEXTUAL_CAPABILITIES.md",
-      "blob": "cd1fe08ecbe7cfc4bbc97840eb163d7eaface3e0"
+      "blob": "f4dbbcfe406f03b5ce4af057b96067c569fcb5fd"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -265,7 +265,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "0bb630c6b068e679f0e7c4de6a71e4946259806d"
+      "blob": "f881394c1151535b32fb1f1602494c8c3e75b8dd"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -357,7 +357,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "daa53b9157bdbb9468e20a38507cc5be6eb4a5f8"
+      "blob": "41e3da5ce2ad6daed39350d6fae8ee3200c1332f"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -573,7 +573,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "b62c52f2d0d17dc2f3426cd4805ac195de926d4d"
+      "blob": "78d5cdee3599be5aee7796ca7aa0e5d7a657281f"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

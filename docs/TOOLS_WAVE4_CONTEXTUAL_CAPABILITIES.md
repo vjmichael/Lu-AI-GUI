@@ -51,3 +51,12 @@ Reused LU-IMAGE-WS-01 draft's typed image-edit intent contract and regression fi
 ## WAVE4-VISION-01 — host-only capability diagnosis and early image admission (source implemented)
 
 Existing admitted image bytes and MMProj model binding are retained. The normal Send host now checks the loaded model's admitted projector before queueing/persisting a new image request; a model without MMProj produces a direct error instead of an abandoned queued generation. A separate read-only "Check vision" UI invokes native host status for that **current session** and accurately labels no model/no projector as unavailable, and admitted MMProj without live image probe as unverified. Reuses `vision_routing::VisionEvidence`, and never implies OCR can describe arbitrary photos. This is not a genuine image-probe implementation; backend-specific image grounding tests, probe revocation on unload/reload, and real Windows MMProj confirmation remain OPEN.
+
+
+## WAVE4-BROWSER-01 — persistent operator visibility preference (source integrated)
+
+Reused tested TOOLS-10 browser visibility-state and SQLite preference modules on the active Wave 4 branch. The Tauri host persists human-selected `automatic_hidden` (default headed browser hidden until user interaction) or `always_visible` and shows a Settings selector. Changing a preference never launches Chromium or grants model/network permission. The packaged Chromium/Node/Playwright worker, origin authorization, same-window CAPTCHA handoff and Windows/Linux installed browser acceptance remain OPEN in draft PR #26.
+
+## WAVE4-RESEARCH-01 — citation integrity and research analysis core (source integrated)
+
+Reused the existing TOOLS-10 verified-evidence ledger, query planner, thesis evidence analysis, premise/cross-domain revision, sufficiency and maturity modules. Discovery is not a verified citation; interpretation is not a verified passage; early missing evidence does not prove scientific absence. The native Linux and Windows test matrix includes each module. Browser/HTTPS provider ingestion, full-text extraction, durable orchestration and one-turn normal-chat Research network dispatch remain OPEN. No live web search or model browser authority was added by staging these offline modules.
