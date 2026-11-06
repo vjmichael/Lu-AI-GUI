@@ -15,6 +15,7 @@ use crate::{
 use std::{
     ffi::OsStr,
     fs::{self},
+    io,
     mem::size_of,
     os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
