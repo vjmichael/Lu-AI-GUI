@@ -647,3 +647,23 @@ message OfficeRevisionResult {
   uint64 bytes_written = 2;
   string revised_sha256 = 3;
 }
+
+
+// WAVE2: bounded multi-part versioned Office revisions. One authenticated
+// human grant approves the exact original and entire revised package digest;
+// all individual edits must have exact expected prior content.
+message OfficeBatchPatch {
+  oneof change {
+    OfficeTextPatch word_text = 1;
+    OfficeTextPatch slide_text = 2;
+    OfficeNumberPatch cell_number = 3;
+    OfficeBooleanPatch cell_boolean = 4;
+  }
+}
+message OfficeBatchRevisionRequest {
+  string source_name = 1;
+  string target_new_name = 2;
+  string original_sha256 = 3;
+  string approved_revised_sha256 = 4;
+  repeated OfficeBatchPatch patches = 5;
+}
