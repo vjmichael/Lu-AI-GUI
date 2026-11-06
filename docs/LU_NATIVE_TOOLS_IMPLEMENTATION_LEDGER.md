@@ -59,3 +59,21 @@ Known limitation: no working Rust toolchain is available in the current containe
 - Added `.github/workflows/lu-wave1-native-tools.yml` to require explicit source module exports and test all consolidated native areas on Linux and Windows; Linux CI installs real xz, bzip2, and zstd command backends.
 - Source-tree inventory is re-pinned after each committed code/workflow change. Exact-head native build and installed-app acceptance remain separate gates.
 - **Not Wave 1 closed:** require exact-head GitHub source lock, Linux and Windows compilation and tests; fix any reported failures; then reconcile draft branch topology. Never treat queued CI as pass.
+
+## Wave 2 implementation — 2026-11-05 (in progress, separate from Wave 1 CI)
+Source branch: `lu/wave2-file-archive-operations-20261105`. Based on Wave 1 exact source `7a8d03f3e579559b6f42ae62e77c8d4eef06d4a6`.
+
+- **ZIP extract:** `native_zip_extract.rs` adds bounded selected-member extraction for Stored/Deflate ZIPs. Validates whole ZIP metadata, links, path casing/duplicates, decompression ratio, expanded size; reads streamed bytes, verifies CRC32 and SHA-256, then hard-link publishes a synced, no-overwrite stage. Different expected hash and pre-existing targets fail closed. No full-directory multi-file extraction claims.
+- **ZIP exact grant:** `native_zip_extract_tool.rs` adds typed Protobuf model codec and `ExactZipExtractPolicy` requiring human-pinned source, member, output and hash; durable effect journal tests cover denial, verified receipt, replay fence and revocation. Catalog registration never authorizes writes.
+- **CSV structured edit:** `native_csv_edit.rs` parses UTF-8 quoted CSV with bounded cell/row counts; edits a nominated cell with literal escaping for new formula-looking input, emits a full-document replacement for `WRITE-01E` full-diff review and hash-pinned existing-file journaled commit. The planner does not mutate files or bypass user consent.
+- **Native CI:** `.github/workflows/lu-wave2-files.yml` requires exact source lock and Linux/Windows ZIP/CSV native tests.
+
+### Still outstanding within Wave 2
+1. Exact-head Cargo CI compilation and repair of all Native/Windows failures. Do not call feature accepted on queued runners.
+2. Desktop human approval UX and normal chat registration of write tools, including exact file/member/content review.
+3. Existing XLSX round-trip edit preserving workbook parts, formulas/styles, relationships, images, charts, macro safety, and package signatures.
+4. DOCX/PPTX native structured create and edit engines, and PDF non-destructive editing.
+5. ZIP full-tree extraction with transaction-wide rollback/recovery; 7z/RAR and broader ISO/UDF variants.
+6. Durable filesystem copy/move/trash adapters, directory transactions, and Windows ACL/race recovery acceptance.
+
+Do not promote Wave 2 to complete from source-level implementation or queued GitHub Actions.
