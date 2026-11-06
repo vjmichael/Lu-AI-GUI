@@ -11,6 +11,7 @@ use lu_core::{
     web_http_fetch::SecureHttpFetcher,
     web_research_evidence::{Candidate,EvidenceLedger,EvidenceError,SourceStatus,TrustedBibliography},
     web_research_planner::canonical_doi,
+    web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::search_openalex,
 };
 
@@ -144,6 +145,33 @@ fn crossref_publisher_url(bytes:&[u8],expected_doi:&str)->Option<String>{
     Some(url.to_owned())
 }
 
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchDocumentView{
+    pub source_id:String,
+    pub catalog_url:String,
+    pub final_url:String,
+    pub redirect_hops:Vec<String>,
+    pub redirect_chain_sha256:String,
+    pub response_sha256:String,
+    pub extracted_text_sha256:String,
+    pub format:String,
+    pub excerpt:String,
+    pub truncated:bool,
+    pub document_accessed:bool,
+    pub publisher_url_matched:bool,
+    pub citation_verified:bool,
+    pub message:&'static str,
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchDocumentPassageView{
+    pub source_id:String,
+    pub exact_quote:String,
+    pub verification_status:&'static str,
+    pub bibliographic_passage_verified:bool,
+    pub interpretation_verified:bool,
+}
 pub(crate) struct ResearchDesktop{
     root:PathBuf,
     curl:PathBuf,
@@ -371,6 +399,102 @@ impl ResearchDesktop{
             }else{
                 "Exact quotation matched the retained Browser excerpt only. No independent publication or scholarly citation was verified."
             },
+        })
+    }
+
+    /// Host-approved NetworkRead for one already corroborated catalog URL.
+    /// Redirect hops are individually HTTPS/DNS pinned by SecureHttpFetcher.
+    /// This does not let the model supply a source URL or executable.
+    pub(crate) fn retrieve_document(
+        &self,chat_id:&str,source_id:&str
+    )->Result<ResearchDocumentView,String>{
+        if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
+            ||source_id.len()>128||source_id.chars().any(char::is_control){
+            return Err("Select a corroborated source in a trusted conversation".into());
+        }
+        if !self.available(){return Err("Pinned Research HTTPS client unavailable".into());}
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if ledger.status(source_id).map_err(|_|"Research source unknown")?
+            !=SourceStatus::MetadataCorroborated{
+            return Err("Research source is not in the metadata-corroborated stage".into());
+        }
+        let catalog_url=ledger.publisher_url_for_source(source_id)
+            .map_err(|_|"Publisher identity unavailable")?
+            .ok_or("Crossref did not identify a specific HTTPS landing URL")?;
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let chain=fetcher.fetch_document_chain(
+            &catalog_url,MAX_RESEARCH_DOCUMENT_BYTES
+        ).map_err(|_|"Document HTTPS retrieval or redirect attestation refused")?;
+        let document=extract_research_document(&chain.final_page.bytes)
+            .map_err(|_|"Fetched document is unreadable, unsupported or exceeds extraction limits")?;
+        let proof=ledger.record_document_retrieval(
+            source_id,&catalog_url,&chain.final_page.canonical_url,
+            &document.raw_sha256,&chain.chain_sha256,document.kind.code(),
+            &document.text,document.truncated
+        ).map_err(|e|format!("Document evidence could not be persisted: {e:?}"))?;
+        let excerpt=document.text.chars().take(4000).collect();
+        Ok(ResearchDocumentView{
+            source_id:source_id.into(),
+            catalog_url:proof.catalog_url.clone(),
+            final_url:proof.final_url.clone(),
+            redirect_hops:chain.hops.into_iter().map(|h|h.url).collect(),
+            redirect_chain_sha256:proof.chain_sha256,
+            response_sha256:proof.raw_sha256,
+            extracted_text_sha256:proof.text_sha256,
+            format:proof.format,excerpt,
+            truncated:proof.truncated,
+            document_accessed:proof.document_accessed,
+            publisher_url_matched:proof.final_url==proof.catalog_url,
+            citation_verified:false,
+            message:if proof.document_accessed{
+                "Complete text layer extracted from a directly Crossref-linked PDF. Individual passages still require exact verification; interpretations are not certified."
+            }else{
+                "Observed document text only. HTML, truncated PDFs or catalog redirects do not prove complete publisher-identified publication access."
+            },
+        })
+    }
+    /// A reviewed quote can be verified against a stored PDF text layer only
+    /// after catalog identity, untruncated extraction and document hash gate.
+    pub(crate) fn verify_document_passage(
+        &self,chat_id:&str,source_id:&str,quote:&str
+    )->Result<ResearchDocumentPassageView,String>{
+        if !safe_id(chat_id)||source_id.len()>128
+            ||!source_id.starts_with("https://openalex.org/")
+            ||quote.len()>4096||quote.trim().is_empty(){
+            return Err("Invalid document passage request".into());
+        }
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.verify_passage(source_id,"full-text",quote)
+            .map_err(|e|format!("Verified document passage refused: {e:?}"))?;
+        Ok(ResearchDocumentPassageView{
+            source_id:source_id.into(),exact_quote:quote.into(),
+            verification_status:"document_passage_verified",
+            bibliographic_passage_verified:true,
+            interpretation_verified:false,
         })
     }
 
