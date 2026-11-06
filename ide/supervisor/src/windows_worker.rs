@@ -59,6 +59,7 @@ use windows_sys::Win32::{
 };
 
 #[cfg(all(feature = "lsp-transport", feature = "protected-recovery-service"))]
+#[path = "windows_lsp_worker.rs"]
 pub(crate) mod lsp_native;
 const MAX_BUNDLE_FILES: usize = 60_000;
 const MAX_BUNDLE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
