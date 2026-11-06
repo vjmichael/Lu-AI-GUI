@@ -29,6 +29,15 @@ test('real visible Chromium worker starts, observes, screenshots and terminates'
     assert.equal(resume.status,'RESUMED');
     const read=await browser.execute({op:'read'});
     assert.match(read.text,/Accessible archival entry/);
+    // A password form may not say "sign in" anywhere in its body text.
+    // The real Playwright visibility probe must still suspend autonomous reads.
+    await browser.page.setContent('<html><body><input type="password" aria-label="Password"></body></html>');
+    const login=await browser.execute({op:'read'});
+    assert.equal(login.status,'NEEDS_HUMAN');
+    assert.equal(login.reason,'LOGIN_REQUIRED');
+    await assert.rejects(browser.execute({op:'screenshot'}),e=>e.code==='NEEDS_HUMAN');
+    await browser.page.setContent('<html><body><p>Public archive page</p></body></html>');
+    assert.equal((await browser.execute({op:'human_resolved'})).status,'RESUMED');
     const screenshot=await browser.execute({op:'screenshot'});
     assert.equal(screenshot.mime,'image/png');
     assert.ok(Buffer.from(screenshot.base64,'base64').length>100);
