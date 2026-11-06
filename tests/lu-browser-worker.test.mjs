@@ -280,3 +280,31 @@ test('browser mouse and keyboard cannot act on a page outside granted origin',as
   assert.equal(types,0);
   await session.close();
 });
+
+test('history traversal pauses and reveals an encountered human challenge', async()=>{
+  let current='https://archive.example/article',body='Article text';
+  const visible=[];
+  const page={
+    url:()=>current,
+    goBack:async()=>{current='https://archive.example/sign-in';body='Sign in to continue';},
+    goForward:async()=>{current='https://archive.example/article';body='Article text';},
+    locator:()=>({innerText:async()=>body})
+  };
+  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/profile',
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:{setVisible:async({visible:v})=>{visible.push(v);return true;}}
+  });
+  await session.start();
+  const challenge=await session.execute({op:'back'});
+  assert.equal(challenge.status,'NEEDS_HUMAN');
+  assert.equal(challenge.reason,'LOGIN_REQUIRED');
+  assert.deepEqual(visible,[false,true]);
+  await assert.rejects(session.execute({op:'forward'}),e=>e.code==='NEEDS_HUMAN');
+  body='Successfully signed in';
+  const resumed=await session.execute({op:'human_resolved'});
+  assert.equal(resumed.status,'RESUMED');
+  assert.deepEqual(visible,[false,true,false]);
+  await session.close();
+});
