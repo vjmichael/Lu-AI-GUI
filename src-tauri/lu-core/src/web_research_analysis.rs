@@ -272,9 +272,10 @@ mod tests {
             direct_quote:"evidence is nuanced",stance:Stance::Supports,
             reasoning:"The paper cautiously supports transfer."
         }).unwrap();
+        ledger.verify_passage("s1","full-text","Original evidence").unwrap();
         analysis.add_interpretation(&ledger,Interpretation{
             source_id:"s1",thesis_claim:"The finding generalizes",
-            direct_quote:"evidence is nuanced",stance:Stance::Challenges,
+            direct_quote:"Original evidence",stance:Stance::Challenges,
             reasoning:"The same excerpt may qualify the scope."
         }).unwrap();
         let rows=analysis.summarize_claims(&ledger).unwrap();
