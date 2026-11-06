@@ -5,7 +5,7 @@
 //! Original archives and existing destination folders are never modified.
 use crate::native_archive_tree::{
     ArchiveCancellation,TreeExtractError,TreeManifest,TreeReceipt,
-    preview_archive_tree,extract_archive_tree_new_cancellable,
+    preview_archive_tree_cancellable,extract_archive_tree_new_cancellable,
     observe_tree_completion,verify_tree_manifest,
 };
 use cap_std::fs::{Dir,OpenOptions};
@@ -116,7 +116,7 @@ pub fn preview_archive_batch(
             ||!names.insert(source.target_folder.to_ascii_lowercase()){
             return Err(TreeExtractError::InvalidName);
         }
-        let manifest=preview_archive_tree(source.source_dir,source.source_name)?;
+        let manifest=preview_archive_tree_cancellable(source.source_dir,source.source_name,cancel)?;
         total_files=total_files.checked_add(manifest.file_count)
             .ok_or(TreeExtractError::TooLarge)?;
         total_bytes=total_bytes.checked_add(manifest.total_bytes)
@@ -157,7 +157,7 @@ pub fn extract_archive_batch_new_cancellable(
             ||source.target_folder!=approved.target_folder{
             return Err(TreeExtractError::ManifestChanged);
         }
-        let now=preview_archive_tree(source.source_dir,source.source_name)?;
+        let now=preview_archive_tree_cancellable(source.source_dir,source.source_name,cancel)?;
         if now!=approved.manifest{return Err(TreeExtractError::ManifestChanged);}
     }
     if destination.symlink_metadata(new_group).is_ok(){
