@@ -62,6 +62,12 @@ function App() {
   const [archiveReviewed, setArchiveReviewed] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [latestArchiveExtract, setLatestArchiveExtract] = useState(null);
+  const [documentComposerOpen, setDocumentComposerOpen] = useState(false);
+  const [documentDraft, setDocumentDraft] = useState({format:'docx',title:'',content:''});
+  const [documentCreateReview, setDocumentCreateReview] = useState(null);
+  const [documentCreateReviewed, setDocumentCreateReviewed] = useState(false);
+  const [documentCreateBusy, setDocumentCreateBusy] = useState(false);
+  const [latestDocumentCreated, setLatestDocumentCreated] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -715,6 +721,67 @@ function App() {
     finally { setArchiveBusy(false); }
   }
 
+  async function reviewStructuredDocument() {
+    if (!chatId || documentCreateBusy || !documentDraft.title.trim() ||
+        !documentDraft.content.trim() || documentCreateReview) return;
+    setDocumentCreateBusy(true);
+    setError('');
+    try {
+      const view = await invoke('lu_review_document_create', {
+        chatId,documentFormat:documentDraft.format,
+        title:documentDraft.title,content:documentDraft.content
+      });
+      if (view) {
+        setDocumentCreateReview(view);
+        setDocumentCreateReviewed(false);
+        setDocumentComposerOpen(false);
+        setActivity('Document preview ready — review full content and target');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setDocumentCreateBusy(false); }
+  }
+  async function confirmStructuredDocument() {
+    if (!documentCreateReview || !documentCreateReviewed ||
+        documentCreateBusy || documentCreateReview.chatId !== chatId) return;
+    const review = documentCreateReview;
+    setDocumentCreateBusy(true);
+    setError('');
+    try {
+      const receipt = await invoke('lu_confirm_document_create', {
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (receipt) {
+        setLatestDocumentCreated({...receipt,chatId:review.chatId});
+        setActivity('Created ' + receipt.documentFormat.toUpperCase() + ': ' + receipt.fileName);
+        await refreshChats();
+        if (currentChat.current === review.chatId)
+          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+      } else {
+        setActivity('Document creation denied in native confirmation');
+      }
+    } catch (error) {
+      setError('Document creation not confirmed. Check recovery before retrying: ' + String(error));
+    } finally {
+      setDocumentCreateReview(null);
+      setDocumentCreateReviewed(false);
+      setDocumentCreateBusy(false);
+    }
+  }
+  async function denyStructuredDocument() {
+    if (!documentCreateReview || documentCreateBusy) return;
+    setDocumentCreateBusy(true);
+    try {
+      await invoke('lu_deny_document_create', {
+        chatId:documentCreateReview.chatId,
+        reviewId:documentCreateReview.reviewId
+      });
+      setDocumentCreateReview(null);
+      setDocumentCreateReviewed(false);
+      setActivity('Document creation denied; no file was written');
+    } catch (error) { setError(String(error)); }
+    finally { setDocumentCreateBusy(false); }
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1193,6 +1260,73 @@ function App() {
             </div>
           </section>
         )}
+        {documentComposerOpen && !documentCreateReview && <section
+          className="readProposalCard editProposalCard" aria-label="Create structured Office document">
+          <strong>Create a new structured Word or PowerPoint document</strong>
+          <small>Lu will generate the file from these reviewed words, but only your native folder picker
+            and independent native confirmation may authorize writing it.</small>
+          <label className="editReviewAck">Document format
+            <select value={documentDraft.format} onChange={e =>
+              setDocumentDraft(prev=>({...prev,format:e.target.value}))}>
+              <option value="docx">Word DOCX</option>
+              <option value="pptx">PowerPoint PPTX</option>
+            </select>
+          </label>
+          <label className="editReviewAck">Document title
+            <input value={documentDraft.title} maxLength={256}
+              onChange={e=>setDocumentDraft(prev=>({...prev,title:e.target.value}))}
+              placeholder="Document or presentation title"/>
+          </label>
+          <label className="editReviewAck">Complete text
+            <textarea className="editFullText" rows={8} maxLength={16384}
+              value={documentDraft.content}
+              onChange={e=>setDocumentDraft(prev=>({...prev,content:e.target.value}))}
+              placeholder={documentDraft.format==='pptx'
+                ? 'Bullet lines on slide one\n\nSlide two title\nBullet lines on slide two'
+                : 'First paragraph\nSecond paragraph'}/>
+          </label>
+          <small>{documentDraft.format==='pptx'
+            ? 'For presentations, blank lines divide slides. A single block uses the document title for slide one.'
+            : 'For Word, each nonempty line becomes a paragraph after the title.'}</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton" disabled={documentCreateBusy ||
+              !chatId || !documentDraft.title.trim() || !documentDraft.content.trim()}
+              onClick={() => void reviewStructuredDocument()}>Choose output folder and review</button>
+            <button type="button" className="subtleButton"
+              onClick={() => setDocumentComposerOpen(false)}>Close</button>
+          </div>
+        </section>}
+        {documentCreateReview?.chatId === chatId && <section className="readProposalCard editProposalCard"
+          role="group" aria-label="Review complete structured document creation">
+          <strong>New {documentCreateReview.documentFormat.toUpperCase()} document (no overwrite)</strong>
+          <code className="writeTarget">{documentCreateReview.exactDestination}</code>
+          <small>{documentCreateReview.bytes} bytes · {documentCreateReview.contentUnits} paragraphs/slides</small>
+          <small>Exact package SHA-256: {documentCreateReview.sha256}</small>
+          <strong>Title: {documentCreateReview.title}</strong>
+          <small>Review ALL proposed content before confirming:</small>
+          <pre className="editFullText" aria-label="All proposed document text">{documentCreateReview.content}</pre>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={documentCreateReviewed}
+              onChange={e => setDocumentCreateReviewed(e.target.checked)}/>
+            I reviewed the entire new document content, exact file destination, and package hash.
+          </label>
+          <small>A separate native confirmation still grants the single-use write. Existing files
+            are never replaced. Interrupted writes require recovery review.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!documentCreateReviewed || documentCreateBusy}
+              onClick={() => void confirmStructuredDocument()}>Confirm in native dialog</button>
+            <button type="button" className="subtleButton" disabled={documentCreateBusy}
+              onClick={() => void denyStructuredDocument()}>Deny document creation</button>
+          </div>
+        </section>}
+        {latestDocumentCreated?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Created {latestDocumentCreated.documentFormat.toUpperCase()}:
+            {latestDocumentCreated.fileName}</strong>
+          <code className="writeTarget">{latestDocumentCreated.exactDestination}</code>
+          <small>{latestDocumentCreated.bytesWritten} bytes · SHA-256: {latestDocumentCreated.sha256}</small>
+          <small>Durable effect receipt: {latestDocumentCreated.effectCallId}</small>
+        </section>}
         {archiveReview?.chatId === chatId && <section className="readProposalCard editProposalCard"
           role="group" aria-label="Review complete archive extraction">
           <strong>Extract archive into a NEW folder</strong>
@@ -1477,6 +1611,12 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || documentCreateBusy || Boolean(documentCreateReview)}
+              title="Create a new DOCX or PPTX through a native folder picker and exact-content approval"
+              onClick={() => setDocumentComposerOpen(v=>!v)}>
+              {documentComposerOpen ? 'Close document' : '+ Document'}
+            </button>
             <button type="button" className="subtleButton"
               disabled={!chatId || working || chatBusy || archiveBusy || Boolean(archiveReview)}
               title="Use native file and folder pickers to safely review an archive and extract it into one NEW folder"
