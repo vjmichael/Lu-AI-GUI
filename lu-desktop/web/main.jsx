@@ -59,6 +59,7 @@ function App() {
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
   const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
+  const [researchCampaignReviewByChat,setResearchCampaignReviewByChat]=useState({});
   const [researchCampaignCeiling,setResearchCampaignCeiling]=useState(120);
   const [researchCampaignBusy,setResearchCampaignBusy]=useState(false);
   const [researchClaimDraft,setResearchClaimDraft]=useState({
@@ -346,6 +347,20 @@ function App() {
       setResearchCampaignBusy(false);
       await refreshResearchCampaigns(selectedChat);
     }
+  }
+  async function reviewResearchCampaign(campaignId){
+    if(!chatId||researchCampaignBusy)return;
+    const sourceChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_campaign_review',{
+        chatId:sourceChat,campaignId,limit:10
+      });
+      setResearchCampaignReviewByChat(old=>({
+        ...old,[sourceChat+'|'+campaignId]:receipt
+      }));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchCampaignBusy(false);}
   }
   async function resumeResearchCampaign(campaignId){
     if(!chatId||researchCampaignBusy)return;
@@ -3475,6 +3490,17 @@ function App() {
                 <small>{job.state} · {job.distinctDois}/{job.candidateCeiling}
                   distinct DOI leads · {job.completedPages} pages checkpointed</small>
                 <small>{job.message}</small>
+                {job.distinctDois>0&&job.state!=='CANCELLED'&&
+                  <button type="button" disabled={researchCampaignBusy||!researchAvailable}
+                    onClick={()=>void reviewResearchCampaign(job.campaignId)}>
+                    Review next 10 discovered sources
+                  </button>}
+                {researchCampaignReviewByChat[chatId+'|'+job.campaignId]&&
+                  <small>Reviewed {researchCampaignReviewByChat[chatId+'|'+job.campaignId].sourcesReviewed}
+                    of {researchCampaignReviewByChat[chatId+'|'+job.campaignId].discoveredDois}
+                    DOI leads; full document text admitted for
+                    {' '}{researchCampaignReviewByChat[chatId+'|'+job.campaignId].completeDocumentTexts}.
+                    Unsupported, mismatched and incomplete sources remain uncited.</small>}
                 {job.blockedReason&&<small>Blocker: {job.blockedReason}</small>}
                 {['PAUSED','BLOCKED','RUNNING'].includes(job.state)&&
                   <button type="button" disabled={researchCampaignBusy||!researchAvailable}
