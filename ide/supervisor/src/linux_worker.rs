@@ -8,8 +8,8 @@
 //! Missing prerequisites = denied. No unrestricted fallback.
 use crate::{
     snapshot::{verify_input, PublishedInput},
-    JobPhase, JobPlan, JobSummary, NativeTreeTerminator,
-    OsContainmentProof, Supervisor, SupervisorError,
+    JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
+    SupervisorError,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -47,7 +47,9 @@ pub struct RunCancellation {
 }
 impl Default for RunCancellation {
     fn default() -> Self {
-        Self { cancelled: Arc::new(AtomicBool::new(false)) }
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
     }
 }
 impl RunCancellation {
@@ -55,7 +57,9 @@ impl RunCancellation {
         self.cancelled.store(true, Ordering::SeqCst);
     }
     pub fn clone_handle(&self) -> Self {
-        Self { cancelled: Arc::clone(&self.cancelled) }
+        Self {
+            cancelled: Arc::clone(&self.cancelled),
+        }
     }
 }
 
@@ -73,12 +77,17 @@ pub struct ExecutionResult {
     pub output_limit_hit: bool,
 }
 
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
 
 fn ensure_root_owned_tool(path: &Path) -> Result<(), SupervisorError> {
     let meta = fs::symlink_metadata(path).map_err(|_| denied())?;
-    if !meta.file_type().is_file() || meta.file_type().is_symlink()
-        || meta.uid() != 0 || meta.mode() & 0o6022 != 0 {
+    if !meta.file_type().is_file()
+        || meta.file_type().is_symlink()
+        || meta.uid() != 0
+        || meta.mode() & 0o6022 != 0
+    {
         return Err(denied());
     }
     Ok(())
@@ -86,8 +95,8 @@ fn ensure_root_owned_tool(path: &Path) -> Result<(), SupervisorError> {
 
 fn hash_file(path: &Path) -> Result<String, SupervisorError> {
     let meta = fs::symlink_metadata(path).map_err(|_| denied())?;
-    if !meta.file_type().is_file() || meta.file_type().is_symlink()
-        || meta.len() > MAX_TOOL_BINARY {
+    if !meta.file_type().is_file() || meta.file_type().is_symlink() || meta.len() > MAX_TOOL_BINARY
+    {
         return Err(denied());
     }
     let mut source = File::open(path).map_err(|_| denied())?;
@@ -96,9 +105,13 @@ fn hash_file(path: &Path) -> Result<String, SupervisorError> {
     let mut length = 0_u64;
     loop {
         let n = source.read(&mut buffer).map_err(|_| denied())?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         length += n as u64;
-        if length > MAX_TOOL_BINARY { return Err(denied()); }
+        if length > MAX_TOOL_BINARY {
+            return Err(denied());
+        }
         hash.update(&buffer[..n]);
     }
     Ok(format!("{:x}", hash.finalize()))
@@ -123,26 +136,32 @@ pub fn installed_toolchain_digest() -> Result<String, SupervisorError> {
 
 fn current_cgroup_parent() -> Result<PathBuf, SupervisorError> {
     let data = fs::read_to_string("/proc/self/cgroup").map_err(|_| denied())?;
-    let line = data.lines().find(|l| l.starts_with("0::")).ok_or_else(denied)?;
+    let line = data
+        .lines()
+        .find(|l| l.starts_with("0::"))
+        .ok_or_else(denied)?;
     let relative = line.strip_prefix("0::").ok_or_else(denied)?;
     if !relative.starts_with('/') || relative.split('/').any(|s| s == "." || s == "..") {
         return Err(denied());
     }
     let root = fs::canonicalize(CGROUP_ROOT).map_err(|_| denied())?;
-    let actual = fs::canonicalize(root.join(relative.trim_start_matches('/')))
-        .map_err(|_| denied())?;
-    if !actual.starts_with(&root) { return Err(denied()); }
+    let actual =
+        fs::canonicalize(root.join(relative.trim_start_matches('/'))).map_err(|_| denied())?;
+    if !actual.starts_with(&root) {
+        return Err(denied());
+    }
     Ok(actual)
 }
 
 fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> {
-    if !job_id.starts_with("job-") || job_id.len() != 36
-        || !job_id[4..].bytes().all(|v| v.is_ascii_hexdigit()) {
+    if !job_id.starts_with("job-")
+        || job_id.len() != 36
+        || !job_id[4..].bytes().all(|v| v.is_ascii_hexdigit())
+    {
         return Err(denied());
     }
     let parent = current_cgroup_parent()?;
-    let available = fs::read_to_string(parent.join("cgroup.controllers"))
-        .map_err(|_| denied())?;
+    let available = fs::read_to_string(parent.join("cgroup.controllers")).map_err(|_| denied())?;
     for controller in ["cpu", "memory", "pids"] {
         if !available.split_whitespace().any(|x| x == controller) {
             return Err(denied());
@@ -167,8 +186,7 @@ fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> 
             return Err(denied());
         }
     }
-    if !group.dir.join("cgroup.kill").is_file()
-        || !group.dir.join("cgroup.procs").is_file() {
+    if !group.dir.join("cgroup.kill").is_file() || !group.dir.join("cgroup.procs").is_file() {
         group.remove_empty();
         return Err(denied());
     }
@@ -193,7 +211,9 @@ impl Cgroup {
     fn await_empty(&self, limit: Duration) -> bool {
         let start = Instant::now();
         while start.elapsed() < limit {
-            if self.zero_members() { return true; }
+            if self.zero_members() {
+                return true;
+            }
             thread::sleep(LOOP_DELAY);
         }
         self.zero_members()
@@ -213,7 +233,9 @@ impl Drop for Cgroup {
                 let _ = fs::write(self.dir.join("cgroup.kill"), "1");
                 let _ = self.await_empty(REAP_LIMIT);
             }
-            if self.zero_members() { let _ = fs::remove_dir(&self.dir); }
+            if self.zero_members() {
+                let _ = fs::remove_dir(&self.dir);
+            }
         }
     }
 }
@@ -225,7 +247,9 @@ struct CgroupTerminator<'a> {
 }
 impl NativeTreeTerminator for CgroupTerminator<'_> {
     fn terminate_and_verify_tree(
-        &mut self, job_id: &str, plan_sha256: &str,
+        &mut self,
+        job_id: &str,
+        plan_sha256: &str,
     ) -> Result<bool, SupervisorError> {
         if job_id != self.expected_job || plan_sha256 != self.expected_hash {
             return Err(SupervisorError::WrongProjectOrSource);
@@ -245,7 +269,9 @@ unsafe fn attach_pid_in_pre_exec(cgroup_fd: i32) -> io::Result<()> {
         index -= 1;
         buffer[index] = b'0' + (number % 10) as u8;
         number /= 10;
-        if number == 0 { break; }
+        if number == 0 {
+            break;
+        }
     }
     let value = &buffer[index..];
     let written = unsafe { libc::write(cgroup_fd, value.as_ptr().cast(), value.len()) };
@@ -263,59 +289,111 @@ unsafe fn attach_pid_in_pre_exec(cgroup_fd: i32) -> io::Result<()> {
     if unsafe { libc::setrlimit(libc::RLIMIT_FSIZE, &file_limit) } != 0 {
         return Err(io::Error::last_os_error());
     }
-    let core_limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    let core_limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &core_limit) } != 0 {
         return Err(io::Error::last_os_error());
     }
-    unsafe { libc::umask(0o077); }
+    unsafe {
+        libc::umask(0o077);
+    }
     Ok(())
 }
 
 fn command_for(
-    plan: &JobPlan, input: &PublishedInput,
-    output: &Path, group: &Cgroup,
+    plan: &JobPlan,
+    input: &PublishedInput,
+    output: &Path,
+    group: &Cgroup,
 ) -> Result<(Command, File), SupervisorError> {
     let manifest = match plan.recipe_id.as_str() {
         "lu_ide_host_tests" => "/workspace/ide/host/Cargo.toml",
         "rust_tests" | "rust_check" => "/workspace/Cargo.toml",
         _ => return Err(SupervisorError::InvalidPlan),
     };
-    if !input.root.join(manifest.trim_start_matches("/workspace/")).is_file()
-        || input.seal.manifest_relative_path != manifest.trim_start_matches("/workspace/") {
+    if !input
+        .root
+        .join(manifest.trim_start_matches("/workspace/"))
+        .is_file()
+        || input.seal.manifest_relative_path != manifest.trim_start_matches("/workspace/")
+    {
         return Err(SupervisorError::WrongProjectOrSource);
     }
-    let proc_file = OpenOptions::new().write(true)
-        .open(group.dir.join("cgroup.procs")).map_err(|_| denied())?;
+    let proc_file = OpenOptions::new()
+        .write(true)
+        .open(group.dir.join("cgroup.procs"))
+        .map_err(|_| denied())?;
     let fd = proc_file.as_raw_fd();
     let mut cmd = Command::new(BWRAP);
     cmd.env_clear()
-        .arg("--die-with-parent").arg("--new-session")
-        .arg("--unshare-all").arg("--clearenv")
-        .arg("--ro-bind").arg("/usr").arg("/usr")
-        .arg("--ro-bind-try").arg("/bin").arg("/bin")
-        .arg("--ro-bind-try").arg("/lib").arg("/lib")
-        .arg("--ro-bind-try").arg("/lib64").arg("/lib64")
-        .arg("--ro-bind").arg(&input.root).arg("/workspace")
-        .arg("--bind").arg(output).arg("/output")
-        .arg("--tmpfs").arg("/tmp")
-        .arg("--proc").arg("/proc")
-        .arg("--dev").arg("/dev")
-        .arg("--setenv").arg("HOME").arg("/tmp")
-        .arg("--setenv").arg("CARGO_HOME").arg("/tmp/cargo-home")
-        .arg("--setenv").arg("CARGO_TARGET_DIR").arg("/output/target")
-        .arg("--setenv").arg("CARGO_NET_OFFLINE").arg("true")
-        .arg("--setenv").arg("PATH").arg("/usr/bin:/bin")
-        .arg("--setenv").arg("LANG").arg("C")
-        .arg("--chdir").arg("/workspace")
+        .arg("--die-with-parent")
+        .arg("--new-session")
+        .arg("--unshare-all")
+        .arg("--clearenv")
+        .arg("--ro-bind")
+        .arg("/usr")
+        .arg("/usr")
+        .arg("--ro-bind-try")
+        .arg("/bin")
+        .arg("/bin")
+        .arg("--ro-bind-try")
+        .arg("/lib")
+        .arg("/lib")
+        .arg("--ro-bind-try")
+        .arg("/lib64")
+        .arg("/lib64")
+        .arg("--ro-bind")
+        .arg(&input.root)
+        .arg("/workspace")
+        .arg("--bind")
+        .arg(output)
+        .arg("/output")
+        .arg("--tmpfs")
+        .arg("/tmp")
+        .arg("--proc")
+        .arg("/proc")
+        .arg("--dev")
+        .arg("/dev")
+        .arg("--setenv")
+        .arg("HOME")
+        .arg("/tmp")
+        .arg("--setenv")
+        .arg("CARGO_HOME")
+        .arg("/tmp/cargo-home")
+        .arg("--setenv")
+        .arg("CARGO_TARGET_DIR")
+        .arg("/output/target")
+        .arg("--setenv")
+        .arg("CARGO_NET_OFFLINE")
+        .arg("true")
+        .arg("--setenv")
+        .arg("PATH")
+        .arg("/usr/bin:/bin")
+        .arg("--setenv")
+        .arg("LANG")
+        .arg("C")
+        .arg("--chdir")
+        .arg("/workspace")
         .arg("--")
         .arg(CARGO);
     match plan.recipe_id.as_str() {
-        "rust_check" => { cmd.arg("check"); }
-        "rust_tests" | "lu_ide_host_tests" => { cmd.arg("test"); }
+        "rust_check" => {
+            cmd.arg("check");
+        }
+        "rust_tests" | "lu_ide_host_tests" => {
+            cmd.arg("test");
+        }
         _ => return Err(SupervisorError::InvalidPlan),
     }
-    cmd.arg("--locked").arg("--offline").arg("--manifest-path").arg(manifest)
-        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.arg("--locked")
+        .arg("--offline")
+        .arg("--manifest-path")
+        .arg(manifest)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     // SAFETY: child does not allocate, lock, or access Rust shared state in
     // pre_exec; it writes its fixed PID to preopened cgroup.procs and sets
     // no_new_privs. If that fails Command::spawn returns error without exec.
@@ -330,8 +408,10 @@ struct Captured {
     bytes: usize,
     truncated: bool,
 }
-fn collect_limited<R: Read + Send + 'static>(mut source: R, max: usize)
-    -> thread::JoinHandle<io::Result<Captured>> {
+fn collect_limited<R: Read + Send + 'static>(
+    mut source: R,
+    max: usize,
+) -> thread::JoinHandle<io::Result<Captured>> {
     thread::spawn(move || {
         let mut digest = Sha256::new();
         let mut buffer = [0_u8; TOTAL_LOG_BUFFER];
@@ -339,11 +419,15 @@ fn collect_limited<R: Read + Send + 'static>(mut source: R, max: usize)
         let mut truncated = false;
         loop {
             let n = source.read(&mut buffer)?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             let len = n.min(max.saturating_sub(kept));
             digest.update(&buffer[..len]);
             kept += len;
-            if n > len { truncated = true; }
+            if n > len {
+                truncated = true;
+            }
         }
         Ok(Captured {
             sha256: format!("{:x}", digest.finalize()),
@@ -360,8 +444,7 @@ fn make_output_root(parent: &Path, job_id: &str) -> Result<PathBuf, SupervisorEr
     let output = parent.join(job_id);
     fs::create_dir(&output).map_err(|_| denied())?;
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(&output, fs::Permissions::from_mode(0o700))
-        .map_err(|_| denied())?;
+    fs::set_permissions(&output, fs::Permissions::from_mode(0o700)).map_err(|_| denied())?;
     Ok(output)
 }
 fn scan_output_budget(root: &Path) -> Result<(), SupervisorError> {
@@ -369,7 +452,9 @@ fn scan_output_budget(root: &Path) -> Result<(), SupervisorError> {
     let mut files = 0_usize;
     let mut bytes = 0_u64;
     while let Some((dir, depth)) = pending.pop() {
-        if depth > 40 { return Err(denied()); }
+        if depth > 40 {
+            return Err(denied());
+        }
         for entry in fs::read_dir(dir).map_err(|_| denied())? {
             let entry = entry.map_err(|_| denied())?;
             let meta = fs::symlink_metadata(entry.path()).map_err(|_| denied())?;
@@ -381,8 +466,10 @@ fn scan_output_budget(root: &Path) -> Result<(), SupervisorError> {
             } else if meta.is_file() {
                 files += 1;
                 bytes = bytes.checked_add(meta.len()).ok_or_else(denied)?;
-                if files > MAX_OUTPUT_FILES || bytes > MAX_ARTIFACT_BYTES
-                    || meta.len() > MAX_SINGLE_ARTIFACT_BYTES {
+                if files > MAX_OUTPUT_FILES
+                    || bytes > MAX_ARTIFACT_BYTES
+                    || meta.len() > MAX_SINGLE_ARTIFACT_BYTES
+                {
                     return Err(denied());
                 }
             } else {
@@ -401,7 +488,9 @@ fn proof_for(group: &Cgroup) -> OsContainmentProof {
         network_access_limited: true, // Bubblewrap --unshare-all includes net
         child_contained_before_resume: true, // pre_exec cgroup.procs
         process_tree_kill_verified: group.dir.join("cgroup.kill").is_file(),
-        memory_quota: true, cpu_quota: true, pid_quota: true,
+        memory_quota: true,
+        cpu_quota: true,
+        pid_quota: true,
         // App-profile journal is not mounted in the worker's namespace.
         protected_journal_broker: true,
     }
@@ -421,7 +510,8 @@ pub fn execute_linux_worker(
 ) -> Result<ExecutionResult, SupervisorError> {
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
     if plan.input_snapshot_sha256 != input.seal.source_sha256
-        || plan.manifest_sha256 != input.seal.manifest_sha256 {
+        || plan.manifest_sha256 != input.seal.manifest_sha256
+    {
         return Err(SupervisorError::WrongProjectOrSource);
     }
     if plan.toolchain_sha256 != installed_toolchain_digest()? {
@@ -436,7 +526,9 @@ pub fn execute_linux_worker(
     let output = make_output_root(output_parent, job_id)?;
     let (mut command, proc_file) = command_for(plan, input, &output, &group)?;
     let current_proof = proof_for(&group);
-    if !current_proof.complete() { return Err(denied()); }
+    if !current_proof.complete() {
+        return Err(denied());
+    }
     supervisor.consume_grant_after_attestation(job_id, plan, &current_proof)?;
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -471,49 +563,72 @@ pub fn execute_linux_worker(
         }
         if cancellation.cancelled.load(Ordering::SeqCst)
             || began.elapsed().as_millis() >= plan.runtime_limit_ms as u128
-            || output_limit_hit {
+            || output_limit_hit
+        {
             timed_out = !cancellation.cancelled.load(Ordering::SeqCst);
             was_cancelled = true;
-            let exact_hash = supervisor.inspect()?
-                .iter().find(|j| j.job_id == job_id)
-                .ok_or(SupervisorError::NoSuchJob)?.plan_sha256.clone();
+            let exact_hash = supervisor
+                .inspect()?
+                .iter()
+                .find(|j| j.job_id == job_id)
+                .ok_or(SupervisorError::NoSuchJob)?
+                .plan_sha256
+                .clone();
             let mut terminator = CgroupTerminator {
-                group: &group, expected_job: job_id,
+                group: &group,
+                expected_job: job_id,
                 expected_hash: &exact_hash,
             };
             // Request is journaled BEFORE native cgroup.kill; failed cleanup
             // becomes uncertain and stops further admissions.
             supervisor.cancel_running_with(job_id, &mut terminator)?;
-            break child.wait().map_err(|_| SupervisorError::JournalUnavailable)?;
+            break child
+                .wait()
+                .map_err(|_| SupervisorError::JournalUnavailable)?;
         }
-        if let Some(exit) = child.try_wait().map_err(|_| SupervisorError::JournalUnavailable)? {
+        if let Some(exit) = child
+            .try_wait()
+            .map_err(|_| SupervisorError::JournalUnavailable)?
+        {
             break exit;
         }
         thread::sleep(LOOP_DELAY);
     };
-    let out = out_reader.join().map_err(|_| SupervisorError::JournalUnavailable)?
+    let out = out_reader
+        .join()
+        .map_err(|_| SupervisorError::JournalUnavailable)?
         .map_err(|_| SupervisorError::JournalUnavailable)?;
-    let err = err_reader.join().map_err(|_| SupervisorError::JournalUnavailable)?
+    let err = err_reader
+        .join()
+        .map_err(|_| SupervisorError::JournalUnavailable)?
         .map_err(|_| SupervisorError::JournalUnavailable)?;
     let empty = group.await_empty(REAP_LIMIT);
     let final_output_bounded = scan_output_budget(&output).is_ok();
     let summary = if was_cancelled {
-        supervisor.inspect()?.into_iter().find(|j| j.job_id == job_id)
+        supervisor
+            .inspect()?
+            .into_iter()
+            .find(|j| j.job_id == job_id)
             .ok_or(SupervisorError::NoSuchJob)?
     } else {
         supervisor.native_finish(
-            job_id, status.success() && !out.truncated && !err.truncated
-                && final_output_bounded,
-            empty, final_output_bounded,
+            job_id,
+            status.success() && !out.truncated && !err.truncated && final_output_bounded,
+            empty,
+            final_output_bounded,
         )?
     };
     Ok(ExecutionResult {
         summary,
         exit_code: status.code(),
-        stdout_sha256: out.sha256, stderr_sha256: err.sha256,
-        stdout_bytes_recorded: out.bytes, stderr_bytes_recorded: err.bytes,
+        stdout_sha256: out.sha256,
+        stderr_sha256: err.sha256,
+        stdout_bytes_recorded: out.bytes,
+        stderr_bytes_recorded: err.bytes,
         output_truncated: out.truncated || err.truncated,
-        output_directory: output, timed_out, output_limit_hit,
+        output_directory: output,
+        timed_out,
+        output_limit_hit,
     })
 }
 
@@ -525,11 +640,15 @@ pub fn reconcile_linux_interrupted(
     supervisor: &Supervisor,
     job_id: &str,
 ) -> Result<JobSummary, SupervisorError> {
-    if !job_id.starts_with("job-") || job_id.len() != 36
-        || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !job_id.starts_with("job-")
+        || job_id.len() != 36
+        || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+    {
         return Err(SupervisorError::NoSuchJob);
     }
-    let summary = supervisor.inspect()?.into_iter()
+    let summary = supervisor
+        .inspect()?
+        .into_iter()
         .find(|value| value.job_id == job_id)
         .ok_or(SupervisorError::NoSuchJob)?;
     if !summary.requires_reconciliation {
@@ -544,9 +663,13 @@ pub fn reconcile_linux_interrupted(
     if !path.join("cgroup.kill").is_file() || !path.join("cgroup.events").is_file() {
         return Err(SupervisorError::Quarantined);
     }
-    let group = Cgroup { dir: path, active: true };
+    let group = Cgroup {
+        dir: path,
+        active: true,
+    };
     let mut broker = CgroupTerminator {
-        group: &group, expected_job: job_id,
+        group: &group,
+        expected_job: job_id,
         expected_hash: &summary.plan_sha256,
     };
     supervisor.reconcile_interrupted_with(job_id, &mut broker)
@@ -561,19 +684,24 @@ mod tests {
         assert_eq!(BWRAP, "/usr/bin/bwrap");
         assert_eq!(CARGO, "/usr/bin/cargo");
         assert_eq!(RUSTC, "/usr/bin/rustc");
-        assert!(matches!(installed_toolchain_digest(), Err(SupervisorError::NoContainment))
-            || installed_toolchain_digest().is_ok());
+        assert!(
+            matches!(
+                installed_toolchain_digest(),
+                Err(SupervisorError::NoContainment)
+            ) || installed_toolchain_digest().is_ok()
+        );
     }
 
     #[test]
     fn output_budget_rejects_sparse_files_and_links() {
-        let root = std::env::temp_dir().join(format!(
-            "ide-output-probe-{}", std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("ide-output-probe-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir(&root).unwrap();
         let too_big = root.join("too-big");
-        File::create(&too_big).unwrap().set_len(MAX_SINGLE_ARTIFACT_BYTES + 1).unwrap();
+        File::create(&too_big)
+            .unwrap()
+            .set_len(MAX_SINGLE_ARTIFACT_BYTES + 1)
+            .unwrap();
         assert!(scan_output_budget(&root).is_err());
         fs::remove_file(&too_big).unwrap();
         assert!(scan_output_budget(&root).is_ok());
@@ -594,7 +722,8 @@ mod tests {
             toolchain_sha256: "e".repeat(64),
             runtime_limit_ms: 1000,
             memory_limit_bytes: 64 * 1024 * 1024,
-            process_limit: 2, log_limit_bytes: 4096,
+            process_limit: 2,
+            log_limit_bytes: 4096,
             effect_class: "test_build_isolated".to_owned(),
         };
         let bogus_job = "job-ffffffffffffffffffffffffffffffff";

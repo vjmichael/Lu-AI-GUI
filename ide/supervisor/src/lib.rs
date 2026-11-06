@@ -564,12 +564,27 @@ impl Supervisor {
     /// Native-only state transition: successful OS admission and suspended
     /// process placement must precede recording a running worker.
     fn native_mark_running(&self, job_id: &str) -> Result<(), SupervisorError> {
-        let mut state = self.state.lock().map_err(|_| SupervisorError::JournalUnavailable)?;
-        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
-        if job.phase != JobPhase::AdmissionPending { return Err(SupervisorError::InvalidTransition); }
-        self.append(&mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            JobPhase::Running, "native_contained_worker_started",
-            "os_admission_and_input_seal_checked")?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
+        if job.phase != JobPhase::AdmissionPending {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::Running,
+            "native_contained_worker_started",
+            "os_admission_and_input_seal_checked",
+        )?;
         state.jobs.get_mut(job_id).unwrap().phase = JobPhase::Running;
         Ok(())
     }
@@ -577,15 +592,34 @@ impl Supervisor {
     /// A worker failure before child execution may be recorded as denied
     /// only after the native broker establishes no live process was started.
     fn native_deny_before_start(
-        &self, job_id: &str,
+        &self,
+        job_id: &str,
         no_process_started: bool,
     ) -> Result<(), SupervisorError> {
-        if !no_process_started { return Err(SupervisorError::NoContainment); }
-        let mut state = self.state.lock().map_err(|_| SupervisorError::JournalUnavailable)?;
-        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
-        if job.phase != JobPhase::AdmissionPending { return Err(SupervisorError::InvalidTransition); }
-        self.append(&mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            JobPhase::Denied, "native_process_admission_denied", "no_child_executed")?;
+        if !no_process_started {
+            return Err(SupervisorError::NoContainment);
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
+        if job.phase != JobPhase::AdmissionPending {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::Denied,
+            "native_process_admission_denied",
+            "no_child_executed",
+        )?;
         state.jobs.get_mut(job_id).unwrap().phase = JobPhase::Denied;
         Ok(())
     }
@@ -593,15 +627,34 @@ impl Supervisor {
     /// Final outcome requires the OS process tree to have fully exited
     /// and the output broker to have verified bounded captured artifacts.
     fn native_finish(
-        &self, job_id: &str, succeeded: bool, tree_reaped: bool, outputs_bounded: bool,
+        &self,
+        job_id: &str,
+        succeeded: bool,
+        tree_reaped: bool,
+        outputs_bounded: bool,
     ) -> Result<JobSummary, SupervisorError> {
-        let mut state = self.state.lock().map_err(|_| SupervisorError::JournalUnavailable)?;
-        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
-        if job.phase != JobPhase::Running { return Err(SupervisorError::InvalidTransition); }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
+        if job.phase != JobPhase::Running {
+            return Err(SupervisorError::InvalidTransition);
+        }
         if !tree_reaped || !outputs_bounded {
-            self.append(&mut state, job_id, &job.plan.project_id, &job.plan_hash,
-                JobPhase::RecoveryRequired, "incomplete_os_worker_reap",
-                "do_not_restart_or_reuse_outputs")?;
+            self.append(
+                &mut state,
+                job_id,
+                &job.plan.project_id,
+                &job.plan_hash,
+                JobPhase::RecoveryRequired,
+                "incomplete_os_worker_reap",
+                "do_not_restart_or_reuse_outputs",
+            )?;
             state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
             state.quarantine.insert(job_id.to_owned());
             return Err(SupervisorError::Quarantined);
@@ -611,13 +664,23 @@ impl Supervisor {
         } else {
             (JobPhase::Failed, "native_worker_failed")
         };
-        self.append(&mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            phase, outcome, "reaped_process_tree_bounded_outputs")?;
+        self.append(
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            phase,
+            outcome,
+            "reaped_process_tree_bounded_outputs",
+        )?;
         state.jobs.get_mut(job_id).unwrap().phase = phase;
         Ok(JobSummary {
-            job_id: job_id.to_owned(), project_id: job.plan.project_id,
-            plan_sha256: job.plan_hash, phase,
-            requires_reconciliation: false, execution_verified: tree_reaped && outputs_bounded,
+            job_id: job_id.to_owned(),
+            project_id: job.plan.project_id,
+            plan_sha256: job.plan_hash,
+            phase,
+            requires_reconciliation: false,
+            execution_verified: tree_reaped && outputs_bounded,
         })
     }
 

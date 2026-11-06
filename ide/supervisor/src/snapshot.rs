@@ -19,8 +19,16 @@ const MAX_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_NAME_BYTES: usize = 255;
 const BUFFER_BYTES: usize = 64 * 1024;
 const SKIP: &[&str] = &[
-    ".git", "target", "node_modules", ".venv", "__pycache__", ".next",
-    ".cache", "dist", "build", ".idea",
+    ".git",
+    "target",
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    ".next",
+    ".cache",
+    "dist",
+    "build",
+    ".idea",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +75,9 @@ fn uid() -> String {
     let mut key = [0_u8; 16];
     OsRng.fill_bytes(&mut key);
     let mut out = "snap-".to_string();
-    for byte in key { out.push_str(&format!("{byte:02x}")); }
+    for byte in key {
+        out.push_str(&format!("{byte:02x}"));
+    }
     out
 }
 fn check_dir(path: &Path) -> Result<(), SnapshotError> {
@@ -83,13 +93,19 @@ fn is_reparse(meta: &fs::Metadata) -> bool {
     meta.file_attributes() & 0x400 != 0
 }
 #[cfg(not(windows))]
-fn is_reparse(_meta: &fs::Metadata) -> bool { false }
+fn is_reparse(_meta: &fs::Metadata) -> bool {
+    false
+}
 
 fn check_name(value: &OsStr) -> Result<String, SnapshotError> {
     let name = value.to_str().ok_or(SnapshotError::InvalidName)?;
-    if name.is_empty() || name.as_bytes().len() > MAX_NAME_BYTES
-        || name == "." || name == ".." || name.contains(':')
-        || name.chars().any(char::is_control) {
+    if name.is_empty()
+        || name.as_bytes().len() > MAX_NAME_BYTES
+        || name == "."
+        || name == ".."
+        || name.contains(':')
+        || name.chars().any(char::is_control)
+    {
         return Err(SnapshotError::InvalidName);
     }
     Ok(name.to_string())
@@ -105,18 +121,26 @@ fn is_generated(name: &str) -> bool {
     SKIP.contains(&name)
 }
 fn scan_directory(
-    root: &Path, relative: &Path, depth: usize, scan: &mut Scan,
+    root: &Path,
+    relative: &Path,
+    depth: usize,
+    scan: &mut Scan,
 ) -> Result<(), SnapshotError> {
-    if depth > MAX_DEPTH { return Err(SnapshotError::LimitExceeded); }
+    if depth > MAX_DEPTH {
+        return Err(SnapshotError::LimitExceeded);
+    }
     let current = root.join(relative);
     check_dir(&current)?;
     let mut children = fs::read_dir(&current)
         .map_err(|_| SnapshotError::Io)?
-        .collect::<Result<Vec<_>, _>>().map_err(|_| SnapshotError::Io)?;
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| SnapshotError::Io)?;
     children.sort_by_key(|entry| entry.file_name());
     for entry in children {
         let name = check_name(&entry.file_name())?;
-        if is_generated(&name) { continue; }
+        if is_generated(&name) {
+            continue;
+        }
         let child_relative = relative.join(&name);
         let child = root.join(&child_relative);
         let metadata = fs::symlink_metadata(&child).map_err(|_| SnapshotError::Io)?;
@@ -129,14 +153,18 @@ fn scan_directory(
             if metadata.len() > MAX_FILE_BYTES || scan.files >= MAX_FILES {
                 return Err(SnapshotError::LimitExceeded);
             }
-            scan.total_bytes = scan.total_bytes.checked_add(metadata.len())
+            scan.total_bytes = scan
+                .total_bytes
+                .checked_add(metadata.len())
                 .ok_or(SnapshotError::LimitExceeded)?;
             if scan.total_bytes > MAX_TOTAL_BYTES {
                 return Err(SnapshotError::LimitExceeded);
             }
-            let relative_string = child_relative.iter()
+            let relative_string = child_relative
+                .iter()
                 .map(|component| check_name(component))
-                .collect::<Result<Vec<_>, _>>()?.join("/");
+                .collect::<Result<Vec<_>, _>>()?
+                .join("/");
             scan.entries.push((relative_string, metadata.len()));
             scan.files += 1;
         } else {
@@ -170,44 +198,59 @@ fn secure_file_read(path: &Path) -> Result<File, SnapshotError> {
 }
 
 fn fingerprint_copy(
-    root: &Path, staged_root: &Path, scan: &Scan, manifest_relative_path: &str,
+    root: &Path,
+    staged_root: &Path,
+    scan: &Scan,
+    manifest_relative_path: &str,
 ) -> Result<(String, String), SnapshotError> {
     let mut tree_hash = Sha256::new();
     let mut manifest_hash = None;
     let mut buffer = [0_u8; BUFFER_BYTES];
     for (relative, expected_size) in &scan.entries {
         let local = Path::new(relative);
-        if local.components().any(|c| !matches!(c, Component::Normal(_))) {
+        if local
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+        {
             return Err(SnapshotError::InvalidName);
         }
         let source_path = root.join(local);
         let target_path = staged_root.join(local);
         let mut src = secure_file_read(&source_path)?;
         let initial = src.metadata().map_err(|_| SnapshotError::Io)?;
-        if !initial.is_file() || initial.len() != *expected_size
-            || is_reparse(&initial) {
+        if !initial.is_file() || initial.len() != *expected_size || is_reparse(&initial) {
             return Err(SnapshotError::RaceDetected);
         }
         if let Some(parent) = target_path.parent() {
             fs::create_dir_all(parent).map_err(|_| SnapshotError::Io)?;
         }
-        let mut out = OpenOptions::new().write(true).create_new(true)
-            .open(&target_path).map_err(|_| SnapshotError::Io)?;
+        let mut out = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target_path)
+            .map_err(|_| SnapshotError::Io)?;
         let mut bytes_read = 0_u64;
         let mut hasher = Sha256::new();
         loop {
             let count = src.read(&mut buffer).map_err(|_| SnapshotError::Io)?;
-            if count == 0 { break; }
-            bytes_read = bytes_read.checked_add(count as u64)
+            if count == 0 {
+                break;
+            }
+            bytes_read = bytes_read
+                .checked_add(count as u64)
                 .ok_or(SnapshotError::LimitExceeded)?;
-            if bytes_read > *expected_size { return Err(SnapshotError::RaceDetected); }
+            if bytes_read > *expected_size {
+                return Err(SnapshotError::RaceDetected);
+            }
             hasher.update(&buffer[..count]);
-            out.write_all(&buffer[..count]).map_err(|_| SnapshotError::Io)?;
+            out.write_all(&buffer[..count])
+                .map_err(|_| SnapshotError::Io)?;
         }
-        if bytes_read != *expected_size { return Err(SnapshotError::RaceDetected); }
+        if bytes_read != *expected_size {
+            return Err(SnapshotError::RaceDetected);
+        }
         let after = src.metadata().map_err(|_| SnapshotError::Io)?;
-        if after.len() != initial.len()
-            || after.modified().ok() != initial.modified().ok() {
+        if after.len() != initial.len() || after.modified().ok() != initial.modified().ok() {
             return Err(SnapshotError::RaceDetected);
         }
         #[cfg(unix)]
@@ -242,7 +285,9 @@ fn fingerprint_copy(
 /// native host. Caller cannot select stage filenames; symlinks are rejected.
 /// This function does not attest an external toolchain or Git HEAD.
 pub fn publish_input(
-    source_root: &Path, private_stage_parent: &Path, recipe_id: &str,
+    source_root: &Path,
+    private_stage_parent: &Path,
+    recipe_id: &str,
 ) -> Result<PublishedInput, SnapshotError> {
     let manifest_relative_path = match recipe_id {
         "rust_check" | "rust_tests" => "Cargo.toml",
@@ -252,19 +297,19 @@ pub fn publish_input(
     check_dir(source_root)?;
     check_dir(private_stage_parent)?;
     let canonical_root = fs::canonicalize(source_root).map_err(|_| SnapshotError::InvalidRoot)?;
-    let canonical_parent = fs::canonicalize(private_stage_parent)
-        .map_err(|_| SnapshotError::InvalidRoot)?;
+    let canonical_parent =
+        fs::canonicalize(private_stage_parent).map_err(|_| SnapshotError::InvalidRoot)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let owner = fs::metadata(&canonical_parent).map_err(|_| SnapshotError::InvalidRoot)?;
-        if owner.uid() != unsafe { libc::geteuid() }
-            || owner.permissions().mode() & 0o077 != 0 {
+        if owner.uid() != unsafe { libc::geteuid() } || owner.permissions().mode() & 0o077 != 0 {
             return Err(SnapshotError::InvalidRoot);
         }
     }
     if canonical_parent.starts_with(&canonical_root)
-        || canonical_root.starts_with(&canonical_parent) {
+        || canonical_root.starts_with(&canonical_parent)
+    {
         return Err(SnapshotError::InvalidRoot);
     }
     let mut scan = Scan::default();
@@ -290,9 +335,13 @@ pub fn publish_input(
     let published = PublishedInput {
         root: dest,
         seal: InputSeal {
-            version: 1, snapshot_id, source_sha256,
-            file_count: scan.files, total_bytes: scan.total_bytes,
-            manifest_sha256, manifest_relative_path: manifest_relative_path.to_owned(),
+            version: 1,
+            snapshot_id,
+            source_sha256,
+            file_count: scan.files,
+            total_bytes: scan.total_bytes,
+            manifest_sha256,
+            manifest_relative_path: manifest_relative_path.to_owned(),
         },
     };
     if verify_input(&published).is_err() {
@@ -320,12 +369,18 @@ pub fn verify_input(input: &PublishedInput) -> Result<(), SnapshotError> {
         let mut length = 0_u64;
         loop {
             let count = file.read(&mut buffer).map_err(|_| SnapshotError::Io)?;
-            if count == 0 { break; }
+            if count == 0 {
+                break;
+            }
             length += count as u64;
-            if length > size { return Err(SnapshotError::InvalidSnapshot); }
+            if length > size {
+                return Err(SnapshotError::InvalidSnapshot);
+            }
             hasher.update(&buffer[..count]);
         }
-        if length != size { return Err(SnapshotError::InvalidSnapshot); }
+        if length != size {
+            return Err(SnapshotError::InvalidSnapshot);
+        }
         let digest = format!("{:x}", hasher.finalize());
         tree_hash.update(relative.as_bytes());
         tree_hash.update([0]);
@@ -338,13 +393,17 @@ pub fn verify_input(input: &PublishedInput) -> Result<(), SnapshotError> {
     }
     let current = format!("{:x}", tree_hash.finalize());
     if current != input.seal.source_sha256
-        || manifest_hash.as_deref() != Some(input.seal.manifest_sha256.as_str()) {
+        || manifest_hash.as_deref() != Some(input.seal.manifest_sha256.as_str())
+    {
         return Err(SnapshotError::InvalidSnapshot);
     }
     Ok(())
 }
 pub fn retire_input(input: PublishedInput) -> Result<(), SnapshotError> {
-    let id = input.root.file_name().and_then(OsStr::to_str)
+    let id = input
+        .root
+        .file_name()
+        .and_then(OsStr::to_str)
         .ok_or(SnapshotError::InvalidName)?;
     if id != input.seal.snapshot_id || !id.starts_with("snap-") {
         return Err(SnapshotError::InvalidSnapshot);
@@ -367,7 +426,11 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).unwrap();
         }
-        fs::write(project.join("Cargo.toml"), b"[package]\nname=\"test\"\nversion=\"0.1.0\"\n").unwrap();
+        fs::write(
+            project.join("Cargo.toml"),
+            b"[package]\nname=\"test\"\nversion=\"0.1.0\"\n",
+        )
+        .unwrap();
         fs::write(project.join("Cargo.lock"), b"# pinned").unwrap();
         fs::create_dir(project.join("src")).unwrap();
         fs::write(project.join("src").join("main.rs"), b"fn main() {}").unwrap();
@@ -383,7 +446,11 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(copied.root.join("Cargo.lock"), fs::Permissions::from_mode(0o600)).unwrap();
+            fs::set_permissions(
+                copied.root.join("Cargo.lock"),
+                fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
         }
         fs::write(copied.root.join("Cargo.lock"), b"# changed").unwrap();
         assert!(verify_input(&copied).is_err());
@@ -406,7 +473,10 @@ mod tests {
         use std::os::unix::fs::symlink;
         let (project, stage) = fixture();
         symlink("/etc/passwd", project.join("outside")).unwrap();
-        assert!(matches!(publish_input(&project, &stage, "rust_tests"), Err(SnapshotError::UntrustedSource)));
+        assert!(matches!(
+            publish_input(&project, &stage, "rust_tests"),
+            Err(SnapshotError::UntrustedSource)
+        ));
         fs::remove_dir_all(project.parent().unwrap()).unwrap();
     }
     #[test]
@@ -414,7 +484,10 @@ mod tests {
         let (project, _stage) = fixture();
         let inside = project.join("stage");
         fs::create_dir(&inside).unwrap();
-        assert!(matches!(publish_input(&project, &inside, "rust_tests"), Err(SnapshotError::InvalidRoot)));
+        assert!(matches!(
+            publish_input(&project, &inside, "rust_tests"),
+            Err(SnapshotError::InvalidRoot)
+        ));
         fs::remove_dir_all(project.parent().unwrap()).unwrap();
     }
 }
