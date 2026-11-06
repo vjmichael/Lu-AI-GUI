@@ -339,6 +339,33 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 **IMAGE WORKSPACE:** Recheck of newly exported immutable PNG revisions now explicitly removes the newly created output if reopening or digest validation fails, rather than leaving an unverified image revision as a successful artifact. Existing crop/resize, no-clobber and source preservation remain. Persistent revision graph, masks/annotation and full installed Windows acceptance still OPEN.
 
+## CURRENT TOOL-AREA STATUS — authoritative source gap register (2026-11-06)
+
+Use this section **before** archived wave notes below. "Source-built" is not a claim of runnable Windows installer acceptance. Exact integration head is draft PR #61; Windows native, physical WGC and NSIS acceptance are **owner-deferred**. The core alpha remains unchanged.
+
+| Tool area | Existing source delivered | Remaining **functional** gap, if any | Acceptance |
+| --- | --- | --- | --- |
+| Files: inspect/read/list/search | Native Registry, workspace picker and normal-chat read path | Edge-case source identity and integrated behavioral verification | Partial native; installed deferred |
+| Files: write/edit/copy/move | Atomic file create/edit, approved journaled move/copy, rollback and fail-closed recovery | Directory-level variants and hostile concurrent-writer matrix | Partial; installed deferred |
+| Trash/restore | Reversible custody, journal and operator approval | More directory/compound operations | Partial; installed deferred |
+| Archives | ZIP/TAR families, CPIO, AR/DEB, RPM, 7z/RAR and ISO source | Encrypted and ISO/UDF variants, worker/format failure matrix | Partial; installed deferred |
+| Office and spreadsheets | CSV/XLSX, DOCX/PPTX bounded create/revise/batch workflows | Rich charts, styles, layout-preserving and nested edits | Partial; installed deferred |
+| Universal Reader | Text, PDF, Office and presentation reader tools with chat selection | Complex scanned OCR/layout, large range handling | Partial; installed deferred |
+| Tool schema/JSON/Protobuf | Typed model schemas, strict boundary, bounded repair and authorization | Cross-backend enforcement and exact-head regressions | Partial; installed deferred |
+| Git | Scoped native status/log/diff and read-only normal-chat route | No general IDE write operations in Lu Core by design | Source-built; acceptance pending |
+| Background | SQLite tasks, progress, owned-worker containment, cancellation and recovery | Final UI/model terminal-result handshake evidence | Source-built; acceptance pending |
+| Normal-chat orchestration | Typed discovery, Reader/workspace/Git, approvals, auditing, journal, progress | Browser execution bridge and broader user-turn full loops | Source-built foundation; integration open |
+| Environment | CPU, OS, backend diagnostics | Verified GPU/driver/backend capabilities | Source-built baseline; acceptance pending |
+| Vision/OCR | MMProj admission and image-awareness envelope | Real semantic vision probe and reliable scanned OCR | Functional gap OPEN |
+| Image Workspace | Deterministic PNG crop/resize/new-file export + IMAGE-WS-03 durable chat history | Undo graph, annotation, masks, semantic edits | Functional gap OPEN |
+| **Browser** | Signed-runtime gate, headed supervised Chromium worker, read-only origins, human CAPTCHA handoff, window custody | **Full authenticated model/browser turn and ordinary-chat result wiring, model-tool stream/cancel/recovery, installed runtime acceptance** | **NEXT active development target; incomplete** |
+| Research | OpenAlex up to five consented pages; Crossref independent DOI metadata corroboration, evidence ledger | Host-verified full-text acquisition/quotes, synthesis and citations, chat integration | Functional gap OPEN |
+| Observe & Learn | Consent/ANSF notes, one-shot native WGC worker, safety gate | Frame/source attestation, redaction, visual verification, safe model handoff | Functional gap OPEN |
+
+**Regression disposition:** Wave 3 Reader/Workspace stale `run_journaled` assertions repaired against `run_journaled_observed`; Windows archive in-use-directory rename test repaired without changing production identity checks. Wave 2 divergent ancestor commits still require a diff/evidence audit, not broad cherry-picks. Branch SHA must be refreshed before edits. All fourteen latest-head CI workflows queued at last check; no newly executed native or installer acceptance claimed.
+
+**Browser integration constraint:** Original TOOLS-10 PR #26 has an earlier model/browser loop, but its `run_reserved_browser_function_calls` supervisor path is absent from the current integrated `inference_supervisor.rs`. Do not splice the old desktop function into PR #61 without bringing its supervised stream, authorization, prompt replay, cancellation and exact chat journal contracts. Prefer a small reviewed bridge using current native primitives, with non-model fallback disabled rather than pretend browsing works.
+
 ## 2026-11-06 integration reconciliation — do not rebuild implemented tools
 
 Following the Lu Dev 28–31 review, the actual integrated tree contains the previously developed Wave 2 archive/document/custody and Wave 3 normal-chat/Reader/Git/authorization work. Earlier comments that Wave 2 advanced format engines, archive cancellation/recovery, spreadsheet/Office revisions, or Wave 3 semantic discovery and live tool progress were *not yet implemented* are historical, not current missing-source claims. Source implementation is not the same as verified completeness.
