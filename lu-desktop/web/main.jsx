@@ -2952,9 +2952,9 @@ function App() {
                 <small>{item.files} files · {item.expandedBytes} bytes ·
                   {' '}{item.manifestSha256}</small>
                 <pre className="editFullText">{item.entries.map((entry,j)=>
-                  (j+1)+'. '+(entry.isDirectory?'directory':'file')+' · '+
-                  entry.path+(entry.isDirectory?'':' · '+
-                    entry.uncompressedBytes+' bytes · '+entry.sha256)
+                  (j+1)+'. '+(entry.is_directory?'directory':'file')+' · '+
+                  entry.path+(entry.is_directory?'':' · '
+                    entry.uncompressed_bytes+' bytes · '+entry.sha256)
                 ).join('\n')}</pre>
               </div>)}
             </details>
