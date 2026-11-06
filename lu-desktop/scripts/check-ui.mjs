@@ -33,6 +33,19 @@ const tests = [
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
+  ['archive desktop review is pinned to native pickers and full-manifest user acknowledgement',
+    ui.includes("invoke('lu_review_archive_tree'") &&
+    ui.includes("invoke('lu_confirm_archive_tree'") &&
+    ui.includes("invoke('lu_deny_archive_tree'") &&
+    ui.includes('archiveReview.entries.map') &&
+    ui.includes('disabled={!archiveReviewed || archiveBusy}') &&
+    ui.includes('manual recovery') &&
+    host.includes('fn lu_review_archive_tree(') &&
+    host.includes('fn lu_confirm_archive_tree(') &&
+    host.includes('fn lu_deny_archive_tree(') &&
+    host.includes('archive_reviews: archive_desktop::ArchiveReviewQueue') &&
+    host.includes('app.dialog().message(modal)') &&
+    host.includes('state.archive_reviews.consume(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
