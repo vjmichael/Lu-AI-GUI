@@ -4717,6 +4717,16 @@ fn lu_observe_notes(
 )->Result<Vec<observe_desktop::ObserveNoteView>,String>{
     state.observe.notes(&chat_id)
 }
+/// Host-owned capture worker receipt. No screenshot, app window title,
+/// microphone or image content can leave the worker.
+#[tauri::command]
+fn lu_observe_capture_receipt(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<observe_desktop::ObserveCaptureReceiptView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for capture history")?;
+    state.observe.capture_receipt(&chat_id)
+}
 /// A data-only handoff for user review. It does not call a model, execute
 /// tests, modify source or upgrade an unverified hint into a verified defect.
 #[tauri::command]
@@ -4867,6 +4877,7 @@ pub fn run() {
             lu_observe_self_signal,
             lu_observe_notes,
             lu_observe_handoff,
+            lu_observe_capture_receipt,
             lu_observe_capture_one_shot,
             lu_observe_capture_available,
             lu_browser_visibility,
