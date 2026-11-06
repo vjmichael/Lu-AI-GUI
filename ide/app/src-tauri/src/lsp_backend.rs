@@ -372,3 +372,35 @@ impl NativeLspRuntime {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_language_router_is_fixed_and_denies_untrusted_paths() {
+        assert_eq!(language_server_for_path("src/main.rs", "rust").unwrap(),
+            "rust-analyzer");
+        assert_eq!(language_server_for_path("lib/example.cpp", "cpp").unwrap(),
+            "clangd");
+        assert_eq!(language_server_for_path("app/main.c", "c").unwrap(),
+            "clangd");
+        assert_eq!(language_server_for_path("tools/a.py", "python").unwrap(),
+            "ruff");
+        for (path, language) in [
+            ("../../secret.rs", "rust"),
+            ("src\\evil.rs", "rust"),
+            ("main.rs", "python"),
+            ("main.ts", "typescript"),
+            ("main.rs/../../a.rs", "rust"),
+            ("file:///secret.c", "c"),
+        ] {
+            assert!(language_server_for_path(path, language).is_err(), "{path}");
+        }
+    }
+    #[test]
+    fn absent_release_pins_deny_by_default() {
+        assert!(pin(None).is_err());
+        assert!(pin(Some("unsafe")).is_err());
+        assert!(pin(Some(&"a".repeat(64))).is_ok());
+    }
+}
