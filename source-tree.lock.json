@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "578e1753151be0c1d97267b1a10c81931e666540",
+  "sourceCommitBeforeLock": "f668540cd134782d849160b6c5c626712f625074",
   "trackedFileCount": 395,
   "files": [
     {
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "e3210a53719a822a8f391b2042eb863df54edafb"
+      "blob": "7410c90c43c46bbf6c2e4a17ff15330b336cab43"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -937,7 +937,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer_tool.rs",
-      "blob": "89353b3d203256384e8cc9fe466caebd2f0bf0c5"
+      "blob": "f8e6ebeab1b1ede23ce1429cf952fe4abff29112"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_trash_tool.rs",
