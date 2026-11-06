@@ -1,7 +1,7 @@
 # Lu Core native tools — implementation and acceptance ledger
 Updated: 2026-11-05
 Source integration branch: `lu/tools-all-source-consolidation-20261105` (PR #40)
-Status: DEVELOPMENT ONLY. No claim of stable v1.0 or installed Windows acceptance.
+Status: DEVELOPMENT SOURCE. **WAVE2-RECOVERY-03 = SOURCE-IMPLEMENTED; exact-head native and installed Windows acceptance PENDING.** No claim of stable v1.0 or installed Windows acceptance.
 
 ## Non-negotiable acceptance states
 - **Source** = a named implementation exists and has source review coverage.
@@ -196,8 +196,25 @@ Implementation sources committed in this pass:
 
 **Not accepted/remaining limitations:** encrypted/password-protected or multi-volume RAR/7z; arbitrary unsupported RPM payload modes; verification of RPM signatures; full rich-object, chart, macro, external-link, formula or template preservation/editing in Office files; native codec worker resource isolation and cancellation; exact-head Windows and Linux passing CI; real installed NSIS artifact with codec DLLs and human confirmation/cancellation/restart validation. Source only is not evidence of completed release acceptance.
 
-No Step 3 recovery hardening or Step 4 native final acceptance is claimed.
+Historical status for initial Step 2 checkpoint: Step 3 had not yet been implemented at that point. See the current WAVE2-RECOVERY-03 source-implementation closure below. Step 4 native acceptance remains separate.
 
+
+## WAVE2-RECOVERY-03 — SOURCE-IMPLEMENTED (native acceptance pending)
+
+Step 3 closure scope: the installed desktop uses host-owned native worker processes for archive **preview and extraction**, with chat-scoped cancellation, immediate owned-child termination (Windows Job/Unix process group), Linux parent-death kill, worker deadline and bounded worker memory. The host records the immutable approved manifest and effect intent before writing; post-start failures/cancellation are journal-UNCERTAIN and never auto-replayed. Full-tree SHA and completion-marker re-observation is required both for APPLIED and on restart. The source-removing move path uses native no-clobber rename (Windows opened handle, Linux pinned dir FD) with identity and SHA verification rather than link+unlink. Bounded DOCX/PPTX/XLSX writes retain versioned non-overwriting publication, receipt and uncertainty handling. The source API now accepts ZIP, TAR/compressed streams, CPIO, AR/DEB, RPM and 7z/RAR through one approved archive extraction tool. Permission does not grant execution authority.
+
+**Acceptance status:** source-coded and committed only, NOT Linux/Windows native compile-verified, NOT installed NSIS approved, NOT a complete Wave 2 release. The existing native CI workflows and explicit Windows installer/codec/modal/interruption acceptance remain separate. This status must be downgraded or code repaired if exact-head CI exposes a defect; no automatic stable release merge.
+
+### Current Step 3 closure matrix
+
+| Requirement | Source implementation | Native/installed evidence |
+| --- | --- | --- |
+| Cancel hung native archive decode | Supervised preview and extraction, OS kill/reap, terminal status, 600-second deadline | Pending exact-head process tests and installed Win/Linux fault injection |
+| Worker containment and orphan prevention | Win Job object and selective 1GiB quota; Linux process group, parent-death SIGKILL and 1GiB rlimit | Pending native worker/job matrix |
+| Safe output and no replay | Host-owned manifest, journal PREPARED/EXECUTING/UNCERTAIN, full SHA rehash, read-only restart reconciliation | Pending actual restart/crash matrix |
+| Copy and new-file interrupted stage | No-clobber stage publication; failed cleanup promotes to UNCERTAIN | Pending crash boundary injection |
+| Source-removing file moves | Atomic no-replace Win32/Linux rename + opened file identity and byte verification | Pending Windows/Linux rename race matrix |
+| Native approval and UI | Host native modal, exact user-turn grant, scoped cancel preview/extract and read-only File operations history | Pending installed desktop end-to-end smoke |
 
 ## WAVE2-RECOVERY-03 — Native archive cancellation hardening
 The archive extraction tool now accepts only a host-owned, chat-scoped, per-review cancellation token. ZIP decode and member publication have cooperative checkpoints, and the desktop exposes an explicit cancel-running-extraction action. Cancellation before directory creation fails without a write; cancellation after creation returns WRITE_UNCERTAIN and preserves partial output for journal and full-manifest reconciliation. Non-ZIP synchronous decoders still require supervised-process termination for immediate cancellation. Exact-head Windows/Linux CI and installed desktop acceptance remain open.

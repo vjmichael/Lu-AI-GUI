@@ -1,6 +1,6 @@
 # Wave 2 — 7z/RAR/RPM, Windows codecs, and richer Office revisions
 
-Status: **SOURCE-IMPLEMENTED, NOT YET RELEASE-ACCEPTED**. Exact-head Windows/Linux Rust CI plus a real installed NSIS desktop test are required.
+Status: **WAVE2-RECOVERY-03 SOURCE-IMPLEMENTED; Windows/Linux native and installed acceptance still pending**. Exact-head Windows/Linux Rust CI plus a real installed NSIS desktop test are required.
 
 ## Native architecture
 
@@ -106,3 +106,6 @@ Upstream API and licensing references:
 - Windows native file moves now use opened-handle `FileRenameInfo` (ReplaceIfExists=false) relative to the already opened directory HANDLE. The original FILE OBJECT is pinned, so an external pathname substitution does not change which file can be moved. Native opened-file ID and approved SHA are rechecked on the new target after the rename.
 - Linux uses native `renameat2(RENAME_NOREPLACE)` with pinned directory FDs, performing publication and source name removal in one atomic namespace transition. A malicious source swap before that transition is detected by post-rename inode/device identity; no second deletion follows.
 - These native operations have no hardlink/unlink window. An unsupported filesystem or OS fails closed rather than falling back to unsafe path deletion. Post-transition mismatches remain WRITE_UNCERTAIN and preserve the moved bytes for manual review.
+
+## Step 3 closure and scope declaration
+Wave 2 recovery/cancellation is marked **SOURCE-IMPLEMENTED**, not native-verified or release-accepted. The host now uses native supervised workers for both archive manifest preview and user-approved extraction, has chat-scoped cancellation, OS termination, memory caps, crash-safe uncertain states, read-only full-tree restart integrity, and atomic source-removing moves. Tests are committed for cancellation, denied/mismatched approvals, source swaps, child failures, stale receipts and restart tampering; these are *test sources*, not evidence that exact-head CI passed. Full release acceptance requires real Windows/Linux runner results, a Windows installer test with staged codec DLLs, Windows native dialogs and restart/cancel/crash injection. Unsupported encrypted/multivolume archives, RPM signature verification, arbitrary Office rich formats and unsupported operating systems remain intentionally out of scope.

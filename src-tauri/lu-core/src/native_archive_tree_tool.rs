@@ -15,6 +15,9 @@ use crate::{
         ArchiveCancellation,TreeExtractError,
     },
     native_linux_archive::detect_linux_archive,
+    native_cpio::is_cpio_name,
+    native_ar_deb::is_ar_name,
+    native_seven_rar::detect_7z_rar,
     native_archive_process::SupervisedArchivePlan,
     registry::NativeToolRegistry,wire::proto,
 };
@@ -28,8 +31,28 @@ fn file_name(s:&str)->bool{
        &&!s.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':'))
 }
 fn archive_name(s:&str)->bool{
-    file_name(s)&&(s.to_ascii_lowercase().ends_with(".zip")||
-        detect_linux_archive(s).is_some())
+    file_name(s)&&(
+        s.to_ascii_lowercase().ends_with(".zip")||
+        s.to_ascii_lowercase().ends_with(".rpm")||
+        detect_linux_archive(s).is_some()||
+        is_cpio_name(s)||is_ar_name(s)||detect_7z_rar(s).is_some()
+    )
+}
+#[cfg(test)]
+mod supported_family_tests{
+    use super::archive_name;
+    #[test]
+    fn exact_archive_policy_accepts_all_bounded_decoder_families(){
+        for name in ["data.zip","parts.tar","parts.tar.gz","data.cpio",
+            "pkg.cpio.zst","pkg.ar","pkg.deb","pkg.rpm","sample.7z",
+            "sample.rar","package.tar.xz"]{
+            assert!(archive_name(name),"rejected supported {name}");
+        }
+        for unsafe_name in ["../bad.rar","bad\\name.zip","C:root.7z",
+            ".lu-stage-hidden.tar","archive.exe","archive"]{
+            assert!(!archive_name(unsafe_name),"admitted {unsafe_name}");
+        }
+    }
 }
 fn hash_ok(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
