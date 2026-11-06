@@ -76,6 +76,7 @@ const MAX_OUTPUT_FILES: usize = 6000;
 const MAX_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_OUTPUT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const LOOP_DELAY: Duration = Duration::from_millis(40);
+const LIVE_OUTPUT_SCAN_INTERVAL: Duration = Duration::from_millis(250);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
 const JOB_OBJECT_TERMINATE_ACCESS: u32 = 0x0008;
 const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
@@ -1113,6 +1114,9 @@ where
     let mut timed_out = false;
     let mut stopped = false;
     let mut unstable_output_since: Option<Instant> = None;
+    // OS process/job liveness and cancellation are polled every 40 ms.
+    // A metadata-only directory walk need not run on *every* wait tick.
+    let mut last_live_output_scan = Instant::now() - LIVE_OUTPUT_SCAN_INTERVAL;
     let exit_code = loop {
         let waited = unsafe { WaitForSingleObject(process.0, LOOP_DELAY.as_millis() as u32) };
         if waited == WAIT_OBJECT_0 {
@@ -1137,21 +1141,26 @@ where
         // A live Cargo tree is mutable. Check quota, reparse and hardlink
         // containment WITHOUT hashing concurrently modified file bytes.
         // An unstable scan gets only a short bounded grace, never a pass.
-        let output_invalid = match live_output_quota(
-            &output,
-            MAX_OUTPUT_FILES,
-            MAX_OUTPUT_BYTES,
-            MAX_OUTPUT_FILE_BYTES,
-        ) {
-            Ok(true) => {
-                unstable_output_since = None;
-                false
+        let output_invalid = if last_live_output_scan.elapsed() >= LIVE_OUTPUT_SCAN_INTERVAL {
+            last_live_output_scan = Instant::now();
+            match live_output_quota(
+                &output,
+                MAX_OUTPUT_FILES,
+                MAX_OUTPUT_BYTES,
+                MAX_OUTPUT_FILE_BYTES,
+            ) {
+                Ok(true) => {
+                    unstable_output_since = None;
+                    false
+                }
+                Ok(false) => {
+                    let started = unstable_output_since.get_or_insert_with(Instant::now);
+                    started.elapsed() >= Duration::from_secs(3)
+                }
+                Err(_) => true, // structural violation or quota exceeded
             }
-            Ok(false) => {
-                let started = unstable_output_since.get_or_insert_with(Instant::now);
-                started.elapsed() >= Duration::from_secs(3)
-            }
-            Err(_) => true, // structural violation or quota exceeded
+        } else {
+            false // not a security certificate; final seal after Job exit
         };
         if request || deadline_exceeded || output_invalid {
             // Fixed CI/debug-only categories. They carry no paths, source,
