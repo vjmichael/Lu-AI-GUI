@@ -36,15 +36,34 @@ jobs:
             cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker hostile_concurrent_child_rename_cannot_escape_pinned_root -- --nocapture
             if ($LASTEXITCODE -ne 0) { throw "D7C OS race iteration $n failed" }
           }
+      - name: Build independent broker and fixed native crash fixture
+        run: |
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features windows-worker --bin windows_recovery_broker --bin d7c_broker_crash_fixture
+      - name: Independently kill original owner and verify retained Job and broker ledger
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP ('lu-d7c-recovery-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          & ./ide/supervisor/fixtures/Test-D7CProductionBrokerCrash.ps1 -OwnerFixture (Join-Path $PWD 'ide/supervisor/target/debug/d7c_broker_crash_fixture.exe') -BrokerExecutable (Join-Path $PWD 'ide/supervisor/target/debug/windows_recovery_broker.exe') -ReceiptDirectory $dir
+          if ($LASTEXITCODE -ne 0) { throw 'Independent production-broker protocol crash acceptance failed' }
       - name: Require exact Rust formatting
         if: always()
         run: cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
-      - name: Assert no fallback to ambient-path tree copying
+      - name: Assert no fallback to ambient-path tree copying and no desktop broker command
         shell: pwsh
         run: |
           $worker = Get-Content ide/supervisor/src/windows_worker.rs -Raw
           $tree = Get-Content ide/supervisor/src/windows_cap_tree.rs -Raw
           $desktop = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          $broker = Get-Content ide/supervisor/src/windows_broker.rs -Raw
+          if ($broker -notmatch 'OpenJobObjectW' -or
+              $broker -notmatch 'OpenProcess' -or
+              $broker -notmatch 'GetProcessTimes' -or
+              $broker -notmatch 'TerminateJobObject' -or
+              $broker -notmatch 'sync_all' -or
+              $broker -notmatch 'RECOVERY_HOLD') {
+            throw 'Native recovery broker OS ownership or durable witness contract missing'
+          }
           if ($worker -match 'fn tree_transfer' -or $worker -match 'fn directory_identity') {
             throw 'Old ambient-path tree copier reintroduced'
           }
