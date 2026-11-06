@@ -39,6 +39,15 @@ mod platform{
     const LOAD_FLAGS:u32=0x00000100|0x00001000;
     fn manifest_verified(folder:&std::path::Path)->bool{
         use sha2::{Digest,Sha256};
+        use std::os::windows::fs::MetadataExt;
+        let regular=|path:&std::path::Path,is_dir:bool|{
+            let Ok(meta)=std::fs::symlink_metadata(path)else{return false};
+            !meta.file_type().is_symlink() &&
+                meta.file_attributes()&0x400==0 &&
+                if is_dir{meta.is_dir()}else{meta.is_file()}
+        };
+        if !regular(folder,true)||
+            !regular(&folder.join("manifest.json"),false){return false}
         let Ok(contents)=std::fs::read(folder.join("manifest.json"))else{return false};
         if contents.len()>64*1024{return false}
         let Ok(doc)=serde_json::from_slice::<serde_json::Value>(&contents)else{return false};
@@ -60,6 +69,7 @@ mod platform{
                 !names.insert(name.to_ascii_lowercase()){
                 return false
             }
+            if !regular(&folder.join(name),false){return false}
             let Ok(contents)=std::fs::read(folder.join(name))else{return false};
             if contents.len() as u64!=expected||expected==0||
                 format!("{:x}",Sha256::digest(&contents))!=hash{
