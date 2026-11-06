@@ -1194,6 +1194,51 @@ mod tests {
         state.jobs.get_mut(&job.job_id).unwrap().phase = JobPhase::Running;
     }
     #[test]
+    fn published_output_digest_is_bound_to_durable_terminal_receipt() {
+        let filename = path();
+        let sup = Supervisor::open(filename.clone()).unwrap();
+        let job = sup.prepare(plan()).unwrap();
+        sup.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&sup, &job);
+        let sha = "a".repeat(64);
+        let completed = sup.native_finish_with_output(
+            &job.job_id, true, true, true, Some(&sha)
+        ).unwrap();
+        assert_eq!(completed.phase, JobPhase::Completed);
+        let last = sup.receipt_history(&job.job_id).unwrap().pop().unwrap();
+        assert_eq!(last.body.phase, JobPhase::Completed);
+        assert!(last.body.evidence_code.contains(&sha));
+        drop(sup);
+        let reopened = Supervisor::open(filename.clone()).unwrap();
+        let last = reopened.receipt_history(&job.job_id).unwrap().pop().unwrap();
+        assert!(last.body.evidence_code.contains(&sha));
+        drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn forged_or_missing_published_output_seal_cannot_finish() {
+        let filename = path();
+        let sup = Supervisor::open(filename.clone()).unwrap();
+        let job = sup.prepare(plan()).unwrap();
+        sup.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&sup, &job);
+        assert_eq!(sup.native_finish_with_output(
+            &job.job_id, true, true, true, Some("not-a-sha")
+        ).unwrap_err(), SupervisorError::InvalidPlan);
+        let _ = sup.native_finish_with_output(
+            &job.job_id, false, false, false, None
+        );
+        assert!(sup.inspect().unwrap()[0].requires_reconciliation);
+        drop(sup);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
     fn cancellation_logs_request_before_verified_tree_kill() {
         let path = path();
         let sup = Supervisor::open(path.clone()).unwrap();
