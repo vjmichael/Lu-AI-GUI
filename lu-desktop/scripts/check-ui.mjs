@@ -124,6 +124,18 @@ const tests = [
     ui.includes('Byte-level progress is not available') &&
     ui.includes('No automatic retry occurs') &&
     ui.includes('File recovery before taking another action')],
+  ['bounded Office batch native review binds full before-after diff and unchanged package hashes',
+    ui.includes("invoke('lu_review_office_batch'") &&
+    ui.includes("invoke('lu_confirm_office_batch'") &&
+    ui.includes("invoke('lu_deny_office_batch'") &&
+    ui.includes('officeBatchReview.changes.map') &&
+    ui.includes('officeBatchReview.unaffectedParts.map') &&
+    ui.includes('disabled={!officeBatchReviewed || officeBatchBusy}') &&
+    host.includes('fn lu_review_office_batch(') &&
+    host.includes('fn lu_confirm_office_batch(') &&
+    host.includes('fn lu_deny_office_batch(') &&
+    host.includes('office_batch_reviews: office_batch_desktop::OfficeBatchQueue') &&
+    host.includes('state.wave2_recovery.record_intent(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
