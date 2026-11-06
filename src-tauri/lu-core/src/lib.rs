@@ -40,6 +40,7 @@ pub mod native_web_research;
 pub mod web_research_evidence;
 pub mod web_research_citation;
 pub mod web_research_document;
+pub mod web_research_report;
 pub mod web_research_analysis;
 pub mod web_research_premise;
 pub mod web_research_sufficiency;
