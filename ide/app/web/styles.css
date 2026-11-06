@@ -225,3 +225,24 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .jobIntentConsent input:focus-visible, .jobIntentComposer select:focus-visible {
   outline: 2px solid #efcb42; outline-offset: 2px;
 }
+
+
+/* Wave E2 — bounded, read-only LSP presentation. The diagnostics are text
+   decorations, never interpreted as a markup or an executable action. */
+.cm-lsp-error {text-decoration:underline wavy #ed7183;text-underline-offset:3px}
+.cm-lsp-warning {text-decoration:underline wavy #eac16c;text-underline-offset:3px}
+.cm-lsp-note {text-decoration:underline dotted #92b7e3;text-underline-offset:3px}
+.lspResultPanel{padding:8px 15px;border-top:1px solid #34485c;background:#14263c;
+  max-height:175px;overflow:auto;font-size:12px;display:flex;flex-direction:column;gap:5px}
+.lspResultPanel>strong{color:#cadbec;font-size:11px;position:sticky;top:0;background:#14263c}
+.lspDiagnostic,.lspSuggestion{width:100%;display:flex;align-items:baseline;gap:10px;
+  padding:5px 7px;text-align:left;color:#d9e6f2;background:transparent;border:1px solid transparent;
+  border-radius:4px;cursor:pointer;font:inherit}
+.lspDiagnostic:hover,.lspSuggestion:hover,.lspDiagnostic:focus-visible,
+.lspSuggestion:focus-visible{background:#213954;border-color:#54718b}
+.lspDiagnostic span:first-child{color:#e3ba7a;flex-shrink:0}
+.lspDiagnostic span:last-child{overflow-wrap:anywhere}
+.lspSuggestion code{font-weight:700;color:#c9e5fb}
+.lspSuggestion span{color:#a3b7cc;white-space:normal}
+.lspResultPanel pre{font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;
+  color:#c4d6e8;margin:0 0 5px;font-family:Consolas,monospace}
