@@ -223,7 +223,7 @@ pub fn decode_members(
                 format==NativeFormat::Rar&&detected!=FORMAT_RAR&&detected!=FORMAT_RAR5 {
                 return Err(NativeArchiveError::UnsupportedFormat)
             }
-            if encrypted(entry)>0||!symlink(entry).is_null()||!hardlink(entry).is_null(){
+            if encrypted(entry)!=0||!symlink(entry).is_null()||!hardlink(entry).is_null(){
                 return Err(NativeArchiveError::EncryptedOrUnsupported)
             }
             let kind=mode(entry)&FILETYPE_MASK;
@@ -379,6 +379,10 @@ pub fn compress_raw(
                 NativeArchiveError::TooLarge
             }else{NativeArchiveError::NativeFailure})
         }
+        // The native writer has callbacks into the OutputBuffer. Release it
+        // BEFORE moving the buffer into the returned Vec.
+        drop(entry);
+        drop(write);
         Ok(output.data)
     }
 }
