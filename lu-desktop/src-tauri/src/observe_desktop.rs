@@ -42,6 +42,18 @@ pub(crate) struct ObserveNoteView{
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
+pub(crate) struct ObserveCaptureReceiptView{
+    pub capture_task_id:String,
+    pub state:String,
+    pub image_received:bool,
+    pub frame_sha256:Option<String>,
+    pub source_identity_attested:bool,
+    pub pixels_retained:bool,
+    pub visual_interpretation_verified:bool,
+    pub message:&'static str,
+}
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
 pub(crate) struct ObserveHandoffView{
     pub session_id:String,
     pub verified_failures:usize,
@@ -304,6 +316,42 @@ impl ObserveHost {
         Ok(id)
     }
 
+    /// Read-only native WGC receipt after the owned capture task ends.
+    /// The digest is a bound proof of pixel-buffer observation only. The
+    /// foreground/picker source is not automatically a verified app target;
+    /// no image bytes or window metadata are stored or returned.
+    pub(crate) fn capture_receipt(
+        &self,chat_id:&str
+    )->Result<Option<ObserveCaptureReceiptView>,String>{
+        let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut s)?;
+        let current=Self::owned(&mut s,chat_id)?;
+        let Some(task_id)=current.capture_task_id.as_deref() else{
+            return Ok(None);
+        };
+        let _=self.capture_processes.poll();
+        let row=self.task_store.get(task_id)
+            .map_err(|_|"Native capture task receipt unavailable")?
+            .ok_or("Capture task receipt no longer exists")?;
+        if row.workspace_id.as_deref()!=Some(chat_id){
+            return Err("Capture task belongs to another conversation".into());
+        }
+        let terminal=row.state==lu_core::tasks::TaskState::Completed;
+        let sha=row.detail.strip_prefix("SHA-256: ")
+            .filter(|value|value.len()==64
+                &&value.bytes().all(|b|b.is_ascii_hexdigit()))
+            .map(str::to_owned);
+        Ok(Some(ObserveCaptureReceiptView{
+            capture_task_id:task_id.into(),
+            state:row.state.as_str().into(),
+            image_received:terminal&&sha.is_some(),
+            frame_sha256:if terminal{sha}else{None},
+            source_identity_attested:false,
+            pixels_retained:false,
+            visual_interpretation_verified:false,
+            message:"Native WGC frame receipt only: no raw pixels or window title retained. This does not prove app identity, GUI correctness, or model visual understanding.",
+        }))
+    }
     /// Only the trusted task session's enum-only annotations can be seen;
     /// no cross-conversation note retrieval or unapproved ANSF write.
     pub(crate) fn notes(
