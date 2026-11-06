@@ -3255,6 +3255,7 @@ function App() {
             <small>{researchResult.message}</small>
             <ul>{researchResult.leads.slice(0,25).map(l=><li key={l.sourceId}>
               <strong>{l.title}</strong>
+              <small>Source ID: {l.sourceId}</small>
               <small>{l.authors} · DOI {l.doi} · {
                 researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus || l.verificationStatus
               }</small>
