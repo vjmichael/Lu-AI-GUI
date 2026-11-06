@@ -7,6 +7,13 @@
 
 This entrypoint is intended to spare the next development conversation from rediscovering the original scope, CI, app paths, and acceptance history.
 
+## C6 continuation pointer — task/evidence ledger (source only)
+The latest Wave 3 task bridge is `ide/host/src/task_evidence.rs` and the optional `DevelopmentEvent.task` in `ide/host/src/continuity.rs`. The native app now supports typed human progress updates and explicit host-probed task CI observations, which are materialized into `ProjectContext.tasks`. The journal remains the single private source; project Markdown is untrusted orientation, not proof of completion. Task status never accepts completed/accepted. Check `ide/docs/IDE_WAVE_C6_TASK_EVIDENCE.md` for exact evidence and acceptance limits, and always verify exact GitHub HEAD before citing CI.
+ 
+## Wave D1 continuation — execution intent is not executable authority
+
+D1 implements a **non-executing** human job request/review journal in `ide/host/src/execution_intents.rs`, native Tauri commands and the Job Requests screen. It is deliberately isolated from Lu runtime and the development ledger's task-acceptance claims. Source plans use only fixed rust recipes, require clean checked HEAD, fixed manifest digests, short TTL and session-local review. They never mint grants, process handles or workers. See `docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md` before any Wave D2 code. **Do not reuse D1 consent events as worker authorization**; actual OS-supervised workers need fresh, scoped, one-shot grants and native cancellation/recovery/containment hostile tests.
+
 ## Required first read (PCP-01)
 
 Before changing code, read [current project state](PROJECT_STATE.md), [chronological changelog](CHANGELOG.md), and [continuity protocol](CONTINUITY_PROTOCOL.md). Confirm real local workspace and `Delivered` contents before assuming GitHub is the most advanced source. Log unknown local or installer locations as unverified, not absent.
@@ -26,6 +33,14 @@ Source control is now a real sidebar section using typed `git.status` and native
 ## A3 Git worktree baseline transitions
 
 Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
+
+## Wave C5 — Exact-head public CI evidence (source implementation)
+ 
+Standalone IDE Source control provides an explicit, bounded, unauthenticated public GitHub Actions lookup for the currently registered local Git HEAD. The native Rust inspector accepts only recognized github.com origin forms, fixed api.github.com TLS endpoints with redirects disabled, and matching workflow paths, run SHAs and mandatory job receipts. Results are commit-level evidence only. No installed UI acceptance, dirty-worktree equivalence, task acceptance, build worker or Lu integration is implied. Reconciliation and exported checkpoints may reuse only a cached same-SHA, same-project checked receipt, without automatic GitHub reads. [Design and test limits](docs/IDE_WAVE_C5_EXACT_HEAD_CI.md).
+
+## Wave C — Read-only development truth (in development)
+
+Feature branch `ide/wave-c-development-truth-20261105` adds `git.diff` (bounded staged and worktree patch), `git.history` (30 local commits), and `resource.probe` (current file bytes/digest at a scoped relative path) to the standalone host, typed capabilities and human Source control/Continuity panels. A file digest does not establish executable readiness. Local history/tracking and public GitHub observations retain separate provenance. No executable worker, arbitrary filesystem access, repo mutation or Lu integration. [Design/limits](docs/IDE_WAVE_C_DEVELOPMENT_TRUTH.md). Source implemented; native CI and Windows installed acceptance open.
 
 ## Wave B1 human Find and Replace
 
