@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave E2 — Supervised language services and editor presentation (2026-11-06)
+
+- **Branch:** \`ide/wave-e2-supervised-lsp-editor-20261106\` stacked on Wave E1 PR #64; source-only integration, not a release-ready real server session.
+- **Native host protocol:** \`lsp_session.rs\` implements LSP initialize/initialized, revision-bound didOpen/didChange, hover/completion/definition requests, exact-version diagnostics, explicit workspace/configuration nulls, and denial of server-initiated edits and commands. Tests use bounded actual LSP JSON-RPC wire frames.
+- **Protected supervisor bridge:** optional \`lsp-transport\` internally binds a running D3 job and plan hash, complete OS-proof contract, per-chunk quotas, and process-tree kill. It cannot launch an executable itself; Windows protected Job/SCM and Linux delegated cgroup pipe adapters remain missing and MUST be implemented before activation.
+- **Human editor:** CodeMirror now supports external, exact-source diagnostic underlines, click-to-navigate problems, plain-text hover, suggestion preview and explicitly clicked completion insertion, same-file definition navigation, and source-revision invalidation. Language Services view shows reviewed descriptive providers. Actual native \`ide_lsp_worker_status\` returns \`LSP_PROTECTED_WORKER_UNVERIFIED\`; live actions stay disabled.
+- **Installer:** \`ide/packaging/language-servers.manifest.json\` candidates: native rust-analyzer, clangd, Ruff; Node-dependent Pyright/TypeScript deferred. \`verify_language_servers.py\` refuses unreviewed assets, wrong digest, missing notices, path escapes, or release without explicit approval. **No server is downloaded or bundled.**
+- **Status:** source changes committed with cross-platform CI/hostile checks, not native-tested or runtime-accepted. Wave D6/D7D OS security tests, true LSP restricted child admission and installed Windows/Linux editor tests still open. See \`ide/docs/IDE_WAVE_E2_SUPERVISED_LANGUAGE_SERVICES.md\`.
+
 ## Wave E1 — Free language-server catalog and framed protocol foundation (2026-11-06)
 
 - **Source:** `ide/wave-e1-lsp-catalog-transport-20261106`, stacked on D7D PR #63. E1 is a new source-only slice and intentionally does **not** close Wave D.
