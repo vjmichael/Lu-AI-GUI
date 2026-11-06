@@ -1,5 +1,8 @@
 use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 struct Picker(Option<PathBuf>);
 impl NativeDirectoryPicker for Picker {
@@ -9,13 +12,19 @@ impl NativeDirectoryPicker for Picker {
 }
 fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String, git2::Repository) {
     let root = std::env::temp_dir().join(format!(
-        "lu-ide-git-evidence-{}-{:016x}", std::process::id(), rand::random::<u64>()));
+        "lu-ide-git-evidence-{}-{:016x}",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
     let project = root.join("project");
     fs::create_dir_all(&project).unwrap();
     let repo = git2::Repository::init(&project).unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-    let id = registry.register_from_native_picker(&mut Picker(Some(project)))
-        .unwrap().unwrap().project_id;
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(project)))
+        .unwrap()
+        .unwrap()
+        .project_id;
     (root, registry, id, repo)
 }
 fn commit_file(repo: &git2::Repository, project: &Path, content: &str) {
@@ -28,7 +37,15 @@ fn commit_file(repo: &git2::Repository, project: &Path, content: &str) {
     let signature = git2::Signature::now("IDE fixture", "fixture@example.invalid").unwrap();
     let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
     let parents: Vec<&git2::Commit<'_>> = parent.iter().collect();
-    repo.commit(Some("HEAD"), &signature, &signature, "fixture commit", &tree, &parents).unwrap();
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "fixture commit",
+        &tree,
+        &parents,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -70,9 +87,15 @@ fn staged_and_worktree_patches_are_separate_and_read_only() {
 #[test]
 fn history_is_bounded_to_local_head_and_scope_is_validated() {
     let (root, registry, id, repo) = fixture();
-    assert_eq!(registry.inspect_git_diff(&id, "all").unwrap_err(),
-        "INVALID_GIT_DIFF_SCOPE");
-    assert!(registry.inspect_git_history(&id).unwrap().commits.is_empty());
+    assert_eq!(
+        registry.inspect_git_diff(&id, "all").unwrap_err(),
+        "INVALID_GIT_DIFF_SCOPE"
+    );
+    assert!(registry
+        .inspect_git_history(&id)
+        .unwrap()
+        .commits
+        .is_empty());
     let project = root.join("project");
     for i in 0..34 {
         commit_file(&repo, &project, &format!("line {i}\n"));
@@ -81,11 +104,15 @@ fn history_is_bounded_to_local_head_and_scope_is_validated() {
     assert_eq!(history.commits.len(), 30);
     assert!(history.truncated);
     assert_eq!(history.live_remote, "not_queried");
-    assert!(history.commits.iter().all(|c|
-        c.commit_sha.len() == 40 && c.summary == "fixture commit"));
+    assert!(history
+        .commits
+        .iter()
+        .all(|c| c.commit_sha.len() == 40 && c.summary == "fixture commit"));
     registry.close(&id).unwrap();
-    assert_eq!(registry.inspect_git_history(&id).unwrap_err(),
-        "PROJECT_NOT_OPEN");
+    assert_eq!(
+        registry.inspect_git_history(&id).unwrap_err(),
+        "PROJECT_NOT_OPEN"
+    );
     drop(repo);
     fs::remove_dir_all(root).unwrap();
 }
@@ -93,15 +120,23 @@ fn history_is_bounded_to_local_head_and_scope_is_validated() {
 #[test]
 fn parent_repo_is_never_searched_through_child_project() {
     let root = std::env::temp_dir().join(format!(
-        "lu-ide-parent-evidence-{}-{:016x}", std::process::id(), rand::random::<u64>()));
+        "lu-ide-parent-evidence-{}-{:016x}",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
     let project = root.join("child");
     fs::create_dir_all(&project).unwrap();
     let repo = git2::Repository::init(&root).unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-    let id = registry.register_from_native_picker(&mut Picker(Some(project)))
-        .unwrap().unwrap().project_id;
-    assert!(matches!(registry.inspect_git_history(&id),
-        Err("GIT_REPOSITORY_OUTSIDE_PROJECT") | Err("GIT_REPOSITORY_UNAVAILABLE")));
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(project)))
+        .unwrap()
+        .unwrap()
+        .project_id;
+    assert!(matches!(
+        registry.inspect_git_history(&id),
+        Err("GIT_REPOSITORY_OUTSIDE_PROJECT") | Err("GIT_REPOSITORY_UNAVAILABLE")
+    ));
     drop(repo);
     fs::remove_dir_all(root).unwrap();
 }
