@@ -69,8 +69,7 @@ impl Drop for Handle {
 /// without writing any message. Production never uses these probes.
 fn ci_probe_denied_pipe_access() {
     if !cfg!(debug_assertions)
-        || std::env::var_os("GITHUB_ACTIONS").as_deref()
-            != Some(std::ffi::OsStr::new("true"))
+        || std::env::var_os("GITHUB_ACTIONS").as_deref() != Some(std::ffi::OsStr::new("true"))
         || std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
             != Some(std::ffi::OsStr::new("1"))
     {
