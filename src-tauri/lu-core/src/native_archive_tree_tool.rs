@@ -15,6 +15,7 @@ use crate::{
         ArchiveCancellation,TreeExtractError,
     },
     native_linux_archive::detect_linux_archive,
+    native_archive_process::SupervisedArchivePlan,
     registry::NativeToolRegistry,wire::proto,
 };
 pub const TOOL_ID:&str="lu.archive.tree.extract";
@@ -75,13 +76,15 @@ fn failure(e:TreeExtractError)->ToolFailure{
     };
     ToolFailure::new(code,"Archive extraction rejected or requires recovery review",false)
 }
-struct Tool{descriptor:ToolDescriptor,source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation}
+struct Tool{descriptor:ToolDescriptor,source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation,
+    supervised:Option<SupervisedArchivePlan>}
 impl NativeTool for Tool{
     fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
     fn invoke(&self,call:ToolInvocation)->ToolFuture<'_>{
         let source=Arc::clone(&self.source);
         let destination=Arc::clone(&self.destination);
         let cancel=self.cancel.clone();
+        let supervised=self.supervised.clone();
         Box::pin(async move{
             if call.input.type_url!=INPUT{
                 return Err(ToolFailure::new("BAD_PROTOBUF","Wrong tree extraction type",false))
@@ -93,10 +96,15 @@ impl NativeTool for Tool{
                 return Err(ToolFailure::new("BAD_ARGUMENTS","Invalid tree extraction scope",false))
             }
             tokio::task::spawn_blocking(move||{
-                let receipt=extract_archive_tree_new_cancellable(
-                    &source,&r.source_name,&destination,&r.target_folder,
-                    &r.approved_manifest_sha256,&cancel
-                ).map_err(failure)?;
+                let receipt=if let Some(plan)=supervised{
+                    plan.execute(&source,&r.source_name,&destination,
+                        &r.target_folder,&r.approved_manifest_sha256,&cancel)
+                }else{
+                    extract_archive_tree_new_cancellable(
+                        &source,&r.source_name,&destination,&r.target_folder,
+                        &r.approved_manifest_sha256,&cancel
+                    )
+                }.map_err(failure)?;
                 Ok(ToolOutput{payload:ProtoPayload{
                     type_url:OUTPUT.into(),
                     bytes:proto::ArchiveTreeExtractResult{
@@ -160,6 +168,26 @@ pub fn register_archive_tree_extractor_with_cancel(
     registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
     source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation,
 )->Result<(),String>{
+    register_archive_tree_extractor_internal(
+        registry,catalog,source,destination,cancel,None
+    )
+}
+/// Production desktop workflow: use the existing owned process manager so
+/// stalled libarchive/codec calls cannot freeze or escape the Lu host.
+pub fn register_archive_tree_extractor_supervised(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
+    source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation,
+    plan:SupervisedArchivePlan,
+)->Result<(),String>{
+    register_archive_tree_extractor_internal(
+        registry,catalog,source,destination,cancel,Some(plan)
+    )
+}
+fn register_archive_tree_extractor_internal(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
+    source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation,
+    supervised:Option<SupervisedArchivePlan>,
+)->Result<(),String>{
     let desc=ToolDescriptor{
         id:TOOL_ID.into(),display_name:"Extract archive into new folder".into(),
         effect:ToolEffect::WriteWorkspace,input_type_url:INPUT.into(),
@@ -170,7 +198,7 @@ pub fn register_archive_tree_extractor_with_cancel(
         display_name:"Lu new-folder archive extraction".into(),
         contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
         tools:vec![desc.clone()],panels:vec![],workflows:vec![],
-    },vec![Arc::new(Tool{descriptor:desc,source,destination,cancel})])
+    },vec![Arc::new(Tool{descriptor:desc,source,destination,cancel,supervised})])
         .map_err(|e|format!("Archive tree registration rejected: {e:?}"))?;
     catalog.insert(registry,ModelToolDefinition{
         name:MODEL_NAME.into(),native_tool_id:TOOL_ID.into(),

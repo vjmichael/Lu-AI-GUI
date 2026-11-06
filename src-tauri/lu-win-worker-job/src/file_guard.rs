@@ -195,3 +195,21 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+
+/// A directory identity witness from a live Win32 directory HANDLE, not a
+/// pathname. Reparse-point or missing native file ID is rejected.
+pub fn opened_directory_identity(file:&File)->io::Result<String>{
+    let metadata=file.metadata()?;
+    if !metadata.is_dir()||metadata.file_attributes()&0x0000_0400!=0{
+        return Err(unsafe_target("unsafe directory or reparse point"))
+    }
+    let mut id=FileIdInfo::default();
+    query(file,FILE_ID_INFO,&mut id)?;
+    if id.file_id==[0;16]{
+        return Err(unsafe_target("directory has no stable native file ID"))
+    }
+    let mut value=format!("{:016x}",id.volume_serial_number);
+    for byte in id.file_id{value.push_str(&format!("{byte:02x}"))}
+    Ok(value)
+}

@@ -18,6 +18,8 @@ mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod archive_desktop;
+mod archive_process_worker;
+pub use archive_process_worker::run_archive_process_worker;
 mod document_create_desktop;
 mod office_revision_desktop;
 mod office_batch_desktop;
@@ -1919,7 +1921,8 @@ async fn lu_confirm_archive_tree(
     )?;
     let result=archive_desktop::execute_reviewed_archive_tree(
         &state.chats,&state.effects,&chat_id,
-        &user_turn_id,&effect_id,&pinned,run_guard.cancellation()
+        &user_turn_id,&effect_id,&pinned,run_guard.cancellation(),
+        Arc::clone(&state.background_processes),Arc::clone(&state.background_tasks)
     ).await?;
     drop(run_guard);
     Ok(Some(result))

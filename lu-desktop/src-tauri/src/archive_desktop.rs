@@ -18,8 +18,11 @@ use lu_core::{
     model::ModelToolCatalog,
     native_archive_tree::{preview_archive_tree,observe_tree_completion,ArchiveCancellation,TreeManifest},
     native_archive_tree_tool::{
-        register_archive_tree_extractor_with_cancel,ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
+        register_archive_tree_extractor_supervised,ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
     },
+    native_archive_process::{SupervisedArchivePlan,opened_directory_identity},
+    native_background_process::BackgroundProcessSupervisor,
+    tasks::TaskStore,
     policy::{CapabilityGrant,PolicyEngine},
     registry::NativeToolRegistry,
     wire::proto,
@@ -52,7 +55,6 @@ impl ArchiveRunRegistry{
         // serialize desktop extractions to bound peak host memory.
         if !active.is_empty() {
             return Err("Another archive extraction is already running".into())
-        }
         }
         let cancel=ArchiveCancellation::default();
         active.insert(review.into(),(chat.into(),cancel.clone()));
@@ -173,6 +175,10 @@ pub struct PinnedArchiveReview{
     new_folder:String,
     source_root:Arc<Dir>,
     destination_root:Arc<Dir>,
+    source_parent:PathBuf,
+    destination_parent:PathBuf,
+    source_identity:String,
+    destination_identity:String,
     manifest:TreeManifest,
 }
 impl PinnedArchiveReview{
@@ -203,6 +209,10 @@ impl PinnedArchiveReview{
             &&self.destination_display==other.destination_display
             &&self.new_folder==other.new_folder
             &&self.manifest==other.manifest
+            &&self.source_parent==other.source_parent
+            &&self.destination_parent==other.destination_parent
+            &&self.source_identity==other.source_identity
+            &&self.destination_identity==other.destination_identity
             &&Arc::ptr_eq(&self.source_root,&other.source_root)
             &&Arc::ptr_eq(&self.destination_root,&other.destination_root)
     }
@@ -219,8 +229,12 @@ impl ArchiveReviewQueue{
         if chat_id.is_empty()||review_id.is_empty()||review_id.len()>128{
             return Err("Invalid archive review identity".into())
         }
-        let (source_name,_,source_root)=physical_file(source)?;
+        let (source_name,source_parent,source_root)=physical_file(source)?;
         let dest_root=physical_folder(destination)?;
+        let source_identity=opened_directory_identity(&source_root)
+            .map_err(|_|"Archive source parent identity unavailable")?;
+        let destination_identity=opened_directory_identity(&dest_root)
+            .map_err(|_|"Archive destination identity unavailable")?;
         let manifest=preview_archive_tree(&source_root,&source_name)
             .map_err(|_|"Archive is unsafe, unsupported, or exceeds resource limits")?;
         let prefix=base_for_folder(&source_name);
@@ -239,7 +253,9 @@ impl ArchiveReviewQueue{
             chat_id:chat_id.into(),review_id:review_id.into(),
             source_name,source_display:source.to_string_lossy().into_owned(),
             destination_display:destination.join(&folder).to_string_lossy().into_owned(),
-            new_folder:folder,source_root,destination_root:dest_root,manifest,
+            new_folder:folder,source_root,destination_root:dest_root,
+            source_parent,destination_parent:destination.to_path_buf(),
+            source_identity,destination_identity,manifest,
         };
         let mut entries=self.pending.lock().map_err(|_|"Archive review unavailable")?;
         if entries.len()>=MAX_PENDING{return Err("Too many pending archive reviews".into())}
@@ -273,6 +289,7 @@ pub async fn execute_reviewed_archive_tree(
     chats:&ChatStore,effects:&EffectJournal,chat_id:&str,
     user_turn_id:&str,effect_call_id:&str,review:&PinnedArchiveReview,
     cancel:ArchiveCancellation,
+    processes:Arc<BackgroundProcessSupervisor>,tasks:Arc<TaskStore>,
 )->Result<ArchiveCreatedView,String>{
     chats.append_user_with_turn_id(chat_id,user_turn_id,
         &format!("Approved extracting {} into a NEW folder {}. {} files, {} bytes; full tree manifest SHA-256 {}.",
@@ -280,8 +297,19 @@ pub async fn execute_reviewed_archive_tree(
             review.manifest.total_bytes,review.manifest.sha256))?;
     let registry=NativeToolRegistry::new();
     let mut catalog=ModelToolCatalog::new();
-    register_archive_tree_extractor_with_cancel(&registry,&mut catalog,
-        Arc::clone(&review.source_root),Arc::clone(&review.destination_root),cancel)
+    let executable=std::env::current_exe()
+        .map_err(|_|"Cannot locate installed Lu worker executable")?;
+    let plan=SupervisedArchivePlan{
+        processes,tasks,executable,
+        source_parent:review.source_parent.clone(),
+        destination_parent:review.destination_parent.clone(),
+        source_parent_identity:review.source_identity.clone(),
+        destination_parent_identity:review.destination_identity.clone(),
+        manifest:review.manifest.clone(),workspace_id:chat_id.into(),
+        task_id:format!("archive-worker-{effect_call_id}"),
+    };
+    register_archive_tree_extractor_supervised(&registry,&mut catalog,
+        Arc::clone(&review.source_root),Arc::clone(&review.destination_root),cancel,plan)
         .map_err(|_|"Cannot register native archive extraction")?;
     let authority=ConversationAuthority::new();
     let policy=PolicyEngine::new();
