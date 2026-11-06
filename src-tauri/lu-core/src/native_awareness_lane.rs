@@ -20,6 +20,9 @@ pub enum Source {
     RendererHint,
     /// A host-verified OS accessibility event. Not a native effect receipt.
     NativeAccessibility,
+    /// An independently observed Lu-host runtime error, not renderer input
+    /// and not proof of an OS GUI test outcome.
+    NativeRuntime,
     /// A separately signed-off native test/effect receipt from the host.
     NativeTestReceipt,
 }
@@ -28,6 +31,7 @@ impl Source {
         match self{
             Self::RendererHint=>"renderer_hint",
             Self::NativeAccessibility=>"native_accessibility",
+            Self::NativeRuntime=>"native_runtime",
             Self::NativeTestReceipt=>"native_test_receipt",
         }
     }
