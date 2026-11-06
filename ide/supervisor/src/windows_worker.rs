@@ -605,18 +605,32 @@ pub fn execute_windows_worker(
     ) {
         Ok(value) => value,
         Err(reason) => {
-            // The launch adapter guarantees no child ran uncontained:
-            // failed CreateProcess or killed/reaped suspended child.
-            supervisor.native_deny_before_start(job_id, true)?;
+            // An OS failure that cannot prove the suspended process was
+            // reaped is quarantined immediately. Do not falsely certify
+            // "no child executed" or permit a second job in this session.
+            if reason == SupervisorError::Quarantined {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+            } else {
+                supervisor.native_deny_before_start(job_id, true)?;
+            }
             return Err(reason);
         }
     };
     // Record the contained process BEFORE ResumeThread, so a host crash in
     // this window is quarantined rather than falsely accepted as success.
-    supervisor.native_mark_running(job_id)?;
+    if let Err(reason) = supervisor.native_mark_running(job_id) {
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(reason);
+    }
     if unsafe { ResumeThread(thread.0) } == u32::MAX {
-        let reaped = job.kill_and_verify()?;
-        let _ = supervisor.native_finish(job_id, false, reaped, false);
+        let reaped = matches!(job.kill_and_verify(), Ok(true));
+        if !reaped {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
+        let bounded = output_seal(&output).is_ok();
+        let _ = supervisor.native_finish(job_id, false, reaped, bounded);
         return Err(denied());
     }
     let begin = Instant::now();
@@ -627,18 +641,25 @@ pub fn execute_windows_worker(
         if waited == WAIT_OBJECT_0 {
             let mut code = 1_u32;
             if unsafe { GetExitCodeProcess(process.0, &mut code) } == 0 {
+                let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(denied());
             }
             break Some(code);
         }
-        if waited != WAIT_TIMEOUT { return Err(denied()); }
+        if waited != WAIT_TIMEOUT {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(denied());
+        }
         let request = cancel.0.load(Ordering::SeqCst);
         if request || begin.elapsed().as_millis() >= plan.runtime_limit_ms as u128
             || output_seal(&output).is_err() {
             timed_out = !request;
             stopped = true;
             let mut terminator = JobTerminator { job: &job, id: job_id, hash: &plan_hash };
-            supervisor.cancel_running_with(job_id, &mut terminator)?;
+            if let Err(reason) = supervisor.cancel_running_with(job_id, &mut terminator) {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(reason);
+            }
             if unsafe { WaitForSingleObject(process.0, 5000) } != WAIT_OBJECT_0 {
                 return Err(SupervisorError::Quarantined);
             }
