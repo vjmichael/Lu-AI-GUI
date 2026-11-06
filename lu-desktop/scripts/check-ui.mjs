@@ -7,6 +7,12 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Research OpenAlex discovery is human-approved, per-chat, and never represented as verified citations',
+    host.includes('async fn lu_research_openalex(') &&
+    host.includes('fn lu_research_available(') &&
+    ui.includes("invoke('lu_research_openalex',{chatId,query:researchQuery})") &&
+    ui.includes('discovered sources · UNVERIFIED') &&
+    ui.includes('Research network runtime is not bundled')],
   ['Browser runtime is native-owned, permit-gated, and host-verified with no ambient model navigation',
     host.includes('async fn lu_browser_runtime_status(') &&
     host.includes('async fn lu_browser_start(') &&

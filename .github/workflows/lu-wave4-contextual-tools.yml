@@ -25,6 +25,7 @@ jobs:
       - run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
       - run: grep -Fq 'WorkspaceReadTurnSession::new_git(' lu-desktop/src-tauri/src/workspace_desktop.rs
       - run: grep -Fq 'dashboard_for_workspace(&chat_id,32)' lu-desktop/src-tauri/src/lib.rs
+      - run: node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.research.conf.json'));if(x.bundle.resources['resources/lu-research/curl.exe']!=='lu-research/curl.exe')process.exit(1)"
   core-linux:
     needs: source
     runs-on: ubuntu-24.04
@@ -114,3 +115,4 @@ jobs:
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib environment_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib research_desktop::tests

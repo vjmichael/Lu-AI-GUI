@@ -42,6 +42,11 @@ function App() {
   const [browserRuntime,setBrowserRuntime] = useState(null);
   const [browserOrigins,setBrowserOrigins]=useState('https://example.org');
   const [browserBusy,setBrowserBusy]=useState(false);
+  const [researchAvailable,setResearchAvailable]=useState(false);
+  const [researchQuery,setResearchQuery]=useState('');
+  const [researchBusy,setResearchBusy]=useState(false);
+  const [researchResult,setResearchResult]=useState(null);
+  const [researchError,setResearchError]=useState('');
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -212,6 +217,23 @@ function App() {
       .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
     return()=>{active=false;};
   },[settingsOpen]);
+  useEffect(()=>{
+    if(!settingsOpen)return;
+    invoke('lu_research_available')
+      .then(v=>setResearchAvailable(Boolean(v)))
+      .catch(()=>setResearchAvailable(false));
+  },[settingsOpen]);
+  async function runResearchDiscovery(){
+    if(!chatId||researchBusy||!researchAvailable)return;
+    setResearchBusy(true);
+    setResearchError('');
+    setResearchResult(null);
+    try{
+      const result=await invoke('lu_research_openalex',{chatId,query:researchQuery});
+      setResearchResult(result);
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBusy(false);}
+  }
   async function browserOperation(name,args={}){
     if(browserBusy)return;
     setBrowserBusy(true);
@@ -2939,6 +2961,32 @@ function App() {
           </div>
           <small>Browser navigation requires a currently authenticated human conversation and separate native approval.
             This control does not grant browser interaction or model tool use.</small>
+        </section>
+        <section className="advancedDocumentSettings" aria-label="Research discovery">
+          <h3>Research · verified-evidence workflow</h3>
+          <p>OpenAlex discovery is a separately approved read-only operation. Search results are
+             unverified leads, never citations, until registry and document evidence are checked.</p>
+          <label htmlFor="researchQuery">Research question or subject</label>
+          <input id="researchQuery" value={researchQuery} disabled={researchBusy}
+            onChange={e=>setResearchQuery(e.target.value)}
+            placeholder="e.g., spatial reasoning and GUI automation" />
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||!researchAvailable||researchBusy||!researchQuery.trim()}
+              onClick={runResearchDiscovery}>
+              {researchBusy?'Searching reviewed source…':'Search OpenAlex'}
+            </button>
+          </div>
+          <small>{researchAvailable?'Pinned HTTPS research runtime available. Native consent required.'
+            :'Research network runtime is not bundled in this build; discovery remains disabled.'}</small>
+          {researchError&&<small role="alert">{researchError}</small>}
+          {researchResult&&<div className="researchResults" aria-label="Unverified research leads">
+            <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
+            <small>{researchResult.message}</small>
+            <ul>{researchResult.leads.slice(0,25).map(l=><li key={l.sourceId}>
+              <strong>{l.title}</strong>
+              <small>{l.authors} · DOI {l.doi} · {l.verificationStatus}</small>
+            </li>)}</ul>
+          </div>}
         </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>

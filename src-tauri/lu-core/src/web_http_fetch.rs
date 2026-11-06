@@ -107,6 +107,12 @@ impl SecureHttpFetcher<'_> {
             return Err(FetchError::BinaryUnavailable);
         }
         let mut cmd=Command::new(self.curl_binary);
+        // The downloaded/installed runtime may not inherit a user's proxy,
+        // CA override, dynamic-loader preload, curl-specific environment or
+        // network credentials. This is an explicit public-HTTPS read.
+        // TLS verification uses this reviewed binary's system certificate
+        // configuration or separately host-approved CA bundle.
+        cmd.env_clear();
         // -q must be the first curl argument: ignore ambient .curlrc flags.
         cmd.args(["-q","--globoff","--silent","--show-error","--no-progress-meter","--ipv4",
             "--proto","=https","--proto-redir","=https","--max-redirs","0",

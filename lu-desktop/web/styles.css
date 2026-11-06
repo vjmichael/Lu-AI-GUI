@@ -269,3 +269,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .observeNotations button{justify-self:start;}
 .observeHandoff{display:grid;gap:4px;padding:8px;border-radius:6px;
  background:var(--panel,#202b35);}
+
+/* WAVE4 Research: display unverified catalog leads, not citation receipts. */
+.researchResults{display:grid;gap:6px;margin-top:8px;border:1px solid var(--border,#546);
+ border-radius:8px;padding:10px;}
+.researchResults ul{max-height:260px;overflow:auto;margin:0;padding-left:20px;}
+.researchResults li{margin:8px 0;display:grid;gap:4px;}
+.researchResults small{overflow-wrap:anywhere;}

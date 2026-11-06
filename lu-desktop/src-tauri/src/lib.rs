@@ -10,6 +10,7 @@ mod environment_context;
 mod vision_context;
 mod observe_desktop;
 mod native_browser_host;
+mod research_desktop;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -224,6 +225,7 @@ struct DesktopState {
     browser_runtime: Arc<native_browser_host::DesktopBrowserHost>,
     browser_authority: lu_core::conversation_authority::ConversationAuthority,
     browser_grant: Mutex<Option<ActiveBrowserGrant>>,
+    research: Arc<research_desktop::ResearchDesktop>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -636,6 +638,10 @@ impl DesktopState {
             )),
             browser_authority:lu_core::conversation_authority::ConversationAuthority::new(),
             browser_grant:Mutex::new(None),
+            research:Arc::new(research_desktop::ResearchDesktop::new(
+                app.path().resource_dir().map_err(|e|format!("Research resource path unavailable: {e}"))?,
+                root.clone(),
+            )),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1161,6 +1167,66 @@ async fn lu_browser_stop(
         }
         stopped
     }).await.map_err(|_|"Browser shutdown worker unavailable")?
+}
+
+/// A trusted host-only HTTPS research binary must be bundled and hash-pinned
+/// before live discovery becomes available. A model cannot select the binary.
+#[tauri::command]
+fn lu_research_available(state:State<'_,Arc<DesktopState>>)->bool{
+    state.research.available()
+}
+/// A deliberate USER research request, with native network consent. Results
+/// are UNVERIFIED discovery leads and never enter an LLM prompt as citations.
+#[tauri::command]
+async fn lu_research_openalex(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,query:String
+)->Result<research_desktop::ResearchSearchView,String>{
+    if query.trim().is_empty()||query.len()>512
+       ||query.chars().any(char::is_control){
+        return Err("Invalid research query".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for research")?;
+    if !state.research.available(){
+        return Err("Reviewed Lu HTTPS research runtime not installed".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=query.clone();
+        move||app.dialog().message(format!(
+            "Search the public OpenAlex catalog for this query?\n\n{}\n\n\
+             Lu will access only the OpenAlex HTTPS endpoint, store source \
+             identifiers in this conversation's local evidence ledger and \
+             label results UNVERIFIED until independently corroborated. \
+             This does not grant the AI general network access.",query
+        )).title("Lu — Authorize Research discovery")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Search OpenAlex".into(),"Cancel".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Native research approval unavailable")?;
+    if !approved{return Err("Research search cancelled".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research task could not start")?;
+    let worker=Arc::clone(&owner.research);
+    let chat=chat_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.search(&chat,&query)
+    ).await.map_err(|_|"Research worker unavailable").and_then(|x|x);
+    match result{
+        Ok(page)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Research completed but receipt could not be finalized")?;
+            Ok(page)
+        }
+        Err(err)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(err)
+        }
+    }
 }
 
 /// Native operator preference. No worker launch, model tool or network grant.
@@ -3873,6 +3939,8 @@ pub fn run() {
             lu_observe_capture_available,
             lu_browser_visibility,
             lu_browser_runtime_status,
+            lu_research_available,
+            lu_research_openalex,
             lu_browser_start,
             lu_browser_set_visible,
             lu_browser_human_verified,
