@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4e96bc2eae958397cc8d737fc5d128d2f197f3f2",
-  "trackedFileCount": 371,
+  "sourceCommitBeforeLock": "ae754d92739f60690b5f326df314783754074bf3",
+  "trackedFileCount": 375,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -37,7 +37,7 @@
     },
     {
       "path": ".github/workflows/lu-wave2-files.yml",
-      "blob": "662199b76b221e700ee31f8f9aeeb3e2a065c2df"
+      "blob": "80bd67831f7ec4b91c0ef4a209baecc722dba549"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "2c453b59fd89a10f5d88ce9c582364affbf3f888"
+      "blob": "2eb9a90a82e0bfb10f5ebc6fd4570e45a27d2c10"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -150,6 +150,10 @@
     {
       "path": "docs/TOOLS_ISO_01_AND_LINUX_ARCHIVE_SUPPORT.md",
       "blob": "ca491eed37328fab8d527d9b965b295203aeb1c7"
+    },
+    {
+      "path": "docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md",
+      "blob": "0d4c8fe110aa21811804093e7af4460d83a065a4"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -285,7 +289,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_desktop.rs",
-      "blob": "706366f5493a8d6b0178f23713e91f8833ee903d"
+      "blob": "3abf562e0ec67c709b70bf92e63d546d7478c030"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -769,7 +773,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "430cf26365bea119ae18479fb221d5278cc4eabf"
+      "blob": "bae986c9afb5aef40290909a0001ae49e63bf855"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -816,16 +820,20 @@
       "blob": "46d3c4105580551056209132db2bd3c30510726b"
     },
     {
+      "path": "src-tauri/lu-core/src/native_ar_deb.rs",
+      "blob": "d7ce33b5900766b214e7c3fc2972d1c90071fbc9"
+    },
+    {
       "path": "src-tauri/lu-core/src/native_archive_create.rs",
       "blob": "43df0277e3b285f961fd7ee3ffd1d854f4548fe1"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_inspect.rs",
-      "blob": "4c6f2d050691bf5e6630f8d614b10b4c6329e2f1"
+      "blob": "51495807c64dbae91025c9008bfbe148c0ad1fc6"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
-      "blob": "6283ed350bd1900ccb2d266bb1a7aa71848b6bcb"
+      "blob": "f80563532176a8c2b95a690925c013025c4d6d51"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree_tool.rs",
@@ -854,6 +862,10 @@
     {
       "path": "src-tauri/lu-core/src/native_chat_ids.rs",
       "blob": "ff2801eb56e6725596f31a779ae1d09cc4cd80ac"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_cpio.rs",
+      "blob": "600e71ecc983d7522bab92df6325e9fa2b553898"
     },
     {
       "path": "src-tauri/lu-core/src/native_create_new.rs",
@@ -909,7 +921,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_linux_archive.rs",
-      "blob": "7f8e35724c21325c0468151a4149005fb4c3b111"
+      "blob": "9adbbe0b2b51d20f8d5e4d59849de1580612841f"
     },
     {
       "path": "src-tauri/lu-core/src/native_linux_archive_tool.rs",
@@ -1346,6 +1358,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_linux_archive.rs",
       "blob": "d1660d56f48d0fa0c109dab722601325f23cda9c"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_linux_packages.rs",
+      "blob": "e35c88fe1d290c5ca1628295179c51db92ea79a4"
     },
     {
       "path": "src-tauri/lu-core/tests/native_office_revision.rs",
