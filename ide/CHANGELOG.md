@@ -2,6 +2,12 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Wave C read-only development truth (source implemented)
+- Added scoped native Git staged/unstaged patch and local commit history with typed `git.diff`, `git.history`, explicit Source control UI, 64 KiB/80-file patch cap and 30-commit history cap. Untracked file contents and any remote fetch remain excluded.
+- Added `resource.probe` under the registered project directory capability, producing a SHA-256 of inspected bytes or an explicit missing, changed, non-file, or oversize state. No claim that executables/installers work; no tool execution.
+- Added native fixture tests, frontend typed-contract checks, human UI and scoped evidence documentation. PR and CI pending; Windows installed acceptance not claimed. B source and acceptance PRs remain separate.
+- Design and gates: [IDE_WAVE_C_DEVELOPMENT_TRUTH.md](docs/IDE_WAVE_C_DEVELOPMENT_TRUTH.md).
+
 ## 2026-11-05 — Wave B1 Find and Replace (source committed)
 - Implemented Ctrl+H Find and Replace in human editor with literal case-sensitive/insensitive search, Replace One, confirmation-gated Replace All, and an explicit scan cap that refuses incomplete bulk edits.
 - Changes apply only to the active unsaved CodeMirror buffer in one undoable transaction, with an expected-document check and consumed nonce to avoid accidental reapplication on remount. Explicit human Save and revision conflict handling remain authoritative; no new native file-write API.
