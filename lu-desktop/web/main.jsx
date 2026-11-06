@@ -66,6 +66,11 @@ function App() {
   });
   const [researchClaimsByChat,setResearchClaimsByChat]=useState({});
   const [researchReportTitle,setResearchReportTitle]=useState('Research evidence report');
+  const [wordReplaceOld,setWordReplaceOld]=useState('');
+  const [wordReplaceNew,setWordReplaceNew]=useState('');
+  const [wordReplaceBusy,setWordReplaceBusy]=useState(false);
+  const [wordReplaceReceipt,setWordReplaceReceipt]=useState(null);
+
   const [researchReportSavedByChat,setResearchReportSavedByChat]=useState({});
   const [researchReportBusy,setResearchReportBusy]=useState(false);
   const [researchDocumentQuotes,setResearchDocumentQuotes]=useState({});
@@ -510,6 +515,18 @@ function App() {
       setImageHistoryView({chatId:sourceChat,rows:Array.isArray(rows)?rows:[]});
     }catch(e){setError(String(e));}
     finally{setImageHistoryBusy(false);}
+  }
+  async function replaceWordTextRuns(){
+    if(!chatId||wordReplaceBusy||!wordReplaceOld.trim()||!wordReplaceNew.trim()
+       ||wordReplaceOld===wordReplaceNew)return;
+    setWordReplaceBusy(true);setWordReplaceReceipt(null);setError('');
+    try{
+      const receipt=await invoke('lu_office_word_replace_all',{
+        chatId,oldText:wordReplaceOld,newText:wordReplaceNew
+      });
+      if(receipt)setWordReplaceReceipt(receipt);
+    }catch(e){setError(String(e));}
+    finally{setWordReplaceBusy(false);}
   }
   async function readOfflineImageText(){
     if(!chatId||ocrBusy)return;
@@ -3599,6 +3616,32 @@ function App() {
               </button>
             </div>
           </div>}
+        </section>
+        <section className="researchResults" aria-label="Non-destructive Word text replacement">
+          <h3>Word document editing</h3>
+          <small>Replace matching complete text runs across a DOCX. Lu retains the
+            original, shows the expected new SHA-256, and asks you to save to a
+            separate file using native dialogs. Word text split across styled
+            runs is deliberately not guessed or rewritten.</small>
+          <label>Exact existing text
+            <input value={wordReplaceOld}
+              onChange={e=>setWordReplaceOld(e.target.value)}/>
+          </label>
+          <label>Replacement text
+            <input value={wordReplaceNew}
+              onChange={e=>setWordReplaceNew(e.target.value)}/>
+          </label>
+          <button type="button" disabled={!chatId||wordReplaceBusy||
+            !wordReplaceOld.trim()||!wordReplaceNew.trim()||
+            wordReplaceOld===wordReplaceNew}
+            onClick={()=>void replaceWordTextRuns()}>
+            {wordReplaceBusy?'Preparing exact Word revision…':'Select Word document and replace'}
+          </button>
+          {wordReplaceReceipt&&<small role="status">
+            Created {wordReplaceReceipt.newFileName}: {wordReplaceReceipt.replacements}
+            replacements · SHA-256 {wordReplaceReceipt.revisedSha256}.
+            Original file was not overwritten.
+          </small>}
         </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
