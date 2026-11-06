@@ -27,7 +27,7 @@ test('browser worker accepts two approved research sites but never expands grant
     locator:()=>({innerText:async()=> 'Verified page content'}),
   };
   const context={
-    route:async (_pattern,handler)=>{routeHandler=handler;},
+    routeWebSocket:async()=>{},route:async (_pattern,handler)=>{routeHandler=handler;},
     pages:()=>[page],close:async()=>{},
   };
   const worker=new BrowserSession({origins:approved,
@@ -64,7 +64,7 @@ test('a real browser session can be paused then user-resumed without auto-solvin
     keyboard:{type:async()=>{}},
     screenshot:async()=>Buffer.from('fake-screenshot')
   };
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const chromiumProvider={launchPersistentContext:async()=>context};
   const session=new BrowserSession({origins:['https://archive.example'],
     profileDirectory:'/host/chosen/profile',chromiumProvider,windowController:nativeWindow()});
@@ -82,7 +82,7 @@ test('a real browser session can be paused then user-resumed without auto-solvin
 });
 test('model-controlled script operations are refused', async () => {
   const page={url:()=> 'https://archive.example',locator:()=>({innerText:async()=> 'hello'})};
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({origins:['https://archive.example'],
     profileDirectory:'/host/chosen/profile',chromiumProvider:{launchPersistentContext:async()=>context},windowController:nativeWindow()});
   await session.start();
@@ -97,7 +97,7 @@ test('bounded keyboard and accessibility operations require known actions', asyn
     keyboard:{press:async key=>pressed.push(key)},
     locator:()=>({innerText:async()=> 'A source',ariaSnapshot:async()=>'- heading "A source"'}),
   };
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({origins:['https://archive.example'],
     profileDirectory:'/host/chosen/profile',
     chromiumProvider:{launchPersistentContext:async()=>context}});
@@ -112,7 +112,7 @@ test('bounded keyboard and accessibility operations require known actions', asyn
 test('automatic mode starts headed-but-hidden, reveals same session for challenge, and re-hides on resume', async () => {
   let current='about:blank',body='Normal page';
   const context={
-    route:async()=>{},pages:()=>[page],close:async()=>{}
+    routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}
   };
   const page={
     url:()=>current,
@@ -146,7 +146,7 @@ test('automatic mode starts headed-but-hidden, reveals same session for challeng
 });
 test('automatic mode fails closed without native window controller', async () => {
   let closed=false;
-  const context={route:async()=>{},pages:()=>[],newPage:async()=>({}),close:async()=>{closed=true}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[],newPage:async()=>({}),close:async()=>{closed=true}};
   const session=new BrowserSession({origins:['https://archive.example'],
     profileDirectory:'/host/chosen/profile',
     chromiumProvider:{launchPersistentContext:async()=>context}});
@@ -155,7 +155,7 @@ test('automatic mode fails closed without native window controller', async () =>
 });
 test('always-visible setting never silently hides window', async () => {
   const page={url:()=> 'https://archive.example'};
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({
     origins:['https://archive.example'],profileDirectory:'/host/chosen/profile',
     visibilityMode:'always-visible',
@@ -174,7 +174,7 @@ test('failed re-hide keeps human takeover active and visible', async () => {
     goto:async url=>{location=url;return {status:()=>200};},
     locator:()=>({innerText:async()=>body})
   };
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const controller={async setVisible({visible}) {
     if (!visible && ++hiddenCalls>1) return false;
     return true;
@@ -223,7 +223,7 @@ test('lost native visibility acknowledgement times out closed', async () => {
 test('trusted loopback CDP attaches to one native-owned headed browser without relaunch',async()=>{
   let connected=0,launched=0;
   const page={url:()=> 'https://archive.example/record'};
-  const context={route:async()=>{},pages:()=>[page]};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page]};
   const controller=nativeWindow();
   const provider={
     connectOverCDP:async endpoint=>{
@@ -264,7 +264,7 @@ test('browser mouse and keyboard cannot act on a page outside granted origin',as
     mouse:{click:async()=>{clicks++;}},
     keyboard:{type:async()=>{types++;}}
   };
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({
     origins:['https://archive.example'],profileDirectory:'/host/profile',
     visibilityMode:'always-visible',
@@ -290,7 +290,7 @@ test('history traversal pauses and reveals an encountered human challenge', asyn
     goForward:async()=>{current='https://archive.example/article';body='Article text';},
     locator:()=>({innerText:async()=>body})
   };
-  const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+  const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({
     origins:['https://archive.example'],profileDirectory:'/host/profile',
     chromiumProvider:{launchPersistentContext:async()=>context},
@@ -312,7 +312,7 @@ test('history traversal pauses and reveals an encountered human challenge', asyn
 test('origin-firewall initialization failure closes owned browser context',async()=>{
   let closed=false;
   const context={
-    route:async()=>{throw new Error('route unavailable');},
+    routeWebSocket:async()=>{},route:async()=>{throw new Error('route unavailable');},
     pages:()=>[],close:async()=>{closed=true;}
   };
   const session=new BrowserSession({
@@ -335,7 +335,7 @@ test('accessibility and screenshot respect login challenge before reading pixels
       }),
       screenshot:async()=>{screenshotCalls++;return Buffer.from('pixels');}
     };
-    const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+    const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
     const controller=nativeWindow();
     const session=new BrowserSession({
       origins:['https://archive.example'],profileDirectory:'/host/profile',
@@ -365,7 +365,7 @@ test('failed challenge inspection never permits screenshot or accessibility outp
       bringToFront:async()=>{accessed=true;},
       screenshot:async()=>{accessed=true;return Buffer.from('secret');}
     };
-    const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+    const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
     const session=new BrowserSession({
       origins:['https://archive.example'],profileDirectory:'/host/profile',
       chromiumProvider:{launchPersistentContext:async()=>context},
@@ -391,7 +391,7 @@ test('visible password form triggers human handoff even with neutral page text',
   const session=new BrowserSession({
     origins:['https://archive.example'],profileDirectory:'/host/private',
     chromiumProvider:{launchPersistentContext:async()=>({
-      route:async()=>{},pages:()=>[page],close:async()=>{}
+      routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}
     })},
     windowController:native
   });
@@ -419,7 +419,7 @@ test('visible embedded CAPTCHA is not missed by plain body-text detection',async
   const session=new BrowserSession({
     origins:['https://archive.example'],profileDirectory:'/host/private',
     chromiumProvider:{launchPersistentContext:async()=>({
-      route:async()=>{},pages:()=>[page],close:async()=>{}
+      routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}
     })},
     windowController:nativeWindow()
   });
@@ -442,7 +442,7 @@ test('unavailable challenge-state probe refuses to release page text',async()=>{
   const session=new BrowserSession({
     origins:['https://archive.example'],profileDirectory:'/host/private',
     chromiumProvider:{launchPersistentContext:async()=>({
-      route:async()=>{},pages:()=>[page],close:async()=>{}
+      routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}
     })},
     windowController:nativeWindow()
   });
@@ -452,4 +452,43 @@ test('unavailable challenge-state probe refuses to release page text',async()=>{
   await assert.rejects(session.execute({op:'read'}),
     e=>e.code==='CHALLENGE_STATE_UNAVAILABLE');
   await session.close();
+});
+
+
+test('browser blocks page WebSockets without connecting to any server',async()=>{
+  let routeSocket;
+  const page={url:()=> 'https://archive.example/article'};
+  const context={
+    routeWebSocket:async (pattern,handler)=>{
+      assert.equal(pattern,'**/*');
+      routeSocket=handler;
+    },
+    route:async()=>{},pages:()=>[page],close:async()=>{}
+  };
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/private',
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:nativeWindow()
+  });
+  await session.start();
+  let closed=false,connected=false;
+  await routeSocket({
+    close:async opts=>{closed=true;assert.equal(opts.code,1008);},
+    connectToServer:()=>{connected=true;}
+  });
+  assert.equal(closed,true);
+  assert.equal(connected,false);
+  await session.close();
+});
+test('missing WebSocket interception fails before any page read',async()=>{
+  let closed=false;
+  const page={url:()=> 'https://archive.example/article'};
+  const context={route:async()=>{},pages:()=>[page],close:async()=>{closed=true}};
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/private',
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:nativeWindow()
+  });
+  await assert.rejects(session.start(),e=>e.code==='WEBSOCKET_FIREWALL_UNAVAILABLE');
+  assert.equal(closed,true);
 });
