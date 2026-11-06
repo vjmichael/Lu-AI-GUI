@@ -1,0 +1,72 @@
+name: Lu IDE Wave E2 supervised LSP protocol and editor
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/supervisor/**'
+      - 'ide/app/**'
+      - 'ide/packaging/**'
+      - '.github/workflows/ide-e2-supervised-lsp.yml'
+  push:
+    branches: ['ide/wave-e2-supervised-lsp-editor-20261106']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-and-editor:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native host LSP session and source revision tests
+        run: cargo test --manifest-path ide/host/Cargo.toml lsp_session::tests -- --nocapture
+      - name: Host source and semantic capabilities regression
+        run: cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Supervisor LSP transport feature tests (NO OS server launch)
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features lsp-transport --all-targets
+      - name: Check Rust formatting
+        if: always()
+        run: |
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+      - name: Install editor dependencies and build UI
+        shell: bash
+        run: |
+          cd ide/app
+          npm install --no-audit --no-fund
+          npm run check
+      - name: Offline installer asset and license-redistribution audit
+        shell: bash
+        run: |
+          python3 -m unittest discover -s ide/packaging -p 'test_*.py' -v
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: unreviewed LSP bundle was accepted for release'
+            exit 1
+          fi
+
+  windows-tauri-host:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile standalone desktop with read-only LSP status and provider catalog
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+      - name: Prove no unprotected editor worker starts
+        shell: pwsh
+        run: |
+          $content=Get-Content 'ide/app/src-tauri/src/lib.rs' -Raw
+          if ($content -match 'ide_start_language_server|ide_run_job|ide_execute_job') {
+            throw 'DENIED: unaccepted executable LSP or worker route'
+          }
+          if ($content -notmatch 'LSP_PROTECTED_WORKER_UNVERIFIED') {
+            throw 'DENIED: protected native acceptance gate missing'
+          }
