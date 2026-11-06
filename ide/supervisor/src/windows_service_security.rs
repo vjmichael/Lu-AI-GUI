@@ -32,7 +32,6 @@ use windows_sys::Win32::{
         GetTokenInformation, GetAclInformation, GetAce,
         GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
         AclSizeInformation, DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED,
-        ACCESS_ALLOWED_ACE_TYPE,
         IsTokenRestricted, OpenProcessToken, OpenThreadToken, RevertToSelf,
         SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenIsAppContainer, TokenUser,
     },
