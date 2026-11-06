@@ -1,0 +1,67 @@
+name: Lu IDE installed Windows buffer acceptance
+
+on:
+  pull_request:
+    branches: [ide/workspace-development]
+    paths:
+      - "ide/scripts/windows-installed-buffer-smoke.ps1"
+      - "ide/app/src-tauri/tauri.installed-acceptance.conf.json"
+      - ".github/workflows/ide-buf-installed-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lu-ide-installed-buffer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nsis-installed-ui:
+    runs-on: windows-2022
+    timeout-minutes: 115
+    defaults:
+      run:
+        working-directory: ide/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Prepare standalone Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup default 1.90.0
+      - name: Prepare frontend and test exact source
+        shell: pwsh
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Build an actual Windows NSIS installer
+        shell: pwsh
+        run: |
+          npx --yes @tauri-apps/cli@2.11.1 build --bundles nsis --config src-tauri/tauri.installed-acceptance.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "Tauri NSIS build failed: $LASTEXITCODE" }
+          $installers = @(Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)" }
+          "IDE_ACCEPTANCE_INSTALLER=$($installers[0].FullName)" >> $env:GITHUB_ENV
+      - name: Install, launch and exercise Copy Draft Reference via actual Windows GUI
+        shell: pwsh
+        run: |
+          $script = (Resolve-Path ../scripts/windows-installed-buffer-smoke.ps1).Path
+          $output = Join-Path $env:RUNNER_TEMP "ide-buf-installed-evidence"
+          & pwsh -NoProfile -Sta -File $script -InstallerPath $env:IDE_ACCEPTANCE_INSTALLER -EvidenceDirectory $output
+          if ($LASTEXITCODE -ne 0) { throw "Installed UI acceptance script failed: $LASTEXITCODE" }
+          $json = Get-Content -Raw (Join-Path $output "installed-acceptance.json") | ConvertFrom-Json
+          if (-not $json.completed -or -not $json.clipboardVerified -or -not $json.noImplicitSave) {
+            throw "Installed UI evidence did not pass mandatory checks"
+          }
+      - name: Attach actual installed UI evidence (including failures)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-ide-installed-buffer-evidence
+          path: ${{ runner.temp }}/ide-buf-installed-evidence/
+          if-no-files-found: warn
+          retention-days: 14
