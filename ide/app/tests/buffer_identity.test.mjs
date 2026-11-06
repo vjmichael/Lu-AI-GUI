@@ -110,3 +110,58 @@ test('invalid source ranges may not split a UTF-16 surrogate pair', () => {
     /INVALID_BUFFER_RANGE/);
   assert.equal(captureBufferSpan(identity, state, 0, 2).text, '😀');
 });
+
+test('adversarial CodeMirror transaction lifecycle rejects stale references', () => {
+  const initial = create('header\nkeep me\ntail');
+  const identity = original();
+  const selected = initial.doc.line(2);
+  const captured = captureBufferSpan(identity, initial, selected.from, selected.to);
+  assert.equal(resolveBufferSpan(captured, identity, initial).status, 'current');
+
+  // A modification outside the selected range still invalidates the entire
+  // draft revision, even when the selected source text remains identical.
+  const editedState = initial.update({ changes: {
+    from: initial.doc.length, insert: '\nmodified',
+  }}).state;
+  const editedIdentity = advanceBufferIdentity(identity);
+  assert.equal(editedState.doc.line(2).text, 'keep me');
+  assert.equal(resolveBufferSpan(captured, editedIdentity, editedState).status,
+    'stale_buffer_reference');
+
+  // Undo is another edit transaction; byte-for-byte old text is not enough.
+  const undoneState = editedState.update({ changes: {
+    from: initial.doc.length, to: editedState.doc.length, insert: '',
+  }}).state;
+  const undoneIdentity = advanceBufferIdentity(editedIdentity);
+  assert.equal(undoneState.sliceDoc(), initial.sliceDoc());
+  assert.equal(resolveBufferSpan(captured, undoneIdentity, undoneState).status,
+    'stale_buffer_reference');
+
+  // Saving the same text rebases its disk revision; old references expire.
+  const savedIdentity = Object.freeze({ ...advanceBufferIdentity(undoneIdentity),
+    savedRevision: 'c'.repeat(64) });
+  assert.equal(resolveBufferSpan(captured, savedIdentity, undoneState).status,
+    'stale_buffer_reference');
+
+  // A reopened tab gets a new editor identity even with identical file bytes.
+  const reopened = newBufferIdentity(identity.projectId, identity.relativePath,
+    savedIdentity.savedRevision, 'cceeff00-1122-3344-5566-77889900aabb');
+  assert.equal(resolveBufferSpan(captured, reopened, create(initial.sliceDoc())).status,
+    'stale_buffer_reference');
+});
+
+test('snapshot range tampering and wrong source identity never authorize reuse', () => {
+  const identity = original();
+  const state = create('first\nsecond');
+  const span = captureBufferSpan(identity, state, 0, 5);
+  assert.equal(resolveBufferSpan({ ...span, fromByte: 2 }, identity, state).status,
+    'stale_buffer_reference');
+  assert.equal(resolveBufferSpan({ ...span, text: 'other' }, identity, state).status,
+    'stale_buffer_reference');
+  assert.equal(resolveBufferSpan({ ...span, projectId: 'another' }, identity, state).status,
+    'stale_buffer_reference');
+  assert.equal(resolveBufferSpan(span, { ...identity, relativePath: 'other.rs' }, state).status,
+    'stale_buffer_reference');
+  assert.throws(() => advanceBufferIdentity({ ...identity,
+    revision: Number.MAX_SAFE_INTEGER }), /BUFFER_REVISION_EXHAUSTED/);
+});
