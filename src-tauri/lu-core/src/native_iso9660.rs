@@ -155,10 +155,10 @@ fn read_dir(file:&mut cap_std::fs::File,length:u64,record:&Record,
     while pos<data.len(){
         let len=data[pos] as usize;
         if len==0{
-            pos=(((pos as u64)/SECTOR)+1) as usize*SECTOR;
+            pos=((((pos as u64)/SECTOR)+1)*SECTOR) as usize;
             continue
         }
-        if pos+len>data.len() || pos%SECTOR+len>SECTOR as usize {
+        if pos+len>data.len() || pos%(SECTOR as usize)+len>SECTOR as usize {
             return Err(IsoError::InvalidImage)
         }
         let item=parse_record(&data[pos..pos+len])?;
