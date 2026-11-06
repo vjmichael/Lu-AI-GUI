@@ -32,6 +32,112 @@ fn valid_text(s:&str)->bool{
 fn elem(s:&[u8])->&[u8]{s.rsplit(|c|*c==b':').next().unwrap_or(s)}
 /// Caller must obtain source via an OS picker, pin current file SHA and
 /// present count/digest in a separate approval UI before any publication.
+/// A source-pinned PowerPoint run replacement across existing slides.
+/// Only exact complete a:t text runs are replaced; geometry, animations,
+/// hyperlinks, media assets and slide masters remain untouched in content.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct SlideTextReplacePlan{
+    pub match_count:usize,
+    pub slides_affected:Vec<usize>,
+    pub original_sha256:String,
+    pub revised_sha256:String,
+}
+pub struct SlideTextReplaceOutput{
+    pub plan:SlideTextReplacePlan,
+    pub preview:OfficeRevisionPreview,
+    pub edits:Vec<OfficeRevisionEdit>,
+}
+pub fn plan_presentation_run_replace_all(
+    source:&[u8],original_sha256:&str,old_text:&str,new_text:&str
+)->Result<SlideTextReplaceOutput,OfficeRevisionError>{
+    use std::collections::BTreeSet;
+    if !valid_text(old_text)||!valid_text(new_text)||old_text==new_text
+        ||source.len()>12*1024*1024{
+        return Err(OfficeRevisionError::InvalidContent);
+    }
+    if format!("{:x}",Sha256::digest(source))!=original_sha256{
+        return Err(OfficeRevisionError::SourceChanged);
+    }
+    let mut zip=ZipArchive::new(Cursor::new(source))
+        .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+    if zip.len()>2048
+        ||zip.has_overlapping_entries().map_err(|_|OfficeRevisionError::InvalidPackage)?
+        ||zip.validate_header_consistency().is_err(){
+        return Err(OfficeRevisionError::InvalidPackage);
+    }
+    let mut found=Vec::new();
+    let mut seen_slides=BTreeSet::new();
+    for index in 0..zip.len(){
+        let mut part=zip.by_index(index).map_err(|_|OfficeRevisionError::InvalidPackage)?;
+        let path=part.name().map_err(|_|OfficeRevisionError::InvalidPackage)?
+            .to_owned();
+        let Some(suffix)=path.strip_prefix("ppt/slides/slide") else{continue};
+        let Some(number)=suffix.strip_suffix(".xml") else{continue};
+        let Ok(slide_number)=number.parse::<usize>() else{continue};
+        if !(1..=256).contains(&slide_number)
+            ||!seen_slides.insert(slide_number)
+            ||part.size()>8*1024*1024{
+            return Err(OfficeRevisionError::InvalidPackage);
+        }
+        let mut raw=Vec::new();
+        (&mut part).take(8*1024*1024+1)
+            .read_to_end(&mut raw).map_err(|_|OfficeRevisionError::InvalidPackage)?;
+        if raw.len()>8*1024*1024{return Err(OfficeRevisionError::TooLarge);}
+        let xml=std::str::from_utf8(&raw)
+            .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+        let mut reader=Reader::from_str(xml);
+        let mut text_index=0usize;
+        let mut steps=0usize;
+        loop{
+            steps+=1;
+            if steps>500_000{return Err(OfficeRevisionError::TooLarge);}
+            let event=reader.read_event()
+                .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+            match event{
+                Event::Start(element) if elem(element.name().as_ref())==b"t"=>{
+                    let from=reader.buffer_position() as usize;
+                    let span=reader.read_to_end(element.name())
+                        .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+                    let to=span.end as usize;
+                    let inner=xml.get(from..to)
+                        .ok_or(OfficeRevisionError::InvalidPackage)?;
+                    if !inner.contains('<'){
+                        let prior=unescape(inner)
+                            .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+                        if prior==old_text{
+                            found.push((slide_number,text_index));
+                            if found.len()>MAX_REPLACEMENTS{
+                                return Err(OfficeRevisionError::TooLarge);
+                            }
+                        }
+                    }
+                    text_index+=1;
+                    if text_index>=10_000{return Err(OfficeRevisionError::TooLarge);}
+                },
+                Event::DocType(_)=>return Err(OfficeRevisionError::UnsafePackage),
+                Event::Eof=>break,
+                _=>{},
+            }
+        }
+    }
+    if found.is_empty(){return Err(OfficeRevisionError::NotFound);}
+    let slides=found.iter().map(|(slide,_)|*slide)
+        .collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    let edits=found.iter().map(|(slide_number,text_index)|
+        OfficeRevisionEdit::SlideRun{
+            slide_number:*slide_number,text_index:*text_index,
+            expected_old:old_text.to_owned(),new_text:new_text.to_owned(),
+        }
+    ).collect::<Vec<_>>();
+    let preview=render_office_revision_batch(source,original_sha256,&edits)?;
+    let plan=SlideTextReplacePlan{
+        match_count:found.len(),slides_affected:slides,
+        original_sha256:original_sha256.into(),
+        revised_sha256:preview.revised_sha256.clone(),
+    };
+    Ok(SlideTextReplaceOutput{plan,preview,edits})
+}
+
 pub fn plan_word_run_replace_all(
     source:&[u8],original_sha256:&str,old_text:&str,new_text:&str
 )->Result<WordTextReplaceOutput,OfficeRevisionError>{
