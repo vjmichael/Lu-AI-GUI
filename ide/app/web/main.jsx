@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import {
+  newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
+  captureBufferSpan, resolveBufferSpan, formatBufferReference,
+} from './buffer_identity.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -34,6 +38,7 @@ function App() {
   const [findRequest, setFindRequest] = useState(null);
   const [cursorByTab, setCursorByTab] = useState({});
   const [referencePending, setReferencePending] = useState(false);
+  const [draftReferencePending, setDraftReferencePending] = useState(false);
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -59,6 +64,18 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  // Volatile editor ownership: no draft is persisted in the resource ledger
+  // or sent over Tauri IPC, and IDs expire on close, reload or restart.
+  const bufferIdentities = useRef(new Map());
+  function resetBufferIdentity(key, projectId, relativePath, savedRevision) {
+    const identity = newBufferIdentity(projectId, relativePath,
+      savedRevision, crypto.randomUUID());
+    bufferIdentities.current.set(key, identity);
+    return identity;
+  }
+  function onEditorSelection(key, state) {
+    editorStates.current.set(key, state);
+  }
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
@@ -71,7 +88,11 @@ function App() {
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
-  const matchPlan = locateMatches(activeTab?.draft ?? '', findQuery, caseSensitiveFind);
+  const activeEditorState = activeTab ? editorStates.current.get(activeTab.key) : null;
+  // CodeMirror counts all line separators as one editor position, even CRLF.
+  // Search coordinates must come from the editor's normalized Text tree.
+  const matchPlan = locateMatches(activeEditorState?.doc.toString() ?? '',
+    findQuery, caseSensitiveFind);
   const matches = matchPlan.matches;
   function navigateMatch(delta) {
     if (matchPlan.truncated || !matches.length || !activeTab) return;
@@ -84,7 +105,9 @@ function App() {
 
   function replaceMatches(all = false) {
     if (!activeTab || savingKey || explorerPending || !findQuery || matchPlan.truncated) return;
-    const planned = planReplacement(activeTab.draft, findQuery, replaceText, {
+    const searchText = editorStates.current.get(activeTab.key)?.doc.toString();
+    if (searchText === undefined) return;
+    const planned = planReplacement(searchText, findQuery, replaceText, {
       caseSensitive: caseSensitiveFind, all, selectedIndex: findIndex,
     });
     if (planned.status !== 'ready') return;
@@ -102,6 +125,49 @@ function App() {
     setHint((all ? 'Replaced ' + planned.count + ' matches' : 'Replaced one match') +
       ' in the editor draft. Use Undo to reverse or Save to write the file.');
     setProblem('');
+  }
+
+  async function copyDraftReference(tab) {
+    if (!tab || draftReferencePending) return;
+    const state = editorStates.current.get(tab.key);
+    const identity = bufferIdentities.current.get(tab.key);
+    if (!state || !identity || state.sliceDoc() !== tab.draft) {
+      setProblem('This editor draft changed. Select the tab and try again.');
+      return;
+    }
+    const selection = state.selection.main;
+    const from = selection.empty ? state.doc.lineAt(selection.head).from : selection.from;
+    const to = selection.empty ? state.doc.lineAt(selection.head).to : selection.to;
+    let snapshot;
+    try {
+      snapshot = captureBufferSpan(identity, state, from, to);
+    } catch (error) {
+      setProblem('Cannot reference this draft range: ' + String(error));
+      return;
+    }
+    setDraftReferencePending(true);
+    setProblem('');
+    try {
+      const digest = await crypto.subtle.digest('SHA-256',
+        new TextEncoder().encode(state.sliceDoc()));
+      const sha = Array.from(new Uint8Array(digest),
+        byte => byte.toString(16).padStart(2, '0')).join('');
+      // Revalidate after async hashing; even edits undone back to the same
+      // text must invalidate older buffer revisions.
+      const latestState = editorStates.current.get(tab.key);
+      const latestIdentity = bufferIdentities.current.get(tab.key);
+      if (resolveBufferSpan(snapshot, latestIdentity, latestState).status !== 'current' ||
+          latestState.sliceDoc() !== state.sliceDoc()) {
+        throw Error('BUFFER_CHANGED_DURING_COPY');
+      }
+      await navigator.clipboard.writeText(formatBufferReference(snapshot, sha));
+      setHint('Copied a session-only draft reference for ' + tab.relativePath +
+        '. This does not save or publish the buffer.');
+    } catch (error) {
+      setProblem('Could not copy the unsaved draft reference: ' + String(error));
+    } finally {
+      setDraftReferencePending(false);
+    }
   }
 
   async function copySourceReference(tab) {
@@ -354,9 +420,11 @@ function App() {
       const stagedTabs = approved.edits.map((edit, index) => {
         const key = keyFor(item.projectId, edit.relativePath);
         const previous = tabs.find(tab => tab.key === key);
+        resetBufferIdentity(key, item.projectId, edit.relativePath, edit.expectedRevision);
         editorStates.current.set(key, createEditorState(
           edit.proposedText, edit.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key, state)
         ));
         return {
           key, projectId: item.projectId, relativePath: edit.relativePath,
@@ -399,7 +467,10 @@ function App() {
   function discardProjectTabs(projectId) {
     setReview(previous => previous?.projectId === projectId ? null : previous);
     const affected = tabs.filter(tab => tab.projectId === projectId);
-    affected.forEach(tab => editorStates.current.delete(tab.key));
+    affected.forEach(tab => {
+      editorStates.current.delete(tab.key);
+      bufferIdentities.current.delete(tab.key);
+    });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
@@ -471,6 +542,8 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    const previous = bufferIdentities.current.get(key);
+    if (previous) bufferIdentities.current.set(key, advanceBufferIdentity(previous));
     setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
       tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText } : tab));
@@ -499,9 +572,11 @@ function App() {
           savedText: opened.text, draft: opened.text,
           dirty: false, generation: 0,
         };
+        resetBufferIdentity(key, opened.projectId, opened.relativePath, opened.revision);
         editorStates.current.set(key, createEditorState(
           opened.text, opened.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key, state)
         ));
         setTabs(previous => [...previous, newTab]);
         setActiveTabKey(key);
@@ -517,6 +592,7 @@ function App() {
     if (selected.dirty && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
     editorStates.current.delete(key);
+    bufferIdentities.current.delete(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
     setTabs(other);
@@ -536,9 +612,11 @@ function App() {
       const opened = await invoke('ide_preview_source_file', {
         projectId: tab.projectId, relativePath: tab.relativePath,
       });
+      resetBufferIdentity(tab.key, opened.projectId, opened.relativePath, opened.revision);
       editorStates.current.set(tab.key, createEditorState(
         opened.text, opened.relativePath,
-        (state, draft) => onEditorChange(tab.key, state, draft)
+        (state, draft) => onEditorChange(tab.key, state, draft),
+        state => onEditorSelection(tab.key, state)
       ));
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
@@ -553,6 +631,7 @@ function App() {
     if (!tab || !tab.dirty || savingKey || explorerPending) return;
     const content = tab.draft;
     const base = tab.revision;
+    const saveStartedBuffer = bufferIdentities.current.get(tab.key);
     setSavingKey(tab.key);
     setProblem('');
     setHint('');
@@ -564,6 +643,16 @@ function App() {
         text: content,
       });
       // If typing continued during the save, the newer draft is kept dirty.
+      const buffer = bufferIdentities.current.get(tab.key);
+      const rebased = rebaseBufferAfterSave(buffer, saveStartedBuffer, saved.revision);
+      if (rebased.status !== 'rebased') {
+        // The disk write finished, but a different editor instance owns this
+        // tab key now. Never mutate or mark that replacement tab clean.
+        setHint('An earlier draft of ' + tab.relativePath +
+          ' was saved. The current editor was reopened or replaced; review it before saving.');
+        return true;
+      }
+      bufferIdentities.current.set(tab.key, rebased.identity);
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: saved.revision, savedText: content,
         dirty: item.draft !== content,
@@ -1080,6 +1169,12 @@ function App() {
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
                   </button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={draftReferencePending || explorerPending || !!savingKey}
+                    title="Copy an exact, session-only source reference to this unsaved editor draft"
+                    onClick={() => copyDraftReference(activeTab)}>
+                    {draftReferencePending ? 'Checking draft…' : 'Copy draft reference'}
+                  </button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
@@ -1150,7 +1245,9 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
-              <div className="editorInfoBar">Edits stay in memory until Save.
+              <div className="editorInfoBar">Draft revision
+                {' '}{bufferIdentities.current.get(activeTab.key)?.revision ?? 0}
+                {' · '} Session-only source identity · Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
               </div>
             </> : <div className="sourcePreviewEmpty">
