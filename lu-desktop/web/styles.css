@@ -248,3 +248,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   max-height:58vh;object-fit:contain;transform-origin:center center;}
 .imageViewerDialog button {cursor:pointer;} .imageViewerDialog button:disabled {opacity:.5;cursor:default;}
 .imageViewerDialog small {overflow-wrap:anywhere;}
+
+
+/* Observe & Learn pilot: persistent visible indication while consent is active. */
+.observePilot{display:grid;gap:6px;padding:10px 12px;margin:6px 0;
+  border:1px solid var(--border,#567);border-radius:9px;}
+.observePilotTop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.observePilot small{overflow-wrap:anywhere;opacity:.83;}
+.observePilot .settingsActions{display:flex;flex-wrap:wrap;gap:8px;}
+.observePilot .observeIndicator{font-weight:600;font-size:12px;}
+.observePilot .observeIndicator.mode-active{color:#ffd566;}
+.observePilot .observeIndicator.mode-paused{color:#a6b6c7;}

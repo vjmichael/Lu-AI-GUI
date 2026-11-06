@@ -7,6 +7,14 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
+    host.includes('fn lu_observe_self_signal(') &&
+    host.includes('fn lu_observe_status(') &&
+    host.includes('lu_observe_start,') &&
+    ui.includes('Observe & Learn · Lu UI only') &&
+    ui.includes('Can see desktop: No') &&
+    ui.includes("observeAction('stop')") &&
+    css.includes('.observePilot')],
   ['Wave 4 browser preference remains a host-only render setting without navigation authority',
     host.includes('fn lu_browser_visibility(') &&
     host.includes('fn lu_set_browser_visibility(') &&

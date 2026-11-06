@@ -8,6 +8,7 @@ mod generation_queue;
 mod background_context;
 mod environment_context;
 mod vision_context;
+mod observe_desktop;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -222,6 +223,7 @@ struct DesktopState {
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
+    observe: Arc<observe_desktop::ObserveHost>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -583,7 +585,9 @@ impl DesktopState {
             )
         );
 
+        let observe=Arc::new(observe_desktop::ObserveHost::new(Arc::clone(&background_tasks)));
         Ok(Self {
+            observe,
             background_processes,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
@@ -638,6 +642,8 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             // The native task supervisor must not depend on a visible
             // WebView. The OS terminates this host thread when Lu exits.
             let _=state.background_processes.poll();
+            // The existing watchdog also expires Lu-only observation leases.
+            state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
                 pushed_cursor,128
             ){
@@ -3464,6 +3470,69 @@ fn lu_rescan_models(state: State<'_, Arc<DesktopState>>) -> Result<usize, String
     Ok(count)
 }
 
+/// Human-only pilot: Lu can observe its own semantic UI hints after native
+/// confirmation. This does NOT capture any Windows desktop pixels or windows
+/// outside Lu and grants no model, memory or computer-control authority.
+#[tauri::command]
+async fn lu_observe_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation first")?;
+    let observer=Arc::clone(&state.observe);
+    let dialog=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(
+            "Start Observe & Learn for Lu's OWN UI events for up to 30 minutes?\n\n\
+             This first release candidate reads only Lu application status \
+             changes and error indicators. It cannot see other desktop \
+             windows, screenshots, keyboard input, audio, or clipboard. \
+             It will NOT run AI inference, control your mouse, or remember \
+             anything automatically. You can pause or stop at any time."
+        ).title("Lu — Observe own UI only")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Start Lu UI observation".into(),"Do not observe".into(),
+         )).blocking_show()
+    }).await.map_err(|_|"Native observation consent unavailable")?;
+    if !dialog{return observer.status(&chat_id);}
+    observer.start(&chat_id,next_id("obs-"))
+}
+#[tauri::command]
+fn lu_observe_status(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.status(&chat_id)
+}
+#[tauri::command]
+fn lu_observe_pause(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.pause(&chat_id)
+}
+#[tauri::command]
+fn lu_observe_resume(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.resume(&chat_id)
+}
+#[tauri::command]
+fn lu_observe_stop(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.stop(&chat_id)
+}
+/// Renderer event hints are NOT trusted test outcomes. Only two enumerated
+/// low-information signals are admitted, and no screenshot/text is accepted.
+#[tauri::command]
+fn lu_observe_self_signal(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,kind:String
+)->Result<observe_desktop::ObserveView,String>{
+    let ready= !state.generation_queue.has_jobs()
+        &&state.supervisor.status().is_ok_and(|r|
+            r.phase==lu_core::inference_host::EnginePhase::Ready
+            &&r.generation_id.is_none());
+    state.observe.self_signal(&chat_id,&kind,ready)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -3485,6 +3554,12 @@ pub fn run() {
             lu_load_model,
             lu_load_diagnostics,
             lu_vision_capability,
+            lu_observe_start,
+            lu_observe_status,
+            lu_observe_pause,
+            lu_observe_resume,
+            lu_observe_stop,
+            lu_observe_self_signal,
             lu_browser_visibility,
             lu_set_browser_visibility,
             lu_unload_model,

@@ -31,6 +31,7 @@ function App() {
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
+  const [observeView,setObserveView] = useState({mode:'off'}); // no screen capture, Lu UI hints only
   const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
   const [browserPreferenceError,setBrowserPreferenceError] = useState('');
   const [textFiles, setTextFiles] = useState([]);
@@ -195,6 +196,37 @@ function App() {
     return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
+  useEffect(()=>{
+    if(!chatId){setObserveView({mode:'off'});return;}
+    let active=true;
+    invoke('lu_observe_status',{chatId})
+      .then(v=>{if(active)setObserveView(v);})
+      .catch(()=>{if(active)setObserveView({mode:'off'});});
+    // An OS-owned clock/watchdog may expire consent while Lu is idle.
+    const timer=setInterval(()=>{
+      invoke('lu_observe_status',{chatId})
+        .then(v=>{if(active)setObserveView(v);}).catch(()=>{});
+    },5000);
+    return()=>{active=false;clearInterval(timer);};
+  },[chatId]);
+  useEffect(()=>{
+    // Report only enum hints from Lu itself. No text, pixels, clipboard,
+    // keystrokes, external app content, or native test PASS/FAIL.
+    if(!chatId||observeView.mode!=='active'||observeView.chatId!==chatId)return;
+    invoke('lu_observe_self_signal',{chatId,kind:'ui_changed'})
+      .then(v=>{if(v.mode!=='active')setObserveView(v);})
+      .catch(()=>{});
+  },[chatId,runtime.phase,observeView.mode]);
+  useEffect(()=>{
+    if(!chatId||!error||observeView.mode!=='active'||observeView.chatId!==chatId)return;
+    invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'}).catch(()=>{});
+  },[chatId,error,observeView.mode]);
+  function observeAction(action){
+    if(!chatId)return;
+    invoke('lu_observe_'+action,{chatId})
+      .then(v=>{setObserveView(v);setError('');})
+      .catch(e=>setError(String(e)));
+  }
   useEffect(()=>{
     if(!settingsOpen)return;
     let active=true;
@@ -1715,6 +1747,30 @@ function App() {
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
+        {chatId && <section className="observePilot" aria-label="Observe and Learn — Lu-only pilot">
+          <div className="observePilotTop">
+            <strong>Observe & Learn · Lu UI only</strong>
+            <span role="status" className={'observeIndicator mode-'+observeView.mode}>
+              {observeView.mode==='active'?'● Observing Lu UI events':
+               observeView.mode==='paused'?'Paused':'Off'}
+            </span>
+          </div>
+          <small>Can see desktop: No · Screenshots: Off · AI prompts issued: 0.
+            This pilot observes only Lu's own state changes, not other apps or your screen.</small>
+          <div className="settingsActions">
+            {observeView.mode==='off' &&
+              <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}
+            {observeView.mode==='active' &&
+              <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
+            {observeView.mode==='paused' &&
+              <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
+            {observeView.mode!=='off' &&
+              <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
+          </div>
+          {observeView.mode!=='off'&&
+            <small>Observed state-change hints: {observeView.nativeEventCount||0}.
+              No automatically saved learning or GUI test verdict.</small>}
+        </section>}
         {wave2FileBusy && <section className="readProposalCard" role="status"
           aria-live="polite" aria-label="Native file operation in progress">
           <strong>Native file operation in progress</strong>
