@@ -146,6 +146,15 @@ export class BrowserSession {
       });
     }
     try {
+      // Ordinary HTTP interception does not cover page-origin WebSockets.
+      // Until a separately approved NetworkWrite WebSocket policy exists,
+      // block every page WebSocket before visiting any user-selected URL.
+      // CDP belongs to the host's Node-side connection, not a page socket.
+      if(typeof this.context.routeWebSocket!=='function')
+        throw new BrowserGateError('WEBSOCKET_FIREWALL_UNAVAILABLE');
+      await this.context.routeWebSocket('**/*',async socket=>{
+        await socket.close({code:1008,reason:'Lu read-only browser'});
+      });
       await this.context.route('**/*', async route => {
         try {
           approvedUrl(route.request().url(), this.origins);
