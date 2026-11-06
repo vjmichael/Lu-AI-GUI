@@ -274,6 +274,57 @@ pub fn authenticate_client(
 /// Independently check installer expectations at runtime. Root and config
 /// must have protected DACLs granting only SYSTEM and this service SID.
 /// No broad user, administrator, or inherited ACE can be silently adopted.
+
+fn current_token_user_sid() -> Result<String, SupervisorError> {
+    let mut raw = ptr::null_mut();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+        return Err(denied());
+    }
+    let token = Handle::new(raw)?;
+    let mut len = 0u32;
+    unsafe { GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut len); }
+    if len < size_of::<TOKEN_USER>() as u32 || len > 8192 { return Err(denied()); }
+    let mut storage = vec![0usize; (len as usize).div_ceil(size_of::<usize>())];
+    if unsafe { GetTokenInformation(token.0, TokenUser, storage.as_mut_ptr().cast(),
+        len, &mut len) } == 0 { return Err(denied()); }
+    let sid = unsafe { (*(storage.as_ptr() as *const TOKEN_USER)).User.Sid };
+    if sid.is_null() { return Err(denied()); }
+    let mut text = ptr::null_mut();
+    if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 || text.is_null() {
+        return Err(denied());
+    }
+    let owned = OwnedSid(text.cast());
+    let length = (0..256).find(|i| unsafe { *text.add(*i) } == 0).ok_or_else(denied)?;
+    String::from_utf16(unsafe { std::slice::from_raw_parts(text, length) }).map_err(|_| denied())
+}
+/// Job ACL explicitly allows the creating native host, SYSTEM and restricted
+/// service SID (query + terminate only). It must never use a default user ACL.
+pub struct JobSecurity {
+    descriptor: OwnedSid,
+    pub attributes: SECURITY_ATTRIBUTES,
+}
+impl JobSecurity {
+    pub fn new() -> Result<Self, SupervisorError> {
+        let sddl = format!(
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0010000C;;;{})",
+            current_token_user_sid()?, sid_of_service()?,
+        );
+        let mut descriptor = ptr::null_mut();
+        if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            ws(&sddl).as_ptr(), 1, &mut descriptor, ptr::null_mut())
+        } == 0 || descriptor.is_null() { return Err(denied()); }
+        let owned = OwnedSid(descriptor);
+        Ok(Self {
+            attributes: SECURITY_ATTRIBUTES {
+                nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: owned.0,
+                bInheritHandle: 0,
+            },
+            descriptor: owned,
+        })
+    }
+}
+
 pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> {
     let system = parse_sid("S-1-5-18")?;
     let service = parse_sid(&sid_of_service()?)?;
