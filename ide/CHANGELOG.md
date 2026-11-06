@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- Native CI repair closeout: inspected historical D7D/D7B/D7C/E1/AppContainer job logs; fixed Rust unsafe-block parsing and Win32 threading token imports, pinned offline VS 17.14 jobs to Windows 2022, installed Rustfmt in Rust 1.99.1 CI, applied native E1 rustfmt diffs, and classified a previously ambiguous AppContainer network timeout without granting acceptance. Added exact-head failure ledger `ide/docs/E2_NATIVE_CI_FAILURE_TRIAGE_20261106.md`.
+
 ## 2026-11-06 — Wave E2 protected language-service integration (source, native pending)
 - Extended protected Windows desktop source from clangd-only to fixed native rust-analyzer, clangd and Ruff language selection; only per-language verified installation hashes unlock buttons. Ruff is restricted to diagnostics by both UI and native host.
 - Added isolated supervisor tests for durable successful close, cancelled session and failed service release quarantine after restart; added native route rejection tests.
