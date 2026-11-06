@@ -70,7 +70,41 @@ fn bounded(text:String,format:ReaderFormat,max_chars:usize)
     let text=if truncated{text.chars().take(max_chars).collect()}else{text};
     Ok(ReaderText{format,text,truncated,extracted_from_image:false})
 }
-fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
+/// Bounded ODS A1 selector, with real ODF repeated-cell coordinates.
+#[derive(Clone,Copy)]
+struct OdsRange{min_row:usize,max_row:usize,min_col:usize,max_col:usize}
+impl OdsRange{
+ fn includes(self,row:usize,col:usize)->bool{
+  row>=self.min_row&&row<=self.max_row&&col>=self.min_col&&col<=self.max_col
+ }
+}
+fn ods_cell(raw:&str)->Option<(usize,usize)>{
+ let s=raw.as_bytes();if s.is_empty()||s.len()>12{return None}
+ let mut i=0usize;let mut col=0usize;
+ if s[i]==b'$'{i+=1}
+ let start=i;
+ while i<s.len()&&s[i].is_ascii_alphabetic(){
+  col=col.checked_mul(26)?
+   .checked_add((s[i].to_ascii_uppercase()-b'A'+1) as usize)?;
+  i+=1;
+ }
+ if start==i||col==0||col>16_384{return None}
+ if s.get(i)==Some(&b'$'){i+=1}
+ let digits=s.get(i..)?;
+ if digits.is_empty()||digits[0]==b'0'||digits.len()>7
+    ||!digits.iter().all(u8::is_ascii_digit){return None}
+ let row=std::str::from_utf8(digits).ok()?.parse::<usize>().ok()?;
+ (row>0&&row<=1_048_576).then_some((row,col))
+}
+fn ods_range(input:&str)->Result<OdsRange,ReaderFailure>{
+ if input.is_empty()||input.len()>48{return Err(ReaderFailure::SelectorNotFound)}
+ let (start,end)=input.split_once(':').unwrap_or((input,input));
+ let (min_row,min_col)=ods_cell(start).ok_or(ReaderFailure::SelectorNotFound)?;
+ let (max_row,max_col)=ods_cell(end).ok_or(ReaderFailure::SelectorNotFound)?;
+ if min_row>max_row||min_col>max_col{return Err(ReaderFailure::SelectorNotFound)}
+ Ok(OdsRange{min_row,max_row,min_col,max_col})
+}
+fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>,range:Option<OdsRange>)
     ->Result<ReaderText,ReaderFailure>{
     let mut reader=Reader::from_reader(xml);
     let mut table=String::new();let mut inside=false;let mut found=false;
@@ -128,9 +162,11 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
                     let formula=attr(e,b"table:formula").unwrap_or_default();
                     if !value.is_empty()||!formula.is_empty(){
                         row_had_content=true;
-                        if repeated>128{return Err(ReaderFailure::TooLarge)}
+                        if repeated>128&&range.is_none(){return Err(ReaderFailure::TooLarge)}
                         for n in 0..repeated{
-                            out.push_str(&format!("{}{}={}",colname(col+n+1)?,row,value));
+                            let column=col+n+1;
+                            if range.is_some_and(|r|!r.includes(row,column)){continue}
+                            out.push_str(&format!("{}{}={}",colname(column)?,row,value));
                             if !formula.is_empty(){
                                 out.push_str(&format!(
                                     " [formula: {}; cached value may be stale]",formula));
@@ -153,9 +189,11 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>)
                 let display=if display.is_empty(){&cached}else{display};
                 if !display.is_empty()||!formula.is_empty(){
                     row_had_content=true;
-                    if cell_repeat>128{return Err(ReaderFailure::TooLarge)}
+                    if cell_repeat>128&&range.is_none(){return Err(ReaderFailure::TooLarge)}
                     for i in 0..cell_repeat {
-                        out.push_str(&format!("{}{}={}",colname(col+i)?,row,
+                        let column=col+i;
+                        if range.is_some_and(|r|!r.includes(row,column)){continue}
+                        out.push_str(&format!("{}{}={}",colname(column)?,row,
                             display.replace('\n'," ")));
                         if !formula.is_empty(){
                             out.push_str(&format!(" [formula: {}; cached value may be stale]",formula))
@@ -233,7 +271,14 @@ fn package(bytes:&[u8],mime:&[u8])->Result<OpenXmlPackage,ReaderFailure>{
 pub fn read_ods(bytes:&[u8],max_chars:usize,selected:Option<&str>)
     ->Result<ReaderText,ReaderFailure>{
     let pkg=package(bytes,b"application/vnd.oasis.opendocument.spreadsheet")?;
-    extract_ods(pkg.part("content.xml")?,max_chars,selected)
+    extract_ods(pkg.part("content.xml")?,max_chars,selected,None)
+}
+pub fn read_ods_range(bytes:&[u8],max_chars:usize,sheet:&str,range:&str)
+ ->Result<ReaderText,ReaderFailure>{
+ if sheet.is_empty()||sheet.len()>128{return Err(ReaderFailure::SelectorNotFound)}
+ let range=ods_range(range)?;
+ let pkg=package(bytes,b"application/vnd.oasis.opendocument.spreadsheet")?;
+ extract_ods(pkg.part("content.xml")?,max_chars,Some(sheet),Some(range))
 }
 pub fn read_odp(bytes:&[u8],max_chars:usize,selected:Option<usize>)
     ->Result<ReaderText,ReaderFailure>{
@@ -307,6 +352,25 @@ mod tests{
         let result=read_ods(&file,500,None).unwrap();
         assert!(result.text.contains("A1=2.5"));
         assert!(result.text.contains("B1=2026-11-04"));
+    }
+    #[test]
+    fn ods_range_is_scoped_and_uses_true_coordinates(){
+      let file=zip(&[
+       ("mimetype","application/vnd.oasis.opendocument.spreadsheet"),
+       ("content.xml",r#"<office:document-content>
+       <table:table table:name="Sales"><table:table-row table:number-rows-repeated="2"/>
+       <table:table-row><table:table-cell office:value="11"/>
+       <table:table-cell office:value="22" table:formula="of:=A3*2"/>
+       <table:table-cell office:value="33"/></table:table-row>
+       </table:table></office:document-content>"#)
+      ]);
+      let result=read_ods_range(&file,500,"Sales","B3:C3").unwrap();
+      assert!(result.text.contains("B3=22"));
+      assert!(result.text.contains("C3=33"));
+      assert!(!result.text.contains("A3=11"));
+      assert!(result.text.contains("cached value may be stale"));
+      assert_eq!(read_ods_range(&file,500,"Sales","C3:B3"),Err(ReaderFailure::SelectorNotFound));
+      assert_eq!(read_ods_range(&file,500,"Wrong","B3:C3"),Err(ReaderFailure::SelectorNotFound));
     }
     #[test]
     fn reads_odp_slide_text_and_slide_selector(){

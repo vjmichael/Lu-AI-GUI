@@ -214,9 +214,15 @@ pub fn read_selected_bytes(
             crate::native_reader_office::read_pptx_slide(bytes,max_chars,Some(slide))
         },
         ReaderFormat::Ods=>{
-            let sheet=selector.strip_prefix("sheet:").filter(|s|!s.is_empty())
-                .ok_or(ReaderFailure::SelectorNotFound)?;
-            crate::native_reader_odf::read_ods(bytes,max_chars,Some(sheet))
+            if let Some(spec)=selector.strip_prefix("range:"){
+                let (sheet,range)=spec.rsplit_once('!')
+                    .ok_or(ReaderFailure::SelectorNotFound)?;
+                crate::native_reader_odf::read_ods_range(bytes,max_chars,sheet,range)
+            }else{
+                let sheet=selector.strip_prefix("sheet:").filter(|s|!s.is_empty())
+                    .ok_or(ReaderFailure::SelectorNotFound)?;
+                crate::native_reader_odf::read_ods(bytes,max_chars,Some(sheet))
+            }
         },
         ReaderFormat::Odp=>{
             let slide=selector.strip_prefix("slide:")

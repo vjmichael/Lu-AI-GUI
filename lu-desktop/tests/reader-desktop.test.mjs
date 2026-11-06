@@ -54,3 +54,14 @@ test('Ask Reader routes exactly one native-picker document through the supervise
   assert.ok(!ui.includes("invoke('lu_reader_ask_document',{path:"));
   assert.ok(!ui.includes("invoke('lu_reader_ask_document',{filePath:"));
 });
+
+test('attached-image OCR shares the pinned worker and remains user-reviewed',()=>{
+  assert.match(host,/async fn lu_ocr_read_attached_image\(/);
+  assert.match(host,/lu_ocr_read_attached_image,/);
+  assert.match(host,/offline_ocr_view\(&source\.bytes/);
+  assert.match(host,/Image detached or changed during OCR approval/);
+  assert.match(host,/source_verified:false,human_review_required:true/);
+  assert.match(ui,/invoke\('lu_ocr_read_attached_image'/);
+  assert.match(ui,/ocrImageScopeRef\.current===key/);
+  assert.match(ui,/Recognize text in this attached image/);
+});

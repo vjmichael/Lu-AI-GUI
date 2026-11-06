@@ -1252,6 +1252,24 @@ struct OcrImageView{
     human_review_required:bool,
     message:&'static str,
 }
+/// Both operator OCR routes reuse the same hash-pinned offline worker.
+fn offline_ocr_view(
+    bytes:&[u8],executable:&Path,expected:&str,
+    tessdata:&Path,expected_data:&str
+)->Result<OcrImageView,String>{
+    let observed=lu_core::native_ocr::recognize_pinned_image(
+        bytes,executable,expected,tessdata,expected_data
+    ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
+    Ok(OcrImageView{
+        source_sha256:observed.source_sha256,
+        text_sha256:observed.recognized_text_sha256,
+        engine_sha256:observed.engine_sha256,
+        text:observed.recognized_text,
+        format:observed.source_format.to_owned(),
+        source_verified:false,human_review_required:true,
+        message:"Offline OCR transcription only. Review its accuracy before using it as evidence.",
+    })
+}
 #[tauri::command]
 async fn lu_ocr_read_selected_image(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
@@ -1306,20 +1324,67 @@ async fn lu_ocr_read_selected_image(
         if bytes.len()>12*1024*1024{
             return Err("OCR source exceeded image budget".into());
         }
-        let observed=lu_core::native_ocr::recognize_pinned_image(
-            &bytes,&executable,expected,&tessdata,expected_data
-        ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
-        Ok(OcrImageView{
-            source_sha256:observed.source_sha256,
-            text_sha256:observed.recognized_text_sha256,
-            engine_sha256:observed.engine_sha256,
-            text:observed.recognized_text,
-            format:observed.source_format.to_owned(),
-            source_verified:false,human_review_required:true,
-            message:"Offline OCR transcription only. Review its accuracy before using it as evidence.",
-        })
+        offline_ocr_view(&bytes,&executable,expected,&tessdata,expected_data)
     }).await.map_err(|_|"Native OCR execution worker unavailable")??;
     Ok(Some(output))
+}
+
+/// Attached-image OCR operates on already host-admitted original pixels.
+/// It cannot choose a path, acquire a model grant, publish a file or start
+/// network activity. Native consent discloses exact attachment identity.
+#[tauri::command]
+async fn lu_ocr_read_attached_image(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String
+)->Result<Option<OcrImageView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for attached-image OCR")?;
+    let Some(expected)=option_env!("LU_OCR_TESSERACT_SHA256") else{
+        return Err("Approved offline OCR runtime is not bundled in this build".into());
+    };
+    let Some(expected_data)=option_env!("LU_OCR_ENG_SHA256") else{
+        return Err("Reviewed OCR language data is not bundled in this build".into());
+    };
+    let source=state.images.lock()
+        .map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned()
+        .ok_or("Original image is no longer admitted")?;
+    let source_sha=format!("{:x}",Sha256::digest(&source.bytes));
+    if source_sha!=source.sha256.iter()
+        .map(|byte|format!("{byte:02x}")).collect::<String>(){
+        return Err("Admitted image changed before OCR review".into());
+    }
+    let approval=format!(
+        "Run local, pinned OCR on the original attached image?\n\n\
+         Conversation: {}\nImage: {}\nSource SHA-256: {}\n\n\
+         Lu sends no pixels to a network service. The transcription is\
+         unverified; only you may insert it into a chat draft.",
+        chat_id,image_ref,source_sha
+    );
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(approval).title("Lu — Attached image OCR")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Recognize image text".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Native attached-image OCR consent unavailable")?;
+    if !approved{return Ok(None);}
+    let still_admitted=state.images.lock()
+        .map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).is_some_and(|current|
+            current.sha256==source.sha256&&current.bytes==source.bytes);
+    if !still_admitted{return Err("Image detached or changed during OCR approval".into());}
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let executable=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let executable=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    let result=tauri::async_runtime::spawn_blocking(move||
+        offline_ocr_view(&source.bytes,&executable,expected,&tessdata,expected_data)
+    ).await.map_err(|_|"Native attached-image OCR worker unavailable")??;
+    Ok(Some(result))
 }
 
 /// A native GGUF+MMProj semantic pixel probe. Synthetic images and answers
@@ -5263,6 +5328,7 @@ pub fn run() {
             lu_vision_capability,
             lu_vision_run_probe,
             lu_ocr_read_selected_image,
+            lu_ocr_read_attached_image,
             lu_office_word_replace_all,
             lu_office_presentation_replace_all,
             lu_image_workspace_export,

@@ -620,6 +620,23 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setVisionProbeBusy(false);}
   }
+  const ocrImageScopeRef=useRef('');
+  ocrImageScopeRef.current=JSON.stringify([chatId,imageViewer?.imageRef||null]);
+  async function readAttachedImageText(){
+    const sourceChat=chatId,sourceRef=imageViewer?.imageRef;
+    if(!sourceChat||!sourceRef||ocrBusy)return;
+    const key=JSON.stringify([sourceChat,sourceRef]);
+    setOcrBusy(true);setOcrObservation(null);setError('');
+    try{
+      const result=await invoke('lu_ocr_read_attached_image',{
+        chatId:sourceChat,imageRef:sourceRef
+      });
+      if(result&&ocrImageScopeRef.current===key){
+        setOcrObservation({chatId:sourceChat,imageRef:sourceRef,...result});
+      }
+    }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
+    finally{setOcrBusy(false);}
+  }
   async function readOfflineImageText(){
     if(!chatId||ocrBusy)return;
     setOcrBusy(true);setOcrObservation(null);setError('');
@@ -3479,16 +3496,23 @@ function App() {
           <small>Select a PNG/JPEG using the native file picker. Lu will use only an
             approved bundled OCR runtime; no images are sent to a web service.
             Recognized text may be inaccurate and is never treated as a verified passage.</small>
+          <button type="button" onClick={()=>void readAttachedImageText()}
+            disabled={ocrBusy||!chatId||!imageViewer?.imageRef}>
+            {ocrBusy?'Offline OCR active…':'Recognize text in this attached image'}
+          </button>
           <button type="button" onClick={()=>void readOfflineImageText()}
             disabled={ocrBusy||!chatId}>
             {ocrBusy?'Recognizing from selected image…':'Choose image and extract text'}
           </button>
-          {ocrObservation?.chatId===chatId&&<div>
+          {ocrObservation?.chatId===chatId&&
+            (!ocrObservation.imageRef||ocrObservation.imageRef===imageViewer?.imageRef)&&<div>
             <small>Unverified OCR · source SHA-256 {ocrObservation.sourceSha256}
               · text SHA-256 {ocrObservation.textSha256}</small>
             <textarea readOnly rows={5} aria-label="Review unverified OCR transcription"
               value={ocrObservation.text}/>
             <button type="button" onClick={()=>{
+              if(ocrObservation?.chatId!==chatId||
+                (ocrObservation.imageRef&&ocrObservation.imageRef!==imageViewer?.imageRef))return;
               setPrompt(p=>p+(p?'\n\n':'')+
                 '[User-reviewed OCR transcription — verify against original image]\n'+
                 ocrObservation.text);
