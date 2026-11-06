@@ -22,7 +22,7 @@ mod windows {
         os::windows::ffi::{OsStrExt, OsStringExt},
         path::{Path, PathBuf},
         ptr,
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
     use windows_sys::Win32::{
         Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
@@ -304,19 +304,19 @@ mod windows {
             Err(_) => return Ok(Some(12)),
         }
         // The host has a live listener on this exact loopback port. Only
-        // WSAEACCES (10013) counts as OS network isolation. ECONNREFUSED
-        // or timeout could be a dead endpoint, so neither proves denial.
+        // Direct WSAEACCES is kernel denial; a bounded timeout requires
+        // independent pre/post host endpoint controls before acceptance.
         let loopback = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
         match TcpStream::connect_timeout(&loopback, Duration::from_millis(800)) {
             Ok(_) => Ok(Some(13)),
             Err(err) if err.raw_os_error() == Some(10013) => Ok(Some(0)),
             // Encode the actual WinSock failure for native CI diagnosis.
             // Do NOT turn an arbitrary timeout, routing error or refusal
-            // into a security pass. Only WSAEACCES above passes.
+            // into an automatic security pass; the host evaluates timeout.
             Err(err) => {
                 // Old exit=1099 obscured whether this was an ordinary
                 // std::io timeout (no raw WinSock error) or a kernel denial.
-                // Preserve strict WSAEACCES-only acceptance; report the
+                // Preserve direct WSAEACCES or a separately verified timeout; report the
                 // non-raw failure category separately for repair evidence.
                 let exit = match err.raw_os_error() {
                     Some(raw) if (0..=30_000).contains(&raw) => 1000 + raw,
@@ -559,7 +559,10 @@ mod windows {
         if unsafe { GetExitCodeProcess(child_handle.0, &mut exit) } == 0 {
             return Err(error("GetExitCodeProcess"));
         }
-        if exit != 0 {
+        // A timeout is provisional: the host must prove the live endpoint
+        // before AND after the child, with zero accepted child connections.
+        let isolated_timeout = exit == 1399;
+        if exit != 0 && !isolated_timeout {
             let reason = match exit {
                 14 => "unable to inspect actual AppContainer token capabilities",
                 15 => "actual AppContainer token has unexpected capabilities",
@@ -571,13 +574,44 @@ mod windows {
                 _ => "token, host secret, or socket preflight failed",
             };
             return Err(io::Error::other(format!(
-                "child rejected: AppContainer probe exit={exit}; classification={reason}; WSAEACCES-only required"
+                "child rejected: AppContainer probe exit={exit}; classification={reason}; independent live endpoint proof required"
             )));
         }
         check_no_active(&job)?;
+        listener.set_nonblocking(true)?;
+        match listener.accept() {
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+            Ok(_) => return Err(io::Error::other(
+                "DENIED: AppContainer child reached host loopback listener"
+            )),
+            Err(e) => return Err(e),
+        }
+        // Reconnect from the trusted host to the identical bound socket:
+        // timeout + a dead listener is never accepted as an isolation pass.
+        let postflight = TcpStream::connect_timeout(&loopback, Duration::from_secs(1))?;
+        let start = Instant::now();
+        let accepted = loop {
+            match listener.accept() {
+                Ok(value) => break value,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock
+                    && start.elapsed() < Duration::from_secs(2) => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                Err(e) => return Err(io::Error::other(
+                    format!("DENIED: postflight host control failed: {e}")
+                )),
+            }
+        };
+        drop(accepted);
+        drop(postflight);
         fs::remove_file(&cleanup.exe)?;
         fs::remove_file(&cleanup.secret)?;
-        println!("PASS: fixed AppContainer child denied host secret (ERROR_ACCESS_DENIED) and live loopback socket (WSAEACCES), Job Object assignment before resume");
+        let network_proof = if isolated_timeout {
+            "zero-capability token, isolated timeout, live endpoint controls and no accepted child connections"
+        } else {
+            "zero-capability token, WSAEACCES and live endpoint controls"
+        };
+        println!("PASS: AppContainer child denied host secret, live loopback was inaccessible ({network_proof}), Job Object assigned before resume");
         println!("UNVERIFIED: arbitrary external network endpoints, production Cargo toolchain, disk ACL races, crash recovery");
         Ok(())
     }
