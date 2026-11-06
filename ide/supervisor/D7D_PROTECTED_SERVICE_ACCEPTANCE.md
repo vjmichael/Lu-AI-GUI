@@ -15,13 +15,16 @@
 
 ## Windows acceptance
 
-Workflow: \`.github/workflows/ide-d7d-protected-service.yml\` (two independent \`windows-latest\` jobs).
+Workflow: \`.github/workflows/ide-d7d-protected-service.yml\` (four independent native Windows jobs; two use \`windows-2025\`).
 
 1. **native-windows-service**: pinned Rust 1.88 compile and unit tests, real elevated SCM install, restricted service token and ACL verification, authenticated named pipe admission and normal empty Job release. Reject a forged interactive server pipe and attempted interactive config mutation.
 2. **crash-recovery-windows**: compile native protected service and fixed self-sleeper fixture; start the service under its own Windows account; admit Job before suspended child resumes. External PowerShell observer checks live child kernel handle, tries pre-crash recovery (must fail), forcibly kills original host, confirms child kernel exit, reopens the retained original named Job with ActiveProcesses=0, launches a new approved host process for independent Job inspection, obtains the service's protected fsynced recovery ACK, closes observer handle and verifies the original Job name is gone.
 3. Native library unit test exercises durable \`RecoveryRequired\` after restart and confirms further work remains quarantined without protected service acknowledgement.
 
-The crash fixture validates the **kernel/service/reconnect loop**. It does not stand in for a full installed desktop run of \`execute_windows_worker\`, pinned offline Cargo fixture, D6 real AppContainer network isolation, or independently signed production installer.
+4. **pinned-offline-protected-cargo**: packages the Windows Rust/MSVC/SDK fixture, compiles the real \`d7_windows_acceptance\` example under \`protected-recovery-service\`, pins the executable as approved host, runs an actual isolated Cargo check, verifies durable journal/output on reopen, then forces cancellation and verifies ordered cancellation receipts. In this mode the host never reads ACL-protected service witnesses; it requires the authenticated fsynced service ACK.
+5. **service-loss-windows**: authenticates the real native owner/worker, kills the separate SCM service while the host is still alive, requires the native service-liveness watchdog to terminate the Job, and verifies the child exited. After service restart, a missing original named Job must refuse reconciliation.
+
+The crash fixture validates the **kernel/service/reconnect loop**. The full protected Cargo fixture and service-loss fixture add OS evidence but do not stand in for a full installed desktop run of \`execute_windows_worker\`, pinned offline Cargo fixture, D6 real AppContainer network isolation, or independently signed production installer.
 
 ## Remaining strict gates
 
@@ -29,3 +32,8 @@ The crash fixture validates the **kernel/service/reconnect loop**. It does not s
 - Test a full real worker build/test transaction with the actual D3 supervisor journal, not just fixed self-sleeper and isolated durable state unit tests.
 - Inject service crash, host/service simultaneous crash, truncated/replayed/tampered witness, hung/disconnected pipes and Windows reboot. Missing Job must remain quarantined.
 - Verify signed installer provenance and true Program Files installation, offline pinned SDK and D6 network isolation, then installed desktop behavior. Until all pass, keep native Run and Lu Core bridge disabled.
+
+
+## Latest D6 dependency
+
+Native prior D6 Windows probe exited with code \`1099\` (a loopback socket failure without a raw WinSock code). This is **not** accepted as network isolation. Do not convert timeouts, connection refusal or missing socket errors into WSAEACCES or a passing gate; require a genuine policy-backed proof of denied network access in the AppContainer context. D6 remains an independent release blocker even if the D7D SCM smoke tests pass.
