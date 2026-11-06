@@ -53,6 +53,11 @@ function App() {
   const [contextBusy, setContextBusy] = useState(false);
   const [gitStatus, setGitStatus] = useState(null);
   const [gitBusy, setGitBusy] = useState(false);
+  const [gitDiffScope, setGitDiffScope] = useState('worktree');
+  const [gitDiff, setGitDiff] = useState(null);
+  const [gitHistory, setGitHistory] = useState(null);
+  const [gitEvidenceBusy, setGitEvidenceBusy] = useState(false);
+  const gitEvidenceRequest = useRef(0);
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubComparison, setGithubComparison] = useState(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
@@ -150,6 +155,9 @@ function App() {
       return;
     }
     setGitBusy(true);
+    setGitDiff(null);
+    setGitHistory(null);
+    gitEvidenceRequest.current += 1;
     setGithubComparison(null); // A local refresh invalidates any prior live comparison.
     setProblem('');
     try {
@@ -158,6 +166,33 @@ function App() {
       setGitStatus(null);
       setProblem('Could not inspect source control: ' + String(error));
     } finally { setGitBusy(false); }
+  }
+
+  async function loadGitEvidence() {
+    if (!activeProject?.projectId || gitEvidenceBusy) return;
+    const projectId = activeProject.projectId;
+    const request = ++gitEvidenceRequest.current;
+    setGitEvidenceBusy(true);
+    setGitDiff(null);
+    setGitHistory(null);
+    setProblem('');
+    try {
+      const [diff, history] = await Promise.all([
+        invoke('ide_read_git_diff', { projectId, scope: gitDiffScope }),
+        invoke('ide_read_git_history', { projectId }),
+      ]);
+      if (request !== gitEvidenceRequest.current) return;
+      if (diff.projectId !== projectId || history.projectId !== projectId) {
+        throw Error('GIT_PROJECT_CONTEXT_CHANGED');
+      }
+      setGitDiff(diff);
+      setGitHistory(history);
+    } catch (error) {
+      if (request === gitEvidenceRequest.current)
+        setProblem('Could not inspect local Git diff/history: ' + String(error));
+    } finally {
+      if (request === gitEvidenceRequest.current) setGitEvidenceBusy(false);
+    }
   }
 
   async function compareLiveGitHub() {
@@ -804,6 +839,47 @@ function App() {
               </div>
               {gitStatus.truncated && <p role="status">
                 More than 120 changed files were found. The visible list is truncated.</p>}
+              <div className="continuityCapture">
+                <h3>Review local differences and commits</h3>
+                <row className="gitReviewControls">
+                  <label htmlFor="git-diff-scope">Diff source</label>
+                  <select id="git-diff-scope" value={gitDiffScope}
+                    disabled={gitEvidenceBusy}
+                    onChange={event => {
+                      setGitDiffScope(event.target.value);
+                      setGitDiff(null);
+                      setGitHistory(null);
+                      gitEvidenceRequest.current += 1;
+                    }}>
+                    <option value="worktree">Unstaged changes</option>
+                    <option value="staged">Staged changes</option>
+                  </select>
+                  <button type="button" className="ghostBtn" disabled={gitEvidenceBusy || gitBusy}
+                    onClick={() => loadGitEvidence()}>
+                    {gitEvidenceBusy ? 'Inspecting…' : 'Inspect diff and history'}
+                  </button>
+                </row>
+              </div>
+              <p>Local-only evidence. Untracked file contents are not included in patch text.
+                Diff previews are capped at 64 KiB and may be incomplete. No Git command is executed.</p>
+              {gitDiff && <div className="continuityDocument" aria-label="Local Git patch">
+                <p><strong>{gitDiff.scope === 'staged' ? 'Staged' : 'Unstaged'} changes</strong>
+                  {' · '}{gitDiff.filesChanged} changed file(s)
+                  {' · '}{gitDiff.patchBytes.toLocaleString()} patch bytes
+                  {gitDiff.truncated && ' · truncated'}</p>
+                {gitDiff.patch
+                  ? <pre className="gitPatchPreview">{gitDiff.patch}</pre>
+                  : <p>No tracked patch changes in the selected scope.</p>}
+              </div>}
+              {gitHistory && <div className="continuityDocument" aria-label="Local Git history">
+                <h4>Local HEAD history</h4>
+                {gitHistory.commits.length === 0 && <p>No local commits found.</p>}
+                {gitHistory.commits.map(item => <p key={item.commitSha}>
+                  <code>{item.commitSha.slice(0, 12)}</code> · {item.summary}
+                </p>)}
+                {gitHistory.truncated && <p role="status">History limited to 30 commits.</p>}
+                <p>Locally stored history only; not evidence of current GitHub state.</p>
+              </div>}
               <div className="continuityCapture">
                 <h3>Compare with live GitHub</h3>
                 <button type="button" className="ghostBtn"
