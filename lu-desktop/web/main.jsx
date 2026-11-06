@@ -32,6 +32,8 @@ function App() {
   const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
+  const [observeNotes,setObserveNotes] = useState([]);
+  const [observeHandoff,setObserveHandoff] = useState(null);
   const [captureWorkerReady,setCaptureWorkerReady]=useState(false);
   const [captureTaskId,setCaptureTaskId]=useState(null);
   const [captureStarting,setCaptureStarting]=useState(false);
@@ -224,16 +226,27 @@ function App() {
     return()=>{active=false;clearInterval(timer);};
   },[chatId]);
   useEffect(()=>{
+    if(!chatId||observeView.chatId!==chatId||observeView.mode==='off'){
+      setObserveNotes([]);setObserveHandoff(null);return;
+    }
+    let active=true;
+    invoke('lu_observe_notes',{chatId})
+      .then(notes=>{if(active)setObserveNotes(notes);})
+      .catch(()=>{if(active)setObserveNotes([]);});
+    return()=>{active=false;};
+  },[chatId,observeView.sessionId,observeView.mode,observeView.notesLogged]);
+  useEffect(()=>{
     // Report only enum hints from Lu itself. No text, pixels, clipboard,
     // keystrokes, external app content, or native test PASS/FAIL.
     if(!chatId||observeView.mode!=='active'||observeView.chatId!==chatId)return;
     invoke('lu_observe_self_signal',{chatId,kind:'ui_changed'})
-      .then(v=>{if(v.mode!=='active')setObserveView(v);})
+      .then(v=>setObserveView(v))
       .catch(()=>{});
   },[chatId,runtime.phase,observeView.mode]);
   useEffect(()=>{
     if(!chatId||!error||observeView.mode!=='active'||observeView.chatId!==chatId)return;
-    invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'}).catch(()=>{});
+    invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'})
+      .then(v=>setObserveView(v)).catch(()=>{});
   },[chatId,error,observeView.mode]);
   async function observeCaptureOneShot(){
     if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
@@ -243,6 +256,13 @@ function App() {
       if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
+  }
+  async function reviewObserveHandoff(){
+    if(!chatId||observeView.mode==='off')return;
+    try{
+      const handoff=await invoke('lu_observe_handoff',{chatId});
+      setObserveHandoff(handoff);
+    }catch(e){setError(String(e));}
   }
   function observeAction(action){
     if(!chatId)return;
@@ -1803,7 +1823,32 @@ function App() {
           </small>}
           {observeView.mode!=='off'&&
             <small>Observed state-change hints: {observeView.nativeEventCount||0}.
-              No automatically saved learning or GUI test verdict.</small>}
+              Durable awareness notes: {observeView.notesLogged||0}.
+              No automatically saved learning, GPU inference or GUI test verdict.</small>}
+          {observeView.mode!=='off'&&
+            <div className="observeNotations" aria-label="Local awareness notations">
+              <strong>Awareness notes · native-only</strong>
+              {observeNotes.length===0
+                ? <small>No issues noted in this observation session.</small>
+                : <ul>{observeNotes.slice(0,8).map(n=>
+                  <li key={n.sequence}>
+                    {n.kind==='error_indicator'?'Error indicator observed (not verified)':
+                      n.kind==='verified_test_failure'?'Independently verified test failure':
+                      n.kind} · {n.source==='renderer_hint'?'UI hint':n.source}
+                    · {n.priority}
+                  </li>
+                )}</ul>}
+              <button type="button" disabled={observeNotes.length===0}
+                onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
+              {observeHandoff&&<div role="status" className="observeHandoff">
+                <strong>Main-model handoff prepared · not executed</strong>
+                <small>Verified failures: {observeHandoff.verifiedFailures} ·
+                  Unverified indicators: {observeHandoff.unverifiedIndicators}.
+                  {observeHandoff.recommendation}.</small>
+                <small>The main model has not run. Source changes, tests and
+                  application control still require separate host authorization.</small>
+              </div>}
+            </div>}
         </section>}
         {wave2FileBusy && <section className="readProposalCard" role="status"
           aria-live="polite" aria-label="Native file operation in progress">

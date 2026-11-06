@@ -7,6 +7,14 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Observe awareness lane logs scoped native hints and prepares a no-execution handoff',
+    host.includes('fn lu_observe_notes(') &&
+    host.includes('fn lu_observe_handoff(') &&
+    host.includes('lu_observe_notes,') &&
+    ui.includes("invoke('lu_observe_notes',{chatId})") &&
+    ui.includes('Prepare large-model review handoff') &&
+    ui.includes('Main-model handoff prepared · not executed') &&
+    css.includes('.observeNotations')],
   ['Observe WGC one-shot is explicit, pinned, supervised, user-selected and does not claim visual understanding',
     host.includes('async fn lu_observe_capture_one_shot(') &&
     host.includes('LU_OBSERVE_CAPTURE_WORKER_SHA256') &&

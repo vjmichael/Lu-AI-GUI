@@ -30,6 +30,7 @@ pub mod web_research_maturity;
 pub mod web_research_planner;
 pub mod native_capability_inventory;
 pub mod native_observe_learn;
+pub mod native_awareness_lane;
 pub mod native_observe_ansf;
 pub mod native_observe_scope;
 pub mod native_gui_verification;

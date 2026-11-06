@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "214d48af160e28c1ed84f3ee4930b32c84f6e582",
-  "trackedFileCount": 423,
+  "sourceCommitBeforeLock": "49cf1d70eca29cbe20cf7fb32fdde2c8f359c0ac",
+  "trackedFileCount": 425,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "bca58825364e49faa064e6d7f7105ba86939c93b"
+      "blob": "7f5b94ddf9a7ca9b8fcd7af6f559ab2a2c11675c"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -88,6 +88,10 @@
       "blob": "3954455a02f113a24dc6868b11ee38626c7bca7d"
     },
     {
+      "path": "docs/LU_AWARENESS_LANE_V1.md",
+      "blob": "41b607a0bba8377d47fd046ee1353fa053bc1cc3"
+    },
+    {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
       "blob": "5ac0cb9f1342e28a13e18b3384ea69b6fd502973"
     },
@@ -97,7 +101,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "f2dabce41eb97d8b7f948ef7a13f7f46646d486a"
+      "blob": "cf31f835dc67854a52d219099bb47e6ead800ba0"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -109,7 +113,7 @@
     },
     {
       "path": "docs/LU_OBSERVE_LEARN_V1.md",
-      "blob": "427828ac53d569aa29108256b182916a71b4c48e"
+      "blob": "5e2afb81931d8a93dd6da55418079acf0ddc7e51"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -281,7 +285,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "d080351c23016f333548ab303ba89a38b2990176"
+      "blob": "c5ff12b57d89105d5662f6470cd4d82fc39605db"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -373,7 +377,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "7a7568c112bd3040e86e1d09eebf793ae0fe9799"
+      "blob": "44acd66049a6b10a78d497cd28ebca8458e2f242"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -401,7 +405,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "06207fea9e6f91c58f882ae60023d37e1a77e8d0"
+      "blob": "750d577a8087639a0f54ebe043c0e4368611e1d8"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -597,7 +601,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "3e4b5127f06949634b6c80a964e2a7709d12522e"
+      "blob": "cd688b496ba592f5fe7e3d8a5bc48d5cd0ae458c"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -613,7 +617,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "f14613d6d07c45bf63ab34860da6ca8d2c009e53"
+      "blob": "3b6863169fce248ddd45050211026f786d75463f"
     },
     {
       "path": "scripts/package-observe-capture-windows.ps1",
@@ -869,7 +873,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "773716f8f8865e9ac8bc12263477c7995fb7ab06"
+      "blob": "67adc4ce238ed41579ddb79d78e398f8b6c527aa"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -942,6 +946,10 @@
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
       "blob": "afd1041bffd3c5a24a4d2a0c687870538b5a2e2c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_awareness_lane.rs",
+      "blob": "ac49b0430eb58dcae20c7efa9fa8c33e1e528565"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_control.rs",
@@ -1201,7 +1209,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "f81b7216b37471d5c8463782db49568c57fcffc1"
+      "blob": "cf315cc4a4fedee7184ac0f5494ff5d0fac1e1ad"
     },
     {
       "path": "src-tauri/lu-core/src/vision_routing.rs",

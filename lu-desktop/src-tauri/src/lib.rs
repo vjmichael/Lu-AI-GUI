@@ -3527,6 +3527,22 @@ fn lu_observe_stop(
 }
 /// Renderer event hints are NOT trusted test outcomes. Only two enumerated
 /// low-information signals are admitted, and no screenshot/text is accepted.
+/// Read-only diagnostic notations from the exact currently consented chat.
+#[tauri::command]
+fn lu_observe_notes(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<observe_desktop::ObserveNoteView>,String>{
+    state.observe.notes(&chat_id)
+}
+/// A data-only handoff for user review. It does not call a model, execute
+/// tests, modify source or upgrade an unverified hint into a verified defect.
+#[tauri::command]
+fn lu_observe_handoff(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<observe_desktop::ObserveHandoffView>,String>{
+    state.observe.handoff(&chat_id)
+}
+
 #[tauri::command]
 fn lu_observe_self_signal(
     state:State<'_,Arc<DesktopState>>,chat_id:String,kind:String
@@ -3652,6 +3668,8 @@ pub fn run() {
             lu_observe_resume,
             lu_observe_stop,
             lu_observe_self_signal,
+            lu_observe_notes,
+            lu_observe_handoff,
             lu_observe_capture_one_shot,
             lu_observe_capture_available,
             lu_browser_visibility,

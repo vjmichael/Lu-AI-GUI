@@ -7,6 +7,7 @@
 use std::{path::Path, sync::Mutex};
 
 use rusqlite::{params, Connection, OptionalExtension};
+use crate::native_awareness_lane::Note;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
@@ -110,6 +111,18 @@ pub struct TaskDashboardEntry{
     pub last_heartbeat:Option<String>,
     pub updated_at:String,
 }
+/// Bounded, enum-only record of an authorized Observe session's diagnostic
+/// hints. This is NOT a saved ANSF memory or a model-generated instruction.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct AwarenessNoteRow{
+    pub task_id:String,
+    pub workspace_id:String,
+    pub sequence:u64,
+    pub code:String,
+    pub source:String,
+    pub priority:String,
+    pub created_at:String,
+}
 pub struct TaskStore {
     connection: Mutex<Connection>,
 }
@@ -149,7 +162,21 @@ impl TaskStore {
              CREATE TABLE IF NOT EXISTS lu_task_auto_continue (
                workspace_id TEXT PRIMARY KEY NOT NULL,
                enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
-             );",
+             );
+             CREATE TABLE IF NOT EXISTS lu_awareness_notes(
+               task_id TEXT NOT NULL,
+               workspace_id TEXT NOT NULL,
+               sequence INTEGER NOT NULL CHECK(sequence > 0),
+               code TEXT NOT NULL CHECK(code IN
+                 ('error_indicator','unexpected_ui_state','verified_test_failure','stalled_progress')),
+               source TEXT NOT NULL CHECK(source IN
+                 ('renderer_hint','native_accessibility','native_test_receipt')),
+               priority TEXT NOT NULL CHECK(priority IN ('observe','investigate')),
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY(task_id,sequence)
+             );
+             CREATE INDEX IF NOT EXISTS lu_awareness_notes_workspace
+               ON lu_awareness_notes(workspace_id,task_id,sequence);",
         )?;
         // Existing desktop profiles may have the older CHECK schema.
         // Rebuild atomically with every row preserved before enabling
@@ -560,6 +587,65 @@ impl TaskStore {
         Ok(result)
     }
 
+    /// Persist enum-only notation in the EXISTING task SQLite database.
+    /// Trusted ObserveHost owns task ID/sequence; no raw UI text, pixels,
+    /// model output, commands, file paths or prompt bodies enter this table.
+    pub fn append_awareness_note(
+        &self,task_id:&str,workspace_id:&str,note:&Note
+    )->Result<(),TaskStoreError>{
+        if !task_id.starts_with("obs-")||task_id.len()>128
+            ||!workspace_id.starts_with("c-")||workspace_id.len()>128
+            ||!workspace_id.bytes().all(|x|
+                x.is_ascii_alphanumeric()||x==b'-'||x==b'_')
+            ||note.sequence==0||note.sequence>i64::MAX as u64{
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock()
+            .map_err(|_|TaskStoreError::Poisoned)?;
+        let changed=connection.execute(
+            "INSERT OR IGNORE INTO lu_awareness_notes
+              (task_id,workspace_id,sequence,code,source,priority)
+             SELECT task_id,workspace_id,?3,?4,?5,?6
+               FROM lu_tasks WHERE task_id=?1 AND workspace_id=?2 AND state='RUNNING'",
+            params![task_id,workspace_id,note.sequence as i64,
+                note.kind.as_str(),note.source.as_str(),note.priority.as_str()],
+        )?;
+        if changed!=1{return Err(TaskStoreError::InvalidTransition);}
+        Ok(())
+    }
+    /// Read only the exact conversation/task's native notations. No status
+    /// query may expose another chat or an arbitrary path or checkpoint.
+    pub fn awareness_notes(
+        &self,task_id:&str,workspace_id:&str,limit:usize
+    )->Result<Vec<AwarenessNoteRow>,TaskStoreError>{
+        if !task_id.starts_with("obs-")||task_id.len()>128
+          ||!workspace_id.starts_with("c-")||workspace_id.len()>128
+          ||!workspace_id.bytes().all(|x|
+              x.is_ascii_alphanumeric()||x==b'-'||x==b'_')
+          ||limit==0||limit>64{
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock()
+            .map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT task_id,workspace_id,sequence,code,source,priority,created_at
+             FROM lu_awareness_notes
+             WHERE task_id=?1 AND workspace_id=?2
+             ORDER BY sequence DESC LIMIT ?3"
+        )?;
+        let rows=stmt.query_map(params![task_id,workspace_id,limit as i64],|row|{
+            Ok(AwarenessNoteRow{
+                task_id:row.get(0)?,workspace_id:row.get(1)?,
+                sequence:row.get::<_,i64>(2)? as u64,
+                code:row.get(3)?,source:row.get(4)?,
+                priority:row.get(5)?,created_at:row.get(6)?,
+            })
+        })?;
+        let mut notes=Vec::new();
+        for row in rows{notes.push(row?);}
+        Ok(notes)
+    }
+
     /// Host-only chat-scoped status: filter before limiting, not after.
     pub fn dashboard_for_workspace(&self,workspace_id:&str,limit:usize)
         ->Result<Vec<TaskDashboardEntry>,TaskStoreError>{
@@ -791,6 +877,34 @@ mod dashboard_tests{
         assert_eq!(store.dashboard_for_workspace("c-other",2).unwrap().len(),2);
         assert!(store.dashboard_for_workspace("local-media",2).is_err());
         assert!(store.dashboard_for_workspace("c-owner",0).is_err());
+    }
+    #[test]
+    fn awareness_notes_are_durable_chat_scoped_and_not_training_data(){
+        use crate::native_awareness_lane::{Note,NoteKind,Source,Priority};
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("obs-first",Some("c-one"),None).unwrap();
+        store.create("obs-second",Some("c-two"),None).unwrap();
+        store.start("obs-first").unwrap();
+        store.start("obs-second").unwrap();
+        let note=Note{
+            sequence:1,kind:NoteKind::ErrorIndicator,
+            source:Source::RendererHint,priority:Priority::Observe,
+            verified_failure:false,
+        };
+        store.append_awareness_note("obs-first","c-one",&note).unwrap();
+        assert_eq!(store.awareness_notes("obs-first","c-one",8).unwrap().len(),1);
+        assert!(store.awareness_notes("obs-first","c-two",8).unwrap().is_empty());
+        assert_eq!(store.append_awareness_note("obs-first","c-two",&note),
+            Err(TaskStoreError::InvalidTransition));
+        assert_eq!(store.append_awareness_note("obs-first","c-one",&note),
+            Err(TaskStoreError::InvalidTransition));
+        assert_eq!(store.awareness_notes("obs-first","c-one",0),
+            Err(TaskStoreError::InvalidTaskId));
+        store.cancelled("obs-first").unwrap();
+        assert_eq!(store.append_awareness_note("obs-first","c-one",&Note{
+            sequence:2,..note
+        }),Err(TaskStoreError::InvalidTransition));
+        // No ANSF write is performed by this note API.
     }
     #[test]
     fn startup_dashboard_never_presents_orphan_running_process_as_live(){

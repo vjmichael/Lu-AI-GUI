@@ -5,11 +5,14 @@ on:
       - 'src-tauri/lu-core/src/native_observe_learn.rs'
       - 'src-tauri/lu-core/src/native_observe_ansf.rs'
       - 'src-tauri/lu-core/src/native_observe_scope.rs'
+      - 'src-tauri/lu-core/src/native_awareness_lane.rs'
+      - 'src-tauri/lu-core/src/tasks.rs'
       - 'src-tauri/lu-core/src/native_gui_verification.rs'
       - 'src-tauri/lu-observe-capture-worker/**'
       - 'scripts/package-observe-capture-windows.ps1'
       - 'lu-desktop/src-tauri/tauri.observe.capture.conf.json'
       - 'docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md'
+      - 'docs/LU_AWARENESS_LANE_V1.md'
       - 'docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md'
       - 'lu-desktop/**'
       - 'src-tauri/lu-core/src/lib.rs'
@@ -51,6 +54,8 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_ansf::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
       - shell: bash
         run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock
@@ -67,6 +72,8 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_ansf::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
       - shell: bash
         run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock

@@ -57,3 +57,8 @@ The current Lu application pilot will observe only explicitly approved semantic 
 ## OBSERVE-SCOPE-03 / OBSERVE-GUI-VERIFY-04
 
 Selected app/window/monitor and physical versus virtual desktop scopes are now distinct typed native contracts. Expected-build versus actual-running-application comparison has a separate host-owned PASS/FAIL/INCONCLUSIVE policy. Neither is a working OS capture adapter yet. See docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md.
+
+
+## AWARENESS-06 — active low-cost notation and escalation
+
+An additional low-cost, host-native awareness lane now annotates meaningful Lu UI hints into task-scoped SQLite records, never elevates an unverified UI hint into a passed/failed test, and prepares a fixed evidence synopsis for main-model review. Suggestions to query a resident small model are rate-limited and separately permission-gated, but do **not** execute model inference yet; current Lu has a single physical inference session. See `docs/LU_AWARENESS_LANE_V1.md` for explicit unfinished small-model, GPU placement, verified visual and autonomous handoff gates.

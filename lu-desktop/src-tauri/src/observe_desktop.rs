@@ -8,6 +8,8 @@ use serde::Serialize;
 use lu_core::{
     native_observe_learn::{Consent,Controller,Decision,Error as ObserveError,Mode,NativeEvent,Signal},
     native_observe_scope::{ScopedObservationGrant,SelectedTargets},
+    native_awareness_lane::{AwarenessLane,NativeSignal as AwarenessSignal,
+        Signal as AwarenessKind,Source as AwarenessSource,HostReadiness},
     tasks::TaskStore,
     native_background_process::{BackgroundProcessSupervisor,TrustedWorkerPlan},
 };
@@ -27,9 +29,32 @@ pub(crate) struct ObserveView {
     pub native_event_count:u64,
     pub inference_recommendations:u64,
     pub inference_performed:u64,
+    pub notes_logged:u64,
 }
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ObserveNoteView{
+    pub sequence:u64,
+    pub kind:String,
+    pub source:String,
+    pub priority:String,
+    pub created_at:String,
+}
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ObserveHandoffView{
+    pub session_id:String,
+    pub verified_failures:usize,
+    pub unverified_indicators:usize,
+    pub recommendation:String,
+    pub requires_separate_tool_authorization:bool,
+    pub main_model_may_treat_as_verified_failure:bool,
+}
+
 struct Session {
     controller:Controller,
+    awareness:Option<AwarenessLane>,
+    notes_logged:u64,
     scope:Option<ScopedObservationGrant>,
     capture_task_id:Option<String>,
     session_id:Option<String>,
@@ -51,7 +76,7 @@ impl ObserveHost {
             task_store,capture_processes,
             epoch:Instant::now(),
             inner:Mutex::new(Session{
-                controller:Controller::default(),
+                controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
                 session_id:None,chat_id:None,sequence:0,
                 event_count:0,recommendations:0,
@@ -72,6 +97,7 @@ impl ObserveHost {
             native_event_count:s.event_count,
             inference_recommendations:s.recommendations,
             inference_performed:0,
+            notes_logged:s.notes_logged,
         }
     }
     /// Called only after the separate native dialog explicitly confirmed a
@@ -114,6 +140,9 @@ impl ObserveHost {
             let _=self.task_store.fail_pending(&session_id);
             return Err(format!("Could not start observation task: {e:?}"));
         }
+        session.awareness=Some(AwarenessLane::new(&session_id,chat_id)
+            .map_err(|_|"Could not initialize scoped awareness lane")?);
+        session.notes_logged=0;
         session.scope=Some(bound_scope);
         session.capture_task_id=None;
         session.session_id=Some(session_id);
@@ -138,6 +167,7 @@ impl ObserveHost {
         session.capture_task_id=None;
         let task_id=session.session_id.take();
         session.controller.stop();
+        if let Some(mut lane)=session.awareness.take(){lane.stop();}
         session.scope=None;
         session.chat_id=None;
         session.sequence=0;
@@ -164,7 +194,8 @@ impl ObserveHost {
                 self.revoke(&mut session)?;
             }
             return Ok(Self::view(&Session{
-                controller:Controller::default(),scope:None,capture_task_id:None,
+                controller:Controller::default(),awareness:None,notes_logged:0,
+                scope:None,capture_task_id:None,
                 session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
             }));
@@ -248,6 +279,45 @@ impl ObserveHost {
         Ok(id)
     }
 
+    /// Only the trusted task session's enum-only annotations can be seen;
+    /// no cross-conversation note retrieval or unapproved ANSF write.
+    pub(crate) fn notes(
+        &self,chat_id:&str
+    )->Result<Vec<ObserveNoteView>,String>{
+        let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut s)?;
+        let owner=Self::owned(&mut s,chat_id)?;
+        let task=owner.session_id.as_deref().ok_or("Missing observe session")?;
+        self.task_store.awareness_notes(task,chat_id,24)
+            .map_err(|_|"Observation notations unavailable")?
+            .into_iter().map(|n|Ok(ObserveNoteView{
+                sequence:n.sequence,kind:n.code,source:n.source,
+                priority:n.priority,created_at:n.created_at,
+            })).collect()
+    }
+    /// Produces a content-minimized main-model review handoff. No model run,
+    /// filesystem change, repair, screenshot or tool grant occurs here.
+    pub(crate) fn handoff(
+        &self,chat_id:&str
+    )->Result<Option<ObserveHandoffView>,String>{
+        let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut s)?;
+        let owner=Self::owned(&mut s,chat_id)?;
+        let task=owner.session_id.as_deref().ok_or("Missing observe session")?;
+        let h=owner.awareness.as_ref().ok_or("Awareness unavailable")?
+            .handoff(task,chat_id)
+            .map_err(|_|"Awareness review is not authorized")?;
+        Ok(h.map(|h|ObserveHandoffView{
+            session_id:h.observation_session_id,
+            verified_failures:h.verified_failures,
+            unverified_indicators:h.unverified_indicators,
+            recommendation:h.recommended_action.to_owned(),
+            requires_separate_tool_authorization:h.requires_separate_tool_authorization,
+            main_model_may_treat_as_verified_failure:
+                h.main_model_may_treat_as_verified_failure,
+        }))
+    }
+
     /// Renderer hints contain no text or pixels. They are NOT verified GUI
     /// outcomes, even when a label says "error". Trustworthy pass/fail must
     /// originate in an independent, native test verifier.
@@ -275,6 +345,25 @@ impl ObserveHost {
             requests_redacted_snapshot:false,
         },self.now(),model_ready_idle).map_err(format_error)?;
         s.sequence=sequence;s.event_count=s.event_count.saturating_add(1);
+        // Lu's background awareness is native-first and does not auto-run
+        // a small/large model. Renderer hints are UNVERIFIED by definition.
+        // An authorized tiny model can be routed through the same supervisor
+        // once the hardware/backend and separate reasoning grant are verified.
+        let session_id=s.session_id.as_deref()
+            .ok_or("Observation session missing")?.to_owned();
+        let awareness=s.awareness.as_mut().ok_or("Awareness lane missing")?;
+        let observed=awareness.ingest(&session_id,chat_id,AwarenessSignal{
+            sequence,source:AwarenessSource::RendererHint,
+            signal:if kind=="error_indicator"{
+                AwarenessKind::ErrorIndicator
+            }else{AwarenessKind::UiChanged},
+        },self.now(),HostReadiness::default())
+            .map_err(|_|"Awareness observation rejected")?;
+        if let Some(note)=observed.notation{
+            self.task_store.append_awareness_note(&session_id,chat_id,&note)
+                .map_err(|_|"Failed to record scoped awareness notation")?;
+            s.notes_logged=s.notes_logged.saturating_add(1);
+        }
         if matches!(decision,Decision::RecommendInference{..}){
             // A recommendation does not submit a model request; actual
             // inference must use existing interactive queue and host grants.
@@ -302,6 +391,13 @@ mod tests{
         assert!(host.self_signal("c-main","test_passed",true).is_err());
         assert_eq!(host.self_signal("c-main","ui_changed",false)
             .unwrap().inference_performed,0);
+        host.self_signal("c-main","error_indicator",false).unwrap();
+        let notes=host.notes("c-main").unwrap();
+        assert_eq!(notes.len(),1);
+        assert_eq!(notes[0].kind,"error_indicator");
+        assert_eq!(notes[0].source,"renderer_hint");
+        assert_eq!(host.handoff("c-main").unwrap().unwrap().verified_failures,0);
+        assert!(host.notes("c-other").is_err());
         assert_eq!(host.pause("c-main").unwrap().mode,"paused");
         assert_eq!(store.get("obs-one").unwrap().unwrap().state,TaskState::Paused);
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
