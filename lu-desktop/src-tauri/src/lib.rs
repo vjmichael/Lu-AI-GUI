@@ -1386,9 +1386,13 @@ async fn lu_image_workspace_export(
                     let _=journal.uncertain(&chat_id,&revision_id);
                     return Err("Export identity differed from reviewed revision; outcome uncertain".into());
                 }
-                journal.applied(&chat_id,&revision_id,
-                    &saved.revision_sha256,saved.bytes_written as u64)
-                    .map_err(|_|"Image created but durable history receipt is uncertain")?;
+                if journal.applied(&chat_id,&revision_id,
+                    &saved.revision_sha256,saved.bytes_written as u64).is_err(){
+                    // The file was created but its durable APPLIED proof was
+                    // not committed. Never claim a clean success/replay.
+                    let _=journal.uncertain(&chat_id,&revision_id);
+                    return Err("Image created but durable history receipt is uncertain".into());
+                }
                 Ok(Some(saved))
             }
             Err(error)=>{
