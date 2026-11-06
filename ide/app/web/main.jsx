@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
+import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 
 const sections = [
@@ -12,6 +13,7 @@ const sections = [
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
+  { id: 'languages', title: 'Language services', glyph: '⌁' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
   { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Job requests', glyph: '▶' },
@@ -56,6 +58,18 @@ function App() {
   const [proposalDetail, setProposalDetail] = useState(null);
   const [inboxBusy, setInboxBusy] = useState(false);
   const [capabilityCatalog, setCapabilityCatalog] = useState(null);
+  const [languageServers, setLanguageServers] = useState([]);
+  const [lspWorker, setLspWorker] = useState({
+    ready: false, code: 'LSP_PROTECTED_WORKER_UNVERIFIED',
+    detail: 'Protected language-server admission has not been accepted.'
+  });
+  const [lspNativeDiagnostics, setLspNativeDiagnostics] = useState({});
+  const [lspCompletions, setLspCompletions] = useState(null);
+  const [lspHover, setLspHover] = useState(null);
+  const [lspJumpRequest, setLspJumpRequest] = useState(null);
+  const [lspCompletionApplyRequest, setLspCompletionApplyRequest] = useState(null);
+  const [cursorPositions, setCursorPositions] = useState({});
+
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
   const [intentList, setIntentList] = useState(null);
@@ -94,6 +108,22 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  useEffect(() => {
+    // Read-only, project-independent inventory. No provider lookup executes.
+    Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
+      .then(([servers, worker]) => {
+        setLanguageServers(Array.isArray(servers) ? servers.slice(0, 16) : []);
+        setLspWorker(worker?.ready ? {
+          ready: false, code: 'LSP_UNATTESTED_ADMISSION',
+          detail: 'Live language services require independently verified native worker evidence.'
+        } : worker);
+      })
+      .catch(() => setLspWorker({
+        ready: false, code: 'LSP_HOST_UNAVAILABLE',
+        detail: 'Native language-service status could not be verified.'
+      }));
+  }, []);
+
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
 
@@ -126,14 +156,32 @@ function App() {
     setTaskStateInput('in_progress');
     setTaskNextActionInput('');
     setTaskRequiredGates(['source_review', 'exact_head_ci']);
+    // Invalidate any provider data from the previous workspace. No cross-
+    // project response may be shown or applied to the newly selected editor.
+    setLspNativeDiagnostics({});
+    setLspCompletions(null);
+    setLspHover(null);
+    setLspJumpRequest(null);
+    setLspCompletionApplyRequest(null);
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
+  const activeLspDiagnostics = useMemo(() => activeTab
+    ? visibleDiagnostics(activeTab, lspNativeDiagnostics[activeTab.key]) : [],
+    [activeTab, lspNativeDiagnostics]);
+  const activeLspCompletions = useMemo(() => activeTab && lspCompletions?.tabKey === activeTab.key
+    ? visibleCompletions(activeTab, lspCompletions.response) : [],
+    [activeTab, lspCompletions]);
+  const activeLspHover = useMemo(() => activeTab && lspHover?.tabKey === activeTab.key
+    ? visibleHover(activeTab, lspHover.response) : '',
+    [activeTab, lspHover]);
+
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
+  const isLanguages = section === 'languages';
   const isContinuity = section === 'continuity';
   const isJobs = section === 'tasks';
   // Advisory only: derives labels from two existing, separately observed native responses.
@@ -700,6 +748,7 @@ function App() {
           draft: edit.proposedText,
           dirty: edit.proposedText !== originals[index].text,
           generation: (previous?.generation ?? 0) + 1,
+          bufferRevision: (previous?.bufferRevision ?? 0) + 1,
         };
       });
       const stagedKeys = new Set(stagedTabs.map(tab => tab.key));
@@ -809,7 +858,10 @@ function App() {
     editorStates.current.set(key, state);
     setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
-      tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText } : tab));
+      tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText,
+        bufferRevision: (tab.bufferRevision ?? 0) + 1 } : tab));
+    setLspCompletions(null);
+    setLspHover(null);
   }
 
   async function selectEntry(entry) {
@@ -833,7 +885,7 @@ function App() {
           key, projectId: opened.projectId,
           relativePath: opened.relativePath, revision: opened.revision,
           savedText: opened.text, draft: opened.text,
-          dirty: false, generation: 0,
+          dirty: false, generation: 0, bufferRevision: 0,
         };
         editorStates.current.set(key, createEditorState(
           opened.text, opened.relativePath,
@@ -879,6 +931,7 @@ function App() {
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
         draft: opened.text, dirty: false, generation: item.generation + 1,
+        bufferRevision: (item.bufferRevision ?? 0) + 1,
       } : item));
       setHint('Reloaded ' + tab.relativePath + ' from disk.');
     } catch (error) { setProblem(String(error)); }
