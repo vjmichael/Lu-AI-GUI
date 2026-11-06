@@ -130,6 +130,12 @@ impl OfficePatchProposal{
                 new_boolean:self.new_value.parse::<bool>()
                     .map_err(|_|"New cell value must be true or false")?,
             }),
+            "cell_text" if ext.ends_with(".xlsx")=>Ok(OfficeRevisionEdit::CellInlineText{
+                sheet_number:self.sheet_number.ok_or("Worksheet number required")?,
+                address:self.address.clone().ok_or("Cell address required")?,
+                expected_old:self.expected_old.clone(),
+                new_text:self.new_value.clone(),
+            }),
             _=>Err("Selected document type and patch kind do not match".into()),
         }
     }
@@ -222,6 +228,11 @@ fn build_change(edit:&OfficeRevisionEdit)->proto::office_revision_request::Chang
             proto::office_revision_request::Change::CellBoolean(proto::OfficeBooleanPatch{
                 sheet_number:*sheet_number as u32,address:address.clone(),
                 expected_old:*expected_old,new_boolean:*new_boolean,
+            }),
+        OfficeRevisionEdit::CellInlineText{sheet_number,address,expected_old,new_text}=>
+            proto::office_revision_request::Change::CellText(proto::OfficeStringPatch{
+                sheet_number:*sheet_number as u32,address:address.clone(),
+                expected_old:expected_old.clone(),new_text:new_text.clone(),
             }),
     }
 }
