@@ -257,6 +257,17 @@ pub(crate) struct ResearchReportExportView{
     pub interpretation_verified:bool,
     pub message:&'static str,
 }
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCampaignReviewView{
+    pub campaign_id:String,
+    pub discovered_dois:u32,
+    pub sources_reviewed:u32,
+    pub complete_document_texts:u32,
+    pub pending_sources:u32,
+    pub reviewed_this_action:u32,
+    pub message:&'static str,
+}
 pub(crate) struct ResearchDesktop{
     active_campaigns:Mutex<HashSet<String>>,
     root:PathBuf,
@@ -766,6 +777,81 @@ impl ResearchDesktop{
             .map_err(|_|"Research campaign cancel refused")?;
         ledger.campaign_status(campaign_id).map(Into::into)
             .map_err(|_|"Research campaign unavailable".into())
+    }
+
+    /// Following discovery, this independently authorized bounded review
+    /// step corroborates DOI metadata and attempts full-text extraction.
+    /// Every source outcome is a durable receipt, not a fabricated citation.
+    /// The same active-campaign lease excludes simultaneous search/review.
+    pub(crate) fn review_campaign_sources(
+        &self,chat_id:&str,campaign_id:&str,limit:usize
+    )->Result<ResearchCampaignReviewView,String>{
+        if !(1..=10).contains(&limit)||!self.available(){
+            return Err("Only 1–10 source reviews with a pinned HTTPS runtime are available".into());
+        }
+        let initial=self.campaign_status(chat_id,campaign_id)?;
+        if initial.state=="CANCELLED"{
+            return Err("Cancelled Research campaign cannot review more sources".into());
+        }
+        let key=format!("{chat_id}:{campaign_id}");
+        {
+            let mut active=self.active_campaigns.lock()
+                .map_err(|_|"Research worker lock unavailable")?;
+            if !active.insert(key.clone()){
+                return Err("This Research campaign has an active network worker".into());
+            }
+        }
+        let outcome=(||{
+            let db=self.root.join(format!("{chat_id}.sqlite"));
+            let pending={
+                let ledger=EvidenceLedger::open(&db)
+                    .map_err(|_|"Research evidence ledger unavailable")?;
+                ledger.campaign_pending_sources(campaign_id,limit)
+                    .map_err(|_|"Research review frontier unavailable")?
+            };
+            let mut reviewed=0u32;
+            for source_id in pending {
+                let snapshot=self.campaign_status(chat_id,campaign_id)?;
+                if snapshot.state=="CANCELLED"{break;}
+                // Stage is derived entirely from host-verified metadata and
+                // persisted doc status, not model confidence or source prose.
+                let (stage,reason)=match self.corroborate_crossref(chat_id,&source_id){
+                    Ok(meta) if meta.verification_status=="metadata_corroborated"=>{
+                        match self.retrieve_document(chat_id,&source_id){
+                            Ok(doc) if doc.document_accessed=>("DOCUMENT_ACCESSED","OK"),
+                            Ok(_)=>("METADATA_CORROBORATED","UNSUPPORTED_CONTENT"),
+                            Err(_)=>("DOCUMENT_UNAVAILABLE","RETRIEVAL_FAILED"),
+                        }
+                    },
+                    Ok(_)=>("METADATA_MISMATCH","CATALOG_MISMATCH"),
+                    Err(_)=>("ERROR","METADATA_FAILED"),
+                };
+                let mut ledger=EvidenceLedger::open(&db)
+                    .map_err(|_|"Research evidence ledger unavailable")?;
+                ledger.record_campaign_source_review(
+                    campaign_id,&source_id,stage,reason
+                ).map_err(|_|"Research review receipt could not be persisted")?;
+                reviewed+=1;
+            }
+            let ledger=EvidenceLedger::open(&db)
+                .map_err(|_|"Research evidence ledger unavailable")?;
+            let (discovered,checked,full)=ledger.campaign_review_progress(campaign_id)
+                .map_err(|_|"Research review progress unavailable")?;
+            let pending=discovered.saturating_sub(checked);
+            Ok(ResearchCampaignReviewView{
+                campaign_id:campaign_id.into(),
+                discovered_dois:discovered,
+                sources_reviewed:checked,
+                complete_document_texts:full,
+                pending_sources:pending,
+                reviewed_this_action:reviewed,
+                message:"Source review records metadata agreement, attempted documents and actual complete text. It does not certify claims or automatically admit quotations as citations.",
+            })
+        })();
+        if let Ok(mut active)=self.active_campaigns.lock(){
+            active.remove(&key);
+        }
+        outcome
     }
 
     /// User-submitted interpretation. The native host must ensure this comes
