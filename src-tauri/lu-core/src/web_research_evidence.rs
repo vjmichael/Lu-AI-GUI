@@ -125,6 +125,20 @@ impl EvidenceLedger {
         )?;
         Ok(())
     }
+    /// Return only the immutable, host-discovered bibliographic identity.
+    /// Callers may use this to select a trusted metadata endpoint; the model
+    /// must never supply a replacement DOI or promote a citation.
+    pub fn discovered_candidate(&self,id:&str)->Result<Candidate,EvidenceError>{
+        if !bounded(id,128){return Err(EvidenceError::Invalid);}
+        self.connection.query_row(
+            "SELECT id,title,author,identifier FROM research_sources WHERE id=?1",
+            [id],
+            |row|Ok(Candidate{
+                id:row.get(0)?,title:row.get(1)?,author:row.get(2)?,
+                identifier:row.get(3)?,
+            })
+        ).optional()?.ok_or(EvidenceError::Missing)
+    }
     pub fn status(&self, id: &str) -> Result<SourceStatus, EvidenceError> {
         let raw: Option<String> = self.connection.query_row(
             "SELECT status FROM research_sources WHERE id=?1", [id], |row| row.get(0)
