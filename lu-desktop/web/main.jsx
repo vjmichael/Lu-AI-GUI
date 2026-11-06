@@ -58,6 +58,10 @@ function App() {
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [latestCreated, setLatestCreated] = useState(null);
+  const [archiveReview, setArchiveReview] = useState(null);
+  const [archiveReviewed, setArchiveReviewed] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [latestArchiveExtract, setLatestArchiveExtract] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -654,6 +658,63 @@ function App() {
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
   }
+  async function reviewArchiveTree() {
+    if (!chatId || archiveBusy || working || chatBusy) return;
+    setArchiveBusy(true);
+    setError('');
+    try {
+      const review = await invoke('lu_review_archive_tree', {chatId});
+      if (review) {
+        setArchiveReview(review);
+        setArchiveReviewed(false);
+        setActivity('Archive review ready — inspect the complete file list before approval');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setArchiveBusy(false); }
+  }
+  async function confirmArchiveTree() {
+    if (!archiveReview || !archiveReviewed || archiveBusy ||
+        archiveReview.chatId !== chatId) return;
+    setArchiveBusy(true);
+    setError('');
+    const review = archiveReview;
+    try {
+      const receipt = await invoke('lu_confirm_archive_tree', {
+        chatId: review.chatId, reviewId: review.reviewId
+      });
+      if (receipt) {
+        setLatestArchiveExtract({...receipt, chatId: review.chatId});
+        setActivity('Archive extracted: ' + receipt.targetFolder);
+        await refreshChats();
+        if (currentChat.current === review.chatId)
+          setHistory(await invoke('lu_history', {chatId: review.chatId}));
+      } else {
+        setActivity('Archive extraction denied in native confirmation');
+      }
+    } catch (error) {
+      setError('Archive extraction was not confirmed. Do not retry an uncertain write: ' + String(error));
+    } finally {
+      // The host consumes a confirmed review once, even if extraction fails.
+      // Never re-submit a possibly partially published archive operation.
+      setArchiveReview(null);
+      setArchiveReviewed(false);
+      setArchiveBusy(false);
+    }
+  }
+  async function denyArchiveTree() {
+    if (!archiveReview || archiveBusy) return;
+    setArchiveBusy(true);
+    try {
+      await invoke('lu_deny_archive_tree', {
+        chatId: archiveReview.chatId, reviewId: archiveReview.reviewId
+      });
+      setArchiveReview(null);
+      setArchiveReviewed(false);
+      setActivity('Archive extraction denied; no files created');
+    } catch (error) { setError(String(error)); }
+    finally { setArchiveBusy(false); }
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1132,6 +1193,46 @@ function App() {
             </div>
           </section>
         )}
+        {archiveReview?.chatId === chatId && <section className="readProposalCard editProposalCard"
+          role="group" aria-label="Review complete archive extraction">
+          <strong>Extract archive into a NEW folder</strong>
+          <small>Trusted OS file picker selected this archive; Lu has not extracted anything.</small>
+          <code className="writeTarget">{archiveReview.sourceDisplay}</code>
+          <strong>Exact destination (new folder only)</strong>
+          <code className="writeTarget">{archiveReview.destinationDisplay}</code>
+          <small>{archiveReview.files} files · {archiveReview.totalBytes} expanded bytes</small>
+          <small>Entire tree manifest SHA-256: {archiveReview.manifestSha256}</small>
+          <details open>
+            <summary>Complete archive contents ({archiveReview.entries.length} entries)</summary>
+            <pre className="editFullText" aria-label="All archive members">{archiveReview.entries.map((entry,i) =>
+              (i + 1) + '. ' + entry.kind + ' · ' + entry.path +
+              (entry.kind === 'file' ? ' · ' + entry.bytes + ' bytes · ' + entry.sha256 : '')
+            ).join('\n')}</pre>
+          </details>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={archiveReviewed}
+              onChange={e => setArchiveReviewed(e.target.checked)}/>
+            I have reviewed the complete member list, destination, and no-overwrite behavior.
+          </label>
+          <small>Lu will ask again in a native confirmation dialog. If extraction is interrupted,
+            partial files are retained for manual recovery and will never be silently retried.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!archiveReviewed || archiveBusy}
+              onClick={() => void confirmArchiveTree()}>
+              Approve in native confirmation
+            </button>
+            <button type="button" className="subtleButton" disabled={archiveBusy}
+              onClick={() => void denyArchiveTree()}>Deny extraction</button>
+          </div>
+        </section>}
+        {latestArchiveExtract?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Archive extracted into {latestArchiveExtract.targetFolder}</strong>
+          <code className="writeTarget">{latestArchiveExtract.exactDestination}</code>
+          <small>{latestArchiveExtract.filesExtracted} verified files · {latestArchiveExtract.bytesExtracted} bytes</small>
+          <small>Manifest SHA-256: {latestArchiveExtract.manifestSha256}</small>
+          <small>Durable effect receipt: {latestArchiveExtract.effectCallId}</small>
+        </section>}
         {Object.values(writeProposals).filter(p => p.chatId === chatId).map(proposal =>
           <section key={proposal.proposalId} className="readProposalCard writeProposalCard"
             role="group" aria-label="Review proposed new file">
@@ -1376,6 +1477,10 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || archiveBusy || Boolean(archiveReview)}
+              title="Use native file and folder pickers to safely review an archive and extract it into one NEW folder"
+              onClick={() => void reviewArchiveTree()}>{archiveBusy ? 'Archive…' : 'Extract archive'}</button>
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
             <button type="button" className="subtleButton" disabled={!loaded}
               onClick={()=>void attachReaderDocument()}>+ Read file</button>
