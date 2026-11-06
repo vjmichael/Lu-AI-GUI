@@ -701,36 +701,42 @@ function App() {
   }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
-    const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
-    const geometry=region||imageEdit.mode==='resize';
-    const width=geometry?Number(imageEdit.width):imageViewer.width;
-    const height=geometry?Number(imageEdit.height):imageViewer.height;
+    // A staged immutable assembly is authoritative for export. Values in
+    // the currently visible single-step form must not veto a valid staged plan.
+    const queuedPlan=imagePlan.chatId===chatId&&
+      imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length?
+      imagePlan.steps:null;
+    const region=!queuedPlan&&['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
+    const geometry=region||(!queuedPlan&&imageEdit.mode==='resize');
+    const width=queuedPlan?1:(geometry?Number(imageEdit.width):imageViewer.width);
+    const height=queuedPlan?1:(geometry?Number(imageEdit.height):imageViewer.height);
     const x=region?Number(imageEdit.x):0,y=region?Number(imageEdit.y):0;
     const blockSize=Number(imageEdit.blockSize);
     const stroke=Number(imageEdit.stroke);
     const hex=/^#[0-9a-fA-F]{6}$/.test(imageEdit.color||'')?
       parseInt(imageEdit.color.slice(1),16):null;
-    if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
+    if(!queuedPlan&&(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
        width<1||height<1||width>8192||height>8192||width*height>32000000||
        (region&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
          x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))||
        (imageEdit.mode==='pixelate'&&(!Number.isSafeInteger(blockSize)||
          blockSize<2||blockSize>128))||
        (imageEdit.mode==='rectangle'&&(hex===null||!Number.isSafeInteger(stroke)||
-         stroke<1||stroke>64))){
+         stroke<1||stroke>64)))){
       setError('Choose valid dimensions, mask/annotation region and color.');return;
     }
     setImageExportBusy(true);setImageExportReceipt(null);
     try{
       const saved=await invoke('lu_image_workspace_export',{
-        chatId,imageRef:imageViewer.imageRef,operation:imageEdit.mode,
+        chatId,imageRef:imageViewer.imageRef,
+        // When steps are supplied, the native host ignores the single-step
+        // operation. A validated harmless resize keeps the legacy signature.
+        operation:queuedPlan?'resize':imageEdit.mode,
         x:region?x:null,y:region?y:null,width,height,
-        blockSize:imageEdit.mode==='pixelate'?blockSize:null,
-        stroke:imageEdit.mode==='rectangle'?stroke:null,
-        color:imageEdit.mode==='rectangle'?hex:null,
-        steps:imagePlan.chatId===chatId&&
-          imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length?
-          imagePlan.steps:null
+        blockSize:!queuedPlan&&imageEdit.mode==='pixelate'?blockSize:null,
+        stroke:!queuedPlan&&imageEdit.mode==='rectangle'?stroke:null,
+        color:!queuedPlan&&imageEdit.mode==='rectangle'?hex:null,
+        steps:queuedPlan
       });
       if(saved){
         setImageExportReceipt(saved);
@@ -3452,7 +3458,10 @@ function App() {
               const width=e.currentTarget.naturalWidth,height=e.currentTarget.naturalHeight;
               setImageViewer(v=>v&&v.imageRef===viewedDraftImage.imageRef
                 ?({...v,width,height}):v);
-              setImageEdit({mode:'resize',x:'0',y:'0',width:String(width),height:String(height)});
+              setImageEdit({
+                mode:'resize',x:'0',y:'0',width:String(width),height:String(height),
+                blockSize:'12',stroke:'3',color:'#ff5500'
+              });
               setImageExportReceipt(null);
             }}
             style={{transform:'scale('+imageViewer.zoom+')'}}/>

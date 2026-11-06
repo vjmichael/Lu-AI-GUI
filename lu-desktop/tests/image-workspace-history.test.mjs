@@ -26,6 +26,10 @@ test('staged native image preview is volatile, origin-pinned and never an implic
   assert.match(screen,/invoke\('lu_image_workspace_preview'/);
   assert.match(screen,/imagePreviewKeyRef\.current===key/);
   assert.match(screen,/No file saved\. Source image remains unchanged/);
+  assert.match(screen,/const queuedPlan=imagePlan\.chatId===chatId/);
+  assert.match(screen,/operation:queuedPlan\?'resize':imageEdit\.mode/);
+  assert.match(screen,/steps:queuedPlan/);
+  assert.match(screen,/blockSize:'12',stroke:'3',color:'#ff5500'/);
 });
 test('history is chat scoped and displays receipts, not paths or automatic undo rights',()=>{
   assert.match(desktop,/fn lu_image_workspace_history\(/);

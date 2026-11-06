@@ -7,6 +7,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 Source-development descendant: `lu/tool-completion-preview-20261106`, based on the C/E/F checkpoint. The Image Workspace native host now offers a **volatile preview** of the operator-staged (1–12 step) deterministic image assembly using the same Lu Core transform that exports a new PNG. A read-only Tauri command requires an existing conversation and an already host-admitted image reference; it accepts no output path, authority or free-form model instruction. Native code runs off the UI thread; the renderer displays returned PNG pixels only for the exact current chat/image/steps, clearing old previews on edit. PNG preview transport is capped at 4 MiB and never creates a file, journal record, ANSF entry or tool call. New Rust and structural UI tests are present as source, **not executed**.
 
+Additional editor correction: the native-approved export of an existing staged assembly no longer fails preflight because of an unused single-step form field, and loading a new image restores the deterministic mosaic/rectangle defaults. A valid staged assembly is still validated independently by Lu Core before either preview or export.
+
 This closes the missing *edit-before-save visualization* path, not installed acceptance, provenance/identity attestation across chats, durable version graphs, source pixel provenance across OS display capture, or AI generative editing. The original remains immutable; separate native approval and no-clobber save still apply. CI, native Windows, GGUF and NSIS work remain owner-deferred.
 
 ## Latest implementation snapshot — Waves C, E, F (2026-11-06)
