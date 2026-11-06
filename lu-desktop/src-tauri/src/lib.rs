@@ -11,6 +11,7 @@ mod vision_context;
 mod observe_desktop;
 mod native_browser_host;
 mod research_desktop;
+mod image_workspace_desktop;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -954,6 +955,22 @@ fn lu_release_image(
 
 /// A diagnostic snapshot can be polled while the blocking engine load runs.
 /// It does not query the engine, acquire the model catalog lock, or expose paths.
+/// Read-only snapshot of Lu's ACTUAL supervised runtime. Never calls a
+/// shell, lists environment variables, installs drivers or grants authority.
+#[tauri::command]
+fn lu_environment_status(
+    state:State<'_,Arc<DesktopState>>
+)->Result<environment_context::EnvironmentRuntimeView,String>{
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Engine diagnostics unavailable")?;
+    let loaded=runtime.session_id.is_some()&&runtime.model_ref.is_some();
+    let catalog=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    let admitted=runtime.model_ref.as_ref().is_some_and(|id|
+        catalog.iter().any(|m|&m.model_ref==id&&m.projector_attached));
+    Ok(environment_context::runtime_view(
+        &format!("{:?}",runtime.phase),loaded,admitted))
+}
+
 /// Host-only model vision diagnostics. Catalog/projector admission alone does
 /// not prove native visual inference; no actual image probe is yet recorded.
 #[derive(Serialize)]
@@ -1227,6 +1244,61 @@ async fn lu_research_openalex(
             Err(err)
         }
     }
+}
+
+/// Human-picked new PNG only: no path or edit authority is exposed to the
+/// model. Current attachment bytes must be host-admitted and still pinned.
+#[tauri::command]
+async fn lu_image_workspace_export(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String,operation:String,
+    x:Option<u32>,y:Option<u32>,width:u32,height:u32
+)->Result<Option<image_workspace_desktop::ImageExportReceipt>,String>{
+    use lu_core::native_image_revision::ImageRevisionOperation as Operation;
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a conversation for image export")?;
+    let source=state.images.lock().map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned().ok_or("Image attachment is no longer admitted")?;
+    let edit=match operation.as_str(){
+        "crop"=>Operation::Crop{
+            x:x.ok_or("Crop requires an X coordinate")?,
+            y:y.ok_or("Crop requires a Y coordinate")?,
+            width,height
+        },
+        "resize"=>Operation::Resize{width,height},
+        _=>return Err("Only deterministic crop and resize are supported".into()),
+    };
+    let image=lu_core::native_image_revision::transform_admitted_image(
+        &source,edit
+    ).map_err(|e|format!("Invalid image revision: {e:?}"))?;
+    let proposed=format!(
+        "Create a new PNG image revision from the already attached original?\n\n\
+         Operation: {}\nOutput: {} × {} pixels\nSource image: {}\n\
+         Expected revision SHA-256: {}\n\n\
+         The original is never overwritten. Choose a NEW filename in the \
+         following OS dialog. Any existing file is rejected.",
+        operation,image.width,image.height,image_ref,image.revision_sha256
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(proposed).title("Lu — Approve image revision")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Choose new PNG file".into(),"Cancel".into()
+            )).blocking_show()
+    }).await.map_err(|_|"Native image review unavailable")?;
+    if !confirmed{return Ok(None);}
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().file().add_filter("PNG image", &["png"])
+            .set_file_name("lu-image-revision.png").blocking_save_file()
+    }).await.map_err(|_|"Native image destination picker unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let destination=selected.into_path().map_err(|_|"Image destination is not a local file")?;
+    // Recompute using the same pinned bytes after the native picker. Paths
+    // from the web/model never enter this export function.
+    tauri::async_runtime::spawn_blocking(move||
+        image_workspace_desktop::write_new_revision(&source,edit,&destination)
+    ).await.map_err(|_|"Image export worker unavailable")?.map(Some)
 }
 
 /// Native operator preference. No worker launch, model tool or network grant.
@@ -1933,12 +2005,18 @@ async fn lu_reader_pick_document(app:AppHandle)
     }).await.map_err(|_|"Native Reader worker unavailable")?
 }
 #[tauri::command]
-fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
-    ->Result<Vec<BackgroundTaskView>,String>{
+fn lu_background_tasks(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<BackgroundTaskView>,String>{
+    // Normal desktop Tasks view stays limited to the selected conversation.
+    // The renderer cannot get another conversation's task detail by
+    // asking for an arbitrary workspace ID that does not exist in ChatStore.
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a valid conversation for background tasks")?;
     state.background_processes.poll()
         .map_err(|_|"Background process status needs reconciliation")?;
-    let tasks=state.background_tasks.dashboard(100)
-        .map_err(|_|"Background task overview unavailable")?;
+    let tasks=state.background_tasks.dashboard_for_workspace(&chat_id,100)
+        .map_err(|_|"Scoped background task overview unavailable")?;
     Ok(tasks.into_iter().map(|task|BackgroundTaskView{
         task_id:task.task_id.clone(),workspace_id:task.workspace_id,
         state:task.state.as_str().to_owned(),
@@ -3927,6 +4005,8 @@ pub fn run() {
             lu_load_model,
             lu_load_diagnostics,
             lu_vision_capability,
+            lu_image_workspace_export,
+            lu_environment_status,
             lu_observe_start,
             lu_observe_status,
             lu_observe_pause,

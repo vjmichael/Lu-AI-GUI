@@ -312,3 +312,10 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **WAVE4-RESEARCH-02 SOURCE IMPLEMENTED (2026-11-06):** Added chat-scoped `research_desktop` OpenAlex discovery, host-only SHA-pinned curl binary and native operator consent; persists only DISCOVERED candidates in the existing per-chat research evidence ledger, with durable Background TaskStore receipts. UI explicitly labels all results UNVERIFIED. TOOLS-10 HTTP transport now clears inherited environment variables before calling the host-pinned binary. Default app has no reviewed curl package and refuses actual network search; production release build/provisioning, Windows native CI, live search, Crossref passage verification and model-turn research routing remain OPEN.
+
+
+**WAVE4-BACKGROUND-02 SOURCE IMPLEMENTED (2026-11-06):** Desktop Background Tasks query now requires verified active chat and uses `dashboard_for_workspace` SQL-scoped BEFORE pagination, rather than listing unrelated tasks globally. Existing supervisor, cancellation, progress and durable recovery unchanged. CI/installed acceptance pending.
+
+**WAVE4-ENV-02 SOURCE IMPLEMENTED (2026-11-06):** Native runtime diagnostics return supervised engine phase/session, admitted model/MMProj and desktop version without shell/env dumps. Actual GPU/backend and live image reasoning remain explicitly UNVERIFIED. Tests added to existing Environment suite; native acceptance pending.
+
+**WAVE4-IMAGE-WS-02 SOURCE IMPLEMENTED (2026-11-06):** New Lu Core deterministic PNG crop/resize of already admitted image bytes with image dimension/pixel/size/digest bounds; native Tauri explicit approval and OS Save dialog select a NEW file; immutable create_new write, sync/readback SHA-256 receipt and React numeric UI. No source overwrite, arbitrary paths, model image-edit tools or unrestricted filesystem authority. Full revision journal/undo, annotation, semantic editing, crash recovery and installed acceptance OPEN.

@@ -37,6 +37,7 @@ jobs:
       - run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision::tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
@@ -62,6 +63,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision::tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
@@ -116,3 +118,4 @@ jobs:
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib research_desktop::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib image_workspace_desktop::tests

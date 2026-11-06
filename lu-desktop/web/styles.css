@@ -276,3 +276,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .researchResults ul{max-height:260px;overflow:auto;margin:0;padding-left:20px;}
 .researchResults li{margin:8px 0;display:grid;gap:4px;}
 .researchResults small{overflow-wrap:anywhere;}
+
+/* WAVE4 Image Workspace — optional native immutable crop/resize export. */
+.imageRevisionForm{display:grid;gap:8px;padding:10px;border:1px solid var(--border,#546);
+ border-radius:8px;max-height:30vh;overflow:auto;}
+.imageRevisionForm label{display:grid;gap:3px;font-size:12px;}
+.imageRevisionDimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.imageRevisionForm input{max-width:100%;min-width:0;}
+.imageRevisionForm button{justify-self:start;}

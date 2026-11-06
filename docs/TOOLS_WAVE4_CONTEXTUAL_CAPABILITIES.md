@@ -77,3 +77,13 @@ The original read-only model Browser tool and structured citation-safe Research 
 ### WAVE4-RESEARCH-02 — human-approved OpenAlex discovery (source implementation)
 
 The Tauri host now exposes a `lu_research_openalex` command that requires a current, existing chat and a separate native approval dialog before an OpenAlex search. Only a **bundled, SHA-256-pinned** HTTPS client may execute; the default build does not include one and reports `lu_research_available=false`. The request uses TOOLS-10's SSRF-resistant public HTTPS adapter (now clears inherited environment variables) and records each source as `DISCOVERED` in a per-chat WAL-backed EvidenceLedger. UI results are unverified leads, not citations. Each search uses the existing durable TaskStore lifecycle; the host does not silently invoke a model. The pinned network runtime, live Windows/Linux search, Crossref corroboration and full-text passage verification remain OPEN for installed acceptance.
+
+
+### WAVE4-BACKGROUND-02 — chat-scoped desktop status (source)
+Normal Background Tasks now require an actual existing conversation ID and query the task ledger using SQL workspace filtering *before* the LIMIT. The UI passes only the selected chat. Model context already admits only task ID, enum and progress. Global operator task inventory no longer leaks unrelated chat task text into a regular conversation's panel. Native/React CI remains pending.
+
+### WAVE4-ENV-02 — supervised runtime evidence (source)
+Native `lu_environment_status` returns Lu desktop version/OS/architecture and **actual** current engine phase plus MMProj catalog admission, but intentionally marks GPU execution and visual reasoning UNVERIFIED until a real host-owned execution probe demonstrates them. No arbitrary env vars, subprocesses, package installs or permission changes; the native API is read-only.
+
+### WAVE4-IMAGE-WS-02 — deterministic immutable new-version crop/resize (source)
+Image Workspace now has bounded deterministic PNG crop and resize from Lu's existing host-admitted PNG/JPEG bytes, **native operator approval and OS save dialog** and a `create_new` filesystem write that cannot overwrite the original or another existing file. An output digest and dimensions are reported after reopening/rechecking the new PNG. User-provided geometry is revalidated in Lu Core; arbitrary image/model edits and paths are rejected. React's preview offers numeric crop/resize and shows the saved version receipt. This is not the full image editor: pixel masks, annotations, true semantic edit model, persistent revision graph/undo, crash-recovery journal and installed Windows acceptance remain OPEN.

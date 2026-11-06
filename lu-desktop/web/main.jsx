@@ -29,7 +29,10 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
-  const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
+  const [imageViewer,setImageViewer] = useState(null);
+  const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:''});
+  const [imageExportBusy,setImageExportBusy]=useState(false);
+  const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
   const [observeNotes,setObserveNotes] = useState([]);
@@ -292,6 +295,30 @@ function App() {
     invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'})
       .then(v=>setObserveView(v)).catch(()=>{});
   },[chatId,error,observeView.mode]);
+  async function exportImageRevision(){
+    if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
+    const width=Number(imageEdit.width),height=Number(imageEdit.height);
+    const x=Number(imageEdit.x),y=Number(imageEdit.y);
+    if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
+       width<1||height<1||width>8192||height>8192||
+       width*height>32000000||
+       (imageEdit.mode==='crop'&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
+           x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))){
+      setError('Choose valid image dimensions or a crop region within the original.');
+      return;
+    }
+    setImageExportBusy(true);
+    setImageExportReceipt(null);
+    try{
+      const saved=await invoke('lu_image_workspace_export',{
+        chatId,imageRef:imageViewer.imageRef,operation:imageEdit.mode,
+        x:imageEdit.mode==='crop'?x:null,y:imageEdit.mode==='crop'?y:null,
+        width,height
+      });
+      if(saved)setImageExportReceipt(saved);
+    }catch(e){setError(String(e));}
+    finally{setImageExportBusy(false);}
+  }
   async function observeCaptureOneShot(){
     if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
     setCaptureStarting(true);
@@ -383,7 +410,8 @@ function App() {
   }
   async function refreshBackgroundTasks() {
     try {
-      const items=await invoke('lu_background_tasks');
+      if(!chatId){setBackgroundTasks([]);return;}
+      const items=await invoke('lu_background_tasks',{chatId});
       setBackgroundTasks(Array.isArray(items)?items:[]);
       setBackgroundError('');
     } catch (error) {
@@ -399,7 +427,7 @@ function App() {
     // Future host event pushes can replace this lightweight refresh.
     const timer=setInterval(refresh,2500);
     return ()=>{alive=false;clearInterval(timer);};
-  },[backgroundPaneOpen]);
+  },[backgroundPaneOpen,chatId]);
 
   async function refreshChats() {
     const list = await invoke('lu_chats');
@@ -2780,13 +2808,20 @@ function App() {
       <section className="imageViewerDialog" role="dialog" aria-modal="true"
         aria-label="Image Workspace preview" onClick={e=>e.stopPropagation()}>
         <header>
-          <strong>Image Workspace · read-only preview</strong>
+          <strong>Image Workspace · original and immutable revision export</strong>
           <button type="button" aria-label="Close image preview"
             onClick={()=>setImageViewer(null)}>×</button>
         </header>
         <small>{viewedDraftImage.name||'Attached image'} · {viewedDraftImage.detectedMimeType||viewedDraftImage.mimeType||'Verified image'}</small>
         <div className="imageViewerViewport" aria-label="Zoomable original draft image">
           <img src={viewedDraftImage.previewUrl} alt="Original attached image, unmodified"
+            onLoad={e=>{
+              const width=e.currentTarget.naturalWidth,height=e.currentTarget.naturalHeight;
+              setImageViewer(v=>v&&v.imageRef===viewedDraftImage.imageRef
+                ?({...v,width,height}):v);
+              setImageEdit({mode:'resize',x:'0',y:'0',width:String(width),height:String(height)});
+              setImageExportReceipt(null);
+            }}
             style={{transform:'scale('+imageViewer.zoom+')'}}/>
         </div>
         <footer>
@@ -2797,7 +2832,38 @@ function App() {
             onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.min(3,+(v.zoom+0.25).toFixed(2))}))}>Zoom in</button>
           <button type="button" onClick={()=>setImageViewer(null)}>Close</button>
         </footer>
-        <small>Original image only. Crop, resize, annotations and AI edits are not enabled until native revision and approval support is verified.</small>
+        <div className="imageRevisionForm" aria-label="Deterministic image revision export">
+          <small>Original stays unchanged. Native approval and a NEW PNG destination are required.
+            No AI edits, annotations, masks, undo or automatic image overwrite.</small>
+          <label>Operation
+            <select value={imageEdit.mode} disabled={imageExportBusy}
+              onChange={e=>setImageEdit(v=>({...v,mode:e.target.value}))}>
+              <option value="resize">Resize</option>
+              <option value="crop">Crop</option>
+            </select>
+          </label>
+          {imageEdit.mode==='crop'&&<div className="imageRevisionDimensions">
+            <label>X <input type="number" min="0" value={imageEdit.x}
+              onChange={e=>setImageEdit(v=>({...v,x:e.target.value}))}/></label>
+            <label>Y <input type="number" min="0" value={imageEdit.y}
+              onChange={e=>setImageEdit(v=>({...v,y:e.target.value}))}/></label>
+          </div>}
+          <div className="imageRevisionDimensions">
+            <label>Width <input type="number" min="1" max="8192" value={imageEdit.width}
+              onChange={e=>setImageEdit(v=>({...v,width:e.target.value}))}/></label>
+            <label>Height <input type="number" min="1" max="8192" value={imageEdit.height}
+              onChange={e=>setImageEdit(v=>({...v,height:e.target.value}))}/></label>
+          </div>
+          <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
+            onClick={()=>void exportImageRevision()}>
+            {imageExportBusy?'Awaiting native approval…':'Save new PNG revision…'}
+          </button>
+          {imageExportReceipt&&<small role="status">
+            New image version saved: {imageExportReceipt.fileName} ·
+            {imageExportReceipt.width} × {imageExportReceipt.height} ·
+            SHA-256 {imageExportReceipt.revisionSha256}. Original retained.
+          </small>}
+        </div>
       </section>
     </div>}
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}

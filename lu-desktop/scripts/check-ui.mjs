@@ -7,6 +7,19 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Image Workspace only exports immutable native-approved PNG revisions from host-pinned images',
+    host.includes('async fn lu_image_workspace_export(') &&
+    host.includes('native_image_revision::transform_admitted_image') &&
+    host.includes('blocking_save_file()') &&
+    ui.includes("invoke('lu_image_workspace_export',{") &&
+    ui.includes('Original stays unchanged') &&
+    css.includes('.imageRevisionForm')],
+  ['Background task view is scoped to an existing selected chat before querying SQLite',
+    host.includes('dashboard_for_workspace(&chat_id,100)') &&
+    ui.includes("invoke('lu_background_tasks',{chatId})")],
+  ['Runtime Environment diagnostics never claim unproven vision or GPU inference',
+    host.includes('fn lu_environment_status(') &&
+    host.includes('environment_context::runtime_view(')],
   ['Research OpenAlex discovery is human-approved, per-chat, and never represented as verified citations',
     host.includes('async fn lu_research_openalex(') &&
     host.includes('fn lu_research_available(') &&
