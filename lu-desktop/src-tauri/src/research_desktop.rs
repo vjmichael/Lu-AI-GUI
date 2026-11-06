@@ -226,6 +226,17 @@ fn claim_view(
         reason_codes:row.reason_codes.into_iter().map(str::to_owned).collect(),
     }
 }
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchReportExportView{
+    pub saved_path:String,
+    pub format:String,
+    pub saved_sha256:String,
+    pub distinct_sources:usize,
+    pub checked_passages:usize,
+    pub interpretation_verified:bool,
+    pub message:&'static str,
+}
 pub(crate) struct ResearchDesktop{
     root:PathBuf,
     curl:PathBuf,
