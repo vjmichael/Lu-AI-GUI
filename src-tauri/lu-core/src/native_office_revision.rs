@@ -21,9 +21,9 @@ use zip::{ZipArchive,ZipWriter,write::SimpleFileOptions,CompressionMethod};
 use crate::native_atomic_write::{
     create_new_atomic_in_dir,AtomicWriteError,WriteReceipt,
 };
-const MAX_PACKAGE:usize=1024*1024;
-const MAX_PARTS:usize=256;
-const MAX_PART:usize=512*1024;
+const MAX_PACKAGE:usize=12*1024*1024;
+const MAX_PARTS:usize=2048;
+const MAX_PART:usize=8*1024*1024;
 const MAX_TEXT:usize=32_768;
 #[derive(Debug,Clone,PartialEq)]
 pub enum OfficeRevisionEdit {
