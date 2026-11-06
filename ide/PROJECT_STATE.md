@@ -9,8 +9,8 @@
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
 **Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/wave-c-development-truth-20261105` (isolated draft PR #47; not merged into workspace-development)  
-**Last inspected implementation source SHA:** `dbaa04ff41a6c1c20367f88f6c2455af47843370`  
-**Current source validation:** [PR #47 exact-source CI run 42143391542](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143391542) queued/running at last inspection. Prior [run 42143131954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143131954) passed frontend but **failed Linux** Rust E0308 (`cap_std::time::SystemTime` vs `std::time::SystemTime`). Fixed in source `dbaa04ff`; new cross-platform acceptance pending. No installed Windows acceptance.
+**Last inspected implementation source SHA:** Prior C3 source commit `d6bdca75953ab63579be5d071ec706effe4c6771`; inspect latest [draft PR #47](https://github.com/vjmichael/Lu-AI-GUI/pull/47) HEAD for the current source and exact-head validation.
+**Current source validation:** Wave C3 source and tests committed; exact-head Linux/frontend/Windows checks and installed Windows clipboard acceptance **pending**. First C3 matrix [42145655561](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42145655561) queued after prior source. A subsequent race-state cleanup supersedes it; inspect the final PR HEAD, not prior runs.
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 

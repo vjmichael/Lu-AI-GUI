@@ -82,6 +82,8 @@ function App() {
     setResourceProbe(null);
     contextRequest.current += 1;
     checkpointRequest.current += 1;
+    setContextBusy(false);
+    setCheckpointBusy(false);
     setProjectContext(null);
     setInventoryComparison(null);
     setGitStatus(null);
