@@ -1,0 +1,51 @@
+name: IDE D7D protected recovery service (Windows)
+on:
+  push:
+    branches:
+      - ide/wave-d7d-protected-windows-recovery-service-20261106
+  pull_request:
+    paths:
+      - "ide/supervisor/**"
+      - ".github/workflows/ide-d7d-protected-service.yml"
+  workflow_dispatch:
+
+jobs:
+  native-windows-service:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native Windows compile and Rust tests
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup override set 1.88.0
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --all-targets
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --lib
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --bin windows_recovery_service --bin d7d_service_smoke_fixture
+      - name: Real SCM LocalService identity and IPC acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $service=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
+          $hostExe=(Resolve-Path 'ide/supervisor/target/debug/d7d_service_smoke_fixture.exe').Path
+          $serviceHash=(Get-FileHash -LiteralPath $service -Algorithm SHA256).Hash
+          $hostHash=(Get-FileHash -LiteralPath $hostExe -Algorithm SHA256).Hash
+          try {
+            & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' -ServiceExecutable $service -ExpectedServiceSha256 $serviceHash -ApprovedHostExecutable $hostExe -ExpectedHostSha256 $hostHash -CiAcceptanceUnsigned -Start
+            if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "service installation failed: $LASTEXITCODE" }
+            & sc.exe queryex LuIdeRecoveryBroker
+            if ($LASTEXITCODE -ne 0) { throw 'service query denied' }
+            & $hostExe $service $serviceHash
+            if ($LASTEXITCODE -ne 0) { throw 'real Windows service admission failed' }
+          } finally {
+            & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+          }
+      - name: Ensure production desktop integration remains disabled
+        shell: pwsh
+        run: |
+          $core=Get-Content -Raw 'ide/supervisor/src/lib.rs'
+          if ($core -match 'tauri::command') { throw 'DENIED: unauthorized desktop command' }
+          Write-Host 'PASS: protected service remains native-only'
