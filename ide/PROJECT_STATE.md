@@ -1,9 +1,62 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### D1 first-head CI repairs
+- Initial D1 frontend workflow had 55 passing tests, one failing contract test: an existing static parser mistook the Tauri-managed `intents` state handle for an external request field. Filtered `intents` as host state; the JSON schema still accepts only `projectId` and `recipeId` for prepare.
+- Initial Linux native host suite compiled and tested successfully, then failed formatting only in the new `execution_intents.rs`. Applied **all 34 actual rustfmt hunks** from the exact CI job log and made the fixed recipe array `static`. Exact-head rerun required; not yet proven on revised source.
+- Windows desktop compilation and continuity gate on the prior head are not a substitute for latest-head acceptance; installed physical Windows UI remains unverified.
+
+
+## Wave D1 — Host-authorized execution-intent protocol (2026-11-05)
+
+- **Implementation branch:** `ide/wave-d1-execution-intent-20261105`, stacked on C6 PR #50 exact SHA `c403a8ba47d6ac1662b8627ce5ab34a9a16b591e`. C6 source CI passed Linux, frontend, Windows Tauri, and continuity on that SHA; installed Windows app acceptance remains separately unverified. Do not merge D1 before C6 and its C3/C4/C5 ancestors.
+- **D1 scope:** Native `execution_intents.rs` defines a host-owned, append-only, private `execution-intents.jsonl` journal. Three typed operations: `job.prepare`, `job.review`, and `job.list`. The human-facing **Job requests** view records and reviews intentions, not execution. Fixed allowlisted Rust check/test recipes only; no model-supplied commands, file paths, arguments, environment variables or executable launch path.
+- **Preconditions:** a registered active Git project, clean observed HEAD and no tracked/untracked modifications, known fixed `Cargo.toml` or `ide/host/Cargo.toml` manifest with bounded SHA-256 digest and symlink/reparse checks. Preparation expires in 120 seconds, is scoped to one IDE session, and records opaque native IDs. Recording review re-reads source SHA and manifest digest; changing project/source/session or expiration blocks approval. A previous review can be withdrawn; no reusable grant is minted.
+- **Effects and recovery:** Journal appends are mutex-serialized, bounded, synced, and checked for valid monotonic transitions. Corrupt/truncated journals fail closed; on restart, unreviewed preparations require fresh review. There is **no process spawn**, no worker, no OS containment assertion, no execution token, no Git mutation and no Lu Core bridge. Approval notes are not execution authority. Required Windows Job Object/Linux cgroup containment, worker budgets, kill/recovery tests, and signed effect receipts remain **Wave D2+ gates**, not complete.
+- **Verification:** Native Rust journal tests and frontend type/schema/UI checks added. Exact-head D1 Linux, Windows, frontend and continuity acceptance are PENDING; physical installed Windows UI checks remain unverified. The project root/Delivered folder on the user's physical machine is not inspected.
+
+
+## Wave C6 — Task evidence and development ledger integration (2026-11-05)
+
+- **Source branch:** `ide/wave-c6-task-ledger-20261105`, stacked on exact C5 source `1dd4a58d84d6bc5f383f75e463b15f82baea6de8` (C5 PR #49). Earlier C3/C4 are passing native/frontend/continuity GitHub CI on their own heads, but no physical installed Windows acceptance. The standalone IDE and Lu Core remain independent.
+- **One private ledger:** C6 extends existing `development-ledger.jsonl` events with an optional, strictly typed task payload and host-owned task materialization. Legacy events remain readable; a task change appends a new event and never rewrites old history. Snapshot of local Git HEAD and dirty state is captured by the host at task update time.
+- **Human task claims:** native `task.update`/`ide_record_task_update` supports bounded task IDs/titles/next actions, status `planned | in_progress | blocked | ready_for_review`, and user-selected gates `source_review | exact_head_ci | installed_windows | human_approval`. No `completed` input is allowed. Maximum 64 tasks per registered project.
+- **CI-linked evidence:** `task.ciObserve`/`ide_observe_task_ci` independently invokes the trusted exact-HEAD public GitHub inspector, binds its bounded summary to the *latest* human task event ID and current source commit, and appends a separate observation. The frontend never supplies the CI verdict, workflow IDs, credentials, Git SHA or any acceptance claim. An intervening task edit or changed HEAD invalidates the old CI link.
+- **Evidence gates:** host projects per-task gate statuses. Successful commit CI can produce `commit_ci_passed_not_task_accepted`; it never proves unsaved buffers, installed Windows UI, a human source review, or final task acceptance. The Continuity UI supports task updates and explicit CI observation, while the portable checkpoint exports only task IDs, statuses, commit/evidence coordinates and explicit unknowns (no task title or private next-action text).
+- **Security:** app-profile-only append under one mutex, no project file mutation, no arbitrary process execution, no Lu runtime bridge. Native test fixtures and Node frontend contract/privacy tests added. **Verification:** exact-head C6 Linux, Windows, frontend and continuity CI not yet accepted; physical installed Windows UI and actual live public CI lookup in an installed app remain open.
+
+
+## Wave C5 — Exact-head CI receipts (2026-11-05)
+
+- **Implementation branch:** `ide/wave-c5-exact-ci-evidence-20261105`, stacked on C4 commit `ca606dfb378ce31945a768a23e9ab6a31cbe60e8`. C3 PR #47 and C4 PR #48 remain independent/open pending acceptance; do not merge C5 before dependencies.
+- **Source implementation:** `host/src/github_ci.rs` read-only public GitHub Actions inspector and typed `git.ciExactHead` host capability/`ide_read_exact_head_ci` Tauri command. An explicit user click queries only `https://api.github.com` for the active registered Git project's validated origin and exact local HEAD SHA. No cookies, tokens, shell, Git fetch/push, source writes or background polling.
+- Workflow receipts check the *specific* `ide-standalone.yml` (required: host-linux, frontend, desktop-windows) and `ide-continuity.yml` (required: continuity) workflow paths, matching run head SHA, matching job head SHA when present, completion and success. Missing/duplicate jobs, partial responses, failure/pending runs or local HEAD changes never count as passing. Unknown origin, private repo/rate limits, absence of runs and incomplete evidence remain explicit.
+- Human Source control view has **Check exact HEAD CI**. C4 evidence matrix and C3 Copy development checkpoint accept only cached, explicit, current SHA-bound CI receipt metadata; copying has **no** additional network request. Dirty worktree/unsaved drafts, installed Windows application, toolchain usability and individual task completion **remain unverified** by CI.
+- **Implementation verification status:** Rust pure fixture tests and Node regression tests added; exact-head Linux/frontend/Windows CI and installed Windows UI acceptance **PENDING**, not passed at authoring. No new installer claimed; local machine's Deliverables/resources uninspected.
+
+### C4 frontend CI regression repair (2026-11-05)
+- Earlier C3 exact-head run 42145804942: Linux native and Windows desktop succeeded, frontend failed a **test-only** capability-registry regex expecting same-line Rust macro arguments. Updated the contract assertion to support multiline rustfmt and require 24 nonempty commands. Direct catalog/Tauri parity: 24=24, no missing or duplicate commands.
+- Wave C3 source was separately repaired at `efe731d874e11309f4646d150827a723ed9932f7`. This C4 stacked branch carries the same test repair independently. Latest C4 exact-head CI, installed Windows UI acceptance and toolchain execution remain open.
+
+## Wave C4 — Development evidence reconciliation (2026-11-05)
+
+- **Implemented in source on independent branch** `ide/wave-c4-evidence-reconciliation-20261105`, based on exact Wave C3 SHA `2572fa445d31d265b0ef27ef52a1dd4a09156326`. No Lu bridge or executable worker.
+- A pure `development_reconciliation.js` derives ten human-readable evidence classifications from the existing native project context + inventory comparison. The Continuity screen labels local Git, stored upstream, live remote (not queried), bounded artifacts, historical baseline, project task claims (unverified), host events, native CI, installed app, and toolchain usability separately.
+- A clean observed Git tree or matching SHA never implies source build success or installer acceptance. Unknown/mixed project IDs fail closed; incomplete scans and truncated paths remain explicit. Project-authored document text is never used as authoritative task completion.
+- The human Copy development checkpoint export embeds the conservative matrix; no new Tauri capabilities/permissions or project writes. JS tests cover contradictory Git state, changed/missing bytes, incomplete scan, absence of CI evidence, privacy and UI wiring.
+- **Verification:** source committed but full latest-head native Linux/frontend/Windows CI and installed Windows GUI acceptance pending. No package or CI receipt claimed for C4 at authoring. Worktree/Delivered on the user's Windows device remains uninspected.
+
+
+## Wave C3 — Portable development checkpoint (2026-11-05)
+
+- **Implemented in source on draft PR #47:** Human **Copy development checkpoint** in Continuity performs fresh parallel native context and inventory comparison reads for the exact currently selected registered project and copies bounded versioned JSON. Project IDs must match both host responses; switching projects invalidates pending requests and any stale continuity UI. Clipboard failure is surfaced, not treated as success.
+- Captures local Git HEAD/branch/dirty counts and stored tracking evidence, bounded artifact SHA/size/status, baseline changes, recent event IDs/saved revisions, and orientation document revision IDs. Omits source and note excerpts, event summaries, private absolute roots, credentials, executable work and live GitHub content. Limits and unknown states are explicit. **Two reads are not an atomic transaction**; copy time is not evidence time.
+- New pure helper and Node tests: `app/web/development_checkpoint.js`, `app/tests/development_checkpoint.test.mjs`. Local isolated Node helper tests passed (3) before repo integration; full frontend/Windows CI and installed Windows copy UI still pending at PR head.
+- Latest verified predecessor commit before this checkpoint: `26040e8331f5a5b8053f4af8248a88d9d551f04f`; new source SHA must be taken from GitHub after publication, not inferred. Local user's checkout/Delivered still not inspected. Lu bridge remains deferred.
+
 **Observed date:** 2026-11-05 (America/Phoenix)  
-**Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `a372bc7ec6c054fc28be825203ea00c94bcfd211`  
-**Current source validation:** Wave B1 source has triggered [CI 42130813013](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42130813013) (pending at last inspection). Older [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605) passed Windows native host + Tauri checks at SHA `b39c6267` before new commits; remaining matrix may be superseded. **No latest exact-source CI acceptance yet.**
+**Repo:** `vjmichael/Lu-AI-GUI` · **Working branch:** `ide/wave-c4-evidence-reconciliation-20261105` (stacked on Wave C3 PR #47; unmerged). Wave C3 remains on `ide/wave-c-development-truth-20261105`.  
+**Last inspected implementation source SHA:** Prior C3 source commit `d6bdca75953ab63579be5d071ec706effe4c6771`; inspect latest [draft PR #47](https://github.com/vjmichael/Lu-AI-GUI/pull/47) HEAD for the current source and exact-head validation.
+**Current source validation:** Wave C3 source and tests committed; exact-head Linux/frontend/Windows checks and installed Windows clipboard acceptance **pending**. First C3 matrix [42145655561](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42145655561) queued after prior source. A subsequent race-state cleanup supersedes it; inspect the final PR HEAD, not prior runs.
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -21,6 +74,8 @@
 | A3 bounded local artifact and toolchain-candidate inventory | **Implemented in source** | CI on latest source pending | Installed acceptance open |
 | A3 persistent snapshot and compare | **Implemented in source** | Native regression fixtures added; CI pending | Installed acceptance open |
 | A3 native local Git dirty/untracked inspection | **Implemented in source** | Exact-head CI pending | Windows UI open |
+| Wave C1 local staged/unstaged Git diff/history | **Implemented on isolated branch** | CI pending | Installed UI open |
+| Wave C2 targeted resource SHA probe | **Implemented on isolated branch** | CI pending | Installed UI open |
 | A3 full live GitHub and external toolchain reconciliation | **Not implemented** | Not tested | Open |
 | Live Lu connector, worker execution, LSP/build/test/package | **Deferred/not implemented as IDE runtime** | Not tested | Open |
 
@@ -29,6 +84,19 @@
 - **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
 - Host-created, versioned descriptors for **21 existing** project, source, review, save, proposal, continuity, inventory and Git/GitHub operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
+
+## Wave C — Development truth (independent source implementation)
+
+- [Draft PR #47](https://github.com/vjmichael/Lu-AI-GUI/pull/47), source repair SHA `dbaa04ff`. First-run [42143131954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143131954) frontend passed, Linux failed E0308 in resource timestamp conversion. Converted cap-std time to std time before Unix offset; new exact-source [42143391542](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143391542) pending. Native Rust/Windows launch and user acceptance remain open.
+
+
+- Isolated feature branch `ide/wave-c-development-truth-20261105` while Wave B PRs remain in their own GitHub acceptance queues. **Do not mark the completed Wave B source work as Windows-accepted yet.**
+- Implemented `host/src/git_evidence.rs` to inspect staged/unstaged local Git patch text and 30 local commits, bounded to 64 KiB of patch and 80 changed files. It refuses parent repository inspection, excludes untracked *contents* from patch, performs no Git command or mutation, and labels remote state as `not_queried`.
+- Added typed `git.diff` and `git.history` and an explicit human **Inspect diff and history** action in Source control.
+- Implemented `host/src/resource_probe.rs` for exact relative-path SHA-256 and metadata under the registered project. Missing/oversized/not-regular/changed files are not mislabeled as verified. **Executable readiness remains not tested**; no shell, package install or Lua/Lu bridge.
+- Added typed `resource.probe` and a **Recheck file bytes** button in Continuity. The registry now describes **24 native operations** with typed schema parity verified structurally (24 descriptors / 24 schemas / 25 registered handlers including discovery).
+- Native fixture tests cover Git patch separation, bounded history, root isolation, symlink and traversal, resource SHA and missing/over-limit cases. Frontend contract tests and isolated PR CI trigger added. Full semantics: [Wave C development truth](docs/IDE_WAVE_C_DEVELOPMENT_TRUTH.md).
+- **Acceptance status:** source implemented; exact-head Linux/frontend/Windows CI and installed Windows UI remain open. No global executable toolchain inspection, authenticated private remote comparison, or real worker execution claimed.
 
 ## Wave B1 — Human Find and Replace (source implemented, exact-head CI open)
 
