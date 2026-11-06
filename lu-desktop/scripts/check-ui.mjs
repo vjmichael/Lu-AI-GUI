@@ -46,6 +46,17 @@ const tests = [
     host.includes('archive_reviews: archive_desktop::ArchiveReviewQueue') &&
     host.includes('app.dialog().message(modal)') &&
     host.includes('state.archive_reviews.consume(')],
+  ['structured DOCX/PPTX writer uses complete draft review and a separate native confirmation',
+    ui.includes("invoke('lu_review_document_create'") &&
+    ui.includes("invoke('lu_confirm_document_create'") &&
+    ui.includes("invoke('lu_deny_document_create'") &&
+    ui.includes('documentCreateReview.content') &&
+    ui.includes('disabled={!documentCreateReviewed || documentCreateBusy}') &&
+    host.includes('fn lu_review_document_create(') &&
+    host.includes('fn lu_confirm_document_create(') &&
+    host.includes('fn lu_deny_document_create(') &&
+    host.includes('document_create_reviews: document_create_desktop::DocumentCreateQueue') &&
+    host.includes('state.document_create_reviews.consume(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
