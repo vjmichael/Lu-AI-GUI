@@ -31,12 +31,14 @@ pub enum TreeExtractError{
     TooLarge,TargetExists,ManifestChanged,MissingSource,
     Cancelled,PublishedNeedsReconciliation,Io(String),
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TreeManifestEntry{
     pub path:String,pub is_directory:bool,pub uncompressed_bytes:u64,
     pub sha256:String,
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TreeManifest {
     pub entries:Vec<TreeManifestEntry>,
     pub file_count:usize,
@@ -77,6 +79,64 @@ fn safe_part(s:&str)->bool{
 }
 fn valid_hash(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
+}
+fn manifest_digest(entries:&[TreeManifestEntry])->String{
+    let mut hasher=Sha256::new();
+    hasher.update(b"LU-ARCHIVE-TREE-MANIFEST-v1");
+    for entry in entries{
+        for field in [
+            entry.path.as_bytes(),
+            if entry.is_directory{b"D".as_slice()}else{b"F".as_slice()},
+            entry.sha256.as_bytes(),
+        ]{
+            hasher.update((field.len() as u64).to_le_bytes());
+            hasher.update(field);
+        }
+        hasher.update(entry.uncompressed_bytes.to_le_bytes());
+    }
+    format!("{:x}",hasher.finalize())
+}
+/// Validates a persisted approved snapshot without opening any filesystem
+/// object. A digest or completion-marker string alone cannot certify a tree.
+pub fn verify_tree_manifest(m:&TreeManifest)->bool{
+    if m.entries.is_empty()||m.entries.len()>MAX_ENTRIES||!valid_hash(&m.sha256)
+        ||m.file_count>MAX_ENTRIES||m.total_bytes>MAX_TOTAL as u64 {
+        return false
+    }
+    let mut names=BTreeSet::new();
+    let mut types=BTreeMap::<String,bool>::new();
+    let mut count=0usize;
+    let mut total=0u64;
+    let mut prior:Option<&str>=None;
+    for e in &m.entries{
+        if !safe_part(&e.path)||prior.is_some_and(|p|p>=e.path.as_str())
+            ||!names.insert(e.path.to_lowercase()) {
+            return false
+        }
+        if e.is_directory{
+            if e.uncompressed_bytes!=0||!e.sha256.is_empty(){return false}
+        }else{
+            if !valid_hash(&e.sha256)||e.uncompressed_bytes>MAX_FILE as u64{
+                return false
+            }
+            count+=1;
+            let Some(sum)=total.checked_add(e.uncompressed_bytes)else{return false};
+            total=sum;
+        }
+        types.insert(e.path.to_lowercase(),e.is_directory);
+        prior=Some(&e.path);
+    }
+    for e in &m.entries{
+        let mut prefix=String::new();
+        let components:Vec<_>=e.path.split('/').collect();
+        for part in &components[..components.len().saturating_sub(1)]{
+            if !prefix.is_empty(){prefix.push('/')}
+            prefix.push_str(part);
+            if types.get(&prefix.to_lowercase())==Some(&false){return false}
+        }
+    }
+    count==m.file_count&&total==m.total_bytes&&
+        manifest_digest(&m.entries)==m.sha256
 }
 fn package_zip(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<Vec<Node>,TreeExtractError>{
     cancel.checkpoint()?;
@@ -241,20 +301,7 @@ fn manifest_and_nodes(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<(
     }
     // Domain-separated canonical manifest digest of the entire exact tree.
     entries.sort_by(|a,b|a.path.cmp(&b.path));
-    let mut hasher=Sha256::new();
-    hasher.update(b"LU-ARCHIVE-TREE-MANIFEST-v1");
-    for entry in &entries{
-        for field in [
-            entry.path.as_bytes(),
-            if entry.is_directory{b"D".as_slice()}else{b"F".as_slice()},
-            entry.sha256.as_bytes(),
-        ]{
-            hasher.update((field.len() as u64).to_le_bytes());
-            hasher.update(field);
-        }
-        hasher.update(entry.uncompressed_bytes.to_le_bytes());
-    }
-    let digest=format!("{:x}",hasher.finalize());
+    let digest=manifest_digest(&entries);
     Ok((TreeManifest{
         entries,file_count:count,total_bytes:total,sha256:digest,
     },items))
@@ -367,7 +414,7 @@ pub fn extract_archive_tree_new_cancellable(
 pub fn observe_tree_completion(
     parent:&Dir,folder_name:&str,approved:&TreeManifest,
 )->Result<bool,TreeExtractError>{
-    if !safe_base(folder_name)||!valid_hash(&approved.sha256){
+    if !safe_base(folder_name)||!verify_tree_manifest(approved){
         return Err(TreeExtractError::InvalidName)
     }
     // Interruption before directory creation, or before the last durable marker,

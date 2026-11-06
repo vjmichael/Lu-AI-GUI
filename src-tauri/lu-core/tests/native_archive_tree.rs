@@ -137,3 +137,18 @@ fn cancelled_archive_does_not_destroy_existing_target(){
     assert_eq!(fs::read(root.join("existing/owned.txt")).unwrap(),b"keep me");
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn approved_manifest_snapshot_rejects_changed_digest_or_unsafe_children(){
+    let (root,dir)=fixture();
+    archive(&root,"input.zip",false);
+    let mut approved=preview_archive_tree(&dir,"input.zip").unwrap();
+    assert!(lu_core::native_archive_tree::verify_tree_manifest(&approved));
+    approved.entries[0].path="../escape.txt".into();
+    assert!(!lu_core::native_archive_tree::verify_tree_manifest(&approved));
+    let approved=preview_archive_tree(&dir,"input.zip").unwrap();
+    let mut changed=approved.clone();
+    changed.entries[0].uncompressed_bytes+=1;
+    assert!(!lu_core::native_archive_tree::verify_tree_manifest(&changed));
+    assert!(observe_tree_completion(&dir,"missing",&changed).is_err());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}

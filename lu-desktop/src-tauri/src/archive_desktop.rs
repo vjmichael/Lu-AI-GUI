@@ -194,6 +194,7 @@ impl PinnedArchiveReview{
         }
     }
     pub fn view_for_modal(&self)->ArchiveReviewView{self.view()}
+    pub fn approved_manifest(&self)->&TreeManifest{&self.manifest}
     pub fn same_as(&self,other:&Self)->bool{self.same_identity(other)}
     fn same_identity(&self,other:&Self)->bool{
         self.chat_id==other.chat_id&&self.review_id==other.review_id

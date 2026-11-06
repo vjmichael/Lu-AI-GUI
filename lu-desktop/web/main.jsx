@@ -1627,6 +1627,8 @@ function App() {
               <small>Approved SHA-256: {operation.approvedSha256}</small>
               <small>Effect ID: {operation.effectCallId}</small>
               <small>{operation.assessment}</small>
+              {operation.targetIntegrity && operation.targetIntegrity !== 'NOT_RECHECKED' &&
+                <small>Current output integrity: {operation.targetIntegrity}</small>}
               {!operation.receiptMatched &&
                 <small>Do not automatically retry. Reconcile the filesystem and journal first.</small>}
             </div>

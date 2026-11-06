@@ -71,3 +71,8 @@ Upstream API and licensing references:
 - Explicit pre-publication archive cancellation is recorded as FAILED only for the trusted Lu archive extractor and only for its dedicated OPERATION_CANCELLED signal. All unknown native failures and every possible partial publication remain UNCERTAIN; neither state permits replay.
 - 7z/RAR libarchive decode checks the host cancellation flag between native header and data chunks, with source reading in bounded cancellable chunks. No hostile decoder is assumed to support preemption inside one native C call.
 - Desktop archive extraction concurrency is restricted to one active approved operation to bound expanded-memory pressure. Interrupted staging cleanup in atomic new-file and copy operations now promotes cleanup failures to WRITE_UNCERTAIN instead of reporting an ordinary safe error.
+
+## Step 3 — post-restart archive filesystem observation
+- The host now writes a bounded, canonical, verified complete archive manifest alongside the pre-effect intent before any extraction effect. Records exceed the 1 MiB persistence limit are refused before publication.
+- File operations recovery still distinguishes the historical journal result from current filesystem state. For new archive records it independently reopens the previously approved parent **read-only** and verifies the completion marker, all expected folders and file SHA-256 digests, and absence of extras. It surfaces VERIFIED, MISSING, INCOMPLETE_OR_CHANGED, UNAVAILABLE or INVALID_TARGET without rewriting, retrying, or granting capabilities.
+- Legacy archive intent schema 1 lacks a complete manifest and remains NOT_RECHECKED; receipt evidence alone is not represented as current filesystem verification. Current schema 2 includes the full snapshot.

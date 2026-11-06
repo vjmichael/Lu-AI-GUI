@@ -1910,10 +1910,9 @@ async fn lu_confirm_archive_tree(
     }
     let user_turn_id=next_id("g-");
     let effect_id=next_id("g-");
-    state.wave2_recovery.record_intent(
-        &chat_id,&effect_id,lu_core::native_archive_tree_tool::TOOL_ID,
-        &view.destination_display,&view.target_folder,&view.manifest_sha256,
-        "Extract approved archive into a new folder",
+    state.wave2_recovery.record_archive_intent(
+        &chat_id,&effect_id,&view.destination_display,&view.target_folder,
+        pinned.approved_manifest(),"Extract approved archive into a new folder",
     )?;
     let run_guard=state.archive_runs.register(&chat_id,&review_id)?;
     let result=archive_desktop::execute_reviewed_archive_tree(

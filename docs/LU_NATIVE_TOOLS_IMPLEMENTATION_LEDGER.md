@@ -204,3 +204,6 @@ The archive extraction tool now accepts only a host-owned, chat-scoped, per-revi
 
 
 WAVE2-RECOVERY-03B: DurableDispatcher now recognizes the built-in archive extractor's proven pre-publication OPERATION_CANCELLED only, journals FAILED, and still blocks replay. Other native execution failures remain UNCERTAIN. 7z/RAR source reads and libarchive member loops honor host cancellation checkpoints. Desktop archive executions are serialized to bound aggregate 256 MiB per decode. Failed staging cleanup for new-file and copy operations is classified as WRITE_UNCERTAIN. Native Windows/Linux CI and installed acceptance remain open.
+
+
+WAVE2-RECOVERY-03C: Before archive execution the desktop now persists the entire bounded, canonical tree-manifest snapshot as part of the approved intent (schema 2). Restart recovery validates snapshots and independently rehashes the actual full extracted tree. It displays current VERIFIED/MISSING/INCOMPLETE_OR_CHANGED/UNAVAILABLE status alongside the immutable historical journal receipt, and never auto-retries. Existing schema-1 records retain receipt-only NOT_RECHECKED semantics. Native integration and installed Windows verification pending.
