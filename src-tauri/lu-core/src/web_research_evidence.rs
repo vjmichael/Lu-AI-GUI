@@ -248,10 +248,15 @@ impl EvidenceLedger {
         if status != SourceStatus::DocumentAccessed && status != SourceStatus::PassageVerified {
             return Err(EvidenceError::NoDocument);
         }
-        let original: String = self.connection.query_row(
-            "SELECT document_text FROM research_sources WHERE id=?1",
-            [id], |row| row.get(0)
+        let (original,pinned_sha):(String,String)=self.connection.query_row(
+            "SELECT document_text,content_sha256 FROM research_sources WHERE id=?1",
+            [id], |row| Ok((row.get(0)?,row.get(1)?))
         )?;
+        // Recheck the immutable content digest, even for already verified
+        // documents. A stale/tampered SQLite body cannot prove a passage.
+        if digest(original.as_bytes())!=pinned_sha {
+            return Err(EvidenceError::NoDocument);
+        }
         // Exact Unicode substring only. The host must independently bind locator
         // to a trusted page/section map before representing page numbers as verified.
         if !original.contains(quotation) { return Err(EvidenceError::PassageNotFound); }
@@ -540,14 +545,29 @@ impl EvidenceLedger {
             "SELECT 1 FROM research_passages WHERE source_id=?1 AND quote=?2 LIMIT 1",
             params![id,quote], |row|row.get(0)
         ).optional()?;
-        Ok(stored.is_some())
+        if stored.is_none(){return Ok(false);}
+        let original:Option<(String,String)>=self.connection.query_row(
+            "SELECT document_text,content_sha256 FROM research_sources WHERE id=?1",
+            [id],|row|Ok((row.get(0)?,row.get(1)?))
+        ).optional()?;
+        Ok(original.is_some_and(|(text,sha)|{
+            sha==digest(text.as_bytes()) && text.contains(quote)
+        }))
     }
     /// Final report gate: only records with a real corroborated identifier
     /// AND actual accessed text may be listed as reviewed sources.
     pub fn eligible_for_reviewed_bibliography(&self, id: &str) -> Result<bool, EvidenceError> {
         let record = self.record(id)?;
-        Ok(matches!(record.status, SourceStatus::DocumentAccessed | SourceStatus::PassageVerified)
-            && record.record_url.is_some() && record.content_sha256.is_some())
+        if !matches!(record.status,SourceStatus::DocumentAccessed|SourceStatus::PassageVerified)
+            ||record.record_url.is_none(){return Ok(false);}
+        let body:Option<(String,String)>=self.connection.query_row(
+            "SELECT document_text,content_sha256 FROM research_sources WHERE id=?1",
+            [id],|row|Ok((row.get(0)?,row.get(1)?))
+        ).optional()?;
+        Ok(body.is_some_and(|(text,sha)|{
+            !text.is_empty() && sha==digest(text.as_bytes())
+                && record.content_sha256.as_deref()==Some(sha.as_str())
+        }))
     }
 }
 #[cfg(test)]
@@ -592,6 +612,24 @@ mod tests {
         assert!(matches!(ledger.corroborate("source-1",&wrong),Err(EvidenceError::MetadataMismatch)));
         assert_eq!(ledger.status("source-1").unwrap(),SourceStatus::Mismatch);
         assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
+    }
+    #[test]
+    fn stored_document_tampering_revokes_passage_and_reviewed_bibliography(){
+        let mut l=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        l.discover(&candidate()).unwrap();
+        l.corroborate("source-1",&record()).unwrap();
+        l.store_accessed_text("source-1","An independently retrieved passage.").unwrap();
+        l.verify_passage("source-1","full-text","retrieved passage").unwrap();
+        assert!(l.has_verified_passage("source-1","retrieved passage").unwrap());
+        assert!(l.eligible_for_reviewed_bibliography("source-1").unwrap());
+        // Model-visible cached passage rows do not outrank the actual stored
+        // document digest when a database is corrupted or tampered with.
+        l.connection.execute("UPDATE research_sources SET document_text='Injected text'
+            WHERE id='source-1'",[]).unwrap();
+        assert!(!l.has_verified_passage("source-1","retrieved passage").unwrap());
+        assert!(!l.eligible_for_reviewed_bibliography("source-1").unwrap());
+        assert!(matches!(l.verify_passage("source-1","full-text","Injected text"),
+            Err(EvidenceError::NoDocument)));
     }
     #[test]
     fn real_metadata_is_not_full_text_and_invented_quote_is_rejected() {
