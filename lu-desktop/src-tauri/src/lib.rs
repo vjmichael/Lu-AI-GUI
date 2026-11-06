@@ -1197,8 +1197,10 @@ fn lu_research_available(state:State<'_,Arc<DesktopState>>)->bool{
 #[tauri::command]
 async fn lu_research_openalex(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
-    chat_id:String,query:String
+    chat_id:String,query:String,page:Option<u32>
 )->Result<research_desktop::ResearchSearchView,String>{
+    let page=page.unwrap_or(1);
+    if !(1..=5).contains(&page){return Err("Invalid research page".into());}
     if query.trim().is_empty()||query.len()>512
        ||query.chars().any(char::is_control){
         return Err("Invalid research query".into());
@@ -1211,11 +1213,11 @@ async fn lu_research_openalex(
     let approved=tauri::async_runtime::spawn_blocking({
         let query=query.clone();
         move||app.dialog().message(format!(
-            "Search the public OpenAlex catalog for this query?\n\n{}\n\n\
+            "Search OpenAlex page {} (of at most five) for this query?\n\n{}\n\n\
              Lu will access only the OpenAlex HTTPS endpoint, store source \
              identifiers in this conversation's local evidence ledger and \
              label results UNVERIFIED until independently corroborated. \
-             This does not grant the AI general network access.",query
+             This does not grant the AI general network access.",page,query
         )).title("Lu — Authorize Research discovery")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
              "Search OpenAlex".into(),"Cancel".into()
@@ -1231,7 +1233,7 @@ async fn lu_research_openalex(
     let worker=Arc::clone(&owner.research);
     let chat=chat_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
-        worker.search(&chat,&query)
+        worker.search_page(&chat,&query,page)
     ).await.map_err(|_|"Research worker unavailable").and_then(|x|x);
     match result{
         Ok(page)=>{
