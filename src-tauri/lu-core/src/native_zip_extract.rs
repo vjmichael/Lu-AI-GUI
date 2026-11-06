@@ -124,7 +124,7 @@ pub fn zip_member_sha256(
     let mut zip=source_zip(source,archive_name)?;
     let index=chosen_member(&mut zip,member)?;
     let mut f=zip.by_index(index).map_err(|_|ZipExtractError::InvalidZip)?;
-    if f.compression()!=CompressionMethod::Stored{
+    if !matches!(f.compression(),CompressionMethod::Stored|CompressionMethod::Deflated){
         return Err(ZipExtractError::UnsupportedMethod)
     }
     let mut hasher=Sha256::new();
@@ -145,8 +145,8 @@ pub fn zip_member_sha256(
 }
 /// Publish exactly one explicitly selected ZIP member to a new flat filename.
 /// A mismatched approved digest never publishes; existing targets are untouched.
-/// This first adapter rejects Deflate and other methods until compression
-/// support is enabled and real decompression regression tests pass.
+/// Supports Stored and Deflated ZIP entries via zip-rs, rejecting other
+/// compression methods, encrypted members, and oversized expansion.
 pub fn extract_zip_member_new_checked(
     source:&Dir,archive_name:&str,member:&str,
     destination:&Dir,target_name:&str,stage_id:&str,approved_sha256:&str,
@@ -157,7 +157,7 @@ pub fn extract_zip_member_new_checked(
     let mut zip=source_zip(source,archive_name)?;
     let index=chosen_member(&mut zip,member)?;
     let mut f=zip.by_index(index).map_err(|_|ZipExtractError::InvalidZip)?;
-    if f.compression()!=CompressionMethod::Stored{
+    if !matches!(f.compression(),CompressionMethod::Stored|CompressionMethod::Deflated){
         return Err(ZipExtractError::UnsupportedMethod)
     }
     let stage=format!(".lu-stage-{stage_id}.zip-extract");
