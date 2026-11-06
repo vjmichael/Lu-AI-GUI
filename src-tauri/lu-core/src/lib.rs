@@ -99,6 +99,7 @@ pub mod native_file_extra;
 pub mod native_file_transfer;
 pub mod native_file_transfer_tool;
 pub mod native_file_trash_tool;
+pub mod native_trash_custody;
 pub mod native_git_inspect;
 pub mod native_files;
 pub mod native_atomic_write;
