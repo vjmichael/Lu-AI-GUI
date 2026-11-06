@@ -182,7 +182,7 @@ impl Journal {
     fn record(&mut self, state: &str) -> Result<(), SupervisorError> {
         if !matches!(state,
             "ready" | "owner_exited" | "kill_requested" | "tree_empty" |
-            "kill_unverified" | "released_empty" | "recovery_hold_expired")
+            "kill_unverified" | "released_empty" | "recovered_release" | "recovery_hold_expired")
         { return Err(denied()); }
         let ms = SystemTime::now().duration_since(UNIX_EPOCH)
             .map_err(|_| denied())?.as_millis();
@@ -269,7 +269,7 @@ pub fn inspect_untrusted_witness(
             record.prior != previous ||
             !matches!(body.state.as_str(),
                 "ready" | "owner_exited" | "kill_requested" | "tree_empty" |
-                "kill_unverified" | "released_empty" | "recovery_hold_expired") {
+                "kill_unverified" | "released_empty" | "recovered_release" | "recovery_hold_expired") {
             return Err(denied());
         }
         if seq > 0 && (owner != Some(body.owner_pid)
@@ -424,6 +424,24 @@ impl Drop for BrokerLease {
     }
 }
 
+/// This signal is only a liveness cleanup hint AFTER the supervisor
+/// performed live kernel Job verification and fsynced a terminal receipt.
+/// It is never an independent proof of cleanup. A missing Event is a failed
+/// release, not permission to invent recovery.
+pub(crate) fn release_after_verified_recovery(
+    id: &str, hash: &str
+) -> Result<(), SupervisorError> {
+    let job = Handle::new(unsafe {
+        OpenJobObjectW(JOB_QUERY, 0, job_name(id, hash)?.as_ptr())
+    })?;
+    if !matches!(job_empty(job.0), Ok(true)) { return Err(denied()); }
+    let event = Handle::new(unsafe {
+        OpenEventW(EVENT_MODIFY_STATE, 0, release_name(id, hash)?.as_ptr())
+    })?;
+    if unsafe { SetEvent(event.0) } == 0 { return Err(denied()); }
+    Ok(())
+}
+
 /// Used only by the dedicated, fixed-mode broker binary. It never executes
 /// source, Cargo, model commands, installer code, or untrusted worker input.
 pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
@@ -470,7 +488,17 @@ pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
             // reconcile it. Do not accept the JSON alone as proof. This
             // bounded lease is deliberately not an unbounded background task.
             let began = Instant::now();
-            while began.elapsed() < RECOVERY_HOLD { thread::sleep(TICK); }
+            while began.elapsed() < RECOVERY_HOLD {
+                // A new supervisor may explicitly release the independent
+                // keeper only AFTER it has verified the original named Job
+                // empty and durably recorded its own terminal recovery.
+                if unsafe { WaitForSingleObject(release.0, 0) } == WAIT_OBJECT_0
+                    && matches!(job_empty(job.0), Ok(true)) {
+                    receipts.record("recovered_release")?;
+                    return Ok(());
+                }
+                thread::sleep(TICK);
+            }
             receipts.record("recovery_hold_expired")?;
             return Ok(());
         }
