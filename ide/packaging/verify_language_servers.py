@@ -80,7 +80,13 @@ def verify(manifest: pathlib.Path, root: pathlib.Path, release: bool = False) ->
             if not isinstance(checksum, str) or not HEX.fullmatch(checksum):
                 raise ValueError(f"{ident}: unpinned {platform} binary")
             target = safe_file(root, paths[platform])
-            if hashlib.sha256(target.read_bytes()).hexdigest() != checksum:
+            if target.stat().st_size > 1024 * 1024 * 1024:
+                raise ValueError(f"{ident}: unreasonably large bundle executable")
+            digest = hashlib.sha256()
+            with target.open("rb") as stream:
+                while block := stream.read(1024 * 1024):
+                    digest.update(block)
+            if digest.hexdigest() != checksum:
                 raise ValueError(f"{ident}: {platform} binary digest mismatch")
         for notice in notices:
             candidate = safe_file(root, notice)
