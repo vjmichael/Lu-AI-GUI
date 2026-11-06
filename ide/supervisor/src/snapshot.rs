@@ -546,6 +546,18 @@ mod tests {
         let input = publish_lsp_input(&project, &stage, "main.c", "clangd").unwrap();
         assert_eq!(input.seal.manifest_relative_path, "main.c");
         assert!(verify_input(&input).is_ok());
+        // The publisher intentionally marks sealed Unix snapshots 0o400.
+        // Recreate a hostile owner chmod before mutating, as in the existing
+        // Cargo snapshot seal test. Never weaken production permissions.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                input.root.join("main.c"),
+                fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+        }
         fs::write(input.root.join("main.c"), b"changed").unwrap();
         assert!(verify_input(&input).is_err());
         assert!(matches!(publish_lsp_input(&project, &stage, "../main.c", "clangd"),
