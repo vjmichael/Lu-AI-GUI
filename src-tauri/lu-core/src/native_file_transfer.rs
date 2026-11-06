@@ -225,12 +225,29 @@ fn check_target_absent(root: &Dir, target: &str) -> Result<(), TransferError> {
 pub fn trash_in_dirs(
     root: &Dir, trash: &Dir, source: &str, host_trash_id: &str
 ) -> Result<TrashReceipt, TransferError> {
+    trash_in_dirs_internal(root,trash,source,host_trash_id,None)
+}
+/// Exact approved content digest is checked before the trash entry's first
+/// filesystem mutation. A model-requested deletion cannot bypass this fence.
+pub fn trash_checked_in_dirs(
+    root:&Dir,trash:&Dir,source:&str,host_trash_id:&str,approved_sha256:&str
+)->Result<TrashReceipt,TransferError>{
+    if !valid_sha(approved_sha256){return Err(TransferError::SourceChanged)}
+    trash_in_dirs_internal(root,trash,source,host_trash_id,Some(approved_sha256))
+}
+fn trash_in_dirs_internal(
+    root:&Dir,trash:&Dir,source:&str,host_trash_id:&str,
+    approved_sha256:Option<&str>,
+)->Result<TrashReceipt,TransferError>{
     if !plain_filename(source) { return Err(TransferError::InvalidName); }
     if !stage_id_ok(host_trash_id) { return Err(TransferError::InvalidStage); }
     let trash_entry = format!("lu-trash-{host_trash_id}");
     check_target_absent(trash, &trash_entry)?;
     let file = verify(root, source)?;
     let (bytes, sha256) = source_hash(file)?;
+    if approved_sha256.is_some_and(|approved|approved!=sha256) {
+        return Err(TransferError::SourceChanged);
+    }
     root.hard_link(source, trash, &trash_entry).map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             TransferError::TargetExists
