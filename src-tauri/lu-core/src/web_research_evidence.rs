@@ -99,6 +99,21 @@ pub struct BrowserPassageProof {
     pub source_id:Option<String>,
     pub publisher_link_matched:bool,
 }
+/// Immutable response extraction receipt. Only complete, directly
+/// catalog-linked PDF text can promote DOCUMENT_ACCESSED. Other content
+/// remains a host-observed document candidate.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct DocumentRetrievalProof {
+    pub source_id:String,
+    pub catalog_url:String,
+    pub final_url:String,
+    pub raw_sha256:String,
+    pub text_sha256:String,
+    pub chain_sha256:String,
+    pub format:String,
+    pub truncated:bool,
+    pub document_accessed:bool,
+}
 pub struct EvidenceLedger { connection: Connection }
 fn bounded(value: &str, cap: usize) -> bool {
     !value.trim().is_empty() && value.len() <= cap && !value.chars().any(char::is_control)
@@ -141,6 +156,18 @@ impl EvidenceLedger {
                CHECK(excerpt_truncated IN (0,1)),
              observed_text_bytes INTEGER NOT NULL,
              PRIMARY KEY(generation_id,call_id)
+           );
+           CREATE TABLE IF NOT EXISTS research_document_observations(
+             source_id TEXT NOT NULL REFERENCES research_sources(id),
+             chain_sha256 TEXT NOT NULL,
+             catalog_url TEXT NOT NULL,
+             final_url TEXT NOT NULL,
+             raw_sha256 TEXT NOT NULL,
+             extracted_sha256 TEXT NOT NULL,
+             format TEXT NOT NULL CHECK(format IN ('PDF','HTML')),
+             truncated INTEGER NOT NULL CHECK(truncated IN (0,1)),
+             document_accessed INTEGER NOT NULL CHECK(document_accessed IN (0,1)),
+             PRIMARY KEY(source_id,chain_sha256)
            );
            CREATE TABLE IF NOT EXISTS research_publisher_links(
              source_id TEXT PRIMARY KEY NOT NULL REFERENCES research_sources(id),
@@ -443,6 +470,88 @@ impl EvidenceLedger {
             return Err(EvidenceError::Invalid);
         }
         Ok(())
+    }
+    /// Only the independently fetched Crossref landing URL is a host-owned
+    /// retrieval seed. The model cannot supply a replacement source URL.
+    pub fn publisher_url_for_source(
+        &self,id:&str
+    )->Result<Option<String>,EvidenceError>{
+        if !bounded(id,128){return Err(EvidenceError::Invalid);}
+        if !matches!(self.status(id)?,SourceStatus::MetadataCorroborated
+            |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+            return Err(EvidenceError::NotCorroborated);
+        }
+        Ok(self.connection.query_row(
+            "SELECT publisher_url FROM research_publisher_links WHERE source_id=?1",
+            [id],|r|r.get(0)
+        ).optional()?)
+    }
+    /// Record a bounded HTTPS document response and its observed redirect
+    /// chain. PDF text is promoted only if the *actual final URL* is the
+    /// independently corroborated catalog URL, extracted without truncation.
+    /// HTML pages can be previewed but cannot imply complete paper access.
+    pub fn record_document_retrieval(
+        &mut self,id:&str,catalog_url:&str,final_url:&str,
+        raw_sha256:&str,chain_sha256:&str,format:&str,text:&str,truncated:bool
+    )->Result<DocumentRetrievalProof,EvidenceError>{
+        if !bounded(id,128)||!matches!(format,"PDF"|"HTML")
+            ||text.trim().is_empty()||text.len()>4_000_000
+            ||text.chars().any(|c|c=='\0'||(c.is_control()&&c!='\n'&&c!='\r'&&c!='\t'))
+            ||raw_sha256.len()!=64||chain_sha256.len()!=64
+            ||!raw_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+            ||!chain_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+            ||!catalog_url.starts_with("https://")||!final_url.starts_with("https://")
+            ||catalog_url.len()>2048||final_url.len()>2048
+            ||catalog_url.chars().any(char::is_whitespace)
+            ||final_url.chars().any(char::is_whitespace) {
+            return Err(EvidenceError::Invalid);
+        }
+        if self.status(id)?!=SourceStatus::MetadataCorroborated {
+            return Err(EvidenceError::NotCorroborated);
+        }
+        let pinned=self.publisher_url_for_source(id)?
+            .ok_or(EvidenceError::NotCorroborated)?;
+        if catalog_url!=pinned{return Err(EvidenceError::MetadataMismatch);}
+        let promotion=format=="PDF"&&!truncated&&final_url==pinned;
+        let extracted_sha=digest(text.as_bytes());
+        let receipt=DocumentRetrievalProof{
+            source_id:id.into(),catalog_url:catalog_url.into(),final_url:final_url.into(),
+            raw_sha256:raw_sha256.into(),text_sha256:extracted_sha.clone(),
+            chain_sha256:chain_sha256.into(),format:format.into(),
+            truncated,document_accessed:promotion
+        };
+        let tx=self.connection.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO research_document_observations
+             (source_id,chain_sha256,catalog_url,final_url,raw_sha256,
+              extracted_sha256,format,truncated,document_accessed)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![id,chain_sha256,catalog_url,final_url,raw_sha256,
+                &extracted_sha,format,i64::from(truncated),i64::from(promotion)]
+        )?;
+        let stored:(String,String,String,String,String,i64,i64)=tx.query_row(
+            "SELECT catalog_url,final_url,raw_sha256,extracted_sha256,format,
+             truncated,document_accessed FROM research_document_observations
+             WHERE source_id=?1 AND chain_sha256=?2",
+            params![id,chain_sha256],
+            |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,
+                r.get(4)?,r.get(5)?,r.get(6)?))
+        )?;
+        if stored!=(catalog_url.into(),final_url.into(),raw_sha256.into(),
+            extracted_sha,format.into(),i64::from(truncated),i64::from(promotion)){
+            return Err(EvidenceError::Invalid);
+        }
+        if promotion {
+            let changed=tx.execute(
+                "UPDATE research_sources SET status='DOCUMENT_ACCESSED',
+                 document_text=?2, content_sha256=?3
+                 WHERE id=?1 AND status='METADATA_CORROBORATED'",
+                params![id,text,&receipt.text_sha256]
+            )?;
+            if changed!=1{return Err(EvidenceError::NotCorroborated);}
+        }
+        tx.commit()?;
+        Ok(receipt)
     }
     /// An exact substring proof against *retained* Browser text. Caller
     /// cannot supply a replacement URL, page body, model paraphrase or hash.
@@ -749,6 +858,38 @@ mod browser_evidence_tests {
         assert!(!proof.publisher_link_matched);
         assert_eq!(proof.source_id,None);
         assert_eq!(proof.source_url,"https://paper.example/article");
+    }
+    #[test]
+    fn full_text_access_requires_nontruncated_pdf_and_exact_catalog_url(){
+        let mut l=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        l.discover(&candidate()).unwrap();
+        l.corroborate("source-1",&record()).unwrap();
+        let digest64="a".repeat(64);
+        l.bind_crossref_publisher_url("source-1",
+            "https://publisher.example/document.pdf",&digest64).unwrap();
+        assert!(l.record_document_retrieval("source-1",
+            "https://wrong.example/document.pdf","https://publisher.example/document.pdf",
+            &digest64,&"b".repeat(64),"PDF","page text",false).is_err());
+        let html=l.record_document_retrieval("source-1",
+            "https://publisher.example/document.pdf","https://publisher.example/document.pdf",
+            &digest64,&"c".repeat(64),"HTML","HTML landing preview",false).unwrap();
+        assert!(!html.document_accessed);
+        let redirected=l.record_document_retrieval("source-1",
+            "https://publisher.example/document.pdf","https://cdn.example/document.pdf",
+            &digest64,&"d".repeat(64),"PDF","PDF redirected candidate",false).unwrap();
+        assert!(!redirected.document_accessed);
+        let clipped=l.record_document_retrieval("source-1",
+            "https://publisher.example/document.pdf","https://publisher.example/document.pdf",
+            &digest64,&"e".repeat(64),"PDF","partial PDF excerpt",true).unwrap();
+        assert!(!clipped.document_accessed);
+        assert_eq!(l.status("source-1").unwrap(),SourceStatus::MetadataCorroborated);
+        let complete=l.record_document_retrieval("source-1",
+            "https://publisher.example/document.pdf","https://publisher.example/document.pdf",
+            &digest64,&"f".repeat(64),"PDF","A complete PDF passage.\nAnother line.",false).unwrap();
+        assert!(complete.document_accessed);
+        assert_eq!(l.status("source-1").unwrap(),SourceStatus::DocumentAccessed);
+        assert!(l.eligible_for_reviewed_bibliography("source-1").unwrap());
+        l.verify_passage("source-1","full-text","complete PDF passage").unwrap();
     }
     #[test]
     fn independently_bound_publisher_url_must_match_exact_browser_final_url(){
