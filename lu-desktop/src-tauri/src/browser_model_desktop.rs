@@ -140,6 +140,10 @@ pub(crate) async fn lu_browser_model_read(
             !=Some(session_id.as_str()){
             return Err("Browser model session changed while queued".into());
         }
+        // Keep a separate immutable scope for post-navigation source identity.
+        // Checking the requested URL is insufficient if a site redirected.
+        let result_scope=BrowserOriginScope::from_host_grant(origins.clone())
+            .map_err(|_|"Browser origin receipt scope unavailable")?;
         let policy=Arc::new(BrowserReadOnlyPolicy);
         let registry=NativeToolRegistry::new();
         let mut catalog=ModelToolCatalog::new();
@@ -208,10 +212,18 @@ pub(crate) async fn lu_browser_model_read(
                 .ok_or("Browser operation returned no bounded status")?.to_owned();
             let url=body.get("url").and_then(|v|v.as_str())
                 .filter(|url|url.len()<=2048).map(str::to_owned);
-            let (excerpt,truncated)=body.get("text").and_then(|v|v.as_str())
-                .map(bounded_excerpt)
-                .map(|(text,truncated)|(Some(text),truncated))
-                .unwrap_or((None,false));
+            // A browser-confirmed READ or accessibility result is associated
+            // with its actual post-redirect URL, not the model's request.
+            let is_text_read=matches!(status.as_str(),"READ"|"ACCESSIBILITY");
+            if is_text_read && !url.as_deref().is_some_and(|u|result_scope.allows(u)){
+                return Err("Browser read escaped approved HTTPS origins".into());
+            }
+            let (excerpt,truncated)=if is_text_read {
+                body.get("text").and_then(|v|v.as_str())
+                    .map(bounded_excerpt)
+                    .map(|(text,truncated)|(Some(text),truncated))
+                    .unwrap_or((None,false))
+            }else{(None,false)};
             observed.push(BrowserObservedPage{
                 status:status.clone(),url,excerpt,truncated
             });
