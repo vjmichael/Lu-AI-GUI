@@ -1057,24 +1057,20 @@ fn browser_origin_list(raw:&str)->Result<Vec<String>,String>{
         .map_err(|_|"Browser origin is not an approved HTTPS origin".into())
         .map(|s|s.origins())
 }
-/// Operator initiates a new read-only Browser session from the LAST persisted
-/// authenticated user turn of this conversation; a model/page cannot mint
-/// task authority or choose an arbitrary origin without this native dialog.
-#[tauri::command]
-async fn lu_browser_start(
-    app:AppHandle,state:State<'_,Arc<DesktopState>>,
-    chat_id:String,origins:String
+/// Shared native Browser start: an explicitly authenticated persisted USER
+/// turn is the sole grant source. Both the settings button and normal-chat
+/// Browser mode call this; no string from a model/webpage mints permission.
+async fn start_browser_for_exact_turn(
+    app:AppHandle,owner:Arc<DesktopState>,
+    chat_id:String,origins:String,turn_id:String
 )->Result<native_browser_host::BrowserRuntimeView,String>{
     use lu_core::{
         conversation_authority::{TaskAuthority,AuthorizedCapability},
         contracts::ToolEffect,
         browser_authorized_execution::BROWSER_READ_TOOL,
     };
-    let owner=Arc::clone(state.inner());
     let allowed=browser_origin_list(&origins)?;
     owner.browser_runtime.require_launch_ready()?;
-    let turn_id=owner.chats.latest_authenticated_user_turn_id(&chat_id)
-        .ok_or("Browser requires an authenticated human message in this conversation")?;
     if owner.chats.trusted_user_turn_text(&chat_id,&turn_id).is_none(){
         return Err("Browser turn is no longer authenticated".into());
     }
@@ -1147,6 +1143,18 @@ async fn lu_browser_start(
         return Err("Browser start was cancelled".into());
     }
     owner.browser_runtime.status(&owner.browser_preferences)
+}
+/// Settings startup binds the most recent real USER turn. General chat
+/// Browser research instead binds its own newly journaled exact generation.
+#[tauri::command]
+async fn lu_browser_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,origins:String
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    let turn_id=owner.chats.latest_authenticated_user_turn_id(&chat_id)
+        .ok_or("Browser requires an authenticated human message in this conversation")?;
+    start_browser_for_exact_turn(app,owner,chat_id,origins,turn_id).await
 }
 /// User-owned visibility controls, distinct from browser page tool calls.
 #[tauri::command]
