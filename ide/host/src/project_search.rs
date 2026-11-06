@@ -49,10 +49,24 @@ pub struct ProjectSearchResult {
 }
 
 fn excluded(name: &str) -> bool {
-    matches!(name,
-        ".git" | ".hg" | ".svn" | "node_modules" | "target" | "dist"
-        | "build" | ".venv" | "venv" | "__pycache__" | ".next"
-        | ".cache" | "site-packages" | "vendor" | ".idea" | ".turbo"
+    matches!(
+        name,
+        ".git"
+            | ".hg"
+            | ".svn"
+            | "node_modules"
+            | "target"
+            | "dist"
+            | "build"
+            | ".venv"
+            | "venv"
+            | "__pycache__"
+            | ".next"
+            | ".cache"
+            | "site-packages"
+            | "vendor"
+            | ".idea"
+            | ".turbo"
     )
 }
 
@@ -62,8 +76,12 @@ fn excerpt(line: &str, start: usize, end: usize) -> String {
     let from = char_start.saturating_sub(45);
     let to = (char_end + 85).min(line.chars().count());
     let mut text: String = line.chars().skip(from).take(to - from).collect();
-    if from > 0 { text.insert_str(0, "…"); }
-    if to < line.chars().count() { text.push('…'); }
+    if from > 0 {
+        text.insert_str(0, "…");
+    }
+    if to < line.chars().count() {
+        text.push('…');
+    }
     text
 }
 
@@ -78,8 +96,10 @@ impl IdeWorkspaceRegistry {
         query: &str,
         case_sensitive: bool,
     ) -> Result<ProjectSearchResult, BrowserError> {
-        if query.trim().is_empty() || query.len() > MAX_QUERY_BYTES ||
-            query.chars().any(char::is_control) {
+        if query.trim().is_empty()
+            || query.len() > MAX_QUERY_BYTES
+            || query.chars().any(char::is_control)
+        {
             return Err(BrowserError::InvalidSearch);
         }
         let expression = RegexBuilder::new(&regex::escape(query))
@@ -129,8 +149,12 @@ impl IdeWorkspaceRegistry {
             }
             names.sort();
             for name in names {
-                let relative_path = parts.iter().chain(std::iter::once(&name))
-                    .map(String::as_str).collect::<Vec<_>>().join("/");
+                let relative_path = parts
+                    .iter()
+                    .chain(std::iter::once(&name))
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join("/");
                 if validate_relative(&relative_path, false).is_err() {
                     result.truncated = true;
                     continue;
@@ -142,7 +166,9 @@ impl IdeWorkspaceRegistry {
                         continue;
                     }
                 };
-                if meta.file_type().is_symlink() { continue; }
+                if meta.file_type().is_symlink() {
+                    continue;
+                }
                 if meta.is_dir() {
                     if depth >= MAX_DEPTH {
                         result.truncated = true;
@@ -153,17 +179,20 @@ impl IdeWorkspaceRegistry {
                     }
                     continue;
                 }
-                if !meta.is_file() { continue; }
+                if !meta.is_file() {
+                    continue;
+                }
                 if meta.len() > MAX_FILE_BYTES {
                     result.skipped_files += 1;
                     continue;
                 }
-                if result.files_scanned >= MAX_FILES ||
-                    result.bytes_scanned.saturating_add(meta.len()) > MAX_TOTAL_BYTES {
+                if result.files_scanned >= MAX_FILES
+                    || result.bytes_scanned.saturating_add(meta.len()) > MAX_TOTAL_BYTES
+                {
                     result.truncated = true;
                     break 'walk;
                 }
-                let mut file = match folder.open(&name) {
+                let file = match folder.open(&name) {
                     Ok(f) => f,
                     Err(_) => {
                         result.skipped_files += 1;
@@ -178,14 +207,21 @@ impl IdeWorkspaceRegistry {
                     }
                 };
                 let mut bytes = Vec::with_capacity(actual.len() as usize);
-                if file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes).is_err() ||
-                    bytes.len() as u64 > MAX_FILE_BYTES {
+                if file
+                    .take(MAX_FILE_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .is_err()
+                    || bytes.len() as u64 > MAX_FILE_BYTES
+                {
                     result.skipped_files += 1;
                     continue;
                 }
                 result.files_scanned += 1;
                 result.bytes_scanned += bytes.len() as u64;
-                if bytes.contains(&0) { result.skipped_files += 1; continue; }
+                if bytes.contains(&0) {
+                    result.skipped_files += 1;
+                    continue;
+                }
                 let Ok(text) = std::str::from_utf8(&bytes) else {
                     result.skipped_files += 1;
                     continue;
@@ -202,7 +238,8 @@ impl IdeWorkspaceRegistry {
                             line: index + 1,
                             column_utf16: line[..found.start()].encode_utf16().count() + 1,
                             match_length_utf16: line[found.start()..found.end()]
-                                .encode_utf16().count(),
+                                .encode_utf16()
+                                .count(),
                             from_byte: (line_start_byte + found.start()) as u64,
                             to_byte: (line_start_byte + found.end()) as u64,
                             preview: excerpt(line, found.start(), found.end()),
