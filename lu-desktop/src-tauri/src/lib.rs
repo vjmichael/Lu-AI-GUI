@@ -23,6 +23,7 @@ mod office_revision_desktop;
 mod file_transfer_desktop;
 mod file_trash_desktop;
 mod trash_desktop;
+mod wave2_recovery;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -196,6 +197,7 @@ struct DesktopState {
     trash_custody: lu_core::native_trash_custody::TrashCustodyLedger,
     trash_reviews: trash_desktop::TrashReviewQueue,
     trash_custody: trash_desktop::TrashCustodyStore,
+    wave2_recovery: wave2_recovery::Wave2OperationLedger,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
@@ -589,6 +591,7 @@ impl DesktopState {
             trash_custody,
             trash_reviews: trash_desktop::TrashReviewQueue::default(),
             trash_custody: trash_desktop::TrashCustodyStore::new(&root)?,
+            wave2_recovery: wave2_recovery::Wave2OperationLedger::new(&root)?,
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
             rollback_approval_ledger: rollback_approvals,
@@ -1907,6 +1910,11 @@ async fn lu_confirm_archive_tree(
     }
     let user_turn_id=next_id("g-");
     let effect_id=next_id("g-");
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,lu_core::native_archive_tree_tool::TOOL_ID,
+        &view.destination_display,&view.target_folder,&view.manifest_sha256,
+        "Extract approved archive into a new folder",
+    )?;
     let result=archive_desktop::execute_reviewed_archive_tree(
         &state.chats,&state.effects,&chat_id,
         &user_turn_id,&effect_id,&pinned
@@ -1984,6 +1992,14 @@ async fn lu_confirm_document_create(
     }
     let user_turn_id=next_id("g-");
     let effect_id=next_id("g-");
+    let tool=if view.document_format=="docx"{
+        lu_core::native_docx_tool::TOOL_ID
+    }else{lu_core::native_pptx_tool::TOOL_ID};
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,tool,&view.exact_destination,
+        &view.file_name,&view.sha256,
+        "Create new structured Office document",
+    )?;
     let result=document_create_desktop::execute_approved_document_create(
         &state.chats,&state.effects,&chat_id,&user_turn_id,&effect_id,&accepted
     ).await?;
@@ -2060,6 +2076,11 @@ async fn lu_confirm_office_revision(
     }
     let user_turn=next_id("g-");
     let effect_id=next_id("g-");
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,lu_core::native_office_revision_tool::TOOL_ID,
+        &view.destination_display,&view.target_new_name,&view.revised_sha256,
+        "Create new version of an existing Office document",
+    )?;
     Ok(Some(office_revision_desktop::execute_office_revision(
         &state.chats,&state.effects,&chat_id,
         &user_turn,&effect_id,&selected,
@@ -2137,6 +2158,14 @@ async fn lu_confirm_file_transfer(
     }
     let user_turn=next_id("g-");
     let effect_id=next_id("g-");
+    let tool=if view.operation=="copy"{
+        lu_core::native_file_transfer_tool::COPY_ID
+    }else{lu_core::native_file_transfer_tool::MOVE_ID};
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,tool,&view.destination_display,
+        &view.target_name,&view.source_sha256,
+        "Copy or move selected regular file to a new name",
+    )?;
     Ok(Some(file_transfer_desktop::execute_approved_transfer(
         &state.chats,&state.effects,&chat_id,&user_turn,&effect_id,&selected
     ).await?))
@@ -2406,6 +2435,17 @@ fn lu_deny_file_restore(
     state.chats.history(&chat_id)?;
     state.restore_reviews.take(&chat_id,&review_id)?;
     Ok(())
+}
+
+/// Chat-scoped read-only durable recovery evidence for native Wave 2 file,
+/// Office and archive operations. This cannot resume, replay or grant an effect.
+#[tauri::command]
+fn lu_wave2_recovery(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+)->Result<Vec<wave2_recovery::OperationRecoveryView>,String>{
+    state.chats.history(&chat_id)?;
+    state.wave2_recovery.list(&chat_id,&state.effects)
 }
 
 /// User's first review action: the destination is selected by the host,
@@ -3218,6 +3258,7 @@ pub fn run() {
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
+            lu_wave2_recovery,
             lu_review_trash_file,
             lu_confirm_trash_file,
             lu_deny_trash_file,
