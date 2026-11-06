@@ -76,3 +76,8 @@ Upstream API and licensing references:
 - The host now writes a bounded, canonical, verified complete archive manifest alongside the pre-effect intent before any extraction effect. Records exceed the 1 MiB persistence limit are refused before publication.
 - File operations recovery still distinguishes the historical journal result from current filesystem state. For new archive records it independently reopens the previously approved parent **read-only** and verifies the completion marker, all expected folders and file SHA-256 digests, and absence of extras. It surfaces VERIFIED, MISSING, INCOMPLETE_OR_CHANGED, UNAVAILABLE or INVALID_TARGET without rewriting, retrying, or granting capabilities.
 - Legacy archive intent schema 1 lacks a complete manifest and remains NOT_RECHECKED; receipt evidence alone is not represented as current filesystem verification. Current schema 2 includes the full snapshot.
+
+## Step 3 — recovery write ordering and move revalidation
+- Archive slot reservation now precedes intent publication, avoiding an approved-intent record for an operation rejected solely because another archive is active.
+- Persisted recovery intents are file-synced, and their containing directories are synced on Unix before effect dispatch. On Windows, native installed crash durability must still be tested.
+- Same-directory moves rehash both the published hardlink target and the existing source after linking and before unlinking. A changed source or wrong linked target stops deletion and returns WRITE_UNCERTAIN for manual reconciliation; this narrows but does not eliminate hostile source-path replacement races during the final unlink.

@@ -1910,11 +1910,13 @@ async fn lu_confirm_archive_tree(
     }
     let user_turn_id=next_id("g-");
     let effect_id=next_id("g-");
+    // Reserve bounded worker capacity BEFORE persisting intent: an already
+    // active extraction must not leave a spurious approved-effect record.
+    let run_guard=state.archive_runs.register(&chat_id,&review_id)?;
     state.wave2_recovery.record_archive_intent(
         &chat_id,&effect_id,&view.destination_display,&view.target_folder,
         pinned.approved_manifest(),"Extract approved archive into a new folder",
     )?;
-    let run_guard=state.archive_runs.register(&chat_id,&review_id)?;
     let result=archive_desktop::execute_reviewed_archive_tree(
         &state.chats,&state.effects,&chat_id,
         &user_turn_id,&effect_id,&pinned,run_guard.cancellation()

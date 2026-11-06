@@ -145,6 +145,12 @@ impl Wave2OperationLedger{
             .map_err(|_|"Recovery intent already exists or cannot be recorded")?;
         file.write_all(&bytes).map_err(|_|"Recovery intent write incomplete")?;
         file.sync_all().map_err(|_|"Recovery intent not durably synced")?;
+        // A file fsync alone does not make its *new directory entry* crash-
+        // durable on Unix filesystems. Sync the containing directory before
+        // permitting the effect to be journaled and dispatched.
+        #[cfg(unix)]
+        File::open(&self.root).and_then(|d|d.sync_all())
+            .map_err(|_|"Recovery intent directory entry not durable")?;
         Ok(())
     }
     fn read_intent(&self,id:&str)->Result<IntentRecord,String>{

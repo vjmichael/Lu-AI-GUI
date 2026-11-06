@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "04b6cbcd5daa06b98ebbde7f8c9cfb234b0d72ac",
+  "sourceCommitBeforeLock": "3c47fb8ccafda8984015b5362e7b09c5bda6bc97",
   "trackedFileCount": 389,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "b5123c8b49728c860930105ad97cfa76e40db5a9"
+      "blob": "13a55140e6ac8f8d7784a38e43bd28217099cc02"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE2_ADVANCED_FORMATS_AND_OFFICE.md",
-      "blob": "27d3aafdf674a96b2c39664fa1de24b310ed2be6"
+      "blob": "7b5de903670dc08f9d4c67e3cb147f82f5c81494"
     },
     {
       "path": "docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md",
@@ -329,7 +329,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "31ec48a5c8ea3f655f670ec5123abfbbe42a9b88"
+      "blob": "59d09beb0e2d97c8a06c4ce210fe67397707050b"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -377,7 +377,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/wave2_recovery.rs",
-      "blob": "2aa875bd7e8cd8a08c87a2cf848fef7f4ca78b8c"
+      "blob": "a3147724cb0554732898b4694a92cf502c8b758b"
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
@@ -909,7 +909,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
-      "blob": "2ef0201a0b5cef6dfcea6fe962b98ff58d1edb8b"
+      "blob": "28c1a6a4ebfce7fb93f64c9856303ab10edc18d3"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer_tool.rs",

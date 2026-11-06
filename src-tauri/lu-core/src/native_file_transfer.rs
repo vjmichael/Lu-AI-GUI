@@ -203,6 +203,25 @@ fn move_new_internal(root:&Dir,source:&str,target:&str,expected_sha256:Option<&s
         if e.kind() == std::io::ErrorKind::AlreadyExists { TransferError::TargetExists }
         else { TransferError::Io(e.to_string()) }
     })?;
+    // hard_link resolves SOURCE by name again. An attacker could substitute
+    // it between the approved digest and link; refuse unlink until the
+    // published target itself is rehashed and still matches that approval.
+    // Once the link exists, any mismatch is UNCERTAIN, not a safe retry.
+    let target_observed=source_hash(verify(root,target)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
+    if target_observed!=(bytes,sha256.clone()){
+        return Err(TransferError::PublishedNeedsReconciliation)
+    }
+    let source_observed=source_hash(verify(root,source)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
+    if source_observed!=target_observed {
+        return Err(TransferError::PublishedNeedsReconciliation)
+    }
+    // No pathname-only verification can make this final unlink atomic against
+    // a hostile external process swapping the source again. That stronger
+    // handle-identity delete fence remains an installed-native acceptance gap.
     root.remove_file(source).map_err(|_| TransferError::PublishedNeedsReconciliation)?;
     Ok(TransferReceipt {
         source: source.into(), target: target.into(), bytes, sha256,
