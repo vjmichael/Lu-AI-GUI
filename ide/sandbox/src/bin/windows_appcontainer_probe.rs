@@ -376,7 +376,8 @@ mod windows {
                     size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
                     ptr::null_mut(),
                 )
-            } == 0 {
+            } == 0
+            {
                 return Err(error("QueryInformationJobObject"));
             }
             if info.ActiveProcesses == 0 {
