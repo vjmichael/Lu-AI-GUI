@@ -54,7 +54,7 @@ mod native {
         }
         Ok(TrustedBroker {
             executable: exe, expected_sha256: hash.to_ascii_lowercase(),
-            private_witness_directory: PathBuf::from(r"C:\ProgramData\LuIDE\RecoveryBroker"),
+            private_witness_directory: PathBuf::from(r"C:\ProgramData\LuIDERecoveryBroker"),
         })
     }
     fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, String> {
