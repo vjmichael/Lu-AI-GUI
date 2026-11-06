@@ -1270,6 +1270,146 @@
         "responseAuthenticated",
         "githubDataVerifiedAsCurrent"
       ]
+    },
+    "GitDiffEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "staged",
+            "worktree"
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "filesChanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "patch": {
+          "type": "string"
+        },
+        "patchBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "untrackedExcluded": {
+          "type": "boolean",
+          "const": true
+        },
+        "sourceTrust": {
+          "type": "string",
+          "const": "untrusted_local_git_text"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "scope",
+        "localHead",
+        "filesChanged",
+        "patch",
+        "patchBytes",
+        "truncated",
+        "untrackedExcluded",
+        "sourceTrust",
+        "liveRemote"
+      ]
+    },
+    "GitHistoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commitSha": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "parentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "committedUnixSeconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "commitSha",
+        "summary",
+        "parentCount",
+        "committedUnixSeconds"
+      ]
+    },
+    "GitHistoryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commits": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "#/$defs/GitHistoryEntry"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "localHead",
+        "commits",
+        "truncated",
+        "liveRemote"
+      ]
     }
   },
   "operations": {
@@ -1727,6 +1867,50 @@
       },
       "result": {
         "$ref": "#/$defs/LiveGitHubComparison"
+      }
+    },
+    "git.diff": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "worktree"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "scope"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitDiffEvidence"
+      }
+    },
+    "git.history": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitHistoryEvidence"
       }
     }
   }
