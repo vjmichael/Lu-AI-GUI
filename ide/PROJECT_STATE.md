@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO3 actual named-pipe ACL attestation added (2026-11-06)
+
+`d65c202` inspects the *kernel-created* protected SCM pipe DACL prior to reporting running status: protected, exactly SYSTEM/service/exact-host SID; no unknown ACE; no client FILE_CREATE_PIPE_INSTANCE right. This follows native job `128199760472` still returning pipe access denied despite exact-user SDDL. Debug-only `3539186` will classify read/write/control access denial to guide the next targeted repair. D7D authentication, owner-crash and restart acceptance are NOT yet proven. [Batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
+
 ### Confirmed D6 Windows isolation and D7C/D7D ABI repair — WO2/WO3 STILL OPEN (2026-11-06)
 
 Native D6 AppContainer job `128199718599` actually passed zero-capability, host secret denial, live loopback network isolation and Job reaping; its workflow failed only on Rustfmt, now repaired by `6fc0b36`. The independent D7C witness returned Win32 24 because its C# Job accounting ABI was 32 instead of 48 bytes; repaired in both D7C/D7D native crash witnesses by `958609d`. Protected SCM service client job `128199760472` still got pipe access denied after the exact-user DACL and v2 config; CI/debug-only read/write/control denial classification was added in `3539186`. **Neither production Cargo null-device provisioning nor protected service authenticated host-crash/restart is accepted.** See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md). GitHub native CI is verification, not a development stop.

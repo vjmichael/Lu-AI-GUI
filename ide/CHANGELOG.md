@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- WO3 protected-service IPC strengthening: `d65c202` verifies actual named-pipe kernel DACL before announcing SCM RUNNING; exact SYSTEM, restricted service SID and installer-approved host SID only, with client pipe-create permission forbidden. The prior native D7D host pipe open still denied despite user SID pinning; CI-only access-mask diagnostics (`3539186`) await new exact-head verification. No service acceptance falsely promoted.
+
 - WO2/WO3 native progress: real Windows D6 AppContainer isolation fixture passed behavioral checks at job `128199718599` (only Rustfmt failed; `6fc0b36` repaired); D7C/D7D crash-observer C# Job Object accounting fixed from 32-byte incomplete ABI to actual 48-byte Win32 ABI (`958609d`), eliminating `ERROR_BAD_LENGTH` cause. Protected SCM client still denied opening pipe at job `128199760472`; fixed-scope CI-only read/write/control probes added (`3539186`). Orders 2 and 3 remain open for real pinned Cargo, crash-safe production NUL and independently verified protected service cleanup/restart. Source: `ide/docs/IDE_WORK_BATCH_02_20261106.md`.
 
 - WO2/WO3 further source hardening: NUL CI compatibility requires explicit `ci-native-null-lease` **compile-time** feature plus disposable debug CI environment; D7C/D7D hostile observers now surface native Win32 Job query failures rather than ambiguous empty/denied evidence. Production capability provisioning and independent SCM crash recovery still open. Draft PR #65, no release enablement.

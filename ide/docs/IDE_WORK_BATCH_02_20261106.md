@@ -35,3 +35,8 @@ Source implementation on draft PR #65 (not a release acceptance):
 4. **Production null device gap:** `2f2043d` requires a separate compile-time `ci-native-null-lease` feature plus debug, explicit runner flags and ephemeral AppContainer SID, so a normal debug/release build cannot activate the global Windows NUL DACL change accidentally. The compatibility helper is *disposable CI only*. Release needs independently approved, crash-safe NUL grant provisioning; a private app capability SID is only a candidate pending native security validation and installer cleanup, not implemented.
 5. **Work-order priority remains fixed:** close 2 and 3 first. No release executable worker, native LSP, signed NSIS, or optional Lu bridge is enabled by these commits.
 
+
+### D7D actual kernel pipe DACL check — source-only, latest head
+
+The signed service pipe still returned `pipe_open_access_denied` in real Windows smoke job `128199760472`; the prior exact-host-user ACL alone did not fix it. Commit `3539186` added **CI/debug-only** read/write/control access classification while keeping all failed opens denied. Commit `d65c202` adds a *server-side kernel-object DACL readback* before reporting SCM RUNNING: exactly three explicit allow ACEs (SYSTEM, service SID, installer-pinned host SID), protected DACL, and client read/write/synchronize WITHOUT FILE_CREATE_PIPE_INSTANCE. Any missing/extra ACE or readback error prevents service startup. The verifier uses actual `GetSecurityInfo`, not the originally authored SDDL string. This is pre-acceptance source implementation; independent D7D pipe authentication and host-crash/restart tests remain open.
+
