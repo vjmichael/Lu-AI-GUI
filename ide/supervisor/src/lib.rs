@@ -1181,6 +1181,30 @@ mod tests {
         drop(sup);
         fs::remove_file(p).unwrap();
     }
+    #[cfg(all(windows, feature = "protected-recovery-service"))]
+    #[test]
+    fn protected_recovery_preflight_survives_restart_and_blocks_new_work() {
+        let p = path();
+        let sup = Supervisor::open(p.clone()).unwrap();
+        let task = sup.prepare(plan()).unwrap();
+        sup.record_human_approval(
+            &task.job_id, &task.plan_sha256, &"b".repeat(40), true,
+        ).unwrap();
+        inject_running(&sup, &task);
+        sup.mark_protected_recovery_pending(&task.job_id).unwrap();
+        assert_eq!(sup.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(sup.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(sup.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(sup);
+        let restarted = Supervisor::open(p.clone()).unwrap();
+        assert_eq!(restarted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        // Without a separately authenticated native service confirmation,
+        // this fixture never reaches the terminal Cancelled phase.
+        drop(restarted);
+        fs::remove_file(p).unwrap();
+    }
     #[test]
     fn persisted_receipts_survive_restart_but_grants_do_not() {
         let p = path();
