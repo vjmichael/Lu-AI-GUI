@@ -79,6 +79,20 @@ const tests = [
     host.includes('fn lu_deny_file_transfer(') &&
     host.includes('file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue') &&
     host.includes('state.file_transfer_reviews.consume(')],
+  ['reversible trash and verified journal-only restore are native-owned, independently approved and recovery-visible',
+    ui.includes("invoke('lu_review_trash_file'") &&
+    ui.includes("invoke('lu_confirm_trash_file'") &&
+    ui.includes("invoke('lu_deny_trash_file'") &&
+    ui.includes("invoke('lu_trash_custody'") &&
+    ui.includes("invoke('lu_confirm_restore_file'") &&
+    ui.includes("custody.status==='AVAILABLE'") &&
+    ui.includes('disabled={!trashReviewed || trashBusy}') &&
+    host.includes('fn lu_review_trash_file(') &&
+    host.includes('fn lu_confirm_trash_file(') &&
+    host.includes('fn lu_trash_custody(') &&
+    host.includes('fn lu_confirm_restore_file(') &&
+    host.includes('trash_custody: trash_desktop::TrashCustodyStore') &&
+    host.includes('state.trash_custody.restore_candidate(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
