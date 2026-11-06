@@ -166,7 +166,7 @@ impl Wave2OperationLedger{
             .take(MAX_RECORD_BYTES+1).read_to_end(&mut data)
             .map_err(|_|"Recovery record read failed")?;
         serde_json::from_slice(&data)
-            .map_err(|_|"Recovery record malformed")
+            .map_err(|_|"Recovery record malformed".to_owned())
     }
     /// A journal receipt is a typed ToolReply. Validate tool, call ID,
     /// output kind, exact destination/name and the approved content witness.

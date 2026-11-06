@@ -560,24 +560,26 @@ mod tests{
     }
     #[test]
     fn desktop_preview_pins_native_selected_source_and_new_output_folder(){
-        use std::io::Write;
-        use zip::{ZipWriter,write::SimpleFileOptions,CompressionMethod};
+        // Use the actual native ZIP constructor rather than a second
+        // desktop-only ZIP dependency.
         let root=std::env::temp_dir().join(format!(
             "lu-archive-desktop-{}",crate::next_id("test-")
         ));
         fs::create_dir_all(&root).unwrap();
         fs::create_dir(root.join("output")).unwrap();
+        fs::write(root.join("notes.txt"),b"Original content").unwrap();
+        let root_cap=Dir::open_ambient_dir(&root,ambient_authority()).unwrap();
+        lu_core::native_archive_create::create_zip_new_in_dir(
+            &root_cap,"backup.zip",&["notes.txt".into()],
+            "archive-desktop-stage-123456789",
+        ).unwrap();
+        drop(root_cap);
         let source=root.join("backup.zip");
-        let mut zip=ZipWriter::new(fs::File::create(&source).unwrap());
-        zip.start_file("assets/notes.txt",SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Stored)).unwrap();
-        zip.write_all(b"Original content").unwrap();
-        zip.finish().unwrap();
         let q=ArchiveReviewQueue::default();
         let view=q.stage("saved-chat","archive-review-123456789",
             &source,&root.join("output")).unwrap();
         assert_eq!(view.files,1);
-        assert_eq!(view.entries[0].path,"assets/notes.txt");
+        assert_eq!(view.entries[0].path,"notes.txt");
         assert_eq!(view.entries[0].kind,"file");
         assert!(!root.join("output").join(&view.target_folder).exists());
         let pinned=q.inspect("saved-chat",&view.review_id).unwrap();
@@ -603,11 +605,13 @@ mod tests{
                 &root.join("source.zip"),&root.join("target")).is_err());
             // A real, valid source is required so this checks destination
             // link refusal rather than merely malformed ZIP rejection.
-            let mut zip=ZipWriter::new(fs::File::create(root.join("valid.zip")).unwrap());
-            zip.start_file("document.txt",SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Stored)).unwrap();
-            zip.write_all(b"safe bytes").unwrap();
-            zip.finish().unwrap();
+            fs::write(root.join("document.txt"),b"safe bytes").unwrap();
+            let cap=Dir::open_ambient_dir(&root,ambient_authority()).unwrap();
+            lu_core::native_archive_create::create_zip_new_in_dir(
+                &cap,"valid.zip",&["document.txt".into()],
+                "archive-link-stage-123456789",
+            ).unwrap();
+            drop(cap);
             assert!(q.stage("chat","review-987654321",
                 &root.join("valid.zip"),&root.join("linked-output")).is_err());
             fs::remove_dir_all(root).unwrap();

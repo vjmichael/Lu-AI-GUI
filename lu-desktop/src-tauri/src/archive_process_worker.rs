@@ -139,7 +139,7 @@ mod tests{
             "--lu-archive-extract-worker".into(),
             root.as_os_str().into(),"payload.tar".into(),
             root.as_os_str().into(),"out".into(),
-            manifest.sha256.into(),"wrong-source-identity".into(),identity,
+            manifest.sha256.into(),"wrong-source-identity".into(),identity.into(),
             std::process::id().to_string().into(),
         ];
         assert!(execute(&args).is_err());

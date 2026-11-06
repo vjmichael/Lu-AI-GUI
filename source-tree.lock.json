@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2a02f4cd7a130d5e7b19a7b694f513852a1723ba",
+  "sourceCommitBeforeLock": "f596afc081919fba147ce602c7557feb4bc8b0dc",
   "trackedFileCount": 394,
   "files": [
     {
@@ -301,11 +301,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_desktop.rs",
-      "blob": "12fe58e810e70f88e61fc5b9353d825e5739ebd5"
+      "blob": "37b9ec0d1227492a8192eede818552c62db491cf"
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_process_worker.rs",
-      "blob": "0bd23663526272ea0453e41e7079bafb5e410749"
+      "blob": "873e1b7408bbc105eeda03ee459eda918c5572f1"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -389,7 +389,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/wave2_recovery.rs",
-      "blob": "a3147724cb0554732898b4694a92cf502c8b758b"
+      "blob": "34851e2fb0249e6a822e06ee2c73d1b520f1d0e5"
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
