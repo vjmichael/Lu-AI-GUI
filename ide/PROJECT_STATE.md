@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### D7D recovery ACK retry and Windows Cargo release gate (2026-11-06)
+
+**Work orders 2 and 3 are still open.** On draft [PR #65](https://github.com/vjmichael/Lu-AI-GUI/pull/65), native AppContainer admission and Windows Job worker-containment passed on exact historical head `c6d288e`; this is **not** proof that isolated Cargo compiles or that the separate recovery service passes. The real pinned Cargo still needs complete kernel/AppContainer/NUL acceptance and release-safe privilege handling.
+
+- WO2: `windows_null_device` now has a **compile-time refusal** of a release build carrying disposable `ci-native-null-lease`; the native Cargo host fails *before* an AppContainer, protected service lease, or one-shot grant when a safe NUL-access path is unavailable. A separate privileged, crash-safe per-job production device-access lifecycle and real rustc execution remain unimplemented/unaccepted. No broad ALL-APPLICATION-PACKAGES ACE is deployed.
+- WO3: `windows_service_security` queries the created named-pipe DACL as the correct `SE_FILE_OBJECT` Windows security object type; it retains exact installer-approved host TokenUser, hash, kernel image and client PID checks. After recording and fsyncing `recovered_release`, the service retains the **original empty kernel Job** for a 60-second ACK retry window. The retry checks real Job emptiness, protected evidence and freshly authenticated client/nonce, and cannot start in live/unreaped/pending states. The independent native D7D crash fixture now verifies the second ACK and eventual bounded Job release.
+- Commits: `220d4a4` (pipe object type), `57bd66f` (fsynced ACK retry and compile-time CI safety), `c6d288e` (fail-closed native Cargo before approval), `2b336e3` (native ACK/release test). **Exact-head D7D SCM service, host-crash recovery, service-loss refusal, pinned offline Cargo and installed NSIS are pending native CI/physical acceptance.** Never mark those passed from source code alone.
+- The original batch remains held on WO2 and WO3: subsequent WO4–WO10 are not activated merely because GitHub jobs are queued.
+
+
 ### WO3 actual named-pipe ACL attestation added (2026-11-06)
 
 `d65c202` inspects the *kernel-created* protected SCM pipe DACL prior to reporting running status: protected, exactly SYSTEM/service/exact-host SID; no unknown ACE; no client FILE_CREATE_PIPE_INSTANCE right. This follows native job `128199760472` still returning pipe access denied despite exact-user SDDL. Debug-only `3539186` will classify read/write/control access denial to guide the next targeted repair. D7D authentication, owner-crash and restart acceptance are NOT yet proven. [Batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md).

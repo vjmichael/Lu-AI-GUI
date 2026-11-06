@@ -51,3 +51,9 @@ The signed service pipe still returned `pipe_open_access_denied` in real Windows
 
 - Native Windows Cargo now refuses admission **before creating the AppContainer profile, Job, service lease or one-shot grant** unless the separately compiled disposable-CI NUL compatibility path is enabled in a debug runner with an absolute `RUNNER_TEMP`. This prevents an installed build from consuming permission or reporting a misleading Cargo exit 101 when nested `rustc` cannot access `NUL`. It deliberately preserves the release blocker until a privileged, crash-recoverable per-job device-access service is independently implemented and accepted.
 - The D7D bounded recovery ACK retry acceptance test now exercises the same state predicate as production recovery, including rejecting pending/unwitnessed phases.
+
+### Closeout continuation — SCM recoverable ACK and release NUL denial
+
+- Verified source changes: D7D named-pipe kernel security inspection uses the Windows file-object type rather than kernel-object type (`220d4a4`); the protected holder fsyncs `recovered_release` and retains the actual empty Job for 60 seconds so a fresh authenticated nonce can retry a lost response (`57bd66f`); native crash fixture tests repeated ACK and eventual Job disappearance (`2b336e3`).
+- Windows Cargo executor now rejects **unproven NUL support before allocating an AppContainer, initiating the protected broker, or consuming a human grant** (`c6d288e`); disposable CI-only NUL remains compiled separately and forbidden in release builds. This is a deliberate fail-closed restriction, **not** the completed production NUL capability implementation.
+- Native AppContainer and Windows worker containment PASS were observed on commit `c6d288e`; exact-head D7D protected SCM ready/host crash/restart, service-loss and actual Cargo rustc execution remain unverified. No LU IDE release server activation.
