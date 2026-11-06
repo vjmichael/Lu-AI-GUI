@@ -109,3 +109,13 @@ The following **development-source** areas were added after the initial ZIP/CSV/
 - Exact-head Linux/Windows Rust compiler suite green, installed Windows desktop and actual GGUF/MMProj model execution.
 
 **Rule:** Wave 2 source integration is broad, but **Wave 2 is OPEN** until all acceptance criteria and remaining declared tool capabilities are satisfied. Never mark this wave complete solely from source commits or queued GitHub Actions.
+
+### Wave 2 Step 1: Desktop Integration — archive approval slice (2026-11-05)
+- `lu-desktop/src-tauri/src/archive_desktop.rs` is a trusted host-only archive review queue. **Both** the archive input and extraction parent are chosen via native OS pickers; no model or WebView argument supplies an OS path. Host pins two `cap_std::fs::Dir` capabilities and the SHA-256 full-tree manifest.
+- The host creates a **new, unpredictable child folder** derived from a bounded source basename and host-generated ID; never overwrites the chosen directory or an existing child.
+- Tauri commands `lu_review_archive_tree`, `lu_confirm_archive_tree`, and `lu_deny_archive_tree` keep the preview inert. A final native confirmation is required after the React panel displays **every** archive member/path/size/hash and requests a review acknowledgment.
+- On explicit consent, Lu records a fresh authenticated chat user turn, grants a single `lu.archive.tree.extract` WriteWorkspace effect through `ConversationAuthority` + `PolicyEngine`, and dispatches it via durable `EffectJournal` and an exact-manifest host policy. Full-tree content is rehashed after effect completion. Denials do not create files.
+- If a write fails after directory creation, the host reports manual recovery/uncertain state, never auto-retries or deletes unexpected files. Preview queue is ephemeral; restart cannot replay it.
+- React `Extract archive` action, exact member-list panel, checksum and destination display, acknowledgment, native approval, success receipt and deny paths are wired into `lu-desktop/web/main.jsx`.
+- Unit source tests validate a real ZIP preview, chat isolation, deny/review consumption, and symlink refusal. `lu-desktop/scripts/check-ui.mjs` statically asserts end-to-end native host/UI command wiring. Dedicated Wave 2 CI includes full React UI build/check/tests and Windows Tauri cargo check + native archive queue tests.
+- **Not yet accepted:** Exact-head Windows CI must actually pass; manually verify installed desktop flow with ZIP/TAR.GZ and interrupted writes. Desktop preview/approval for native Office revisions, structured DOCX/PPTX writers, spreadsheet edits, file copy/move/trash/restore are still separate gates. Model-generated proposals to these new tools remain Wave 3 normal conversation integration.
