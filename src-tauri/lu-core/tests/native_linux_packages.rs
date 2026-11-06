@@ -61,9 +61,10 @@ fn tar(path:&str,body:&[u8])->Vec<u8>{
     let mut h=[0u8;512];
     h[..path.len()].copy_from_slice(path.as_bytes());
     fn octal(out:&mut [u8],n:usize){
-        let text=format!("{:0width$o}",n,width=out.len()-1);
-        out[..out.len()-1].copy_from_slice(text.as_bytes());
-        out[out.len()-1]=0;
+        let last=out.len()-1;
+        let text=format!("{:0width$o}",n,width=last);
+        out[..last].copy_from_slice(text.as_bytes());
+        out[last]=0;
     }
     octal(&mut h[100..108],0o644);
     octal(&mut h[108..116],0);
@@ -130,10 +131,11 @@ fn ar_gnu_long_names_and_debian_data_control_are_inert(){
     let data=tar("./usr/share/app/hello.txt",b"Hello Debian");
     let mut gz=GzEncoder::new(Vec::new(),Compression::default());
     gz.write_all(&data).unwrap();
+    let compressed_data=gz.finish().unwrap();
     let payload=ar(&[
         ("debian-binary/",b"2.0\n"),
         ("control.tar/",control.as_slice()),
-        ("data.tar.gz/",gz.finish().unwrap().as_slice()),
+        ("data.tar.gz/",compressed_data.as_slice()),
     ]);
     fs::write(root.join("safe.deb"),&payload).unwrap();
     let parsed=deb_virtual_members(&payload).unwrap();
