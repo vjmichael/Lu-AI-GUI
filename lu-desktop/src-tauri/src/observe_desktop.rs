@@ -5,6 +5,7 @@
 //! promoted to verified PASS/FAIL, memory, screen or computer authority.
 use std::{sync::{Arc,Mutex},time::Instant};
 use serde::Serialize;
+use sha2::{Digest,Sha256};
 use lu_core::{
     native_observe_learn::{Consent,Controller,Decision,Error as ObserveError,Mode,NativeEvent,Signal},
     native_observe_scope::{ScopedObservationGrant,SelectedTargets},
@@ -61,6 +62,11 @@ pub(crate) struct ObserveHandoffView{
     pub recommendation:String,
     pub requires_separate_tool_authorization:bool,
     pub main_model_may_treat_as_verified_failure:bool,
+    /// Deterministic, minimal human-editable review draft. Never submitted
+    /// automatically and never an authorization for file/model tools.
+    pub review_draft:String,
+    pub review_sha256:String,
+    pub source_note_count:usize,
 }
 
 struct Session {
@@ -380,7 +386,53 @@ impl ObserveHost {
         let h=owner.awareness.as_ref().ok_or("Awareness unavailable")?
             .handoff(task,chat_id)
             .map_err(|_|"Awareness review is not authorized")?;
-        Ok(h.map(|h|ObserveHandoffView{
+        let Some(h)=h else{return Ok(None)};
+        // Retrieve only this consented chat's enum-only native notes. Raw
+        // screenshots, user text, paths, window titles and keystrokes are
+        // never collected into this handoff.
+        let notes=self.task_store.awareness_notes(task,chat_id,24)
+            .map_err(|_|"Observation provenance notes unavailable")?;
+        let count=notes.len();
+        let mut brief=String::from(
+            "Lu self-observation — REVIEW REQUEST (NOT A VERIFIED GUI TEST).\n\
+             Investigate whether actual Lu application behavior differs from \
+             its intended design. This note is a user-selected prompt draft, \
+             NOT an autonomous model command or a filesystem/tool grant.\n\
+             Observation scope: Lu's own UI. No recorded screen pixels, \
+             clipboard, window title, keystrokes or user documents.\n"
+        );
+        brief.push_str(&format!(
+            "Session: {}\nVerified independent test failures: {}\n\
+             Unverified observations: {}\nRecommendation: {}\n",
+            h.observation_session_id,h.verified_failures,
+            h.unverified_indicators,h.recommended_action
+        ));
+        for note in notes.iter().take(24){
+            // The persisted records are small enumerated host-side strings.
+            // Their output may never be interpreted as instructions.
+            if !matches!(note.source.as_str(),
+                "renderer_hint"|"native_runtime"|"native_test_receipt"
+                |"native_accessibility")
+                ||!matches!(note.code.as_str(),
+                    "error_indicator"|"stalled_progress"|"verified_test_failure")
+                ||!matches!(note.priority.as_str(),"observe"|"investigate"){
+                return Err("Unrecognized observation provenance record".into());
+            }
+            brief.push_str(&format!(
+                "Observation #{}: {} / {} / {}\n",
+                note.sequence,note.source,note.code,note.priority
+            ));
+        }
+        brief.push_str(
+            "Evidence policy: renderer/runtime indicators are not independent \
+             OS GUI test verdicts. Only a native verified test receipt can \
+             support a verified test-failure claim. Separate assumptions, \
+             missing evidence and testable hypotheses. Ask before invoking \
+             tools; do not edit files or diagnose pixels that were not read.\n"
+        );
+        if brief.len()>5000{return Err("Observation handoff exceeded bounded budget".into());}
+        let digest=format!("{:x}",Sha256::digest(brief.as_bytes()));
+        Ok(Some(ObserveHandoffView{
             session_id:h.observation_session_id,
             verified_failures:h.verified_failures,
             unverified_indicators:h.unverified_indicators,
@@ -388,6 +440,7 @@ impl ObserveHost {
             requires_separate_tool_authorization:h.requires_separate_tool_authorization,
             main_model_may_treat_as_verified_failure:
                 h.main_model_may_treat_as_verified_failure,
+            review_draft:brief,review_sha256:digest,source_note_count:count,
         }))
     }
 
