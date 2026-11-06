@@ -499,7 +499,8 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             "lu_files_read_text".into()
         )))
     );
-    for _ in 0..MAX_TOOL_STEPS {
+    assert!(MAX_TOOL_STEPS>8,"tool loops should not stop at eight useful steps");
+    for _ in 0..lu_core::agent_tool_loop::MAX_IDENTICAL_RESULTS {
         let out = turn
             .handle_model_reply(
                 r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"notes.txt"}}"#,
@@ -512,6 +513,8 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             .unwrap();
         assert!(matches!(out, ToolTurnOutcome::ToolResult { .. }));
     }
+    // A fourth *identical* native request does not execute or get another
+    // permission grant merely because the model emits a new call envelope.
     assert_eq!(
         turn.handle_model_reply(
             r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"notes.txt"}}"#,
@@ -521,7 +524,7 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             &Permitted,
         )
         .await,
-        Err(ToolTurnError::StepLimit)
+        Err(ToolTurnError::NoProgress)
     );
     // Keep compile-time reference to the full catalog needed for larger lists.
     assert_eq!(allowed.len(), 4);

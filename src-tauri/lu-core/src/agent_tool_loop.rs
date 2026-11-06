@@ -22,7 +22,10 @@ use crate::{
     registry::NativeToolRegistry,
 };
 
-pub const MAX_TOOL_STEPS: u32 = 8;
+/// Large absolute emergency limit, not a small fixed reasoning loop cap.
+/// Repeated identical tool results stop after MAX_IDENTICAL_RESULTS.
+pub const MAX_TOOL_STEPS:u32=32;
+pub const MAX_IDENTICAL_RESULTS:u8=3;
 pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
 
 // Compiled-in host observation with no model-supplied identifiers or text.
@@ -55,6 +58,7 @@ pub enum ToolTurnError {
     TooLarge,
     NoAuthorizedTools,
     StepLimit,
+    NoProgress,
     AlreadyFinished,
     Revoked,
     ReadOnlyTurnViolation,
@@ -71,6 +75,9 @@ pub struct NativeToolTurn {
     done: bool,
     last_repair: JsonRepairStatus,
     read_only: bool,
+    previous_request_digest:Option<String>,
+    previous_result_digest:Option<String>,
+    identical_result_count:u8,
 }
 
 impl NativeToolTurn {
@@ -112,6 +119,9 @@ impl NativeToolTurn {
             done: false,
             last_repair: JsonRepairStatus::Unchanged,
             read_only: false,
+            previous_request_digest:None,
+            previous_result_digest:None,
+            identical_result_count:0,
         })
     }
 
@@ -395,6 +405,17 @@ impl NativeToolTurn {
             .ok_or(ToolTurnError::MalformedModelReply)?;
         let encoded =
             serde_json::to_string(args).map_err(|_| ToolTurnError::MalformedModelReply)?;
+        // Stable semantic request witness excludes Lu's generated call ID.
+        let mut request_hasher=Sha256::new();
+        request_hasher.update(name.as_bytes());
+        request_hasher.update([0]);
+        request_hasher.update(encoded.as_bytes());
+        let request_digest=format!("{:x}",request_hasher.finalize());
+        if self.previous_request_digest.as_deref()==Some(&request_digest) &&
+            self.identical_result_count>=MAX_IDENTICAL_RESULTS{
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
+        }
         let digest = Sha256::digest(self.origin.task_id.as_bytes());
         let prefix = digest
             .iter()
@@ -412,16 +433,19 @@ impl NativeToolTurn {
             )
             .map_err(ToolTurnError::Catalog)?;
 
-        if self.read_only {
-            let descriptors = registry
-                .tools()
-                .map_err(|_| ToolTurnError::ReadOnlyTurnViolation)?;
-            if !descriptors.iter().any(|descriptor| {
-                descriptor.id == invocation.tool_id
-                    && descriptor.effect == ToolEffect::ReadWorkspace
-            }) {
-                return Err(ToolTurnError::ReadOnlyTurnViolation);
-            }
+        let descriptors=registry.tools()
+            .map_err(|_|ToolTurnError::ReadOnlyTurnViolation)?;
+        let descriptor=descriptors.iter().find(|d|d.id==invocation.tool_id)
+            .ok_or(ToolTurnError::ReadOnlyTurnViolation)?;
+        if self.read_only && descriptor.effect!=ToolEffect::ReadWorkspace{
+            return Err(ToolTurnError::ReadOnlyTurnViolation)
+        }
+        // Do not re-execute the same write effect, even if the first
+        // result differs. A fresh model call is not fresh human approval.
+        if descriptor.effect!=ToolEffect::ReadWorkspace &&
+            self.previous_request_digest.as_deref()==Some(&request_digest){
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
         }
 
         // A tool can be advertised earlier, then revoked. Host checks exact
@@ -454,6 +478,17 @@ impl NativeToolTurn {
         let data = catalog
             .decode_result(&self.advertised, name, &response)
             .map_err(ToolTurnError::Catalog)?;
+        let encoded_result=serde_json::to_vec(&data)
+            .map_err(|_|ToolTurnError::MalformedModelReply)?;
+        let result_digest=format!("{:x}",Sha256::digest(&encoded_result));
+        if self.previous_request_digest.as_deref()==Some(&request_digest) &&
+            self.previous_result_digest.as_deref()==Some(&result_digest){
+            self.identical_result_count=self.identical_result_count.saturating_add(1);
+        }else{
+            self.identical_result_count=1;
+        }
+        self.previous_request_digest=Some(request_digest);
+        self.previous_result_digest=Some(result_digest);
         Ok(ToolTurnOutcome::ToolResult {
             call_id,
             tool_name: name.into(),

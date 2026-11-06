@@ -188,6 +188,7 @@ pub fn native_generation_failure_class(error: &NativeGenerationError) -> &'stati
             ToolTurnError::Catalog(_) | ToolTurnError::NoAuthorizedTools,
         ) => "tool_contract_rejected",
         NativeGenerationError::ModelReply(ToolTurnError::StepLimit) => "tool_step_limit",
+        NativeGenerationError::ModelReply(ToolTurnError::NoProgress) => "tool_no_forward_progress",
         NativeGenerationError::ModelReply(ToolTurnError::AlreadyFinished) => "turn_state_rejected",
         NativeGenerationError::ModelReply(ToolTurnError::DurableDispatchFailed) => {
             "durable_effect_failed"
@@ -834,6 +835,18 @@ async fn run_supervised_native_turn_inner(
                     &format!("{error:?}"),
                     parsed_candidate.as_ref().map(|p| p.repair),
                 )?;
+                // Repeating the same request after identical feedback is
+                // evidence of a stalled loop, not permission to retry.
+                // The progress witness is computed solely by Lu.
+                if matches!(error,ToolTurnError::NoProgress){
+                    record_audit(
+                        journal,&conversation_id,&task_id,
+                        ModelAuditKind::GenerationFailure,
+                        "LOOP_GUARD_STOP: no semantic tool forward progress",None,
+                    )?;
+                    turn.halt();
+                    return Err(NativeGenerationError::ModelReply(ToolTurnError::NoProgress))
+                }
                 // There is no second execution attempt if any effect was
                 // entered, denied, cancelled or left UNCERTAIN. A JSON error
                 // does not mint permission for a tool.

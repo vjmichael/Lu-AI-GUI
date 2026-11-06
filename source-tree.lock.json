@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "525828727bf76ed01796c9198499f95a489af8e2",
+  "sourceCommitBeforeLock": "3f44024eb9121bcf9693c7f3b4e78f81c89e97ae",
   "trackedFileCount": 393,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "85810f343a26d558bb62670eee6c989c75c8d536"
+      "blob": "614d17f00ad3a10f5afbe6c25617909cb6d279e7"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -161,7 +161,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE3_NORMAL_CONVERSATION.md",
-      "blob": "19fb487289aeb8fbe1fb3cc30a4a866d07637197"
+      "blob": "7a4044d6d2d7d01fe5eaccf250335ad6a80a08d3"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -625,7 +625,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
-      "blob": "43dab3ce323fadf314b66a4250b6534ab26a09ef"
+      "blob": "a67c72ba18cf07a4e0b9d24a36e2e483157f68e8"
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
@@ -1109,7 +1109,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "f5406d7b492d0e82fe299b0ec411ba7a8e1992ba"
+      "blob": "c87ce20c1775399ebd47cd31eccab44cea417865"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
@@ -1349,7 +1349,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_agent_tool_turn.rs",
-      "blob": "4fe055f30a30fe010bc663066d2e226c49740bd8"
+      "blob": "cd26ffc8c48c1428fe21b0f5431fc415495a4fb9"
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_create.rs",
