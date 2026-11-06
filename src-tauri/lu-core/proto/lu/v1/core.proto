@@ -559,3 +559,18 @@ message FileTransferResult {
   string sha256 = 4;
   bool source_removed = 5;
 }
+
+// Native PowerPoint creation; user grants and verified bytes are host owned.
+message PptxCreateSlide {
+  string title = 1;
+  repeated string bullet_points = 2;
+}
+message PptxCreateRequest {
+  string file_name = 1;
+  repeated PptxCreateSlide slides = 2;
+}
+message PptxCreateResult {
+  string file_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
