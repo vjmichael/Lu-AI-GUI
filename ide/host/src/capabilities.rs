@@ -77,6 +77,10 @@ fn metadata() -> Vec<CapabilityMeta> {
                 "Close an open IDE project, without deleting its files.", "session_write", "open project ID", "inactive project summary"),
             capability!("project.unregister", "ide_unregister_project", "Remove project from IDE",
                 "Remove project registration only; never remove files on disk.", "catalog_write", "registered project ID and user intent", "catalog without project"),
+            capability!("source.findProject", "ide_find_in_project", "Find in project",
+                "Read-only bounded literal search of saved UTF-8 project files; excludes generated directories.",
+                "read", "registered open project, nonempty literal query",
+                "revision-tagged source matches, exact bytes and explicit truncation"),
             capability!("source.list", "ide_list_source_directory", "List source directory",
                 "Capability-scoped, bounded listing of one directory.", "read", "registered and open project", "relative paths and truncation flag"),
             capability!("source.preview", "ide_preview_source_file", "Read source file",
@@ -171,7 +175,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 21);
+        assert_eq!(catalog.capabilities.len(), 22);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -196,7 +200,7 @@ mod tests {
             assert!(matches!(item.effect,
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 26);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 28);
     }
 
     #[test]
