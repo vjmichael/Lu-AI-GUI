@@ -847,6 +847,34 @@ impl Supervisor {
         })
     }
 
+
+    /// D7D protected recovery phase 1: write durable RecoveryRequired BEFORE
+    /// asking the service to relinquish its independently-held Job handle.
+    /// This never clears quarantine and never authorizes further execution.
+    #[cfg(all(windows, feature = "protected-recovery-service"))]
+    fn mark_protected_recovery_pending(&self, job_id: &str)
+        -> Result<(), SupervisorError> {
+        let mut state = self.state.lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        if !state.quarantine.contains(job_id) {
+            return Err(SupervisorError::Quarantined);
+        }
+        let job = state.jobs.get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?.clone();
+        if job.phase == JobPhase::RecoveryRequired { return Ok(()); }
+        if !matches!(job.phase, JobPhase::AdmissionPending | JobPhase::Running |
+            JobPhase::CancelRequested) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            JobPhase::RecoveryRequired, "protected_recovery_preflight",
+            "original_kernel_job_open_and_empty_but_service_ack_pending",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
+        Ok(())
+    }
+
     /// After process or host crash, no worker is relaunched. A durable
     /// recovery-required receipt is written before contacting an OS broker.
     /// If the broker cannot prove descendant cleanup, remain quarantined.
