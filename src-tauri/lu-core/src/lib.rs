@@ -70,6 +70,7 @@ pub mod native_iso9660;
 pub mod native_linux_archive;
 pub mod native_libarchive;
 pub mod native_seven_rar;
+pub mod native_rpm;
 pub mod native_cpio;
 pub mod native_ar_deb;
 pub mod native_linux_archive_tool;
