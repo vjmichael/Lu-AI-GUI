@@ -46,6 +46,11 @@ async fn authorized_file_read_and_archive_inspection_share_one_model_session(){
     let mut session=WorkspaceReadTurnSession::new(
         &Verifier,"chat-a","human-1","task-1",&root).unwrap();
     let schemas=session.schemas().unwrap();
+    let capabilities=session.capabilities().unwrap();
+    assert!(!capabilities.is_empty());
+    assert!(capabilities.iter().all(|c|c.effect=="read_workspace"));
+    assert_eq!(capabilities.len(),schemas.len());
+    assert!(capabilities.iter().any(|c|c.public_name=="lu_files_read_text"));
     assert!(schemas.iter().any(|s|s["function"]["name"]=="lu_archive_list"));
     assert!(schemas.iter().any(|s|s["function"]["name"]=="lu_files_read_text"));
     let mut model=Scripted(VecDeque::from(vec![

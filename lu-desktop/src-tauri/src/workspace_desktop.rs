@@ -18,6 +18,12 @@ use std::sync::{Arc,Mutex};
 struct NativeToolProgress{
     chat_id:String,generation_id:String,phase:String,
 }
+#[derive(Clone,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+struct NativeToolCatalogEvent{
+    chat_id:String,generation_id:String,
+    tools:Vec<lu_core::native_capability_inventory::NativeCapabilityView>,
+}
 struct PersistedWorkspaceTurn<'a> {
     chats:&'a ChatStore,
     conversation_id:&'a str,
@@ -129,6 +135,13 @@ pub(crate) async fn ask_workspace_for_chat(
             let mut turn=WorkspaceReadTurnSession::new(
                 &verifier,&chat_id,&gid,&gid,&root,
             ).map_err(|e|format!("Workspace admission: {e:?}"))?;
+            let available=turn.capabilities().map_err(|_|"Native tool catalog unavailable")?;
+            if available.is_empty()||available.iter().any(|t|t.effect!="read_workspace"){
+                return Err("No safe read-only native tool registered".into())
+            }
+            let _=event_app.emit("lu-native-turn-capabilities",NativeToolCatalogEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),tools:available,
+            });
             let journal=ModelTurnJournal::open(
                 &host.catalog_path.with_file_name("lu-workspace-read-audit.sqlite")
             ).map_err(|e|format!("Workspace audit: {e:?}"))?;

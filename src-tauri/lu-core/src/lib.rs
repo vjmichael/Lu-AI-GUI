@@ -20,6 +20,7 @@ pub mod ansf_revisions;
 pub mod ansf_sync;
 pub mod benchmark_contract;
 pub mod capability_router;
+pub mod native_capability_inventory;
 pub mod ce_approval;
 pub mod ce_broker;
 pub mod ce_packages;

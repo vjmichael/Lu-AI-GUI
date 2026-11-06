@@ -13,6 +13,7 @@ use crate::{
         AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
         TrustedUserTurnVerifier,
     },
+    native_capability_inventory::{discover_turn_capabilities,NativeCapabilityView},
     inference_host::Cancellation,
     model::ModelToolCatalog,
     model_turn_journal::ModelTurnJournal,
@@ -56,6 +57,7 @@ pub struct WorkspaceReadTurnSession {
     turn:NativeToolTurn,
     policy:ReadOnlyPolicy,
     task_id:String,
+    origin:BoundCallOrigin,
 }
 impl WorkspaceReadTurnSession{
     #[allow(clippy::too_many_arguments)]
@@ -107,12 +109,20 @@ impl WorkspaceReadTurnSession{
             expires_at:Some(expires_at),
         },verifier).map_err(|_|WorkspaceReadError::AuthorityUnavailable)?;
         let turn=NativeToolTurn::new_read_only(
-            &catalog,&registry,&authority,origin,task_id.into(),&names
+            &catalog,&registry,&authority,origin.clone(),task_id.into(),&names
         ).map_err(|_:ToolTurnError|WorkspaceReadError::CatalogUnavailable)?;
         Ok(Self {
             registry,catalog,authority,turn,
             policy:ReadOnlyPolicy{ids},task_id:task_id.into(),
+            origin,
         })
+    }
+    /// Safe names/types for the actual just-authorized read-only turn.
+    /// No model-visible tool name is independently treated as permission.
+    pub fn capabilities(&self)->Result<Vec<NativeCapabilityView>,WorkspaceReadError>{
+        discover_turn_capabilities(
+            &self.registry,&self.catalog,&self.authority,&self.origin,true,
+        ).map_err(|_|WorkspaceReadError::CatalogUnavailable)
     }
     pub fn schemas(&self)->Result<Vec<serde_json::Value>,WorkspaceReadError>{
         self.turn.schemas(&self.catalog).map_err(|_|WorkspaceReadError::CatalogUnavailable)

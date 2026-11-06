@@ -39,6 +39,7 @@ function App() {
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
+  const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
   const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
   const [editRecovery, setEditRecovery] = useState([]);
@@ -298,7 +299,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopBackground = () => {}, stopFinished = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -348,10 +349,19 @@ function App() {
         ...prev,[update.chatId]:update,
       }));
     }).then(fn=>{if(alive)stopToolProgress=fn;else fn();});
+    listen('lu-native-turn-capabilities',e=>{
+      const entry=e.payload;
+      if (!alive||!entry?.chatId||!entry?.generationId||!Array.isArray(entry.tools))return;
+      setTurnCapabilitiesByChat(prev=>({...prev,[entry.chatId]:entry}));
+    }).then(fn=>{if(alive)stopTurnCapabilities=fn;else fn();});
     listen('lu-generation-finish', e=>{
       if (!alive || !e.payload?.chatId)return;
       const {chatId:finishedChat,generationId}=e.payload;
       setToolProgressByChat(prev=>{
+        if (prev[finishedChat]?.generationId!==generationId)return prev;
+        const next={...prev};delete next[finishedChat];return next;
+      });
+      setTurnCapabilitiesByChat(prev=>{
         if (prev[finishedChat]?.generationId!==generationId)return prev;
         const next={...prev};delete next[finishedChat];return next;
       });
@@ -372,7 +382,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopBackground(); stopFinished(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -1671,7 +1681,11 @@ function App() {
                  ? 'Lu · checking tool result'
                  : 'Lu · thinking with tools'
              : 'Lu · generating'}
-          </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}</div>}
+          </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}
+          {turnCapabilitiesByChat[chatId]?.generationId===visibleJob.generationId &&
+            <small>Read-only native tools for this turn: {turnCapabilitiesByChat[chatId].tools
+              .map(tool=>tool.publicName).join(', ')}</small>}
+        </div>}
       </div>
         {!atBottom && <button type="button" className="jumpLatest" onClick={jumpToLatest}
           aria-label="Jump to latest message">↓ Jump to latest</button>}
