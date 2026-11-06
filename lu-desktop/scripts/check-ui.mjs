@@ -108,6 +108,16 @@ const tests = [
     host.includes('wave2_recovery: wave2_recovery::Wave2OperationLedger') &&
     host.includes('state.wave2_recovery.record_intent(') &&
     host.includes('state.wave2_recovery.list(')],
+  ['one reversible trash custody authority and one set of UI review controls',
+    host.includes('mod file_trash_desktop;') &&
+    !host.includes('mod trash_desktop;') &&
+    host.includes('native_trash_custody::TrashCustodyLedger') &&
+    host.includes('trash_custody.reconcile_interrupted()') &&
+    (ui.match(/const \[trashReview, setTrashReview\]/g) || []).length === 1 &&
+    (ui.match(/const \[trashBusy, setTrashBusy\]/g) || []).length === 1 &&
+    (ui.match(/aria-label="Review reversible file trash"/g) || []).length === 1 &&
+    !ui.includes("invoke('lu_review_trash_file'") &&
+    !host.includes('fn lu_review_trash_file(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
