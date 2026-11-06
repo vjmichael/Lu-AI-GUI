@@ -81,7 +81,7 @@ jobs:
           }
 
   pinned-offline-protected-cargo:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 75
     permissions:
       contents: read
