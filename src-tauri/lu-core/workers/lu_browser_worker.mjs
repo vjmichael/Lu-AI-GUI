@@ -117,21 +117,23 @@ export class BrowserSession {
         args: this.softwareRendering ? ['--disable-gpu'] : [],
       });
     }
-    await this.context.route('**/*', async route => {
-      try {
-        approvedUrl(route.request().url(), this.origins);
-        await route.continue();
-      } catch { await route.abort(); }
-    });
-    this.page = this.context.pages()[0] ?? await this.context.newPage();
     try {
+      await this.context.route('**/*', async route => {
+        try {
+          approvedUrl(route.request().url(), this.origins);
+          await route.continue();
+        } catch { await route.abort(); }
+      });
+      this.page = this.context.pages()[0] ?? await this.context.newPage();
       if (this.visibilityMode === 'automatic') {
         await this.#setWindowVisibility('HIDDEN');
       } else {
         this.windowVisibility = 'VISIBLE';
       }
     } catch (error) {
-      await this.close();
+      // A failed origin firewall or page creation must never leave a
+      // headful Chromium session behind (including a host-owned CDP attach).
+      try { await this.close(); } catch { /* preserve original error */ }
       throw error;
     }
     return {status:'READY',windowVisibility:this.windowVisibility};
@@ -251,6 +253,11 @@ export class BrowserSession {
       return {status:'NAVIGATED',url:this.page.url()};
     }
     if (op === 'accessibility') {
+      // The accessibility path is not an escape hatch around read()'s
+      // CAPTCHA/login takeover gate.
+      const text=await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const challenge=challengeKind(text);
+      if(challenge)return this.#requestHuman(challenge);
       const tree=await this.page.locator('body').ariaSnapshot({timeout:5000});
       return {status:'ACCESSIBILITY',url:this.page.url(),text:tree.slice(0,65536),
         truncated:tree.length>65536};
@@ -270,6 +277,10 @@ export class BrowserSession {
       return {status:'READ',url:this.page.url(),text:text.slice(0,131072),truncated:text.length>131072};
     }
     if (op === 'screenshot') {
+      // Prevent screenshot() from bypassing human challenge handoff.
+      const text=await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const challenge=challengeKind(text);
+      if(challenge)return this.#requestHuman(challenge);
       let image;
       try {
         await this.page.bringToFront();
