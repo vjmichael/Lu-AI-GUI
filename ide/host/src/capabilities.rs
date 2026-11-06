@@ -47,6 +47,10 @@ type CapabilityMeta = (&'static str, &'static str, &'static str,
 
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
+            capability!("resource.probe", "ide_probe_project_resource", "Inspect resource bytes",
+                "Read exact scoped file metadata and SHA-256 without executing it.",
+                "read", "open registered project, validated relative file path",
+                "observed bytes and digest, missing/changed state, explicit untested execution"),
             capability!("inventory.capture", "ide_capture_project_inventory", "Record verified inventory snapshot",
                 "Persist observed artifact paths and hashes for future comparison; no execution.",
                 "catalog_write", "open project and explicit user snapshot request",
@@ -179,7 +183,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 23);
+        assert_eq!(catalog.capabilities.len(), 24);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -204,7 +208,7 @@ mod tests {
             assert!(matches!(item.effect,
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 29);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 30);
     }
 
     #[test]
