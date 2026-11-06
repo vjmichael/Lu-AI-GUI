@@ -191,8 +191,9 @@ fn spawn_contained_stdio(
 
 struct WindowsLspProcess {
     _profile: AppProfile,
-    job: Job,
+    // Lease must drop BEFORE the borrowed Job HANDLE it uses in its Drop.
     lease: BrokerLease,
+    job: Job,
     process: Handle,
     _thread: Handle,
     stdin_write: Handle,
