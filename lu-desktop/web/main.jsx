@@ -59,6 +59,13 @@ function App() {
   const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
   const [researchCampaignCeiling,setResearchCampaignCeiling]=useState(120);
   const [researchCampaignBusy,setResearchCampaignBusy]=useState(false);
+  const [researchClaimDraft,setResearchClaimDraft]=useState({
+    sourceId:'',claim:'',quote:'',stance:'COMPLICATES',reasoning:''
+  });
+  const [researchClaimsByChat,setResearchClaimsByChat]=useState({});
+  const [researchReportTitle,setResearchReportTitle]=useState('Research evidence report');
+  const [researchReportSavedByChat,setResearchReportSavedByChat]=useState({});
+  const [researchReportBusy,setResearchReportBusy]=useState(false);
   const [researchDocumentQuotes,setResearchDocumentQuotes]=useState({});
   const [researchDocumentPassages,setResearchDocumentPassages]=useState({});
   const [researchError,setResearchError]=useState('');
@@ -272,6 +279,40 @@ function App() {
       }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function refreshResearchClaims(selectedChat=chatId){
+    if(!selectedChat)return;
+    try{
+      const claims=await invoke('lu_research_claims',{chatId:selectedChat});
+      setResearchClaimsByChat(old=>({...old,[selectedChat]:claims}));
+    }catch(error){setResearchError(String(error));}
+  }
+  async function submitResearchClaim(){
+    if(!chatId||researchReportBusy)return;
+    const sourceChat=chatId;
+    const {sourceId,claim,quote,stance,reasoning}=researchClaimDraft;
+    if(!sourceId.trim()||!claim.trim()||!quote.trim()||!reasoning.trim())return;
+    setResearchReportBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_add_claim',{
+        chatId:sourceChat,sourceId:sourceId.trim(),claim:claim.trim(),
+        quote:quote.trim(),stance,reasoning:reasoning.trim()
+      });
+      setResearchClaimsByChat(old=>({...old,[sourceChat]:result}));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchReportBusy(false);}
+  }
+  async function exportResearchReport(format){
+    if(!chatId||researchReportBusy||!researchReportTitle.trim())return;
+    const sourceChat=chatId;
+    setResearchReportBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_export_report',{
+        chatId:sourceChat,title:researchReportTitle.trim(),format
+      });
+      if(result)setResearchReportSavedByChat(old=>({...old,[sourceChat]:result}));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchReportBusy(false);}
   }
   async function refreshResearchCampaigns(selectedChat=chatId){
     if(!selectedChat)return;
@@ -3372,6 +3413,75 @@ function App() {
                   </button>}
               </li>)}</ul>
             </div>}
+          <div className="researchResults" aria-label="Source-linked claim matrix">
+            <strong>Document-backed claim and counterevidence review</strong>
+            <small>Only a previously verified full-text PDF passage can enter this matrix.
+              Your interpretation is recorded as human-reviewed, not as established fact.</small>
+            <input aria-label="Verified research source ID"
+              placeholder="Crossref-corroborated OpenAlex source ID"
+              value={researchClaimDraft.sourceId}
+              onChange={e=>setResearchClaimDraft(old=>({...old,sourceId:e.target.value}))}/>
+            <input aria-label="Claim under analysis" placeholder="Specific claim"
+              value={researchClaimDraft.claim}
+              onChange={e=>setResearchClaimDraft(old=>({...old,claim:e.target.value}))}/>
+            <textarea aria-label="Verified quote for research claim"
+              placeholder="Exact verified PDF passage" value={researchClaimDraft.quote}
+              onChange={e=>setResearchClaimDraft(old=>({...old,quote:e.target.value}))}/>
+            <label>Evidence relationship
+              <select value={researchClaimDraft.stance}
+                onChange={e=>setResearchClaimDraft(old=>({...old,stance:e.target.value}))}>
+                <option value="SUPPORTS">Supports</option>
+                <option value="CHALLENGES">Challenges</option>
+                <option value="COMPLICATES">Qualifies or complicates</option>
+              </select>
+            </label>
+            <input aria-label="Reasoning for interpretation"
+              placeholder="Why this quote relates to the claim"
+              value={researchClaimDraft.reasoning}
+              onChange={e=>setResearchClaimDraft(old=>({...old,reasoning:e.target.value}))}/>
+            <div className="settingsActions">
+              <button type="button" disabled={!chatId||researchReportBusy||
+                !researchClaimDraft.sourceId.trim()||!researchClaimDraft.claim.trim()||
+                !researchClaimDraft.quote.trim()||!researchClaimDraft.reasoning.trim()}
+                onClick={()=>void submitResearchClaim()}>
+                Save my evidence interpretation
+              </button>
+              <button type="button" disabled={!chatId||researchReportBusy}
+                onClick={()=>void refreshResearchClaims()}>
+                Review saved claims
+              </button>
+            </div>
+            {Array.isArray(researchClaimsByChat[chatId])&&
+              <ul>{researchClaimsByChat[chatId].map(item=><li key={item.claim}>
+                <strong>{item.claim}</strong>
+                <small>Support: {item.supports} · Challenge: {item.challenges}
+                  · Qualification: {item.complicates}
+                  · Source IDs: {item.distinctCatalogSources}</small>
+                {item.unresolvedDisagreement&&
+                  <small>Unresolved: contrary or qualifying evidence remains</small>}
+                <small>{item.reasonCodes.join(', ')}</small>
+              </li>)}</ul>}
+            <label>Verified evidence report title
+              <input value={researchReportTitle}
+                onChange={e=>setResearchReportTitle(e.target.value)}/>
+            </label>
+            <div className="settingsActions">
+              <button type="button" disabled={!chatId||researchReportBusy}
+                onClick={()=>void exportResearchReport('markdown')}>
+                Save Markdown report
+              </button>
+              <button type="button" disabled={!chatId||researchReportBusy}
+                onClick={()=>void exportResearchReport('json')}>
+                Save evidence JSON
+              </button>
+            </div>
+            {researchReportSavedByChat[chatId]&&
+              <small>Saved {researchReportSavedByChat[chatId].format}:
+                {' '}{researchReportSavedByChat[chatId].savedPath}
+                {' '}· SHA-256: {researchReportSavedByChat[chatId].savedSha256}
+                {' '}· {researchReportSavedByChat[chatId].checkedPassages}
+                verified passages. Interpretations are not independently certified.</small>}
+          </div>
           {researchError&&<small role="alert">{researchError}</small>}
           {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
             <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
