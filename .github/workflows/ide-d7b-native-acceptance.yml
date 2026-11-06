@@ -26,6 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Compile native Windows worker
         run: cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --all-targets
       - name: Hostile filesystem and restart tests
@@ -63,6 +64,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Construct a version-pinned offline Rust MSVC and SDK bundle
         shell: pwsh
         run: |
