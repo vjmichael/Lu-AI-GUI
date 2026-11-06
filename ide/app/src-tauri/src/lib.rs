@@ -70,6 +70,23 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// Read file metadata and bounded SHA-256 under an active registered project.
+/// The result NEVER proves an executable is safe or operable.
+#[tauri::command]
+async fn ide_probe_project_resource(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::resource_probe::ProjectResourceProbe, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.probe_project_resource(&project_id, &relative_path)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "RESOURCE_PROBE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read local Git diff hunks only, in the exact registered project root.
 /// Scope is strictly "staged" or "worktree"; there are no mutation actions.
 #[tauri::command]
@@ -490,6 +507,7 @@ pub fn run() {
             ide_read_project_context,
             ide_read_git_status,
             ide_read_git_diff,
+            ide_probe_project_resource,
             ide_read_git_history,
             ide_compare_live_github,
             ide_capture_project_inventory,
