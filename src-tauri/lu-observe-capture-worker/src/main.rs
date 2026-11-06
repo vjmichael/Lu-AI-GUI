@@ -26,6 +26,26 @@ fn frame_geometry_valid(width:u32,height:u32,row_pitch:u32,buffer_len:usize)->bo
     let max_padded=MAX_FRAME_BYTES+(MAX_FRAME_HEIGHT as usize)*4096;
     mapped_len<=max_padded&&buffer_len>=useful_end&&buffer_len<=max_padded
 }
+/// Canonical capture receipt: includes geometry and nonce, never row-padding bytes.
+/// The mapped buffer is borrowed only; nothing is serialized to disk or IPC.
+fn frame_receipt(nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8])->Option<String> {
+    use sha2::{Digest,Sha256};
+    if nonce.len()!=32||!nonce.bytes().all(|b|b.is_ascii_hexdigit())
+        ||!frame_geometry_valid(width,height,row_pitch,pixels.len()) {return None;}
+    let pitch=row_pitch as usize;
+    let active_bytes=(width as usize)*4;
+    let mut hash=Sha256::new();
+    hash.update(b"Lu-WGC-one-shot-frame-v1");
+    hash.update(nonce.as_bytes());
+    hash.update(width.to_le_bytes());
+    hash.update(height.to_le_bytes());
+    for row in 0..height as usize {
+        let offset=row*pitch;
+        hash.update(&pixels[offset..offset+active_bytes]);
+    }
+    Some(format!("{:x}",hash.finalize()))
+}
+
 #[cfg(test)]
 mod frame_geometry_tests {
     use super::*;
@@ -33,6 +53,24 @@ mod frame_geometry_tests {
     fn accepts_mapped_bgra_frame_with_bounded_pitch_padding(){
         assert!(frame_geometry_valid(1920,1080,7680,7680*1080));
         assert!(frame_geometry_valid(1919,1080,7680,7680*1080));
+    }
+    #[test]
+    fn receipt_ignores_pitch_padding_but_detects_changed_pixels_nonce_and_geometry(){
+        let nonce="00112233445566778899aabbccddeeff";
+        let mut padded=vec![0u8;24];
+        // A 2x2 BGRA image: 8 active bytes per row, 4 pitch-padding bytes.
+        for index in 0..8 {padded[index]=index as u8;}
+        for index in 12..20 {padded[index]=(index+2) as u8;}
+        let receipt=frame_receipt(nonce,2,2,12,&padded).unwrap();
+        padded[8..12].fill(255);
+        padded[20..24].fill(255);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
+        padded[12]^=1;
+        assert_ne!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
+        assert_ne!(frame_receipt("ffeeddccbbaa99887766554433221100",2,2,12,&padded).unwrap(),receipt);
+        assert!(frame_receipt(nonce,2,2,12,&padded[..19]).is_none());
+        assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded).is_none());
+        assert!(frame_receipt(nonce,0,2,12,&padded).is_none());
     }
     #[test]
     fn rejects_invalid_dimensions_truncation_and_unbounded_pitch(){
@@ -56,7 +94,6 @@ mod windows_capture_worker {
     // Keep the native D3D11 callback and its geometry checks bound to the
     // same validated limits used by the host-independent unit tests.
     use super::{frame_geometry_valid, MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT};
-    use sha2::{Digest, Sha256};
     use std::{env,error::Error,io::{self,Write},time::{Instant,Duration}};
     use windows_capture::{
         capture::{Context,GraphicsCaptureApiHandler},
@@ -121,21 +158,10 @@ mod windows_capture_worker {
             }
             // Read actual WGC/D3D11-mapped bytes. No screenshot file, video
             // recording, user text, clipboard, window title or pixel IPC.
-            // This hash is a *capture receipt*, not visual understanding.
-            let mut sha=Sha256::new();
-            sha.update(b"Lu-WGC-one-shot-frame-v1");
-            sha.update(self.nonce.as_bytes());
-            sha.update(width.to_le_bytes());
-            sha.update(height.to_le_bytes());
-            // Hash only active BGRA pixels. D3D11 row-pitch padding is not
-            // image content and must not affect a privacy-preserving receipt.
-            let pitch=row_pitch as usize;
-            let active_bytes=(width as usize)*4;
-            for row in 0..height as usize {
-                let start=row*pitch;
-                sha.update(&buffer[start..start+active_bytes]);
-            }
-            let digest=format!("{:x}",sha.finalize());
+            // This is a nonce-bound receipt, not visual understanding.
+            // Canonical hashing is tested independently of Windows capture.
+            let digest=super::frame_receipt(&self.nonce,width,height,row_pitch,buffer)
+                .ok_or("Invalid frame receipt geometry or host nonce")?;
             // FrameBuffer release unmaps staging surface when dropped.
             // The operating system owns the GPU/driver buffers; Lu does not
             // retain or copy the pixel data into a persistent heap or file.
