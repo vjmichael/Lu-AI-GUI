@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ec2f24cbe0d211e6fb331449b2c755a4006e8c92",
+  "sourceCommitBeforeLock": "b4c1c5dcd9083e05eb556084712963fd3db588f4",
   "trackedFileCount": 389,
   "files": [
     {
@@ -1413,7 +1413,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_office_batch_tool_authority.rs",
-      "blob": "c5a16f71f45d7582e7fbc6fa183623bef139867b"
+      "blob": "163822792c1ce493c4fb280b52da511e0f9e55bb"
     },
     {
       "path": "src-tauri/lu-core/tests/native_office_revision.rs",

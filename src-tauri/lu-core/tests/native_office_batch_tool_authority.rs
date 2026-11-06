@@ -104,7 +104,7 @@ async fn exact_multiedit_package_requires_native_grant_and_journal(){
         &registry,&journal,invalid,origin.clone(),&fence
     ).await,Err(DispatchError::Denied(_))));
     assert!(!root.join("wrong.docx").exists());
-    let approved_call=call("batch-applied-012345",approved);
+    let approved_call=call("batch-applied-012345",approved.clone());
     let output=auth.dispatch_bound_durable(
         &registry,&journal,approved_call.clone(),origin.clone(),&fence,
     ).await.unwrap();
