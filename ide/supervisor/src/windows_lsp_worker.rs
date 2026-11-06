@@ -15,7 +15,7 @@ use lu_ide_workspace::{
 };
 use std::{ffi::OsStr, io, sync::Arc};
 use windows_sys::Win32::{
-    Foundation::INVALID_HANDLE_VALUE,
+    Foundation::{INVALID_HANDLE_VALUE, SetHandleInformation},
     Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
     System::{
