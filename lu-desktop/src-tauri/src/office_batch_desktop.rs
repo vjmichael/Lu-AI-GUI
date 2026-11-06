@@ -232,3 +232,73 @@ pub async fn apply(
         sha256:result.revised_sha256,bytes_written:result.bytes_written,
         effect_call_id:effect_id.into()})
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use std::fs;
+    use lu_core::native_docx_create::{render_docx,DocxBlock,DocxBlockKind};
+    #[test]
+    fn native_review_renders_two_edits_but_cannot_write_without_consent(){
+        let root=std::env::temp_dir().join(crate::next_id("lu-office-batch-ui-"));
+        fs::create_dir_all(root.join("revisions")).unwrap();
+        let original=render_docx(&[
+            DocxBlock{kind:DocxBlockKind::Title,text:"Original title".into()},
+            DocxBlock{kind:DocxBlockKind::Paragraph,text:"Original body".into()},
+        ]).unwrap();
+        fs::write(root.join("source.docx"),&original).unwrap();
+        let changes=vec![
+            OfficePatchProposal{
+                kind:"word_text".into(),text_index:Some(0),
+                slide_number:None,sheet_number:None,address:None,
+                expected_old:"Original title".into(),new_value:"New title".into(),
+            },
+            OfficePatchProposal{
+                kind:"word_text".into(),text_index:Some(1),
+                slide_number:None,sheet_number:None,address:None,
+                expected_old:"Original body".into(),new_value:"New body".into(),
+            },
+        ];
+        let queue=OfficeBatchQueue::default();
+        let id=crate::next_id("ob-");
+        let view=queue.stage("chat-one",&id,
+            &root.join("source.docx"),&root.join("revisions"),&changes).unwrap();
+        assert_eq!(view.changes.len(),2);
+        assert!(view.unaffected_parts.iter().any(|(part,_)|part=="word/styles.xml"));
+        assert_ne!(view.original_sha256,view.revised_sha256);
+        assert!(queue.inspect("not-chat",&id).is_err());
+        let taken=queue.take("chat-one",&id).unwrap();
+        assert!(queue.inspect("chat-one",&id).is_err());
+        assert_eq!(taken.view().review_id,id);
+        assert_eq!(fs::read(root.join("source.docx")).unwrap(),original);
+        assert_eq!(fs::read_dir(root.join("revisions")).unwrap().count(),0);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn batch_refuses_wrong_expected_original_before_creating_anything(){
+        let root=std::env::temp_dir().join(crate::next_id("lu-office-batch-denied-"));
+        fs::create_dir_all(root.join("revisions")).unwrap();
+        let original=render_docx(&[
+            DocxBlock{kind:DocxBlockKind::Title,text:"Original title".into()},
+            DocxBlock{kind:DocxBlockKind::Paragraph,text:"Original body".into()},
+        ]).unwrap();
+        fs::write(root.join("source.docx"),&original).unwrap();
+        let changes=vec![
+            OfficePatchProposal{
+                kind:"word_text".into(),text_index:Some(0),
+                slide_number:None,sheet_number:None,address:None,
+                expected_old:"Original title".into(),new_value:"New title".into(),
+            },
+            OfficePatchProposal{
+                kind:"word_text".into(),text_index:Some(1),
+                slide_number:None,sheet_number:None,address:None,
+                expected_old:"Wrong body".into(),new_value:"New body".into(),
+            },
+        ];
+        let queue=OfficeBatchQueue::default();
+        assert!(queue.stage("chat-one",&crate::next_id("ob-"),
+            &root.join("source.docx"),&root.join("revisions"),&changes).is_err());
+        assert_eq!(fs::read_dir(root.join("revisions")).unwrap().count(),0);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
