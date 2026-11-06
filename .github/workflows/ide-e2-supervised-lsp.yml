@@ -79,3 +79,47 @@ jobs:
           if ($content -notmatch 'LSP_PROTECTED_WORKER_UNVERIFIED') {
             throw 'DENIED: protected native acceptance gate missing'
           }
+
+  # Evidence of installed DEFAULT shell only. It cannot prove signed E2 LSP
+  # acceptance: no native-lsp flag, no SCM service, no language-server assets.
+  unsigned-installed-desktop-smoke:
+    needs: protocol-and-editor
+    runs-on: windows-2022
+    timeout-minutes: 75
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install frontend dependencies
+        working-directory: ide/app
+        run: npm install --no-audit --no-fund
+      - name: Build genuine unsigned standalone NSIS
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native NSIS build failed' }
+      - name: Check real installed executable launch/restart/uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $installers=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis/' -Filter '*setup.exe' -File)
+          if ($installers.Count -ne 1) { throw "DENIED: expected exactly one NSIS installer, got $($installers.Count)" }
+          $private=Join-Path $env:RUNNER_TEMP ('lu-ide-alpha-smoke-'+$env:GITHUB_RUN_ID)
+          & 'ide/app/fixtures/Test-InstalledAlphaNsis.ps1' -InstallerPath $installers[0].FullName -InstallRoot $private
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'DENIED: real installed default IDE failed' }
+      - name: Keep unsigned candidate explicitly separate from E2 release
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-e2-default-alpha-unsigned-nsis-test-only
+          path: ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+          if-no-files-found: ignore
+          retention-days: 3
