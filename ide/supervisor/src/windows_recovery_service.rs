@@ -49,6 +49,8 @@ const TICK: Duration = Duration::from_millis(100);
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
 
 struct Handle(HANDLE);
+// Transferred exactly once to a connection worker; never shared concurrently.
+unsafe impl Send for Handle {}
 impl Handle {
     fn new(raw: HANDLE) -> Result<Self, SupervisorError> {
         if raw.is_null() || raw == INVALID_HANDLE_VALUE { Err(denied()) } else { Ok(Self(raw)) }
