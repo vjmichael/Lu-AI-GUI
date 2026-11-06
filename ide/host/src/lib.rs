@@ -14,6 +14,7 @@ pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
 pub mod git_status;
+pub mod git_evidence;
 pub mod github_live;
 pub mod proposal;
 pub mod review;
