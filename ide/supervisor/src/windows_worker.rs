@@ -476,12 +476,39 @@ fn bootstrap_environment(local: &Path, workspace: &Path, output: &Path,
         return Err(denied());
     }
     let bin = tools.join("bin");
+    let sdk_bin = tools.join("sdk-bin");
     let rustc = bin.join("rustc.exe");
+    let vc_lib = tools.join("msvc/lib/x64");
+    let vc_include = tools.join("msvc/include");
+    let sdk_lib_um = tools.join("windows-sdk/lib/um/x64");
+    let sdk_lib_ucrt = tools.join("windows-sdk/lib/ucrt/x64");
+    let sdk_include_um = tools.join("windows-sdk/include/um");
+    let sdk_include_ucrt = tools.join("windows-sdk/include/ucrt");
+    let sdk_include_shared = tools.join("windows-sdk/include/shared");
+    for required in [
+        &rustc, &bin.join("cargo.exe"), &bin.join("link.exe"),
+        &sdk_bin.join("rc.exe"), &sdk_bin.join("mt.exe"),
+        &vc_lib, &vc_include, &sdk_lib_um, &sdk_lib_ucrt,
+        &sdk_include_um, &sdk_include_ucrt, &sdk_include_shared,
+    ] {
+        let meta = clean_meta(required)?;
+        if !meta.is_dir() && !meta.is_file() { return Err(denied()); }
+    }
+    // Source, target, compiler, linker, VC libs, UCRT, headers and SDK
+    // tools must all resolve inside the *same content-sealed bundle*.
+    // Host PATH/LIB/INCLUDE and VS toolchain variables are not inherited.
+    let sdk_root = tools.join("windows-sdk");
+    let vc_root = tools.join("msvc");
+    let os_system32 = Path::new(&system).join("System32");
     let env = format!(
-        "CARGO_HOME={}\0CARGO_INCREMENTAL=0\0CARGO_NET_OFFLINE=true\0CARGO_TARGET_DIR={}\0LOCALAPPDATA={}\0PATH={}\0RUSTC={}\0SystemRoot={}\0TEMP={}\0TMP={}\0\0",
+        "CARGO_HOME={}\0CARGO_INCREMENTAL=0\0CARGO_NET_OFFLINE=true\0CARGO_TARGET_DIR={}\0INCLUDE={};{};{};{}\0LIB={};{};{}\0LOCALAPPDATA={}\0PATH={};{};{}\0RUSTC={}\0SystemRoot={}\0TEMP={}\0TMP={}\0VCToolsInstallDir={}\0WindowsSdkDir={}\0\0",
         tools.join("cargo-home").display(), output.display(),
-        appdata.to_string_lossy(), bin.display(), rustc.display(),
-        system.to_string_lossy(), local.display(), local.display()
+        vc_include.display(), sdk_include_um.display(),
+        sdk_include_ucrt.display(), sdk_include_shared.display(),
+        vc_lib.display(), sdk_lib_um.display(), sdk_lib_ucrt.display(),
+        appdata.to_string_lossy(), bin.display(), sdk_bin.display(),
+        os_system32.display(), rustc.display(), system.to_string_lossy(),
+        local.display(), local.display(), vc_root.display(), sdk_root.display()
     );
     if env.encode_utf16().count() > 32767 || workspace.to_str().is_none()
         || env.chars().any(|c| c == '\u{0001}') { return Err(denied()); }
