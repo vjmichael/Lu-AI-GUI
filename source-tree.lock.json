@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2486d0e4e0294b0035e4a161f7082a7d40c71283",
+  "sourceCommitBeforeLock": "b1932dbfa8c80326aba12e0b93ed5b1ceb8e9b2d",
   "trackedFileCount": 395,
   "files": [
     {
@@ -89,7 +89,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "6384b8877fa728a508bb80d67ea87b6cc66dbadb"
+      "blob": "e3210a53719a822a8f391b2042eb863df54edafb"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -257,7 +257,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "7b530fa8c11b62c4a7c337b9eafb389279f5590f"
+      "blob": "2e86535a670f4b76a9dcd56d29037a7ec656a6b4"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -421,7 +421,7 @@
     },
     {
       "path": "lu-desktop/tests/native-auth/src/lib.rs",
-      "blob": "c1a31ae7fca173eb19985dd16aa43748c525669d"
+      "blob": "be4b66c0576a8f0d7f7df800c8db9e9653113c39"
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
@@ -865,7 +865,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_process.rs",
-      "blob": "81384d20e319537310c2b623bed8d4de0ec077b9"
+      "blob": "9559cdf492096dfd45addd9745cc41f387c74a4e"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
@@ -933,7 +933,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
-      "blob": "52d6ef352d92e6c64a72706258bed7e737721d28"
+      "blob": "79658eaf297b993409a57046328af4db68258c02"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer_tool.rs",
@@ -961,7 +961,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_libarchive.rs",
-      "blob": "a02a9369a474d25eb8877d53b522002ef979d9b8"
+      "blob": "97f49228ff589f8b95d4a219199d9ef5008eb01c"
     },
     {
       "path": "src-tauri/lu-core/src/native_linux_archive.rs",
@@ -1381,7 +1381,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_codecs.rs",
-      "blob": "4c82a12d4cafc1fdb69846553174d3ba4ad36582"
+      "blob": "e4200743ddff9a71fa19c68530c5644482e251a1"
     },
     {
       "path": "src-tauri/lu-core/tests/native_create_new_authority.rs",
@@ -1569,7 +1569,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/file_guard.rs",
-      "blob": "91ba83b1973715cec8a82a7f9d1fdeee50ba782b"
+      "blob": "cc0eea939efe62f0c23c38fbd56ecca2e0930e82"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",

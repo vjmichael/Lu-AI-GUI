@@ -16,7 +16,11 @@ fn native_xz_bzip2_zstd_roundtrip_without_shell(){
         let encoded=compress_raw(codec,&payload).unwrap();
         assert!(!encoded.is_empty());
         assert_ne!(encoded,payload);
-        assert_eq!(expand_raw(codec,&encoded).unwrap(),payload);
+        // A raw codec stream must not have the default padded output
+        // blocks that make Zstandard see a second malformed frame.
+        assert!(encoded.len()<payload.len(),"unexpected padding in {codec:?}");
+        assert_eq!(expand_raw(codec,&encoded)
+            .unwrap_or_else(|e|panic!("{codec:?} failed roundtrip: {e:?}")),payload);
         // Do not accept arbitrary bytes as a RAW format if the actual
         // requested xz/bzip2/zstd compression filter is absent.
         assert!(expand_raw(codec,b"Uncompressed data is not a codec stream").is_err());

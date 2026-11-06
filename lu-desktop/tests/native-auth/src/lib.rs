@@ -18,6 +18,11 @@ mod native_host_edit;
 mod rollback_review;
 #[path = "../../../src-tauri/src/prompt_context.rs"]
 mod prompt_context;
+// This standalone portable AUTH acceptance crate compiles the *actual*
+// desktop prompt contract; its Wave 3 proposal classifier must be included
+// just as in the Tauri host, rather than bypassing that safety boundary.
+#[path = "../../../src-tauri/src/native_action_proposal.rs"]
+mod native_action_proposal;
 
 use chat_store::ChatStore;
 use lu_core::{

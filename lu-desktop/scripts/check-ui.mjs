@@ -11,7 +11,7 @@ const tests = [
     host.includes('reader_desktop::ask_reader_for_chat(')],
   ['Wave 3 ordinary text can offer a native workspace picker without model permission or attachment instructions',
     host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
-    ui.includes('Explicit workspace file searches also offer a native folder picker')],
+    ui.includes('Explicit workspace searches and document-reading requests open native pickers')],
   ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
     ui.includes("listen('lu-native-turn-capabilities'") &&
     ui.includes('Read-only native tools for this turn') &&
