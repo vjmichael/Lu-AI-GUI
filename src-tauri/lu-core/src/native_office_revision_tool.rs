@@ -98,7 +98,7 @@ fn preview(
     if !metadata.is_file()||metadata.file_type().is_symlink()
         ||metadata.len()>1024*1024{return Err(OfficeRevisionError::UnsafePackage)}
     #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
+        use cap_std::fs::MetadataExt;
         if metadata.file_attributes()&0x400!=0{
             return Err(OfficeRevisionError::UnsafePackage)
         }

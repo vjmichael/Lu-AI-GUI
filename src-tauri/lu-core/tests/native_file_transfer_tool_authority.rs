@@ -151,7 +151,7 @@ async fn a_changed_source_digest_denies_before_any_side_effect(){
             type_url:INPUT.into(),
             bytes:proto::FileTransferRequest{
                 source_name:"source.txt".into(),target_name:"copy.txt".into(),
-                expected_source_sha256:digest,
+                expected_source_sha256:digest.clone(),
             }.encode_to_vec(),
         },
     };
