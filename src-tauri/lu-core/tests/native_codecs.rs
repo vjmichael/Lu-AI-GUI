@@ -44,3 +44,23 @@ fn native_codec_expansion_refuses_large_archive_input(){
     assert_eq!(decode_members(NativeFormat::SevenZip,&input).unwrap_err(),
         NativeArchiveError::TooLarge);
 }
+
+#[test]
+fn real_7zip_fixture_is_decoded_as_a_regular_file(){
+    if !available(){
+        if std::env::var_os("LU_REQUIRE_NATIVE_CODEC").is_some(){
+            panic!("Mandatory native libarchive DLL unavailable");
+        }
+        return
+    }
+    use base64::{Engine as _,engine::general_purpose::STANDARD};
+    // Generated with libarchive 7zip writer; no shell or external 7z needed.
+    let packed=STANDARD.decode(
+        "N3q8ryccAAPBa65AIAAAAAAAAABEAAAAAAAAAKHobjYAJh1ABOMqWT5LYf/s2y9i2sZ/h+zTnWZWvj///dxQAAEEBgABCSAABwsBAAEjAwEBBV0AAIAADBUACAoB3FsTQwAABQEREwB0AGkAbgB5AC4AdAB4AHQAAAAVBgEAIYAAgAAA"
+    ).unwrap();
+    let files=decode_members(NativeFormat::SevenZip,&packed).unwrap();
+    assert_eq!(files.len(),1);
+    assert_eq!(files[0].path,"tiny.txt");
+    assert!(!files[0].is_directory);
+    assert_eq!(files[0].bytes,b"Lu Native 7z fixture\n");
+}
