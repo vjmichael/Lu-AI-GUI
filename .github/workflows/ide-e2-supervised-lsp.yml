@@ -67,6 +67,8 @@ jobs:
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
       - name: Compile release-gated protected native Windows language service host
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-lsp --all-targets
+      - name: Native language router, release pin and traversal denial tests
+        run: cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features native-lsp --lib
       - name: Prove no unprotected editor worker starts
         shell: pwsh
         run: |
