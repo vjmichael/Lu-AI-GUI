@@ -576,7 +576,7 @@ mod browser_evidence_tests {
             let saved=ledger.observe_browser_text("g-persist","browser-call-persist",
                 "https://public.example/landing","READ",
                 "Observed document text, not a corroborated paper",false).unwrap();
-            assert_eq!(saved.observed_text_bytes,46);
+            assert_eq!(saved.observed_text_bytes,48);
         }
         {
             let ledger=EvidenceLedger::open(&path).unwrap();
