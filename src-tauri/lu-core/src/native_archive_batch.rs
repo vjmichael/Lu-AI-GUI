@@ -216,11 +216,32 @@ pub fn observe_archive_batch_completion(
     if !flat(group_name)||!verify_archive_batch_plan(plan){
         return Err(TreeExtractError::InvalidName);
     }
+    let metadata=match destination.symlink_metadata(group_name){
+        Ok(meta)=>meta,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+        Err(e)=>return Err(TreeExtractError::Io(e.to_string())),
+    };
+    if !metadata.is_dir()||metadata.file_type().is_symlink(){
+        return Ok(false);
+    }
     let group=match destination.open_dir(group_name){
         Ok(group)=>group,
         Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
         Err(e)=>return Err(TreeExtractError::Io(e.to_string())),
     };
+    #[cfg(windows)]
+    if crate::windows_file_guard::reject_opened_directory_reparse(&group).is_err(){
+        return Ok(false);
+    }
+    let marker_info=match group.symlink_metadata(MARKER){
+        Ok(meta)=>meta,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+        Err(e)=>return Err(TreeExtractError::Io(e.to_string())),
+    };
+    if !marker_info.is_file()||marker_info.file_type().is_symlink()
+        ||marker_info.len()!=64{
+        return Ok(false);
+    }
     #[cfg(windows)]
     if crate::windows_file_guard::reject_opened_directory_reparse(&group).is_err(){
         return Ok(false);
