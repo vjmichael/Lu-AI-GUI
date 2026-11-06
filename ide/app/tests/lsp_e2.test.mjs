@@ -69,6 +69,15 @@ test('E2 only accepts plain limited content; rejects remote URI and executable e
     }},
   });
   assert.equal(visibleCompletions(t,visible).length,1);
+  const clangd = result(t, {completions:[{
+    label:' addition(int a, int b)', insertText:'addition',
+    replaceFromUtf16:9, replaceToUtf16:13,
+    detail:'int', kind:3
+  }]});
+  assert.deepEqual(visibleCompletions(t,clangd)[0],{
+    label:' addition(int a, int b)', insertText:'addition',
+    replaceFrom:9, replaceTo:13, detail:'int'
+  });
   assert.equal(visibleHover(t,visible),visible.hover);
   assert.deepEqual(visibleDefinition(t,visible),{from:9,to:15});
   assert.equal(visibleDefinition(t,{
