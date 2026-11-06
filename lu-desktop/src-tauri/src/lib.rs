@@ -18,6 +18,7 @@ mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod archive_desktop;
+mod document_create_desktop;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -183,6 +184,7 @@ struct DesktopState {
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
     edit_proposals: edit_proposal::EditProposalQueue,
     archive_reviews: archive_desktop::ArchiveReviewQueue,
+    document_create_reviews: document_create_desktop::DocumentCreateQueue,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
@@ -563,6 +565,7 @@ impl DesktopState {
             write_approval_ledger: write_approvals,
             edit_proposals: edit_proposal::EditProposalQueue::default(),
             archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
+            document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
             rollback_approval_ledger: rollback_approvals,
@@ -1897,6 +1900,82 @@ fn lu_deny_archive_tree(
     state.archive_reviews.deny(&chat_id,&review_id)
 }
 
+/// User-authored DOCX/PPTX preview. Only a native OS folder picker
+/// supplies the target parent; Lu generates a safe non-overwriting filename.
+#[tauri::command]
+async fn lu_review_document_create(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    document_format:String,
+    title:String,
+    content:String,
+)->Result<Option<document_create_desktop::DocumentCreateView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let path=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("Document folder picker failed: {e}"))??
+        .ok_or("Document creation cancelled")?;
+    let id=next_id("dc-");
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        state.document_create_reviews.stage(
+            &chat_id,&id,&path,&document_format,&title,&content
+        )
+    }).await.map_err(|e|format!("Document preview failed: {e}"))??;
+    Ok(Some(result))
+}
+/// Native confirmation is distinct from the WebView review checkbox.
+/// No model, path argument or frontend callback is itself a write grant.
+#[tauri::command]
+async fn lu_confirm_document_create(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<document_create_desktop::DocumentCreatedView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.document_create_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.for_modal();
+    let message=format!(
+        "Create a new {} document?\n\nExact new file: {}\nContents: {} blocks/slides\nBytes: {}\nPackage SHA-256: {}\n\nConfirm only after reviewing all text in Lu. Existing files are never overwritten. This grant is single-use; an interrupted write will not be retried.",
+        view.document_format.to_uppercase(),view.exact_destination,
+        view.content_units,view.bytes,view.sha256,
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Approve structured document")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new document".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native document confirmation failed: {e}"))?;
+    if !confirmed{
+        state.document_create_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let accepted=state.document_create_reviews.consume(&chat_id,&review_id)?;
+    if !accepted.same_as(&initial){
+        return Err("Document review changed during native confirmation".into())
+    }
+    let user_turn_id=next_id("g-");
+    let effect_id=next_id("g-");
+    let result=document_create_desktop::execute_approved_document_create(
+        &state.chats,&state.effects,&chat_id,&user_turn_id,&effect_id,&accepted
+    ).await?;
+    Ok(Some(result))
+}
+#[tauri::command]
+fn lu_deny_document_create(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.document_create_reviews.deny(&chat_id,&review_id)
+}
+
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
@@ -2707,6 +2786,9 @@ pub fn run() {
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
+            lu_review_document_create,
+            lu_confirm_document_create,
+            lu_deny_document_create,
             lu_review_archive_tree,
             lu_confirm_archive_tree,
             lu_deny_archive_tree,
