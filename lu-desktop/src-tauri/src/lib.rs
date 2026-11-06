@@ -1109,21 +1109,93 @@ async fn lu_office_word_replace_all(
     let output_dir=office_revision_desktop::open_folder(
         output.parent().ok_or("Word output folder unavailable")?
     )?;
+    // The human OS consent above creates one durable authenticated user
+    // intent; the model did not invent or authorize this file operation.
+    let user_turn=next_id("g-");
+    state.chats.append_user_with_turn_id(
+        &chat_id,&user_turn,&format!(
+            "User-approved Word text replacement in a NEW DOCX. Source SHA-256 {}; output SHA-256 {}; {} exact text-run replacements. Original preserved.",
+            original_sha,plan.plan.revised_sha256,plan.plan.match_count
+        )
+    )?;
+    let call_id=next_id("word-edit-");
     let stage_id=next_id("word-replace-");
     let count=plan.plan.match_count;
     let expected=plan.plan.revised_sha256;
+    let edit_indices=plan.plan.edited_run_indices;
     let edits=plan.edits;
-    let receipt=tauri::async_runtime::spawn_blocking(move||
-        lu_core::native_office_revision::publish_office_revision_batch_new(
+    use lu_core::contracts::{ToolInvocation,ProtoPayload};
+    use lu_core::journal::PrepareOutcome;
+    let call=ToolInvocation{
+        call_id:call_id.clone(),
+        tool_id:"lu.office.word_replace_all".into(),
+        workspace_id:Some(format!("{chat_id}:{user_turn}")),
+        input:ProtoPayload{
+            type_url:"type.googleapis.com/lu.v1.HostApprovedWordReplacement".into(),
+            bytes:serde_json::to_vec(&serde_json::json!({
+                "source_basename":original_name,
+                "destination_basename":new_name,
+                "original_sha256":original_sha,
+                "revised_sha256":expected,
+                "text_run_indices":edit_indices,
+                "exact_old":old_text,
+                "exact_new":new_text,
+            })).map_err(|_|"Word replacement intent serialization failed")?,
+        },
+    };
+    let owner=Arc::clone(state.inner());
+    if owner.effects.prepare(&call)
+        .map_err(|_|"Durable Word replacement intent refused")?
+        !=PrepareOutcome::New{
+        return Err("Word replacement intent cannot be replayed".into());
+    }
+    let receipt=tauri::async_runtime::spawn_blocking(move||{
+        use prost::Message;
+        owner.effects.mark_executing(&call_id)
+            .map_err(|_|"Word effect journal could not start")?;
+        let result=lu_core::native_office_revision::publish_office_revision_batch_new(
             &source_dir,&original_name,&output_dir,&new_name,&stage_id,
             &original_sha,&expected,&edits
-        ).map(|_|WordReplaceReceiptView{
+        );
+        let publish=match result{
+            Ok(receipt)=>receipt,
+            Err(e)=>{
+                // A partial file effect is not claimed absent. The durable
+                // journal records UNCERTAIN, never automatic retry.
+                let _=owner.effects.mark_uncertain(&call_id);
+                return Err(format!("Word revision failed or uncertain: {e:?}"));
+            }
+        };
+        let written=office_revision_desktop::read_selected(&output_dir,&new_name);
+        let source_now=office_revision_desktop::read_selected(&source_dir,&original_name);
+        let good=written.as_ref().is_ok_and(|data|
+            format!("{:x}",Sha256::digest(data))==expected)
+            &&source_now.as_ref().is_ok_and(|data|
+                format!("{:x}",Sha256::digest(data))==original_sha);
+        if !good{
+            let _=owner.effects.mark_uncertain(&call_id);
+            return Err("Word output/source SHA mismatch: manual reconciliation required".into());
+        }
+        let reply=proto::ToolReply{
+            call_id:call_id.clone(),
+            output_type_url:"type.googleapis.com/lu.v1.OfficeRevisionResult".into(),
+            outcome:Some(proto::tool_reply::Outcome::Output(
+                proto::OfficeRevisionResult{
+                    target_new_name:new_name.clone(),
+                    bytes_written:publish.bytes_written,
+                    revised_sha256:expected.clone(),
+                }.encode_to_vec()
+            )),
+        };
+        owner.effects.mark_applied(&call_id,&reply.encode_to_vec())
+            .map_err(|_|"Word file created but effect receipt is uncertain")?;
+        Ok(WordReplaceReceiptView{
             new_file_name:new_name,replacements:count,
             source_sha256:original_sha,revised_sha256:expected,
             source_preserved:true,
-            message:"Non-destructive Word revision; unchanged parts retained as document content. Review the generated DOCX before use.",
-        }).map_err(|e|format!("Word revision publication refused: {e:?}"))
-    ).await.map_err(|_|"Word replacement worker unavailable")??;
+            message:"Journaled, non-destructive Word revision. Both source and new document hashes were rechecked.",
+        })
+    }).await.map_err(|_|"Word replacement worker unavailable")??;
     Ok(Some(receipt))
 }
 
