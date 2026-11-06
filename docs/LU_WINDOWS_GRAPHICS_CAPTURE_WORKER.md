@@ -45,3 +45,10 @@ The native ObserveHost now routes **Pause, Stop, expiry and conversation switch*
 ### OBSERVE-WIN-07 — D3D11 frame stride admission
 
 A native frame-layout validator checks width/height bounds, BGRA row pitch, upper padding limits and truncation against the actual mapped D3D11 frame before reading bytes. Windows cargo unit tests are part of the capture worker build gate. The OS-screen capture callback still only produces a digest and cannot be forwarded to the model until source identity, redaction and installed acceptance are verified.
+
+
+## OBSERVE-WIN-08: explicit foreground-window one-shot (source)
+
+A separately approved foreground-app mode uses the existing Windows worker and host supervisor. The user has four seconds to focus the intended app after native confirmation. Windows Window::foreground() yields an HWND and owning PID; the worker verifies that it is a capturable top-level window owned by a different process and captures only that window, never a full monitor. It rechecks HWND validity and PID again when the frame arrives. No title, path, raw pixel buffer, or PID is returned; only the original nonce-salted digest receipt.
+
+This is not a durable process-lifetime token and does not yield an app identity to Lu's main host. It is useful one-shot source assurance, but it is NOT an authorization for continuous app observation, virtual desktop access or direct LLM vision. Real Windows CI and physical GUI acceptance are still required.

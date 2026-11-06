@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0fb577fb4491b75ea5f18e7dd3cc9013f2ffa2db",
+  "sourceCommitBeforeLock": "754b4710c7180db66447eed706d8c0fa06cc9d70",
   "trackedFileCount": 459,
   "files": [
     {
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "86acff1c1e5952814f79f5268d63aa0ea526c7b3"
+      "blob": "ffbd6ec65f5801bd3bf37db465a3e6886972fed2"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -101,7 +101,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "2f4585f8b6abc02962aa4973511b1141bb717990"
+      "blob": "a66da5588299298b7014acf50db7976325540d8c"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -157,7 +157,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "ed95afd77471d45a0420f20cedbbff7c1cbf5b2b"
+      "blob": "adf5968bc15627f21a899bd94382e8ada20f6add"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -289,7 +289,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "9ea59c56656c4ca8e2a13834c96e18229b2f1b02"
+      "blob": "6d5ba2f4b957c709665dccc1fe3f4d35c9f06e83"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -393,7 +393,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "21a0a84029d5175a65005934ae9e409f355ab5a0"
+      "blob": "e2d948363371695c630228b5f4aa1e32f9835f5b"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -425,7 +425,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "6eb1ec90e024527c05467ae8302a7433066ad473"
+      "blob": "db1e2beb58e7d19c19a564aa625d6f58af8406aa"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -653,7 +653,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "589089d380875deffeb7616dcf3074d0942a8e86"
+      "blob": "93c7c0863490ace7693fc935f4794aa1c0afeb3e"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1805,7 +1805,7 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "8a73baac406f1b8a4da85a049f073eca7ed954ac"
+      "blob": "f0489ae15310f07befa176bcd5b430c22dee40b4"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",

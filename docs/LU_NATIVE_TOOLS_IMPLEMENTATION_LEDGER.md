@@ -322,3 +322,6 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **OBSERVE-WIN-07 FRAME BOUNDS SOURCE (2026-11-06):** Added strict width/height/row-pitch and mapped-buffer-length checks and Windows worker unit tests before hashing any mapped D3D11 frame. Source-only; native Windows compilation and installed capture evidence remain pending. AWARENESS-07–11 remains DEFERRED.
+
+
+**OBSERVE-WIN-08 FOREGROUND APP IDENTITY SOURCE (2026-11-06):** Separate user-approved 4-second focused-window WGC mode via Window::foreground, validates non-self PID and capturable top-level HWND, rechecks same HWND/PID at frame callback. Single window only; no persistent watcher, screen pixels output, automatic model handoff, window titles or process ID in receipt. Existing picker remains separate. This HWND/PID check is not full process-lifetime attestation, visual redaction or trusted host-visible source receipt. Windows installed tests still OPEN.

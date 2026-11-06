@@ -120,6 +120,9 @@ jobs:
           npm run build
       - name: Native Windows capture frame geometry and privacy bounds tests
         run: cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture
+      - name: Foreground HWND PID recheck is part of native capture worker
+        shell: bash
+        run: grep -Fq -- '--lu-observe-foreground-one-shot' src-tauri/lu-observe-capture-worker/src/main.rs
       - name: Compile Windows.Graphics.Capture picker and D3D11 one-shot worker
         run: cargo build --release --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml
       - name: Pin compiled Windows capture worker digest for desktop host

@@ -319,11 +319,11 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setImageExportBusy(false);}
   }
-  async function observeCaptureOneShot(){
+  async function observeCaptureOneShot(foregroundOnly=false){
     if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
     setCaptureStarting(true);
     try{
-      const id=await invoke('lu_observe_capture_one_shot',{chatId});
+      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly});
       if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
@@ -1875,7 +1875,8 @@ function App() {
             </span>
           </div>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
-            A separately approved Windows picker can capture exactly one frame, but does not give the model its pixels.</small>
+            An additionally approved Windows foreground-window capture rechecks HWND and PID;
+            the general picker can select a monitor. Neither gives the model its pixels.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
               <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}
@@ -1884,10 +1885,16 @@ function App() {
             {observeView.mode==='paused' &&
               <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
             {observeView.mode==='active' && captureWorkerReady &&
-              <button type="button" disabled={captureStarting}
-                onClick={observeCaptureOneShot}>
-                {captureStarting?'Opening Windows picker…':'Select window/display · capture one frame'}
-              </button>}
+              <>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(true)}>
+                  {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false)}>
+                  Select window/display · capture one frame
+                </button>
+              </>}
             {observeView.mode!=='off' &&
               <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
           </div>

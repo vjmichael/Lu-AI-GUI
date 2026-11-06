@@ -279,7 +279,8 @@ impl ObserveHost {
         if !plan.task_id.starts_with("obs-frame-")
           ||plan.workspace_id!=chat_id
           ||plan.args.len()!=2
-          ||plan.args[0]!="--lu-observe-one-shot"
+          ||!(plan.args[0]=="--lu-observe-one-shot"
+            ||plan.args[0]=="--lu-observe-foreground-one-shot")
           ||plan.args[1].to_string_lossy().len()!=32
           ||!plan.args[1].to_string_lossy().bytes().all(|b|b.is_ascii_hexdigit())
           ||!plan.progress_protocol

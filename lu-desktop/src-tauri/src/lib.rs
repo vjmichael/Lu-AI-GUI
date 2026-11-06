@@ -3902,11 +3902,12 @@ fn lu_observe_self_signal(
 /// the Lu-only semantic-observation scope and has no automatic model access.
 #[tauri::command]
 async fn lu_observe_capture_one_shot(
-    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,
+    foreground_only:bool
 )->Result<Option<String>,String>{
     #[cfg(not(windows))]
     {
-        let _=app;let _=state;let _=chat_id;
+        let _=app;let _=state;let _=chat_id;let _=foreground_only;
         return Err("Windows Graphics Capture requires interactive Windows".into());
     }
     #[cfg(windows)]
@@ -3927,23 +3928,28 @@ async fn lu_observe_capture_one_shot(
             return Err("Installed capture worker signature is invalid".into());
         }
         let approved=tauri::async_runtime::spawn_blocking(move||{
-            app.dialog().message(
-                "Use Windows' system picker to choose ONE application window \
-                 OR ONE entire display for a single frame?\n\n\
-                 If you pick a monitor, the selected display may include \
-                 private windows unrelated to Lu. This is an additional \
-                 permission separate from Lu-only event observation.\n\n\
-                 Lu will read one frame into temporary GPU/CPU memory and \
-                 immediately discard it. Only a nonce-salted capture receipt \
-                 is kept in your local Background Tasks; no screenshot, \
-                 window title, clipboard, microphone or pixel data is saved, \
-                 sent to the AI model, or uploaded. You may cancel the picker \
-                 or stop observation at any time."
-            ).title("Lu — Windows capture of one selected source")
-             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                 "Open Windows capture picker".into(),
-                 "Cancel".into(),
-             )).blocking_show()
+            let warning=if foreground_only{
+                "Capture ONE foreground application window after a four-second \
+                 countdown?\n\n\
+                 Confirm, then click or focus the desired window within \
+                 four seconds. The worker independently checks its Windows \
+                 HWND and owning process ID again before reading one frame. \
+                 It will not capture a whole monitor in this mode. The \
+                 temporary pixels are discarded; only a non-reversible \
+                 capture digest is recorded. No model receives the pixels."
+            }else{
+                "Use Windows' picker to select ONE window or ONE entire display \
+                 for a single frame? A monitor may contain unrelated private \
+                 windows. The selected source is not app-identity attested. \
+                 Pixels are discarded and a digest receipt is recorded only. \
+                 No AI model receives the pixels."
+            };
+            app.dialog().message(warning)
+              .title("Lu — approve one-shot Windows capture")
+              .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                  if foreground_only{"Capture foreground window"}else{"Open Windows picker"}.into(),
+                  "Cancel".into()
+              )).blocking_show()
         }).await.map_err(|_|"Windows capture confirmation unavailable")?;
         if !approved{return Ok(None);}
         let observer=Arc::clone(&state.observe);
@@ -3961,7 +3967,9 @@ async fn lu_observe_capture_one_shot(
                 workspace_id:chat_id.clone(),
                 executable,
                 expected_sha256:expected,
-                args:vec!["--lu-observe-one-shot".into(),nonce.into()],
+                args:vec![if foreground_only{
+                    "--lu-observe-foreground-one-shot"
+                }else{"--lu-observe-one-shot"}.into(),nonce.into()],
                 progress_protocol:true,
                 max_runtime_seconds:Some(90),
             };
