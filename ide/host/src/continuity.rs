@@ -273,7 +273,9 @@ impl DevelopmentLedger {
         let all = self.events()?;
         let current_git = registry.inspect_git_worktree(project_id);
         let tasks = crate::task_evidence::project_tasks(
-            &all, project_id, current_git.local_head.as_deref(),
+            &all,
+            project_id,
+            current_git.local_head.as_deref(),
         )?;
         let events = all
             .into_iter()
