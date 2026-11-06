@@ -327,6 +327,19 @@ mod tests {
         identifier:"doi:10.1000/example".into()
     } }
     #[test]
+    fn discovered_candidate_is_exact_identity_and_cannot_mint_a_new_doi(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        assert!(matches!(ledger.discovered_candidate("source-1"),Err(EvidenceError::Missing)));
+        ledger.discover(&candidate()).unwrap();
+        let stored=ledger.discovered_candidate("source-1").unwrap();
+        assert_eq!(stored.identifier,"doi:10.1000/example");
+        assert_eq!(stored.title,"A Verified Study");
+        assert_eq!(stored.author,"Jane Doe");
+        assert!(matches!(ledger.discovered_candidate("source-1\\nOTHER"),Err(EvidenceError::Invalid)));
+        assert!(matches!(ledger.discovered_candidate("source-2"),Err(EvidenceError::Missing)));
+        assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
+    }
+    #[test]
     fn model_suggestion_never_counts_as_a_reviewed_source() {
         let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
         ledger.discover(&candidate()).unwrap();
