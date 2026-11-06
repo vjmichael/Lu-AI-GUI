@@ -279,7 +279,22 @@ mod windows {
             // Encode the actual WinSock failure for native CI diagnosis.
             // Do NOT turn an arbitrary timeout, routing error or refusal
             // into a security pass. Only WSAEACCES above passes.
-            Err(err) => Ok(Some(1000 + err.raw_os_error().unwrap_or(99))),
+            Err(err) => {
+                // Old exit=1099 obscured whether this was an ordinary
+                // std::io timeout (no raw WinSock error) or a kernel denial.
+                // Preserve strict WSAEACCES-only acceptance; report the
+                // non-raw failure category separately for repair evidence.
+                let exit = match err.raw_os_error() {
+                    Some(raw) if (0..=30_000).contains(&raw) => 1000 + raw,
+                    Some(_) => 1398,
+                    None if err.kind() == io::ErrorKind::TimedOut => 1399,
+                    None if err.kind() == io::ErrorKind::ConnectionRefused => 1397,
+                    None => 1396,
+                };
+                eprintln!("NETWORK_PROBE_DENIED_UNVERIFIED code={exit} kind={:?} error={err}",
+                    err.kind());
+                Ok(Some(exit))
+            },
         }
     }
 
@@ -509,8 +524,16 @@ mod windows {
             return Err(error("GetExitCodeProcess"));
         }
         if exit != 0 {
+            let reason = match exit {
+                1399 => "timeout without raw WinSock denial",
+                1398 => "unexpected out-of-range WinSock error",
+                1397 => "connection refused without raw WinSock error",
+                1396 => "other non-raw socket error",
+                11013 => "WSAEACCES was not recognized in the expected child branch",
+                _ => "token, host secret, or socket preflight failed",
+            };
             return Err(io::Error::other(format!(
-                "child rejected: AppContainer token/host secret check exit={exit}"
+                "child rejected: AppContainer probe exit={exit}; classification={reason}; WSAEACCES-only required"
             )));
         }
         check_no_active(&job)?;
