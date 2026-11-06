@@ -114,6 +114,14 @@ const tests = [
     host.includes('fn lu_confirm_file_restore(') &&
     host.includes('trash_custody.reconcile_interrupted()') &&
     host.includes('file_trash_desktop::TrashQueue')],
+  ['Wave 2 history survives restart from host intents and typed journal receipts without retry controls',
+    ui.includes("invoke('lu_wave2_recovery'") &&
+    ui.includes('operation.receiptMatched') &&
+    ui.includes('operation.state.replaceAll') &&
+    host.includes('fn lu_wave2_recovery(') &&
+    host.includes('wave2_recovery: wave2_recovery::Wave2OperationLedger') &&
+    host.includes('state.wave2_recovery.record_intent(') &&
+    host.includes('state.wave2_recovery.list(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
