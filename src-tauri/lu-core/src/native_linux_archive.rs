@@ -338,6 +338,10 @@ fn tar_entries(data:&[u8])->Result<Vec<ParsedEntry>,LinuxArchiveError>{
         if let Some(long)=pending_path.take(){name=long}
         let is_directory=kind==b'5';
         if is_directory{name=name.trim_end_matches('/').into();}
+        // Conventional archives use a single root ./ prefix; permit just
+        // this normalization while still rejecting traversal and links.
+        if name=="."&&is_directory&&size==0{offset=padded;continue}
+        if let Some(normalized)=name.strip_prefix("./"){name=normalized.to_owned()}
         if !member_name(&name){return Err(LinuxArchiveError::UnsafeEntry)}
         let key=name.to_lowercase();
         if !seen.insert(key){return Err(LinuxArchiveError::DuplicateEntry)}
@@ -401,10 +405,13 @@ pub fn inspect_linux_archive(
 /// Return bounded validated directory/file members for a NEW tree extraction.
 /// A tar member is never used as a host pathname without the separate
 /// destination-root checks in native_archive_tree. No symlinks or special files.
-pub fn linux_archive_tree_members(
-    root:&Dir,name:&str
+/// Bounded memory-only decoder for validated Linux distribution packages.
+pub fn linux_archive_tree_members_from_bytes(
+    name:&str,encoded:&[u8]
 )->Result<Vec<(String,bool,Vec<u8>)>,LinuxArchiveError>{
-    let (format,raw,_)=decoded(root,name)?;
+    if encoded.len() as u64>MAX_ARCHIVE{return Err(LinuxArchiveError::TooLarge)}
+    let format=detect_linux_archive(name).ok_or(LinuxArchiveError::UnsupportedFormat)?;
+    let raw=expand(format,encoded)?;
     if !format.is_tar(){
         let suffix=match format{
             LinuxArchiveFormat::Gzip=>".gz",LinuxArchiveFormat::Xz=>".xz",
@@ -425,6 +432,21 @@ pub fn linux_archive_tree_members(
         output.push((entry.path,entry.is_directory,bytes));
     }
     Ok(output)
+}
+/// Decode one compressed stream without publishing, mounting or executing.
+/// Only used after the enclosing CPIO/DEB container was bounded and checked.
+pub fn expand_bounded_linux_stream(
+    encoding:LinuxArchiveFormat,encoded:&[u8]
+)->Result<Vec<u8>,LinuxArchiveError>{
+    if encoded.len() as u64>MAX_ARCHIVE{return Err(LinuxArchiveError::TooLarge)}
+    if encoding.is_tar(){return Err(LinuxArchiveError::UnsupportedFormat)}
+    expand(encoding,encoded)
+}
+pub fn linux_archive_tree_members(
+    root:&Dir,name:&str
+)->Result<Vec<(String,bool,Vec<u8>)>,LinuxArchiveError>{
+    let encoded=read_bounded(root,name)?;
+    linux_archive_tree_members_from_bytes(name,&encoded)
 }
 /// Hash the exact selected decoded member without publishing. The returned
 /// digest is an integrity hint for trusted user preview, never a permission.
