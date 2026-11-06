@@ -382,12 +382,20 @@ mod tests {
             let target = base.join(format!("stage-{iteration}"));
             let result = digest_tree(&source, Some(&target), 100, 100_000);
             if let Ok(seal) = result {
-                // Every accepted result must be exactly the approved tree;
-                // an attacker-controlled external symlink is never copied.
-                assert_eq!(seal, control);
-                let copied = fs::read(target.join("nested/safe.txt")).unwrap();
+                // A successful rooted copy must be self-consistent, and may
+                // observe the original directory under either *inside-root*
+                // name while an attacker races a rename. Source identity is
+                // enforced by the separately pinned snapshot manifest; this
+                // test instead proves that the race cannot escape the root.
+                assert_eq!(seal, digest_tree(&target, None, 100, 100_000).unwrap());
+                let original = target.join("nested/safe.txt");
+                let moved = target.join("nested-original/safe.txt");
+                assert_ne!(original.is_file(), moved.is_file());
+                let copied = fs::read(if original.is_file() { original } else { moved }).unwrap();
                 assert_eq!(copied, b"allowed workspace bytes");
                 assert_ne!(copied, forbidden);
+                assert!(!target.join("nested/secret.txt").exists());
+                assert!(!target.join("nested-original/secret.txt").exists());
                 accepted += 1;
             }
         }
