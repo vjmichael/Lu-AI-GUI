@@ -30,7 +30,7 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null);
-  const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:''});
+  const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500'});
   const [imageExportBusy,setImageExportBusy]=useState(false);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
@@ -511,27 +511,36 @@ function App() {
   }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
-    const width=Number(imageEdit.width),height=Number(imageEdit.height);
-    const x=Number(imageEdit.x),y=Number(imageEdit.y);
+    const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
+    const geometry=region||imageEdit.mode==='resize';
+    const width=geometry?Number(imageEdit.width):imageViewer.width;
+    const height=geometry?Number(imageEdit.height):imageViewer.height;
+    const x=region?Number(imageEdit.x):0,y=region?Number(imageEdit.y):0;
+    const blockSize=Number(imageEdit.blockSize);
+    const stroke=Number(imageEdit.stroke);
+    const hex=/^#[0-9a-fA-F]{6}$/.test(imageEdit.color||'')?
+      parseInt(imageEdit.color.slice(1),16):null;
     if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
-       width<1||height<1||width>8192||height>8192||
-       width*height>32000000||
-       (imageEdit.mode==='crop'&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
-           x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))){
-      setError('Choose valid image dimensions or a crop region within the original.');
-      return;
+       width<1||height<1||width>8192||height>8192||width*height>32000000||
+       (region&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
+         x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))||
+       (imageEdit.mode==='pixelate'&&(!Number.isSafeInteger(blockSize)||
+         blockSize<2||blockSize>128))||
+       (imageEdit.mode==='rectangle'&&(hex===null||!Number.isSafeInteger(stroke)||
+         stroke<1||stroke>64))){
+      setError('Choose valid dimensions, mask/annotation region and color.');return;
     }
-    setImageExportBusy(true);
-    setImageExportReceipt(null);
+    setImageExportBusy(true);setImageExportReceipt(null);
     try{
       const saved=await invoke('lu_image_workspace_export',{
         chatId,imageRef:imageViewer.imageRef,operation:imageEdit.mode,
-        x:imageEdit.mode==='crop'?x:null,y:imageEdit.mode==='crop'?y:null,
-        width,height
+        x:region?x:null,y:region?y:null,width,height,
+        blockSize:imageEdit.mode==='pixelate'?blockSize:null,
+        stroke:imageEdit.mode==='rectangle'?stroke:null,
+        color:imageEdit.mode==='rectangle'?hex:null
       });
       if(saved){
         setImageExportReceipt(saved);
-        // Review-only receipts: history does not claim this file still exists.
         await loadImageRevisionHistory();
       }
     }catch(e){setError(String(e));}
@@ -3093,26 +3102,42 @@ function App() {
         </footer>
         <div className="imageRevisionForm" aria-label="Deterministic image revision export">
           <small>Original stays unchanged. Native approval and a NEW PNG destination are required.
-            No AI edits, annotations, masks, undo or automatic image overwrite.</small>
+            Solid masks remove pixels in the exported file; mosaics are visual effects, not secure redaction.
+            AI-generated editing and automatic source overwrite remain disabled.</small>
           <label>Operation
             <select value={imageEdit.mode} disabled={imageExportBusy}
               onChange={e=>setImageEdit(v=>({...v,mode:e.target.value}))}>
               <option value="resize">Resize</option>
               <option value="crop">Crop</option>
+              <option value="rotate90">Rotate 90°</option>
+              <option value="flip_h">Flip horizontally</option>
+              <option value="redact">Solid privacy mask</option>
+              <option value="pixelate">Pixelate selected region</option>
+              <option value="rectangle">Outline annotation</option>
             </select>
           </label>
-          {imageEdit.mode==='crop'&&<div className="imageRevisionDimensions">
+          {['crop','redact','pixelate','rectangle'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
             <label>X <input type="number" min="0" value={imageEdit.x}
               onChange={e=>setImageEdit(v=>({...v,x:e.target.value}))}/></label>
             <label>Y <input type="number" min="0" value={imageEdit.y}
               onChange={e=>setImageEdit(v=>({...v,y:e.target.value}))}/></label>
           </div>}
-          <div className="imageRevisionDimensions">
+          {!['rotate90','flip_h'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
             <label>Width <input type="number" min="1" max="8192" value={imageEdit.width}
               onChange={e=>setImageEdit(v=>({...v,width:e.target.value}))}/></label>
             <label>Height <input type="number" min="1" max="8192" value={imageEdit.height}
               onChange={e=>setImageEdit(v=>({...v,height:e.target.value}))}/></label>
-          </div>
+          </div>}
+          {imageEdit.mode==='pixelate'&&<label>Mosaic block size
+            <input type="number" min="2" max="128" value={imageEdit.blockSize}
+              onChange={e=>setImageEdit(v=>({...v,blockSize:e.target.value}))}/>
+          </label>}
+          {imageEdit.mode==='rectangle'&&<div className="imageRevisionDimensions">
+            <label>Annotation color <input type="color" value={imageEdit.color}
+              onChange={e=>setImageEdit(v=>({...v,color:e.target.value}))}/></label>
+            <label>Stroke width <input type="number" min="1" max="64" value={imageEdit.stroke}
+              onChange={e=>setImageEdit(v=>({...v,stroke:e.target.value}))}/></label>
+          </div>}
           <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
             onClick={()=>void exportImageRevision()}>
             {imageExportBusy?'Awaiting native approval…':'Save new PNG revision…'}
