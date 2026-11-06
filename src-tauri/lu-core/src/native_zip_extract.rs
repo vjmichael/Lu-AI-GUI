@@ -64,7 +64,7 @@ fn source_zip(root:&Dir,name:&str)->Result<ZipArchive<cap_std::fs::File>,ZipExtr
     if !hmeta.is_file()||hmeta.len()>MAX_ARCHIVE{
         return Err(ZipExtractError::NotRegularFile)
     }
-    let archive=ZipArchive::new(handle).map_err(|_|ZipExtractError::InvalidZip)?;
+    let mut archive=ZipArchive::new(handle).map_err(|_|ZipExtractError::InvalidZip)?;
     if archive.len()>MAX_ENTRIES{return Err(ZipExtractError::TooLarge)}
     if archive.has_overlapping_entries().map_err(|_|ZipExtractError::InvalidZip)?{
         return Err(ZipExtractError::InvalidZip)
@@ -86,7 +86,7 @@ fn chosen_member(
     let mut total=0u64;
     for i in 0..archive.len(){
         let entry=archive.by_index_raw(i).map_err(|_|ZipExtractError::InvalidZip)?;
-        let name=entry.name().to_string();
+        let name=entry.name().map_err(|_|ZipExtractError::InvalidZip)?.into_owned();
         if !member_name(&name){return Err(ZipExtractError::UnsafeEntry)}
         let key=name.trim_end_matches('/').to_lowercase();
         if !seen.insert(key){return Err(ZipExtractError::DuplicateEntry)}
