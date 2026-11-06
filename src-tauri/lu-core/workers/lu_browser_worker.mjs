@@ -26,6 +26,34 @@ export function challengeKind(text) {
   }
   return null;
 }
+// This check is read-only: no challenge solving, page scripts, field values,
+// or credentials are ever collected. A CAPTCHA iframe/login form need not
+// announce itself in body.innerText(), so visible DOM markers are inspected
+// before a model may read text, accessibility or pixels.
+export async function inspectHumanGate(page, bodyText) {
+  const fromText=challengeKind(bodyText);
+  if(fromText==='CAPTCHA_REQUIRED') return fromText;
+  const markers=[
+    ['iframe[src*="/recaptcha/api2/bframe"]','CAPTCHA_REQUIRED'],
+    ['iframe[src*="hcaptcha.com"]','CAPTCHA_REQUIRED'],
+    ['iframe[src*="challenges.cloudflare.com"]','CAPTCHA_REQUIRED'],
+    ['[data-sitekey].h-captcha','CAPTCHA_REQUIRED'],
+    ['input[type="password"]','LOGIN_REQUIRED']
+  ];
+  for(const [selector,reason] of markers) {
+    // Native Playwright locators implement first().isVisible(). Minimal
+    // offline test doubles may only expose innerText and skip DOM probing.
+    const locator=page.locator(selector);
+    const first=typeof locator?.first==='function'?locator.first():locator;
+    if(typeof first?.isVisible!=='function') continue;
+    let visible;
+    try {visible=await first.isVisible({timeout:1000});}
+    catch {throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');}
+    if(visible) return reason;
+  }
+  return fromText;
+}
+
 function boundedText(value, max) {
   if (typeof value !== 'string' || !value.length || value.length > max || /[\x00-\x08\x0b-\x1f]/.test(value)) {
     throw new BrowserGateError('INVALID_INPUT');
@@ -174,7 +202,7 @@ export class BrowserSession {
       // page instead of blindly assuming the challenge has been completed.
       approvedUrl(this.page.url(),this.origins);
       const text = await this.page.locator('body').innerText({timeout:5000});
-      if (challengeKind(text)) throw new BrowserGateError('CHALLENGE_STILL_PRESENT');
+      if (await inspectHumanGate(this.page,text)) throw new BrowserGateError('CHALLENGE_STILL_PRESENT');
       // User may have completed a form or navigated. Verify challenge state
       // before the host can hide the window and relinquish human control.
       if (this.visibilityMode==='automatic') {
@@ -205,8 +233,9 @@ export class BrowserSession {
       const url = approvedUrl(boundedText(command.url,2048),this.origins);
       const response = await this.page.goto(url.href,{waitUntil:'domcontentloaded',timeout:20000});
       approvedUrl(this.page.url(),this.origins);
-      const text = await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
-      const challenge = challengeKind(text);
+      const text = await this.page.locator('body').innerText({timeout:5000})
+        .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
+      const challenge = await inspectHumanGate(this.page,text);
       if (challenge) {
         return this.#requestHuman(challenge);
       }
@@ -249,7 +278,7 @@ export class BrowserSession {
       // do not silently continue autonomous browsing in that state.
       const text=await this.page.locator('body').innerText({timeout:5000})
         .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
-      const challenge=challengeKind(text);
+      const challenge=await inspectHumanGate(this.page,text);
       if(challenge) return this.#requestHuman(challenge);
       return {status:'NAVIGATED',url:this.page.url()};
     }
@@ -258,7 +287,7 @@ export class BrowserSession {
       // CAPTCHA/login takeover gate.
       const text=await this.page.locator('body').innerText({timeout:5000})
         .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
-      const challenge=challengeKind(text);
+      const challenge=await inspectHumanGate(this.page,text);
       if(challenge)return this.#requestHuman(challenge);
       const tree=await this.page.locator('body').ariaSnapshot({timeout:5000});
       return {status:'ACCESSIBILITY',url:this.page.url(),text:tree.slice(0,65536),
@@ -272,7 +301,7 @@ export class BrowserSession {
     }
     if (op === 'read') {
       const text = await this.page.locator('body').innerText({timeout:5000});
-      const challenge=challengeKind(text);
+      const challenge=await inspectHumanGate(this.page,text);
       if (challenge) {
         return this.#requestHuman(challenge);
       }
@@ -282,7 +311,7 @@ export class BrowserSession {
       // Prevent screenshot() from bypassing human challenge handoff.
       const text=await this.page.locator('body').innerText({timeout:5000})
         .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
-      const challenge=challengeKind(text);
+      const challenge=await inspectHumanGate(this.page,text);
       if(challenge)return this.#requestHuman(challenge);
       let image;
       try {
