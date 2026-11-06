@@ -65,3 +65,10 @@ Reused the existing TOOLS-10 verified-evidence ledger, query planner, thesis evi
 ### Browser/Research import closeout step — functional host wiring OPEN
 
 Copied the existing TOOLS-10 PR #26 native browser supervisor, native browser tools, Chromium custody and visibility bridge, verified HTTPS/Crossref/OpenAlex research modules, worker script and native acceptance fixtures **without redesign**. These modules preserve explicit NetworkRead/NetworkWrite grants, user-selected origins, host-owned binaries and source verification. Merely exporting core modules does not start the browser or grant model network access. Windows/host packaging and actual one-turn desktop Browser/Research integration remain OPEN pending native acceptance.
+
+
+### WAVE4-BROWSER-02 — owned desktop lifecycle (source implementation)
+
+The active Lu desktop now integrates the original TOOLS-10 headed Chromium/Playwright runtime manifest verifier (default `not-packaged`), OS-owned browser-window custody and native task start/status/show/hide/stop commands. A host-scoped browser task requires an authenticated persisted human conversation turn, separate native approval for each bounded HTTPS origin list, and a NetworkRead-only conversation authority grant. Startup/reservation races and browser crashes revoke the original task. The React Settings panel reports measured `launchReady`, collects exact HTTPS origins, and exposes operator-only start/watch/hide/human-verification/stop controls. No model-facing general-purpose browser execute API was added. A native runtime cannot launch until its fully reviewed Chromium/Node/Playwright package is staged with an exact embedded manifest; ordinary builds fail closed.
+
+The original read-only model Browser tool and structured citation-safe Research modules exist in Lu Core, but the primary GGUF model queue is not yet connected to the Browser dispatch path. Genuine verified Browser-native Windows/Linux installed acceptance and normal-GGUF tool invocation remain OPEN.

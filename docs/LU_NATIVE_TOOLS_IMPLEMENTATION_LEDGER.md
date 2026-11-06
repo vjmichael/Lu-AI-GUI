@@ -306,3 +306,6 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **WAVE4-BROWSER/RESEARCH CORE IMPORT (2026-11-06):** Completed source transfer of 14 preexisting TOOLS-10 modules (host-owned Chromium/Node/Playwright worker protocol, scoped Protobuf authorization, browser tools; vetted HTTPS/OpenAlex/Crossref research adapters) plus native acceptance fixtures, JS worker and Windows browser-window custody from draft PR #26 onto Observe+Wave4 integration. Preserves per-turn read/write separation; source import is NOT the installed headed-browser runtime or an accepted model web tool. Host wiring and pinned runtime packaging remain OPEN.
+
+
+**WAVE4-BROWSER-02 DESKTOP SOURCE INTEGRATED (2026-11-06):** Added TOOLS-10 `DesktopBrowserHost`, content-addressed runtime manifest (default not-packaged), staging/CI candidate scripts, and native Lu Tauri Browser status/start/show/hide/human-verification/stop with per-turn persisted human text and NetworkRead-only ConversationAuthority task grants. Operator Settings shows actual launch readiness and permits a separately approved exact HTTPS origin list. React controls cannot issue raw browser instructions. Available headless/hidden worker must be packaged and accepted by Windows/Linux CI; browser model-dispatch loop and native installed acceptance remain OPEN. This is NOT a shipped Chromium runtime.

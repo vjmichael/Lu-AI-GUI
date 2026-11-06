@@ -39,6 +39,9 @@ function App() {
   const [captureStarting,setCaptureStarting]=useState(false);
   const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
   const [browserPreferenceError,setBrowserPreferenceError] = useState('');
+  const [browserRuntime,setBrowserRuntime] = useState(null);
+  const [browserOrigins,setBrowserOrigins]=useState('https://example.org');
+  const [browserBusy,setBrowserBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -201,6 +204,25 @@ function App() {
     return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
+  useEffect(()=>{
+    if(!settingsOpen)return;
+    let active=true;
+    invoke('lu_browser_runtime_status')
+      .then(v=>{if(active)setBrowserRuntime(v);})
+      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
+    return()=>{active=false;};
+  },[settingsOpen]);
+  async function browserOperation(name,args={}){
+    if(browserBusy)return;
+    setBrowserBusy(true);
+    try{
+      const result=await invoke(name,args);
+      if(name==='lu_browser_stop')setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+      else setBrowserRuntime(result);
+      setBrowserPreferenceError('');
+    }catch(e){setBrowserPreferenceError(String(e));}
+    finally{setBrowserBusy(false);}
+  }
   useEffect(()=>{
     invoke('lu_observe_capture_available')
       .then(v=>setCaptureWorkerReady(Boolean(v)))
@@ -2880,7 +2902,43 @@ function App() {
             <option value="always_visible">Always visible</option>
           </select>
           {browserPreferenceError&&<small role="alert">{browserPreferenceError}</small>}
-          <small>The Chromium/Playwright runtime and real visibility handoff are not yet packaged or native-accepted.</small>
+          <small>{browserRuntime?.reason||'Checking native browser runtime admission…'}</small>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={browserBusy} onClick={()=>browserOperation('lu_browser_runtime_status')}>
+              Check Browser runtime
+            </button>
+          </div>
+          <label htmlFor="browserTrustedOrigins">HTTPS origins for a new read-only task</label>
+          <input id="browserTrustedOrigins" value={browserOrigins}
+            onChange={e=>setBrowserOrigins(e.target.value)} disabled={browserBusy||browserRuntime?.running}
+            placeholder="https://example.org" />
+          <div className="settingsActions">
+            {!browserRuntime?.running &&
+              <button type="button" disabled={browserBusy||!chatId||!browserRuntime?.launchReady}
+                onClick={()=>browserOperation('lu_browser_start',{chatId,origins:browserOrigins})}>
+                Authorize read-only Browser
+              </button>}
+            {browserRuntime?.running && <>
+              <button type="button" disabled={browserBusy}
+                onClick={()=>browserOperation('lu_browser_set_visible',{visible:true})}>
+                Show browser
+              </button>
+              <button type="button" disabled={browserBusy}
+                onClick={()=>browserOperation('lu_browser_set_visible',{visible:false})}>
+                Hide browser
+              </button>
+              {browserRuntime.humanVerificationRequired &&
+                <button type="button" disabled={browserBusy}
+                  onClick={()=>browserOperation('lu_browser_human_verified')}>
+                  I've completed verification
+                </button>}
+              <button type="button" disabled={browserBusy}
+                onClick={()=>browserOperation('lu_browser_stop')}>Stop browser</button>
+            </>}
+          </div>
+          <small>Browser navigation requires a currently authenticated human conversation and separate native approval.
+            This control does not grant browser interaction or model tool use.</small>
         </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>

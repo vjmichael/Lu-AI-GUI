@@ -7,6 +7,13 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Browser runtime is native-owned, permit-gated, and host-verified with no ambient model navigation',
+    host.includes('async fn lu_browser_runtime_status(') &&
+    host.includes('async fn lu_browser_start(') &&
+    host.includes('owner.browser_authority.open_user_task(') &&
+    host.includes('owner.browser_runtime.require_launch_ready()?') &&
+    ui.includes("browserOperation('lu_browser_start',{chatId,origins:browserOrigins})") &&
+    ui.includes('Authorize read-only Browser')],
   ['Observe awareness lane logs scoped native hints and prepares a no-execution handoff',
     host.includes('fn lu_observe_notes(') &&
     host.includes('fn lu_observe_handoff(') &&

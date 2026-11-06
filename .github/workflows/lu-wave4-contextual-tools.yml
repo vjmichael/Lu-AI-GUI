@@ -21,6 +21,8 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
+      - run: node --test lu-desktop/tests/browser-staging.test.mjs
+      - run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
       - run: grep -Fq 'WorkspaceReadTurnSession::new_git(' lu-desktop/src-tauri/src/workspace_desktop.rs
       - run: grep -Fq 'dashboard_for_workspace(&chat_id,32)' lu-desktop/src-tauri/src/lib.rs
   core-linux:
@@ -111,3 +113,4 @@ jobs:
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib background_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib environment_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests

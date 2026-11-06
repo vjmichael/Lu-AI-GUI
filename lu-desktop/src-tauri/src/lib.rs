@@ -9,6 +9,7 @@ mod background_context;
 mod environment_context;
 mod vision_context;
 mod observe_desktop;
+mod native_browser_host;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -187,6 +188,14 @@ struct BackgroundTerminalEvent{
     progress:u8,
     detail:String,
 }
+/// Host-owned browser task identity. It carries no browser executable or
+/// window handle from a model/WebView and is revoked on Stop/crash.
+struct ActiveBrowserGrant {
+    task_id:String,
+    chat_id:String,
+    user_turn_id:String,
+    starting:bool,
+}
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
@@ -212,6 +221,9 @@ struct DesktopState {
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     browser_preferences: lu_core::browser_preferences::BrowserPreferences,
+    browser_runtime: Arc<native_browser_host::DesktopBrowserHost>,
+    browser_authority: lu_core::conversation_authority::ConversationAuthority,
+    browser_grant: Mutex<Option<ActiveBrowserGrant>>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -617,6 +629,13 @@ impl DesktopState {
             documents_os_dir,
             document_preferences,
             browser_preferences,
+            browser_runtime:Arc::new(native_browser_host::DesktopBrowserHost::new(
+                app.path().resource_dir()
+                    .map_err(|e|format!("Browser resource directory unavailable: {e}"))?,
+                root.clone(),
+            )),
+            browser_authority:lu_core::conversation_authority::ConversationAuthority::new(),
+            browser_grant:Mutex::new(None),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -962,6 +981,186 @@ fn lu_vision_capability(
             "MMProj admitted; native visual reasoning remains unverified until a real host-scoped image probe succeeds."
         },
     })
+}
+
+/// Returns *measured* browser runtime status and reconciles a crashed native
+/// Chromium/Playwright session. No browser launch, navigation or rights here.
+#[tauri::command]
+async fn lu_browser_runtime_status(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let status=owner.browser_runtime.status(&owner.browser_preferences)?;
+        if !status.running{
+            let previous={
+                let mut grant=owner.browser_grant.lock()
+                    .map_err(|_|"Browser grant lock unavailable")?;
+                if grant.as_ref().is_some_and(|g|!g.starting){
+                    grant.take()
+                }else{None}
+            };
+            if let Some(previous)=previous{
+                owner.browser_authority.revoke_task(&previous.task_id)
+                    .map_err(|_|"Browser crash grant revocation unavailable")?;
+            }
+        }
+        Ok(status)
+    }).await.map_err(|_|"Browser status worker unavailable")?
+}
+fn browser_origin_list(raw:&str)->Result<Vec<String>,String>{
+    use lu_core::browser_authorized_execution::BrowserOriginScope;
+    if raw.len()>2048{return Err("Origin list is too long".into());}
+    let values:Vec<String>=raw.split([',',';','\n']).map(str::trim)
+        .map(str::to_owned).collect();
+    if values.is_empty()||values.len()>8
+        ||values.iter().any(|v|v.is_empty()){
+        return Err("Select one to eight exact HTTPS origins".into());
+    }
+    BrowserOriginScope::from_host_grant(values)
+        .map_err(|_|"Browser origin is not an approved HTTPS origin".into())
+        .map(|s|s.origins())
+}
+/// Operator initiates a new read-only Browser session from the LAST persisted
+/// authenticated user turn of this conversation; a model/page cannot mint
+/// task authority or choose an arbitrary origin without this native dialog.
+#[tauri::command]
+async fn lu_browser_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,origins:String
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    use lu_core::{
+        conversation_authority::{TaskAuthority,AuthorizedCapability},
+        contracts::ToolEffect,
+        browser_authorized_execution::BROWSER_READ_TOOL,
+    };
+    let owner=Arc::clone(state.inner());
+    let allowed=browser_origin_list(&origins)?;
+    owner.browser_runtime.require_launch_ready()?;
+    let turn_id=owner.chats.latest_authenticated_user_turn_id(&chat_id)
+        .ok_or("Browser requires an authenticated human message in this conversation")?;
+    if owner.chats.trusted_user_turn_text(&chat_id,&turn_id).is_none(){
+        return Err("Browser turn is no longer authenticated".into());
+    }
+    {
+        let existing=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if existing.is_some(){return Err("Stop the existing Browser task first".into());}
+    }
+    let prompt=format!(
+        "Start a Lu-owned read-only browser for this conversation?\n\n{}\n\n\
+         Browsing may access these HTTPS origins only. Clicks, typing and \
+         form submissions are NOT authorized. The browser may appear if \
+         human verification is required.",
+        allowed.join("\n")
+    );
+    let approved=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(prompt).title("Lu — Read-only Browser grant")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Authorize selected origins".into(),"Cancel".into()
+            )).blocking_show()
+    }).await.map_err(|_|"Browser approval dialog failed")?;
+    if !approved{return Err("Browser grant cancelled".into());}
+    let task_id=next_id("browser-task-");
+    let scope_id=next_id("browser-scope-");
+    owner.browser_authority.open_user_task(TaskAuthority{
+        conversation_id:chat_id.clone(),user_turn_id:turn_id.clone(),
+        task_id:task_id.clone(),execution_scope_id:scope_id,
+        capabilities:vec![AuthorizedCapability{
+            tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead,
+        }],
+        expires_at:Some(std::time::SystemTime::now()+Duration::from_secs(3600)),
+    },&owner.chats).map_err(|e|format!("Native Browser permission denied: {e:?}"))?;
+    {
+        let mut state=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if state.is_some(){
+            let _=owner.browser_authority.revoke_task(&task_id);
+            return Err("Another Browser task started during approval".into());
+        }
+        *state=Some(ActiveBrowserGrant{
+            task_id:task_id.clone(),chat_id:chat_id.clone(),
+            user_turn_id:turn_id,starting:true,
+        });
+    }
+    let launch_owner=Arc::clone(&owner);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        launch_owner.browser_runtime.launch_for_native_grant(
+            allowed,&launch_owner.browser_preferences
+        )
+    ).await.map_err(|_|"Browser launch worker unavailable")
+        .and_then(|x|x);
+    if let Err(err)=result{
+        let _=owner.browser_runtime.stop();
+        if let Ok(mut grant)=owner.browser_grant.lock(){
+            if grant.as_ref().is_some_and(|g|g.task_id==task_id){grant.take();}
+        }
+        let _=owner.browser_authority.revoke_task(&task_id);
+        return Err(err);
+    }
+    let still_current={
+        let mut grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if let Some(g)=grant.as_mut().filter(|g|g.task_id==task_id){
+            g.starting=false;true
+        }else{false}
+    };
+    if !still_current{
+        let _=owner.browser_runtime.stop();
+        return Err("Browser start was cancelled".into());
+    }
+    owner.browser_runtime.status(&owner.browser_preferences)
+}
+/// User-owned visibility controls, distinct from browser page tool calls.
+#[tauri::command]
+async fn lu_browser_set_visible(
+    state:State<'_,Arc<DesktopState>>,visible:bool
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if grant.as_ref().is_none_or(|g|g.starting){
+            return Err("No user-approved Browser task".into());
+        }
+        drop(grant);
+        owner.browser_runtime.set_user_visible(visible)?;
+        owner.browser_runtime.status(&owner.browser_preferences)
+    }).await.map_err(|_|"Native browser window operation unavailable")?
+}
+#[tauri::command]
+async fn lu_browser_human_verified(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if grant.as_ref().is_none_or(|g|g.starting){
+            return Err("No approved Browser verification task".into());
+        }
+        drop(grant);
+        owner.browser_runtime.resolve_human_verification()?;
+        owner.browser_runtime.status(&owner.browser_preferences)
+    }).await.map_err(|_|"Browser verification worker unavailable")?
+}
+#[tauri::command]
+async fn lu_browser_stop(
+    state:State<'_,Arc<DesktopState>>
+)->Result<bool,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        // Revoke the current task before stopping the owned Chromium child.
+        let grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?.take();
+        let revoked=grant.as_ref().map(|g|
+            owner.browser_authority.revoke_task(&g.task_id));
+        let stopped=owner.browser_runtime.stop();
+        if let Some(Err(e))=revoked{
+            return Err(format!("Browser stopped but grant revocation failed: {e:?}"));
+        }
+        stopped
+    }).await.map_err(|_|"Browser shutdown worker unavailable")?
 }
 
 /// Native operator preference. No worker launch, model tool or network grant.
@@ -3673,6 +3872,11 @@ pub fn run() {
             lu_observe_capture_one_shot,
             lu_observe_capture_available,
             lu_browser_visibility,
+            lu_browser_runtime_status,
+            lu_browser_start,
+            lu_browser_set_visible,
+            lu_browser_human_verified,
+            lu_browser_stop,
             lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,

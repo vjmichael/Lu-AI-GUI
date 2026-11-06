@@ -413,6 +413,29 @@ impl ChatStore {
 
     /// Verify only an exact persisted User turn from an existing host-owned
     /// conversation. Unknown, old imported, duplicate or corrupted turns fail.
+    /// Host-only lookup for the latest durable authenticated USER turn.
+    /// Legacy imported turns and model text cannot authenticate tool tasks.
+    /// Refuse corrupt or duplicate journal rows rather than guessing.
+    pub fn latest_authenticated_user_turn_id(&self, chat_id:&str)->Option<String>{
+        if !valid_id(chat_id,"c-"){return None;}
+        let catalog=self.inner.lock().ok()?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){return None;}
+        let path=self.chat_path(chat_id);
+        if fs::metadata(&path).ok()?.len()>MAX_LOG{return None;}
+        let file=File::open(&path).ok()?;
+        let mut seen=HashSet::new();
+        let mut latest=None;
+        for line in BufReader::new(file).lines(){
+            let line=line.ok()?;
+            if line.is_empty(){return None;}
+            let event:Event=serde_json::from_str(&line).ok()?;
+            if let Event::User{user_turn_id:Some(id),..}=event{
+                if !valid_id(&id,"g-")||!seen.insert(id.clone()){return None;}
+                latest=Some(id);
+            }
+        }
+        latest
+    }
     pub fn trusted_user_turn_text(&self, chat_id: &str, user_turn_id: &str) -> Option<String> {
         if !valid_id(chat_id, "c-") || !valid_id(user_turn_id, "g-") { return None; }
         let catalog = self.inner.lock().ok()?;
