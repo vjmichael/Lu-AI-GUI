@@ -203,6 +203,72 @@ pub(crate) fn digest_tree(
 mod tests {
     use super::*;
     #[test]
+    fn hostile_concurrent_child_rename_cannot_escape_pinned_root() {
+        use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+        use std::thread;
+        let base = std::env::temp_dir().join(format!(
+            "lu-cap-race-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let source = base.join("source");
+        let inside = source.join("nested");
+        let outside = base.join("outside");
+        fs::create_dir_all(&inside).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(inside.join("safe.txt"), b"allowed workspace bytes").unwrap();
+        let forbidden = b"HOST_ONLY_NOT_FOR_WORKER";
+        fs::write(outside.join("secret.txt"), forbidden).unwrap();
+        let control = digest_tree(&source, None, 100, 100_000).unwrap();
+        let done = Arc::new(AtomicBool::new(false));
+        let stop = Arc::clone(&done);
+        let source_for_attacker = source.clone();
+        let outside_for_attacker = outside.clone();
+        let adversary = thread::spawn(move || {
+            let nested = source_for_attacker.join("nested");
+            let alternate = source_for_attacker.join("nested-original");
+            while !stop.load(Ordering::SeqCst) {
+                // Both operations may fail because cap_std holds directory
+                // handles without FILE_SHARE_DELETE. That is a valid secure
+                // outcome; never retry with an ambient-path fallback.
+                if fs::rename(&nested, &alternate).is_ok() {
+                    if std::os::windows::fs::symlink_dir(&outside_for_attacker, &nested).is_ok() {
+                        let _ = fs::remove_dir(&nested);
+                    }
+                    let _ = fs::rename(&alternate, &nested);
+                }
+                thread::yield_now();
+            }
+            if alternate.is_dir() && !nested.exists() {
+                let _ = fs::rename(&alternate, &nested);
+            }
+        });
+        let mut accepted = 0_usize;
+        for iteration in 0..24 {
+            let target = base.join(format!("stage-{iteration}"));
+            let result = digest_tree(&source, Some(&target), 100, 100_000);
+            if let Ok(seal) = result {
+                // Every accepted result must be exactly the approved tree;
+                // an attacker-controlled external symlink is never copied.
+                assert_eq!(seal, control);
+                let copied = fs::read(target.join("nested/safe.txt")).unwrap();
+                assert_eq!(copied, b"allowed workspace bytes");
+                assert_ne!(copied, forbidden);
+                accepted += 1;
+            }
+        }
+        done.store(true, Ordering::SeqCst);
+        adversary.join().unwrap();
+        // Normal proof case must still be accepted with no race.
+        if source.join("nested").is_dir()
+            && !source.join("nested").is_symlink() {
+            assert_eq!(digest_tree(&source, None, 100, 100_000).unwrap(), control);
+        }
+        eprintln!("D7C accepted {accepted}/24 race attempts; all accepted trees equal pinned input");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
     fn rejects_absolute_escape_and_normalizes_tree_hashes() {
         let base = std::env::temp_dir().join(format!(
             "lu-cap-tree-{}-{}", std::process::id(),
