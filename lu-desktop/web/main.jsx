@@ -45,6 +45,7 @@ function App() {
   const [observeHandoff,setObserveHandoff] = useState(null);
   const [captureWorkerReady,setCaptureWorkerReady]=useState(false);
   const [captureTaskId,setCaptureTaskId]=useState(null);
+  const [captureReceipt,setCaptureReceipt]=useState(null);
   const [captureStarting,setCaptureStarting]=useState(false);
   const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
   const [browserPreferenceError,setBrowserPreferenceError] = useState('');
@@ -655,6 +656,13 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
   }
+  async function reviewCaptureReceipt(){
+    if(!chatId||!captureTaskId)return;
+    try{
+      const receipt=await invoke('lu_observe_capture_receipt',{chatId});
+      setCaptureReceipt(receipt?{chatId,...receipt}:null);
+    }catch(e){setError(String(e));}
+  }
   async function reviewObserveHandoff(){
     if(!chatId||observeView.mode==='off')return;
     try{
@@ -667,7 +675,9 @@ function App() {
     invoke('lu_observe_'+action,{chatId})
       .then(v=>{
         setObserveView(v);
-        if(action==='pause'||action==='stop')setCaptureTaskId(null);
+        if(action==='pause'||action==='stop'){
+          setCaptureTaskId(null);setCaptureReceipt(null);
+        }
         setError('');
       })
       .catch(e=>setError(String(e)));
@@ -2246,10 +2256,20 @@ function App() {
           </div>
           {observeView.mode==='active' && !captureWorkerReady &&
             <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
-          {captureTaskId && <small role="status">
-            One-shot Windows frame capture task: {captureTaskId}.
-            Check Background Tasks for the frame receipt. No image pixels are retained or sent to the model.
-          </small>}
+          {captureTaskId && <div aria-label="Native one-shot capture evidence">
+            <small role="status">One-shot WGC task: {captureTaskId}.
+              Raw pixels are neither retained nor supplied to the model.</small>
+            <button type="button" onClick={()=>void reviewCaptureReceipt()}>
+              Inspect native frame receipt
+            </button>
+            {captureReceipt?.chatId===chatId&&
+              <small>Capture state: {captureReceipt.state}.
+                {captureReceipt.frameSha256
+                  ?' Frame SHA-256: '+captureReceipt.frameSha256
+                  :' No completed frame digest.'}
+                The receipt does not establish source identity,
+                GUI correctness, or visual understanding.</small>}
+          </div>}
           {observeView.mode!=='off'&&
             <small>Observed state-change hints: {observeView.nativeEventCount||0}.
               Durable awareness notes: {observeView.notesLogged||0}.
