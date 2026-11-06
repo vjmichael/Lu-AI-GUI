@@ -50,7 +50,7 @@ fn smoke() -> Result<(), String> {
     }
     let config = TrustedBroker {
         executable: exe, expected_sha256: hash,
-        private_witness_directory: PathBuf::from(r"C:\ProgramData\LuIDE\RecoveryBroker"),
+        private_witness_directory: PathBuf::from(r"C:\ProgramData\LuIDERecoveryBroker"),
     };
     let mut lease = ServiceLease::begin(job, &id, &plan, &config)
         .map_err(|e| format!("service admission: {}", e.code()))?;
