@@ -31,6 +31,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Compile native LSP and acceptance harness
         run: cargo check --manifest-path ide/supervisor/Cargo.toml --features "${{ matrix.feature_set }}" --all-targets
       - name: Native E2 protocol and supervisor tests
@@ -49,6 +50,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Compile protected SCM service and real E2 host
         shell: pwsh
         run: |
@@ -98,6 +100,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Install native test tools
         run: |
           sudo apt-get update -qq
