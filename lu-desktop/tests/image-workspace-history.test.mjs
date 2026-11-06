@@ -35,7 +35,7 @@ test('history is chat scoped and displays receipts, not paths or automatic undo 
   assert.match(desktop,/fn lu_image_workspace_history\(/);
   assert.match(desktop,/ledger\.history\(&chat_id,32\)/);
   assert.match(desktop,/lu_image_workspace_history,/);
-  assert.match(core,/WHERE chat_id=\?1/);
+  assert.match(core,/WHERE cur\.chat_id=\?1/);
   assert.match(core,/parent_revision_id/);
   assert.match(core,/prev\.revision_sha256=cur\.base_sha256/);
   assert.match(core,/prev\.chat_id=cur\.chat_id/);
