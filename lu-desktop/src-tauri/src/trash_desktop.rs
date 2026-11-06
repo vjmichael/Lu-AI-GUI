@@ -219,6 +219,10 @@ impl TrashCustodyStore{
     fn store_once<T:Serialize>(&self,kind:&str,effect:&str,record:&T)
         ->Result<(),String>{
         let _g=self.guard.lock().map_err(|_|"Custody store unavailable")?;
+        self.store_unlocked(kind,effect,record)
+    }
+    fn store_unlocked<T:Serialize>(&self,kind:&str,effect:&str,record:&T)
+        ->Result<(),String>{
         let target=self.path(kind,effect)?;
         let bytes=serde_json::to_vec(record)
             .map_err(|_|"Cannot encode custody record")?;
@@ -333,6 +337,9 @@ impl TrashCustodyStore{
                 return Err("Unsafe stored trash intent".into())
             }
             if intent.chat_id!=chat{continue}
+            if results.len()>=MAX_RECORDS{
+                return Err("Custody review exceeds bounded record limit".into())
+            }
             let has_restore=restorations.iter()
                 .any(|r|r.source_effect_id==id);
             let status=if has_restore{
@@ -345,9 +352,12 @@ impl TrashCustodyStore{
                     _=>"RESTORE_NEEDS_REVIEW",
                 }
             }else if self.receipt_from_journal(effects,&intent)?.is_some(){
-                let live=self.trash.symlink_metadata(
-                    &format!("lu-trash-{}",intent.effect_call_id));
-                if live.is_ok(){"AVAILABLE"}else{"CUSTODY_NEEDS_REVIEW"}
+                let name=format!("lu-trash-{}",intent.effect_call_id);
+                match source_digest(&self.trash,&name) {
+                    Ok((size,hash)) if size==intent.expected_size&&hash==intent.sha256
+                        =>"AVAILABLE",
+                    _=>"CUSTODY_NEEDS_REVIEW",
+                }
             }else{
                 "TRASH_NEEDS_REVIEW"
             };
@@ -391,10 +401,13 @@ impl TrashCustodyStore{
         if !opaque(restore_effect_id)||!opaque(source_id){
             return Err("Invalid restore identity".into())
         }
+        // Prevent simultaneous native restore confirmations from both
+        // preparing different effects against the same custody record.
+        let _g=self.guard.lock().map_err(|_|"Custody store unavailable")?;
         if self.latest_restoration(source_id)?.is_some(){
             return Err("Restore already attempted; manual reconciliation required".into())
         }
-        self.store_once("restore",restore_effect_id,&RestoreIntent{
+        self.store_unlocked("restore",restore_effect_id,&RestoreIntent{
             schema:1,chat_id:chat.into(),
             source_effect_id:source_id.into(),
             restore_effect_id:restore_effect_id.into(),
