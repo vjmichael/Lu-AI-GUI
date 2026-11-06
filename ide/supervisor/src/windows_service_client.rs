@@ -30,6 +30,14 @@ const SECURITY_SQOS_PRESENT: u32 = 0x00100000;
 const SECURITY_IMPERSONATION: u32 = 0x00020000;
 const MAX_RESPONSE: usize = 2048;
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
+/// Logs only fixed admission-stage names in debug native acceptance builds.
+fn acceptance_trace(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
+            == Some(std::ffi::OsStr::new("1")) {
+        eprintln!("PROTECTED_SERVICE_ADMISSION_STAGE={stage}");
+    }
+}
 struct Handle(HANDLE);
 impl Handle {
     fn new(handle: HANDLE) -> Result<Self, SupervisorError> {
@@ -44,6 +52,7 @@ impl Drop for Handle {
 fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
     // A just-started SCM service can be running before the first pipe instance
     // is visible. Retry only absent/busy, never ACCESS_DENIED or other errors.
+    acceptance_trace("connect_start");
     let began = Instant::now();
     while began.elapsed() < Duration::from_secs(8) {
         let raw = unsafe { CreateFileW(
@@ -54,9 +63,11 @@ fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
         ) };
         if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
             let pipe = Handle(raw);
+            acceptance_trace("pipe_opened");
             security::authenticate_service_server(
                 pipe.0, &config.executable, &config.expected_sha256,
             )?;
+            acceptance_trace("server_kernel_token_and_image_authenticated");
             return Ok(pipe);
         }
         let error = unsafe { GetLastError() };
@@ -154,6 +165,7 @@ impl ServiceLease {
             .map(|s| !s.eq_ignore_ascii_case("windows_recovery_service.exe"))
             .unwrap_or(true) { return Err(denied()); }
         let pipe = connect_approved(config)?;
+        acceptance_trace("lease_validated_pipe");
         let mut bytes = [0u8; 24];
         OsRng.fill_bytes(&mut bytes);
         let nonce = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
@@ -164,9 +176,12 @@ impl ServiceLease {
             owner_creation: current_owner_creation()?, nonce: &nonce,
         };
         write(pipe.0, &serde_json::to_vec(&admission).map_err(|_| denied())?)?;
+        acceptance_trace("admission_sent");
         read(pipe.0, &nonce, "ready")?;
+        acceptance_trace("service_ready_fsynced");
         // Check again AFTER the service's own fsynced ready receipt.
         if !empty(job) { return Err(denied()); }
+        acceptance_trace("empty_kernel_job_reverified");
         Ok(Self { pipe, nonce, job, released: false })
     }
     pub fn alive(&mut self) -> bool {
