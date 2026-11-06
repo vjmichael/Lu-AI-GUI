@@ -1257,8 +1257,8 @@ async fn lu_vision_run_probe(
         for index in order{
             let current=owner.supervisor.status()
                 .map_err(|_|"Loaded model status changed during visual probe")?;
-            if current.session_id.as_deref()!=Some(&sid)
-                ||current.model_ref.as_deref()!=Some(&model){
+            if current.session_id.as_deref()!=Some(sid.as_str())
+                ||current.model_ref.as_deref()!=Some(model.as_str()){
                 return Err("Model changed during vision probe".into());
             }
             let image=vision_context::image_for_probe(index)?;
@@ -1286,7 +1286,7 @@ async fn lu_vision_run_probe(
                 Ok(())
             };
             owner.supervisor.run_reserved_images_with_history(
-                &sid,&gid,&rid,PROBE_PROMPT,32,vec![image],vec![],emit
+                &sid,&gid,&rid,PROBE_PROMPT.to_owned(),32,vec![image],vec![],emit
             ).map_err(|e|format!("Native image inference failed: {e:?}"))?;
             // Case folding is allowed; explanatory text or extra words
             // invalidate the response instead of being treated as correct.
