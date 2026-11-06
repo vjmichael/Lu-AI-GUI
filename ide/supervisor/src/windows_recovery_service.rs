@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     ptr,
     sync::{
-        atomic::{AtomicU32, AtomicU8, Ordering},
+        atomic::{AtomicU32, AtomicU8, AtomicUsize, Ordering},
         Arc, Mutex, OnceLock,
     },
     thread,
@@ -64,6 +64,10 @@ const HOLD: Duration = Duration::from_secs(15 * 60);
 // host lost the first pipe response. Keep the original named Job handle live.
 const RECOVERY_ACK_RETRY: Duration = Duration::from_secs(60);
 const TICK: Duration = Duration::from_millis(100);
+// Bound authenticated and unauthenticated service connection threads.
+// Invalid/idle IPC clients cannot exhaust the process with unbounded
+// threads or force a 17th CreateNamedPipe failure to terminate the service.
+const MAX_ACTIVE_PIPE_SESSIONS: usize = 12;
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
 }
@@ -667,6 +671,12 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         thread::sleep(TICK);
     }
 }
+struct SessionSlot(Arc<AtomicUsize>);
+impl Drop for SessionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+}
 fn serve_one(pipe: Handle, config: &InstalledConfig) {
     let _ = serve(pipe.0, config);
     unsafe {
@@ -681,7 +691,15 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
     let acl = security::PipeSecurity::new(&config.approved_host_user_sid)?;
     STARTUP_STAGE.store(30, Ordering::Relaxed);
     let mut first = true;
+    let active_sessions = Arc::new(AtomicUsize::new(0));
     loop {
+        // Do not create more pipe instances than the bounded worker pool.
+        // With the prior unlimited spawn loop, a same-user client could
+        // hold 16 instances and make CreateNamedPipe terminate the service,
+        // dropping all independently retained Job Object handles.
+        while active_sessions.load(Ordering::Acquire) >= MAX_ACTIVE_PIPE_SESSIONS {
+            thread::sleep(TICK);
+        }
         // PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE prevent remote
         // callers or same-user prebinding from impersonating the service.
         let mode = PIPE_ACCESS_DUPLEX | if first { PIPE_FIRST_INSTANCE } else { 0 };
@@ -737,7 +755,17 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
             endpoint: config.endpoint.clone(),
             acceptance_unsigned: config.acceptance_unsigned,
         };
-        thread::spawn(move || serve_one(pipe, &cloned));
+        active_sessions.fetch_add(1, Ordering::AcqRel);
+        let permit = SessionSlot(Arc::clone(&active_sessions));
+        // The permit is dropped even if a native thread cannot be created;
+        // never leave a stale saturated count or unbounded worker spawn.
+        thread::Builder::new()
+            .name("lu-ide-protected-ipc".into())
+            .spawn(move || {
+                let _permit = permit;
+                serve_one(pipe, &cloned);
+            })
+            .map_err(|_| denied())?;
     }
 }
 unsafe extern "system" fn control(
@@ -809,6 +837,16 @@ pub fn dispatch() -> Result<(), SupervisorError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_ipc_session_slot_releases_under_denied_or_failed_request() {
+        let sessions = Arc::new(AtomicUsize::new(1));
+        {
+            let _one = SessionSlot(Arc::clone(&sessions));
+            assert_eq!(sessions.load(Ordering::Acquire), 1);
+        }
+        assert_eq!(sessions.load(Ordering::Acquire), 0);
+        assert!(MAX_ACTIVE_PIPE_SESSIONS < 16);
+    }
     #[test]
     fn admission_fails_on_bad_scope_or_replay_nonce() {
         let valid = Admission {
