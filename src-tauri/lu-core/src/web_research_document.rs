@@ -154,7 +154,7 @@ mod tests {
     }
     #[test]
     fn malformed_and_unreadable_document_fail_closed(){
-        assert_eq!(extract_research_document(b"<html><body>open tag").err(),
+        assert_eq!(extract_research_document(b"<html><body>open <p").err(),
             Some(DocumentError::NotReadable));
         assert!(extract_research_document(b"\x89PNGimage").is_err());
         assert!(extract_research_document(&vec![b'A';MAX_RESEARCH_DOCUMENT_BYTES+1]).is_err());
