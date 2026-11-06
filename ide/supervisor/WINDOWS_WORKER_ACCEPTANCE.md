@@ -38,6 +38,19 @@
 - If the named Job is missing after crash/OS restart, there is **no surviving OS handle to attest cleanup**. The worker remains quarantined/uncertain instead of falsely reporting cancellation. A durable independent broker/witness mechanism is still required to fully close this case.
 - The worker is not installed in Lu IDE; a physically installed Windows app build/run/cancel/restart exercise and Windows-native hostile filesystem/network proofs are open.
 
+## Opt-in native Windows acceptance executable
+
+The real integration fixture is `ide/supervisor/examples/d7_windows_acceptance.rs`. It is not installed or registered in Lu IDE. It constructs a tiny pinned Rust source snapshot, stages the host-provisioned toolchain bundle, grants only its fixed test job, runs the actual AppContainer Cargo check through the D7 native supervisor, then verifies the published output seal and hash-linked receipt after reopening the journal.
+
+A trusted Windows acceptance host must provision a complete offline bundle with `bin/cargo.exe`, `bin/rustc.exe`, `lib/`, and `cargo-home/` before running:
+
+```powershell
+$env:LU_IDE_D7_NATIVE_TOOLCHAIN = 'C:\TrustedLuToolchains\offline-rust'
+cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
+```
+
+The path is an example staging convention, **not** a claim that such a bundle is installed. The fixture fails closed if the input is absent or invalid. It does not satisfy the hostile cancellation/restart matrix, signed bundle provenance, or installed Windows GUI gate merely by compiling.
+
 ## Acceptance gates before activation
 
 1. Exact-head Windows `cargo check --features windows-worker --all-targets`, native Rust tests, `rustfmt --check`, and the existing standalone IDE regression gates.
