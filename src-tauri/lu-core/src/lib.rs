@@ -124,6 +124,7 @@ pub mod native_spreadsheet_create;
 pub mod native_csv_edit;
 pub mod native_docx_create;
 pub mod native_office_revision;
+pub mod native_office_replace_all;
 pub mod native_office_revision_tool;
 pub mod native_office_batch_tool;
 pub mod native_pptx_create;
