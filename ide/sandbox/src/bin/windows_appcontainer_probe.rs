@@ -18,10 +18,11 @@ mod windows {
         ffi::{OsStr, OsString},
         fs, io,
         mem::size_of,
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream},
         os::windows::ffi::{OsStrExt, OsStringExt},
         path::{Path, PathBuf},
         ptr,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
     use windows_sys::Win32::{
         Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
@@ -235,10 +236,13 @@ mod windows {
         if args.first().map(String::as_str) != Some("--appcontainer-child") {
             return Ok(None);
         }
-        if args.len() != 2 {
+        if args.len() != 3 {
             return Err(io::Error::other("invalid fixed child args"));
         }
         let secret = Path::new(&args[1]);
+        let port: u16 = args[2]
+            .parse()
+            .map_err(|_| io::Error::other("invalid loopback probe port"))?;
         let mut raw: HANDLE = ptr::null_mut();
         // SAFETY: current process pseudo handle, live output pointer.
         if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
@@ -261,9 +265,18 @@ mod windows {
             return Ok(Some(10));
         }
         match fs::read(secret) {
-            Ok(_) => Ok(Some(11)),
-            Err(err) if err.raw_os_error() == Some(5) => Ok(Some(0)),
-            Err(_) => Ok(Some(12)),
+            Ok(_) => return Ok(Some(11)),
+            Err(err) if err.raw_os_error() == Some(5) => {}
+            Err(_) => return Ok(Some(12)),
+        }
+        // The host has a live listener on this exact loopback port. Only
+        // WSAEACCES (10013) counts as OS network isolation. ECONNREFUSED
+        // or timeout could be a dead endpoint, so neither proves denial.
+        let loopback = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
+        match TcpStream::connect_timeout(&loopback, Duration::from_millis(800)) {
+            Ok(_) => Ok(Some(13)),
+            Err(err) if err.raw_os_error() == Some(10013) => Ok(Some(0)),
+            Err(_) => Ok(Some(14)),
         }
     }
 
@@ -347,6 +360,13 @@ mod windows {
         if fs::read(&secret)?.as_slice() != b"PRIVATE HOST TEST SECRET" {
             return Err(io::Error::other("host secret preflight failed"));
         }
+        // Keep a real OS-owned listener live for the full child lifetime.
+        // This avoids false network isolation passes from a closed endpoint.
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        let loopback = listener.local_addr()?;
+        let preflight = TcpStream::connect_timeout(&loopback, Duration::from_secs(1))?;
+        let (_accepted, _) = listener.accept()?;
+        drop(preflight);
         let mut caps = SECURITY_CAPABILITIES::default();
         caps.AppContainerSid = profile.sid;
         caps.Capabilities = ptr::null_mut();
@@ -370,9 +390,10 @@ mod windows {
 
         let program = wide(exe.as_os_str());
         let mut cmd = wide_string(&format!(
-            "\"{}\" --appcontainer-child \"{}\"",
+            "\"{}\" --appcontainer-child \"{}\" {}",
             exe.display(),
-            secret.display()
+            secret.display(),
+            loopback.port()
         ));
         let mut startup = STARTUPINFOEXW::default();
         startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
@@ -467,8 +488,8 @@ mod windows {
         check_no_active(&job)?;
         fs::remove_file(&cleanup.exe)?;
         fs::remove_file(&cleanup.secret)?;
-        println!("PASS: zero-capability AppContainer child, denied host secret with ACCESS_DENIED, Job Object assignment before resume");
-        println!("UNVERIFIED: production Cargo toolchain, disk ACL races, networking hostile test, crash recovery");
+        println!("PASS: fixed AppContainer child denied host secret (ERROR_ACCESS_DENIED) and live loopback socket (WSAEACCES), Job Object assignment before resume");
+        println!("UNVERIFIED: arbitrary external network endpoints, production Cargo toolchain, disk ACL races, crash recovery");
         Ok(())
     }
 
