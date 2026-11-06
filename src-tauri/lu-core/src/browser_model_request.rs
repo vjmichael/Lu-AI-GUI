@@ -71,7 +71,7 @@ mod tests{
         assert!(body.len()<20000);
         assert_eq!(data["tools"][0]["function"]["parameters"]["properties"]["operation"]["enum"]
             .as_array().unwrap().len(),4);
-        assert!(!body.contains("\\"screenshot\\""));
+        assert!(!body.contains(r#""screenshot""#));
 
         let mut bad=tools.clone();
         bad.push(json!({"type":"function","function":{
