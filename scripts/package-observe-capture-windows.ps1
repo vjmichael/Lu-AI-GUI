@@ -5,6 +5,7 @@
 [CmdletBinding()]
 param(
   [switch]$BuildInstaller,
+  [switch]$IncludeResearch,
   [string]$VerifyInstalledDirectory,
   [string]$ExpectedWorkerSha256,
   [string]$ExpectedResearchSha256
@@ -27,6 +28,9 @@ $tauriDir=Join-Path $desktopDir 'src-tauri'
 $stage=Join-Path $tauriDir 'resources/lu-observe-capture-worker.exe'
 $overlay=Join-Path $tauriDir 'tauri.observe.capture.conf.json'
 
+if($IncludeResearch -and -not $BuildInstaller){
+  throw 'Research installer integration requires -BuildInstaller'
+}
 if(-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
   throw 'A trusted Windows Rust/Cargo toolchain is required'
 }
@@ -61,10 +65,44 @@ try {
 finally {Pop-Location}
 
 if($BuildInstaller){
-  # --config is RFC7396 merge-patched into the baseline Tauri config,
-  # including the original inference DLLs and all other bundle resources.
-  & cargo tauri build --ci --config $overlay
-  if($LASTEXITCODE -ne 0){throw 'Lu NSIS build with capture worker failed'}
+  # Tauri CLI must run from the actual lu-desktop project root. Running it
+  # from the repository root resolves the wrong src-tauri directory.
+  # Build a single opt-in overlay so WGC and Research can ship together.
+  $bundleOverlay=$overlay
+  $temporaryOverlay=$null
+  try {
+    if($IncludeResearch){
+      & (Join-Path $repo 'scripts/stage-research-windows.ps1')
+      if($LASTEXITCODE -and $LASTEXITCODE -ne 0){
+        throw 'Trusted Research HTTPS client staging failed'
+      }
+      $researchOverlay=Join-Path $tauriDir 'tauri.research.conf.json'
+      $captureConfig=Get-Content -LiteralPath $overlay -Raw | ConvertFrom-Json
+      $researchConfig=Get-Content -LiteralPath $researchOverlay -Raw | ConvertFrom-Json
+      foreach($property in $researchConfig.bundle.resources.PSObject.Properties){
+        if($captureConfig.bundle.resources.PSObject.Properties[$property.Name]){
+          throw 'Duplicate resource destination in combined installer'
+        }
+        $captureConfig.bundle.resources |
+          Add-Member -MemberType NoteProperty -Name $property.Name -Value $property.Value
+      }
+      $temporaryOverlay=Join-Path $tauriDir 'tauri.observe.research.generated.conf.json'
+      $captureConfig | ConvertTo-Json -Depth 10 |
+        Set-Content -LiteralPath $temporaryOverlay -Encoding utf8
+      $bundleOverlay=$temporaryOverlay
+    }
+    Push-Location $desktopDir
+    try {
+      # --config merge-patches resource mappings into the baseline Lu NSIS
+      # bundle. This path builds the actual desktop app, not test placeholders.
+      & cargo tauri build --ci --config $bundleOverlay
+      if($LASTEXITCODE -ne 0){throw 'Lu NSIS build with trusted resources failed'}
+    } finally {Pop-Location}
+  } finally {
+    if($temporaryOverlay -and (Test-Path -LiteralPath $temporaryOverlay)){
+      Remove-Item -LiteralPath $temporaryOverlay -Force
+    }
+  }
 }else{
   & cargo build --release --locked --manifest-path (Join-Path $tauriDir 'Cargo.toml')
   if($LASTEXITCODE -ne 0){throw 'Lu desktop native host build failed'}
