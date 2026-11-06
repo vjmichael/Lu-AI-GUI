@@ -4,8 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
 import {
-  newBufferIdentity, advanceBufferIdentity, captureBufferSpan,
-  resolveBufferSpan, formatBufferReference,
+  newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
+  captureBufferSpan, resolveBufferSpan, formatBufferReference,
 } from './buffer_identity.js';
 
 const sections = [
@@ -631,6 +631,7 @@ function App() {
     if (!tab || !tab.dirty || savingKey || explorerPending) return;
     const content = tab.draft;
     const base = tab.revision;
+    const saveStartedBuffer = bufferIdentities.current.get(tab.key);
     setSavingKey(tab.key);
     setProblem('');
     setHint('');
@@ -643,10 +644,15 @@ function App() {
       });
       // If typing continued during the save, the newer draft is kept dirty.
       const buffer = bufferIdentities.current.get(tab.key);
-      if (buffer) {
-        bufferIdentities.current.set(tab.key,
-          Object.freeze({ ...advanceBufferIdentity(buffer), savedRevision: saved.revision }));
+      const rebased = rebaseBufferAfterSave(buffer, saveStartedBuffer, saved.revision);
+      if (rebased.status !== 'rebased') {
+        // The disk write finished, but a different editor instance owns this
+        // tab key now. Never mutate or mark that replacement tab clean.
+        setHint('An earlier draft of ' + tab.relativePath +
+          ' was saved. The current editor was reopened or replaced; review it before saving.');
+        return true;
       }
+      bufferIdentities.current.set(tab.key, rebased.identity);
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: saved.revision, savedText: content,
         dirty: item.draft !== content,
