@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+## 2026-11-06 — Wave E2 protected language-service integration (source, native pending)
+- Introduced real LSP session wire processor: initialize, safe document sync, bounded diagnostics/completions/hover/same-file definition, strict pending/revision checks and rejection of server-initiated execution or edits.
+- Added optional internal supervisor transport endpoint requiring trusted running D3 job, same plan SHA, OS containment proof and verified tree cleanup; **no unrestricted process spawn or active native LSP child**.
+- Wired CodeMirror marker effects, problems/suggestions/hover panels, same-file jump and human-selected completion insertion, native read-only worker status, language server catalog page and UTF-16/stale result guards.
+- Added offline installer candidates and mandatory license notice, dependency, asset hash and release provenance audit; **all assets remain unbundled and unapproved**. New Rust/Node/Python tests and cross-platform E2 CI; real Windows/Linux LSP and D7D OS acceptance pending.
+
 ## 2026-11-06 — Wave E1 free language-server discovery and wire protocol (draft)
 - Added standalone host catalog of eight free open-source LSP providers across Rust, C/C++, Python, JS/TS, HTML, CSS and JSON, with fixed executable hints and license/upstream identity. Discovery cannot run a program.
 - Added bounded JSON-RPC stdio framing parser/encoder, strict length/JSON-RPC envelope checks and source-revision diagnostic contract; native Rust and frontend safety tests.
