@@ -23,10 +23,20 @@ test('headed Chromium candidate starts and completes verification handoff in the
   const profile=await mkdtemp(join(tmpdir(),'lu-ci-candidate-'));
   // Force the candidate's Chromium executable and JS packages. No fallback
   // to a browser pre-installed on the GitHub runner.
+  let websocketInterceptions=0;
   const provider={
-    launchPersistentContext:(dir,options)=>chromium.launchPersistentContext(
-      dir,{...options,executablePath:browserPath}
-    )
+    launchPersistentContext:async(dir,options)=>{
+      const context=await chromium.launchPersistentContext(
+        dir,{...options,executablePath:browserPath}
+      );
+      // Wrap the genuine Playwright routing API, not a mock browser session.
+      const original=context.routeWebSocket.bind(context);
+      context.routeWebSocket=(pattern,handler)=>original(pattern,async socket=>{
+        websocketInterceptions++;
+        await handler(socket);
+      });
+      return context;
+    }
   };
   const session=new BrowserSession({
     origins:['https://example.com'],profileDirectory:profile,
@@ -52,6 +62,23 @@ test('headed Chromium candidate starts and completes verification handoff in the
     assert.equal(resolved.status,'RESUMED');
     const text=await session.execute({op:'read'});
     assert.match(text.text,/Real candidate browser resumed/);
+    // Real Chromium must hand off a login form with no "sign in" body text.
+    await session.page.setContent('<html><body><input type="password"></body></html>');
+    const login=await session.execute({op:'read'});
+    assert.equal(login.status,'NEEDS_HUMAN');
+    assert.equal(login.reason,'LOGIN_REQUIRED');
+    await session.page.setContent('<html><body>Public archive fixture</body></html>');
+    assert.equal((await session.execute({op:'human_resolved'})).status,'RESUMED');
+    // The browser's HTTP request route does not cover WebSockets. Confirm
+    // this actual Chromium page is intercepted and the socket is closed.
+    const websocketResult=await session.page.evaluate(()=>new Promise(resolve=>{
+      const socket=new WebSocket('wss://example.com/lu-test-denied');
+      socket.onopen=()=>resolve('OPENED');
+      socket.onclose=()=>resolve('CLOSED');
+      setTimeout(()=>resolve('NOT_CLOSED'),4000);
+    }));
+    assert.equal(websocketResult,'CLOSED');
+    assert.ok(websocketInterceptions>0);
     const screenshot=await session.execute({op:'screenshot'});
     assert.equal(screenshot.mime,'image/png');
     assert.ok(Buffer.from(screenshot.base64,'base64').length>500);
