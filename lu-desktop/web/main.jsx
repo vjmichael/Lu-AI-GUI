@@ -68,6 +68,15 @@ function App() {
   const [documentCreateReviewed, setDocumentCreateReviewed] = useState(false);
   const [documentCreateBusy, setDocumentCreateBusy] = useState(false);
   const [latestDocumentCreated, setLatestDocumentCreated] = useState(null);
+  const [officeRevisionOpen, setOfficeRevisionOpen] = useState(false);
+  const [officePatch, setOfficePatch] = useState({
+    kind:'word_text',textIndex:0,slideNumber:1,sheetNumber:1,
+    address:'A1',expectedOld:'',newValue:''
+  });
+  const [officeRevisionReview, setOfficeRevisionReview] = useState(null);
+  const [officeRevisionReviewed, setOfficeRevisionReviewed] = useState(false);
+  const [officeRevisionBusy, setOfficeRevisionBusy] = useState(false);
+  const [latestOfficeRevision, setLatestOfficeRevision] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -782,6 +791,66 @@ function App() {
     finally { setDocumentCreateBusy(false); }
   }
 
+  async function reviewOfficeRevision() {
+    if (!chatId || officeRevisionBusy || officeRevisionReview ||
+        !officePatch.expectedOld.trim() || !officePatch.newValue.trim()) return;
+    setOfficeRevisionBusy(true);
+    setError('');
+    try {
+      const review=await invoke('lu_review_office_revision', {
+        chatId,proposal:officePatch
+      });
+      if (review) {
+        setOfficeRevisionReview(review);
+        setOfficeRevisionReviewed(false);
+        setOfficeRevisionOpen(false);
+        setActivity('Office revision ready — review exact change and preserved package parts');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setOfficeRevisionBusy(false); }
+  }
+  async function confirmOfficeRevision() {
+    if (!officeRevisionReview || !officeRevisionReviewed ||
+        officeRevisionBusy || officeRevisionReview.chatId !== chatId) return;
+    const review=officeRevisionReview;
+    setOfficeRevisionBusy(true);
+    setError('');
+    try {
+      const receipt=await invoke('lu_confirm_office_revision', {
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (receipt) {
+        setLatestOfficeRevision({...receipt,chatId:review.chatId});
+        setActivity('Saved new document revision: ' + receipt.targetNewName);
+        await refreshChats();
+        if (currentChat.current === review.chatId)
+          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+      } else {
+        setActivity('Office revision denied in native confirmation');
+      }
+    } catch (error) {
+      setError('Office revision was not verified. Check recovery before retrying: ' + String(error));
+    } finally {
+      setOfficeRevisionReview(null);
+      setOfficeRevisionReviewed(false);
+      setOfficeRevisionBusy(false);
+    }
+  }
+  async function denyOfficeRevision() {
+    if (!officeRevisionReview || officeRevisionBusy) return;
+    setOfficeRevisionBusy(true);
+    try {
+      await invoke('lu_deny_office_revision', {
+        chatId:officeRevisionReview.chatId,
+        reviewId:officeRevisionReview.reviewId
+      });
+      setOfficeRevisionReview(null);
+      setOfficeRevisionReviewed(false);
+      setActivity('Office revision denied; original file unchanged');
+    } catch (error) { setError(String(error)); }
+    finally { setOfficeRevisionBusy(false); }
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1260,6 +1329,103 @@ function App() {
             </div>
           </section>
         )}
+        {officeRevisionOpen && !officeRevisionReview && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Prepare an existing Office document revision">
+          <strong>Revise existing Word, PowerPoint, or Excel document</strong>
+          <small>The original file is selected with a native picker and never overwritten.
+            A second native picker chooses the folder for a NEW versioned revision.</small>
+          <label className="editReviewAck">Change type
+            <select value={officePatch.kind}
+              onChange={e=>setOfficePatch(prev=>({...prev,kind:e.target.value}))}>
+              <option value="word_text">Word: text run</option>
+              <option value="slide_text">PowerPoint: slide text run</option>
+              <option value="cell_number">Excel: numeric cell</option>
+              <option value="cell_boolean">Excel: boolean cell</option>
+            </select>
+          </label>
+          {(officePatch.kind==='word_text' || officePatch.kind==='slide_text') && <label className="editReviewAck">
+            Text run index (0-based)
+            <input type="number" min="0" max="9999" value={officePatch.textIndex}
+              onChange={e=>setOfficePatch(prev=>({...prev,textIndex:Math.max(0,Number(e.target.value)||0)}))}/>
+          </label>}
+          {officePatch.kind==='slide_text' && <label className="editReviewAck">
+            Slide number (1-based)
+            <input type="number" min="1" max="256" value={officePatch.slideNumber}
+              onChange={e=>setOfficePatch(prev=>({...prev,slideNumber:Math.max(1,Number(e.target.value)||1)}))}/>
+          </label>}
+          {officePatch.kind.startsWith('cell_') && <>
+            <label className="editReviewAck">Worksheet number (1-based)
+              <input type="number" min="1" max="256" value={officePatch.sheetNumber}
+                onChange={e=>setOfficePatch(prev=>({...prev,sheetNumber:Math.max(1,Number(e.target.value)||1)}))}/>
+            </label>
+            <label className="editReviewAck">Cell address
+              <input value={officePatch.address} maxLength={8}
+                onChange={e=>setOfficePatch(prev=>({...prev,address:e.target.value.toUpperCase()}))}
+                placeholder="B2"/>
+            </label>
+          </>}
+          <label className="editReviewAck">Expected existing value (must match exactly)
+            <textarea rows={2} className="editFullText" maxLength={32768}
+              value={officePatch.expectedOld} onChange={e=>
+                setOfficePatch(prev=>({...prev,expectedOld:e.target.value}))}/>
+          </label>
+          <label className="editReviewAck">New value
+            <textarea rows={2} className="editFullText" maxLength={32768}
+              value={officePatch.newValue} onChange={e=>
+                setOfficePatch(prev=>({...prev,newValue:e.target.value}))}/>
+          </label>
+          <small>Unsupported formulas, signatures, macros, rich objects or unsafe structures are refused.
+            Office revisions are new files; they never overwrite the selected original.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!chatId || officeRevisionBusy || !officePatch.expectedOld.trim() ||
+                !officePatch.newValue.trim()}
+              onClick={()=>void reviewOfficeRevision()}>Choose source & output folder</button>
+            <button type="button" className="subtleButton"
+              onClick={()=>setOfficeRevisionOpen(false)}>Close</button>
+          </div>
+        </section>}
+        {officeRevisionReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard"
+          role="group" aria-label="Review exact Office document revision">
+          <strong>New Office revision; original stays unchanged</strong>
+          <small>Original source (SHA-256 {officeRevisionReview.originalSha256}):</small>
+          <code className="writeTarget">{officeRevisionReview.sourceDisplay}</code>
+          <small>New output (SHA-256 {officeRevisionReview.revisedSha256}):</small>
+          <code className="writeTarget">{officeRevisionReview.destinationDisplay}</code>
+          <small>Changed package part: {officeRevisionReview.targetPart}.
+            Total revised document size: {officeRevisionReview.revisedBytes} bytes.</small>
+          <strong>Exact proposed change</strong>
+          <small>Before</small>
+          <pre className="editFullText">{officeRevisionReview.originalValue}</pre>
+          <small>After</small>
+          <pre className="editFullText">{officeRevisionReview.newValue}</pre>
+          <details open>
+            <summary>All unchanged package parts ({officeRevisionReview.unaffectedParts.length})</summary>
+            <pre className="editFullText" aria-label="Preserved Office package part checksums">
+              {officeRevisionReview.unaffectedParts.map(x => x.partName + ' · ' + x.sha256).join('\n')}
+            </pre>
+          </details>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={officeRevisionReviewed}
+              onChange={e=>setOfficeRevisionReviewed(e.target.checked)}/>
+            I reviewed the exact change, original and new paths, and all preserved package parts.
+          </label>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!officeRevisionReviewed || officeRevisionBusy}
+              onClick={()=>void confirmOfficeRevision()}>Approve new revision in native dialog</button>
+            <button type="button" className="subtleButton" disabled={officeRevisionBusy}
+              onClick={()=>void denyOfficeRevision()}>Deny revision</button>
+          </div>
+        </section>}
+        {latestOfficeRevision?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Office document revision created: {latestOfficeRevision.targetNewName}</strong>
+          <code className="writeTarget">{latestOfficeRevision.exactDestination}</code>
+          <small>{latestOfficeRevision.bytesWritten} bytes · SHA-256 {latestOfficeRevision.sha256}</small>
+          <small>Effect receipt: {latestOfficeRevision.effectCallId}. Original file preserved.</small>
+        </section>}
         {documentComposerOpen && !documentCreateReview && <section
           className="readProposalCard editProposalCard" aria-label="Create structured Office document">
           <strong>Create a new structured Word or PowerPoint document</strong>
@@ -1611,6 +1777,12 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || officeRevisionBusy || Boolean(officeRevisionReview)}
+              title="Revise one existing Office field while preserving original and unrelated package contents"
+              onClick={()=>setOfficeRevisionOpen(v=>!v)}>
+              {officeRevisionOpen ? 'Close revision' : 'Revise Office'}
+            </button>
             <button type="button" className="subtleButton"
               disabled={!chatId || working || chatBusy || documentCreateBusy || Boolean(documentCreateReview)}
               title="Create a new DOCX or PPTX through a native folder picker and exact-content approval"
