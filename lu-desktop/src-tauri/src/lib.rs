@@ -1182,7 +1182,7 @@ async fn lu_office_word_replace_all(
             outcome:Some(proto::tool_reply::Outcome::Output(
                 proto::OfficeRevisionResult{
                     target_new_name:new_name.clone(),
-                    bytes_written:publish.bytes_written,
+                    bytes_written:publish.bytes_written as u64,
                     revised_sha256:expected.clone(),
                 }.encode_to_vec()
             )),
