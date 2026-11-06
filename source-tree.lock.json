@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f51d51344d0035e4429813745d8b8acf08430568",
+  "sourceCommitBeforeLock": "be3dee5f41f9c68fa1af916616e8fc1ecfcbc1de",
   "trackedFileCount": 391,
   "files": [
     {
@@ -1413,7 +1413,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_linux_archive.rs",
-      "blob": "d1660d56f48d0fa0c109dab722601325f23cda9c"
+      "blob": "ce998eaaf9a83ec5debeb0b73d7e689fe7eb6a18"
     },
     {
       "path": "src-tauri/lu-core/tests/native_linux_packages.rs",
@@ -1429,7 +1429,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_office_revision_tool_authority.rs",
-      "blob": "0cdd8f74be1db594962f37a111495b1b48ff79cb"
+      "blob": "1d9b64b4f2b8522b093bf4a8a1b9c66f48c4127f"
     },
     {
       "path": "src-tauri/lu-core/tests/native_pptx_create.rs",
