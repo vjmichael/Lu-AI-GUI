@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "49cf1d70eca29cbe20cf7fb32fdde2c8f359c0ac",
+  "sourceCommitBeforeLock": "13b9f937f0ce37c592e8f601af8ee3692875f165",
   "trackedFileCount": 425,
   "files": [
     {
@@ -101,7 +101,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "cf31f835dc67854a52d219099bb47e6ead800ba0"
+      "blob": "852638bc4a2e9d14e8de004023ea4d1d111a6357"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -113,7 +113,7 @@
     },
     {
       "path": "docs/LU_OBSERVE_LEARN_V1.md",
-      "blob": "5e2afb81931d8a93dd6da55418079acf0ddc7e51"
+      "blob": "de87f5fdc2dc5e374a945174160533fdb494267f"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -157,7 +157,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "5d0b5e65a2e16135e67943a5bcb0be15ff93714c"
+      "blob": "840a04e435d8b17e6b69b24a772ec2d71203a5db"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -285,7 +285,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "c5ff12b57d89105d5662f6470cd4d82fc39605db"
+      "blob": "418dafcdbde215da12956d04afed0e9162b3f174"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -405,7 +405,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "750d577a8087639a0f54ebe043c0e4368611e1d8"
+      "blob": "6eb1ec90e024527c05467ae8302a7433066ad473"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -601,7 +601,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "cd688b496ba592f5fe7e3d8a5bc48d5cd0ae458c"
+      "blob": "07853334e5e7fdad7a7edf570e20bb59485ea63a"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

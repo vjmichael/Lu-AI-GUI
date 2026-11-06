@@ -22,6 +22,7 @@ const tests = [
     host.includes('lu_observe_capture_available,') &&
     ui.includes("invoke('lu_observe_capture_one_shot',{chatId})") &&
     ui.includes('Select window/display · capture one frame') &&
+    ui.includes("if(action==='pause'||action==='stop')setCaptureTaskId(null)") &&
     ui.includes('No image pixels are retained or sent to the model')],
   ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
     host.includes('fn lu_observe_self_signal(') &&

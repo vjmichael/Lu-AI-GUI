@@ -62,3 +62,8 @@ Selected app/window/monitor and physical versus virtual desktop scopes are now d
 ## AWARENESS-06 — active low-cost notation and escalation
 
 An additional low-cost, host-native awareness lane now annotates meaningful Lu UI hints into task-scoped SQLite records, never elevates an unverified UI hint into a passed/failed test, and prepares a fixed evidence synopsis for main-model review. Suggestions to query a resident small model are rate-limited and separately permission-gated, but do **not** execute model inference yet; current Lu has a single physical inference session. See `docs/LU_AWARENESS_LANE_V1.md` for explicit unfinished small-model, GPU placement, verified visual and autonomous handoff gates.
+
+
+## Current work order (2026-11-06)
+
+Focus only on completing Observe & Learn's native OS capture/window identity, pause/cancellation/restart, redaction/ephemeral vision admission and independently verified GUI tests. Do not expand resident small-model inference, device placement or autonomous reasoning (AWARENESS-07–11) in this work wave. After observer acceptance, return to Browser, Research, Background, Environment, Vision and Image Workspace tool integration and native verification, as independently tracked in the central implementation ledger.

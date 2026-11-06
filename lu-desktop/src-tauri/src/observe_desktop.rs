@@ -150,30 +150,45 @@ impl ObserveHost {
         session.sequence=0;session.event_count=0;session.recommendations=0;
         Ok(Self::view(&session))
     }
-    /// Immediately wipe the in-memory consent before marking the durable
-    /// task terminal. No worker process is associated with this event session.
-    fn revoke(&self,session:&mut Session)->Result<(),String>{
-        // Stop any captured window/display operation (including an open OS
-        // picker) before dropping consent. Uncertain reaping is an error.
-        if let Some(capture_id)=session.capture_task_id.as_ref(){
+    /// An outstanding native OS picker/frame worker must be cancelled before
+    /// any Pause state can be reported. The same existing process supervisor
+    /// is used for Stop, expiry and conversation-switch revocation.
+    fn reap_capture(&self,capture_id:Option<&str>,chat:Option<&str>)
+        ->Result<(),String>{
+        if let Some(capture_id)=capture_id{
             let _=self.capture_processes.poll();
             if self.capture_processes.can_cancel(capture_id){
-                let chat=session.chat_id.as_deref()
-                    .ok_or("Missing owned capture workspace")?;
+                let chat=chat.ok_or("Missing owned capture workspace")?;
                 self.capture_processes.cancel_owned(capture_id,chat)
                     .map_err(|e|format!("Capture process could not be reaped: {e:?}"))?;
             }
         }
+        Ok(())
+    }
+    fn stop_capture(&self,session:&mut Session)->Result<(),String>{
+        self.reap_capture(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref())?;
         session.capture_task_id=None;
+        Ok(())
+    }
+    /// Revoke the entire permission before calling potentially blocking
+    /// process cancellation. No failure can leave an active observation grant.
+    /// Existing process supervision retains the hard timeout on kill errors.
+    fn revoke(&self,session:&mut Session)->Result<(),String>{
+        let capture_id=session.capture_task_id.take();
+        let chat_id=session.chat_id.take();
         let task_id=session.session_id.take();
         session.controller.stop();
         if let Some(mut lane)=session.awareness.take(){lane.stop();}
         session.scope=None;
-        session.chat_id=None;
         session.sequence=0;
+        // Never write a CANCELLED receipt when a child is not confirmed
+        // reaped. The existing process supervisor still owns its timeout.
+        // Consent is already OFF no matter which result follows.
+        self.reap_capture(capture_id.as_deref(),chat_id.as_deref())?;
         if let Some(task_id)=task_id{
             self.task_store.cancelled(&task_id)
-                .map_err(|e|format!("Observation was revoked, task receipt pending: {e:?}"))?;
+                .map_err(|e|format!("Observation revoked; task receipt pending: {e:?}"))?;
         }
         Ok(())
     }
@@ -218,11 +233,20 @@ impl ObserveHost {
         self.refresh_expiry(&mut s)?;
         let s=Self::owned(&mut s,chat_id)?;
         if s.controller.mode()!=Mode::Active{return Err("Observation is not active".into());}
+        // A visible Paused state MUST NOT coexist with an active picker.
+        // Cancellation failures fail closed: revoke the observation grant,
+        // report the failure, and leave OS cleanup to the same supervisor.
+        if let Err(e)=self.stop_capture(s){
+            let _=self.revoke(s);
+            return Err(format!("Observation revoked because capture could not pause: {e}"));
+        }
         let task_id=s.session_id.as_deref().ok_or("Missing observation task")?;
-        self.task_store.pause(task_id)
-            .map_err(|e|format!("Cannot pause observation task: {e:?}"))?;
+        if let Err(e)=self.task_store.pause(task_id){
+            let _=self.revoke(s);
+            return Err(format!("Cannot pause observation task: {e:?}"));
+        }
         if let Err(e)=s.controller.pause(){
-            s.controller.stop();
+            let _=self.revoke(s);
             return Err(format_error(e));
         }
         Ok(Self::view(s))
@@ -398,7 +422,11 @@ mod tests{
         assert_eq!(notes[0].source,"renderer_hint");
         assert_eq!(host.handoff("c-main").unwrap().unwrap().verified_failures,0);
         assert!(host.notes("c-other").is_err());
+        // A stale finished capture task reference must not block Pause;
+        // any live one is always terminated through the same supervisor.
+        host.inner.lock().unwrap().capture_task_id=Some("obs-frame-done".into());
         assert_eq!(host.pause("c-main").unwrap().mode,"paused");
+        assert!(host.inner.lock().unwrap().capture_task_id.is_none());
         assert_eq!(store.get("obs-one").unwrap().unwrap().state,TaskState::Paused);
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
         assert_eq!(host.resume("c-main").unwrap().mode,"active");

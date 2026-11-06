@@ -267,7 +267,11 @@ function App() {
   function observeAction(action){
     if(!chatId)return;
     invoke('lu_observe_'+action,{chatId})
-      .then(v=>{setObserveView(v);setError('');})
+      .then(v=>{
+        setObserveView(v);
+        if(action==='pause'||action==='stop')setCaptureTaskId(null);
+        setError('');
+      })
       .catch(e=>setError(String(e)));
   }
   useEffect(()=>{
