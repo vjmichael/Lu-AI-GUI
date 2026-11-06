@@ -36,6 +36,10 @@ use lu_ide_workspace::{
 // language server replies cannot override these values.
 const APPROVED_CLANGD_BUNDLE: Option<&str> =
     option_env!("LU_IDE_E2_CLANGD_BUNDLE_SHA256");
+const APPROVED_RUST_ANALYZER_BUNDLE: Option<&str> =
+    option_env!("LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256");
+const APPROVED_RUFF_BUNDLE: Option<&str> =
+    option_env!("LU_IDE_E2_RUFF_BUNDLE_SHA256");
 const APPROVED_SERVICE: Option<&str> =
     option_env!("LU_IDE_E2_D7D_SERVICE_SHA256");
 
@@ -62,13 +66,19 @@ struct Installation {
     service: TrustedBroker,
     bundle_sha256: String,
 }
-fn installation(app:&AppHandle)->Result<Installation,String>{
+fn installation(app:&AppHandle,server_id:&str)->Result<Installation,String>{
+    let (recipe,approved) = match server_id {
+        "clangd" => ("lsp_clangd",APPROVED_CLANGD_BUNDLE),
+        "rust-analyzer" => ("lsp_rust_analyzer",APPROVED_RUST_ANALYZER_BUNDLE),
+        "ruff" => ("lsp_ruff",APPROVED_RUFF_BUNDLE),
+        _ => return Err("LSP_SERVER_NOT_APPROVED".into()),
+    };
     let root=app.path().resource_dir().map_err(|_|"LSP_RESOURCE_ROOT_UNAVAILABLE")?;
-    let bundle=root.join("language-servers").join("clangd");
+    let bundle=root.join("language-servers").join(server_id);
     let service=root.join("recovery").join("windows_recovery_service.exe");
-    let expected_bundle=pin(APPROVED_CLANGD_BUNDLE)?;
+    let expected_bundle=pin(approved)?;
     let expected_service=pin(APPROVED_SERVICE)?;
-    let observed=native_lsp_bundle_digest(&bundle,"lsp_clangd")
+    let observed=native_lsp_bundle_digest(&bundle,recipe)
         .map_err(|_|"LSP_UNTRUSTED_BUNDLE")?;
     if observed!=expected_bundle {return Err("LSP_BUNDLE_PIN_MISMATCH".into());}
     if hash_file(&service)?!=expected_service {
@@ -80,7 +90,37 @@ fn installation(app:&AppHandle)->Result<Installation,String>{
     };
     Ok(Installation{bundle,service:broker,bundle_sha256:observed})
 }
-pub fn installed_worker_ready(app:&AppHandle)->bool { installation(app).is_ok() }
+pub fn installed_languages(app:&AppHandle)->Vec<String> {
+    let mut result=Vec::new();
+    if installation(app,"clangd").is_ok(){
+        result.extend(["c","cpp"].map(str::to_owned));
+    }
+    if installation(app,"rust-analyzer").is_ok(){
+        result.push("rust".into());
+    }
+    if installation(app,"ruff").is_ok(){
+        result.push("python".into());
+    }
+    result
+}
+pub fn installed_worker_ready(app:&AppHandle)->bool {
+    !installed_languages(app).is_empty()
+}
+fn language_server_for_path(path:&str,language_id:&str)
+    -> Result<&'static str,String> {
+    if path.len()>1024 || path.contains('\\') || path.contains(':')
+        || path.split('/').any(|part|part.is_empty()||part=="."||part=="..")
+        || path.chars().any(char::is_control) {
+        return Err("LSP_INVALID_ACTIVE_SOURCE".into());
+    }
+    let extension=path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match (extension.as_str(),language_id){
+        ("rs","rust")=>Ok("rust-analyzer"),
+        ("c"|"h","c")|("cpp"|"cc"|"cxx"|"hpp"|"hxx","cpp")=>Ok("clangd"),
+        ("py"|"pyi","python")=>Ok("ruff"),
+        _=>Err("LSP_LANGUAGE_NOT_APPROVED".into()),
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
@@ -183,7 +223,7 @@ impl NativeLspRuntime {
     fn validated_registered_text(
         registry:&IdeWorkspaceRegistry,request:&LspRequest,
     )->Result<(PathBuf,String),String>{
-        if request.language_id!="c"||!request.relative_path.to_ascii_lowercase().ends_with(".c")
+        if language_server_for_path(&request.relative_path,&request.language_id).is_err()
             ||request.text.len()>512*1024||request.text.contains('\0')
             ||request.expected_revision.len()!=64 {
             return Err("LSP_INVALID_ACTIVE_SOURCE".into())
@@ -203,13 +243,14 @@ impl NativeLspRuntime {
         if self.active.lock().map_err(|_|"LSP_HOST_UNAVAILABLE")?.is_some() {
             return Err("LSP_SESSION_ALREADY_ACTIVE".into())
         }
-        let install=installation(app)?;
+        let server_id=language_server_for_path(&request.relative_path,&request.language_id)?;
+        let install=installation(app,server_id)?;
         let (root,saved_revision)=Self::validated_registered_text(registry,&request)?;
         // This is a genuine native OS confirmation, not a client boolean
         // or model-generated consent. It runs on Tauri's background thread.
         let choice=app.dialog()
-            .message(format!("Allow the installed clangd language server to inspect the current file and the staged copy of this project?\n\nProject: {}\nFile: {}\n\nThe worker has no network privileges. It cannot edit source files.",
-                request.project_id,request.relative_path))
+            .message(format!("Allow the installed {} language server to inspect the current file and the staged copy of this project?\n\nProject: {}\nFile: {}\n\nThe isolated worker cannot edit source files.",
+                server_id,request.project_id,request.relative_path))
             .title("Allow language analysis")
             .buttons(MessageDialogButtons::OkCancelCustom(
                 "Allow this session".into(),"Cancel".into(),
@@ -221,7 +262,7 @@ impl NativeLspRuntime {
         if root_now!=root||rev_now!=saved_revision {
             return Err("LSP_SCOPE_CHANGED_DURING_APPROVAL".into());
         }
-        let input=publish_lsp_input(&root,&self.stage,&request.relative_path,"clangd")
+        let input=publish_lsp_input(&root,&self.stage,&request.relative_path,server_id)
             .map_err(|e|e.code())?;
         if input.seal.manifest_sha256!=saved_revision{
             return Err("LSP_SNAPSHOT_CHANGED_DURING_ADMISSION".into())
@@ -230,7 +271,7 @@ impl NativeLspRuntime {
             .filter(|sha|sha.len()==40&&sha.bytes().all(|b|b.is_ascii_hexdigit()))
             .unwrap_or_else(||"0".repeat(40));
         let plan=JobPlan{
-            project_id:request.project_id.clone(),recipe_id:"lsp_clangd".into(),
+            project_id:request.project_id.clone(),recipe_id:format!("lsp_{}",server_id.replace('-','_')),
             source_head:observed.clone(),
             input_snapshot_sha256:input.seal.source_sha256.clone(),
             manifest_sha256:input.seal.manifest_sha256.clone(),
@@ -260,7 +301,7 @@ impl NativeLspRuntime {
         let source=DiagnosticSource{
             project_id:request.project_id.clone(),
             file_id:file_id[..37].to_owned(),disk_sha256:saved_revision.clone(),
-            buffer_revision:request.buffer_revision,language_id:"c".into(),
+            buffer_revision:request.buffer_revision,language_id:request.language_id.clone(),
         };
         session.open(source.clone(),&native_uri,&request.text)
             .map_err(|e|e.code())?;
