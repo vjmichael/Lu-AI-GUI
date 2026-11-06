@@ -63,6 +63,7 @@ function App() {
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
   const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
   const [researchCampaignReviewByChat,setResearchCampaignReviewByChat]=useState({});
+  const [researchCampaignRowsByChat,setResearchCampaignRowsByChat]=useState({});
   const [researchCampaignCeiling,setResearchCampaignCeiling]=useState(120);
   const [researchCampaignBusy,setResearchCampaignBusy]=useState(false);
   const [researchClaimDraft,setResearchClaimDraft]=useState({
@@ -364,6 +365,42 @@ function App() {
       }));
     }catch(error){setResearchError(String(error));}
     finally{setResearchCampaignBusy(false);}
+  }
+  async function showResearchReviewRows(campaignId){
+    if(!chatId||researchCampaignBusy)return;
+    const selectedChat=chatId;
+    try{
+      const rows=await invoke('lu_research_campaign_review_rows',{
+        chatId:selectedChat,campaignId
+      });
+      setResearchCampaignRowsByChat(old=>({
+        ...old,[selectedChat+'|'+campaignId]:rows
+      }));
+    }catch(error){setResearchError(String(error));}
+  }
+  async function retryResearchSource(campaignId,sourceId){
+    if(!chatId||researchCampaignBusy)return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      await invoke('lu_research_campaign_retry_source',{
+        chatId:selectedChat,campaignId,sourceId
+      });
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await showResearchReviewRowsForChat(selectedChat,campaignId);
+    }
+  }
+  async function showResearchReviewRowsForChat(selectedChat,campaignId){
+    try{
+      const rows=await invoke('lu_research_campaign_review_rows',{
+        chatId:selectedChat,campaignId
+      });
+      setResearchCampaignRowsByChat(old=>({
+        ...old,[selectedChat+'|'+campaignId]:rows
+      }));
+    }catch(error){setResearchError(String(error));}
   }
   async function resumeResearchCampaign(campaignId){
     if(!chatId||researchCampaignBusy)return;
@@ -3607,6 +3644,22 @@ function App() {
                     DOI leads; full document text admitted for
                     {' '}{researchCampaignReviewByChat[chatId+'|'+job.campaignId].completeDocumentTexts}.
                     Unsupported, mismatched and incomplete sources remain uncited.</small>}
+                <button type="button" disabled={researchCampaignBusy}
+                  onClick={()=>void showResearchReviewRows(job.campaignId)}>
+                  Inspect each source outcome
+                </button>
+                {Array.isArray(researchCampaignRowsByChat[chatId+'|'+job.campaignId])&&
+                  <ul>{researchCampaignRowsByChat[chatId+'|'+job.campaignId].map(item=>
+                    <li key={item.sourceId}>
+                      <small>{item.sourceId}</small>
+                      <small>{item.stage} · {item.reasonCode}</small>
+                      {item.canRetry&&
+                        <button type="button" disabled={researchCampaignBusy}
+                          onClick={()=>void retryResearchSource(job.campaignId,item.sourceId)}>
+                          Authorize candidate retry
+                        </button>}
+                    </li>
+                  )}</ul>}
                 {job.blockedReason&&<small>Blocker: {job.blockedReason}</small>}
                 {['PAUSED','BLOCKED','RUNNING'].includes(job.state)&&
                   <button type="button" disabled={researchCampaignBusy||!researchAvailable}
