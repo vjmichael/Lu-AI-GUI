@@ -124,8 +124,8 @@ fn fixed_backend(format:LinuxArchiveFormat)->Result<(&'static str,&'static [&'st
     let (name,args)=match format{
         LinuxArchiveFormat::Xz=>
             ("xz",&["-dc"] as &'static [&'static str]),
-        LinuxArchiveFormat::Bzip2=>("bzip2",&["-dc"]),
-        LinuxArchiveFormat::Zstd=>("zstd",&["-dcq"]),
+        LinuxArchiveFormat::Bzip2=>("bzip2",&["-dc"] as &'static [&'static str]),
+        LinuxArchiveFormat::Zstd=>("zstd",&["-dcq"] as &'static [&'static str]),
         _=>return Err(LinuxArchiveError::UnsupportedFormat),
     };
     for prefix in ["/usr/bin/","/bin/"]{
