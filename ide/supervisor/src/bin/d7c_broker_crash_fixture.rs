@@ -7,7 +7,7 @@ fn main() {
 }
 #[cfg(all(windows, feature = "windows-worker"))]
 mod native {
-    use lu_ide_execution_supervisor::windows_broker::TrustedBroker;
+    use lu_ide_execution_supervisor::windows_broker::{inspect_untrusted_witness, TrustedBroker};
     use lu_ide_execution_supervisor::windows_broker::BrokerLease;
     use rand::{rngs::OsRng, RngCore};
     use std::{
@@ -44,6 +44,18 @@ mod native {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if args.len() == 1 && args[0] == "--sleep" {
             thread::sleep(Duration::from_secs(120));
+            return Ok(());
+        }
+        if args.len() == 4 && args[0] == "--audit" {
+            let states = inspect_untrusted_witness(
+                &PathBuf::from(&args[1]), &args[2], &args[3]
+            ).map_err(|_| denied())?;
+            if states.len() < 4 || states[0] != "ready" ||
+                states[1] != "owner_exited" ||
+                states[2] != "kill_requested" || states[3] != "tree_empty" {
+                return Err("DENIED: incomplete broker tree-reap evidence".into());
+            }
+            println!("PASS: broker-owned witness journal integrity and ordered kernel events");
             return Ok(());
         }
         if args.len() != 5 || args[0] != "--owner" {
