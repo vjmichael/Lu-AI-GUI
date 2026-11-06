@@ -40,6 +40,17 @@ pub(crate) struct ResearchSearchView{
 
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
+pub(crate) struct ResearchBrowserEvidenceView {
+    pub generation_id:String,
+    pub call_id:String,
+    pub source_url:String,
+    pub observed_sha256:String,
+    pub excerpt_truncated:bool,
+    pub verification_status:&'static str,
+    pub citation_verified:bool,
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
 pub(crate) struct ResearchCorroborationView{
     pub source_id:String,
     pub verification_status:&'static str,
@@ -208,6 +219,48 @@ impl ResearchDesktop{
         })
     }
 
+    /// Host-only bridge from a successfully dispatched, authorized native
+    /// Browser READ/ACCESSIBILITY to the same chat-scoped Research evidence DB.
+    /// The caller must recheck the current Browser task and redirect origin.
+    /// This NEVER promotes a bibliography record or claims a checked citation.
+    pub(crate) fn record_browser_read(
+        &self,chat_id:&str,generation_id:&str,call_id:&str,
+        source_url:&str,kind:&str,text:&str,truncated:bool
+    )->Result<ResearchBrowserEvidenceView,String>{
+        if !safe_id(chat_id){
+            return Err("Browser evidence requires a trusted conversation".into());
+        }
+        fs::create_dir_all(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory is not trusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        match fs::symlink_metadata(&db) {
+            Ok(meta) if !meta.file_type().is_file()||meta.file_type().is_symlink()=>
+                return Err("Research evidence ledger is not a regular file".into()),
+            Err(err) if err.kind()!=std::io::ErrorKind::NotFound=>
+                return Err("Research evidence ledger cannot be checked".into()),
+            _=>{}
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let observed=ledger.observe_browser_text(
+            generation_id,call_id,source_url,kind,text,truncated
+        ).map_err(|_|"Browser observation rejected or conflicted with prior receipt")?;
+        Ok(ResearchBrowserEvidenceView{
+            generation_id:observed.generation_id,
+            call_id:observed.call_id,
+            source_url:observed.url,
+            observed_sha256:observed.observed_sha256,
+            excerpt_truncated:observed.excerpt_truncated,
+            verification_status:"browser_observed_untrusted",
+            citation_verified:false,
+        })
+    }
+
     /// User-approved metadata corroboration of one already-persisted
     /// OpenAlex lead. No arbitrary URL, DOI or model-selected authority.
     /// A successful result is ONLY bibliographic corroboration.
@@ -276,6 +329,29 @@ impl ResearchDesktop{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn native_browser_read_is_kept_in_research_ledger_not_promoted_to_citation(){
+        let dir=std::env::temp_dir().join(format!("lu-research-browser-{}-{}",
+            std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let host=ResearchDesktop::new(dir.join("unused-resources"),dir.clone());
+        let view=host.record_browser_read("c-first","g-1","browser-call-1",
+            "https://archive.example/article","READ",
+            "The observed web content",false).unwrap();
+        assert_eq!(view.verification_status,"browser_observed_untrusted");
+        assert!(!view.citation_verified);
+        let first=EvidenceLedger::open(
+            &dir.join("lu-research-evidence/c-first.sqlite")).unwrap();
+        assert!(first.has_browser_excerpt("g-1","browser-call-1","observed web").unwrap());
+        assert!(matches!(EvidenceLedger::open(
+            &dir.join("lu-research-evidence/c-second.sqlite")).unwrap()
+            .browser_observation("g-1","browser-call-1"),Err(EvidenceError::Missing)));
+        assert!(host.record_browser_read("c-first","g-1","browser-call-1",
+            "https://archive.example/other","READ","The observed web content",false).is_err());
+        assert!(host.record_browser_read("c-../escape","g-1","browser-call-2",
+            "https://archive.example/article","READ","test",false).is_err());
+        let _=std::fs::remove_dir_all(dir);
+    }
     #[test]
     fn staged_builder_signed_windows_curl_matches_exact_compiled_digest(){
         #[cfg(windows)]
