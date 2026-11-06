@@ -186,6 +186,40 @@ fn inspect(root:&Dir,request:proto::ArchiveListRequest)
     if request.path.to_ascii_lowercase().ends_with(".zip"){
         return inspect_zip(root,request)
     }
+    if request.path.to_ascii_lowercase().ends_with(".rpm"){
+        let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
+        if !(1..=MAX_RETURNED_ENTRIES).contains(&max){
+            return Err(refuse("ARCHIVE_LIMIT","RPM listing budget invalid"))
+        }
+        let name=safe_relative_name(&request.path,false)?;
+        if name.components().count()!=1{
+            return Err(refuse("INVALID_ARCHIVE_PATH","RPM source must be flat"))
+        }
+        let meta=root.symlink_metadata(&name)
+            .map_err(|_|refuse("ARCHIVE_UNAVAILABLE","RPM missing"))?;
+        if !meta.is_file()||meta.file_type().is_symlink()||meta.len()>128*1024*1024{
+            return Err(refuse("ARCHIVE_INVALID","RPM source is invalid"))
+        }
+        let members=crate::native_rpm::rpm_tree_members(root,&request.path)
+            .map_err(|_|refuse("ARCHIVE_INVALID","RPM payload rejected"))?;
+        let count=members.len();
+        let total=members.iter().try_fold(0u64,|s,(_,_,b)|
+            s.checked_add(b.len() as u64)).ok_or_else(||
+                refuse("ARCHIVE_TOO_LARGE","RPM expanded data too large"))?;
+        let entries=members.into_iter().take(max as usize).map(|(path,dir,bytes)|
+            proto::ArchiveEntry{
+                path,kind:if dir{"directory".into()}else{"file".into()},
+                compressed_bytes:0,declared_uncompressed_bytes:bytes.len() as u64,
+                crc32:0,
+            }).collect();
+        return Ok(ToolOutput{payload:ProtoPayload{
+            type_url:OUTPUT.into(),
+            bytes:proto::ArchiveListResult{
+                entries,truncated:count>max as usize,total_entries:count as u64,
+                total_declared_uncompressed_bytes:total,archive_bytes:meta.len(),
+            }.encode_to_vec(),
+        }});
+    }
     if crate::native_seven_rar::detect_7z_rar(&request.path).is_some(){
         let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
         if !(1..=MAX_RETURNED_ENTRIES).contains(&max){
@@ -365,7 +399,7 @@ impl ModelToolCodec for ArchiveCodec {
             .ok_or_else(|| ModelToolError::InvalidArguments("path must be text".into()))?;
         safe_relative_name(path, false)
             .map_err(|_| ModelToolError::InvalidArguments("unsafe archive path".into()))?;
-        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") && crate::native_linux_archive::detect_linux_archive(path).is_none() && !crate::native_cpio::is_cpio_name(path) && !crate::native_ar_deb::is_ar_name(path) && crate::native_seven_rar::detect_7z_rar(path).is_none() {
+        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") && crate::native_linux_archive::detect_linux_archive(path).is_none() && !crate::native_cpio::is_cpio_name(path) && !crate::native_ar_deb::is_ar_name(path) && crate::native_seven_rar::detect_7z_rar(path).is_none() && !path.to_ascii_lowercase().ends_with(".rpm") {
             return Err(ModelToolError::InvalidArguments("Unsupported archive format".into()));
         }
         let max_entries = optional_uint(args, "max_entries", DEFAULT_ENTRIES, MAX_RETURNED_ENTRIES)?;
@@ -432,7 +466,7 @@ pub fn register_archive_inspection_tool(
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_archive_list".into(),
         native_tool_id: LIST.into(),
-        description: "Read-only inspect ZIP, ISO9660, TAR, CPIO, ar, Debian DEB, 7z and RAR/RAR5; fail closed on encrypted or unsafe entries; no execution or extraction.".into(),
+        description: "Read-only inspect ZIP, ISO9660, TAR, CPIO, ar, DEB, RPM, 7z and RAR/RAR5; fail closed on encrypted or unsafe entries; no execution or extraction.".into(),
         parameters: json!({
             "type": "object",
             "properties": {
