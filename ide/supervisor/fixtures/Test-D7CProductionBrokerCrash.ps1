@@ -24,6 +24,10 @@ public static class D7CNativeWitness {
       out BasicAccounting info, int length, IntPtr returned);
   [DllImport("kernel32.dll", SetLastError=true)]
   public static extern bool CloseHandle(IntPtr handle);
+  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern IntPtr OpenEventW(uint access, bool inherit, string name);
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool SetEvent(IntPtr handle);
   [StructLayout(LayoutKind.Sequential)]
   public struct BasicAccounting {
     public long TotalUserTime;
@@ -111,7 +115,29 @@ try {
   }
   & $exe --audit "$brokerRoot" "$jobId" "$plan"
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: native hash chain witness verification failed' }
-  Write-Host 'PASS: independent keeper remained live, reaped tree, held named Job and fsynced ordered evidence'
+  # The kernel Job is confirmed empty and the independent audit succeeded.
+  # Release this test-only keeper explicitly so CI cannot leak a 15-minute
+  # background process. A production supervisor sends this only after its
+  # own durable Cancelled recovery receipt.
+  $releaseName="Local\LuIdeD7BrokerRelease-$jobId-$($plan.Substring(0,16))"
+  $release=[D7CNativeWitness]::OpenEventW(0x0002,$false,$releaseName)
+  if ($release -eq [IntPtr]::Zero) { throw 'DENIED: broker recovery-release event missing' }
+  try {
+    if (![D7CNativeWitness]::SetEvent($release)) {
+      throw 'DENIED: native recovery-release signal rejected'
+    }
+  } finally { [void][D7CNativeWitness]::CloseHandle($release) }
+  $released=$false
+  $limit=[DateTime]::UtcNow.AddSeconds(8)
+  while ([DateTime]::UtcNow -lt $limit) {
+    if ((Get-Content -LiteralPath $journal -Raw) -match '"state":"recovered_release"') {
+      $released=$true
+      break
+    }
+    Start-Sleep -Milliseconds 50
+  }
+  if (!$released) { throw 'DENIED: independent keeper did not fsync recovery release' }
+  Write-Host 'PASS: independent keeper remained live, reaped tree, held named Job, fsynced evidence, and released after verification'
 } finally {
   if ($jobHandle -ne [IntPtr]::Zero) { [void][D7CNativeWitness]::CloseHandle($jobHandle) }
   if ($childHandle -ne [IntPtr]::Zero) { [void][D7CNativeWitness]::CloseHandle($childHandle) }
