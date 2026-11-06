@@ -445,4 +445,62 @@ mod tests {
         assert!(!valid_gates(&["build.run".into()]));
         assert!(valid_gates(&["source_review".into(),"exact_head_ci".into()]));
     }
+    #[test]
+    fn single_ledger_reopens_legacy_events_and_task_updates() {
+        let path = std::env::temp_dir().join(format!(
+            "ide-c6-test-{}-{}.jsonl",
+            std::process::id(),
+            rand::random::<u128>()
+        ));
+        let legacy = DevelopmentEvent {
+            schema_version: 1,
+            event_id: event_id(),
+            observed_unix_seconds: now().unwrap(),
+            project_id: "test-project".into(),
+            operation: "project.open".into(),
+            outcome: "observed_host_success".into(),
+            source_revision: None,
+            source_path: None,
+            summary: "Opened".into(),
+            task: None,
+        };
+        let ledger = DevelopmentLedger::new(path.clone()).unwrap();
+        ledger.append_transaction(|prior| {
+            assert!(prior.is_empty());
+            Ok((legacy.clone(), ()))
+        }).unwrap();
+        let task = task_event("C6-restart", &"a".repeat(40));
+        ledger.append_transaction(|prior| {
+            assert_eq!(prior.len(), 1);
+            Ok((task.clone(), ()))
+        }).unwrap();
+        drop(ledger);
+        let reopened = DevelopmentLedger::new(path.clone()).unwrap();
+        let persisted = reopened.events().unwrap();
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted[0].operation, "project.open");
+        assert!(persisted[0].task.is_none());
+        let state = project_tasks(&persisted, "test-project",
+            Some(&"a".repeat(40))).unwrap();
+        assert_eq!(state.len(), 1);
+        assert_eq!(state[0].task_id, "C6-restart");
+        assert_eq!(state[0].task_acceptance, "not_verified");
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn truncated_journal_fails_closed_on_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "ide-c6-corrupt-{}-{}.jsonl",
+            std::process::id(),
+            rand::random::<u128>()
+        ));
+        std::fs::write(&path, b"{\"schemaVersion\":1").unwrap();
+        let ledger = DevelopmentLedger::new(path.clone()).unwrap();
+        assert!(matches!(ledger.events(), Err(ContinuityError::Corrupt)));
+        drop(ledger);
+        std::fs::remove_file(path).unwrap();
+    }
+
 }
