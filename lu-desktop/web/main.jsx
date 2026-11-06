@@ -85,6 +85,8 @@ function App() {
   // An opt-in for exactly one ordinary Send. This boolean is never authority:
   // the host still requires an actual native directory picker.
   const [workspaceToolsNextSend,setWorkspaceToolsNextSend] = useState(false);
+  // Explicit one-turn Browser opt-in; native dialog remains the grant.
+  const [browserResearchNextSend,setBrowserResearchNextSend]=useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
@@ -515,7 +517,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -533,6 +535,12 @@ function App() {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => startedJob(prev,e.payload));
     }).then(fn => { if (alive) stopStart = fn; else fn(); });
+    listen('lu-browser-needs-human',e=>{
+      if(!alive||!e.payload?.chatId)return;
+      invoke('lu_browser_runtime_status')
+        .then(v=>{if(alive)setBrowserRuntime(v);})
+        .catch(()=>{});
+    }).then(fn=>{if(alive)stopBrowserChallenge=fn;else fn();});
     listen('lu-token', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
@@ -598,7 +606,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -1588,6 +1596,13 @@ function App() {
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
     const useWorkspaceTools=workspaceToolsNextSend;
+    const useBrowserResearch=browserResearchNextSend;
+    if(useWorkspaceTools&&useBrowserResearch){
+      setError('Choose either workspace tools or Browser research for this turn.');return;
+    }
+    if(useBrowserResearch&&(images.length||textFiles.length||input.length>12*1024)){
+      setError('Browser research requires a text-only question of at most 12 KiB.');return;
+    }
     if (useWorkspaceTools && (images.length || textFiles.length)){
       setError('Workspace tools require a text-only question. Remove attachments or turn off workspace tools.');return;
     }
@@ -1610,6 +1625,7 @@ function App() {
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
+    if (useBrowserResearch) setBrowserResearchNextSend(false);
     setImageViewer(null);
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
@@ -1626,11 +1642,16 @@ function App() {
     let completed = false;
     let cancelled = false;
     try {
-      const output = await invoke('lu_generate', {
-        sessionId: runtime.sessionId, chatId: activeId,
-        prompt: submitted, imageRefs: refs, maxNewTokens: 512,
-        readOnlyWorkspace: useWorkspaceTools
-      });
+      const output = useBrowserResearch
+        ? await invoke('lu_generate_browser', {
+            sessionId:runtime.sessionId,chatId:activeId,
+            prompt:input,origins:browserOrigins,maxNewTokens:512
+          })
+        : await invoke('lu_generate', {
+            sessionId: runtime.sessionId, chatId: activeId,
+            prompt: submitted, imageRefs: refs, maxNewTokens: 512,
+            readOnlyWorkspace: useWorkspaceTools
+          });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
     } catch (error) {
@@ -2842,12 +2863,27 @@ function App() {
               aria-pressed={workspaceToolsNextSend}
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="On the next normal Send, choose a folder in the native picker and let Lu use approved read-only tools for that one turn"
-              onClick={()=>setWorkspaceToolsNextSend(value=>!value)}>
+              onClick={()=>{setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
               {workspaceToolsNextSend?'Workspace tools: next Send ✓':'Use workspace tools on Send'}
             </button>
             {workspaceToolsNextSend && <span className="composerHelp" role="status">
               Next Send will open a native folder picker. Read-only access is granted for that turn only.
             </span>}
+            <button type="button" className="subtleButton"
+              aria-pressed={browserResearchNextSend}
+              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
+              title="Next Send: request native approval for exact HTTPS origins, use a supervised read-only Browser and return a journaled answer"
+              onClick={()=>{setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
+              {browserResearchNextSend?'Browser research: next Send ✓':'Research with Lu browser (read only)'}
+            </button>
+            {browserResearchNextSend&&<label className="composerHelp">
+              Research HTTPS origins (exact public sites)
+              <input value={browserOrigins} maxLength={2048}
+                onChange={e=>setBrowserOrigins(e.target.value)}
+                placeholder="https://example.org" />
+              <small>Lu asks for native approval of the entire list.
+                Text-only, read-only, one conversation turn.</small>
+            </label>}
             <button type="button" className="subtleButton"
               disabled={!chatId}
               title="Inspect actual persisted Reader/Workspace model tool loops without replaying effects"
