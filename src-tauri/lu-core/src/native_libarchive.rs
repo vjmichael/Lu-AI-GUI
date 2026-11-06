@@ -37,9 +37,58 @@ mod platform{
     // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR + LOAD_LIBRARY_SEARCH_DEFAULT_DIRS.
     // Include DLL dependencies in same trusted subdirectory.
     const LOAD_FLAGS:u32=0x00000100|0x00001000;
+    fn manifest_verified(folder:&std::path::Path)->bool{
+        use sha2::{Digest,Sha256};
+        let Ok(contents)=std::fs::read(folder.join("manifest.json"))else{return false};
+        if contents.len()>64*1024{return false}
+        let Ok(doc)=serde_json::from_slice::<serde_json::Value>(&contents)else{return false};
+        if doc["schema"].as_u64()!=Some(1){return false}
+        let Some(files)=doc["files"].as_array()else{return false};
+        if files.len()<2||files.len()>128{return false}
+        let mut names=std::collections::BTreeSet::new();
+        for item in files{
+            let Some(name)=item["name"].as_str()else{return false};
+            let Some(hash)=item["sha256"].as_str()else{return false};
+            let Some(expected)=item["bytes"].as_u64()else{return false};
+            if !name.to_ascii_lowercase().ends_with(".dll")||
+                name.is_empty()||name.len()>128||
+                !name.bytes().all(|b|b.is_ascii_alphanumeric()||
+                    matches!(b,b'.'|b'-'|b'_'))||
+                hash.len()!=64||
+                !hash.bytes().all(|b|b.is_ascii_digit()||
+                    (b'a'..=b'f').contains(&b))||
+                !names.insert(name.to_ascii_lowercase()){
+                return false
+            }
+            let Ok(contents)=std::fs::read(folder.join(name))else{return false};
+            if contents.len() as u64!=expected||expected==0||
+                format!("{:x}",Sha256::digest(&contents))!=hash{
+                return false
+            }
+        }
+        if !names.contains("archive.dll")&&!names.contains("libarchive.dll"){
+            return false
+        }
+        // Manifest may not omit any executable DLL present in its folder.
+        let Ok(entries)=std::fs::read_dir(folder)else{return false};
+        for entry in entries{
+            let Ok(entry)=entry else{return false};
+            let file_name=entry.file_name();
+            let Some(name)=file_name.to_str()else{return false};
+            if name.to_ascii_lowercase().ends_with(".dll")&&
+                !names.contains(&name.to_ascii_lowercase()){
+                return false
+            }
+        }
+        true
+    }
     pub unsafe fn open()->Result<*mut c_void,NativeArchiveError>{
         let exe=std::env::current_exe().map_err(|_|NativeArchiveError::BackendMissing)?;
         let parent=exe.parent().ok_or(NativeArchiveError::BackendMissing)?;
+        let trusted=parent.join("lu-native-codecs");
+        if !manifest_verified(&trusted){
+            return Err(NativeArchiveError::BackendMissing)
+        }
         for name in ["archive.dll","libarchive.dll"]{
             let file=parent.join("lu-native-codecs").join(name);
             if !file.is_file(){continue}
