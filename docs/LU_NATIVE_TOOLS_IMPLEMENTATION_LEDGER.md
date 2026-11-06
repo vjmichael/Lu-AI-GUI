@@ -77,3 +77,9 @@ Source branch: `lu/wave2-file-archive-operations-20261105`. Based on Wave 1 exac
 6. Durable filesystem copy/move/trash adapters, directory transactions, and Windows ACL/race recovery acceptance.
 
 Do not promote Wave 2 to complete from source-level implementation or queued GitHub Actions.
+
+### Word document creation added within Wave 2
+- `native_docx_create.rs` produces a real macro-free DOCX OOXML package with styled Title, Heading 1, Heading 2 and paragraph blocks, escaped text, line breaks and tabs, bounded sizes and no-overwrite create-new publication.
+- `native_docx_tool.rs` exposes a typed Protobuf Create operation whose `ExactDocxCreatePolicy` re-renders and verifies the approved content SHA256 and destination before the persisted-human-turn / effect-journal admission.
+- Native tests exercise package structure, Word paragraph styling, DOCX Reader round-trip, no-clobber, invalid XML characters and durable authorized dispatch/revocation.
+- This remains a first structured Word creator. It does NOT claim existing DOCX editing, tables, images, sections, headers, footers, revision tracking, styles from templates, or installed desktop approval UX. All require dedicated tests and recovery boundaries.
