@@ -18,9 +18,10 @@ fn smoke() -> Result<(), String> {
     use std::{path::PathBuf, ptr};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS},
+        Storage::FileSystem::PIPE_ACCESS_DUPLEX,
         System::{
             JobObjects::CreateJobObjectW,
-            Pipes::{CreateNamedPipeW, PIPE_ACCESS_DUPLEX, PIPE_READMODE_MESSAGE,
+            Pipes::{CreateNamedPipeW, PIPE_READMODE_MESSAGE,
                 PIPE_TYPE_MESSAGE, PIPE_WAIT, PIPE_REJECT_REMOTE_CLIENTS},
         },
     };
