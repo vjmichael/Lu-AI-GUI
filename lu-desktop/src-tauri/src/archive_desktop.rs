@@ -75,7 +75,7 @@ fn base_for_folder(archive_name:&str)->String{
     let lower=archive_name.to_ascii_lowercase();
     let suffix=[".cpio.gz",".cpio.xz",".cpio.bz2",".cpio.zst",
         ".tar.gz",".tar.xz",".tar.bz2",".tar.zst",".tgz",".tbz2",
-        ".txz",".tzst",".zip",".cpio",".deb",".ar",".a",".tar",
+        ".txz",".tzst",".zip",".7z",".rar",".rpm",".cpio",".deb",".ar",".a",".tar",
         ".gz",".xz",".bz2",".zst"]
         .iter().find(|suffix|lower.ends_with(**suffix)).copied().unwrap_or("");
     let prefix=&archive_name[..archive_name.len()-suffix.len()];
