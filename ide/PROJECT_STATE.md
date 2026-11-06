@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### E2B native integration continuation — 2026-11-06
+
+- **Language routing:** the feature-gated Windows Tauri backend now selects clangd for C/C++, rust-analyzer for Rust, and Ruff for Python diagnostics only. The host independently validates filename extension and language ID, checks each server against its own compile-time approved installer hash, and publishes only installed, verified language IDs to the editor. JS cannot start unverified catalog-only servers.
+- **Native unit-level lifecycle coverage:** protected gateway mocks now exercise Running → ReleasePending → Completed with durable replay, Running → CancelRequested → Cancelled on drop, and service-ACK failure quarantine after supervisor restart. These are authored source tests, **not kernel proofs**.
+- **Installer staging:** ide/packaging/stage_language_server_release.py requires a reviewed two-platform manifest, exact service SHA-256, OS Authenticode check, native binary hashes and license notices before staging a per-machine NSIS resource tree. ide/app/src-tauri/tauri.e2.nsis.conf.json keeps this separate from the default non-executable alpha. Restricted service installation, signed packaged binaries and real installed-app acceptance remain open gates.
+- **CI queue hygiene:** E1/E2 workflows now coalesce superseded branch jobs; exact-head native results remain queued. This is not released or installed E2 execution.
+
 ## Wave E2 — Supervised language services and editor presentation (2026-11-06)
 
 - **Independent real-server protocol smoke:** local `clangd 17.0.0` stdio fixture successfully exchanged initialize, versioned diagnostics, hover, same-file definition and completion messages. Sanitized wire frames in `ide/host/fixtures/clangd17_real_wire.json` are replayed by Rust E2 tests. This is **not** D7D contained server execution or installed IDE acceptance. Restricted clangd completion text edits are now accepted only for the current identifier prefix/cursor after human selection.
