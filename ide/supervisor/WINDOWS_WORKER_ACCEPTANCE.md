@@ -51,6 +51,35 @@ cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_accepta
 
 The path is an example staging convention, **not** a claim that such a bundle is installed. The fixture fails closed if the input is absent or invalid. It does not satisfy the hostile cancellation/restart matrix, signed bundle provenance, or installed Windows GUI gate merely by compiling.
 
+## D7B native acceptance fixtures (2026-11-06)
+
+Draft [D7B PR #60](https://github.com/vjmichael/Lu-AI-GUI/pull/60), stacked on D7 PR #58. These are **native acceptance implementations**, not installation approval.
+
+| Gate | Executable evidence | Present state |
+| --- | --- | --- |
+| Rust toolchain | Rust 1.99.1, fixed MSVC target and full rustc/Cargo sysroot | Packager written; real host verification pending |
+| VC toolchain and SDK | VS 17.14.*, MSVC 14.44.*, SDK 10.0.26100.0; linker, UCRT/UM libraries, SDK binaries and headers | Explicit version checks and bundle closure; actual provisioned run pending |
+| Immutable trust lock | Native-compatible content digest and every file SHA-256, outside runnable bundle | Produced by PowerShell packager; **self-observed**, not release-authorized until expected reviewed SHA matches |
+| Native sealed execution | D7 feature-gated AppContainer Cargo `--offline --locked` | Acceptance CLI exists; runtime not yet passed |
+| Hostile input | Hard links, reparse/junction, parent-swap, file/content tampering | Windows native regression tests written; exact-head CI pending |
+| Cancellation | Real contained Cargo Job cancellation, durable request-before-kill, zero published cancelled output and restart replay | Acceptance mode written; real run pending |
+| Owner crash | Separate observer retains OS handles to both child and grandchild **before** terminating Job owner, requires both signaled | Standalone fixed Job fixture and independent PowerShell test; not production D7 cleanup authority |
+| Recovery uncertainty | Missing Job object on D7 restart must stay quarantined, not report Cancelled | Native replay regression written |
+| Same-user concurrent rename | Full handle-relative source staging and output publication against adversarial swaps | **Not yet proven**; additional hostile test and API hardening required |
+| Installed IDE | Human-first Run/cancel/restart on signed Windows installer | **Blocked**; no Tauri command registered |
+
+**Command for a trusted Windows CI host:**
+
+```powershell
+./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot "$env:RUNNER_TEMP\lu-d7b-offline" -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
+cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker -- --cancel-native-worker
+```
+
+The packager populates `LU_IDE_D7_NATIVE_TOOLCHAIN` for GitHub Actions through `GITHUB_ENV`; for a local manual run set it to the generated bundle path. The lock file is placed beside, **not inside**, the bundle, and needs an independently reviewed `-ExpectedBundleSha256` to become a release pin.
+
+**Crash-witness limits:** `Test-IndependentJobCrash.ps1` holds kernel process handles to the D2 fixed fixture descendants, forcibly kills the owner and writes an observation only when the OS confirms both handles signaled. It does not possess D7's authenticated job grant, cannot write trusted D7 terminal receipts, and cannot claim a missing named Job was cleaned up after reboot. That failure remains quarantined until an independent recovery broker is implemented and validated.
+
 ## Acceptance gates before activation
 
 1. Exact-head Windows `cargo check --features windows-worker --all-targets`, native Rust tests, `rustfmt --check`, and the existing standalone IDE regression gates.
