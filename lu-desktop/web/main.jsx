@@ -33,6 +33,8 @@ function App() {
   const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:''});
   const [imageExportBusy,setImageExportBusy]=useState(false);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
+  const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
+  const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
   const [observeNotes,setObserveNotes] = useState([]);
@@ -312,6 +314,16 @@ function App() {
     invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'})
       .then(v=>setObserveView(v)).catch(()=>{});
   },[chatId,error,observeView.mode]);
+  async function loadImageRevisionHistory(){
+    if(!chatId||imageHistoryBusy)return;
+    const sourceChat=chatId;
+    setImageHistoryBusy(true);
+    try{
+      const rows=await invoke('lu_image_workspace_history',{chatId:sourceChat});
+      setImageHistoryView({chatId:sourceChat,rows:Array.isArray(rows)?rows:[]});
+    }catch(e){setError(String(e));}
+    finally{setImageHistoryBusy(false);}
+  }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
     const width=Number(imageEdit.width),height=Number(imageEdit.height);
@@ -332,7 +344,11 @@ function App() {
         x:imageEdit.mode==='crop'?x:null,y:imageEdit.mode==='crop'?y:null,
         width,height
       });
-      if(saved)setImageExportReceipt(saved);
+      if(saved){
+        setImageExportReceipt(saved);
+        // Review-only receipts: history does not claim this file still exists.
+        await loadImageRevisionHistory();
+      }
     }catch(e){setError(String(e));}
     finally{setImageExportBusy(false);}
   }
@@ -2887,6 +2903,19 @@ function App() {
             {imageExportReceipt.width} × {imageExportReceipt.height} ·
             SHA-256 {imageExportReceipt.revisionSha256}. Original retained.
           </small>}
+          <button type="button" disabled={!chatId||imageHistoryBusy}
+            onClick={()=>void loadImageRevisionHistory()}>
+            {imageHistoryBusy?'Reading history…':'Review saved revision history'}
+          </button>
+          {imageHistoryView.chatId===chatId&&
+            <div aria-label="Historical image revision receipts">
+              <small>Historical exports only. This list does not prove files still exist.
+                Uncertain exports are never automatically retried.</small>
+              <ul>{imageHistoryView.rows.map(record=><li key={record.id}>
+                {record.fileName} · {record.width} × {record.height} ·
+                {record.state} · SHA-256 {record.revisionSha256}
+              </li>)}</ul>
+            </div>}
         </div>
       </section>
     </div>}
