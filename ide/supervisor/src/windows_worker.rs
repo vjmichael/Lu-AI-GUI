@@ -905,6 +905,69 @@ mod tests {
     }
 
     #[test]
+    fn pinned_bundle_digest_detects_mutation_and_rejects_reuse() {
+        let root = test_tree();
+        let src = root.join("bundle");
+        fs::create_dir_all(src.join("bin")).unwrap();
+        fs::create_dir_all(src.join("lib")).unwrap();
+        fs::create_dir_all(src.join("cargo-home")).unwrap();
+        fs::write(src.join("bin/cargo.exe"), b"known-pinned-cargo").unwrap();
+        fs::write(src.join("bin/rustc.exe"), b"known-pinned-rustc").unwrap();
+        let expected = trusted_offline_toolchain_digest(&src).unwrap();
+        let first = root.join("first");
+        stage_toolchain(&src, &first, &expected).unwrap();
+        assert_eq!(digest_tree(&first, None, 100, 100_000).unwrap(), expected);
+        fs::write(src.join("bin/cargo.exe"), b"unexpected-cargo-update").unwrap();
+        assert_eq!(
+            stage_toolchain(&src, &root.join("second"), &expected).unwrap_err(),
+            SupervisorError::WrongProjectOrSource
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn quarantined_restart_cannot_invent_cleanup_for_missing_job() {
+        let root = test_tree();
+        let journal = root.join("receipts.jsonl");
+        let supervisor = Supervisor::open(journal.clone()).unwrap();
+        let plan = JobPlan {
+            project_id: format!("ide-{}", "a".repeat(32)),
+            recipe_id: "rust_check".into(),
+            source_head: "b".repeat(40),
+            input_snapshot_sha256: "c".repeat(64),
+            manifest_sha256: "d".repeat(64),
+            toolchain_sha256: "e".repeat(64),
+            runtime_limit_ms: 3000,
+            memory_limit_bytes: 128 * 1024 * 1024,
+            process_limit: 3,
+            log_limit_bytes: 65536,
+            effect_class: "test_build_isolated".into(),
+        };
+        let prepared = supervisor.prepare(plan.clone()).unwrap();
+        supervisor.record_human_approval(
+            &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true
+        ).unwrap();
+        supervisor.consume_grant_after_attestation(
+            &prepared.job_id, &plan, &proof()
+        ).unwrap();
+        supervisor.native_mark_running(&prepared.job_id).unwrap();
+        drop(supervisor);
+        let restarted = Supervisor::open(journal).unwrap();
+        assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
+        // No kernel Job was actually created, so restart may never infer a
+        // cancelled/clean outcome from a missing named Job Object.
+        assert_eq!(
+            reconcile_windows_interrupted(&restarted, &prepared.job_id).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        let after = restarted.inspect().unwrap();
+        assert!(after[0].requires_reconciliation);
+        assert_ne!(after[0].phase, JobPhase::Cancelled);
+        drop(restarted);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn rejects_reparse_and_unknown_offline_toolchain() {
         let base = std::env::temp_dir().join(format!("lu-ide-d7-fixture-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
