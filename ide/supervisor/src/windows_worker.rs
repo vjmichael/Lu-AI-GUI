@@ -576,10 +576,12 @@ fn proof() -> OsContainmentProof {
 /// and the user performed a fresh, exact-plan approval.
 pub fn execute_windows_worker(
     supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+    current_host_observed_head: &str,
     input: &PublishedInput, trusted_offline_toolchain_root: &Path,
     trusted_native_output_parent: &Path, cancel: &WindowsCancellation,
 ) -> Result<WindowsExecutionResult, SupervisorError> {
-    if !valid_job_id(job_id) || plan.input_snapshot_sha256 != input.seal.source_sha256
+    if !valid_job_id(job_id) || plan.source_head != current_host_observed_head
+        || plan.input_snapshot_sha256 != input.seal.source_sha256
         || plan.manifest_sha256 != input.seal.manifest_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
