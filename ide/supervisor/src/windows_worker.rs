@@ -8,16 +8,15 @@
 //! feature in a distributed IDE build.
 use crate::{
     snapshot::{verify_input, PublishedInput},
+    windows_cap_tree::{audit_tree, digest_tree},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
-use sha2::{Digest, Sha256};
 use std::{
-    ffi::{OsStr, OsString},
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    ffi::OsStr,
+    fs::{self},
     mem::size_of,
-    os::windows::{ffi::{OsStrExt, OsStringExt}, fs::OpenOptionsExt, io::AsRawHandle},
+    os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
     sync::{atomic::{AtomicBool, Ordering}, Arc},
@@ -32,7 +31,6 @@ use windows_sys::Win32::{
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath},
         PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenAppContainerSid, TokenIsAppContainer,
     },
-    Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
     System::{
         Com::CoTaskMemFree,
         JobObjects::{
@@ -59,12 +57,8 @@ const MAX_BUNDLE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_OUTPUT_FILES: usize = 6000;
 const MAX_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_OUTPUT_FILE_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_DEPTH: usize = 48;
-const MAX_SINGLE_INPUT: u64 = 1024 * 1024 * 1024;
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
-const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const JOB_OBJECT_TERMINATE_ACCESS: u32 = 0x0008;
 const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
@@ -125,8 +119,6 @@ fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     Ok(wstr(&format!("Local\\LuIdeD7-{id}-{}", &hash[..16])))
 }
 
-#[derive(Default)]
-struct TreeCounter { files: usize, bytes: u64 }
 fn clean_meta(path: &Path) -> Result<fs::Metadata, SupervisorError> {
     let m = fs::symlink_metadata(path).map_err(io_denied)?;
     use std::os::windows::fs::MetadataExt;
@@ -134,127 +126,6 @@ fn clean_meta(path: &Path) -> Result<fs::Metadata, SupervisorError> {
         return Err(denied());
     }
     Ok(m)
-}
-fn clean_part(name: &OsStr) -> Result<(), SupervisorError> {
-    let text = name.to_str().ok_or_else(denied)?;
-    if text.is_empty() || text == "." || text == ".."
-        || text.len() > 240 || text.contains(':') || text.contains('"')
-        || text.chars().any(char::is_control) { return Err(denied()); }
-    Ok(())
-}
-fn checked_file_identity(file: &File, allow_directory: bool) -> Result<(u32, u64, u64), SupervisorError> {
-    let metadata = file.metadata().map_err(io_denied)?;
-    if !(metadata.is_file() || (allow_directory && metadata.is_dir())) {
-        return Err(denied());
-    }
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
-        return Err(denied());
-    }
-    // A hard link is not a reparse point and can alias a sensitive file
-    // outside the approved tree. Reject files with any second name.
-    if metadata.is_file() && info.nNumberOfLinks != 1 { return Err(denied()); }
-    let id = ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64;
-    Ok((info.dwVolumeSerialNumber, id, metadata.len()))
-}
-fn read_regular(path: &Path) -> Result<File, SupervisorError> {
-    if !clean_meta(path)?.is_file() { return Err(denied()); }
-    let mut options = OpenOptions::new();
-    options.read(true).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    let file = options.open(path).map_err(io_denied)?;
-    checked_file_identity(&file, false)?;
-    Ok(file)
-}
-fn directory_identity(path: &Path) -> Result<(File, (u32, u64, u64)), SupervisorError> {
-    if !clean_meta(path)?.is_dir() { return Err(denied()); }
-    let mut options = OpenOptions::new();
-    options.read(true).custom_flags(
-        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
-    );
-    let directory = options.open(path).map_err(io_denied)?;
-    let id = checked_file_identity(&directory, true)?;
-    Ok((directory, id))
-}
-// Deterministic SHA-256 of every relative path, size and content. Every
-// source and staged toolchain file is compared, and all reparse points denied.
-fn tree_transfer(
-    src: &Path,
-    dest: Option<&Path>,
-    depth: usize,
-    prefix: &Path,
-    count: &mut TreeCounter,
-    hash: &mut Sha256,
-    max_files: usize,
-    max_bytes: u64,
-) -> Result<(), SupervisorError> {
-    if depth > MAX_DEPTH { return Err(denied()); }
-    // A live OS handle pins this directory's identity across enumeration.
-    // Path-based child traversal still requires additional hostile rename
-    // acceptance before a same-user adversary is in the supported threat model.
-    let (_directory, directory_before) = directory_identity(src)?;
-    if let Some(dst) = dest { fs::create_dir_all(dst).map_err(io_denied)?; }
-    let mut children = fs::read_dir(src)
-        .map_err(io_denied)?
-        .collect::<Result<Vec<_>,_>>()
-        .map_err(io_denied)?;
-    children.sort_by_key(|x| x.file_name());
-    for child in children {
-        let name = child.file_name();
-        clean_part(&name)?;
-        let file = child.path();
-        let rel = prefix.join(&name);
-        let meta = clean_meta(&file)?;
-        let dst = dest.map(|d| d.join(&name));
-        if meta.is_dir() {
-            tree_transfer(&file, dst.as_deref(), depth + 1, &rel,
-                count, hash, max_files, max_bytes)?;
-        } else if meta.is_file() {
-            count.files += 1;
-            count.bytes = count.bytes.checked_add(meta.len()).ok_or_else(denied)?;
-            if count.files > max_files || count.bytes > max_bytes || meta.len() > MAX_SINGLE_INPUT {
-                return Err(denied());
-            }
-            let mut reader = read_regular(&file)?;
-            let before = reader.metadata().map_err(io_denied)?;
-            if before.len() != meta.len() { return Err(denied()); }
-            let mut writer = if let Some(d) = dst.as_deref() {
-                Some(OpenOptions::new().write(true).create_new(true).open(d).map_err(io_denied)?)
-            } else { None };
-            let mut item_hash = Sha256::new();
-            let mut bytes = 0_u64;
-            let mut buffer = [0_u8; 64 * 1024];
-            loop {
-                let n = reader.read(&mut buffer).map_err(io_denied)?;
-                if n == 0 { break; }
-                bytes = bytes.checked_add(n as u64).ok_or_else(denied)?;
-                if bytes > meta.len() { return Err(denied()); }
-                item_hash.update(&buffer[..n]);
-                if let Some(out) = writer.as_mut() { out.write_all(&buffer[..n]).map_err(io_denied)?; }
-            }
-            if bytes != meta.len() { return Err(denied()); }
-            let after = reader.metadata().map_err(io_denied)?;
-            if after.len() != meta.len() || after.modified().map_err(io_denied)?
-                != before.modified().map_err(io_denied)? { return Err(denied()); }
-            checked_file_identity(&reader, false)?;
-            if let Some(out) = writer.as_mut() { out.sync_all().map_err(io_denied)?; }
-            let relative = rel.to_str().ok_or_else(denied)?.replace('\\', "/");
-            hash.update(relative.as_bytes()); hash.update([0]);
-            hash.update(bytes.to_le_bytes());
-            hash.update(format!("{:x}", item_hash.finalize()).as_bytes());
-            hash.update([0]);
-        } else { return Err(denied()); }
-    }
-    let (_after, directory_after) = directory_identity(src)?;
-    if directory_before != directory_after { return Err(denied()); }
-    Ok(())
-}
-fn digest_tree(root: &Path, destination: Option<&Path>,
-    max_files: usize, max_bytes: u64) -> Result<String, SupervisorError> {
-    let mut counter = TreeCounter::default();
-    let mut hash = Sha256::new();
-    tree_transfer(root, destination, 0, Path::new(""), &mut counter,
-        &mut hash, max_files, max_bytes)?;
-    Ok(format!("{:x}", hash.finalize()))
 }
 /// Internal native-host helper to bind a provisioned offline bundle to an
 /// exact JobPlan. No executable path, bundle path or digest is accepted from
@@ -297,25 +168,7 @@ fn stage_workspace(input: &PublishedInput, dest: &Path)
     verify_input(&staged).map_err(|_| denied())
 }
 fn output_seal(root: &Path) -> Result<(u64, String), SupervisorError> {
-    if !clean_meta(root)?.is_dir() { return Err(denied()); }
-    let mut counter = TreeCounter::default();
-    let mut hash = Sha256::new();
-    tree_transfer(root, None, 0, Path::new(""), &mut counter,
-        &mut hash, MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES)?;
-    // MAX_SINGLE_INPUT in transfer is larger than output per-file policy.
-    // Check independent per-file quota via another bounded metadata walk.
-    fn check(dir: &Path, depth: usize) -> Result<(), SupervisorError> {
-        if depth > MAX_DEPTH { return Err(denied()); }
-        for entry in fs::read_dir(dir).map_err(io_denied)? {
-            let p = entry.map_err(io_denied)?.path();
-            let m = clean_meta(&p)?;
-            if m.is_dir() { check(&p, depth + 1)?; }
-            else if !m.is_file() || m.len() > MAX_OUTPUT_FILE_BYTES { return Err(denied()); }
-        }
-        Ok(())
-    }
-    check(root, 0)?;
-    Ok((counter.bytes, format!("{:x}", hash.finalize())))
+    audit_tree(root, None, MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES)
 }
 
 /// Publish only fully scanned, size-limited output from a terminated kernel
