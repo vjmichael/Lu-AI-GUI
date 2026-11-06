@@ -503,6 +503,17 @@ impl EvidenceLedger {
         }
         Ok(())
     }
+    pub fn recent_campaigns(
+        &self,limit:usize
+    )->Result<Vec<ResearchCampaignStatus>,EvidenceError>{
+        if !(1..=32).contains(&limit){return Err(EvidenceError::Invalid);}
+        let mut stmt=self.connection.prepare(
+            "SELECT id FROM research_campaigns ORDER BY rowid DESC LIMIT ?1"
+        )?;
+        let rows=stmt.query_map([limit as i64],|r|r.get::<_,String>(0))?
+            .collect::<Result<Vec<_>,_>>()?;
+        rows.iter().map(|id|self.campaign_status(id)).collect()
+    }
     fn campaign_safe_id(id:&str)->bool{
         id.starts_with("research-campaign-")&&id.len()<=128
             &&id.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'-'||c==b'_')
