@@ -308,3 +308,47 @@ test('history traversal pauses and reveals an encountered human challenge', asyn
   assert.deepEqual(visible,[false,true,false]);
   await session.close();
 });
+
+test('origin-firewall initialization failure closes owned browser context',async()=>{
+  let closed=false;
+  const context={
+    route:async()=>{throw new Error('route unavailable');},
+    pages:()=>[],close:async()=>{closed=true;}
+  };
+  const session=new BrowserSession({
+    origins:['https://archive.example'],profileDirectory:'/host/profile',
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:nativeWindow()
+  });
+  await assert.rejects(session.start(),/route unavailable/);
+  assert.equal(closed,true);
+});
+
+test('accessibility and screenshot respect login challenge before reading pixels or tree',async()=>{
+  for(const op of ['accessibility','screenshot']){
+    let screenshotCalls=0,treeCalls=0;
+    const page={
+      url:()=> 'https://archive.example/login',
+      locator:()=>({
+        innerText:async()=> 'Sign in to continue',
+        ariaSnapshot:async()=>{treeCalls++;return 'private';}
+      }),
+      screenshot:async()=>{screenshotCalls++;return Buffer.from('pixels');}
+    };
+    const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+    const controller=nativeWindow();
+    const session=new BrowserSession({
+      origins:['https://archive.example'],profileDirectory:'/host/profile',
+      chromiumProvider:{launchPersistentContext:async()=>context},
+      windowController:controller
+    });
+    await session.start();
+    const result=await session.execute({op});
+    assert.equal(result.status,'NEEDS_HUMAN');
+    assert.equal(result.reason,'LOGIN_REQUIRED');
+    assert.equal(treeCalls,0);
+    assert.equal(screenshotCalls,0);
+    assert.deepEqual(controller.calls.map(call=>call.visible),[false,true]);
+    await session.close();
+  }
+});
