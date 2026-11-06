@@ -1228,6 +1228,9 @@ async fn lu_ocr_read_selected_image(
     let Some(expected)=option_env!("LU_OCR_TESSERACT_SHA256") else {
         return Err("Approved offline OCR runtime is not bundled in this build".into());
     };
+    let Some(expected_data)=option_env!("LU_OCR_ENG_SHA256") else {
+        return Err("Reviewed OCR language data is not bundled in this build".into());
+    };
     let resources=app.path().resource_dir()
         .map_err(|_|"OCR resource directory unavailable")?;
     #[cfg(windows)]
@@ -1270,7 +1273,7 @@ async fn lu_ocr_read_selected_image(
             return Err("OCR source exceeded image budget".into());
         }
         let observed=lu_core::native_ocr::recognize_pinned_image(
-            &bytes,&executable,expected,&tessdata
+            &bytes,&executable,expected,&tessdata,expected_data
         ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
         Ok(OcrImageView{
             source_sha256:observed.source_sha256,
