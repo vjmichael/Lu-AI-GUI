@@ -422,9 +422,18 @@ mod windows {
         if !Path::new(&system_root).is_absolute() {
             return Err(io::Error::other("SystemRoot is not absolute"));
         }
+        // CreateProcessW's AppContainer startup resolves the package profile
+        // under LOCALAPPDATA. On real GitHub Windows runners, omitting it
+        // returns ERROR_ENVVAR_NOT_FOUND (203), even when SystemRoot is set.
+        let local_app_data = std::env::var_os("LOCALAPPDATA")
+            .ok_or_else(|| io::Error::other("LOCALAPPDATA unavailable; deny launch"))?;
+        if !Path::new(&local_app_data).is_absolute() {
+            return Err(io::Error::other("LOCALAPPDATA is not absolute"));
+        }
         let temp = std::env::temp_dir();
         let env: Vec<u16> = format!(
-            "SystemRoot={}\0TEMP={}\0TMP={}\0\0",
+            "LOCALAPPDATA={}\0SystemRoot={}\0TEMP={}\0TMP={}\0\0",
+            local_app_data.to_string_lossy(),
             system_root.to_string_lossy(),
             temp.display(),
             temp.display()
