@@ -506,6 +506,11 @@ impl ResearchDesktop{
     pub(crate) fn retrieve_document(
         &self,chat_id:&str,source_id:&str
     )->Result<ResearchDocumentView,String>{
+        self.retrieve_document_admitted(chat_id,source_id,None)
+    }
+    fn retrieve_document_admitted(
+        &self,chat_id:&str,source_id:&str,cancel:Option<&AtomicBool>
+    )->Result<ResearchDocumentView,String>{
         if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
             ||source_id.len()>128||source_id.chars().any(char::is_control){
             return Err("Select a corroborated source in a trusted conversation".into());
@@ -532,9 +537,14 @@ impl ResearchDesktop{
             .map_err(|_|"Publisher identity unavailable")?
             .ok_or("Crossref did not identify a specific HTTPS landing URL")?;
         let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
-        let chain=fetcher.fetch_document_chain(
-            &catalog_url,MAX_RESEARCH_DOCUMENT_BYTES
-        ).map_err(|_|"Document HTTPS retrieval or redirect attestation refused")?;
+        let chain=match cancel{
+            Some(flag)=>fetcher.fetch_document_chain_cancellable(
+                &catalog_url,MAX_RESEARCH_DOCUMENT_BYTES,flag
+            ),
+            None=>fetcher.fetch_document_chain(
+                &catalog_url,MAX_RESEARCH_DOCUMENT_BYTES
+            ),
+        }.map_err(|_|"Document HTTPS retrieval or redirect attestation refused")?;
         let document=extract_research_document(&chain.final_page.bytes)
             .map_err(|_|"Fetched document is unreadable, unsupported or exceeds extraction limits")?;
         let proof=ledger.record_document_retrieval(
@@ -828,9 +838,14 @@ impl ResearchDesktop{
                 if snapshot.state=="CANCELLED"||cancel.load(Ordering::Acquire){break;}
                 // Stage is derived entirely from host-verified metadata and
                 // persisted doc status, not model confidence or source prose.
-                let (stage,reason)=match self.corroborate_crossref(chat_id,&source_id){
+                let (stage,reason)=match self.corroborate_crossref_admitted(
+                    chat_id,&source_id,Some(&cancel)
+                ){
                     Ok(meta) if meta.verification_status=="metadata_corroborated"=>{
-                        match self.retrieve_document(chat_id,&source_id){
+                        if cancel.load(Ordering::Acquire){break;}
+                        match self.retrieve_document_admitted(
+                            chat_id,&source_id,Some(&cancel)
+                        ){
                             Ok(doc) if doc.document_accessed=>("DOCUMENT_ACCESSED","OK"),
                             Ok(_)=>("METADATA_CORROBORATED","UNSUPPORTED_CONTENT"),
                             Err(_)=>("DOCUMENT_UNAVAILABLE","RETRIEVAL_FAILED"),
@@ -955,6 +970,11 @@ impl ResearchDesktop{
     pub(crate) fn corroborate_crossref(
         &self,chat_id:&str,source_id:&str
     )->Result<ResearchCorroborationView,String>{
+        self.corroborate_crossref_admitted(chat_id,source_id,None)
+    }
+    fn corroborate_crossref_admitted(
+        &self,chat_id:&str,source_id:&str,cancel:Option<&AtomicBool>
+    )->Result<ResearchCorroborationView,String>{
         if !safe_id(chat_id)||source_id.len()>128
           ||!source_id.starts_with("https://openalex.org/")
           ||source_id.chars().any(char::is_control){
@@ -988,8 +1008,10 @@ impl ResearchDesktop{
         let fetcher=SecureHttpFetcher{
             curl_binary:&self.curl,ca_bundle:None,
         };
-        let response=fetcher.fetch(&url)
-            .map_err(|_|"Crossref metadata retrieval unavailable")?;
+        let response=match cancel{
+            Some(flag)=>fetcher.fetch_cancellable(&url,flag),
+            None=>fetcher.fetch(&url),
+        }.map_err(|_|"Crossref metadata retrieval unavailable")?;
         if response.http_status!=200{
             return Err("Crossref did not return a verified work record".into());
         }
