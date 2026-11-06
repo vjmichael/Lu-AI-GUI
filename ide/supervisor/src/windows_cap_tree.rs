@@ -301,6 +301,60 @@ mod tests {
     }
 
     #[test]
+    fn output_publication_is_exclusive_and_sealed_inside_trusted_parent() {
+        let base = std::env::temp_dir().join(format!(
+            "lu-cap-publish-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let source = base.join("source");
+        let native = base.join("native");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir(&native).unwrap();
+        fs::write(source.join("artifact.bin"), b"published immutable bytes").unwrap();
+        let (size, seal) = publish_into_native_parent(
+            &source, &native, OsStr::new("job-fixed"), 100, 10000, 10000
+        ).unwrap();
+        assert_eq!(size, b"published immutable bytes".len() as u64);
+        assert_eq!(
+            seal, digest_tree(&native.join("job-fixed"), None, 100, 10000).unwrap()
+        );
+        // No overwrite/replay against a native destination from a different
+        // job or previously published artifact directory.
+        assert!(publish_into_native_parent(
+            &source, &native, OsStr::new("job-fixed"), 100, 10000, 10000
+        ).is_err());
+        assert!(publish_into_native_parent(
+            &source, &native, OsStr::new("../escape"), 100, 10000, 10000
+        ).is_err());
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn rooted_output_parent_refuses_junction_to_host_directory() {
+        let base = std::env::temp_dir().join(format!(
+            "lu-cap-output-junction-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let source = base.join("source");
+        let host = base.join("protected");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir(&host).unwrap();
+        fs::write(source.join("public.txt"), b"allowed").unwrap();
+        fs::write(host.join("private.txt"), b"do not modify").unwrap();
+        let alias = base.join("fake-native-parent");
+        std::os::windows::fs::symlink_dir(&host, &alias)
+            .expect("native hostile Windows runner must support junction/symlink creation");
+        assert!(publish_into_native_parent(
+            &source, &alias, OsStr::new("job-attempt"), 100, 10000, 10000
+        ).is_err());
+        assert!(!host.join("job-attempt").exists());
+        assert_eq!(fs::read(host.join("private.txt")).unwrap(), b"do not modify");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
     fn rejects_absolute_escape_and_normalizes_tree_hashes() {
         let base = std::env::temp_dir().join(format!(
             "lu-cap-tree-{}-{}", std::process::id(),
