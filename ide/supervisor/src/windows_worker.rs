@@ -544,6 +544,18 @@ fn proof() -> OsContainmentProof {
     }
 }
 
+/// CI/debug-only progress labels. These carry no source contents, paths,
+/// tokens, SIDs, credentials or process IDs. The environment flag changes
+/// logging only; it never affects OS admissions or authorization decisions.
+fn acceptance_trace(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        eprintln!("NATIVE_ACCEPTANCE_STAGE={stage}");
+    }
+}
+
 /// Internal-only Windows native worker. This function is not registered with
 /// Tauri or exported through the WebView. It only runs when explicitly built
 /// with windows-worker, after native host provisioned a pinned offline bundle
@@ -584,9 +596,11 @@ where F: FnOnce() -> Result<(), SupervisorError> {
         return Err(SupervisorError::WrongProjectOrSource);
     }
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    acceptance_trace("input_seal_verified");
     // No AppContainer creation, one-shot grant consumption or process launch
     // happens until the entire bundle has been sealed and checked.
     let profile = AppProfile::create(job_id)?;
+    acceptance_trace("appcontainer_profile_created");
     let local = profile.local_state()?;
     let workspace = local.join("workspace");
     let toolchain = local.join("toolchain");
@@ -598,7 +612,9 @@ where F: FnOnce() -> Result<(), SupervisorError> {
     if private_parent.starts_with(&local) || local.starts_with(&private_parent)
         || private_parent.starts_with(&input.root) { return Err(denied()); }
     stage_workspace(input, &workspace)?;
+    acceptance_trace("workspace_staged");
     stage_toolchain(trusted_offline_toolchain_root, &toolchain, &plan.toolchain_sha256)?;
+    acceptance_trace("toolchain_staged");
     fs::create_dir(&output).map_err(io_denied)?;
     let (exe, mut command) = command_for(plan, &toolchain, &workspace)?;
     let env = bootstrap_environment(&local, &workspace, &output, &toolchain)?;
@@ -621,18 +637,23 @@ where F: FnOnce() -> Result<(), SupervisorError> {
     if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
+    acceptance_trace("staged_digests_verified");
     // Source identity and the exact native execution bundle are now sealed.
     // Only NOW request/consume fresh one-use authority. No untrusted program
     // has been started, and the 60-second grant TTL remains unchanged.
     approve_after_staging()?;
+    acceptance_trace("fresh_grant_issued_after_staging");
     let plan_hash = supervisor.inspect()?.into_iter()
         .find(|x| x.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?.plan_sha256;
     let job = Job::create(job_id, &plan_hash, plan)?;
+    acceptance_trace("kernel_job_created");
     if !proof().complete() { return Err(denied()); }
     // Independent kernel Job holder MUST acknowledge readiness and fsync
     // its own witness before the one-shot grant can be consumed.
     let mut broker = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_broker)?;
+    acceptance_trace("protected_broker_fsync_ready");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
+    acceptance_trace("one_use_grant_consumed");
     let (process, thread) = match launch_appcontainer(
         &profile, &job, &exe, &mut command, &workspace, &env
     ) {
@@ -651,6 +672,7 @@ where F: FnOnce() -> Result<(), SupervisorError> {
     };
     // The separate broker must remain live across the suspended child
     // admission. A dead broker cannot be waved through as containment.
+    acceptance_trace("suspended_appcontainer_attested");
     if !broker.alive() {
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
