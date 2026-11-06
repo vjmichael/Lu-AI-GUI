@@ -113,10 +113,10 @@ function App() {
     Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
       .then(([servers, worker]) => {
         setLanguageServers(Array.isArray(servers) ? servers.slice(0, 16) : []);
-        setLspWorker(worker?.ready ? {
-          ready: false, code: 'LSP_UNATTESTED_ADMISSION',
-          detail: 'Live language services require independently verified native worker evidence.'
-        } : worker);
+        setLspWorker(worker && typeof worker.ready === 'boolean' ? worker : {
+          ready: false, code: 'LSP_HOST_UNAVAILABLE',
+          detail: 'Native language-service status is not a trusted response.'
+        });
       })
       .catch(() => setLspWorker({
         ready: false, code: 'LSP_HOST_UNAVAILABLE',
@@ -854,6 +854,53 @@ function App() {
     finally { setExplorerPending(false); }
   }
 
+  async function requestLspFeature(kind) {
+    const tab = activeTab;
+    if (!tab || !lspWorker?.ready || !languageForPath(tab.relativePath)) return;
+    if (!['completion', 'hover', 'definition', 'diagnostics'].includes(kind)) return;
+    // The native host must independently revalidate this current project,
+    // saved disk hash, exact unsaved editor buffer revision, worker scope,
+    // peer identity and user approval before forwarding an LSP message.
+    const position = cursorPositions[tab.key] || {line: 0, character: 0};
+    try {
+      const command = kind === 'diagnostics' ? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature';
+      const response = await invoke(command, {request: {
+        projectId: tab.projectId, relativePath: tab.relativePath,
+        expectedRevision: tab.revision, bufferRevision: tab.bufferRevision,
+        languageId: languageForPath(tab.relativePath),
+        kind, position: {line:position.line, character:position.character}
+      }});
+      if (!matchesSource(tab,response)) return;
+      if (kind === 'diagnostics') {
+        setLspNativeDiagnostics(previous => ({...previous, [tab.key]: response}));
+      } else if (kind === 'completion') {
+        setLspCompletions({tabKey:tab.key,response});
+      } else if (kind === 'hover') {
+        setLspHover({tabKey:tab.key,response});
+      } else if (kind === 'definition') {
+        const target=visibleDefinition(tab,response);
+        if (target) setLspJumpRequest({...target,
+          tabIdentity:tab.key + ':' + tab.generation, nonce:Date.now()});
+      }
+    } catch (error) {
+      // No automatic external interpreter, shell, installer or unsupervised
+      // fallback. The human can keep editing normally.
+      setProblem('Language service unavailable: ' + String(error));
+    }
+  }
+
+  function applyLspCompletion(item) {
+    if (!activeTab || !lspWorker?.ready ||
+        !activeLspCompletions.some(choice => choice === item)) return;
+    setLspCompletionApplyRequest({
+      tabIdentity: activeTab.key + ':' + activeTab.generation,
+      expectedDraft: activeTab.draft,
+      insertText: item.insertText,
+      nonce: Date.now(),
+    });
+    setLspCompletions(null);
+  }
+
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
     setReview(previous => previous?.tabKey === key ? null : previous);
@@ -1053,7 +1100,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -1068,11 +1115,12 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isJobs ? 'Review non-executable plans · No worker enabled · No grants' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
+            isLanguages ? 'Open-source LSP engines · Protected worker status · No auto-install' :
             isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
             isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
             'Choose projects without executing their code.'}</p>
@@ -1081,7 +1129,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? refreshIntents() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? refreshIntents() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
