@@ -12,9 +12,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand = "0.8"
 sha2 = "0.10"
+lu-ide-workspace = { path = "../host", optional = true }
 
 [features]
 default = []
+# E2 pipe/protocol gateway only; actual OS LSP launch remains gated.
+lsp-transport = ["dep:lu-ide-workspace"]
 # Both OS workers are opt-in and not linked into the installed IDE.
 # Neither feature registers a Tauri command or an unrestricted execution API.
 linux-worker = []
