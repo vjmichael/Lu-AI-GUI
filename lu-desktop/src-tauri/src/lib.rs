@@ -1059,6 +1059,12 @@ async fn lu_generate(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
         ).await?.ok_or_else(||"Workspace folder was not selected".into())
     }
+    if image_refs.is_empty()&&max_new_tokens==512 &&
+        reader_desktop::explicit_reader_document_request(&prompt){
+        return reader_desktop::ask_reader_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+        ).await?.ok_or_else(||"Reader document was not selected".into())
+    }
     generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
         prompt,image_refs,max_new_tokens,GenerationOrigin::Human).await
 }

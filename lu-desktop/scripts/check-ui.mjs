@@ -6,6 +6,9 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 3 ordinary Send can open trusted Reader for explicit document interpretation',
+    host.includes('reader_desktop::explicit_reader_document_request(&prompt)') &&
+    host.includes('reader_desktop::ask_reader_for_chat(')],
   ['Wave 3 ordinary text can offer a native workspace picker without model permission or attachment instructions',
     host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
     ui.includes('Explicit workspace file searches also offer a native folder picker')],

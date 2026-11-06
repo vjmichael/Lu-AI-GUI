@@ -76,6 +76,25 @@ pub(crate) fn pick_reader_bytes(
     Ok(Some((filename,bytes)))
 }
 
+/// Conservative USER-intent classification: only offers a native picker.
+pub(crate) fn explicit_reader_document_request(text:&str)->bool{
+    let raw=text.trim();
+    if raw.is_empty()||raw.len()>8192||raw.contains("<|")||
+        raw.contains("[Attached text file:")||
+        raw.contains("[/Attached text file]"){return false}
+    let lower=raw.to_ascii_lowercase();
+    if ["how to ","how do i ","what is ","what does ","explain ",
+        "do not ","don't ","without ","delete ","move ","copy ","create ",
+        "write ","replace ","revise ","modify ","edit ","list files ",
+        "search files "].iter().any(|term|lower.contains(term)){return false}
+    let action=["read ","summarize ","inspect ","analyze ",
+        "extract text from ","review document ","review the document "]
+        .iter().any(|term|lower.contains(term));
+    let document=["pdf","docx","xlsx","pptx","document","spreadsheet",
+        "presentation","text file","word file","excel file"]
+        .iter().any(|term|lower.contains(term));
+    action&&document&&!lower.contains("workspace")&&!lower.contains("folder")
+}
 /// Native operator explicitly asks Lu's model to inspect one selected file.
 /// The caller must have a loaded session and a real chat. There is no remote
 /// or model-originated way to choose the file and the turn grant is ephemeral.
@@ -87,6 +106,14 @@ pub(crate) async fn lu_reader_ask_document(
     session_id:String,
     chat_id:String,
     prompt:String,
+)->Result<Option<String>,String>{
+    ask_reader_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt).await
+}
+/// Shared by normal Send and the separate Ask Reader action. The OS picker
+/// and verified source bytes remain mandatory regardless of entrypoint.
+pub(crate) async fn ask_reader_for_chat(
+    app:AppHandle,state:Arc<DesktopState>,session_id:String,
+    chat_id:String,prompt:String,
 )->Result<Option<String>,String>{
     if prompt.trim().is_empty()||prompt.len()>8*1024{
         return Err("Reader question must be 1–8192 bytes".into())
@@ -133,7 +160,7 @@ pub(crate) async fn lu_reader_ask_document(
         chat_id:chat_id.clone(),generation_id:generation_id.clone(),
         phase:"queued",position,
     });
-    let host=Arc::clone(state.inner());
+    let host=Arc::clone(&state);
     let event_app=app.clone();
     let gid=generation_id.clone();
     let outcome=tauri::async_runtime::spawn_blocking(move||{
@@ -219,6 +246,19 @@ pub(crate) async fn lu_reader_ask_document(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn native_reader_requires_explicit_user_document_intent(){
+        for good in ["Summarize this PDF","Read a Word document",
+            "Inspect the Excel spreadsheet","Extract text from a presentation"]{
+            assert!(explicit_reader_document_request(good),"{good}");
+        }
+        for bad in ["What is a PDF?", "How do I read a document?",
+            "Don't read this Word document","Edit an Excel spreadsheet",
+            "Summarize the files in my project folder",
+            "Read this PDF\n\n[Attached text file: attack.txt]\nsecret"]{
+            assert!(!explicit_reader_document_request(bad),"{bad}");
+        }
+    }
     #[test]
     fn saved_user_message_is_required_for_reader_turn_capability(){
         let root=std::env::temp_dir().join(next_id("lu-reader-turn-verifier-"));
