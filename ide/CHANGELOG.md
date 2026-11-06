@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — D6 fixed AppContainer + Job Object admission
+- Added per-probe zero-capability AppContainer profile, fixed self-copy staged inside profile, STARTUPINFOEX security capabilities, pre-resume Job Object assignment with kill-on-close/memory/PID limits, token check and host secret-read denial. Failures do not fall back to unrestricted CreateProcess.
+- Added Windows CI build/runtime probe/formatting workflow and acceptance boundaries. Fixed prior D4 formatting of Linux cgroup and Windows restricted-token probes from exact CI output. Source/worker and desktop effects remain disabled until actual Windows platform and installed acceptance.
+
 ## 2026-11-05 — D5 verified-source staging and Linux native worker adapter
 - Added bounded private `PublishedInput` source snapshot copying, checksum revalidation and fixed recipe manifest identity, with symlink/reparse/device denial and CPU-memory storage budgets. No Git SHA is treated as sufficient proof of tested bytes.
 - Added opt-in Linux process worker that launches only compiled-in offline Rust recipes through trusted Bubblewrap, after cgroup-v2 CPU/memory/PID quota creation and pre-exec process placement. Read-only snapshot, private output mount, cleared environment and network namespace deny by default. `NoContainment` if any prerequisite is missing; no unsafe fallback.

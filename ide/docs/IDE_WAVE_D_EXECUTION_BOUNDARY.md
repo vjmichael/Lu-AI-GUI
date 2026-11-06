@@ -118,3 +118,19 @@ or equivalent restricted worker process and installed Windows UI acceptance
 are open. There is no `job.run` Tauri handler. Standard Linux CI without
 delegated cgroup rights must fail closed. See
 `ide/supervisor/WORKER_ACCEPTANCE.md`.
+
+## D6 — Windows AppContainer + Job Object admission (fixed diagnostic)
+
+An independent native Windows test now constructs a new zero-capability
+AppContainer profile and launches only its own fixed probe executable,
+staged inside its per-profile LocalState directory. It passes the profile SID
+via `STARTUPINFOEXW SECURITY_CAPABILITIES`, creates the process suspended,
+assigns it to a quota-limited Job Object **before resuming**, requires a real
+AppContainer token, denied host temporary secret read, and successful
+empty Job accounting. Failure is denied without fallback.
+
+The fixture does **not** run an arbitrary Cargo command, does not verify a
+restricted network call, does not share a trusted source/toolchain/output
+snapshot with AppContainer, or implement a production Windows cancellation
+broker. User-facing Run must remain disabled. See
+`ide/sandbox/WINDOWS_APPCONTAINER_ADMISSION.md`; exact-head native CI pending.

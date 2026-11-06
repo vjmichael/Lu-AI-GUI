@@ -13,6 +13,7 @@ description = "Fail-closed Linux sandbox admission and adversarial probes for Lu
 # No Tauri or workspace dependency; experimental fixture only.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
-  "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_JobObjects",
+  "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization",
+  "Win32_Security_Isolation", "Win32_System_Com", "Win32_System_JobObjects",
   "Win32_System_Threading"
 ] }

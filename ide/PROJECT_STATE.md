@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D6 — Windows AppContainer + Job Object native admission (2026-11-05)
+
+- **Branch:** `ide/wave-d6-appcontainer-worker-20261105`, stacked on D5 production-worker source `341b3ab5ea268770bb01fdcf32cbb8d06452b095`. D5 Rust supervisor Windows and Linux native CI successful after formatter repair; desktop installed acceptance still open.
+- **Windows fixed fixture:** `ide/sandbox/src/bin/windows_appcontainer_probe.rs` now creates a fresh *zero-capability* AppContainer profile, stages only its own fixed executable inside the profile-owned LocalState directory, uses `SECURITY_CAPABILITIES` in `STARTUPINFOEXW` with suspended `CreateProcessW`, creates/configures Job Object, assigns suspended child before resuming, and checks child AppContainer token / denied host secret read / exit / zero active Job processes. Any OS admission failure denies execution; no arbitrary app or project build.
+- **Verification:** dedicated `ide-appcontainer-windows.yml` native Windows CI is required; fixed runtime test and formatting pending until exact-head result. D4's two unformatted OS rights probes are fixed in this stacked branch from the actual prior CI output.
+- **Remaining:** AppContainer network-denial hostile test, secure Cargo/toolchain staging into per-job container, real Windows job/cancel/timeout worker adapter integrated with D3 grants, crash recovery, race-safe snapshot traversal and installed Windows UI acceptance. The desktop `job.run` remains deliberately absent; do not call full production worker complete.
+
+
 ## Wave D5 — Native production-worker implementation, gated (2026-11-05)
 
 - **Source branch:** `ide/wave-d5-production-worker-20261105`, stacked on Wave D4 PR #54 head `32b208a76ed17910554b8ca6b7e8647577e6657a`. D3 and D4 remain separate draft PRs; do not merge D5 before them.

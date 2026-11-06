@@ -18,7 +18,9 @@ mod probe {
 
     fn current_cgroup() -> io::Result<PathBuf> {
         let proc = fs::read_to_string("/proc/self/cgroup")?;
-        let line = proc.lines().find(|line| line.starts_with("0::"))
+        let line = proc
+            .lines()
+            .find(|line| line.starts_with("0::"))
             .ok_or_else(|| io::Error::other("unified cgroup-v2 not mounted"))?;
         let path = line.strip_prefix("0::").unwrap();
         if !path.starts_with('/') || path.split('/').any(|part| part == "..") {
@@ -65,8 +67,10 @@ mod probe {
             eprintln!("DENIED: missing delegated quota controllers: {error}");
             return Ok(false);
         }
-        let id = SystemTime::now().duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos()).unwrap_or(0);
+        let id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         let child = parent.join(format!("lu-ide-quota-probe-{}-{id}", std::process::id()));
         if let Err(error) = fs::create_dir(&child) {
             eprintln!("DENIED: cgroup-v2 delegated child creation unavailable: {error}");

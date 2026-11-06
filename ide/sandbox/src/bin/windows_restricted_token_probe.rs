@@ -8,19 +8,13 @@ fn main() {
 
 #[cfg(windows)]
 mod probe {
-    use std::{
-        ffi::OsStr,
-        io,
-        os::windows::ffi::OsStrExt,
-        ptr,
-    };
+    use std::{ffi::OsStr, io, os::windows::ffi::OsStrExt, ptr};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, LocalFree, HANDLE},
         Security::{
-            Authorization::ConvertStringSidToSidW,
-            CreateRestrictedToken, IsTokenRestricted, SID_AND_ATTRIBUTES,
-            DISABLE_MAX_PRIVILEGE, PSID, TOKEN_ASSIGN_PRIMARY,
-            TOKEN_DUPLICATE, TOKEN_QUERY,
+            Authorization::ConvertStringSidToSidW, CreateRestrictedToken, IsTokenRestricted,
+            DISABLE_MAX_PRIVILEGE, PSID, SID_AND_ATTRIBUTES, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
+            TOKEN_QUERY,
         },
         System::Threading::{GetCurrentProcess, OpenProcessToken},
     };
@@ -30,7 +24,9 @@ mod probe {
         fn drop(&mut self) {
             if !self.0.is_null() {
                 // SAFETY: token was returned by a successful Win32 call.
-                unsafe { CloseHandle(self.0); }
+                unsafe {
+                    CloseHandle(self.0);
+                }
             }
         }
     }
@@ -40,19 +36,25 @@ mod probe {
         fn drop(&mut self) {
             if !self.0.is_null() {
                 // SAFETY: SID memory was allocated by ConvertStringSidToSidW.
-                unsafe { LocalFree(self.0.cast()); }
+                unsafe {
+                    LocalFree(self.0.cast());
+                }
             }
         }
     }
 
     fn fail(action: &'static str) -> io::Error {
-        io::Error::new(io::Error::last_os_error().kind(), format!(
-            "{action}: {}", io::Error::last_os_error()
-        ))
+        io::Error::new(
+            io::Error::last_os_error().kind(),
+            format!("{action}: {}", io::Error::last_os_error()),
+        )
     }
 
     fn wide(value: &str) -> Vec<u16> {
-        OsStr::new(value).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(value)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     pub fn run() -> io::Result<()> {
@@ -74,11 +76,14 @@ mod probe {
         let mut raw_source: HANDLE = ptr::null_mut();
         // SAFETY: process pseudo-handle is current trusted probe process,
         // and output is initialized by OpenProcessToken.
-        if unsafe { OpenProcessToken(
-            GetCurrentProcess(),
-            TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
-            &mut raw_source,
-        ) } == 0 {
+        if unsafe {
+            OpenProcessToken(
+                GetCurrentProcess(),
+                TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
+                &mut raw_source,
+            )
+        } == 0
+        {
             return Err(fail("OpenProcessToken"));
         }
         let source = OwnedToken(raw_source);
@@ -88,9 +93,15 @@ mod probe {
         // fixed SID. No pointer comes from external caller or project files.
         let created = unsafe {
             CreateRestrictedToken(
-                source.0, DISABLE_MAX_PRIVILEGE,
-                0, ptr::null(), 0, ptr::null(),
-                1, &restrict, &mut restricted,
+                source.0,
+                DISABLE_MAX_PRIVILEGE,
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                1,
+                &restrict,
+                &mut restricted,
             )
         };
         if created == 0 {
@@ -102,7 +113,9 @@ mod probe {
         if unsafe { IsTokenRestricted(reduced.0) } == 0 {
             return Err(io::Error::other("OS did not mark token as SID-restricted"));
         }
-        println!("PASS: native restricted primary token with restrictive SID and privileges removed");
+        println!(
+            "PASS: native restricted primary token with restrictive SID and privileges removed"
+        );
         println!("UNVERIFIED: low integrity, restricted child process startup, filesystem, network, desktop isolation");
         Ok(())
     }
