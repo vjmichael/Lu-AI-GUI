@@ -1019,6 +1019,89 @@ fn lu_vision_capability(
     })
 }
 
+/// Offline, operator-selected image OCR. Text remains UNVERIFIED and is not
+/// silently inserted into a model prompt, citation ledger or saved conversation.
+/// Pinned Tesseract + English data are bundled only after licensed runtime
+/// admission; builds without the approved digest refuse execution.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct OcrImageView{
+    source_sha256:String,
+    text_sha256:String,
+    engine_sha256:String,
+    text:String,
+    format:String,
+    source_verified:bool,
+    human_review_required:bool,
+    message:&'static str,
+}
+#[tauri::command]
+async fn lu_ocr_read_selected_image(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String
+)->Result<Option<OcrImageView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for OCR")?;
+    let Some(expected)=option_env!("LU_OCR_TESSERACT_SHA256") else {
+        return Err("Approved offline OCR runtime is not bundled in this build".into());
+    };
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let executable=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let executable=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().file()
+            .add_filter("OCR images",&["png","jpg","jpeg"])
+            .blocking_pick_file()
+    }).await.map_err(|_|"Native OCR source picker unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let path=selected.into_path()
+        .map_err(|_|"OCR source must be a local image file")?;
+    let meta=std::fs::symlink_metadata(&path)
+        .map_err(|_|"OCR source no longer available")?;
+    if !meta.file_type().is_file()||meta.file_type().is_symlink()
+        ||meta.len()>12*1024*1024{
+        return Err("OCR requires an ordinary image at most 12 MiB".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(
+            "Run the separately hash-pinned offline OCR worker on this \
+             selected PNG/JPEG? Lu will display the transcribed text for \
+             review. OCR output is UNVERIFIED and will never be silently \
+             promoted to a source passage or model instruction."
+        ).title("Lu — Authorize offline OCR")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Read image text".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Native OCR consent unavailable")?;
+    if !approved{return Ok(None);}
+    let output=tauri::async_runtime::spawn_blocking(move||{
+        let bytes=std::fs::read(&path)
+            .map_err(|_|"OCR image source changed or was unreadable")?;
+        if bytes.len()>12*1024*1024{
+            return Err("OCR source exceeded image budget".into());
+        }
+        let observed=lu_core::native_ocr::recognize_pinned_image(
+            &bytes,&executable,expected,&tessdata
+        ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
+        Ok(OcrImageView{
+            source_sha256:observed.source_sha256,
+            text_sha256:observed.recognized_text_sha256,
+            engine_sha256:observed.engine_sha256,
+            text:observed.recognized_text,
+            format:observed.source_format.to_owned(),
+            source_verified:false,human_review_required:true,
+            message:"Offline OCR transcription only. Review its accuracy before using it as evidence.",
+        })
+    }).await.map_err(|_|"Native OCR execution worker unavailable")??;
+    Ok(Some(output))
+}
+
 /// Returns *measured* browser runtime status and reconciles a crashed native
 /// Chromium/Playwright session. No browser launch, navigation or rights here.
 #[tauri::command]
@@ -4473,6 +4556,7 @@ pub fn run() {
             lu_load_model,
             lu_load_diagnostics,
             lu_vision_capability,
+            lu_ocr_read_selected_image,
             lu_image_workspace_export,
             lu_image_workspace_history,
             lu_environment_status,
