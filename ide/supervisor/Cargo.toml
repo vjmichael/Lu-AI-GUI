@@ -15,9 +15,17 @@ sha2 = "0.10"
 
 [features]
 default = []
-# Native Linux execution is opt-in and not linked into the installed IDE until
-# cgroup-v2/Bubblewrap hostile tests and installed acceptance pass.
+# Both OS workers are opt-in and not linked into the installed IDE.
+# Neither feature registers a Tauri command or an unrestricted execution API.
 linux-worker = []
+windows-worker = []
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization",
+  "Win32_Security_Isolation", "Win32_System_Com", "Win32_System_JobObjects",
+  "Win32_System_Threading"
+] }
