@@ -11,6 +11,8 @@ use lu_core::{
     web_http_fetch::SecureHttpFetcher,
     web_research_evidence::{Candidate,EvidenceLedger,EvidenceError,SourceStatus,TrustedBibliography,ResearchCampaignStatus},
     web_research_planner::canonical_doi,
+    web_research_analysis::{AnalysisStore,Interpretation,Stance},
+    web_research_report::{render_verified_report,VerifiedResearchReport},
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::search_openalex,
 };
@@ -196,6 +198,32 @@ impl From<ResearchCampaignStatus> for ResearchCampaignView{
             blocked_reason:status.blocked_reason,
             message:"Catalog leads are discovered only; search count is not independently verified full-text evidence.",
         }
+    }
+}
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchClaimView{
+    pub claim:String,
+    pub supports:usize,
+    pub challenges:usize,
+    pub complicates:usize,
+    pub distinct_catalog_sources:usize,
+    pub unresolved_disagreement:bool,
+    pub interpretation_verified:bool,
+    pub reason_codes:Vec<String>,
+}
+fn claim_view(
+    row:lu_core::web_research_analysis::ClaimDebate
+)->ResearchClaimView{
+    ResearchClaimView{
+        claim:row.thesis_claim,
+        supports:row.supports.len(),
+        challenges:row.challenges.len(),
+        complicates:row.complicates.len(),
+        distinct_catalog_sources:row.distinct_catalog_sources,
+        unresolved_disagreement:row.unresolved_disagreement,
+        interpretation_verified:false,
+        reason_codes:row.reason_codes.into_iter().map(str::to_owned).collect(),
     }
 }
 pub(crate) struct ResearchDesktop{
@@ -681,6 +709,88 @@ impl ResearchDesktop{
             .map_err(|_|"Research campaign cancel refused")?;
         ledger.campaign_status(campaign_id).map(Into::into)
             .map_err(|_|"Research campaign unavailable".into())
+    }
+
+    /// User-submitted interpretation. The native host must ensure this comes
+    /// from an explicit UI action; the model cannot mark its own interpretation
+    /// HUMAN_REVIEWED or bypass exact-source passage verification.
+    pub(crate) fn add_claim(
+        &self,chat_id:&str,source_id:&str,claim:&str,quote:&str,
+        stance:&str,reasoning:&str
+    )->Result<Vec<ResearchClaimView>,String>{
+        let _=self.browser_evidence(chat_id)?;
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !ledger.has_verified_passage(source_id,quote)
+            .map_err(|_|"Document passage could not be checked")?{
+            return Err("Claim requires an exact verified document passage".into());
+        }
+        let position=match stance{
+            "SUPPORTS"=>Stance::Supports,
+            "CHALLENGES"=>Stance::Challenges,
+            "COMPLICATES"=>Stance::Complicates,
+            _=>return Err("Unknown evidence stance".into()),
+        };
+        let analysis_path=self.root.join(format!("{chat_id}.analysis.sqlite"));
+        if let Ok(meta)=fs::symlink_metadata(&analysis_path){
+            if !meta.file_type().is_file()||meta.file_type().is_symlink(){
+                return Err("Research analysis database is untrusted".into());
+            }
+        }
+        let mut analysis=AnalysisStore::open(&analysis_path)
+            .map_err(|_|"Research analysis database unavailable")?;
+        analysis.add_interpretation(&ledger,Interpretation{
+            source_id,thesis_claim:claim,direct_quote:quote,
+            stance:position,reasoning
+        }).map_err(|e|format!("Claim interpretation rejected: {e:?}"))?;
+        analysis.human_review(source_id,claim,quote)
+            .map_err(|_|"User interpretation review could not be recorded")?;
+        analysis.summarize_claims(&ledger)
+            .map_err(|_|"Research source validation failed")
+            .map(|v|v.into_iter().map(claim_view).collect())
+    }
+    /// Read-only view. Every claim is rechecked against the current document
+    /// SHA so corrupted or superseded evidence fails closed.
+    pub(crate) fn claims(
+        &self,chat_id:&str
+    )->Result<Vec<ResearchClaimView>,String>{
+        let _=self.browser_evidence(chat_id)?;
+        let path=self.root.join(format!("{chat_id}.analysis.sqlite"));
+        match fs::symlink_metadata(&path){
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(Vec::new()),
+            Ok(m) if !m.file_type().is_file()||m.file_type().is_symlink()=>
+                return Err("Research analysis file untrusted".into()),
+            Err(_)=>return Err("Research analysis file unavailable".into()),
+            _=>{}
+        };
+        let ledger=EvidenceLedger::open(&self.root.join(format!("{chat_id}.sqlite")))
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let analysis=AnalysisStore::open(&path)
+            .map_err(|_|"Research analysis database unavailable")?;
+        analysis.summarize_claims(&ledger)
+            .map_err(|_|"Research claim provenance invalid")
+            .map(|v|v.into_iter().map(claim_view).collect())
+    }
+    /// No model-generated bibliography is accepted: this is an entirely
+    /// deterministic report over rehashed, verified full-document passages.
+    pub(crate) fn verified_report(
+        &self,chat_id:&str,title:&str
+    )->Result<VerifiedResearchReport,String>{
+        if !safe_id(chat_id){return Err("Invalid Research conversation".into());}
+        let _=self.browser_evidence(chat_id)?;
+        let analysis_path=self.root.join(format!("{chat_id}.analysis.sqlite"));
+        if let Ok(meta)=fs::symlink_metadata(&analysis_path){
+            if !meta.file_type().is_file()||meta.file_type().is_symlink(){
+                return Err("Research analysis database untrusted".into());
+            }
+        }
+        let ledger=EvidenceLedger::open(&self.root.join(format!("{chat_id}.sqlite")))
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let analysis=AnalysisStore::open(&analysis_path)
+            .map_err(|_|"Research analysis database unavailable")?;
+        render_verified_report(title,&ledger,&analysis)
+            .map_err(|e|format!("Report provenance gate rejected export: {e:?}"))
     }
 
     /// User-approved metadata corroboration of one already-persisted
