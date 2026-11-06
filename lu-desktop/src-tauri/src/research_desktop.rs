@@ -135,17 +135,36 @@ fn crossref_publisher_url(bytes:&[u8],expected_doi:&str)->Option<String>{
     let work=json.get("message")?;
     if work.get("DOI").and_then(|v|v.as_str()).and_then(canonical_doi)
         .as_deref()!=Some(expected_doi){return None;}
+    let safe=|url:&str|{
+        if !url.starts_with("https://")||url.len()>2048
+            ||url.contains('@')||url.contains('\\')
+            ||url.chars().any(|c:char|c.is_whitespace()||c.is_control()){
+            return false;
+        }
+        let authority=url.strip_prefix("https://").unwrap_or("")
+            .split(&['/','?','#'][..]).next().unwrap_or("");
+        !authority.is_empty()&&!authority.contains(':')
+            &&authority.contains('.')&&!authority.starts_with('.')
+    };
+    // Prefer a SINGLE independently cataloged PDF link over the generic
+    // Crossref DOI URL, which usually redirects to an HTML landing page.
+    // Ambiguous links do not grant a new destination: fail closed rather
+    // than choose a model-preferred publisher or unverified mirror.
+    let mut pdf=std::collections::BTreeSet::<String>::new();
+    if let Some(links)=work.get("link").and_then(|v|v.as_array()){
+        if links.len()>32{return None;}
+        for link in links{
+            let kind=link.get("content-type").and_then(|v|v.as_str());
+            if kind!=Some("application/pdf"){continue;}
+            let url=link.get("URL").and_then(|v|v.as_str())?;
+            if !safe(url){return None;}
+            pdf.insert(url.into());
+        }
+    }
+    if pdf.len()>1{return None;}
+    if let Some(url)=pdf.into_iter().next(){return Some(url);}
     let url=work.get("URL")?.as_str()?;
-    if !url.starts_with("https://")||url.len()>2048
-        ||url.contains('@')||url.contains('\\')
-        ||url.chars().any(char::is_whitespace){
-        return None;
-    }
-    let authority=url.strip_prefix("https://")?.split(&['/','?','#'][..]).next()?;
-    if authority.is_empty()||authority.contains(':')||!authority.contains('.') {
-        return None;
-    }
-    Some(url.to_owned())
+    safe(url).then(||url.to_owned())
 }
 
 #[derive(Serialize,Clone)]
@@ -990,6 +1009,27 @@ mod tests{
         assert!(parse_crossref_metadata(malformed.as_bytes(),"10.1234/study1",
             "https://api.crossref.org/works/10.1234%2Fstudy1").is_err());
         assert_eq!(encode_doi_component("10.1234/study1"),"10.1234%2Fstudy1");
+    }
+    #[test]
+    fn crossref_prefers_unambiguous_doi_bound_pdf_and_rejects_ambiguous_catalog_links(){
+        let json=serde_json::json!({"message":{
+            "DOI":"10.1234/verified",
+            "URL":"https://doi.org/10.1234/verified",
+            "link":[{"URL":"https://publisher.example/full.pdf",
+                "content-type":"application/pdf"}]
+        }}).to_string();
+        assert_eq!(crossref_publisher_url(json.as_bytes(),"10.1234/verified"),
+            Some("https://publisher.example/full.pdf".into()));
+        assert!(crossref_publisher_url(json.as_bytes(),"10.1234/other").is_none());
+        let ambiguous=serde_json::json!({"message":{
+            "DOI":"10.1234/verified",
+            "URL":"https://doi.org/10.1234/verified",
+            "link":[
+                {"URL":"https://publisher.example/a.pdf","content-type":"application/pdf"},
+                {"URL":"https://publisher.example/b.pdf","content-type":"application/pdf"}
+            ]
+        }}).to_string();
+        assert!(crossref_publisher_url(ambiguous.as_bytes(),"10.1234/verified").is_none());
     }
     #[test]
     fn crossref_publisher_link_is_independent_and_doi_checked(){
