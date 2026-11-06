@@ -269,13 +269,18 @@ mod windows {
         // the parent. No capability may be silently added at admission.
         let mut required = 0u32;
         unsafe {
-            GetTokenInformation(token.0, TokenCapabilities, ptr::null_mut(), 0, &mut required);
+            GetTokenInformation(
+                token.0,
+                TokenCapabilities,
+                ptr::null_mut(),
+                0,
+                &mut required,
+            );
         }
         if required < size_of::<u32>() as u32 || required > 64 * 1024 {
             return Ok(Some(14));
         }
-        let mut capability_words =
-            vec![0usize; (required as usize).div_ceil(size_of::<usize>())];
+        let mut capability_words = vec![0usize; (required as usize).div_ceil(size_of::<usize>())];
         let mut returned = 0u32;
         let cap_ok = unsafe {
             GetTokenInformation(

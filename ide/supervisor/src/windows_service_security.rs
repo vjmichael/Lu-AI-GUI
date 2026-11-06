@@ -280,7 +280,10 @@ pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorErro
     if value.len() > 160
         || !value.starts_with("S-1-5-21-")
         || value.split('-').count() != 8
-        || !value.split('-').skip(4).all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        || !value
+            .split('-')
+            .skip(4)
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
     {
         return Err(denied());
     }

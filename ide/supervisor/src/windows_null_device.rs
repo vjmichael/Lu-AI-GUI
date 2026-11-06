@@ -24,55 +24,86 @@ const FILE_SHARE_READ: u32 = 1;
 const FILE_SHARE_WRITE: u32 = 2;
 const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
 struct Handle(HANDLE);
 impl Drop for Handle {
-    fn drop(&mut self) { unsafe { CloseHandle(self.0); } }
+    fn drop(&mut self) {
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
 }
 struct Local(*mut c_void);
 impl Drop for Local {
-    fn drop(&mut self) { if !self.0.is_null() { unsafe { LocalFree(self.0); } } }
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                LocalFree(self.0);
+            }
+        }
+    }
 }
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain([0]).collect()
 }
 fn contains_sid(acl: *mut ACL, sid: PSID) -> Result<bool, SupervisorError> {
-    if acl.is_null() || unsafe { IsValidSid(sid) } == 0 { return Err(denied()); }
+    if acl.is_null() || unsafe { IsValidSid(sid) } == 0 {
+        return Err(denied());
+    }
     let mut info = ACL_SIZE_INFORMATION::default();
     if unsafe {
         GetAclInformation(
-            acl, (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-            size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation,
+            acl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
         )
-    } == 0 { return Err(denied()); }
+    } == 0
+    {
+        return Err(denied());
+    }
     for i in 0..info.AceCount {
         let mut ptr_ace = ptr::null_mut();
         if unsafe { GetAce(acl, i, &mut ptr_ace) } == 0 || ptr_ace.is_null() {
             return Err(denied());
         }
         let ace = unsafe { &*(ptr_ace as *const ACCESS_ALLOWED_ACE) };
-        if ace.Header.AceType == 0
-            && ace.Header.AceSize >= size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+        if ace.Header.AceType == 0 && ace.Header.AceSize >= size_of::<ACCESS_ALLOWED_ACE>() as u16 {
             let ace_sid = (&ace.SidStart as *const u32).cast_mut().cast::<c_void>();
-            if unsafe { EqualSid(ace_sid, sid) } != 0 { return Ok(true); }
+            if unsafe { EqualSid(ace_sid, sid) } != 0 {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
 }
 fn with_dacl<T>(
-    handle: HANDLE, callback: impl FnOnce(*mut ACL) -> Result<T, SupervisorError>,
+    handle: HANDLE,
+    callback: impl FnOnce(*mut ACL) -> Result<T, SupervisorError>,
 ) -> Result<T, SupervisorError> {
     let mut acl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
     if unsafe {
         GetSecurityInfo(
-            handle, SE_KERNEL_OBJECT as i32, DACL_SECURITY_INFORMATION,
-            ptr::null_mut(), ptr::null_mut(), &mut acl,
-            ptr::null_mut(), &mut descriptor,
+            handle,
+            SE_KERNEL_OBJECT as i32,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut acl,
+            ptr::null_mut(),
+            &mut descriptor,
         )
-    } != 0 { return Err(denied()); }
+    } != 0
+    {
+        return Err(denied());
+    }
     let _allocated = Local(descriptor);
-    if acl.is_null() || descriptor.is_null() { return Err(denied()); }
+    if acl.is_null() || descriptor.is_null() {
+        return Err(denied());
+    }
     callback(acl)
 }
 fn change(handle: HANDLE, sid: PSID, mode: i32) -> Result<(), SupervisorError> {
@@ -94,13 +125,23 @@ fn change(handle: HANDLE, sid: PSID, mode: i32) -> Result<(), SupervisorError> {
             return Err(denied());
         }
         let _allocated = Local(updated.cast());
-        if updated.is_null() { return Err(denied()); }
+        if updated.is_null() {
+            return Err(denied());
+        }
         if unsafe {
             SetSecurityInfo(
-                handle, SE_KERNEL_OBJECT as i32, DACL_SECURITY_INFORMATION,
-                ptr::null_mut(), ptr::null_mut(), updated, ptr::null_mut(),
+                handle,
+                SE_KERNEL_OBJECT as i32,
+                DACL_SECURITY_INFORMATION,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                updated,
+                ptr::null_mut(),
             )
-        } != 0 { return Err(denied()); }
+        } != 0
+        {
+            return Err(denied());
+        }
         Ok(())
     })
 }
@@ -116,7 +157,11 @@ impl CiNullLease {
         if self.applied {
             change(self.handle.0, self.sid, REVOKE_ACCESS)?;
             with_dacl(self.handle.0, |acl| {
-                if contains_sid(acl, self.sid)? { Err(denied()) } else { Ok(()) }
+                if contains_sid(acl, self.sid)? {
+                    Err(denied())
+                } else {
+                    Ok(())
+                }
             })?;
             self.applied = false;
         }
@@ -137,30 +182,50 @@ pub(crate) fn ci_scoped_nul_access(sid: PSID) -> Result<Option<CiNullLease>, Sup
     let enabled = cfg!(debug_assertions)
         && std::env::var_os("LU_IDE_D7_CI_ALLOW_EXACT_NUL").as_deref()
             == Some(std::ffi::OsStr::new("1"))
-        && std::env::var_os("GITHUB_ACTIONS").as_deref()
-            == Some(std::ffi::OsStr::new("true"))
-        && std::env::var_os("CI").as_deref()
-            == Some(std::ffi::OsStr::new("true"));
-    if !enabled { return Ok(None); }
-    if sid.is_null() || unsafe { IsValidSid(sid) } == 0 { return Err(denied()); }
+        && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(std::ffi::OsStr::new("true"))
+        && std::env::var_os("CI").as_deref() == Some(std::ffi::OsStr::new("true"));
+    if !enabled {
+        return Ok(None);
+    }
+    if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+        return Err(denied());
+    }
     let raw = unsafe {
         CreateFileW(
-            wide(r"\\.\NUL").as_ptr(), READ_CONTROL | WRITE_DAC,
-            FILE_SHARE_READ | FILE_SHARE_WRITE, ptr::null(),
-            OPEN_EXISTING, 0, ptr::null_mut(),
+            wide(r"\\.\NUL").as_ptr(),
+            READ_CONTROL | WRITE_DAC,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
         )
     };
-    if raw.is_null() || raw == INVALID_HANDLE_VALUE { return Err(denied()); }
+    if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+        return Err(denied());
+    }
     let handle = Handle(raw);
     // A new profile's SID must not already be present on the device ACL.
     with_dacl(handle.0, |acl| {
-        if contains_sid(acl, sid)? { Err(denied()) } else { Ok(()) }
+        if contains_sid(acl, sid)? {
+            Err(denied())
+        } else {
+            Ok(())
+        }
     })?;
-    let mut lease = CiNullLease { handle, sid, applied: true };
+    let mut lease = CiNullLease {
+        handle,
+        sid,
+        applied: true,
+    };
     // Mark applied before the write, so even ambiguous failures try cleanup.
     change(lease.handle.0, lease.sid, GRANT_ACCESS)?;
     with_dacl(lease.handle.0, |acl| {
-        if contains_sid(acl, sid)? { Ok(()) } else { Err(denied()) }
+        if contains_sid(acl, sid)? {
+            Ok(())
+        } else {
+            Err(denied())
+        }
     })?;
     eprintln!("NATIVE_CI_NUL_STAGE=exact_profile_access_verified");
     Ok(Some(lease))

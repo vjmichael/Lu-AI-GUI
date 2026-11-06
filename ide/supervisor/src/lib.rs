@@ -19,9 +19,9 @@ pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
-pub mod windows_recovery_service;
-#[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_null_device;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
+pub mod windows_recovery_service;
 #[cfg(all(target_os = "windows", feature = "protected-recovery-service"))]
 pub mod windows_service_client;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
@@ -1262,8 +1262,13 @@ mod tests {
         // recovery. A live job cannot forge a service cleanup receipt.
         drop(sup);
         let interrupted = Supervisor::open(p.clone()).unwrap();
-        interrupted.mark_protected_recovery_pending(&task.job_id).unwrap();
-        assert_eq!(interrupted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        interrupted
+            .mark_protected_recovery_pending(&task.job_id)
+            .unwrap();
+        assert_eq!(
+            interrupted.inspect().unwrap()[0].phase,
+            JobPhase::RecoveryRequired
+        );
         assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
         assert_eq!(
             interrupted.prepare(plan()).unwrap_err(),

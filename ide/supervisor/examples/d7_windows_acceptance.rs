@@ -9,7 +9,11 @@ fn main() {
     std::process::exit(2);
 }
 
-#[cfg(all(windows, feature = "windows-worker", not(feature = "protected-recovery-service")))]
+#[cfg(all(
+    windows,
+    feature = "windows-worker",
+    not(feature = "protected-recovery-service")
+))]
 fn require_independent_broker_release(
     root: &std::path::Path,
     job_id: &str,
