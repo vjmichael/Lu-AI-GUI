@@ -119,6 +119,7 @@ jobs:
           try {
             & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' -ServiceExecutable $service -ExpectedServiceSha256 $serviceHash -ApprovedHostExecutable $hostExe -ExpectedHostSha256 $hostHash -CiAcceptanceUnsigned -Start
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'DENIED: restricted SCM install failed' }
+            $env:LU_IDE_D7_PROTECTED_SERVICE_EXE=$service
             & $hostExe
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected real Cargo check failed' }
             & $hostExe --cancel-native-worker
