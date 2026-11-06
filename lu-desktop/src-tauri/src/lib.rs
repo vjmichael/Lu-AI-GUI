@@ -1481,6 +1481,102 @@ async fn lu_research_campaign_resume(
     result
 }
 
+/// Explicit human-authored claim. A native source recheck is mandatory:
+/// HTML/browser quotations are NOT full-document evidence, and model text
+/// cannot self-approve scientific interpretations.
+#[tauri::command]
+fn lu_research_add_claim(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,claim:String,quote:String,
+    stance:String,reasoning:String
+)->Result<Vec<research_desktop::ResearchClaimView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.add_claim(
+        &chat_id,&source_id,&claim,&quote,&stance,&reasoning
+    )
+}
+#[tauri::command]
+fn lu_research_claims(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<research_desktop::ResearchClaimView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.claims(&chat_id)
+}
+/// Native Save File owns the destination; the UI/model never supplies paths.
+/// Hard-linking the fully synced temporary file is an atomic no-clobber
+/// publication of derived evidence, never an overwrite of source recordings.
+#[tauri::command]
+async fn lu_research_export_report(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,title:String,format:String
+)->Result<Option<research_desktop::ResearchReportExportView>,String>{
+    if !matches!(format.as_str(),"markdown"|"json")
+        ||title.trim().is_empty()||title.len()>180
+        ||title.chars().any(char::is_control){
+        return Err("Invalid research report format or title".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    let file_type=if format=="markdown"{"md"}else{"json"};
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        let ext=file_type.to_owned();
+        move||app.dialog().file()
+            .add_filter("Lu verified research report",&[ext.as_str()])
+            .set_file_name(if ext=="md"{
+                "Lu Verified Research Report.md"
+            }else{"Lu Verified Research Evidence.json"})
+            .blocking_save_file()
+    }).await.map_err(|_|"Native Research save picker unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let destination=selected.into_path()
+        .map_err(|_|"Research report destination is not a local file")?;
+    if destination.extension().and_then(|x|x.to_str())
+        .is_none_or(|s|!s.eq_ignore_ascii_case(file_type)){
+        return Err("Choose a destination with the matching report extension".into());
+    }
+    let parent=destination.parent().ok_or("Research destination directory unavailable")?;
+    let dir=std::fs::symlink_metadata(parent)
+        .map_err(|_|"Research destination directory cannot be verified")?;
+    if !dir.file_type().is_dir(){
+        return Err("Research destination is not an ordinary directory".into());
+    }
+    if std::fs::symlink_metadata(&destination).is_ok(){
+        return Err("Research report destination exists; choose a new filename".into());
+    }
+    let report=state.research.verified_report(&chat_id,&title)?;
+    let body=if format=="markdown"{&report.markdown}else{&report.json};
+    if body.len()>2*1024*1024{
+        return Err("Research report exceeds native export budget".into());
+    }
+    use std::io::Write;
+    let temp=parent.join(format!(".{}.tmp",next_id("research-export-")));
+    let result=(||->Result<(),String>{
+        let mut file=std::fs::File::create_new(&temp)
+            .map_err(|_|"Research temporary export could not be created")?;
+        file.write_all(body.as_bytes())
+            .map_err(|_|"Research temporary export could not be written")?;
+        file.sync_all()
+            .map_err(|_|"Research export durability check failed")?;
+        std::fs::hard_link(&temp,&destination)
+            .map_err(|_|"Research destination could not be atomically created")?;
+        Ok(())
+    })();
+    let _=std::fs::remove_file(&temp);
+    result?;
+    let saved_sha256=format!("{:x}",sha2::Sha256::digest(body.as_bytes()));
+    Ok(Some(research_desktop::ResearchReportExportView{
+        saved_path:destination.to_string_lossy().into_owned(),
+        format, saved_sha256,
+        distinct_sources:report.distinct_sources,
+        checked_passages:report.checked_passages,
+        interpretation_verified:false,
+        message:"Derived report saved from rehashed document evidence; factual interpretations remain unverified.",
+    }))
+}
+
 /// Independently corroborate ONE already-discovered lead against Crossref.
 /// The trusted local evidence ledger supplies the DOI; the UI/model can
 /// only select its previously discovered OpenAlex source ID.
@@ -4382,6 +4478,9 @@ pub fn run() {
             lu_research_campaigns,
             lu_research_campaign_resume,
             lu_research_campaign_cancel,
+            lu_research_add_claim,
+            lu_research_claims,
+            lu_research_export_report,
             lu_browser_start,
             lu_browser_set_visible,
             lu_browser_human_verified,
