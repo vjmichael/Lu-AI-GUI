@@ -11,4 +11,36 @@
 | E — Observe & Learn | Minimized event-driven observation, safe redaction and independently reviewable handoff to larger model | OFF by default; explicit chat/session/target scope; no silent surveillance or fabricated GUI pass |
 | F — Unified host lifecycle | Process and cancellation receipt hardening, consistent return/timeout bounds and Development Ledger integration | Native and installed test gates remain OPEN pending real GH CI and physical Windows |
 
+## Batch closeout — Waves C, E and F (2026-11-06)
+
+**Branch:** lu/tool-completion-waves-20261106 (descendant of PR #61). These are committed source changes. **No native, CI, installed NSIS, visual, network or performance tests were executed in this batch**, by user direction. Existing draft PRs and stale CI were left untouched.
+
+### C — archives and document revision: source-implemented within conservative formats
+
+- New native_archive_batch.rs and archive_batch_desktop.rs: OS selection of **1–8 existing archives**, full source tree review, **512 MiB expanded / 4,096 entries / 900 KiB immutable manifest** maximum, new group output, separate native approval, host cancellation and member-by-member SHA reconciliation.
+- Each accepted group effect has a typed Protobuf ArchiveBatchExtractReceipt. A cancellation or partial write leaves an UNCERTAIN journal and an incomplete new folder for review, not an invented all-or-nothing success or silent retry.
+- Wave 2 recovery now records the entire approved group manifest BEFORE mutation, and after restart independently rechecks group, marker and each file. Symlink/reparse directories and linked completion markers do not qualify as verified.
+- Word and PowerPoint use one safe host-owned edit flow: exact whole-run replacement (maximum 32), source/revised SHA check, independent human approval, new-file publication and durable effect/recovery receipt. PPTX existing slide text nodes are handled across slides while unrelated OOXML parts retain the same uncompressed content.
+- **Limits:** Styled-run-spanning replacement, complex charts/layout/OOXML, encrypted/split archives, complex UDF/ISO and scanned/encrypted/signed/macro-bearing documents are not blanket-supported. Batch publication is intentionally not transactionally atomic.
+
+### E — Observe & Learn: user-owned investigation bridge in source
+
+- Real Lu model-supervisor failures can create content-minimized native-origin awareness events while Observe is explicitly consented. Renderer hints are never independent GUI verdicts.
+- Windows WGC capture returns only a read-only task/frame digest, not screen pixels, window titles, sound, source identity or model visual understanding.
+- ObserveHost prepares a bounded SHA-256 fingerprinted review prompt from scoped, enumerated native awareness notes, with explicit verified-vs-unverified evidence labels.
+- The UI requires an explicit Add observed evidence to chat draft action and manual Send. No inference, memory edit, source edit or tool grant occurs automatically.
+- **Limits:** No independent authenticated external-app visual perception, autonomous mini-model execution or self-repair. Observe remains OFF by default, scoped, and revoked on pause/stop/expiry/session switch.
+
+### F — workers, cancellation and durable outcomes: source-integrated
+
+- Research campaigns cancel their pinned running curl subprocess during OpenAlex, Crossref and publisher-document reads. Direct document fetches have their own per-chat cancellation command; cancelled documents cannot be silently promoted to accessed evidence.
+- Start, resume and review tasks now distinguish worker-ended CANCELLED from COMPLETED and FAILED, with SQLite task receipt. No task is considered cancelled while its owned subprocess is still running.
+- Archive full-tree preflight, source SHA rechecks and group publication use a shared host cancellation token.
+- Offline OCR rechecks both executable and English-trained-data digests at use; bounded stdin/stdout worker threads prevent deadlocks; timeout kills/reaps the worker. Windows package staging exports both digests, without implying the binary/license is ready.
+- Word, PowerPoint and archive-batch writes have durable human-turn effect intents and exact typed receipt checks prior to any claim of completion. Uncertain effects are never automatically replayed.
+- **Still independent:** exact-head native compiler and test results, real Windows Job Object/process-tree hostile cancellation, concurrency/crash recovery, licensed package/installer contents, long research runtime, GGUF/Vulkan/NSIS installed acceptance.
+
+**Development closeout:** Waves C/E/F received the bounded source implementation and native UI integration. Explicit unsupported advanced formats, autonomous visual diagnosis, and all native acceptance gates remain open. Lu v1.0 is not declared released.
+
+---
 **Execution policy:** Implement each applicable component on this branch, commit source changes, update the central `LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md`. No native tests are being executed within this work order; tests and old PR housekeeping are deferred as the user requested. Do not conflate untouched scope, mock-based source, or unsupported archive/Office cases with complete, released capability.
