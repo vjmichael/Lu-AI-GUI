@@ -222,14 +222,41 @@ fn move_new_with_guard(
     if expected_sha256.is_some_and(|approved|approved!=sha256){
         return Err(TransferError::SourceChanged)
     }
-    root.hard_link(source, root, target).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::AlreadyExists { TransferError::TargetExists }
-        else { TransferError::Io(e.to_string()) }
-    })?;
-    // After the link exists, never delete SOURCE based solely on equal
-    // bytes. Equal-content files may be different filesystem objects.
-    // Retain the original opened handle throughout this verification.
+    // The fault hook runs before the single OS namespace transition.
+    // A native handle-bound rename on Windows cannot move a substituted
+    // SOURCE file. Linux renameat2 is atomic/no-clobber; a racing substitute
+    // is detected by the independent opened-file identity proof below.
     on_published();
+    #[cfg(windows)]
+    {
+        let selected=original.try_clone().map_err(|_|TransferError::SourceChanged)?
+            .into_std();
+        let directory=root.try_clone().map_err(|_|TransferError::SourceChanged)?
+            .into_std_file();
+        crate::windows_file_guard::rename_opened_file_noreplace(
+            &selected,&directory,target
+        ).map_err(|e|{
+            if e.kind()==std::io::ErrorKind::AlreadyExists{
+                TransferError::TargetExists
+            }else{TransferError::Io(e.to_string())}
+        })?;
+    }
+    #[cfg(target_os="linux")]
+    {
+        let directory=root.try_clone()
+            .map_err(|_|TransferError::SourceChanged)?.into_std_file();
+        lu_win_worker_job::unix_owned::rename_noreplace(
+            &directory,source,target
+        ).map_err(|e|{
+            if e.kind()==std::io::ErrorKind::AlreadyExists{
+                TransferError::TargetExists
+            }else{TransferError::Io(e.to_string())}
+        })?;
+    }
+    #[cfg(not(any(windows,target_os="linux")))]
+    return Err(TransferError::Io("Atomic no-clobber move unavailable".into()));
+    // From here on the native rename may have committed. ANY validation
+    // failure is UNCERTAIN and must never be auto-retried.
     let mut linked=verify(root,target)
         .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
     if opened_identity(&linked).ok().as_deref()!=Some(&original_identity){
@@ -240,19 +267,13 @@ fn move_new_with_guard(
     if target_observed!=(bytes,sha256.clone()){
         return Err(TransferError::PublishedNeedsReconciliation)
     }
-    let mut source_now=verify(root,source)
-        .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
-    if opened_identity(&source_now).ok().as_deref()!=Some(&original_identity){
-        return Err(TransferError::PublishedNeedsReconciliation)
+    // No separate source unlink is permitted. The native no-replace rename
+    // already moved the exact opened object (Windows) or atomically moved one
+    // name (Linux). A replaced/new source is retained and flagged UNCERTAIN.
+    match root.symlink_metadata(source){
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+        _=>return Err(TransferError::PublishedNeedsReconciliation),
     }
-    if source_hash(&mut source_now)
-        .map_err(|_|TransferError::PublishedNeedsReconciliation)?!=target_observed{
-        return Err(TransferError::PublishedNeedsReconciliation)
-    }
-    // No pathname-only verification can make this final unlink atomic against
-    // a hostile external process swapping the source again. That stronger
-    // handle-identity delete fence remains an installed-native acceptance gap.
-    root.remove_file(source).map_err(|_| TransferError::PublishedNeedsReconciliation)?;
     Ok(TransferReceipt {
         source: source.into(), target: target.into(), bytes, sha256,
         source_removed: true,
@@ -280,9 +301,20 @@ mod move_race_tests{
             },
         );
         assert_eq!(result,Err(TransferError::PublishedNeedsReconciliation));
-        assert_eq!(fs::read(dir.join("source.txt")).unwrap(),b"identical");
-        assert_eq!(fs::read(dir.join("target.txt")).unwrap(),b"identical");
-        assert_eq!(fs::read(dir.join("parked.txt")).unwrap(),b"identical");
+        // No bytes were destroyed, even though a concurrent process swapped
+        // an equal-content pathname at the exact OS-rename boundary.
+        #[cfg(windows)]
+        {
+            assert_eq!(fs::read(dir.join("source.txt")).unwrap(),b"identical");
+            assert_eq!(fs::read(dir.join("target.txt")).unwrap(),b"identical");
+            assert!(!dir.join("parked.txt").exists());
+        }
+        #[cfg(target_os="linux")]
+        {
+            assert!(!dir.join("source.txt").exists());
+            assert_eq!(fs::read(dir.join("target.txt")).unwrap(),b"identical");
+            assert_eq!(fs::read(dir.join("parked.txt")).unwrap(),b"identical");
+        }
         drop(root);fs::remove_dir_all(dir).unwrap();
     }
 }

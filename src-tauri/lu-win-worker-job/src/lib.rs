@@ -229,12 +229,16 @@ pub use windows_owned::Job;
 #[cfg(unix)]
 pub mod unix_owned {
     use std::{io,process::Child};
+    #[cfg(target_os="linux")]
+    use std::{ffi::CString,fs::File,os::fd::AsRawFd};
     // POSIX killpg via negative PID. The calling host MUST have spawned this
     // child with CommandExt::process_group(0); never accept a model PID here.
     unsafe extern "C" {fn kill(pid:i32, signal:i32)->i32;}
     const SIGKILL:i32=9;
     #[cfg(target_os="linux")]
     unsafe extern "C"{
+        fn renameat2(oldfd:i32,old:*const std::ffi::c_char,
+            newfd:i32,new:*const std::ffi::c_char,flags:u32)->i32;
         fn prctl(option:i32,arg2:usize,arg3:usize,arg4:usize,arg5:usize)->i32;
         fn getppid()->i32;
         fn setrlimit(resource:u32,lim:*const Rlimit)->i32;
@@ -265,6 +269,19 @@ pub mod unix_owned {
             return Err(io::Error::other("Lu parent died before worker admission"))
         }
         Ok(())
+    }
+    /// Linux native no-overwrite move using a pinned open directory FD.
+    /// This is one atomic namespace transition; no hardlink/unlink gap.
+    #[cfg(target_os="linux")]
+    pub fn rename_noreplace(dir:&File,source:&str,target:&str)->io::Result<()>{
+        let from=CString::new(source).map_err(|_|io::Error::other("invalid name"))?;
+        let to=CString::new(target).map_err(|_|io::Error::other("invalid name"))?;
+        // SAFETY: both open directory FDs live during this call; both
+        // CStrings remain allocated and NUL-terminated for the syscall.
+        let result=unsafe{renameat2(
+            dir.as_raw_fd(),from.as_ptr(),dir.as_raw_fd(),to.as_ptr(),1
+        )};
+        if result!=0{Err(io::Error::last_os_error())}else{Ok(())}
     }
     pub fn kill_owned_group(child:&Child)->io::Result<()>{
         let pid=i32::try_from(child.id()).map_err(|_|io::Error::other("invalid worker pid"))?;

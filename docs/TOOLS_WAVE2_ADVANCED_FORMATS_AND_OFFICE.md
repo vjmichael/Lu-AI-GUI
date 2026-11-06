@@ -101,3 +101,8 @@ Upstream API and licensing references:
 - Linux children set PR_SET_PDEATHSIG(SIGKILL) and verify their expected parent PID after installation, preventing orphaned decoders after a Lu crash. A 1 GiB address-space rlimit is applied before source decoding.
 - Windows limits only the two fixed archive worker modes to 1 GiB via the same owned Job Object that guarantees termination on handle close. General background workers, inference and GGUF model memory behavior are unchanged.
 - Exit, kill, timeout and memory rejection are never successful completion proofs; host journal and manifest observation still govern reconciliation.
+
+## Step 3 — atomic no-clobber source moves
+- Windows native file moves now use opened-handle `FileRenameInfo` (ReplaceIfExists=false) relative to the already opened directory HANDLE. The original FILE OBJECT is pinned, so an external pathname substitution does not change which file can be moved. Native opened-file ID and approved SHA are rechecked on the new target after the rename.
+- Linux uses native `renameat2(RENAME_NOREPLACE)` with pinned directory FDs, performing publication and source name removal in one atomic namespace transition. A malicious source swap before that transition is detected by post-rename inode/device identity; no second deletion follows.
+- These native operations have no hardlink/unlink window. An unsupported filesystem or OS fails closed rather than falling back to unsafe path deletion. Post-transition mismatches remain WRITE_UNCERTAIN and preserve the moved bytes for manual review.

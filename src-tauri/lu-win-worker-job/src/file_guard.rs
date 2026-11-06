@@ -5,7 +5,7 @@
 #![cfg(windows)]
 use std::{
     ffi::c_void, fs::File, io,
-    os::windows::{fs::MetadataExt, io::AsRawHandle},
+    os::windows::{fs::MetadataExt, io::{AsRawHandle,FromRawHandle}},
 };
 const FILE_STANDARD_INFO:u32=1;
 const FILE_STREAM_INFO:u32=7;
@@ -46,6 +46,12 @@ extern "system" {
         file_info_class:u32,
         file_information:*mut c_void,
         buffer_size:u32
+    )->i32;
+    fn ReOpenFile(
+        original:*mut c_void,desired_access:u32,share_mode:u32,flags:u32
+    )->*mut c_void;
+    fn SetFileInformationByHandle(
+        file:*mut c_void,info_class:u32,info:*const c_void,bytes:u32
     )->i32;
 }
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -230,4 +236,64 @@ pub fn opened_file_identity(file:&File)->io::Result<String>{
     let mut value=format!("{:016x}",id.volume_serial_number);
     for byte in id.file_id{value.push_str(&format!("{byte:02x}"))}
     Ok(value)
+}
+
+
+/// Atomic handle-relative, no-overwrite rename of the already opened file.
+/// A substituted SOURCE pathname cannot redirect this to a different file.
+/// All Win32 ABI and raw handle ownership stay inside this audited boundary.
+pub fn rename_opened_file_noreplace(
+    source:&File,destination_dir:&File,target:&str
+)->io::Result<()>{
+    const DELETE:u32=0x0001_0000;
+    const FILE_SHARE_ALL:u32=0x0000_0007;
+    const FILE_RENAME_INFO:u32=3;
+    if target.is_empty()||target.len()>255||target=="."||target==".."||
+        target.ends_with(' ')||target.ends_with('.')||
+        target.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':')){
+        return Err(unsafe_target("invalid no-clobber move destination"))
+    }
+    let original_id=opened_file_identity(source)?;
+    opened_directory_identity(destination_dir)?;
+    // ReOpenFile retains the original FILE OBJECT, not a second pathname
+    // lookup. Request DELETE access only for this exact opened file.
+    let raw=unsafe{ReOpenFile(
+        source.as_raw_handle().cast::<c_void>(),DELETE,
+        FILE_SHARE_ALL,0,
+    )};
+    if raw.is_null()||raw as isize==-1{
+        return Err(io::Error::last_os_error())
+    }
+    // SAFETY: ReOpenFile returned a new, exclusively owned valid HANDLE.
+    let reopened=unsafe{File::from_raw_handle(raw.cast())};
+    if opened_file_identity(&reopened)?!=original_id{
+        return Err(unsafe_target("source file object changed"))
+    }
+    let utf16=target.encode_utf16().collect::<Vec<_>>();
+    if utf16.is_empty()||utf16.len()>256{
+        return Err(unsafe_target("destination name too long"))
+    }
+    #[repr(C)]
+    struct RenameInfo{
+        replace_if_exists:u32,
+        reserved:u32,
+        root_directory:*mut c_void,
+        filename_bytes:u32,
+        filename:[u16;256],
+    }
+    let mut info=RenameInfo{
+        replace_if_exists:0,reserved:0,
+        root_directory:destination_dir.as_raw_handle().cast::<c_void>(),
+        filename_bytes:(utf16.len()*2) as u32,
+        filename:[0;256],
+    };
+    info.filename[..utf16.len()].copy_from_slice(&utf16);
+    // SAFETY: valid opened DELETE handle and initialized repr(C) buffer;
+    // FileRenameInfo, ReplaceIfExists=false, uses the pinned root directory.
+    let result=unsafe{SetFileInformationByHandle(
+        reopened.as_raw_handle().cast::<c_void>(),FILE_RENAME_INFO,
+        (&info as *const RenameInfo).cast::<c_void>(),
+        std::mem::size_of::<RenameInfo>() as u32
+    )};
+    if result==0{Err(io::Error::last_os_error())}else{Ok(())}
 }
