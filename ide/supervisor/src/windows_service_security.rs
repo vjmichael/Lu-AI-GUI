@@ -164,10 +164,13 @@ impl PipeSecurity {
     pub fn new() -> Result<Self, SupervisorError> {
         // 0x00100003: SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA.
         // Does NOT include FILE_APPEND_DATA / FILE_CREATE_PIPE_INSTANCE.
+        // The service must NOT try to assign SYSTEM as an object owner: it
+        // runs as restricted LocalService and cannot assume that privilege.
+        // Its own kernel-verified service SID receives explicit server rights.
         // No BA grant on the IPC endpoint: administrators are machine TCB
         // but do not need to connect as a desktop worker.
         let sddl = format!(
-            "O:SYG:SYD:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
             sid_of_service()?
         );
         let mut descriptor = ptr::null_mut();
@@ -439,7 +442,7 @@ mod tests {
     use super::*;
     #[test]
     fn client_pipe_dacl_does_not_allow_pipe_instance_creation() {
-        let template = format!("O:SYG:SYD:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
+        let template = format!("D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
             "S-1-5-80-1-2-3-4-5");
         assert!(template.contains("0x00100003;;;IU"));
         assert!(!template.contains(";;;WD"));
