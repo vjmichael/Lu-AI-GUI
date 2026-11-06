@@ -94,14 +94,24 @@ pub struct SecureHttpFetcher<'a> {
 }
 impl SecureHttpFetcher<'_> {
     pub fn fetch(&self, url: &str) -> Result<FetchedPage,FetchError> {
+        self.fetch_bounded(url,MAX_RESPONSE_BYTES)
+    }
+    /// Only trusted host adapters may request the larger research-document
+    /// limit. Every response still has a hard streaming cap and no redirects.
+    pub fn fetch_bounded(
+        &self,url:&str,max_bytes:usize
+    )->Result<FetchedPage,FetchError>{
+        if max_bytes==0||max_bytes>12*1024*1024 {
+            return Err(FetchError::ResponseTooLarge);
+        }
         let (host,canonical_url)=validated_host(url)?;
         let resolved:Vec<IpAddr>=(host.as_str(),443).to_socket_addrs()
-            .map_err(|_| FetchError::ResolverFailed)?
-            .map(|address| address.ip()).collect();
+            .map_err(|_|FetchError::ResolverFailed)?
+            .map(|address|address.ip()).collect();
         let address=trusted_resolution(resolved)?;
-        self.fetch_pinned(&canonical_url,&host,address)
+        self.fetch_pinned(&canonical_url,&host,address,max_bytes)
     }
-    fn fetch_pinned(&self,url:&str,host:&str,address:Ipv4Addr)
+    fn fetch_pinned(&self,url:&str,host:&str,address:Ipv4Addr,max_bytes:usize)
         -> Result<FetchedPage,FetchError> {
         if !self.curl_binary.is_absolute() || !self.curl_binary.is_file() {
             return Err(FetchError::BinaryUnavailable);
@@ -117,8 +127,9 @@ impl SecureHttpFetcher<'_> {
         cmd.args(["-q","--globoff","--silent","--show-error","--no-progress-meter","--ipv4",
             "--proto","=https","--proto-redir","=https","--max-redirs","0",
             "--noproxy","*","--connect-timeout","8","--max-time","25",
-            "--max-filesize","1048576","--request","GET","--output","-",
+            "--request","GET","--output","-",
             "--write-out","%{http_code}"]);
+        cmd.arg("--max-filesize").arg(max_bytes.to_string());
         cmd.arg("--resolve").arg(format!("{host}:443:{address}"));
         if let Some(ca)=self.ca_bundle {
             if !ca.is_absolute() || !ca.is_file() {
@@ -134,12 +145,12 @@ impl SecureHttpFetcher<'_> {
             .spawn().map_err(|_| FetchError::TransportFailed)?;
         let stdout=child.stdout.take().ok_or(FetchError::TransportFailed)?;
         let mut output=Vec::new();
-        let read_result=stdout.take((MAX_RESPONSE_BYTES+4) as u64)
+        let read_result=stdout.take((max_bytes+4) as u64)
             .read_to_end(&mut output);
-        if read_result.is_err() || output.len()>MAX_RESPONSE_BYTES+3 {
+        if read_result.is_err() || output.len()>max_bytes+3 {
             let _=child.kill();
             let _=child.wait();
-            return Err(if output.len()>MAX_RESPONSE_BYTES+3 {
+            return Err(if output.len()>max_bytes+3 {
                 FetchError::ResponseTooLarge
             } else {FetchError::TransportFailed});
         }
@@ -167,6 +178,16 @@ mod tests {
             assert!(validated_host(url).is_err(), "{url}");
         }
         assert!(validated_host("https://example.org/path?q=1").is_ok());
+    }
+    #[test]
+    fn the_large_document_fetch_remains_host_bounded_and_https_only(){
+        let fetcher=SecureHttpFetcher{curl_binary:Path::new("/nonexistent"),ca_bundle:None};
+        assert_eq!(fetcher.fetch_bounded("https://public.example/doc.pdf",0).err(),
+            Some(FetchError::ResponseTooLarge));
+        assert_eq!(fetcher.fetch_bounded("https://public.example/doc.pdf",
+            13*1024*1024).err(),Some(FetchError::ResponseTooLarge));
+        assert_eq!(fetcher.fetch_bounded("file:///etc/passwd",1024).err(),
+            Some(FetchError::InvalidUrl));
     }
     #[test]
     fn reject_reserved_documentation_and_local_network_addresses() {
