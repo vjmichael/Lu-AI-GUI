@@ -6,6 +6,9 @@ use std::{
     path::Path,
     io::Read,
     process::{Command,Stdio},
+    sync::atomic::{AtomicBool,Ordering},
+    thread,
+    time::{Duration,Instant},
 };
 use sha2::{Digest, Sha256};
 
@@ -20,6 +23,7 @@ pub enum FetchError {
     TransportFailed,
     ResponseTooLarge,
     InvalidResponse,
+    Cancelled,
 }
 #[derive(Debug)]
 pub struct FetchedPage {
@@ -117,15 +121,36 @@ impl SecureHttpFetcher<'_> {
     pub fn fetch_bounded(
         &self,url:&str,max_bytes:usize
     )->Result<FetchedPage,FetchError>{
+        self.fetch_admitted(url,max_bytes,None)
+    }
+    /// A host-held cancellation flag can immediately terminate a hung
+    /// in-flight curl, unlike a database-only cancel marker. This flag never
+    /// comes from model arguments.
+    pub fn fetch_cancellable(
+        &self,url:&str,cancel:&AtomicBool
+    )->Result<FetchedPage,FetchError>{
+        self.fetch_bounded_cancellable(url,MAX_RESPONSE_BYTES,cancel)
+    }
+    pub fn fetch_bounded_cancellable(
+        &self,url:&str,max_bytes:usize,cancel:&AtomicBool
+    )->Result<FetchedPage,FetchError>{
+        self.fetch_admitted(url,max_bytes,Some(cancel))
+    }
+    fn fetch_admitted(
+        &self,url:&str,max_bytes:usize,cancel:Option<&AtomicBool>
+    )->Result<FetchedPage,FetchError>{
         if max_bytes==0||max_bytes>12*1024*1024 {
             return Err(FetchError::ResponseTooLarge);
+        }
+        if cancel.is_some_and(|c|c.load(Ordering::Acquire)){
+            return Err(FetchError::Cancelled);
         }
         let (host,canonical_url)=validated_host(url)?;
         let resolved:Vec<IpAddr>=(host.as_str(),443).to_socket_addrs()
             .map_err(|_|FetchError::ResolverFailed)?
             .map(|address|address.ip()).collect();
         let address=trusted_resolution(resolved)?;
-        self.fetch_pinned(&canonical_url,&host,address,max_bytes)
+        self.fetch_pinned(&canonical_url,&host,address,max_bytes,cancel)
     }
     /// Only follows independently observed HTTPS response redirects, never
     /// curl -L. Every hop repeats public DNS admission and exact IP pinning;
@@ -133,13 +158,23 @@ impl SecureHttpFetcher<'_> {
     pub fn fetch_document_chain(
         &self,catalog_url:&str,max_bytes:usize
     )->Result<RetrievedRedirectChain,FetchError>{
+        self.fetch_document_chain_admitted(catalog_url,max_bytes,None)
+    }
+    pub fn fetch_document_chain_cancellable(
+        &self,catalog_url:&str,max_bytes:usize,cancel:&AtomicBool
+    )->Result<RetrievedRedirectChain,FetchError>{
+        self.fetch_document_chain_admitted(catalog_url,max_bytes,Some(cancel))
+    }
+    fn fetch_document_chain_admitted(
+        &self,catalog_url:&str,max_bytes:usize,cancel:Option<&AtomicBool>
+    )->Result<RetrievedRedirectChain,FetchError>{
         let (_,catalog)=validated_host(catalog_url)?;
         let mut current=catalog.clone();
         let mut seen=std::collections::BTreeSet::new();
         let mut hops=Vec::new();
         for _ in 0..=3usize{
             if !seen.insert(current.clone()){return Err(FetchError::InvalidResponse);}
-            let page=self.fetch_bounded(&current,max_bytes)?;
+            let page=self.fetch_admitted(&current,max_bytes,cancel)?;
             hops.push(RedirectHop{
                 url:page.canonical_url.clone(),status:page.http_status,
                 response_sha256:page.sha256.clone()
@@ -169,8 +204,10 @@ impl SecureHttpFetcher<'_> {
         }
         Err(FetchError::InvalidResponse)
     }
-    fn fetch_pinned(&self,url:&str,host:&str,address:Ipv4Addr,max_bytes:usize)
-        -> Result<FetchedPage,FetchError> {
+    fn fetch_pinned(
+        &self,url:&str,host:&str,address:Ipv4Addr,max_bytes:usize,
+        cancel:Option<&AtomicBool>
+    )->Result<FetchedPage,FetchError>{
         if !self.curl_binary.is_absolute() || !self.curl_binary.is_file() {
             return Err(FetchError::BinaryUnavailable);
         }
@@ -202,20 +239,45 @@ impl SecureHttpFetcher<'_> {
         let mut child=cmd.stdout(Stdio::piped()).stderr(Stdio::null())
             .spawn().map_err(|_| FetchError::TransportFailed)?;
         let stdout=child.stdout.take().ok_or(FetchError::TransportFailed)?;
-        let mut output=Vec::new();
-        // Final curl metadata may include a bounded redirect target. Never
-        // let a malicious response consume unbounded stdout before inspection.
+        // A dedicated bounded reader keeps stdout from blocking the parent.
+        // Host cancellation and timeout can now kill the *actual curl child*
+        // instead of waiting indefinitely on read_to_end.
         const META_LIMIT:usize=4096;
-        let read_result=stdout.take((max_bytes+META_LIMIT+1) as u64)
-            .read_to_end(&mut output);
-        if read_result.is_err() || output.len()>max_bytes+META_LIMIT {
-            let _=child.kill();let _=child.wait();
-            return Err(if output.len()>max_bytes+META_LIMIT{
-                FetchError::ResponseTooLarge
-            }else{FetchError::TransportFailed});
+        let reader=thread::spawn(move||{
+            let mut output=Vec::new();
+            let outcome=stdout.take((max_bytes+META_LIMIT+1) as u64)
+                .read_to_end(&mut output);
+            (outcome,output)
+        });
+        let deadline=Instant::now()+Duration::from_secs(27);
+        let status=loop{
+            if cancel.is_some_and(|c|c.load(Ordering::Acquire)){
+                let _=child.kill();let _=child.wait();
+                let _=reader.join();
+                return Err(FetchError::Cancelled);
+            }
+            if Instant::now()>=deadline{
+                let _=child.kill();let _=child.wait();
+                let _=reader.join();
+                return Err(FetchError::TransportFailed);
+            }
+            match child.try_wait(){
+                Ok(Some(result))=>break result,
+                Ok(None)=>thread::sleep(Duration::from_millis(20)),
+                Err(_)=>{
+                    let _=child.kill();let _=child.wait();
+                    let _=reader.join();
+                    return Err(FetchError::TransportFailed);
+                },
+            }
+        };
+        let (read_result,output)=reader.join()
+            .map_err(|_|FetchError::TransportFailed)?;
+        if read_result.is_err(){return Err(FetchError::TransportFailed);}
+        if output.len()>max_bytes+META_LIMIT{
+            return Err(FetchError::ResponseTooLarge);
         }
-        let status=child.wait().map_err(|_| FetchError::TransportFailed)?;
-        if !status.success() { return Err(FetchError::TransportFailed); }
+        if !status.success(){return Err(FetchError::TransportFailed);}
         const MARKER:&[u8]=b"\n__LU_CURL_META_V1__";
         const END:&[u8]=b"|__END__";
         let start=output.windows(MARKER.len())
