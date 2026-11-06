@@ -346,16 +346,16 @@ impl Drop for BrokerLease {
 pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
     if args.len() != 7 || args[0] != "--guard" { return Err(denied()); }
     let (id, hash) = (&args[1], &args[2]);
-    let owner: u32 = args[3].parse().map_err(|_| denied())?;
+    let owner_pid: u32 = args[3].parse().map_err(|_| denied())?;
     let owner_creation: u64 = args[4].parse().map_err(|_| denied())?;
     let root = Path::new(&args[5]);
     let nonce = &args[6];
-    if !valid_id(id) || !valid_hash(hash) || owner == 0 || owner_creation == 0 ||
+    if !valid_id(id) || !valid_hash(hash) || owner_pid == 0 || owner_creation == 0 ||
         nonce.len() != 48 || !nonce.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(denied());
     }
     let owner = Handle::new(unsafe {
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, owner)
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, owner_pid)
     })?;
     if process_started_at(owner.0)? != owner_creation ||
         unsafe { WaitForSingleObject(owner.0, 0) } != WAIT_TIMEOUT {
@@ -369,7 +369,7 @@ pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
         CreateEventW(ptr::null(), 1, 0, release_name(id, hash)?.as_ptr())
     })?;
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS { return Err(denied()); }
-    let mut receipts = Journal::create(root, id, hash, std::process::id(), owner_creation, nonce)?;
+    let mut receipts = Journal::create(root, id, hash, owner_pid, owner_creation, nonce)?;
     receipts.record("ready")?;
     // This byte sequence goes through an anonymous stdout pipe which only
     // the process that spawned this fixed executable can read.
