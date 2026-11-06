@@ -3,8 +3,8 @@
 //! This is NOT an LLM tool and DOES NOT grant filesystem authority.
 //! Host must bind exact source and target to a persisted user turn, durable
 //! effect journal and trusted single-directory handle before calling this.
-//! Moving a file uses a same-directory hard link then source unlink. An
-//! unlink failure leaves BOTH names visible and must be reconciled as UNCERTAIN.
+//! Moving uses an OS-native atomic no-clobber rename, retaining opened
+//! identity. Post-publication uncertainty is journaled, never auto-retried.
 use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{io::{Read, Write}, path::Path};

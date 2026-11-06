@@ -50,10 +50,23 @@ extern "system" {
     fn ReOpenFile(
         original:*mut c_void,desired_access:u32,share_mode:u32,flags:u32
     )->*mut c_void;
-    fn SetFileInformationByHandle(
-        file:*mut c_void,info_class:u32,info:*const c_void,bytes:u32
-    )->i32;
 }
+// RootDirectory + relative FileName is required to keep the selected
+// destination directory HANDLE authoritative across concurrent renames.
+// Some Win32 FileRenameInfo implementations reject that combination with
+// ERROR_INVALID_PARAMETER (87), even when the fields are documented.
+// Native NtSetInformationFile(FileRenameInformation=10) accepts the pinned
+// relative directory handle. No absolute path or new source lookup is used.
+#[link(name="ntdll")]
+extern "system" {
+    fn NtSetInformationFile(
+        file:*mut c_void,status:*mut IoStatusBlock,
+        information:*const c_void,bytes:u32,information_class:u32
+    )->i32;
+    fn RtlNtStatusToDosError(status:i32)->u32;
+}
+#[repr(C)]
+struct IoStatusBlock{status:usize,information:usize}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub struct WindowsFileIdentity {
     volume_serial:u64,
@@ -247,7 +260,7 @@ pub fn rename_opened_file_noreplace(
 )->io::Result<()>{
     const DELETE:u32=0x0001_0000;
     const FILE_SHARE_ALL:u32=0x0000_0007;
-    const FILE_RENAME_INFO:u32=3;
+    const FILE_RENAME_INFORMATION:u32=10;
     if target.is_empty()||target.len()>255||target=="."||target==".."||
         target.ends_with(' ')||target.ends_with('.')||
         target.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':')){
@@ -289,11 +302,23 @@ pub fn rename_opened_file_noreplace(
     };
     info.filename[..utf16.len()].copy_from_slice(&utf16);
     // SAFETY: valid opened DELETE handle and initialized repr(C) buffer;
-    // FileRenameInfo, ReplaceIfExists=false, uses the pinned root directory.
-    let result=unsafe{SetFileInformationByHandle(
-        reopened.as_raw_handle().cast::<c_void>(),FILE_RENAME_INFO,
+    // The full 256-wide-char array is an allocation bound, not the supplied
+    // native filename length. Header + EXACT UTF-16 bytes is the ABI size.
+    let info_len=(std::mem::offset_of!(RenameInfo,filename)
+        +utf16.len()*std::mem::size_of::<u16>()) as u32;
+    let mut io_status=IoStatusBlock{status:0,information:0};
+    let status=unsafe{NtSetInformationFile(
+        reopened.as_raw_handle().cast::<c_void>(),
+        &mut io_status,
         (&info as *const RenameInfo).cast::<c_void>(),
-        std::mem::size_of::<RenameInfo>() as u32
+        info_len,FILE_RENAME_INFORMATION,
     )};
-    if result==0{Err(io::Error::last_os_error())}else{Ok(())}
+    if status!=0{
+        let win32=unsafe{RtlNtStatusToDosError(status)};
+        return Err(io::Error::from_raw_os_error(win32 as i32))
+    }
+    // The caller independently verifies the target's opened file ID, full
+    // bytes, and expected old-name absence. Even a successful syscall alone
+    // never implies a completed/authorized effect receipt.
+    Ok(())
 }

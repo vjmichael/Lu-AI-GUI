@@ -161,11 +161,15 @@ mod tests{
     use super::*;
     use cap_std::ambient_authority;
     use std::fs;
+    use std::sync::atomic::{AtomicU64,Ordering};
+    static TEMP_ID:AtomicU64=AtomicU64::new(0);
     #[test]
     fn source_and_destination_identity_follows_handle_not_swapped_path(){
+        // Rust test thread names contain "::", which is illegal in Windows
+        // file paths. A numeric discriminator is portable and collision-safe.
         let tmp=std::env::temp_dir().join(format!(
             "lu-archive-parent-identity-{}-{}",
-            std::process::id(),std::thread::current().name().unwrap_or("worker")
+            std::process::id(),TEMP_ID.fetch_add(1,Ordering::SeqCst)
         ));
         let _=fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("parent")).unwrap();

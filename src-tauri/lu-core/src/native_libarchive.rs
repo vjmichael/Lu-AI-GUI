@@ -418,6 +418,17 @@ pub fn compress_raw(
         let handle=new();
         if handle.is_null(){return Err(NativeArchiveError::NativeFailure)}
         let write=Archive{lib:&lib,handle,free};
+        // RAW compression is an exact byte stream, not a padded archive
+        // container. libarchive's default 10-KiB block finalization can
+        // append zero padding (Zstandard sees this as a bogus second frame).
+        // Set BOTH knobs: disable block aggregation and last-block padding.
+        // Keep the reader's exact compression-filter and EOF validation.
+        type BlockOption=unsafe extern "C" fn(*mut c_void,i32)->i32;
+        let per_block:BlockOption=lib.required(b"archive_write_set_bytes_per_block\0")?;
+        let final_block:BlockOption=lib.required(b"archive_write_set_bytes_in_last_block\0")?;
+        if per_block(write.handle,0)!=0||final_block(write.handle,1)!=0{
+            return Err(NativeArchiveError::BackendMissing)
+        }
         let raw:One=lib.required(b"archive_write_set_format_raw\0")?;
         if raw(write.handle)!=0{return Err(NativeArchiveError::UnsupportedFormat)}
         let filter=match format{
