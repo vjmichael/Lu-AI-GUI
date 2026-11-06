@@ -85,6 +85,8 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "LU_IDE_D7_BROKER_EXE=$broker"
       - name: Attempt genuine offline Cargo check within AppContainer supervisor
         shell: pwsh
+        env:
+          LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
         run: |
           cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer Cargo fixture denied or failed' }
