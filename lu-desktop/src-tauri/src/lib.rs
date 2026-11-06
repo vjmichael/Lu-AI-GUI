@@ -1231,6 +1231,21 @@ fn lu_research_browser_evidence(
         .map_err(|_|"Choose an existing conversation for Browser evidence")?;
     state.research.browser_evidence(&chat_id)
 }
+/// Exact quote proof against a previously admitted, chat-scoped Browser
+/// observation. No model authority, network call or citation promotion.
+#[tauri::command]
+fn lu_research_verify_quote(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,generation_id:String,call_id:String,quote:String,
+    publisher_source_id:Option<String>
+)->Result<research_desktop::ResearchQuoteProofView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation for passage verification")?;
+    state.research.verify_browser_quote(
+        &chat_id,&generation_id,&call_id,&quote,
+        publisher_source_id.as_deref().filter(|s|!s.trim().is_empty())
+    )
+}
 /// A deliberate USER research request, with native network consent. Results
 /// are UNVERIFIED discovery leads and never enter an LLM prompt as citations.
 #[tauri::command]
@@ -4179,6 +4194,7 @@ pub fn run() {
             lu_browser_runtime_status,
             lu_research_available,
             lu_research_browser_evidence,
+            lu_research_verify_quote,
             lu_research_openalex,
             lu_research_crossref,
             lu_browser_start,
