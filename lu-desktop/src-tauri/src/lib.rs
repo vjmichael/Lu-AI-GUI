@@ -5,6 +5,9 @@ mod chat_store;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
+mod background_context;
+mod environment_context;
+mod vision_context;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -207,6 +210,7 @@ struct DesktopState {
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
+    browser_preferences: lu_core::browser_preferences::BrowserPreferences,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -487,6 +491,10 @@ impl DesktopState {
         approvals.reconcile_pending()
             .map_err(|e| format!("read approval startup reconciliation: {e:?}"))?;
 
+        // Host-only rendering preference; never authorizes Chromium launch.
+        let browser_preferences=lu_core::browser_preferences::BrowserPreferences::open(
+            &root.join("lu-browser-visibility.sqlite")
+        ).map_err(|e|format!("Browser preference unavailable: {e:?}"))?;
         let models_dir = root.join("lu-models");
         fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
         let engine_dir = app
@@ -602,6 +610,7 @@ impl DesktopState {
             rollback_approval_ledger: rollback_approvals,
             documents_os_dir,
             document_preferences,
+            browser_preferences,
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -909,6 +918,69 @@ fn lu_release_image(
 
 /// A diagnostic snapshot can be polled while the blocking engine load runs.
 /// It does not query the engine, acquire the model catalog lock, or expose paths.
+/// Host-only model vision diagnostics. Catalog/projector admission alone does
+/// not prove native visual inference; no actual image probe is yet recorded.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct VisionCapabilityView{
+    session_id:Option<String>,
+    model_ref:Option<String>,
+    status:&'static str,
+    detail:&'static str,
+}
+#[tauri::command]
+fn lu_vision_capability(
+    state:State<'_,Arc<DesktopState>>
+)->Result<VisionCapabilityView,String>{
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Vision model status unavailable")?;
+    let loaded=runtime.session_id.is_some()&&runtime.model_ref.is_some();
+    let models=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    let projector=runtime.model_ref.as_ref().is_some_and(|id|
+        models.iter().any(|m|&m.model_ref==id&&m.projector_attached)
+    );
+    let evidence=vision_context::session_evidence(loaded,projector);
+    Ok(VisionCapabilityView{
+        session_id:runtime.session_id,model_ref:runtime.model_ref,
+        status:vision_context::availability_label(evidence),
+        detail:if !loaded{
+            "No loaded model. Native visual understanding unavailable."
+        }else if !projector{
+            "The loaded model has no admitted MMProj for image requests."
+        }else{
+            "MMProj admitted; native visual reasoning remains unverified until a real host-scoped image probe succeeds."
+        },
+    })
+}
+
+/// Native operator preference. No worker launch, model tool or network grant.
+#[tauri::command]
+fn lu_browser_visibility(
+    state:State<'_,Arc<DesktopState>>
+)->Result<String,String>{
+    use lu_core::browser_visibility_settings::BrowserVisibilityPreference as Mode;
+    let mode=state.browser_preferences.visibility()
+        .map_err(|_|"Browser preference unavailable")?;
+    Ok(match mode{
+        Mode::AutomaticHidden=>"automatic_hidden",
+        Mode::AlwaysVisible=>"always_visible",
+    }.to_owned())
+}
+#[tauri::command]
+fn lu_set_browser_visibility(
+    state:State<'_,Arc<DesktopState>>,mode:String
+)->Result<String,String>{
+    use lu_core::browser_visibility_settings::BrowserVisibilityPreference as Mode;
+    let value=match mode.as_str(){
+        "automatic_hidden"=>Mode::AutomaticHidden,
+        "always_visible"=>Mode::AlwaysVisible,
+        _=>return Err("Invalid browser visibility mode".into()),
+    };
+    state.browser_preferences.set_visibility(value)
+        .map_err(|_|"Unable to persist browser visibility mode")?;
+    Ok(mode)
+}
+
 #[tauri::command]
 fn lu_load_diagnostics(state: State<'_, Arc<DesktopState>>) -> Result<LoadTraceView, String> {
     let trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
@@ -1043,6 +1115,19 @@ async fn lu_generate(
     max_new_tokens: u32,
     read_only_workspace: Option<bool>,
 ) -> Result<String, String> {
+    // Git inspection is a separate read-only, host-scoped capability.
+    // It is never inferred from retrieved text, background turns, or a
+    // general workspace grant. The native picker is still mandatory.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty() &&
+        max_new_tokens==512 &&
+        workspace_desktop::explicit_read_git_request(&prompt){
+        workspace_desktop::validate_workspace_send_request(
+            &prompt,&image_refs,max_new_tokens,
+        ).map_err(str::to_owned)?;
+        return workspace_desktop::ask_git_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+        ).await?.ok_or_else(||"Git repository was not selected".into())
+    }
     let requested_workspace=read_only_workspace.unwrap_or(false) ||
         (image_refs.is_empty() &&
             workspace_desktop::explicit_read_workspace_request(&prompt));
@@ -1106,6 +1191,16 @@ async fn generate_internal(
         .map_err(|e| format!("status: {e:?}"))?;
     if runtime.session_id.as_deref() != Some(session_id.as_str()) {
         return Err("model session changed; reload before submitting".into());
+    }
+    // Reject impossible image turns BEFORE queuing or journaling a user
+    // message; an admitted projector still does not equal proven vision.
+    if !images.is_empty(){
+        let models=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+        let admitted=runtime.model_ref.as_ref().is_some_and(|id|
+            models.iter().any(|m|&m.model_ref==id&&m.projector_attached)
+        );
+        vision_context::image_preflight(runtime.session_id.is_some(),admitted)
+            .map_err(str::to_owned)?;
     }
     let generation_id = next_id("g-");
     let request_id = next_id("req-");
@@ -1190,6 +1285,26 @@ async fn generate_internal(
             }
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
+            }
+            // Wave 4: status context is a chat-scoped host observation.
+            // No model polling, new worker, cancellation or process grant.
+            if origin==GenerationOrigin::Human&&images.is_empty()&&
+                background_context::explicit_background_status_request(&prompt){
+                state.background_processes.poll()
+                    .map_err(|_|"Background task reconciliation unavailable")?;
+                let rows=state.background_tasks.dashboard_for_workspace(&chat_id,32)
+                    .map_err(|_|"Scoped background status unavailable")?;
+                model_prompt.push_str("\n\n");
+                model_prompt.push_str(&background_context::snapshot(&rows,&chat_id));
+            }
+            // WAVE4-ENV-01: fresh host diagnostics, never a model-selected
+            // shell, environment variable dump or backend-readiness claim.
+            if origin==GenerationOrigin::Human&&images.is_empty()&&
+                environment_context::explicit_environment_status_request(&prompt){
+                model_prompt.push_str("\n\n");
+                model_prompt.push_str(
+                    &environment_context::fresh_environment_snapshot()
+                );
             }
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {
@@ -1632,6 +1747,7 @@ fn lu_tool_turn_history(
     for (source,file) in [
         ("Workspace","lu-workspace-read-audit.sqlite"),
         ("Reader","lu-reader-turn-audit.sqlite"),
+        ("Git","lu-git-read-audit.sqlite"),
     ]{
         let path=state.catalog_path.with_file_name(file);
         // Reading history must never create a fake audit database.
@@ -3368,6 +3484,9 @@ pub fn run() {
             lu_release_image,
             lu_load_model,
             lu_load_diagnostics,
+            lu_vision_capability,
+            lu_browser_visibility,
+            lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,
             lu_generate,

@@ -29,6 +29,10 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
+  const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
+  const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
+  const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
+  const [browserPreferenceError,setBrowserPreferenceError] = useState('');
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -136,6 +140,7 @@ function App() {
   const previewUrls = useRef(new Set());
   const selected = models.find(m => m.modelRef === selectedModel);
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
+  const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
   const wave2FileBusy = archiveBusy || documentCreateBusy || officeRevisionBusy ||
@@ -190,6 +195,14 @@ function App() {
     return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
+  useEffect(()=>{
+    if(!settingsOpen)return;
+    let active=true;
+    invoke('lu_browser_visibility')
+      .then(mode=>{if(active){setBrowserVisibility(mode);setBrowserPreferenceError('');}})
+      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
+    return()=>{active=false;};
+  },[settingsOpen]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -520,6 +533,7 @@ function App() {
     });
   }
   function removeImage(imageRef) {
+    if (imageViewer?.imageRef===imageRef) setImageViewer(null);
     const image = draftImages.current.find(i => i.imageRef === imageRef);
     if (image?.previewUrl) { URL.revokeObjectURL(image.previewUrl); previewUrls.current.delete(image.previewUrl); }
     draftImages.current = draftImages.current.filter(i => i.imageRef !== imageRef);
@@ -1393,6 +1407,7 @@ function App() {
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
+    setImageViewer(null);
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
     draftText.current = '';
@@ -2469,6 +2484,7 @@ function App() {
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
               <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
+              {im.previewUrl && <button type="button" onClick={()=>setImageViewer({imageRef:im.imageRef,zoom:1})} aria-label={'View image '+(im.name||'draft')}>View</button>}
               <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
             {textFiles.map((file,i)=><span key={i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
@@ -2483,6 +2499,14 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={!loaded}
+              title="Inspect native vision status without claiming MMProj presence proves visual understanding"
+              onClick={()=>void invoke('lu_vision_capability')
+                .then(setVisionCapability).catch(e=>setError(String(e)))}>Check vision</button>
+            {visionCapability?.sessionId===runtime.sessionId && visionCapability?.modelRef===runtime.modelRef &&
+              <span className="composerHelp" role="status">
+                Vision: {visionCapability.status} · {visionCapability.detail}
+              </span>}
             <button type="button" className="subtleButton"
               disabled={!chatId || wave2RecoveryBusy}
               title="Read-only durable history of approved archives, documents and file operations"
@@ -2560,7 +2584,7 @@ function App() {
               onClick={()=>{setToolActivityOpen(v=>!v);void refreshToolActivity(chatId);}}>
               {toolActivityOpen?'Hide tool activity':'Tool activity'}
             </button>
-            <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers · No automatic file permission</span>
+            <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers; Git status, log and diff require selecting a repository · No automatic file permission</span>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
@@ -2568,6 +2592,31 @@ function App() {
           </div></form>}
       </div>
     </main>
+    {viewedDraftImage?.previewUrl && <div className="imageViewerBackdrop" role="presentation"
+      onClick={()=>setImageViewer(null)}>
+      <section className="imageViewerDialog" role="dialog" aria-modal="true"
+        aria-label="Image Workspace preview" onClick={e=>e.stopPropagation()}>
+        <header>
+          <strong>Image Workspace · read-only preview</strong>
+          <button type="button" aria-label="Close image preview"
+            onClick={()=>setImageViewer(null)}>×</button>
+        </header>
+        <small>{viewedDraftImage.name||'Attached image'} · {viewedDraftImage.detectedMimeType||viewedDraftImage.mimeType||'Verified image'}</small>
+        <div className="imageViewerViewport" aria-label="Zoomable original draft image">
+          <img src={viewedDraftImage.previewUrl} alt="Original attached image, unmodified"
+            style={{transform:'scale('+imageViewer.zoom+')'}}/>
+        </div>
+        <footer>
+          <button type="button" disabled={imageViewer.zoom<=0.5}
+            onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.max(0.5,+(v.zoom-0.25).toFixed(2))}))}>Zoom out</button>
+          <span>{Math.round(imageViewer.zoom*100)}%</span>
+          <button type="button" disabled={imageViewer.zoom>=3}
+            onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.min(3,+(v.zoom+0.25).toFixed(2))}))}>Zoom in</button>
+          <button type="button" onClick={()=>setImageViewer(null)}>Close</button>
+        </footer>
+        <small>Original image only. Crop, resize, annotations and AI edits are not enabled until native revision and approval support is verified.</small>
+      </section>
+    </div>}
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
     {backgroundPaneOpen && <div className="backgroundPaneBackdrop" role="presentation"
       onClick={()=>setBackgroundPaneOpen(false)}>
@@ -2676,6 +2725,24 @@ function App() {
           <p className="settingsNotice">Lu saves only after reviewing the exact file contents and destination.
             Modifying existing files requires a separate validated edit/backup pipeline.</p>
         </section>}
+        <section className="advancedDocumentSettings" aria-label="Browser visibility settings">
+          <h3>Browser visibility</h3>
+          <p>Automatic uses a headed Chromium window hidden by default until the user is needed.
+             Always Visible is optional. This preference does not launch or authorize browsing.</p>
+          <label htmlFor="browserVisibilityMode">Window visibility</label>
+          <select id="browserVisibilityMode" value={browserVisibility}
+            onChange={e=>{
+              const mode=e.target.value;
+              invoke('lu_set_browser_visibility',{mode})
+                .then(saved=>{setBrowserVisibility(saved);setBrowserPreferenceError('');})
+                .catch(error=>setBrowserPreferenceError(String(error)));
+            }}>
+            <option value="automatic_hidden">Automatic (headed, initially hidden)</option>
+            <option value="always_visible">Always visible</option>
+          </select>
+          {browserPreferenceError&&<small role="alert">{browserPreferenceError}</small>}
+          <small>The Chromium/Playwright runtime and real visibility handoff are not yet packaged or native-accepted.</small>
+        </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
         <button className="subtleButton full" onClick={importModel} disabled={busy}>Import GGUF from another location</button>

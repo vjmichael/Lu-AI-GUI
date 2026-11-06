@@ -7,6 +7,27 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 4 browser preference remains a host-only render setting without navigation authority',
+    host.includes('fn lu_browser_visibility(') &&
+    host.includes('fn lu_set_browser_visibility(') &&
+    ui.includes("invoke('lu_set_browser_visibility',{mode})") &&
+    ui.includes('This preference does not launch or authorize browsing')],
+  ['Wave 4 vision status is host-attested and never claims projector presence is a successful probe',
+    host.includes('fn lu_vision_capability(') &&
+    host.includes('vision_context::image_preflight(') &&
+    ui.includes("invoke('lu_vision_capability')") &&
+    ui.includes('Vision: {visionCapability.status}')],
+  ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
+    ui.includes('Image Workspace · read-only preview') &&
+    ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
+    ui.includes('Crop, resize, annotations and AI edits are not enabled') &&
+    css.includes('.imageViewerDialog')],
+  ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
+    host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&
+    host.includes('workspace_desktop::ask_git_for_chat(') &&
+    workspaceHost.includes('WorkspaceReadTurnSession::new_git(') &&
+    workspaceHost.includes('trusted_git_executable()') &&
+    ui.includes('Git status, log and diff require selecting a repository')],
   ['Wave 3 ordinary Send can open trusted Reader for explicit document interpretation',
     host.includes('reader_desktop::explicit_reader_document_request(&prompt)') &&
     host.includes('reader_desktop::ask_reader_for_chat(')],

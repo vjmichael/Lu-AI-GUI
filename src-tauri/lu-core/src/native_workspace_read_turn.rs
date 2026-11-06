@@ -20,6 +20,7 @@ use crate::{
     native_archive_inspect::register_archive_inspection_tool,
     native_file_extra::register_inspection_tools,
     native_files::register_bundled_file_tools,
+    native_git_inspect::register_git_inspection_tools,
     registry::NativeToolRegistry,
     supervised_tool_generation::{
         run_supervised_native_turn_journaled_observed,ModelStepGenerator,
@@ -66,6 +67,27 @@ impl WorkspaceReadTurnSession{
         conversation_id:&str,user_turn_id:&str,task_id:&str,
         host_approved_root:&Path,
     )->Result<Self,WorkspaceReadError>{
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
+            host_approved_root,None)
+    }
+    /// Wave 4: read-only local Git from a HUMAN-picked repository directory
+    /// and a host-selected trusted Git executable. Only three narrow Git
+    /// schemas are advertised. No GitHub, shell, staging, commit or push.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_git(
+        verifier:&dyn TrustedUserTurnVerifier,
+        conversation_id:&str,user_turn_id:&str,task_id:&str,
+        host_approved_repository:&Path,host_trusted_git:&Path,
+    )->Result<Self,WorkspaceReadError>{
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
+            host_approved_repository,Some(host_trusted_git))
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_capability(
+        verifier:&dyn TrustedUserTurnVerifier,
+        conversation_id:&str,user_turn_id:&str,task_id:&str,
+        host_approved_root:&Path,git_executable:Option<&Path>,
+    )->Result<Self,WorkspaceReadError>{
         if [conversation_id,user_turn_id,task_id].iter().any(|s|
              s.is_empty()||s.len()>128||
              !s.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))
@@ -81,12 +103,20 @@ impl WorkspaceReadTurnSession{
             return Err(WorkspaceReadError::RootUnavailable);
         }
         let registry=NativeToolRegistry::new();
-        let mut catalog=register_bundled_file_tools(&registry,&root)
-            .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
-        register_inspection_tools(&registry,&mut catalog,&root)
-            .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
-        register_archive_inspection_tool(&registry,&mut catalog,&root)
-            .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+        let mut catalog=if let Some(executable)=git_executable{
+            let mut catalog=ModelToolCatalog::new();
+            register_git_inspection_tools(&registry,&mut catalog,&root,executable)
+                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+            catalog
+        }else{
+            let mut catalog=register_bundled_file_tools(&registry,&root)
+                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+            register_inspection_tools(&registry,&mut catalog,&root)
+                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+            register_archive_inspection_tool(&registry,&mut catalog,&root)
+                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+            catalog
+        };
         let descriptors=registry.tools().map_err(|_|WorkspaceReadError::RegistrationFailed)?;
         if descriptors.is_empty() || descriptors.iter().any(|d|d.effect!=ToolEffect::ReadWorkspace){
             return Err(WorkspaceReadError::RegistrationFailed);

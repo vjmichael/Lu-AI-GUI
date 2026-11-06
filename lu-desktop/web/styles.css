@@ -231,3 +231,20 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   white-space: pre; overflow-wrap: normal; padding: 10px 12px; border: 1px solid #334c65;
   border-radius: 7px; background: #101b2a; color: #dbeaf8;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+
+/* WAVE4-IMAGE-WS-01: read-only original attachment viewer, no file operations. */
+.imageViewerBackdrop { position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.78);
+  display:grid;place-items:center;padding:20px; }
+.imageViewerDialog { display:flex;flex-direction:column;gap:12px; width:min(960px,96vw);
+  max-height:92vh; padding:18px;border:1px solid var(--border,#53677c);
+  border-radius:12px;background:var(--panel,#152437);color:var(--text,#edf4ff); }
+.imageViewerDialog header,.imageViewerDialog footer {display:flex;gap:10px;
+  align-items:center;flex-wrap:wrap;justify-content:space-between;}
+.imageViewerDialog .imageViewerViewport {display:grid;place-items:center;overflow:auto;
+  min-height:220px;max-height:65vh;padding:16px;border-radius:8px;
+  background:repeating-conic-gradient(#17283c 0 25%,#25374c 0 50%) 50%/24px 24px;}
+.imageViewerDialog .imageViewerViewport img {display:block;max-width:100%;height:auto;
+  max-height:58vh;object-fit:contain;transform-origin:center center;}
+.imageViewerDialog button {cursor:pointer;} .imageViewerDialog button:disabled {opacity:.5;cursor:default;}
+.imageViewerDialog small {overflow-wrap:anywhere;}
