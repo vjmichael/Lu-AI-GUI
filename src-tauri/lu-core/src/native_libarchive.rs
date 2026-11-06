@@ -111,6 +111,7 @@ type OpenMemory=unsafe extern "C" fn(*mut c_void,*const c_void,usize)->i32;
 type Next=unsafe extern "C" fn(*mut c_void,*mut *mut c_void)->i32;
 type Data=unsafe extern "C" fn(*mut c_void,*mut c_void,usize)->isize;
 type Format=unsafe extern "C" fn(*mut c_void)->i32;
+type FilterCode=unsafe extern "C" fn(*mut c_void,i32)->i32;
 type Path=unsafe extern "C" fn(*mut c_void)->*const c_char;
 type Mode=unsafe extern "C" fn(*mut c_void)->u32;
 type Size=unsafe extern "C" fn(*mut c_void)->i64;
@@ -282,12 +283,25 @@ pub fn expand_raw(
         let open:OpenMemory=lib.required(b"archive_read_open_memory\0")?;
         let next:Next=lib.required(b"archive_read_next_header\0")?;
         let data:Data=lib.required(b"archive_read_data\0")?;
+        let filter_code:FilterCode=lib.required(b"archive_filter_code\0")?;
         if open(read.handle,source.as_ptr().cast(),source.len())<0{
             return Err(NativeArchiveError::CorruptArchive)
         }
         let mut entry=ptr::null_mut();
         if next(read.handle,&mut entry)!=0||entry.is_null(){
             return Err(NativeArchiveError::CorruptArchive)
+        }
+        // libarchive's RAW format also accepts arbitrary uncompressed bytes.
+        // Require the actual requested native compression FILTER, not only
+        // a successful RAW header, or mislabeled payloads could pass through.
+        let expected_filter=match format{
+            NativeFormat::RawXz=>6,
+            NativeFormat::RawBzip2=>2,
+            NativeFormat::RawZstd=>14,
+            _=>unreachable!(),
+        };
+        if filter_code(read.handle,0)!=expected_filter{
+            return Err(NativeArchiveError::UnsupportedFormat)
         }
         let mut out=Vec::new();let mut buffer=[0u8;BLOCK];
         loop{
