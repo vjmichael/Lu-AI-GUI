@@ -139,8 +139,23 @@ try {
   & sc.exe sdset $serviceName $scmSddl | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: service management DACL failed' }
   if ($Start) {
-    & sc.exe start $serviceName | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted recovery service failed to start' }
+    $startResult=@(& sc.exe start $serviceName 2>&1 | ForEach-Object { [string]$_ })
+    $startExit=$LASTEXITCODE
+    if ($startExit -ne 0) {
+      throw ("DENIED: restricted recovery service failed to start (SCM={0}): {1}" -f
+        $startExit, ($startResult -join ' | '))
+    }
+    # SCM accepts StartService before service_main has necessarily finished
+    # validating LocalService token, protected installed config and pipe ACL.
+    # Reject a service that immediately exits; do not stage a 4-minute
+    # toolchain against a non-running broker and misreport its missing pipe.
+    Start-Sleep -Seconds 2
+    $observed=Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    if (!$observed -or $observed.State -ne 'Running') {
+      $code=if ($observed) { [string]$observed.ExitCode } else { 'unknown' }
+      $specific=if ($observed) { [string]$observed.ServiceSpecificExitCode } else { 'unknown' }
+      throw "DENIED: independent restricted service did not remain running (SCM=$code stage=$specific)"
+    }
   }
   Write-Host "SERVICE=$serviceName"
   Write-Host "EVIDENCE_ROOT=$root"
