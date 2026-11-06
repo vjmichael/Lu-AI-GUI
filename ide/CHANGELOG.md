@@ -2,6 +2,11 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Wave C first native CI repair (pending recheck)
+- First source matrix [42143131954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143131954) confirmed frontend success but failed Linux Rust E0308 in `resource_probe.rs`: `cap_std::time::SystemTime` differs from `std::time::SystemTime`.
+- Fixed explicitly with `into_std()` before Unix timestamp conversion; implementation SHA `dbaa04ff41a6c1c20367f88f6c2455af47843370`. New exact-head [CI 42143391542](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143391542) pending; not yet accepted.
+- No runtime execution or Lu connection enabled.
+
 ## 2026-11-05 — Wave C read-only development truth (source implemented)
 - Added scoped native Git staged/unstaged patch and local commit history with typed `git.diff`, `git.history`, explicit Source control UI, 64 KiB/80-file patch cap and 30-commit history cap. Untracked file contents and any remote fetch remain excluded.
 - Added `resource.probe` under the registered project directory capability, producing a SHA-256 of inspected bytes or an explicit missing, changed, non-file, or oversize state. No claim that executables/installers work; no tool execution.
