@@ -86,8 +86,8 @@ fn chosen_member(
     let mut total=0u64;
     for i in 0..archive.len(){
         let entry=archive.by_index_raw(i).map_err(|_|ZipExtractError::InvalidZip)?;
-        let name=entry.name().map_err(|_|ZipExtractError::InvalidZip)?;
-        if !member_name(name){return Err(ZipExtractError::UnsafeEntry)}
+        let name=entry.name().map_err(|_|ZipExtractError::InvalidZip)?.to_string();
+        if !member_name(&name){return Err(ZipExtractError::UnsafeEntry)}
         let key=name.trim_end_matches('/').to_lowercase();
         if !seen.insert(key){return Err(ZipExtractError::DuplicateEntry)}
         let mode=entry.unix_mode().unwrap_or(0);
