@@ -2578,6 +2578,13 @@ async fn generate_internal(
             Err(e) if e.contains("Cancelled") || e.contains("Canceled") => "cancelled",
             Err(_) => "failed",
         };
+        // Observe & Learn is OFF by default. While a human-authorized
+        // Lu-only observation is active, a genuine failed native model
+        // generation produces a small verified-host-origin note, never a
+        // fabricated GUI test verdict or an automatic model/tool turn.
+        if phase=="failed"{
+            let _=state.observe.host_model_failure(&chat_id);
+        }
         let _ = app.emit(
             "lu-generation-finish",
             GenerationEvent {
