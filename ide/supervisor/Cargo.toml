@@ -5,10 +5,19 @@ edition = "2021"
 rust-version = "1.88"
 publish = false
 license = "Apache-2.0"
-description = "Fail-closed durable execution control plane for Lu IDE; no process launcher"
+description = "Fail-closed durable execution control plane and feature-gated Linux native worker for Lu IDE"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand = "0.8"
 sha2 = "0.10"
+
+[features]
+default = []
+# Native Linux execution is opt-in and not linked into the installed IDE until
+# cgroup-v2/Bubblewrap hostile tests and installed acceptance pass.
+linux-worker = []
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — D5 verified-source staging and Linux native worker adapter
+- Added bounded private `PublishedInput` source snapshot copying, checksum revalidation and fixed recipe manifest identity, with symlink/reparse/device denial and CPU-memory storage budgets. No Git SHA is treated as sufficient proof of tested bytes.
+- Added opt-in Linux process worker that launches only compiled-in offline Rust recipes through trusted Bubblewrap, after cgroup-v2 CPU/memory/PID quota creation and pre-exec process placement. Read-only snapshot, private output mount, cleared environment and network namespace deny by default. `NoContainment` if any prerequisite is missing; no unsafe fallback.
+- Connected host-only D3 one-use grant consumption to admission-pending/running/terminal journal states, and verified-cgroup process-tree cancellation/recovery paths with bounded stdout/stderr and output artifacts. No WebView or Lu Core executable capability added.
+- Linux feature compilation/native cgroup hostile tests pending; Windows AppContainer production worker and installed desktop acceptance still not implemented. Central design/acceptance docs updated.
+
 ## 2026-11-05 — D4 restricted-rights and cgroup-v2 admission probes
 - Added a fixed Windows native SID restricted-token primitive probe with no child execution. This is not an AppContainer or OS rights acceptance for untrusted code.
 - Added a fixed Linux delegated cgroup-v2 quota admission probe that checks CPU/memory/PID controllers, attempts bounded settings on a disposable *empty* cgroup, and denies when delegation is absent. A successful workflow can still contain an explicit controlled denial.

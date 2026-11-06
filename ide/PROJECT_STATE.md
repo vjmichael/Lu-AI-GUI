@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D5 — Native production-worker implementation, gated (2026-11-05)
+
+- **Source branch:** `ide/wave-d5-production-worker-20261105`, stacked on Wave D4 PR #54 head `32b208a76ed17910554b8ca6b7e8647577e6657a`. D3 and D4 remain separate draft PRs; do not merge D5 before them.
+- **Real input staging:** `ide/supervisor/src/snapshot.rs` now copies bounded regular files from the registered source into a unique private staged directory, excluding generated caches and rejecting symlink/reparse/device files, unexpected names and budget overruns. A deterministic SHA-256 tree seal and *recipe-specific* Cargo manifest digest are reverified on staged bytes before execution. Private native source/privileged toolchain identity must still come from a trusted host component.
+- **Linux native worker code:** `ide/supervisor/src/linux_worker.rs` (opt-in `linux-worker` compile feature) implements real fixed offline Cargo check/test execution via root-owned unprivileged `/usr/bin/bwrap`, isolated user/PID/network/mount namespaces, read-only `/workspace`, writable private `/output`, cleared environment, and resource-limited cgroup-v2 admission performed in `pre_exec` **before** the launcher runs. Requires delegated CPU/memory/PID controllers and actual cgroup.kill; fail closed without them.
+- **Cancellation and recovery:** native cancellation requests are journaled before `cgroup.kill`. Process tree must report empty via `cgroup.events` before cancellation is completed; failure becomes uncertain/quarantined. On restart, the worker can attempt *explicit* cleanup of a matching existing per-job cgroup, never relaunch the job. Log SHA-256/size bounds, output scanner, per-file kernel limit and short runtime watchdog are present.
+- **Authorization integration:** D3's native-only one-shot grant is consumed after scoped input/toolchain/OS admission evidence and before `spawn`; durable admission/running/terminal records are appended with native host state. The separate D1 review journal still cannot mint an executable grant.
+- **Not yet ready for user execution:** Linux actual worker integration with installed Tauri, Windows restricted/AppContainer+Job worker, race-safe cap-std source traversal, OS crash/kill hostile acceptance and physical installed Windows acceptance are **not complete**. No production `job.run` command is advertised. CI compile/tests and actual delegated cgroup runtime validation pending; do not claim Wave D complete.
+
+
 ## Wave D4 — Native restricted-rights admission probes (2026-11-05)
 
 - **Branch:** `ide/wave-d4-native-rights-admission-20261105`, stacked on D3 source commit `080b15dbfbc231dc2b0b691cb65a03b20d1c5794`. Production supervisor remains independently gated and disconnected from Tauri.

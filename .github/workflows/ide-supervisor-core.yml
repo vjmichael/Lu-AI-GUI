@@ -28,6 +28,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test supervisor durable journal and one-shot authorization
         run: cargo test --manifest-path ide/supervisor/Cargo.toml --all-targets
+      - name: Compile and test Linux worker admission (no uncontained execution)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features linux-worker --all-targets
       - name: Check supervisor Rust formatting
         if: always()
         run: cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
@@ -45,4 +48,4 @@ jobs:
           if ($supervisor -notmatch 'Err\(SupervisorError::NoContainment\)') {
             throw "Production admission must fail closed"
           }
-          Write-Host "No unverified production worker launch path"
+          Write-Host "No desktop process-launch surface; Linux worker remains explicit compile feature"

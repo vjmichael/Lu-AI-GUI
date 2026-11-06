@@ -70,3 +70,20 @@ snapshot and grant.
 
 This crate is intentionally isolated so Wave D3 can be tested without
 accidentally widening the existing standalone desktop's permissions.
+
+## Wave D5 — Feature-gated Linux worker and trusted input snapshot
+
+`src/snapshot.rs` stages real source bytes under an application-private
+directory and records a deterministic SHA-256 seal and recipe-specific Cargo
+manifest digest. `src/linux_worker.rs`, compiled only with
+`--features linux-worker`, can execute fixed offline Rust check/test recipes
+through a trusted root-owned Bubblewrap binary after cgroup-v2 resource
+admission and pre-exec cgroup membership. It does not accept shell text or
+model-chosen commands. Cancellation and recovery use native cgroup-wide kill,
+not parent-process exit heuristics. See `WORKER_ACCEPTANCE.md`.
+
+**Do not treat this source as installed production acceptance:** the
+feature is disabled by default and not wired to Tauri; standard hosted CI
+runners may lack cgroup delegation. Windows AppContainer rights and worker
+execution still need a separate verified implementation. All existing
+installed IDE execution operations remain preparation/review only.

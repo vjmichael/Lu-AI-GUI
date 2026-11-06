@@ -93,3 +93,28 @@ and network isolation. Linux cgroup creation plus Bubblewrap still lacks
 pre-exec attached worker/descendant tests, security broker and crash recovery.
 The D3 production admission gate remains deny-only until full OS native
 acceptance and trusted source/output publication are proven.
+
+## D5 — First native worker implementation (feature-gated Linux)
+
+A staged immutable-input publisher now copies source bytes into a private
+app-owned directory with bounded file counts/size, regular-file-only
+checks and a deterministic tree/manifest seal. The worker rechecks the seal
+before any process admission.
+
+The opt-in Linux native runner joins a delegated quota-controlled cgroup
+in `pre_exec`, before the trusted Bubblewrap launcher executes, then uses
+isolated user/PID/mount/network namespaces with the source snapshot mounted
+read-only and a bounded private output directory mounted writable. Only
+allowlisted offline Cargo check/test recipes are encoded. A fresh native
+one-shot grant is consumed atomically in the supervisor journal before
+spawning; a new OS tree-termination verifier uses `cgroup.kill` and checks
+empty membership. Capped output/log checks and a timeout/cancel watchdog
+return concrete receipts. Interrupted executions remain quarantined until
+explicit cgroup orphan reconciliation.
+
+This is **not yet a complete user-visible production worker**: Linux native
+hostile running tests, race-safe source-handle traversal, Windows AppContainer
+or equivalent restricted worker process and installed Windows UI acceptance
+are open. There is no `job.run` Tauri handler. Standard Linux CI without
+delegated cgroup rights must fail closed. See
+`ide/supervisor/WORKER_ACCEPTANCE.md`.
