@@ -95,6 +95,8 @@ function App() {
   const [trashCustodyByChat, setTrashCustodyByChat] = useState({});
   const [latestTrashedFile, setLatestTrashedFile] = useState(null);
   const [latestRestoredCustody, setLatestRestoredCustody] = useState(null);
+  const [wave2RecoveryByChat,setWave2RecoveryByChat] = useState({});
+  const [wave2RecoveryBusy,setWave2RecoveryBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -1121,6 +1123,19 @@ function App() {
     finally {setTrashBusy(false);}
   }
 
+  async function refreshWave2Recovery(targetChat = chatId) {
+    if (!targetChat || wave2RecoveryBusy) return;
+    setWave2RecoveryBusy(true);
+    try {
+      const records=await invoke('lu_wave2_recovery',{chatId:targetChat});
+      setWave2RecoveryByChat(prev=>({...prev,[targetChat]:records}));
+    } catch (error) {
+      setError('Cannot inspect Wave 2 operation journal: '+String(error));
+    } finally {
+      setWave2RecoveryBusy(false);
+    }
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1599,6 +1614,25 @@ function App() {
             </div>
           </section>
         )}
+        {(wave2RecoveryByChat[chatId] || []).length > 0 && <section
+          className="readProposalCard" role="region" aria-label="Durable Wave 2 operation recovery">
+          <strong>File and document operation history</strong>
+          <small>Read-only records reloaded from Lu's durable host intent and effect journals.
+            A matched receipt confirms a past journaled effect, not that no external process
+            has subsequently changed the files.</small>
+          {(wave2RecoveryByChat[chatId] || []).map(operation=>
+            <div key={operation.effectCallId} className="readProposalCard">
+              <strong>{operation.summary} — {operation.state.replaceAll('_',' ')}</strong>
+              <code className="writeTarget">{operation.exactTarget}</code>
+              <small>Tool: {operation.toolId}</small>
+              <small>Approved SHA-256: {operation.approvedSha256}</small>
+              <small>Effect ID: {operation.effectCallId}</small>
+              <small>{operation.assessment}</small>
+              {!operation.receiptMatched &&
+                <small>Do not automatically retry. Reconcile the filesystem and journal first.</small>}
+            </div>
+          )}
+        </section>}
         {trashReview?.chatId===chatId && <section
           className="readProposalCard editProposalCard" role="group"
           aria-label="Review reversible trash of selected file">
@@ -2228,6 +2262,12 @@ function App() {
               disabled={!chatId || working || chatBusy || trashBusy || Boolean(trashReview)}
               title="Native-pick a file and review an exact reversible trash operation"
               onClick={()=>void reviewReversibleTrash()}>Trash file</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || wave2RecoveryBusy}
+              title="Read-only durable history of approved archives, documents and file operations"
+              onClick={()=>void refreshWave2Recovery(chatId)}>
+              {wave2RecoveryBusy ? 'Checking operations…' : 'File operations'}
+            </button>
             <button type="button" className="subtleButton"
               disabled={!chatId || trashBusy}
               title="Inspect durable Lu trash receipts and restore only verified records"
