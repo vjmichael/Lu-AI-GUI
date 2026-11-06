@@ -4,7 +4,10 @@
 //! arbitrary edit tool or model-selected filesystem authority.
 use lu_core::{
     multimodal_saved_turn::PinnedImage,
-    native_image_revision::{ImageRevisionOperation,transform_admitted_image},
+    native_image_revision::{
+        ImageRevisionOperation,ImageRevision,
+        transform_admitted_image,transform_admitted_image_sequence,
+    },
 };
 use serde::Serialize;
 use sha2::{Digest,Sha256};
@@ -35,6 +38,18 @@ pub(crate) fn write_new_revision(
 )->Result<ImageExportReceipt,String>{
     let result=transform_admitted_image(source,operation)
         .map_err(|e|format!("Image transform refused: {e:?}"))?;
+    write_precomputed_revision(result,destination)
+}
+pub(crate) fn write_new_revision_plan(
+    source:&PinnedImage,operations:&[ImageRevisionOperation],destination:&Path
+)->Result<ImageExportReceipt,String>{
+    let result=transform_admitted_image_sequence(source,operations)
+        .map_err(|e|format!("Image assembly refused: {e:?}"))?;
+    write_precomputed_revision(result,destination)
+}
+fn write_precomputed_revision(
+    result:ImageRevision,destination:&Path
+)->Result<ImageExportReceipt,String>{
     let name=destination.file_name().and_then(|s|s.to_str())
         .filter(|s|!s.is_empty()&&s.len()<=200)
         .ok_or("Invalid image output filename")?;
