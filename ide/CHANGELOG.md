@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — D1 native/frontend CI repair
+- Reconciled Rustfmt's 34 exact hunks from first D1 native job. Native Rust tests passed on predecessor but formatter check failed; no process launch was added. `RECIPES` moved to static storage for lifetime clarity.
+- Frontend test updated to exclude host-only Tauri `intents` state from WebView request field schema parity. The new D1 UI and typed native schema remained unchanged.
+- New D1 exact-head acceptance must run again; do not count predecessor results as passed.
+
 ## 2026-11-05 — Wave D1 execution intent protocol (no worker launch)
 - Added a separate, bounded, append-only host execution-intent journal and 3 typed Tauri capabilities (`job.prepare`, `job.review`, `job.list`). D1 deliberately records **no execution authority**. Source Git HEAD, worktree cleanliness, fixed recipe and manifest SHA-256 are observed by native code, not submitted by the frontend.
 - Short-lived 120-second prepared plans and human review are single-session, with native revalidation; stale, edited, expired, cross-project, replayed and corrupt-record attempts fail closed. A previous review can be withdrawn without dispatch.

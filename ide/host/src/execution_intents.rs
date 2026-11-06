@@ -56,7 +56,7 @@ struct Recipe {
     display: &'static str,
     proposed_action: &'static str,
 }
-const RECIPES: [Recipe; 3] = [
+static RECIPES: [Recipe; 3] = [
     Recipe {
         id: "rust_check",
         manifest: "Cargo.toml",
@@ -84,11 +84,11 @@ fn valid_sha(value: &str, digits: usize) -> bool {
     value.len() == digits && value.bytes().all(|c| c.is_ascii_hexdigit())
 }
 fn valid_project(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 128 && id.bytes()
-        .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+    !id.is_empty() && id.len() <= 128 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
 }
 fn now() -> Result<u64, IntentError> {
-    SystemTime::now().duration_since(UNIX_EPOCH)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .map_err(|_| IntentError::JournalUnavailable)
 }
@@ -156,14 +156,17 @@ pub struct IntentList {
 
 fn safe_manifest(root: &Path, relative: &str) -> Result<String, IntentError> {
     // Fixed relative recipe paths only, not caller supplied paths.
-    if !RECIPES.iter().any(|candidate| candidate.manifest == relative) {
+    if !RECIPES
+        .iter()
+        .any(|candidate| candidate.manifest == relative)
+    {
         return Err(IntentError::Invalid);
     }
     let mut file_path = root.to_owned();
     for part in relative.split('/') {
         file_path.push(part);
-        let meta = fs::symlink_metadata(&file_path)
-            .map_err(|_| IntentError::ManifestUnavailable)?;
+        let meta =
+            fs::symlink_metadata(&file_path).map_err(|_| IntentError::ManifestUnavailable)?;
         if meta.file_type().is_symlink() {
             return Err(IntentError::ManifestUnavailable);
         }
@@ -175,13 +178,11 @@ fn safe_manifest(root: &Path, relative: &str) -> Result<String, IntentError> {
             }
         }
     }
-    let meta = fs::symlink_metadata(&file_path)
-        .map_err(|_| IntentError::ManifestUnavailable)?;
+    let meta = fs::symlink_metadata(&file_path).map_err(|_| IntentError::ManifestUnavailable)?;
     if !meta.is_file() || meta.len() > MAX_MANIFEST_BYTES {
         return Err(IntentError::ManifestUnavailable);
     }
-    if fs::canonicalize(&file_path).ok().as_ref()
-        != Some(&root.join(relative)) {
+    if fs::canonicalize(&file_path).ok().as_ref() != Some(&root.join(relative)) {
         return Err(IntentError::ManifestUnavailable);
     }
     let mut bytes = Vec::new();
@@ -201,7 +202,8 @@ fn check_source(
     project_id: &str,
     candidate: &Recipe,
 ) -> Result<(String, String), IntentError> {
-    let root = registry.registered_git_root(project_id)
+    let root = registry
+        .registered_git_root(project_id)
         .map_err(|_| IntentError::ProjectUnavailable)?;
     let git = registry.inspect_git_worktree(project_id);
     if git.state != "local_repository_inspected"
@@ -209,7 +211,11 @@ fn check_source(
         || git.modified_or_staged_count != 0
         || git.untracked_count != 0
         || git.truncated
-        || !git.local_head.as_deref().is_some_and(|sha| valid_sha(sha, 40)) {
+        || !git
+            .local_head
+            .as_deref()
+            .is_some_and(|sha| valid_sha(sha, 40))
+    {
         return Err(IntentError::SourceDirty);
     }
     let hash = safe_manifest(&root, candidate.manifest)?;
@@ -217,7 +223,9 @@ fn check_source(
 }
 
 fn valid_record(record: &IntentRecord) -> bool {
-    let Some(candidate) = recipe(&record.recipe_id) else { return false };
+    let Some(candidate) = recipe(&record.recipe_id) else {
+        return false;
+    };
     record.intent_id.starts_with("intent-")
         && valid_sha(record.intent_id.trim_start_matches("intent-"), 32)
         && valid_project(&record.project_id)
@@ -298,7 +306,8 @@ impl ExecutionIntents {
             }
         }
         Ok(Self {
-            path, session_id: format!("session-{:032x}", rand::random::<u128>()),
+            path,
+            session_id: format!("session-{:032x}", rand::random::<u128>()),
             lock: Mutex::new(()),
         })
     }
@@ -319,23 +328,30 @@ impl ExecutionIntents {
             .read_to_end(&mut bytes)
             .map_err(|_| IntentError::JournalUnavailable)?;
         if bytes.len() as u64 > JOURNAL_LIMIT_BYTES
-            || (!bytes.is_empty() && !bytes.ends_with(b"\n")) {
+            || (!bytes.is_empty() && !bytes.ends_with(b"\n"))
+        {
             return Err(IntentError::JournalCorrupt);
         }
         let mut result = Vec::new();
-        for line in bytes.split(|ch| *ch == b'\n').filter(|line| !line.is_empty()) {
-            let event: IntentEvent = serde_json::from_slice(line)
-                .map_err(|_| IntentError::JournalCorrupt)?;
+        for line in bytes
+            .split(|ch| *ch == b'\n')
+            .filter(|line| !line.is_empty())
+        {
+            let event: IntentEvent =
+                serde_json::from_slice(line).map_err(|_| IntentError::JournalCorrupt)?;
             if event.schema_version != 1
                 || !valid_record(&event.intent)
                 || event.event_id.len() != 36
                 || !event.event_id.starts_with("evt-")
-                || !valid_sha(&event.event_id[4..], 32) {
+                || !valid_sha(&event.event_id[4..], 32)
+            {
                 return Err(IntentError::JournalCorrupt);
             }
             result.push(event);
         }
-        if result.len() > MAX_JOURNAL_EVENTS { return Err(IntentError::JournalCorrupt); }
+        if result.len() > MAX_JOURNAL_EVENTS {
+            return Err(IntentError::JournalCorrupt);
+        }
         // Audit all transitions before returning any apparent current state.
         self.project_state(&result)?;
         Ok(result)
@@ -372,7 +388,9 @@ impl ExecutionIntents {
         events: &[IntentEvent],
         next: IntentRecord,
     ) -> Result<IntentSummary, IntentError> {
-        if events.len() >= MAX_JOURNAL_EVENTS { return Err(IntentError::Capacity); }
+        if events.len() >= MAX_JOURNAL_EVENTS {
+            return Err(IntentError::Capacity);
+        }
         let at = now()?;
         let current = self.project_state(events)?;
         let record = IntentEvent {
@@ -384,17 +402,21 @@ impl ExecutionIntents {
         let mut all = events.to_vec();
         all.push(record.clone());
         self.project_state(&all)?;
-        let mut bytes = serde_json::to_vec(&record)
-            .map_err(|_| IntentError::JournalUnavailable)?;
+        let mut bytes = serde_json::to_vec(&record).map_err(|_| IntentError::JournalUnavailable)?;
         bytes.push(b'\n');
         let len = fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
         if len.saturating_add(bytes.len() as u64) > JOURNAL_LIMIT_BYTES {
             return Err(IntentError::Capacity);
         }
-        let mut file = OpenOptions::new().append(true).create(true)
-            .open(&self.path).map_err(|_| IntentError::JournalUnavailable)?;
-        file.write_all(&bytes).map_err(|_| IntentError::JournalUnavailable)?;
-        file.sync_all().map_err(|_| IntentError::JournalUnavailable)?;
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&self.path)
+            .map_err(|_| IntentError::JournalUnavailable)?;
+        file.write_all(&bytes)
+            .map_err(|_| IntentError::JournalUnavailable)?;
+        file.sync_all()
+            .map_err(|_| IntentError::JournalUnavailable)?;
         let _ = current;
         snapshot(&next, &self.session_id, at)
     }
@@ -404,18 +426,26 @@ impl ExecutionIntents {
         registry: &IdeWorkspaceRegistry,
         project_id: &str,
     ) -> Result<IntentList, IntentError> {
-        registry.registered_git_root(project_id)
+        registry
+            .registered_git_root(project_id)
             .map_err(|_| IntentError::ProjectUnavailable)?;
-        let _guard = self.lock.lock().map_err(|_| IntentError::JournalUnavailable)?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| IntentError::JournalUnavailable)?;
         let events = self.events_locked()?;
         let current = self.project_state(&events)?;
         let at = now()?;
-        let mut entries = current.values()
+        let mut entries = current
+            .values()
             .filter(|record| record.project_id == project_id)
             .map(|record| snapshot(record, &self.session_id, at))
             .collect::<Result<Vec<_>, _>>()?;
-        entries.sort_by(|a, b| b.created_unix_seconds.cmp(&a.created_unix_seconds)
-            .then_with(|| a.intent_id.cmp(&b.intent_id)));
+        entries.sort_by(|a, b| {
+            b.created_unix_seconds
+                .cmp(&a.created_unix_seconds)
+                .then_with(|| a.intent_id.cmp(&b.intent_id))
+        });
         Ok(IntentList {
             schema_version: 1,
             project_id: project_id.to_owned(),
@@ -448,11 +478,19 @@ impl ExecutionIntents {
             session_id: self.session_id.clone(),
             status: "prepared".to_owned(),
         };
-        let _guard = self.lock.lock().map_err(|_| IntentError::JournalUnavailable)?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| IntentError::JournalUnavailable)?;
         let events = self.events_locked()?;
-        let count = self.project_state(&events)?.values()
-            .filter(|intent| intent.project_id == project_id).count();
-        if count >= MAX_INTENTS_PER_PROJECT { return Err(IntentError::Capacity); }
+        let count = self
+            .project_state(&events)?
+            .values()
+            .filter(|intent| intent.project_id == project_id)
+            .count();
+        if count >= MAX_INTENTS_PER_PROJECT {
+            return Err(IntentError::Capacity);
+        }
         self.append_locked(&events, next)
     }
 
@@ -466,21 +504,29 @@ impl ExecutionIntents {
         if !valid_project(project_id)
             || !intent_id.starts_with("intent-")
             || !valid_sha(&intent_id[7..], 32)
-            || !matches!(decision, "record_review" | "cancel") {
+            || !matches!(decision, "record_review" | "cancel")
+        {
             return Err(IntentError::Invalid);
         }
-        registry.registered_git_root(project_id)
+        registry
+            .registered_git_root(project_id)
             .map_err(|_| IntentError::ProjectUnavailable)?;
-        let _guard = self.lock.lock().map_err(|_| IntentError::JournalUnavailable)?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| IntentError::JournalUnavailable)?;
         let events = self.events_locked()?;
         let current = self.project_state(&events)?;
         let prior = current.get(intent_id).ok_or(IntentError::NotFound)?;
-        if prior.project_id != project_id { return Err(IntentError::NotFound); }
+        if prior.project_id != project_id {
+            return Err(IntentError::NotFound);
+        }
         let mut next = prior.clone();
         if decision == "record_review" {
             if prior.status != "prepared"
                 || prior.session_id != self.session_id
-                || now()? > prior.expires_unix_seconds {
+                || now()? > prior.expires_unix_seconds
+            {
                 return Err(IntentError::Stale);
             }
             let candidate = recipe(&prior.recipe_id).ok_or(IntentError::JournalCorrupt)?;
@@ -494,7 +540,8 @@ impl ExecutionIntents {
                 "prepared" => "cancelled",
                 "review_recorded_no_execution" => "review_withdrawn",
                 _ => return Err(IntentError::Stale),
-            }.to_owned();
+            }
+            .to_owned();
         }
         self.append_locked(&events, next)
     }
@@ -506,18 +553,26 @@ mod tests {
 
     fn sample(id: &str) -> IntentRecord {
         IntentRecord {
-            intent_id: id.to_owned(), project_id: "project-1".into(),
-            recipe_id: "rust_tests".into(), manifest_relative_path: "Cargo.toml".into(),
-            manifest_sha256: "b".repeat(64), source_head: "a".repeat(40),
-            worktree: "clean".into(), created_unix_seconds: 100,
+            intent_id: id.to_owned(),
+            project_id: "project-1".into(),
+            recipe_id: "rust_tests".into(),
+            manifest_relative_path: "Cargo.toml".into(),
+            manifest_sha256: "b".repeat(64),
+            source_head: "a".repeat(40),
+            worktree: "clean".into(),
+            created_unix_seconds: 100,
             expires_unix_seconds: 100 + INTENT_TTL_SECS,
             session_id: "session-0123456789abcdef0123456789abcdef".into(),
             status: "prepared".into(),
         }
     }
     fn sample_event(intent: IntentRecord, id: &str) -> IntentEvent {
-        IntentEvent { schema_version: 1, event_id: id.into(),
-            observed_unix_seconds: 100, intent }
+        IntentEvent {
+            schema_version: 1,
+            event_id: id.into(),
+            observed_unix_seconds: 100,
+            intent,
+        }
     }
     #[test]
     fn schema_refuses_arbitrary_recipes_and_paths() {
@@ -535,15 +590,26 @@ mod tests {
         let store = ExecutionIntents::new(path).unwrap();
         let id = "intent-0123456789abcdef0123456789abcdef";
         let first = sample(id);
-        let second = IntentRecord { status: "review_recorded_no_execution".into(), ..first.clone() };
-        let third = IntentRecord { status: "review_withdrawn".into(), ..second.clone() };
+        let second = IntentRecord {
+            status: "review_recorded_no_execution".into(),
+            ..first.clone()
+        };
+        let third = IntentRecord {
+            status: "review_withdrawn".into(),
+            ..second.clone()
+        };
         let rows = vec![
             sample_event(first, "evt-0123456789abcdef0123456789abcdef"),
             sample_event(second, "evt-11111111111111111111111111111111"),
             sample_event(third, "evt-22222222222222222222222222222222"),
         ];
-        assert_eq!(store.project_state(&rows).unwrap().get(id).unwrap().status, "review_withdrawn");
-        assert!(store.project_state(&[rows[0].clone(), rows[1].clone(), rows[1].clone()]).is_err());
+        assert_eq!(
+            store.project_state(&rows).unwrap().get(id).unwrap().status,
+            "review_withdrawn"
+        );
+        assert!(store
+            .project_state(&[rows[0].clone(), rows[1].clone(), rows[1].clone()])
+            .is_err());
         let snap = snapshot(&rows[1].intent, &store.session_id, 110).unwrap();
         assert!(!snap.grant_token_issued);
         assert_eq!(snap.execution, "never_started");
@@ -554,7 +620,8 @@ mod tests {
         let prepared = sample("intent-0123456789abcdef0123456789abcdef");
         let live = snapshot(&prepared, &prepared.session_id, 110).unwrap();
         assert_eq!(live.state, "prepared_not_authorized");
-        let restarted = snapshot(&prepared, "session-ffffffffffffffffffffffffffffffff", 110).unwrap();
+        let restarted =
+            snapshot(&prepared, "session-ffffffffffffffffffffffffffffffff", 110).unwrap();
         assert_eq!(restarted.state, "requires_new_session_review");
         let expired = snapshot(&prepared, &prepared.session_id, 300).unwrap();
         assert_eq!(expired.state, "expired_without_execution");
@@ -562,18 +629,21 @@ mod tests {
     }
     #[test]
     fn corrupt_and_incomplete_journals_are_not_silently_reset() {
-        let path = std::env::temp_dir().join(format!("d1-corrupt-{}.jsonl", rand::random::<u128>()));
+        let path =
+            std::env::temp_dir().join(format!("d1-corrupt-{}.jsonl", rand::random::<u128>()));
         fs::write(&path, b"{\"schemaVersion\":1").unwrap();
         let store = ExecutionIntents::new(path.clone()).unwrap();
-        assert!(matches!(store.events_locked(), Err(IntentError::JournalCorrupt)));
+        assert!(matches!(
+            store.events_locked(),
+            Err(IntentError::JournalCorrupt)
+        ));
         drop(store);
         fs::remove_file(path).unwrap();
     }
     #[test]
     fn durable_preparation_reopens_without_reusable_review() {
-        let path = std::env::temp_dir().join(format!(
-            "d1-restart-{}.jsonl", rand::random::<u128>()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("d1-restart-{}.jsonl", rand::random::<u128>()));
         let store = ExecutionIntents::new(path.clone()).unwrap();
         let at = now().unwrap();
         let record = IntentRecord {
@@ -594,8 +664,9 @@ mod tests {
         let state = snapshot(
             latest.get(&record.intent_id).unwrap(),
             &reopened.session_id,
-            at
-        ).unwrap();
+            at,
+        )
+        .unwrap();
         assert_eq!(state.state, "requires_new_session_review");
         assert!(!state.can_record_review);
         assert_eq!(state.execution, "never_started");
@@ -612,14 +683,17 @@ mod tests {
             status: "review_recorded_no_execution".into(),
             ..first.clone()
         };
-        let store = ExecutionIntents::new(std::env::temp_dir().join(format!(
-            "d1-proof-{}.jsonl", rand::random::<u128>()
-        ))).unwrap();
+        let store = ExecutionIntents::new(
+            std::env::temp_dir().join(format!("d1-proof-{}.jsonl", rand::random::<u128>())),
+        )
+        .unwrap();
         let rows = vec![
             sample_event(first, "evt-0123456789abcdef0123456789abcdef"),
             sample_event(change_project, "evt-11111111111111111111111111111111"),
         ];
-        assert!(matches!(store.project_state(&rows), Err(IntentError::JournalCorrupt)));
+        assert!(matches!(
+            store.project_state(&rows),
+            Err(IntentError::JournalCorrupt)
+        ));
     }
-
 }

@@ -1,5 +1,11 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### D1 first-head CI repairs
+- Initial D1 frontend workflow had 55 passing tests, one failing contract test: an existing static parser mistook the Tauri-managed `intents` state handle for an external request field. Filtered `intents` as host state; the JSON schema still accepts only `projectId` and `recipeId` for prepare.
+- Initial Linux native host suite compiled and tested successfully, then failed formatting only in the new `execution_intents.rs`. Applied **all 34 actual rustfmt hunks** from the exact CI job log and made the fixed recipe array `static`. Exact-head rerun required; not yet proven on revised source.
+- Windows desktop compilation and continuity gate on the prior head are not a substitute for latest-head acceptance; installed physical Windows UI remains unverified.
+
+
 ## Wave D1 — Host-authorized execution-intent protocol (2026-11-05)
 
 - **Implementation branch:** `ide/wave-d1-execution-intent-20261105`, stacked on C6 PR #50 exact SHA `c403a8ba47d6ac1662b8627ce5ab34a9a16b591e`. C6 source CI passed Linux, frontend, Windows Tauri, and continuity on that SHA; installed Windows app acceptance remains separately unverified. Do not merge D1 before C6 and its C3/C4/C5 ancestors.
