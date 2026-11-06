@@ -1051,139 +1051,167 @@ async fn lu_office_word_replace_all(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,old_text:String,new_text:String
 )->Result<Option<WordReplaceReceiptView>,String>{
-    state.chats.history(&chat_id)
-        .map_err(|_|"Choose an existing conversation for Word editing")?;
-    if old_text.trim().is_empty()||new_text.trim().is_empty()
+    lu_office_exact_text_replace(
+        app,Arc::clone(state.inner()),chat_id,old_text,new_text,"docx"
+    ).await
+}
+#[tauri::command]
+async fn lu_office_presentation_replace_all(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,old_text:String,new_text:String
+)->Result<Option<WordReplaceReceiptView>,String>{
+    lu_office_exact_text_replace(
+        app,Arc::clone(state.inner()),chat_id,old_text,new_text,"pptx"
+    ).await
+}
+/// Both formats use the SAME native pick/approve/journal/recheck authority.
+/// Exact text runs only; existing OOXML media, structure, formatting and
+/// unrelated parts retain identical uncompressed content. Existing sources
+/// and destinations are never overwritten.
+async fn lu_office_exact_text_replace(
+    app:AppHandle,owner:Arc<DesktopState>,chat_id:String,
+    old_text:String,new_text:String,format:&'static str
+)->Result<Option<WordReplaceReceiptView>,String>{
+    owner.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for Office editing")?;
+    if !matches!(format,"docx"|"pptx")
+        ||old_text.trim().is_empty()||new_text.trim().is_empty()
         ||old_text.len()>8192||new_text.len()>8192||old_text==new_text{
-        return Err("Word replacement needs distinct bounded text".into());
+        return Err("Exact Office replacement needs distinct bounded text".into());
     }
     let source=tauri::async_runtime::spawn_blocking({
         let app=app.clone();
         move||app.dialog().file()
-            .add_filter("Word document",&["docx"])
+            .add_filter("Office document",&[format])
             .blocking_pick_file()
-    }).await.map_err(|_|"Native Word source picker unavailable")?;
+    }).await.map_err(|_|"Native Office source picker unavailable")?;
     let Some(source)=source else{return Ok(None)};
-    let source=source.into_path().map_err(|_|"Selected Word source must be local")?;
+    let source=source.into_path().map_err(|_|"Selected Office source must be local")?;
     let (original_name,source_dir)=office_revision_desktop::open_parent(&source)?;
-    if !original_name.to_ascii_lowercase().ends_with(".docx"){
-        return Err("Select a Word .docx document".into());
+    if !original_name.to_ascii_lowercase().ends_with(&format!(".{format}")){
+        return Err("Selected file does not match the approved Office format".into());
     }
     let original=office_revision_desktop::read_selected(&source_dir,&original_name)?;
     let original_sha=format!("{:x}",Sha256::digest(&original));
-    let plan=lu_core::native_office_replace_all::plan_word_run_replace_all(
-        &original,&original_sha,&old_text,&new_text
-    ).map_err(|e|format!("Word replacement not supported for this document: {e:?}"))?;
-    let proposed=format!(
-        "Replace exactly {} whole Word text runs in a NEW document?\n\n\
-         Source SHA-256: {}\nRevised SHA-256: {}\n\
-         Text before: {}\nText after: {}\n\n\
-         All other Office package parts stay unchanged at the extracted-byte \
-         level. Word text split across formatting runs is NOT guessed. \
-         A new filename will be required; the source is never overwritten.",
-        plan.plan.match_count,plan.plan.original_sha256,
-        plan.plan.revised_sha256,old_text,new_text
-    );
+    let (count,expected,edits,locations)=if format=="docx"{
+        let plan=lu_core::native_office_replace_all::plan_word_run_replace_all(
+            &original,&original_sha,&old_text,&new_text
+        ).map_err(|e|format!("Word exact replacement refused: {e:?}"))?;
+        (plan.plan.match_count,plan.plan.revised_sha256,plan.edits,
+            plan.plan.edited_run_indices.into_iter()
+                .map(|n|format!("run-{n}")).collect::<Vec<_>>())
+    }else{
+        let plan=lu_core::native_office_replace_all::plan_presentation_run_replace_all(
+            &original,&original_sha,&old_text,&new_text
+        ).map_err(|e|format!("PowerPoint exact replacement refused: {e:?}"))?;
+        (plan.plan.match_count,plan.plan.revised_sha256,plan.edits,
+            plan.plan.slides_affected.into_iter()
+                .map(|n|format!("slide-{n}")).collect::<Vec<_>>())
+    };
     let approved=tauri::async_runtime::spawn_blocking({
         let app=app.clone();
-        move||app.dialog().message(proposed)
-            .title("Lu — Review exact Word replacements")
+        let modal=format!(
+            "Replace {} EXACT complete text runs in a NEW {} document?\n\n\
+             Original SHA-256: {}\nRevised SHA-256: {}\n\
+             Old text: {}\nNew text: {}\nAffected: {}\n\n\
+             This preserves the original and requires an unused output \
+             filename. Text split across styled runs will NOT be guessed.",
+            count,format,original_sha,expected,old_text,new_text,
+            locations.join(", ")
+        );
+        move||app.dialog().message(modal)
+            .title("Lu — Review Office text replacements")
             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                "Choose new Word file".into(),"Cancel".into()
+                "Choose new document".into(),"Cancel".into()
             )).blocking_show()
-    }).await.map_err(|_|"Native Word replacement approval unavailable")?;
+    }).await.map_err(|_|"Native Office replacement approval unavailable")?;
     if !approved{return Ok(None);}
     let output=tauri::async_runtime::spawn_blocking({
         let app=app.clone();
-        move||app.dialog().file().add_filter("Word document",&["docx"])
-            .set_file_name("Lu Word revision.docx").blocking_save_file()
-    }).await.map_err(|_|"Native Word destination picker unavailable")?;
+        move||app.dialog().file()
+            .add_filter("Office document",&[format])
+            .set_file_name(if format=="docx"{
+                "Lu Word revision.docx"
+            }else{"Lu presentation revision.pptx"})
+            .blocking_save_file()
+    }).await.map_err(|_|"Native Office destination picker unavailable")?;
     let Some(output)=output else{return Ok(None)};
-    let output=output.into_path().map_err(|_|"Word destination must be local")?;
-    if output==source ||!output.extension().and_then(|e|e.to_str())
-        .is_some_and(|e|e.eq_ignore_ascii_case("docx")){
-        return Err("Select a distinct NEW DOCX output file".into());
+    let output=output.into_path().map_err(|_|"Office output must be local")?;
+    if output==source||output.extension().and_then(|s|s.to_str())
+        .is_none_or(|s|!s.eq_ignore_ascii_case(format)){
+        return Err("Choose a distinct NEW output with the correct Office extension".into());
     }
     if std::fs::symlink_metadata(&output).is_ok(){
-        return Err("Output exists; Word revision never overwrites existing files".into());
+        return Err("Office revision output already exists; no overwrite allowed".into());
     }
     let destination_display=output.to_string_lossy().into_owned();
     let new_name=output.file_name().and_then(|s|s.to_str())
-        .ok_or("Invalid Word destination filename")?.to_owned();
+        .ok_or("Invalid Office output filename")?.to_owned();
     let output_dir=office_revision_desktop::open_folder(
-        output.parent().ok_or("Word output folder unavailable")?
+        output.parent().ok_or("Office output folder unavailable")?
     )?;
-    // The human OS consent above creates one durable authenticated user
-    // intent; the model did not invent or authorize this file operation.
     let user_turn=next_id("g-");
-    state.chats.append_user_with_turn_id(
+    owner.chats.append_user_with_turn_id(
         &chat_id,&user_turn,&format!(
-            "User-approved Word text replacement in a NEW DOCX. Source SHA-256 {}; output SHA-256 {}; {} exact text-run replacements. Original preserved.",
-            original_sha,plan.plan.revised_sha256,plan.plan.match_count
+            "User approved {} exact text-run changes in NEW {}. \
+             Original SHA256 {}, revised SHA256 {}, original preserved.",
+            count,format,original_sha,expected
         )
     )?;
-    let call_id=next_id("word-edit-");
-    let stage_id=next_id("word-replace-");
-    let count=plan.plan.match_count;
-    let expected=plan.plan.revised_sha256;
-    let edit_indices=plan.plan.edited_run_indices;
-    let edits=plan.edits;
+    let call_id=next_id("office-text-");
+    let stage_id=next_id("office-stage-");
+    let tool_id=if format=="pptx"{
+        "lu.office.presentation_replace_all"
+    }else{"lu.office.word_replace_all"};
     use lu_core::contracts::{ToolInvocation,ProtoPayload};
     use lu_core::journal::PrepareOutcome;
     let call=ToolInvocation{
-        call_id:call_id.clone(),
-        tool_id:"lu.office.word_replace_all".into(),
+        call_id:call_id.clone(),tool_id:tool_id.into(),
         workspace_id:Some(format!("{chat_id}:{user_turn}")),
         input:ProtoPayload{
-            type_url:"type.googleapis.com/lu.v1.HostApprovedWordReplacement".into(),
+            type_url:"type.googleapis.com/lu.v1.HostApprovedOfficeTextReplace".into(),
             bytes:serde_json::to_vec(&serde_json::json!({
                 "source_basename":original_name,
                 "destination_basename":new_name,
+                "format":format,
                 "original_sha256":original_sha,
                 "revised_sha256":expected,
-                "text_run_indices":edit_indices,
-                "exact_old":old_text,
-                "exact_new":new_text,
-            })).map_err(|_|"Word replacement intent serialization failed")?,
+                "locations":locations,
+                "old_text":old_text,"new_text":new_text,
+            })).map_err(|_|"Office effect intent serialization failed")?,
         },
     };
-    let owner=Arc::clone(state.inner());
     owner.wave2_recovery.record_intent(
-        &chat_id,&call_id,"lu.office.word_replace_all",
-        &destination_display,&new_name,&expected,
-        "Exact reviewed multi-run Word change, original file preserved"
+        &chat_id,&call_id,tool_id,&destination_display,&new_name,
+        &expected,"Exact host-approved Office text replacements; original preserved"
     )?;
     if owner.effects.prepare(&call)
-        .map_err(|_|"Durable Word replacement intent refused")?
+        .map_err(|_|"Durable Office revision intent refused")?
         !=PrepareOutcome::New{
-        return Err("Word replacement intent cannot be replayed".into());
+        return Err("Office edit approval cannot be replayed".into());
     }
     let receipt=tauri::async_runtime::spawn_blocking(move||{
         use prost::Message;
         owner.effects.mark_executing(&call_id)
-            .map_err(|_|"Word effect journal could not start")?;
-        let result=lu_core::native_office_revision::publish_office_revision_batch_new(
+            .map_err(|_|"Office effect journal could not start")?;
+        let published=match lu_core::native_office_revision::publish_office_revision_batch_new(
             &source_dir,&original_name,&output_dir,&new_name,&stage_id,
             &original_sha,&expected,&edits
-        );
-        let publish=match result{
+        ){
             Ok(receipt)=>receipt,
             Err(e)=>{
-                // A partial file effect is not claimed absent. The durable
-                // journal records UNCERTAIN, never automatic retry.
                 let _=owner.effects.mark_uncertain(&call_id);
-                return Err(format!("Word revision failed or uncertain: {e:?}"));
+                return Err(format!("Office revision failed or uncertain: {e:?}"));
             }
         };
-        let written=office_revision_desktop::read_selected(&output_dir,&new_name);
+        let new_bytes=office_revision_desktop::read_selected(&output_dir,&new_name);
         let source_now=office_revision_desktop::read_selected(&source_dir,&original_name);
-        let good=written.as_ref().is_ok_and(|data|
-            format!("{:x}",Sha256::digest(data))==expected)
-            &&source_now.as_ref().is_ok_and(|data|
-                format!("{:x}",Sha256::digest(data))==original_sha);
-        if !good{
+        if !new_bytes.as_ref().is_ok_and(|b|
+            format!("{:x}",Sha256::digest(b))==expected)
+            ||!source_now.as_ref().is_ok_and(|b|
+                format!("{:x}",Sha256::digest(b))==original_sha){
             let _=owner.effects.mark_uncertain(&call_id);
-            return Err("Word output/source SHA mismatch: manual reconciliation required".into());
+            return Err("Office source/output changed; manual recovery required".into());
         }
         let reply=proto::ToolReply{
             call_id:call_id.clone(),
@@ -1191,20 +1219,20 @@ async fn lu_office_word_replace_all(
             outcome:Some(proto::tool_reply::Outcome::Output(
                 proto::OfficeRevisionResult{
                     target_new_name:new_name.clone(),
-                    bytes_written:publish.bytes_written as u64,
+                    bytes_written:published.bytes_written as u64,
                     revised_sha256:expected.clone(),
                 }.encode_to_vec()
             )),
         };
         owner.effects.mark_applied(&call_id,&reply.encode_to_vec())
-            .map_err(|_|"Word file created but effect receipt is uncertain")?;
+            .map_err(|_|"Office file created but effect receipt unavailable")?;
         Ok(WordReplaceReceiptView{
             new_file_name:new_name,replacements:count,
             source_sha256:original_sha,revised_sha256:expected,
             source_preserved:true,
-            message:"Journaled, non-destructive Word revision. Both source and new document hashes were rechecked.",
+            message:"Exact OOXML text revision. Original and new document hashes verified; no file was overwritten.",
         })
-    }).await.map_err(|_|"Word replacement worker unavailable")??;
+    }).await.map_err(|_|"Office revision worker unavailable")??;
     Ok(Some(receipt))
 }
 
@@ -5213,6 +5241,7 @@ pub fn run() {
             lu_vision_run_probe,
             lu_ocr_read_selected_image,
             lu_office_word_replace_all,
+            lu_office_presentation_replace_all,
             lu_image_workspace_export,
             lu_image_workspace_history,
             lu_environment_status,
