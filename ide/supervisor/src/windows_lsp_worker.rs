@@ -20,7 +20,7 @@ use windows_sys::Win32::{
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
     System::{
         Pipes::{CreatePipe, PeekNamedPipe},
-        Threading::{SetHandleInformation, STARTF_USESTDHANDLES},
+        Threading::STARTF_USESTDHANDLES,
     },
 };
 const MAX_LSP_BUNDLE_FILES: usize = 500;
