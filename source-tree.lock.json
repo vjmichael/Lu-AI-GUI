@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0f4213db864c4ca82ed26a3b9f8f1f87607b478f",
+  "sourceCommitBeforeLock": "0a808ff8aad3e58dd7fc25a7742770da64eb9c40",
   "trackedFileCount": 391,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "65eb830fb063ed50dcbc3b2d946361d877d20fce"
+      "blob": "7105b48d50a692e93774c04bf04090f94d59169a"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -925,7 +925,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_trash_tool.rs",
-      "blob": "cd52c882ff43b9bfc3eff144efaeb76945a1f2ff"
+      "blob": "0892d07f9d16dd96e1654b0871e759153872f2a3"
     },
     {
       "path": "src-tauri/lu-core/src/native_files.rs",
@@ -965,7 +965,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_office_revision_tool.rs",
-      "blob": "1f9c7dafb263ed98a75b3100aa6ed735c6cc50af"
+      "blob": "7606206770564b82cc283f2556bd0977c146cd85"
     },
     {
       "path": "src-tauri/lu-core/src/native_pptx_create.rs",
@@ -1041,7 +1041,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_zip_extract_tool.rs",
-      "blob": "cd1a2663c7bf7615d127eb7968f5e565a03c9f7b"
+      "blob": "4ec4bc71e34dfea50a1b3f0f5e9d13aead9bf2c4"
     },
     {
       "path": "src-tauri/lu-core/src/ownership_store.rs",

@@ -16,8 +16,8 @@ use crate::{
     },
     registry::NativeToolRegistry,wire::proto,
 };
-pub const TRASH_ID:&str="lu.files.trash";
-pub const RESTORE_ID:&str="lu.files.restore";
+pub const TRASH_ID:&str="lu.files.reversible.trash";
+pub const RESTORE_ID:&str="lu.files.reversible.restore";
 pub const TRASH_MODEL:&str="lu_file_trash";
 pub const RESTORE_MODEL:&str="lu_file_restore";
 pub const TRASH_INPUT:&str="type.googleapis.com/lu.v1.FileTrashRequest";

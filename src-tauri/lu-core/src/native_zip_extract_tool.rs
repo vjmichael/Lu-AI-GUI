@@ -159,7 +159,7 @@ pub fn register_zip_extractor(
         output_type_url:OUTPUT.into(),
     };
     registry.register(ModuleManifest{
-        id:"lu.archive.zip.extractor".into(),
+        id:"lu.archive.zip".into(),
         display_name:"Lu ZIP selected-member extraction".into(),
         contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
         tools:vec![desc.clone()],panels:vec![],workflows:vec![],
