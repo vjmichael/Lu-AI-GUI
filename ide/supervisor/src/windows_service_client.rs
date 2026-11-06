@@ -84,20 +84,31 @@ fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
         if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
             let pipe = Handle(raw);
             acceptance_trace("pipe_opened");
-            security::authenticate_service_server(
+            if let Err(err) = security::authenticate_service_server(
                 pipe.0,
                 &config.executable,
                 &config.expected_sha256,
-            )?;
+            ) {
+                // Fixed status only: never log the service image, token or
+                // host's private SID from an untrusted pipe response.
+                acceptance_trace("server_image_or_token_attestation_denied");
+                return Err(err);
+            }
             acceptance_trace("server_kernel_token_and_image_authenticated");
             return Ok(pipe);
         }
         let error = unsafe { GetLastError() };
         if error != ERROR_FILE_NOT_FOUND && error != ERROR_PIPE_BUSY {
+            if error == 5 {
+                acceptance_trace("pipe_open_access_denied");
+            } else {
+                acceptance_trace("pipe_open_other_os_denial");
+            }
             return Err(denied());
         }
         thread::sleep(Duration::from_millis(50));
     }
+    acceptance_trace("pipe_open_timeout_absent_or_busy");
     Err(denied())
 }
 

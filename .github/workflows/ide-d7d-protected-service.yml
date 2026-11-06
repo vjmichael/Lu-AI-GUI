@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   native-windows-service:
+    env:
+      LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
     runs-on: windows-latest
     timeout-minutes: 35
     permissions:
@@ -43,6 +45,9 @@ jobs:
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "service installation failed: $LASTEXITCODE" }
             & sc.exe queryex LuIdeRecoveryBroker
             if ($LASTEXITCODE -ne 0) { throw 'service query denied' }
+            $interactiveSid = @([Security.Principal.WindowsIdentity]::GetCurrent().Groups |
+                Where-Object { $_.Value -eq 'S-1-5-4' }).Count -gt 0
+            Write-Host "D7D_HOST_INTERACTIVE_LOGON_SID=$interactiveSid"
             & $hostExe $service $serviceHash
             if ($LASTEXITCODE -ne 0) { throw 'real Windows service admission failed' }
           } finally {
@@ -56,6 +61,8 @@ jobs:
           Write-Host 'PASS: protected service remains native-only'
 
   crash-recovery-windows:
+    env:
+      LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
     runs-on: windows-latest
     timeout-minutes: 35
     permissions:
@@ -86,6 +93,8 @@ jobs:
           }
 
   pinned-offline-protected-cargo:
+    env:
+      LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
     runs-on: windows-2022
     timeout-minutes: 75
     permissions:
@@ -138,6 +147,8 @@ jobs:
           if-no-files-found: ignore
 
   service-loss-windows:
+    env:
+      LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
     runs-on: windows-2025
     timeout-minutes: 35
     permissions:
