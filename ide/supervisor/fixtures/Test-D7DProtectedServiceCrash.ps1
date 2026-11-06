@@ -119,15 +119,38 @@ try {
   # SCM service to fsync recovered_release before returning.
   & $fixture --recover $service $ExpectedServiceSha256 $jobId $plan
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected recovery ACK not durable' }
+  # The service intentionally keeps the exact named Job briefly after fsync
+  # so a legitimate restarted host can recover a lost reply with a fresh nonce.
   [void][D7DProtectedObserver]::CloseHandle($job)
   $job=[IntPtr]::Zero
-  Start-Sleep -Milliseconds 300
-  $unexpected=[D7DProtectedObserver]::OpenJobObjectW(0x0004,$false,$jobName)
-  if ($unexpected -ne [IntPtr]::Zero) {
-    [void][D7DProtectedObserver]::CloseHandle($unexpected)
-    throw 'DENIED: service did not release recovered original Job'
+  $retryHeld=[D7DProtectedObserver]::OpenJobObjectW(0x0004,$false,$jobName)
+  if ($retryHeld -eq [IntPtr]::Zero) {
+    throw 'DENIED: service dropped original kernel Job before ACK retry window'
   }
-  Write-Host 'PASS: host-crash -> separate service Job kill -> child exit -> retained empty original Job -> authenticated recovery ACK -> Job release'
+  [void][D7DProtectedObserver]::CloseHandle($retryHeld)
+  # This second process repeats kernel verification and performs a fresh,
+  # fully authenticated service round-trip; a file-only ACK cannot pass.
+  & $fixture --recover $service $ExpectedServiceSha256 $jobId $plan
+  if ($LASTEXITCODE -ne 0) {
+    throw 'DENIED: fsynced recovery ACK was not idempotently retryable'
+  }
+  # The observer MUST NOT hold an open kernel Job handle while checking
+  # the service's eventual release. Wait boundedly for retention expiry.
+  $released=$false
+  $deadline=[DateTime]::UtcNow.AddSeconds(75)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $stillHeld=[D7DProtectedObserver]::OpenJobObjectW(0x0004,$false,$jobName)
+    if ($stillHeld -eq [IntPtr]::Zero) {
+      $released=$true
+      break
+    }
+    [void][D7DProtectedObserver]::CloseHandle($stillHeld)
+    Start-Sleep -Milliseconds 100
+  }
+  if (!$released) {
+    throw 'DENIED: service did not release recovered original Job after bounded ACK retry'
+  }
+  Write-Host 'PASS: host crash -> separate service Job kill -> empty original kernel Job -> durable recovery ACK -> authenticated retry -> bounded Job release'
 } finally {
   if ($job -ne [IntPtr]::Zero) { [void][D7DProtectedObserver]::CloseHandle($job) }
   if ($child -ne [IntPtr]::Zero) { [void][D7DProtectedObserver]::CloseHandle($child) }
