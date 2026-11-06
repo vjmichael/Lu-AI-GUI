@@ -291,6 +291,11 @@ pub fn start_windows_lsp(
     stage_bundle(trusted_release_bundle, &bundle, &plan.recipe_id, &plan.toolchain_sha256)?;
     let staged_input = PublishedInput {root:workspace.clone(),seal:input.seal.clone()};
     verify_input(&staged_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    let staged_document = workspace.join(&input.seal.manifest_relative_path);
+    if !clean_meta(&staged_document)?.is_file() {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    let native_uri = crate::lsp_transport::trusted_staged_file_uri(&staged_document)?;
     let executable = bundle.join("bin").join(executable_basename);
     if !clean_meta(&executable)?.is_file() { return Err(denied()); }
     let env = min_environment(&local, &bundle)?;
@@ -342,11 +347,12 @@ pub fn start_windows_lsp(
         Arc::clone(&supervisor), job_id, &plan_hash, &proof(),
         Box::new(actor), server_id,
     )?;
-    Ok(WindowsLspSession { gateway })
+    Ok(WindowsLspSession { gateway, native_uri })
 }
 
-pub struct WindowsLspSession { gateway: LspGateway }
+pub struct WindowsLspSession { gateway: LspGateway, native_uri: String }
 impl WindowsLspSession {
+    pub fn native_document_uri(&self) -> &str { &self.native_uri }
     pub fn initialize(&mut self) -> Result<(), SupervisorError> {
         self.gateway.initialize()
     }
