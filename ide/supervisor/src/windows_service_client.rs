@@ -135,12 +135,12 @@ impl ServiceLease {
         if !empty(job) { return Err(denied()); }
         Ok(Self { pipe, nonce, job, released: false })
     }
-    pub(crate) fn alive(&mut self) -> bool {
+    pub fn alive(&mut self) -> bool {
         let mut available = 0u32;
         unsafe { PeekNamedPipe(self.pipe.0, ptr::null_mut(), 0,
             ptr::null_mut(), &mut available, ptr::null_mut()) != 0 }
     }
-    pub(crate) fn release_empty(&mut self) -> Result<(), SupervisorError> {
+    pub fn release_empty(&mut self) -> Result<(), SupervisorError> {
         if !empty(self.job) || !self.alive() { return Err(denied()); }
         let release = Release {
             schema: "lu.ide.d7d.release.v1", operation: "release", nonce: &self.nonce,
