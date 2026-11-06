@@ -331,7 +331,9 @@ pub(crate) async fn lu_generate_browser(
                         conversation_id:chat_id.clone(),user_turn_id:gid.clone(),
                         task_id:task_id.clone(),
                     },
-                    scope:scope.clone(),policy:policy.clone(),
+                    scope:BrowserOriginScope::from_host_grant(scope.origins())
+                        .map_err(|_|"Browser scope changed before tool registration")?,
+                    policy:policy.clone(),
                     runner:Arc::clone(&owner.browser_runtime)
                         as Arc<dyn lu_core::native_browser_tool::BrowserTaskRunner>,
                 }
