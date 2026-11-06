@@ -33,6 +33,15 @@ reason to introduce a direct desktop or shell spawn to bypass those gates.
 | \`packaging/language-servers.manifest.json\` | Native rust-analyzer, clangd, Ruff candidates; Pyright/TypeScript need audited Node/TypeScript dependency bundles | All assets unpinned/unbundled, \`releaseApproved=false\` |
 | \`packaging/verify_language_servers.py\` | Refuses release without pinned SHA-256 per platform, copyright review, license notices, audited dependencies and reviewed approval | No server binaries are acquired, copied or distributed by this branch |
 
+## E2B implementation update — source-only, 2026-11-06
+
+- Windows Tauri now routes reviewed native **clangd** (C/C++), **rust-analyzer** (Rust), and **Ruff** (Python diagnostics only) using file-extension + language-ID validation. The host checks separate compile-time bundle SHA-256 pins and the protected service pin, publishes the installed language-ID list, prompts for native OS confirmation, and binds the editor's exact disk hash + buffer revision to a single supervised session. Ruff completion/hover/navigation are denied by the host, not only the UI. Pyright/TypeScript remain deferred pending Node dependencies and license review.
+- Native source tests added to D3: protocol actor normal completion persists a Completed receipt, Drop cancellation persists Cancelled before native kill, failed protected-service release leaves RecoveryRequired after journal replay. Mock process tests are **not OS containment acceptance**.
+- The E2 per-machine NSIS overlay config is at ide/app/src-tauri/tauri.e2.nsis.conf.json; it maps an independently staged resources/ directory into the native installed resource root. ide/packaging/stage_language_server_release.py refuses to stage unapproved license/notice manifests, unmatched platform hashes, a modified or unsigned protected service, or an existing output. Tests use fixtures and a signature-check bypass only in the internal Python test function, never the production CLI.
+- The native Windows release utility ide/supervisor/examples/e2_native_release_bundle_pins.rs computes full-tree SHA-256 pins (including license notices) with the same Rust tree digest used by runtime. Release build tooling must independently confirm Authenticode, signer identity, actual installer resource layout, protected LocalService installation, and exact head security acceptance before using its output. The printed pin is **not** approval.
+- Queue coalescing has been added to the E1/E2 workflows to reduce redundant Github Actions jobs. All exact-head native CI findings still require inspection and repairs.
+- **Not completed:** no reviewed server binary has been bundled or released; the installed NSIS broker/service hook, hostile real Windows/ Linux acceptance, OS network denial proof, and live editor E2E results remain outstanding. The normal Lu IDE alpha build continues to deny language-server execution.
+
 ## Next activation: E2B — native OS-restricted process sessions
 
 1. **Windows:** Add a fixed-language-server recipe family to D3 only after independent
