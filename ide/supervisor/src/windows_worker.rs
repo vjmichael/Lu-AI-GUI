@@ -122,7 +122,11 @@ fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     if !valid_job_id(id) || hash.len() != 64 || !hash.bytes().all(|x| x.is_ascii_hexdigit()) {
         return Err(SupervisorError::InvalidPlan);
     }
-    Ok(wstr(&format!("Global\\LuIdeD7-{id}-{}", &hash[..16])))
+    #[cfg(feature = "protected-recovery-service")]
+    let prefix = "Global";
+    #[cfg(not(feature = "protected-recovery-service"))]
+    let prefix = "Local";
+    Ok(wstr(&format!("{prefix}\\LuIdeD7-{id}-{}", &hash[..16])))
 }
 
 fn clean_meta(path: &Path) -> Result<fs::Metadata, SupervisorError> {
@@ -288,8 +292,16 @@ struct Job { handle: Handle }
 impl Job {
     fn create(id: &str, hash: &str, plan: &JobPlan) -> Result<Self, SupervisorError> {
         let name = job_name(id, hash)?;
-        let acl = crate::windows_service_security::JobSecurity::new()?;
-        let raw = unsafe { CreateJobObjectW(&acl.attributes, name.as_ptr()) };
+        #[cfg(feature = "protected-recovery-service")]
+        let raw = {
+            let acl = crate::windows_service_security::JobSecurity::new()?;
+            unsafe { CreateJobObjectW(&acl.attributes, name.as_ptr()) }
+        };
+        // Preserve D7C's local Job fixture without needing a service SID
+        // to be installed. No implicit protected-service downgrade exists
+        // when the dedicated D7D production feature is selected.
+        #[cfg(not(feature = "protected-recovery-service"))]
+        let raw = unsafe { CreateJobObjectW(ptr::null(), name.as_ptr()) };
         let created = Handle::new(raw)?;
         if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS { return Err(denied()); }
         let mut limit = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
