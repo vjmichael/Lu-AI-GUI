@@ -16,31 +16,35 @@ use std::{
     fs::{self, File, OpenOptions},
     io::Read,
     mem::size_of,
-    os::windows::{ffi::OsStrExt, fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle},
+    os::windows::{
+        ffi::OsStrExt,
+        fs::{MetadataExt, OpenOptionsExt},
+        io::AsRawHandle,
+    },
     path::Path,
     ptr,
 };
 use windows_sys::Win32::{
     Foundation::{CloseHandle, LocalFree, HANDLE},
     Security::{
+        AclSizeInformation,
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            ConvertStringSidToSidW, GetNamedSecurityInfoW,
-            SE_FILE_OBJECT,
+            ConvertStringSidToSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT,
         },
-        CheckTokenMembership, EqualSid, LookupAccountNameW,
-        GetTokenInformation, GetAclInformation, GetAce,
-        GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
-        AclSizeInformation, DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED,
-        IsTokenRestricted, RevertToSelf,
-        SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenIsAppContainer, TokenUser,
+        CheckTokenMembership, EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl,
+        GetTokenInformation, IsTokenRestricted, LookupAccountNameW, RevertToSelf,
+        TokenIsAppContainer, TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
+        DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
     },
     System::{
-        Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId,
-            ImpersonateNamedPipeClient},
-        Threading::{GetCurrentProcess, GetCurrentThread, GetProcessTimes,
-            OpenProcessToken, OpenThreadToken,
-            OpenProcess, QueryFullProcessImageNameW},
+        Pipes::{
+            GetNamedPipeClientProcessId, GetNamedPipeServerProcessId, ImpersonateNamedPipeClient,
+        },
+        Threading::{
+            GetCurrentProcess, GetCurrentThread, GetProcessTimes, OpenProcess, OpenProcessToken,
+            OpenThreadToken, QueryFullProcessImageNameW,
+        },
     },
 };
 const SERVICE_NAME: &str = "LuIdeRecoveryBroker";
@@ -50,48 +54,96 @@ const SYNCHRONIZE: u32 = 0x0010_0000;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_SHARE_READ: u32 = 1;
 const MAX_IMAGE_BYTES: u64 = 128 * 1024 * 1024;
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
-pub fn wide(s: &OsStr) -> Vec<u16> { s.encode_wide().chain([0]).collect() }
-pub fn ws(s: &str) -> Vec<u16> { wide(OsStr::new(s)) }
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
+pub fn wide(s: &OsStr) -> Vec<u16> {
+    s.encode_wide().chain([0]).collect()
+}
+pub fn ws(s: &str) -> Vec<u16> {
+    wide(OsStr::new(s))
+}
 struct Handle(HANDLE);
 impl Handle {
     fn new(value: HANDLE) -> Result<Self, SupervisorError> {
-        if value.is_null() { Err(denied()) } else { Ok(Self(value)) }
+        if value.is_null() {
+            Err(denied())
+        } else {
+            Ok(Self(value))
+        }
     }
 }
 impl Drop for Handle {
-    fn drop(&mut self) { if !self.0.is_null() { unsafe { CloseHandle(self.0); } } }
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
 }
 struct OwnedSid(*mut c_void);
 impl Drop for OwnedSid {
-    fn drop(&mut self) { if !self.0.is_null() { unsafe { LocalFree(self.0); } } }
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                LocalFree(self.0);
+            }
+        }
+    }
 }
 pub fn sid_of_service() -> Result<String, SupervisorError> {
     let name = ws(&format!("NT SERVICE\\{SERVICE_NAME}"));
     let mut sid_size = 0_u32;
     let mut domain_size = 0_u32;
     let mut use_type = 0_i32;
-    unsafe { LookupAccountNameW(ptr::null(), name.as_ptr(), ptr::null_mut(),
-        &mut sid_size, ptr::null_mut(), &mut domain_size, &mut use_type); }
+    unsafe {
+        LookupAccountNameW(
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            &mut sid_size,
+            ptr::null_mut(),
+            &mut domain_size,
+            &mut use_type,
+        );
+    }
     if sid_size < 8 || sid_size > 1024 || domain_size > 1024 {
         return Err(denied());
     }
     let mut sid = vec![0_u8; sid_size as usize];
     let mut domain = vec![0_u16; domain_size as usize];
-    if unsafe { LookupAccountNameW(ptr::null(), name.as_ptr(),
-        sid.as_mut_ptr().cast(), &mut sid_size,
-        domain.as_mut_ptr(), &mut domain_size, &mut use_type)
-    } == 0 { return Err(denied()); }
+    if unsafe {
+        LookupAccountNameW(
+            ptr::null(),
+            name.as_ptr(),
+            sid.as_mut_ptr().cast(),
+            &mut sid_size,
+            domain.as_mut_ptr(),
+            &mut domain_size,
+            &mut use_type,
+        )
+    } == 0
+    {
+        return Err(denied());
+    }
     let mut string: *mut u16 = ptr::null_mut();
     if unsafe { ConvertSidToStringSidW(sid.as_mut_ptr().cast(), &mut string) } == 0
-        || string.is_null() { return Err(denied()); }
-    let len = (0..256).find(|n| unsafe { *string.add(*n) } == 0)
+        || string.is_null()
+    {
+        return Err(denied());
+    }
+    let len = (0..256)
+        .find(|n| unsafe { *string.add(*n) } == 0)
         .ok_or_else(denied)?;
-    let value = String::from_utf16(unsafe {
-        std::slice::from_raw_parts(string, len)
-    }).map_err(|_| denied())?;
-    unsafe { LocalFree(string.cast()); }
-    if !value.starts_with("S-1-5-80-") { return Err(denied()); }
+    let value = String::from_utf16(unsafe { std::slice::from_raw_parts(string, len) })
+        .map_err(|_| denied())?;
+    unsafe {
+        LocalFree(string.cast());
+    }
+    if !value.starts_with("S-1-5-80-") {
+        return Err(denied());
+    }
     Ok(value)
 }
 fn parse_sid(text: &str) -> Result<OwnedSid, SupervisorError> {
@@ -105,38 +157,60 @@ fn parse_sid(text: &str) -> Result<OwnedSid, SupervisorError> {
 /// LocalService is a logon identity, so CheckTokenMembership alone is wrong.
 fn token_user_is(token: HANDLE, expected: *mut c_void) -> Result<bool, SupervisorError> {
     let mut len = 0u32;
-    unsafe { GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut len); }
-    if len < size_of::<TOKEN_USER>() as u32 || len > 8192 { return Err(denied()); }
+    unsafe {
+        GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut len);
+    }
+    if len < size_of::<TOKEN_USER>() as u32 || len > 8192 {
+        return Err(denied());
+    }
     let mut storage = vec![0usize; (len as usize).div_ceil(size_of::<usize>())];
-    if unsafe { GetTokenInformation(
-        token, TokenUser, storage.as_mut_ptr().cast(), len, &mut len,
-    ) } == 0 { return Err(denied()); }
+    if unsafe { GetTokenInformation(token, TokenUser, storage.as_mut_ptr().cast(), len, &mut len) }
+        == 0
+    {
+        return Err(denied());
+    }
     let user = unsafe { (*(storage.as_ptr() as *const TOKEN_USER)).User.Sid };
-    if user.is_null() { return Err(denied()); }
+    if user.is_null() {
+        return Err(denied());
+    }
     Ok(unsafe { EqualSid(user, expected) } != 0)
 }
 
 fn token_user_equal(a: HANDLE, b: HANDLE) -> Result<bool, SupervisorError> {
     fn sid(token: HANDLE) -> Result<Vec<u8>, SupervisorError> {
         let mut len = 0_u32;
-        unsafe { GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut len); }
-        if len < size_of::<TOKEN_USER>() as u32 || len > 8192 { return Err(denied()); }
+        unsafe {
+            GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut len);
+        }
+        if len < size_of::<TOKEN_USER>() as u32 || len > 8192 {
+            return Err(denied());
+        }
         let mut bytes = vec![0_usize; (len as usize).div_ceil(size_of::<usize>())];
-        if unsafe { GetTokenInformation(token, TokenUser,
-            bytes.as_mut_ptr().cast(), len, &mut len) } == 0 {
+        if unsafe {
+            GetTokenInformation(token, TokenUser, bytes.as_mut_ptr().cast(), len, &mut len)
+        } == 0
+        {
             return Err(denied());
         }
         let user_sid = unsafe { (*(bytes.as_ptr() as *const TOKEN_USER)).User.Sid };
-        if user_sid.is_null() { return Err(denied()); }
+        if user_sid.is_null() {
+            return Err(denied());
+        }
         // Copy the compact textual SID while token allocation remains alive.
         let mut string = ptr::null_mut();
-        if unsafe { ConvertSidToStringSidW(user_sid, &mut string) } == 0 ||
-            string.is_null() { return Err(denied()); }
-        let length = (0..256).find(|n| unsafe { *string.add(*n) } == 0)
+        if unsafe { ConvertSidToStringSidW(user_sid, &mut string) } == 0 || string.is_null() {
+            return Err(denied());
+        }
+        let length = (0..256)
+            .find(|n| unsafe { *string.add(*n) } == 0)
             .ok_or_else(denied)?;
         let result = unsafe { std::slice::from_raw_parts(string, length) };
-        let bytes = String::from_utf16(result).map_err(|_| denied())?.into_bytes();
-        unsafe { LocalFree(string.cast()); }
+        let bytes = String::from_utf16(result)
+            .map_err(|_| denied())?
+            .into_bytes();
+        unsafe {
+            LocalFree(string.cast());
+        }
         Ok(bytes)
     }
     Ok(sid(a)? == sid(b)?)
@@ -151,10 +225,17 @@ pub fn assert_restricted_local_service() -> Result<(), SupervisorError> {
     let local_service_sid = parse_sid("S-1-5-19")?;
     let mut service_member = 0_i32;
     if unsafe { CheckTokenMembership(token.0, service_sid.0, &mut service_member) } == 0
-        || service_member == 0 { return Err(denied()); }
+        || service_member == 0
+    {
+        return Err(denied());
+    }
     // Service must NOT be LocalSystem and must run with restricted SIDs.
-    if unsafe { IsTokenRestricted(token.0) } == 0 { return Err(denied()); }
-    if !token_user_is(token.0, local_service_sid.0)? { return Err(denied()); }
+    if unsafe { IsTokenRestricted(token.0) } == 0 {
+        return Err(denied());
+    }
+    if !token_user_is(token.0, local_service_sid.0)? {
+        return Err(denied());
+    }
     Ok(())
 }
 pub struct PipeSecurity {
@@ -177,8 +258,14 @@ impl PipeSecurity {
         let mut descriptor = ptr::null_mut();
         if unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                ws(&sddl).as_ptr(), 1, &mut descriptor, ptr::null_mut())
-        } == 0 || descriptor.is_null() {
+                ws(&sddl).as_ptr(),
+                1,
+                &mut descriptor,
+                ptr::null_mut(),
+            )
+        } == 0
+            || descriptor.is_null()
+        {
             return Err(denied());
         }
         let mut result = Self {
@@ -204,33 +291,49 @@ pub struct VerifiedClientLease {
     pub creation_time: u64,
 }
 impl VerifiedClientLease {
-    pub fn process_handle(&self) -> HANDLE { self.handle.0 }
+    pub fn process_handle(&self) -> HANDLE {
+        self.handle.0
+    }
 }
 fn process_creation(process: HANDLE) -> Result<u64, SupervisorError> {
     use windows_sys::Win32::Foundation::FILETIME;
     let (mut c, mut e, mut k, mut u) = (
-        FILETIME::default(), FILETIME::default(),
-        FILETIME::default(), FILETIME::default()
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
     );
     if unsafe { GetProcessTimes(process, &mut c, &mut e, &mut k, &mut u) } == 0 {
         return Err(denied());
     }
     Ok(((c.dwHighDateTime as u64) << 32) | c.dwLowDateTime as u64)
 }
-pub(crate) fn hash_executable(expected_path: &Path, expected_hash: &str) -> Result<(), SupervisorError> {
-    if expected_hash.len() != 64 || !expected_hash.bytes().all(|b| b.is_ascii_hexdigit())
-        || !expected_path.is_absolute() { return Err(denied()); }
+pub(crate) fn hash_executable(
+    expected_path: &Path,
+    expected_hash: &str,
+) -> Result<(), SupervisorError> {
+    if expected_hash.len() != 64
+        || !expected_hash.bytes().all(|b| b.is_ascii_hexdigit())
+        || !expected_path.is_absolute()
+    {
+        return Err(denied());
+    }
     let md = fs::symlink_metadata(expected_path).map_err(|_| denied())?;
-    if !md.is_file() || md.file_attributes() & 0x400 != 0 ||
-        md.len() > MAX_IMAGE_BYTES { return Err(denied()); }
+    if !md.is_file() || md.file_attributes() & 0x400 != 0 || md.len() > MAX_IMAGE_BYTES {
+        return Err(denied());
+    }
     let mut opts = OpenOptions::new();
-    opts.read(true).share_mode(FILE_SHARE_READ).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    opts.read(true)
+        .share_mode(FILE_SHARE_READ)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     let mut file = opts.open(expected_path).map_err(|_| denied())?;
     let mut hash = Sha256::new();
     let mut buf = [0_u8; 65536];
     loop {
         let n = file.read(&mut buf).map_err(|_| denied())?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hash.update(&buf[..n]);
     }
     if format!("{:x}", hash.finalize()) != expected_hash {
@@ -240,35 +343,56 @@ pub(crate) fn hash_executable(expected_path: &Path, expected_hash: &str) -> Resu
 }
 struct Impersonation;
 impl Drop for Impersonation {
-    fn drop(&mut self) { unsafe { RevertToSelf(); } }
+    fn drop(&mut self) {
+        unsafe {
+            RevertToSelf();
+        }
+    }
 }
 pub fn authenticate_client(
-    pipe: HANDLE, asserted_pid: u32, asserted_creation: u64,
-    approved_host_path: &Path, approved_host_sha256: &str,
+    pipe: HANDLE,
+    asserted_pid: u32,
+    asserted_creation: u64,
+    approved_host_path: &Path,
+    approved_host_sha256: &str,
 ) -> Result<VerifiedClientLease, SupervisorError> {
     let mut pid = 0_u32;
     if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0
-        || pid == 0 || pid != asserted_pid { return Err(denied()); }
+        || pid == 0
+        || pid != asserted_pid
+    {
+        return Err(denied());
+    }
     let process = Handle::new(unsafe {
         OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
     })?;
     let created = process_creation(process.0)?;
-    if created != asserted_creation { return Err(denied()); }
+    if created != asserted_creation {
+        return Err(denied());
+    }
     // Kernel image path cannot be asserted through the JSON protocol.
     let mut image = vec![0_u16; 32768];
     let mut size = image.len() as u32;
     if unsafe { QueryFullProcessImageNameW(process.0, 0, image.as_mut_ptr(), &mut size) } == 0
-        || size == 0 { return Err(denied()); }
+        || size == 0
+    {
+        return Err(denied());
+    }
     let client_image = String::from_utf16(&image[..size as usize]).map_err(|_| denied())?;
     let installed = fs::canonicalize(approved_host_path).map_err(|_| denied())?;
     let client = fs::canonicalize(&client_image).map_err(|_| denied())?;
-    if !client.to_string_lossy().eq_ignore_ascii_case(&installed.to_string_lossy()) {
+    if !client
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&installed.to_string_lossy())
+    {
         return Err(denied());
     }
     hash_executable(&installed, approved_host_sha256)?;
     // The call must occur only after ReadFile on this connection.
     // On impersonation failure, immediately deny; never continue as service.
-    if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 { return Err(denied()); }
+    if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
+        return Err(denied());
+    }
     let _impersonation = Impersonation;
     let mut client_token = ptr::null_mut();
     if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut client_token) } == 0 {
@@ -280,13 +404,29 @@ pub fn authenticate_client(
         return Err(denied());
     }
     let owner_token = Handle::new(owner_token)?;
-    if !token_user_equal(client_token.0, owner_token.0)? { return Err(denied()); }
+    if !token_user_equal(client_token.0, owner_token.0)? {
+        return Err(denied());
+    }
     let mut in_container = 0_u32;
     let mut size = 0_u32;
-    if unsafe { GetTokenInformation(client_token.0, TokenIsAppContainer,
-        (&mut in_container as *mut u32).cast(), size_of::<u32>() as u32, &mut size)
-    } == 0 || in_container != 0 { return Err(denied()); }
-    Ok(VerifiedClientLease { handle: process, pid, creation_time: created })
+    if unsafe {
+        GetTokenInformation(
+            client_token.0,
+            TokenIsAppContainer,
+            (&mut in_container as *mut u32).cast(),
+            size_of::<u32>() as u32,
+            &mut size,
+        )
+    } == 0
+        || in_container != 0
+    {
+        return Err(denied());
+    }
+    Ok(VerifiedClientLease {
+        handle: process,
+        pid,
+        creation_time: created,
+    })
 }
 
 /// Independently check installer expectations at runtime. Root and config
@@ -300,19 +440,37 @@ fn current_token_user_sid() -> Result<String, SupervisorError> {
     }
     let token = Handle::new(raw)?;
     let mut len = 0u32;
-    unsafe { GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut len); }
-    if len < size_of::<TOKEN_USER>() as u32 || len > 8192 { return Err(denied()); }
+    unsafe {
+        GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut len);
+    }
+    if len < size_of::<TOKEN_USER>() as u32 || len > 8192 {
+        return Err(denied());
+    }
     let mut storage = vec![0usize; (len as usize).div_ceil(size_of::<usize>())];
-    if unsafe { GetTokenInformation(token.0, TokenUser, storage.as_mut_ptr().cast(),
-        len, &mut len) } == 0 { return Err(denied()); }
+    if unsafe {
+        GetTokenInformation(
+            token.0,
+            TokenUser,
+            storage.as_mut_ptr().cast(),
+            len,
+            &mut len,
+        )
+    } == 0
+    {
+        return Err(denied());
+    }
     let sid = unsafe { (*(storage.as_ptr() as *const TOKEN_USER)).User.Sid };
-    if sid.is_null() { return Err(denied()); }
+    if sid.is_null() {
+        return Err(denied());
+    }
     let mut text = ptr::null_mut();
     if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 || text.is_null() {
         return Err(denied());
     }
     let owned = OwnedSid(text.cast());
-    let length = (0..256).find(|i| unsafe { *text.add(*i) } == 0).ok_or_else(denied)?;
+    let length = (0..256)
+        .find(|i| unsafe { *text.add(*i) } == 0)
+        .ok_or_else(denied)?;
     String::from_utf16(unsafe { std::slice::from_raw_parts(text, length) }).map_err(|_| denied())
 }
 /// Job ACL explicitly allows the creating native host, SYSTEM and restricted
@@ -325,12 +483,22 @@ impl JobSecurity {
     pub fn new() -> Result<Self, SupervisorError> {
         let sddl = format!(
             "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0010000C;;;{})",
-            current_token_user_sid()?, sid_of_service()?,
+            current_token_user_sid()?,
+            sid_of_service()?,
         );
         let mut descriptor = ptr::null_mut();
-        if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            ws(&sddl).as_ptr(), 1, &mut descriptor, ptr::null_mut())
-        } == 0 || descriptor.is_null() { return Err(denied()); }
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                ws(&sddl).as_ptr(),
+                1,
+                &mut descriptor,
+                ptr::null_mut(),
+            )
+        } == 0
+            || descriptor.is_null()
+        {
+            return Err(denied());
+        }
         let owned = OwnedSid(descriptor);
         Ok(Self {
             attributes: SECURITY_ATTRIBUTES {
@@ -343,12 +511,13 @@ impl JobSecurity {
     }
 }
 
-
 /// Client-side server attestation. A spoofed, same-user pipe instance cannot
 /// claim to be the recovery service merely by echoing a nonce. Kernel PID,
 /// fixed installed image and restricted Windows service token all must match.
 pub fn authenticate_service_server(
-    pipe: HANDLE, approved_service_path: &Path, service_sha256: &str,
+    pipe: HANDLE,
+    approved_service_path: &Path,
+    service_sha256: &str,
 ) -> Result<(), SupervisorError> {
     let mut pid = 0u32;
     if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 || pid == 0 {
@@ -360,12 +529,18 @@ pub fn authenticate_service_server(
     let mut text = vec![0u16; 32768];
     let mut length = text.len() as u32;
     if unsafe { QueryFullProcessImageNameW(server.0, 0, text.as_mut_ptr(), &mut length) } == 0
-        || length == 0 { return Err(denied()); }
-    let observed = Path::new(&String::from_utf16(&text[..length as usize])
-        .map_err(|_| denied())?).to_path_buf();
+        || length == 0
+    {
+        return Err(denied());
+    }
+    let observed = Path::new(&String::from_utf16(&text[..length as usize]).map_err(|_| denied())?)
+        .to_path_buf();
     let expected = fs::canonicalize(approved_service_path).map_err(|_| denied())?;
     let observed = fs::canonicalize(observed).map_err(|_| denied())?;
-    if !observed.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()) {
+    if !observed
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&expected.to_string_lossy())
+    {
         return Err(denied());
     }
     hash_executable(&expected, service_sha256)?;
@@ -378,10 +553,14 @@ pub fn authenticate_service_server(
     let local = parse_sid("S-1-5-19")?;
     let mut present = 0;
     if unsafe { CheckTokenMembership(token.0, service.0, &mut present) } == 0
-        || present == 0 || !token_user_is(token.0, local.0)? {
+        || present == 0
+        || !token_user_is(token.0, local.0)?
+    {
         return Err(denied());
     }
-    if unsafe { IsTokenRestricted(token.0) } == 0 { return Err(denied()); }
+    if unsafe { IsTokenRestricted(token.0) } == 0 {
+        return Err(denied());
+    }
     Ok(())
 }
 
@@ -390,14 +569,23 @@ pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> 
     let service = parse_sid(&sid_of_service()?)?;
     for path in [root.to_path_buf(), root.join("service.json")] {
         let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
-        if meta.file_attributes() & 0x400 != 0 { return Err(denied()); }
+        if meta.file_attributes() & 0x400 != 0 {
+            return Err(denied());
+        }
         let mut dacl = ptr::null_mut();
         let mut descriptor = ptr::null_mut();
-        let result = unsafe { GetNamedSecurityInfoW(
-            wide(path.as_os_str()).as_ptr(), SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION, ptr::null_mut(), ptr::null_mut(),
-            &mut dacl, ptr::null_mut(), &mut descriptor,
-        ) };
+        let result = unsafe {
+            GetNamedSecurityInfoW(
+                wide(path.as_os_str()).as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut dacl,
+                ptr::null_mut(),
+                &mut descriptor,
+            )
+        };
         if result != 0 || descriptor.is_null() || dacl.is_null() {
             return Err(denied());
         }
@@ -405,12 +593,24 @@ pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> 
         let mut control = 0u16;
         let mut revision = 0u32;
         if unsafe { GetSecurityDescriptorControl(owned.0, &mut control, &mut revision) } == 0
-            || control & SE_DACL_PROTECTED == 0 { return Err(denied()); }
+            || control & SE_DACL_PROTECTED == 0
+        {
+            return Err(denied());
+        }
         let mut info = ACL_SIZE_INFORMATION::default();
-        if unsafe { GetAclInformation(dacl,
-            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-            size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation)
-        } == 0 || info.AceCount < 2 || info.AceCount > 8 { return Err(denied()); }
+        if unsafe {
+            GetAclInformation(
+                dacl,
+                (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+                size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
+            )
+        } == 0
+            || info.AceCount < 2
+            || info.AceCount > 8
+        {
+            return Err(denied());
+        }
         let mut seen_system = false;
         let mut seen_service = false;
         for i in 0..info.AceCount {
@@ -421,7 +621,8 @@ pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> 
             let ace = unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
             if ace.Header.AceType != 0
                 || ace.Header.AceFlags & 0x10 != 0
-                || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+                || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+            {
                 return Err(denied());
             }
             let sid = (&ace.SidStart as *const u32).cast_mut().cast();
@@ -433,7 +634,9 @@ pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> 
                 return Err(denied());
             }
         }
-        if !seen_system || !seen_service { return Err(denied()); }
+        if !seen_system || !seen_service {
+            return Err(denied());
+        }
     }
     Ok(())
 }
@@ -443,8 +646,10 @@ mod tests {
     use super::*;
     #[test]
     fn client_pipe_dacl_does_not_allow_pipe_instance_creation() {
-        let template = format!("D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
-            "S-1-5-80-1-2-3-4-5");
+        let template = format!(
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;IU)",
+            "S-1-5-80-1-2-3-4-5"
+        );
         assert!(template.contains("0x00100003;;;IU"));
         assert!(!template.contains(";;;WD"));
         assert!(!template.contains(";;;AN"));
