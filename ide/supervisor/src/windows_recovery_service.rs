@@ -75,7 +75,7 @@ struct InstalledConfig {
 impl InstalledConfig {
     fn read() -> Result<Self, SupervisorError> {
         let root = PathBuf::from(std::env::var_os("ProgramData").ok_or_else(denied)?)
-            .join("LuIDE").join("RecoveryBroker");
+            .join("LuIDERecoveryBroker");
         if !root.is_absolute() || fs::symlink_metadata(&root).map_err(|_| denied())?
             .file_attributes() & 0x400 != 0 { return Err(denied()); }
         let path = root.join("service.json");
