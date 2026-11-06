@@ -544,3 +544,18 @@ message DocxCreateResult {
   uint64 bytes_written = 2;
   string sha256 = 3;
 }
+
+// Same-directory, host-pinned file transfer. Copy and move require separate
+// WRITE grants even if they share a typed Protobuf payload.
+message FileTransferRequest {
+  string source_name = 1;
+  string target_name = 2;
+  string expected_source_sha256 = 3;
+}
+message FileTransferResult {
+  string source_name = 1;
+  string target_name = 2;
+  uint64 bytes_written = 3;
+  string sha256 = 4;
+  bool source_removed = 5;
+}
