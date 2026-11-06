@@ -902,6 +902,13 @@ function App() {
     }
   }
   useEffect(() => {
+    if (lspSession && (!activeTab ||
+        lspSession.projectId!==activeTab.projectId ||
+        lspSession.relativePath!==activeTab.relativePath)) {
+      void stopLspSession();
+    }
+  },[lspSession,activeTabKey,activeProject?.projectId]);
+  useEffect(() => {
     if (!lspSession || !activeTab ||
         lspSession.projectId!==activeTab.projectId ||
         lspSession.relativePath!==activeTab.relativePath) return;
@@ -1892,19 +1899,28 @@ function App() {
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
                   </button>
+                  {lspAvailableForTab && !lspSession && <button type="button"
+                    className="ghostBtn editorToolButton" disabled={lspBusy}
+                    title="Require native human consent, then start isolated clangd"
+                    onClick={() => void startLspSession()}>
+                    {lspBusy ? 'Starting…' : 'Start clangd'}</button>}
+                  {lspRunningForTab && <button type="button"
+                    className="ghostBtn editorToolButton" disabled={lspBusy}
+                    onClick={() => void stopLspSession()}>
+                    {lspBusy ? 'Stopping…' : 'Stop clangd'}</button>}
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
-                    title={lspWorker?.ready ? 'Ask protected language server for completions' :
-                      'Language server unavailable until protected-worker acceptance'}
+                    disabled={!lspRunningForTab || lspBusy}
+                    title={lspRunningForTab ? 'Ask native protected clangd for completions' :
+                      'Start a consented protected clangd session first'}
                     onClick={() => void requestLspFeature('completion')}>Complete</button>
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    disabled={!lspRunningForTab || lspBusy}
                     onClick={() => void requestLspFeature('hover')}>Hover</button>
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    disabled={!lspRunningForTab || lspBusy}
                     onClick={() => void requestLspFeature('definition')}>Definition</button>
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    disabled={!lspRunningForTab || lspBusy}
                     onClick={() => void requestLspFeature('diagnostics')}>Problems</button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
@@ -2017,7 +2033,10 @@ function App() {
                 <strong>Symbol information</strong>
                 <pre>{activeLspHover}</pre>
               </section>}
-              <div className="editorInfoBar">Edits stay in memory until Save.
+              <div className="editorInfoBar">
+                {lspRunningForTab ? 'Protected clangd running · approved session · ' :
+                  'Language intelligence requires protected worker and native consent · '}
+                Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
               </div>
             </> : <div className="sourcePreviewEmpty">
