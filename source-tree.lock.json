@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6d30aa6666e6b3a2f7663c3edc731e664f4dff84",
-  "trackedFileCount": 337,
+  "sourceCommitBeforeLock": "49bca18519be74a45756ba1c6791beaba68e6ad6",
+  "trackedFileCount": 344,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -34,6 +34,10 @@
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
       "blob": "e2be58818d8d5c70fa56f7b69c015b25b6a17f4a"
+    },
+    {
+      "path": ".github/workflows/lu-wave2-files.yml",
+      "blob": "f2929eb894d0f9837d582e1336ac5ed120d1ae90"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -81,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "b7777df15bb502f540133e419e6f6a3d9d5af421"
+      "blob": "9f78f45dd3fc0bab3e08a0b1f917958de1a563d7"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -517,7 +521,7 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
-      "blob": "cc9feeadee52f82cd55d1bf30327b364f215df3d"
+      "blob": "d9640d10fe8df2906a8f9bcb40cb5deaa79ff6c3"
     },
     {
       "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
@@ -561,7 +565,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "faee1a4a5b65de3600a09d93721c6fb7f7eeff19"
+      "blob": "42381f292df594cd663fa6ecf5b4e7e821bae36f"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -741,7 +745,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "6681901dd31e1d2d3c40f1368140db60c442e1b9"
+      "blob": "dab9490cfa1ef6f750a658e7aa83a04107a25576"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -822,6 +826,10 @@
     {
       "path": "src-tauri/lu-core/src/native_create_new.rs",
       "blob": "95a821874423cd53545c082aab12d74d7a0749a5"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_csv_edit.rs",
+      "blob": "0e421b6c8cfe2a09d9a49fb6cb48ab2aa5332127"
     },
     {
       "path": "src-tauri/lu-core/src/native_edit_existing.rs",
@@ -906,6 +914,14 @@
     {
       "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
       "blob": "039126f574a36a2da14b5979b20718e505e4f3b9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_zip_extract.rs",
+      "blob": "a50a1322d8d1403602f341b919ac123016a5e76f"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_zip_extract_tool.rs",
+      "blob": "cd1a2663c7bf7615d127eb7968f5e565a03c9f7b"
     },
     {
       "path": "src-tauri/lu-core/src/ownership_store.rs",
@@ -1212,6 +1228,10 @@
       "blob": "1487abb4c507dfd0f2309cb1edced1e7db6e1310"
     },
     {
+      "path": "src-tauri/lu-core/tests/native_csv_edit.rs",
+      "blob": "8bad50b0077c751f274028b1b76b9af8833b5080"
+    },
+    {
       "path": "src-tauri/lu-core/tests/native_dispatch_error_codes.rs",
       "blob": "8e8b79d6a6c1cc51e393622049264c5da8fd953e"
     },
@@ -1254,6 +1274,14 @@
     {
       "path": "src-tauri/lu-core/tests/native_workspace_read_turn.rs",
       "blob": "308068328ad61c24a879dcf5c7a448107737f33d"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_zip_extract.rs",
+      "blob": "1b0c8a3b87173ed98d60878f925211550870c8ec"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_zip_extract_authority.rs",
+      "blob": "a2e2d08bbe80b44d3c772fe1d4cdd4c0ca34efb2"
     },
     {
       "path": "src-tauri/lu-core/tests/ownership_store.rs",
