@@ -36,6 +36,12 @@ pub fn opened_directory_identity(dir:&Dir)->Result<String,TreeExtractError>{
     #[cfg(not(any(windows,unix)))]
     {Err(TreeExtractError::UnsafeMember)}
 }
+/// Entered only by the Linux native child process, never the Tauri host
+/// or a Rust test harness with unrelated process lifetime constraints.
+#[cfg(target_os="linux")]
+pub fn bind_archive_worker_parent(expected_pid:u32)->std::io::Result<()>{
+    lu_win_worker_job::unix_owned::bind_archive_parent(expected_pid)
+}
 fn executable_sha256(executable:&PathBuf)->Result<String,TreeExtractError>{
     let mut f=File::open(executable).map_err(fail)?;
     let mut digest=Sha256::new();
@@ -99,6 +105,7 @@ impl SupervisedArchivePlan{
             self.destination_parent.as_os_str().into(),target.into(),
             approved_digest.into(),self.source_parent_identity.clone().into(),
             self.destination_parent_identity.clone().into(),
+            std::process::id().to_string().into(),
         ];
         let plan=TrustedWorkerPlan{
             task_id:self.task_id.clone(),workspace_id:self.workspace_id.clone(),

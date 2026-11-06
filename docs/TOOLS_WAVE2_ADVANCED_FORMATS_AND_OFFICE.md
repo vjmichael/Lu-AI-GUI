@@ -96,3 +96,8 @@ Upstream API and licensing references:
 - The initial 7z/RAR/ZIP/TAR/package preview is now decoded in a separate Lu-owned worker too, not on Tauri's main or blocking thread. The host launches the verified executable in `--lu-archive-preview-worker` mode, bound to the previously opened source directory identity. It can terminate hung libarchive calls without disrupting the desktop.
 - The preview worker writes only a fresh bounded 1 MiB manifest JSON in Lu's temporary preview path. The host validates the manifest's canonical digest, entry counts, paths, sizes and resource bounds before displaying it. The temporary file is removed on every handled success/failure path. There is no project-directory write before explicit user approval.
 - A new preview cancellation UI issues a chat-scoped request; only the host may resolve and terminate the corresponding worker. The second prepublication manifest check runs in the separately supervised extraction child, not through an in-host archive decoder.
+
+## Step 3 — abnormal host termination and archive memory ceilings
+- Linux children set PR_SET_PDEATHSIG(SIGKILL) and verify their expected parent PID after installation, preventing orphaned decoders after a Lu crash. A 1 GiB address-space rlimit is applied before source decoding.
+- Windows limits only the two fixed archive worker modes to 1 GiB via the same owned Job Object that guarantees termination on handle close. General background workers, inference and GGUF model memory behavior are unchanged.
+- Exit, kill, timeout and memory rejection are never successful completion proofs; host journal and manifest observation still govern reconciliation.

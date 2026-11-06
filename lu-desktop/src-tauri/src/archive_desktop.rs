@@ -266,6 +266,7 @@ fn preview_in_owned_worker(
             OsString::from("--lu-archive-preview-worker"),
             source_parent.as_os_str().into(),source_name.into(),
             output.path.as_os_str().into(),source_identity.into(),
+            std::process::id().to_string().into(),
         ],
         progress_protocol:false,max_runtime_seconds:Some(600),
     }).map_err(|_|"Cannot start supervised archive preview")?;

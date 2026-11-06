@@ -7,8 +7,17 @@ use lu_core::{
     native_archive_process::opened_directory_identity,
     native_archive_tree::{extract_archive_tree_new,preview_archive_tree,observe_tree_completion},
 };
+fn check_parent(raw:&OsString)->Result<(),()>{
+    let pid=raw.to_str().ok_or(())?.parse::<u32>().map_err(|_|())?;
+    if pid<=1{return Err(())}
+    #[cfg(all(target_os="linux",not(test)))]
+    lu_core::native_archive_process::bind_archive_worker_parent(pid).map_err(|_|())?;
+    // In Windows, Job Object kill-on-close provides the parent-death fence.
+    // Test harnesses must not install Linux PDEATHSIG or RLIMIT_AS on themselves.
+    Ok(())
+}
 fn execute(args:&[OsString])->Result<(),()>{
-    if args.len()!=8||args[0]!=OsStr::new("--lu-archive-extract-worker"){
+    if args.len()!=9||args[0]!=OsStr::new("--lu-archive-extract-worker"){
         return Err(())
     }
     let source_parent=Path::new(&args[1]);
@@ -18,6 +27,7 @@ fn execute(args:&[OsString])->Result<(),()>{
     let sha=args[5].to_str().ok_or(())?;
     let src_id=args[6].to_str().ok_or(())?;
     let dst_id=args[7].to_str().ok_or(())?;
+    check_parent(&args[8])?;
     if !source_parent.is_absolute()||!destination_parent.is_absolute()||
         src_id.is_empty()||dst_id.is_empty(){
         return Err(())
@@ -42,13 +52,14 @@ fn execute(args:&[OsString])->Result<(),()>{
 }
 fn execute_preview(args:&[OsString])->Result<(),()>{
     use std::{fs::{self,OpenOptions},io::Write};
-    if args.len()!=5||args[0]!=OsStr::new("--lu-archive-preview-worker"){
+    if args.len()!=6||args[0]!=OsStr::new("--lu-archive-preview-worker"){
         return Err(())
     }
     let source_path=Path::new(&args[1]);
     let source_name=args[2].to_str().ok_or(())?;
     let output_path=Path::new(&args[3]);
     let identity=args[4].to_str().ok_or(())?;
+    check_parent(&args[5])?;
     if !source_path.is_absolute()||!output_path.is_absolute()||identity.is_empty(){
         return Err(())
     }
@@ -99,6 +110,7 @@ mod tests{
             "--lu-archive-preview-worker".into(),root.as_os_str().into(),
             "preview.tar".into(),output.as_os_str().into(),
             opened_directory_identity(&dir).unwrap().into(),
+            std::process::id().to_string().into(),
         ];
         assert!(execute_preview(&args).is_ok());
         let restored:lu_core::native_archive_tree::TreeManifest=
@@ -128,6 +140,7 @@ mod tests{
             root.as_os_str().into(),"payload.tar".into(),
             root.as_os_str().into(),"out".into(),
             manifest.sha256.into(),"wrong-source-identity".into(),identity,
+            std::process::id().to_string().into(),
         ];
         assert!(execute(&args).is_err());
         assert!(!root.join("out").exists());
@@ -152,6 +165,7 @@ mod tests{
             "--lu-archive-extract-worker".into(),root.as_os_str().into(),
             "approved.tar".into(),root.as_os_str().into(),"new-folder".into(),
             manifest.sha256.into(),identity.clone().into(),identity.into(),
+            std::process::id().to_string().into(),
         ];
         assert!(execute(&args).is_ok());
         assert_eq!(fs::read(root.join("new-folder/file.txt")).unwrap(),b"approved");
