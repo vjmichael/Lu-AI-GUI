@@ -1,0 +1,59 @@
+name: Lu IDE unsigned installed NSIS desktop smoke (not E2 release acceptance)
+on:
+  push:
+    branches: ['ide/wave-e2-supervised-lsp-editor-20261106']
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - '.github/workflows/ide-e2-unsigned-installed-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-default-alpha:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Run native-independent frontend check
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Build actual unsigned standalone per-user NSIS
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real NSIS build failed' }
+      - name: Install, launch twice, and uninstall actual desktop executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $installers=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis/' -Filter '*setup.exe' -File)
+          if ($installers.Count -ne 1) {
+            throw "DENIED: expected one real NSIS bundle, found $($installers.Count)"
+          }
+          $private=Join-Path $env:RUNNER_TEMP ('lu-ide-alpha-smoke-'+$env:GITHUB_RUN_ID)
+          & 'ide/app/fixtures/Test-InstalledAlphaNsis.ps1' -InstallerPath $installers[0].FullName -InstallRoot $private
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'DENIED: installed desktop smoke failed' }
+      - name: Publish clearly unsigned test installer only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-e2-default-alpha-unsigned-nsis-smoke
+          path: ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+          if-no-files-found: ignore
+          retention-days: 3
