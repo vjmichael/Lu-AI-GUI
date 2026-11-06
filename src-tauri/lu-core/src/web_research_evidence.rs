@@ -567,6 +567,29 @@ mod browser_evidence_tests {
             Err(EvidenceError::Missing)));
     }
     #[test]
+    fn browser_observations_survive_restart_without_gaining_citation_authority(){
+        let path=std::env::temp_dir().join(format!("lu-browser-evidence-{}-{}.sqlite",
+            std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        {
+            let mut ledger=EvidenceLedger::open(&path).unwrap();
+            let saved=ledger.observe_browser_text("g-persist","browser-call-persist",
+                "https://public.example/landing","READ",
+                "Observed document text, not a corroborated paper",false).unwrap();
+            assert_eq!(saved.observed_text_bytes,46);
+        }
+        {
+            let ledger=EvidenceLedger::open(&path).unwrap();
+            let saved=ledger.browser_observation("g-persist","browser-call-persist").unwrap();
+            assert!(saved.excerpt.contains("Observed document text"));
+            assert_eq!(ledger.recent_browser_observations(24).unwrap().len(),1);
+            assert!(matches!(ledger.status("g-persist"),Err(EvidenceError::Missing)));
+        }
+        let _=std::fs::remove_file(&path);
+        let _=std::fs::remove_file(path.with_extension("sqlite-wal"));
+        let _=std::fs::remove_file(path.with_extension("sqlite-shm"));
+    }
+    #[test]
     fn browser_receipts_reject_unowned_and_non_read_claims(){
         let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
         for (generation,call,url,kind,text) in [
