@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b004faa817895f8e3f3295aac86bb699e528a700",
+  "sourceCommitBeforeLock": "a1687c784dfdc0a0131824c9b8a683b09f7e46a2",
   "trackedFileCount": 461,
   "files": [
     {
@@ -581,7 +581,7 @@
     },
     {
       "path": "lu-desktop/tests/reader-desktop.test.mjs",
-      "blob": "30c9260c0bd45b59368c391f736330bb0ec3115e"
+      "blob": "245055934fd4671d6faf483ddeecf9307dfb517f"
     },
     {
       "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
@@ -621,7 +621,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "55cc44c2557ce690cb89614c3b83e995b8a9a1cd"
+      "blob": "778659c25ac6d724067a2e3cb42d1be5aed695b0"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
@@ -1029,7 +1029,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_process.rs",
-      "blob": "9559cdf492096dfd45addd9745cc41f387c74a4e"
+      "blob": "069a9daa121fe7139a1162e844f123dd3e9e1697"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
