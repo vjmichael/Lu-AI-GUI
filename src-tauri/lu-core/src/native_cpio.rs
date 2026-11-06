@@ -118,7 +118,7 @@ pub fn parse_cpio_newc(raw:&[u8])->Result<Vec<CpioMember>,CpioError>{
             0o100000=>false,0o040000=>true,
             _=>return Err(CpioError::UnsupportedEntry)
         };
-        if (directory&&size!=0)||nlink==0||nlink>if directory{2}else{1}{
+        if (directory&&size!=0)||nlink==0||nlink>(if directory{2}else{1}){
             return Err(CpioError::UnsupportedEntry)
         }
         if let Some(path)=safe_path(name,directory)?{
