@@ -308,7 +308,16 @@ fn manifest_and_nodes(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<(
 pub fn preview_archive_tree(
     root:&Dir,source_name:&str
 )->Result<TreeManifest,TreeExtractError>{
-    manifest_and_nodes(root,source_name,&ArchiveCancellation::default())
+    preview_archive_tree_cancellable(
+        root,source_name,&ArchiveCancellation::default()
+    )
+}
+/// Host-owned cancellation must cover the full member/decompression
+/// preflight, not only publication after the user approves extraction.
+pub fn preview_archive_tree_cancellable(
+    root:&Dir,source_name:&str,cancel:&ArchiveCancellation
+)->Result<TreeManifest,TreeExtractError>{
+    manifest_and_nodes(root,source_name,cancel)
         .map(|(manifest,_)|manifest)
 }
 fn open_or_create_child(current:&Dir,name:&str)->Result<Dir,TreeExtractError>{
