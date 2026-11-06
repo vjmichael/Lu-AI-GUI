@@ -95,7 +95,7 @@ test('bounded keyboard and accessibility operations require known actions', asyn
   const page={
     url:()=> 'https://archive.example',
     keyboard:{press:async key=>pressed.push(key)},
-    locator:()=>({ariaSnapshot:async()=>'- heading "A source"'}),
+    locator:()=>({innerText:async()=> 'A source',ariaSnapshot:async()=>'- heading "A source"'}),
   };
   const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({origins:['https://archive.example'],
@@ -349,6 +349,31 @@ test('accessibility and screenshot respect login challenge before reading pixels
     assert.equal(treeCalls,0);
     assert.equal(screenshotCalls,0);
     assert.deepEqual(controller.calls.map(call=>call.visible),[false,true]);
+    await session.close();
+  }
+});
+
+test('failed challenge inspection never permits screenshot or accessibility output',async()=>{
+  for(const op of ['screenshot','accessibility']){
+    let accessed=false;
+    const page={
+      url:()=> 'https://archive.example/item',
+      locator:()=>({
+        innerText:async()=>{throw new Error('renderer unavailable');},
+        ariaSnapshot:async()=>{accessed=true;return 'secret';}
+      }),
+      bringToFront:async()=>{accessed=true;},
+      screenshot:async()=>{accessed=true;return Buffer.from('secret');}
+    };
+    const context={route:async()=>{},pages:()=>[page],close:async()=>{}};
+    const session=new BrowserSession({
+      origins:['https://archive.example'],profileDirectory:'/host/profile',
+      chromiumProvider:{launchPersistentContext:async()=>context},
+      windowController:nativeWindow()
+    });
+    await session.start();
+    await assert.rejects(session.execute({op}),e=>e.code==='CHALLENGE_STATE_UNAVAILABLE');
+    assert.equal(accessed,false);
     await session.close();
   }
 });
