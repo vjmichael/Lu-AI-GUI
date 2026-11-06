@@ -235,7 +235,7 @@ pub fn render_office_revision(
     let mut changed=false;
     for idx in 0..zip.len(){
         let mut part=zip.by_index(idx).map_err(|_|OfficeRevisionError::InvalidPackage)?;
-        let name=part.name().to_owned();
+        let name=part.name().map_err(|_|OfficeRevisionError::InvalidPackage)?.into_owned();
         if !safe_part(&name)||!seen.insert(name.to_lowercase())
             ||part.is_symlink()||part.encrypted() {
             return Err(OfficeRevisionError::UnsafePackage)
