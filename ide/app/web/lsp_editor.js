@@ -84,9 +84,13 @@ export function visibleCompletions(tab, nativeResult) {
     typeof item.insertText === 'string' && item.insertText.length <= 512 &&
     !item.insertText.includes('\0') && !item.label.includes('\n') &&
     item.insertTextFormat !== 2 && !item.textEdit && !item.command
-  ).map(item => ({ label: item.label,
+  ).map(item => ({
+    label: item.label,
     detail: typeof item.detail === 'string' ? item.detail.slice(0, 256) : '',
-    insertText: item.insertText }));
+    insertText: item.insertText,
+    replaceFrom: Number.isSafeInteger(item.replaceFromUtf16) ? item.replaceFromUtf16 : null,
+    replaceTo: Number.isSafeInteger(item.replaceToUtf16) ? item.replaceToUtf16 : null,
+  }));
 }
 
 export function visibleHover(tab, nativeResult) {
