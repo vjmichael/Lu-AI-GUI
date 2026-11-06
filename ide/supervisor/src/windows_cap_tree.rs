@@ -496,10 +496,18 @@ mod tests {
                 assert_eq!(seal, digest_tree(&target, None, 100, 100_000).unwrap());
                 let original = target.join("nested/safe.txt");
                 let moved = target.join("nested-original/safe.txt");
-                assert_ne!(original.is_file(), moved.is_file());
-                let copied = fs::read(if original.is_file() { original } else { moved }).unwrap();
-                assert_eq!(copied, b"allowed workspace bytes");
-                assert_ne!(copied, forbidden);
+                // A racing *inside-root* directory rename can expose the
+                // safe object under one or both names during enumeration.
+                // The proof is confinement and byte identity, not whether
+                // one particular in-root filename happened to exist.
+                assert!(original.is_file() || moved.is_file());
+                for safe in [&original, &moved] {
+                    if safe.is_file() {
+                        let copied = fs::read(safe).unwrap();
+                        assert_eq!(copied, b"allowed workspace bytes");
+                        assert_ne!(copied, forbidden);
+                    }
+                }
                 assert!(!target.join("nested/secret.txt").exists());
                 assert!(!target.join("nested-original/secret.txt").exists());
                 accepted += 1;
