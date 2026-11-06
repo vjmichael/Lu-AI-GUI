@@ -348,8 +348,15 @@ mod tests{
             let q=ArchiveReviewQueue::default();
             assert!(q.stage("chat","review-123456789",
                 &root.join("source.zip"),&root.join("target")).is_err());
+            // A real, valid source is required so this checks destination
+            // link refusal rather than merely malformed ZIP rejection.
+            let mut zip=ZipWriter::new(fs::File::create(root.join("valid.zip")).unwrap());
+            zip.start_file("document.txt",SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Stored)).unwrap();
+            zip.write_all(b"safe bytes").unwrap();
+            zip.finish().unwrap();
             assert!(q.stage("chat","review-987654321",
-                &root.join("real.zip"),&root.join("linked-output")).is_err());
+                &root.join("valid.zip"),&root.join("linked-output")).is_err());
             fs::remove_dir_all(root).unwrap();
         }
     }
