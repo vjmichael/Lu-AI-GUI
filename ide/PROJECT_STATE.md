@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D3 — Production supervisor control-plane implementation (2026-11-05)
+
+- **Branch:** `ide/wave-d3-supervisor-core-20261105`, stacked on corrected D2 Windows Job Object probe commit `c091fbe174b85a0c0f90c67933fdb2069000cd24`. D2's [Windows native runtime+format workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42158228849) and continuity gate passed on that source SHA. Installed Windows acceptance is still separate and open.
+- **Implemented:** Independent `ide/supervisor` native control-plane crate, not connected to Tauri, Lu Core or the IDE's Run button. It models allowlisted build/test jobs with exact Git commit, host input-snapshot/toolchain/manifest digests, effect class and bounded runtime/memory/PID/log quotas. A fresh one-job, one-session, 60-second in-memory grant is bound to the plan hash and current source. Durable receipt state transitions and SHA-256 hash linkage detect corrupted/truncated history (not cryptographically authenticated external receipts).
+- **Cancellation and recovery:** native-private broker interface records cancellation request before invoking process-tree termination; only explicitly verified descendant kill can produce a cancelled receipt. Failed kill becomes `uncertain`, blocks further work. Interrupted admission/running/cancel attempts are quarantined on journal reopen; cleanup requires native broker proof and no automatic retry.
+- **Execution remains disabled:** `production_worker_admission` always fails closed until OS-specific restricted rights, filesystem/network access policy, CPU/memory/PID quotas, real worker-snapshot publication, crash-orphan resolution and platform hostile tests are complete. No release-build spawn API, worker bridge or frontend Run command added. D1 review entries cannot mint grants. Unit tests use **simulated** OS broker only.
+- **Verification status:** dedicated Windows/Linux core test workflow, plus Node static desktop boundary test added; latest-head CI pending. D3 is the supervisor foundation, NOT complete actual worker execution, installed desktop acceptance, or closed Wave D.
+
+
 ## Wave D2-W1 — Windows fixed-fixture Job Object containment probe (2026-11-05)
 
 - **Source branch:** `ide/wave-d2-windows-job-probe-20261105`, stacked on D1 PR #51 SHA `ef623bfd22f8dfc8b1674a44911e98825be8ab53`. This is a standalone OS diagnostic, **not** a production worker, and does not alter the Lu IDE app or Core.

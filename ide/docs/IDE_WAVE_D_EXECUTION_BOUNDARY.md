@@ -49,3 +49,30 @@ Source lives under the *existing*, unconnected `ide/sandbox` experiment, in `src
 **Scope warning:** Job Objects manage CPU/resource/process-tree effects; they are not a Windows restricted token, AppContainer, filesystem jail, network broker or full hostile-code containment. Independent worker activation requires additional OS security boundaries and crash/kill race proofs. A successful fixed-fixture CI is not installed-app acceptance nor proof of arbitrary build/test script safety.
 
 The Linux legacy Bubblewrap native probe crate is reused rather than rewritten; its previous 5/5 kernel checks do not prove process quotas or full descendant cleanup. Both platforms must meet all D2 gates before any future `job.run` capability is advertised.
+
+## D3 — Durable execution control plane (source implementation)
+
+The `ide/supervisor` crate introduces a bounded, host-only plan and approval
+model and durable hash-linked execution receipts. It is not wired into Tauri.
+A fresh 60-second single-job grant is kept only in volatile supervisor state,
+bound to the original plan hash and observed source. Review documents and
+older D1 records cannot become grants. The only production admission entry
+returns `SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED` on every OS until the broker
+has independently demonstrated all required rights/quotas/cleanup checks.
+
+The journal records immutable transitions, including cancellation **before**
+OS termination and uncertain/crash-recovery on incomplete cleanup. On restart
+in-flight jobs are quarantined, and a trusted OS tree-termination broker must
+prove cleanup before they are reconciled. No auto rerun is permitted. The
+SHA-256 chain only detects accidental or naive tampering; it is **not signed**
+and does not protect against a local account with write access to the entire
+app-data journal. A secure protected broker/publisher is still needed.
+
+Native Rust tests use simulated brokers to verify the state machine. Real
+Windows Job Object and Linux Bubblewrap OS probes are separate earlier
+evidence; neither alone demonstrates production restricted rights or real
+worker-execution safety. Future platform worker modules require Windows
+restricted identity and filesystem/network policy, Linux cgroup-v2 resource
+admission and namespace isolation, race-safe source/toolchain snapshot
+publication, native process-tree kill and crash orphans, capped output,
+hostile fixtures and physical installed desktop acceptance.

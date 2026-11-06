@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — D3 supervisor authorization, receipt and recovery control plane
+- New standalone Rust `ide/supervisor` crate (no desktop/Tauri dependency): strict fixed-recipe JobPlan, current source and actual input snapshot/toolchain digest fields, bounded resource/effect budgets, fresh per-job desktop-only one-shot short-lived grant.
+- App-private append-only receipt journal with sequential SHA-256 chain and transition validation; synced writes; truncated/tampered logs reject startup. A hash chain is not an authenticated/MAC receipt.
+- Private native cancellation/recovery broker interface: write cancel before kill, verify all descendants before cancelled; failed kill uncertain/quarantined; restart of in-flight job requires explicit native OS cleanup receipt, never auto-relaunch.
+- Default platform admission denies execution; no general worker, no Tauri command or Lu bridge. D1 review notes remain non-executable. Native Windows/Linux unit regression and frontend contract tests added; native containment and installation gates still outstanding.
+
 ## 2026-11-05 — Wave D2-W1 Windows Job Object containment probes
 - Reused existing experimental `ide/sandbox` crate, without linking it to Lu IDE/Tauri. Added compiled-in Windows probe binary and target-specific `windows-sys` dependency. No general-purpose subprocess or arbitrary project code execution surface is added.
 - Fixed acceptance fixtures cover suspended-create/Job assignment/resume, bounded job-memory and process-count limits, deadline kill, and child+grandchild cleanup. Startup environment stripped to SystemRoot/TEMP/TMP. Job Object is killed on handle close; worker is not exposed to users.

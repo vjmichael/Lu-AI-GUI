@@ -1,0 +1,48 @@
+name: IDE production supervisor core acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/app/tests/supervisor_contract.test.mjs'
+      - '.github/workflows/ide-supervisor-core.yml'
+  push:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-supervisor-core.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test supervisor durable journal and one-shot authorization
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --all-targets
+      - name: Check supervisor Rust formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+      - name: Confirm production execution remains disabled
+        shell: pwsh
+        run: |
+          $supervisor = Get-Content ide/supervisor/src/lib.rs -Raw
+          $desktop = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          if ($supervisor -match 'std::process::Command|Command::new|\.spawn\(') {
+            throw "Supervisor control plane unexpectedly exposes process launch"
+          }
+          if ($desktop -match 'ide_run_job|ide_launch_worker|ide_execute_job') {
+            throw "Production IDE unexpectedly exposes worker execution"
+          }
+          if ($supervisor -notmatch 'Err\(SupervisorError::NoContainment\)') {
+            throw "Production admission must fail closed"
+          }
+          Write-Host "No unverified production worker launch path"

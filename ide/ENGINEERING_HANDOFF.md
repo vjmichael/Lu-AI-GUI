@@ -14,6 +14,9 @@ The latest Wave 3 task bridge is `ide/host/src/task_evidence.rs` and the optiona
 
 D1 implements a **non-executing** human job request/review journal in `ide/host/src/execution_intents.rs`, native Tauri commands and the Job Requests screen. It is deliberately isolated from Lu runtime and the development ledger's task-acceptance claims. Source plans use only fixed rust recipes, require clean checked HEAD, fixed manifest digests, short TTL and session-local review. They never mint grants, process handles or workers. See `docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md` before any Wave D2 code. **Do not reuse D1 consent events as worker authorization**; actual OS-supervised workers need fresh, scoped, one-shot grants and native cancellation/recovery/containment hostile tests.
 
+## Wave D3 — Production supervisor control plane (not live worker)
+The new `ide/supervisor` independent Rust crate defines the per-job authorization and state-machine/event-receipt core. Its worktree/source/toolchain digest fields are **required contract inputs**, not yet a trusted snapshot implementation. The only release execution-admission path refuses jobs because restricted OS rights and cross-crash termination are not yet proven. The task ledger and D1 human review may never be consumed as executable grants. Unit-test brokers simulate cancellation/crash recovery and prove state transitions only. See `ide/supervisor/README.md` and `ide/docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md`; do not claim Wave D complete or add `job.run` until real OS native acceptance.
+
 ## Required first read (PCP-01)
 
 Before changing code, read [current project state](PROJECT_STATE.md), [chronological changelog](CHANGELOG.md), and [continuity protocol](CONTINUITY_PROTOCOL.md). Confirm real local workspace and `Delivered` contents before assuming GitHub is the most advanced source. Log unknown local or installer locations as unverified, not absent.
