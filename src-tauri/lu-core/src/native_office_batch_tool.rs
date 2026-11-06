@@ -63,6 +63,11 @@ pub fn edits(req:&proto::OfficeBatchRevisionRequest)
                     sheet_number:p.sheet_number as usize,address:p.address.clone(),
                     expected_old:p.expected_old,new_boolean:p.new_boolean,
                 },
+            Some(proto::office_batch_patch::Change::CellText(p)) if ext=="cell"=>
+                OfficeRevisionEdit::CellInlineText{
+                    sheet_number:p.sheet_number as usize,address:p.address.clone(),
+                    expected_old:p.expected_old.clone(),new_text:p.new_text.clone(),
+                },
             _=>return Err("Unsupported or mismatched Office batch patch".into()),
         };
         out.push(edit);
@@ -203,6 +208,11 @@ impl ModelToolCodec for BatchCodec{
                         new_boolean:new.parse().map_err(|_|
                             ModelToolError::InvalidArguments("new boolean invalid".into()))?,
                     }),
+                "cell_text"=>proto::office_batch_patch::Change::CellText(
+                    proto::OfficeStringPatch{
+                        sheet_number:where_at,address:get("address")?.into(),
+                        expected_old:old.into(),new_text:new.into(),
+                    }),
                 _=>return Err(ModelToolError::InvalidArguments("unknown patch kind".into())),
             };
             patches.push(proto::OfficeBatchPatch{change:Some(change)});
@@ -255,7 +265,7 @@ pub fn register_office_batch_tool(
             "original_sha256":{"type":"string"},"approved_revised_sha256":{"type":"string"},
             "patches":{"type":"array","minItems":1,"maxItems":32,"items":{
                 "type":"object","properties":{
-                    "kind":{"type":"string","enum":["word_text","slide_text","cell_number","cell_boolean"]},
+                    "kind":{"type":"string","enum":["word_text","slide_text","cell_number","cell_boolean","cell_text"]},
                     "index":{"type":"integer","minimum":0},
                     "sheet_or_slide":{"type":"integer","minimum":0},
                     "address":{"type":"string"},
