@@ -110,11 +110,15 @@ pub fn create_new_atomic_in_dir(
     })();
     drop(handle);
     if let Err(e) = write_result {
-        let _ = root.remove_file(&stage_name);
+        if root.remove_file(&stage_name).is_err(){
+            return Err(AtomicWriteError::PublishedNeedsReconciliation)
+        }
         return Err(e);
     }
     if let Err(e) = root.hard_link(&stage_name, root, target_name) {
-        let _ = root.remove_file(&stage_name);
+        if root.remove_file(&stage_name).is_err(){
+            return Err(AtomicWriteError::PublishedNeedsReconciliation)
+        }
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             return Err(AtomicWriteError::ExistingTarget);
         }

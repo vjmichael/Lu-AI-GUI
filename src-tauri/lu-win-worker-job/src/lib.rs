@@ -21,6 +21,7 @@ use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, pt
 type Handle = *mut c_void;
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: i32 = 9;
 const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+const JOB_OBJECT_LIMIT_JOB_MEMORY:u32=0x0000_0200;
 const TH32CS_SNAPTHREAD:u32=0x0000_0004;
 const THREAD_SUSPEND_RESUME:u32=0x0002;
 #[repr(C)]
@@ -187,6 +188,22 @@ impl Job {
         Ok(())
     }
 
+    /// Limit only the fixed internal archive codecs, not GGUF inference.
+    pub fn set_memory_limit(&self,bytes:usize)->io::Result<()>{
+        if bytes<512*1024*1024 || bytes>4*1024*1024*1024usize{
+            return Err(io::Error::other("invalid worker memory quota"))
+        }
+        let mut info=ExtendedLimitInformation::default();
+        info.basic_limit_information.limit_flags=
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE|JOB_OBJECT_LIMIT_JOB_MEMORY;
+        info.job_memory_limit=bytes;
+        let ok=unsafe{SetInformationJobObject(
+            self.0,JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+            &info as *const _ as *const c_void,
+            mem::size_of::<ExtendedLimitInformation>() as u32
+        )};
+        if ok==0{Err(io::Error::last_os_error())}else{Ok(())}
+    }
     pub fn assign(&self, child: &Child) -> io::Result<()> {
         // SAFETY: both handles remain alive for this synchronous call.
         let result = unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle() as Handle) };
@@ -212,10 +229,60 @@ pub use windows_owned::Job;
 #[cfg(unix)]
 pub mod unix_owned {
     use std::{io,process::Child};
+    #[cfg(target_os="linux")]
+    use std::{ffi::CString,fs::File,os::fd::AsRawFd};
     // POSIX killpg via negative PID. The calling host MUST have spawned this
     // child with CommandExt::process_group(0); never accept a model PID here.
     unsafe extern "C" {fn kill(pid:i32, signal:i32)->i32;}
     const SIGKILL:i32=9;
+    #[cfg(target_os="linux")]
+    unsafe extern "C"{
+        fn renameat2(oldfd:i32,old:*const std::ffi::c_char,
+            newfd:i32,new:*const std::ffi::c_char,flags:u32)->i32;
+        fn prctl(option:i32,arg2:usize,arg3:usize,arg4:usize,arg5:usize)->i32;
+        fn getppid()->i32;
+        fn setrlimit(resource:u32,lim:*const Rlimit)->i32;
+    }
+    #[cfg(target_os="linux")]
+    #[repr(C)]
+    struct Rlimit{soft:u64,hard:u64}
+    /// No orphan decoder after an abnormal Lu host exit. The immediate PID
+    /// recheck closes the race between child spawn and PR_SET_PDEATHSIG.
+    #[cfg(target_os="linux")]
+    pub fn bind_archive_parent(expected_pid:u32)->io::Result<()>{
+        const PR_SET_PDEATHSIG:i32=1;
+        const RLIMIT_AS:u32=9;
+        let expected=i32::try_from(expected_pid)
+            .map_err(|_|io::Error::other("invalid archive parent PID"))?;
+        if expected<=1{return Err(io::Error::other("invalid archive parent"))}
+        // SAFETY: fixed Linux integer-only prctl ABI.
+        if unsafe{prctl(PR_SET_PDEATHSIG,SIGKILL as usize,0,0,0)}!=0{
+            return Err(io::Error::last_os_error())
+        }
+        let limit=Rlimit{soft:1024*1024*1024,hard:1024*1024*1024};
+        // SAFETY: repr(C) initialized 64-bit Linux rlimit structure.
+        if unsafe{setrlimit(RLIMIT_AS,&limit)}!=0{
+            return Err(io::Error::last_os_error())
+        }
+        // SAFETY: getppid takes no pointers and cannot mutate memory.
+        if unsafe{getppid()}!=expected{
+            return Err(io::Error::other("Lu parent died before worker admission"))
+        }
+        Ok(())
+    }
+    /// Linux native no-overwrite move using a pinned open directory FD.
+    /// This is one atomic namespace transition; no hardlink/unlink gap.
+    #[cfg(target_os="linux")]
+    pub fn rename_noreplace(dir:&File,source:&str,target:&str)->io::Result<()>{
+        let from=CString::new(source).map_err(|_|io::Error::other("invalid name"))?;
+        let to=CString::new(target).map_err(|_|io::Error::other("invalid name"))?;
+        // SAFETY: both open directory FDs live during this call; both
+        // CStrings remain allocated and NUL-terminated for the syscall.
+        let result=unsafe{renameat2(
+            dir.as_raw_fd(),from.as_ptr(),dir.as_raw_fd(),to.as_ptr(),1
+        )};
+        if result!=0{Err(io::Error::last_os_error())}else{Ok(())}
+    }
     pub fn kill_owned_group(child:&Child)->io::Result<()>{
         let pid=i32::try_from(child.id()).map_err(|_|io::Error::other("invalid worker pid"))?;
         if pid<=1 {return Err(io::Error::other("invalid worker process group"));}

@@ -17,6 +17,15 @@ mod prompt_context;
 mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
+mod archive_desktop;
+mod archive_process_worker;
+pub use archive_process_worker::run_archive_process_worker;
+mod document_create_desktop;
+mod office_revision_desktop;
+mod office_batch_desktop;
+mod file_transfer_desktop;
+mod file_trash_desktop;
+mod wave2_recovery;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -181,6 +190,16 @@ struct DesktopState {
     write_proposals: write_proposal::WriteProposalQueue,
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
     edit_proposals: edit_proposal::EditProposalQueue,
+    archive_reviews: archive_desktop::ArchiveReviewQueue,
+    archive_runs: archive_desktop::ArchiveRunRegistry,
+    document_create_reviews: document_create_desktop::DocumentCreateQueue,
+    office_revision_reviews: office_revision_desktop::OfficeRevisionQueue,
+    office_batch_reviews: office_batch_desktop::OfficeBatchQueue,
+    file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue,
+    trash_reviews: file_trash_desktop::TrashQueue,
+    restore_reviews: file_trash_desktop::RestoreQueue,
+    trash_custody: lu_core::native_trash_custody::TrashCustodyLedger,
+    wave2_recovery: wave2_recovery::Wave2OperationLedger,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
@@ -427,6 +446,9 @@ impl DesktopState {
         ).map_err(|e| format!("write approvals unavailable: {e:?}"))?;
         write_approvals.reconcile_pending()
             .map_err(|e| format!("write approval reconciliation failed: {e:?}"))?;
+        let trash_custody = lu_core::native_trash_custody::TrashCustodyLedger::open(
+            &root.join("file-trash-custody.sqlite")
+        ).map_err(|e|format!("reversible file custody unavailable: {e:?}"))?;
         let edit_approvals = lu_core::edit_approval_ledger::EditApprovalLedger::open(
             &root.join("edit-approvals.sqlite")
         ).map_err(|e| format!("edit approvals unavailable: {e:?}"))?;
@@ -458,6 +480,8 @@ impl DesktopState {
         // these remain auditable, not executable grants.
         effects.reconcile_interrupted()
             .map_err(|e| format!("native effect startup reconciliation: {e:?}"))?;
+        trash_custody.reconcile_interrupted()
+            .map_err(|e|format!("reversible file custody startup reconciliation: {e:?}"))?;
         approvals.reconcile_pending()
             .map_err(|e| format!("read approval startup reconciliation: {e:?}"))?;
 
@@ -560,6 +584,16 @@ impl DesktopState {
             write_proposals: write_proposal::WriteProposalQueue::default(),
             write_approval_ledger: write_approvals,
             edit_proposals: edit_proposal::EditProposalQueue::default(),
+            archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
+            archive_runs: archive_desktop::ArchiveRunRegistry::default(),
+            document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
+            office_revision_reviews: office_revision_desktop::OfficeRevisionQueue::default(),
+            office_batch_reviews: office_batch_desktop::OfficeBatchQueue::default(),
+            file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue::default(),
+            trash_reviews: file_trash_desktop::TrashQueue::default(),
+            restore_reviews: file_trash_desktop::RestoreQueue::default(),
+            trash_custody,
+            wave2_recovery: wave2_recovery::Wave2OperationLedger::new(&root)?,
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
             rollback_approval_ledger: rollback_approvals,
@@ -1815,6 +1849,604 @@ fn lu_open_created_folder(
     }
 }
 
+/// Separate native source and destination dialogs. The model and WebView
+/// never provide actual OS paths. The result is only an INERT full-tree
+/// preview, not permission to create files.
+#[tauri::command]
+async fn lu_review_archive_tree(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+)->Result<Option<archive_desktop::ArchiveReviewView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let picked=tauri::async_runtime::spawn_blocking(move||{
+        let source=app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        let Some(source)=source else{return Ok(None)};
+        let destination=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(destination.map(|folder|(source,folder)))
+    }).await.map_err(|e|format!("Archive picker failed: {e}"))??;
+    let Some((source,destination))=picked else{return Ok(None)};
+    let review_id=next_id("ar-");
+    let view=tauri::async_runtime::spawn_blocking(move||{
+        let run=state.archive_runs.register(&chat_id,&review_id)?;
+        state.archive_reviews.stage_supervised(
+            &chat_id,&review_id,&source,&destination,&run.cancellation(),
+            &state.background_processes,&state.background_tasks
+        )
+    }).await.map_err(|e|format!("Archive preview worker failed: {e}"))??;
+    Ok(Some(view))
+}
+
+/// The user must review all members inside Lu and then approve the exact
+/// source/manifest/new destination in a native confirmation dialog.
+/// A cancelled/failed attempt never silently resumes or retries.
+#[tauri::command]
+async fn lu_confirm_archive_tree(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<archive_desktop::ArchiveCreatedView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let original=state.archive_reviews.inspect(&chat_id,&review_id)?;
+    let view=original.view_for_modal();
+    let modal=format!(
+        "Extract this archive to a NEW folder? Existing folders will NEVER be replaced.\n\nSource: {}\nNew folder: {}\nFiles: {}\nExpanded bytes: {}\nComplete tree SHA-256: {}\n\nReview every member in Lu first. Approval is single-use. A failed or interrupted extraction requires manual recovery and is never automatically retried.",
+        view.source_display,view.destination_display,view.files,
+        view.total_bytes,view.manifest_sha256,
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(modal)
+            .title("Lu — Confirm exact archive extraction")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Extract into new folder".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Archive confirmation failed: {e}"))?;
+    if !confirmed{
+        state.archive_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let pinned=state.archive_reviews.consume(&chat_id,&review_id)?;
+    if !pinned.same_as(&original){
+        return Err("Archive review changed during confirmation; refused".into())
+    }
+    let user_turn_id=next_id("g-");
+    let effect_id=next_id("g-");
+    // Reserve bounded worker capacity BEFORE persisting intent: an already
+    // active extraction must not leave a spurious approved-effect record.
+    let run_guard=state.archive_runs.register(&chat_id,&review_id)?;
+    state.wave2_recovery.record_archive_intent(
+        &chat_id,&effect_id,&view.destination_display,&view.target_folder,
+        pinned.approved_manifest(),"Extract approved archive into a new folder",
+    )?;
+    let result=archive_desktop::execute_reviewed_archive_tree(
+        &state.chats,&state.effects,&chat_id,
+        &user_turn_id,&effect_id,&pinned,run_guard.cancellation(),
+        Arc::clone(&state.background_processes),Arc::clone(&state.background_tasks)
+    ).await?;
+    drop(run_guard);
+    Ok(Some(result))
+}
+/// Cancel an active operator preview without accepting a model-provided PID
+/// or unsigned file path. The host resolves the only active archive run.
+#[tauri::command]
+fn lu_cancel_archive_preview(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)?;
+    state.archive_runs.request_cancel_chat(&chat_id)
+}
+/// Cancellation is host-owned and reaps the supervised child. Any extraction
+/// started after EXECUTING remains UNCERTAIN unless full-tree receipt verified.
+#[tauri::command]
+fn lu_cancel_archive_tree(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,review_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)?;
+    state.archive_runs.request_cancel(&chat_id,&review_id)
+}
+#[tauri::command]
+fn lu_deny_archive_tree(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.archive_reviews.deny(&chat_id,&review_id)
+}
+
+/// User-authored DOCX/PPTX preview. Only a native OS folder picker
+/// supplies the target parent; Lu generates a safe non-overwriting filename.
+#[tauri::command]
+async fn lu_review_document_create(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    document_format:String,
+    title:String,
+    content:String,
+)->Result<Option<document_create_desktop::DocumentCreateView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let path=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("Document folder picker failed: {e}"))??
+        .ok_or("Document creation cancelled")?;
+    let id=next_id("dc-");
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        state.document_create_reviews.stage(
+            &chat_id,&id,&path,&document_format,&title,&content
+        )
+    }).await.map_err(|e|format!("Document preview failed: {e}"))??;
+    Ok(Some(result))
+}
+/// Native confirmation is distinct from the WebView review checkbox.
+/// No model, path argument or frontend callback is itself a write grant.
+#[tauri::command]
+async fn lu_confirm_document_create(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<document_create_desktop::DocumentCreatedView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.document_create_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.for_modal();
+    let message=format!(
+        "Create a new {} document?\n\nExact new file: {}\nContents: {} blocks/slides\nBytes: {}\nPackage SHA-256: {}\n\nConfirm only after reviewing all text in Lu. Existing files are never overwritten. This grant is single-use; an interrupted write will not be retried.",
+        view.document_format.to_uppercase(),view.exact_destination,
+        view.content_units,view.bytes,view.sha256,
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Approve structured document")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new document".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native document confirmation failed: {e}"))?;
+    if !confirmed{
+        state.document_create_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let accepted=state.document_create_reviews.consume(&chat_id,&review_id)?;
+    if !accepted.same_as(&initial){
+        return Err("Document review changed during native confirmation".into())
+    }
+    let user_turn_id=next_id("g-");
+    let effect_id=next_id("g-");
+    let tool=if view.document_format=="docx"{
+        lu_core::native_docx_tool::TOOL_ID
+    }else{lu_core::native_pptx_tool::TOOL_ID};
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,tool,&view.exact_destination,
+        &view.file_name,&view.sha256,
+        "Create new structured Office document",
+    )?;
+    let result=document_create_desktop::execute_approved_document_create(
+        &state.chats,&state.effects,&chat_id,&user_turn_id,&effect_id,&accepted
+    ).await?;
+    Ok(Some(result))
+}
+#[tauri::command]
+fn lu_deny_document_create(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.document_create_reviews.deny(&chat_id,&review_id)
+}
+
+/// The user edits one safe OOXML text run or numeric/boolean cell. The actual
+/// source and revision folder are chosen ONLY through native OS pickers.
+/// This is a read-only inert preview until independent native confirmation.
+#[tauri::command]
+async fn lu_review_office_revision(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    proposal:office_revision_desktop::OfficePatchProposal,
+)->Result<Option<office_revision_desktop::OfficeRevisionView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let selection=tauri::async_runtime::spawn_blocking(move||{
+        let selected=app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        let Some(selected)=selected else{return Ok(None)};
+        let output=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(output.map(|folder|(selected,folder)))
+    }).await.map_err(|e|format!("Office native pickers failed: {e}"))??;
+    let Some((source,folder))=selection else{return Ok(None)};
+    let id=next_id("or-");
+    let view=tauri::async_runtime::spawn_blocking(move||{
+        state.office_revision_reviews.stage(&chat_id,&id,&source,&folder,&proposal)
+    }).await.map_err(|e|format!("Office revision preview worker failed: {e}"))??;
+    Ok(Some(view))
+}
+#[tauri::command]
+async fn lu_confirm_office_revision(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<office_revision_desktop::OfficeRevisionReceiptView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.office_revision_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.view();
+    let modal=format!(
+        "Create a NEW revision of an existing Office file?\n\nOriginal: {}\nNew version: {}\nTargeted XML part: {}\nChange from: {}\nChange to: {}\nOriginal SHA-256: {}\nNew package SHA-256: {}\nUnchanged package parts checked: {}\n\nThe original is preserved. Confirm only after inspecting the full change and unchanged-part list in Lu. This authorization is single-use and is NEVER automatically retried.",
+        view.source_display,view.destination_display,view.target_part,
+        view.original_value,view.new_value,view.original_sha256,
+        view.revised_sha256,view.unaffected_parts.len(),
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(modal)
+            .title("Lu — Approve versioned Office edit")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new revision".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Office native confirmation failed: {e}"))?;
+    if !confirmed{
+        state.office_revision_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let selected=state.office_revision_reviews.consume(&chat_id,&review_id)?;
+    if !selected.same_as(&initial){
+        return Err("Office review was modified during native confirmation".into())
+    }
+    let user_turn=next_id("g-");
+    let effect_id=next_id("g-");
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,lu_core::native_office_revision_tool::TOOL_ID,
+        &view.destination_display,&view.target_new_name,&view.revised_sha256,
+        "Create new version of an existing Office document",
+    )?;
+    Ok(Some(office_revision_desktop::execute_office_revision(
+        &state.chats,&state.effects,&chat_id,
+        &user_turn,&effect_id,&selected,
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_office_revision(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.office_revision_reviews.deny(&chat_id,&review_id)
+}
+
+/// Host-selected single-file copy/move. Model or WebView chooses only the
+/// operation type; the existing source and new target basename are host-owned.
+#[tauri::command]
+async fn lu_review_file_transfer(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    operation:String,
+)->Result<Option<file_transfer_desktop::FileTransferReviewView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let picked=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("File source picker failed: {e}"))??;
+    let Some(picked)=picked else{return Ok(None)};
+    let review_id=next_id("ft-");
+    let view=tauri::async_runtime::spawn_blocking(move||{
+        state.file_transfer_reviews.stage(&chat_id,&review_id,&picked,&operation)
+    }).await.map_err(|e|format!("File transfer preview failed: {e}"))??;
+    Ok(Some(view))
+}
+/// Consequential move/unlink requires a separate native modal after exact
+/// source hash, action and generated new target have been displayed in Lu.
+#[tauri::command]
+async fn lu_confirm_file_transfer(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<file_transfer_desktop::FileTransferReceiptView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.file_transfer_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.view();
+    let warning=if view.removes_original{
+        "MOVE removes the original filename after publication. If the unlink fails, BOTH names may remain and recovery must be reviewed manually."
+    }else{
+        "COPY preserves the original. The new name is created only if it does not exist."
+    };
+    let message=format!(
+        "Approve {} of this EXACT existing file?\n\nOriginal: {}\nNew output: {}\nSize: {} bytes\nOriginal SHA-256: {}\n\n{}\n\nApproval is single-use and never automatically replayed.",
+        view.operation.to_uppercase(),view.source_display,
+        view.destination_display,view.bytes,view.source_sha256,warning,
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Approve exact file operation")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve exact action".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native file action confirmation failed: {e}"))?;
+    if !confirmed{
+        state.file_transfer_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let selected=state.file_transfer_reviews.consume(&chat_id,&review_id)?;
+    if !selected.same_as(&initial){
+        return Err("File transfer preview changed during native confirmation".into())
+    }
+    let user_turn=next_id("g-");
+    let effect_id=next_id("g-");
+    let tool=if view.operation=="copy"{
+        lu_core::native_file_transfer_tool::COPY_ID
+    }else{lu_core::native_file_transfer_tool::MOVE_ID};
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,tool,&view.destination_display,
+        &view.target_name,&view.source_sha256,
+        "Copy or move selected regular file to a new name",
+    )?;
+    Ok(Some(file_transfer_desktop::execute_approved_transfer(
+        &state.chats,&state.effects,&chat_id,&user_turn,&effect_id,&selected
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_file_transfer(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.file_transfer_reviews.deny(&chat_id,&review_id)
+}
+
+/// Select a regular file through a native OS dialog. This only previews the
+/// exact SHA-256 and generated same-folder custody name; it does not delete.
+#[tauri::command]
+async fn lu_review_file_trash(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+)->Result<Option<file_trash_desktop::TrashPreview>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let path=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("Native file picker failed: {e}"))??;
+    let Some(path)=path else{return Ok(None)};
+    let id=next_id("ct-");
+    let effect=next_id("g-");
+    let review=tauri::async_runtime::spawn_blocking(move||{
+        state.trash_reviews.stage(&chat_id,&id,&effect,&path)
+    }).await.map_err(|e|format!("Trash preview worker failed: {e}"))??;
+    Ok(Some(review))
+}
+/// Consequential unlink requires a separate native modal, followed by a
+/// persisted custody intent and authenticated ConversationAuthority dispatch.
+#[tauri::command]
+async fn lu_confirm_file_trash(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<file_trash_desktop::CustodyOutcome>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let before=state.trash_reviews.inspect(&chat_id,&review_id)?;
+    let view=before.view();
+    let message=format!(
+        "Reversibly move the EXACT selected file to Lu's same-folder custody name?\n\nOriginal: {}\nCustody entry: {}\nSize: {} bytes\nSHA-256: {}\n\nThe original filename will disappear. Lu keeps the bytes in the SAME folder; this is NOT the system Recycle Bin. Restore requires a new independent approval. Interruption will be flagged for manual reconciliation, never retried automatically.",
+        view.source,view.stored_name,view.bytes,view.sha256
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Confirm reversible file trash")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Move to reversible trash".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native trash confirmation failed: {e}"))?;
+    if !confirmed{
+        state.trash_reviews.take(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let reviewed=state.trash_reviews.take(&chat_id,&review_id)?;
+    if !reviewed.same(&before){
+        return Err("Source or trash receipt changed during confirmation".into())
+    }
+    let turn=next_id("g-");
+    Ok(Some(file_trash_desktop::apply_trash(
+        &state.chats,&state.effects,&state.trash_custody,
+        &chat_id,&turn,&reviewed,
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_file_trash(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.trash_reviews.take(&chat_id,&review_id)?;
+    Ok(())
+}
+/// Read-only durable custody status. Each receipt belongs to one chat and
+/// is compared against the actual EffectJournal and filesystem before
+/// presenting an enabled Restore action.
+#[tauri::command]
+fn lu_file_trash_history(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+)->Result<Vec<file_trash_desktop::CustodyView>,String>{
+    file_trash_desktop::history(
+        &state.chats,&state.trash_custody,&state.effects,&chat_id,
+    )
+}
+/// Restore can only use a host-owned custody record ID. UI-supplied strings
+/// are NEVER treated as file paths or as valid tool authority.
+#[tauri::command]
+fn lu_review_file_restore(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    custody_id:String,
+)->Result<file_trash_desktop::RestorePreview,String>{
+    state.chats.history(&chat_id)?;
+    let id=next_id("rr-");
+    let effect=next_id("g-");
+    state.restore_reviews.stage(
+        &chat_id,&id,&effect,&custody_id,
+        &state.trash_custody,&state.effects,
+    )
+}
+#[tauri::command]
+async fn lu_confirm_file_restore(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<file_trash_desktop::CustodyOutcome>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.restore_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.view();
+    let message=format!(
+        "Restore this exact, journal-verified file from Lu's reversible custody?\n\nDestination: {}\nCustody entry: {}\nSize: {} bytes\nSHA-256: {}\n\nLu will NEVER overwrite an existing file. This is a separate, one-use authorization. If interrupted, the operation requires manual recovery, not automatic retry.",
+        view.original,view.trash_entry,view.bytes,view.sha256
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Confirm recorded file restore")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Restore exact file".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native restore confirmation failed: {e}"))?;
+    if !confirmed{
+        state.restore_reviews.take(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let reviewed=state.restore_reviews.take(&chat_id,&review_id)?;
+    if !reviewed.same(&initial){
+        return Err("Restore custody changed during native confirmation".into())
+    }
+    let turn=next_id("g-");
+    Ok(Some(file_trash_desktop::apply_restore(
+        &state.chats,&state.effects,&state.trash_custody,
+        &chat_id,&turn,&reviewed,
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_file_restore(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.restore_reviews.take(&chat_id,&review_id)?;
+    Ok(())
+}
+
+/// Chat-scoped read-only durable recovery evidence for native Wave 2 file,
+/// Office and archive operations. This cannot resume, replay or grant an effect.
+#[tauri::command]
+fn lu_wave2_recovery(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+)->Result<Vec<wave2_recovery::OperationRecoveryView>,String>{
+    state.chats.history(&chat_id)?;
+    state.wave2_recovery.list(&chat_id,&state.effects)
+}
+
+/// Native-picked existing Office batch: 2–32 proposed edits, exact final
+/// package hash, every prior field value and all unaffected package parts.
+#[tauri::command]
+async fn lu_review_office_batch(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    proposals:Vec<office_revision_desktop::OfficePatchProposal>,
+)->Result<Option<office_batch_desktop::OfficeBatchView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let selected=tauri::async_runtime::spawn_blocking(move||{
+        let source=app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        let Some(source)=source else{return Ok(None)};
+        let folder=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(folder.map(|folder|(source,folder)))
+    }).await.map_err(|e|format!("Office batch source/destination pickers failed: {e}"))??;
+    let Some((source,folder))=selected else{return Ok(None)};
+    let id=next_id("ob-");
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        state.office_batch_reviews.stage(
+            &chat_id,&id,&source,&folder,&proposals
+        )
+    }).await.map_err(|e|format!("Office batch preview worker failed: {e}"))??;
+    Ok(Some(result))
+}
+#[tauri::command]
+async fn lu_confirm_office_batch(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<office_batch_desktop::OfficeBatchReceipt>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let before=state.office_batch_reviews.inspect(&chat_id,&review_id)?;
+    let view=before.view();
+    let message=format!(
+        "Create a NEW multi-edit Office document version?\n\nOriginal: {}\nNew file: {}\nChanges: {}\nAffected: {}\nOriginal SHA-256: {}\nApproved new package SHA-256: {}\nUnaffected parts: {}\n\nConfirm only after reviewing all individual before/after edits and unchanged parts in Lu. This one-use authorization is never auto-retried.",
+        view.source_display,view.destination_display,view.changes.len(),
+        view.changed_parts,view.original_sha256,view.revised_sha256,
+        view.unaffected_parts.len(),
+    );
+    let yes=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Approve exact Office batch")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new version".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native Office batch confirmation failed: {e}"))?;
+    if !yes{
+        state.office_batch_reviews.take(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let reviewed=state.office_batch_reviews.take(&chat_id,&review_id)?;
+    if !before.same(&reviewed){
+        return Err("Office batch preview changed during native confirmation".into())
+    }
+    let turn=next_id("g-");let effect_id=next_id("g-");
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,lu_core::native_office_batch_tool::TOOL_ID,
+        &view.destination_display,
+        view.destination_display.rsplit(|c|c=='/'||c=='\\').next()
+            .ok_or("Office batch output filename missing")?,
+        &view.revised_sha256,
+        "Create new exact-approved 2–32 change Office version",
+    )?;
+    Ok(Some(office_batch_desktop::apply(
+        &state.chats,&state.effects,&chat_id,&turn,&effect_id,&reviewed,
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_office_batch(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.office_batch_reviews.take(&chat_id,&review_id)?;
+    Ok(())
+}
+
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
@@ -2625,6 +3257,31 @@ pub fn run() {
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
+            lu_wave2_recovery,
+            lu_review_file_trash,
+            lu_confirm_file_trash,
+            lu_deny_file_trash,
+            lu_file_trash_history,
+            lu_review_file_restore,
+            lu_confirm_file_restore,
+            lu_deny_file_restore,
+            lu_review_file_transfer,
+            lu_confirm_file_transfer,
+            lu_deny_file_transfer,
+            lu_review_office_batch,
+            lu_confirm_office_batch,
+            lu_deny_office_batch,
+            lu_review_office_revision,
+            lu_confirm_office_revision,
+            lu_deny_office_revision,
+            lu_review_document_create,
+            lu_confirm_document_create,
+            lu_deny_document_create,
+            lu_review_archive_tree,
+            lu_confirm_archive_tree,
+            lu_cancel_archive_tree,
+            lu_cancel_archive_preview,
+            lu_deny_archive_tree,
             lu_review_write_destination,
             lu_confirm_write,
             lu_deny_write,

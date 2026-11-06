@@ -6,5 +6,11 @@ fn main() {
     {
         std::process::exit(lu_desktop::run_file_scan_worker());
     }
+    if matches!(std::env::args_os().nth(1).as_deref(),
+        Some(s) if s==std::ffi::OsStr::new("--lu-archive-extract-worker")||
+            s==std::ffi::OsStr::new("--lu-archive-preview-worker"))
+    {
+        std::process::exit(lu_desktop::run_archive_process_worker());
+    }
     lu_desktop::run();
 }

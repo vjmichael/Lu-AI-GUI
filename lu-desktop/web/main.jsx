@@ -58,6 +58,49 @@ function App() {
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [latestCreated, setLatestCreated] = useState(null);
+  const [archiveReview, setArchiveReview] = useState(null);
+  const [archiveReviewed, setArchiveReviewed] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveCancelRequested, setArchiveCancelRequested] = useState(false);
+  const [latestArchiveExtract, setLatestArchiveExtract] = useState(null);
+  const [documentComposerOpen, setDocumentComposerOpen] = useState(false);
+  const [documentDraft, setDocumentDraft] = useState({format:'docx',title:'',content:''});
+  const [documentCreateReview, setDocumentCreateReview] = useState(null);
+  const [documentCreateReviewed, setDocumentCreateReviewed] = useState(false);
+  const [documentCreateBusy, setDocumentCreateBusy] = useState(false);
+  const [latestDocumentCreated, setLatestDocumentCreated] = useState(null);
+  const [officeRevisionOpen, setOfficeRevisionOpen] = useState(false);
+  const [officePatch, setOfficePatch] = useState({
+    kind:'word_text',textIndex:0,slideNumber:1,sheetNumber:1,
+    address:'A1',expectedOld:'',newValue:''
+  });
+  const [officeRevisionReview, setOfficeRevisionReview] = useState(null);
+  const [officeRevisionReviewed, setOfficeRevisionReviewed] = useState(false);
+  const [officeRevisionBusy, setOfficeRevisionBusy] = useState(false);
+  const [latestOfficeRevision, setLatestOfficeRevision] = useState(null);
+  const [officeBatchOpen, setOfficeBatchOpen] = useState(false);
+  const [officeBatchDraft, setOfficeBatchDraft] = useState([
+    {kind:'word_text',textIndex:0,slideNumber:1,sheetNumber:1,address:'A1',expectedOld:'',newValue:''},
+    {kind:'word_text',textIndex:1,slideNumber:1,sheetNumber:1,address:'A1',expectedOld:'',newValue:''}
+  ]);
+  const [officeBatchReview, setOfficeBatchReview] = useState(null);
+  const [officeBatchReviewed, setOfficeBatchReviewed] = useState(false);
+  const [officeBatchBusy, setOfficeBatchBusy] = useState(false);
+  const [latestOfficeBatch, setLatestOfficeBatch] = useState(null);
+  const [fileTransferReview, setFileTransferReview] = useState(null);
+  const [fileTransferReviewed, setFileTransferReviewed] = useState(false);
+  const [fileTransferBusy, setFileTransferBusy] = useState(false);
+  const [latestFileTransfer, setLatestFileTransfer] = useState(null);
+  const [trashReview, setTrashReview] = useState(null);
+  const [trashReviewed, setTrashReviewed] = useState(false);
+  const [restoreReview, setRestoreReview] = useState(null);
+  const [restoreReviewed, setRestoreReviewed] = useState(false);
+  const [trashBusy, setTrashBusy] = useState(false);
+  const [trashHistoryOpen, setTrashHistoryOpen] = useState(false);
+  const [trashHistory, setTrashHistory] = useState([]);
+  const [latestCustodyOutcome, setLatestCustodyOutcome] = useState(null);
+  const [wave2RecoveryByChat,setWave2RecoveryByChat] = useState({});
+  const [wave2RecoveryBusy,setWave2RecoveryBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -86,6 +129,8 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
+  const wave2FileBusy = archiveBusy || documentCreateBusy || officeRevisionBusy ||
+    fileTransferBusy || trashBusy;
   const activeChat = chats.find(c => c.chatId === chatId);
   const matchingChats = chats.filter(c => matchesChatTitle(c, chatQuery));
   const visibleJob = chatId ? jobs[chatId] : null;
@@ -654,6 +699,447 @@ function App() {
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
   }
+  async function reviewArchiveTree() {
+    if (!chatId || archiveBusy || working || chatBusy) return;
+    setArchiveCancelRequested(false);
+    setArchiveBusy(true);
+    setError('');
+    try {
+      const review = await invoke('lu_review_archive_tree', {chatId});
+      if (review) {
+        setArchiveReview(review);
+        setArchiveReviewed(false);
+        setActivity('Archive review ready — inspect the complete file list before approval');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setArchiveBusy(false); }
+  }
+  async function cancelArchivePreview() {
+    if (!chatId || !archiveBusy || archiveCancelRequested) return;
+    try {
+      const requested=await invoke('lu_cancel_archive_preview',{chatId});
+      if (requested) {
+        setArchiveCancelRequested(true);
+        setActivity('Stopping the supervised archive worker. No extraction approval was granted.');
+      } else {
+        setActivity('Archive picker or preview worker has already finished.');
+      }
+    } catch (error) {setError(String(error));}
+  }
+  async function confirmArchiveTree() {
+    if (!archiveReview || !archiveReviewed || archiveBusy ||
+        archiveReview.chatId !== chatId) return;
+    setArchiveBusy(true);
+    setArchiveCancelRequested(false);
+    setError('');
+    const review = archiveReview;
+    try {
+      const receipt = await invoke('lu_confirm_archive_tree', {
+        chatId: review.chatId, reviewId: review.reviewId
+      });
+      if (receipt) {
+        setLatestArchiveExtract({...receipt, chatId: review.chatId});
+        setActivity('Archive extracted: ' + receipt.targetFolder);
+        await refreshChats();
+        if (currentChat.current === review.chatId)
+          setHistory(await invoke('lu_history', {chatId: review.chatId}));
+      } else {
+        setActivity('Archive extraction denied in native confirmation');
+      }
+    } catch (error) {
+      setError('Archive extraction was not confirmed. Do not retry an uncertain write: ' + String(error));
+    } finally {
+      // The host consumes a confirmed review once, even if extraction fails.
+      // Never re-submit a possibly partially published archive operation.
+      setArchiveReview(null);
+      setArchiveReviewed(false);
+      setArchiveBusy(false);
+    }
+  }
+  async function requestArchiveCancellation() {
+    if (!archiveReview || !archiveBusy || archiveCancelRequested) return;
+    try {
+      const signalled = await invoke('lu_cancel_archive_tree', {
+        chatId: archiveReview.chatId, reviewId: archiveReview.reviewId
+      });
+      if (signalled) {
+        setArchiveCancelRequested(true);
+        setActivity('Cancellation requested. The native worker will stop at a safe checkpoint; inspect File operations for recovery.');
+      } else {
+        setActivity('The extraction worker has not started or has already finished. Use Cancel in the native confirmation dialog if it is open.');
+      }
+    } catch (error) { setError(String(error)); }
+  }
+  async function denyArchiveTree() {
+    if (!archiveReview || archiveBusy) return;
+    setArchiveBusy(true);
+    try {
+      await invoke('lu_deny_archive_tree', {
+        chatId: archiveReview.chatId, reviewId: archiveReview.reviewId
+      });
+      setArchiveReview(null);
+      setArchiveReviewed(false);
+      setActivity('Archive extraction denied; no files created');
+    } catch (error) { setError(String(error)); }
+    finally { setArchiveBusy(false); }
+  }
+
+  async function reviewStructuredDocument() {
+    if (!chatId || documentCreateBusy || !documentDraft.title.trim() ||
+        !documentDraft.content.trim() || documentCreateReview) return;
+    setDocumentCreateBusy(true);
+    setError('');
+    try {
+      const view = await invoke('lu_review_document_create', {
+        chatId,documentFormat:documentDraft.format,
+        title:documentDraft.title,content:documentDraft.content
+      });
+      if (view) {
+        setDocumentCreateReview(view);
+        setDocumentCreateReviewed(false);
+        setDocumentComposerOpen(false);
+        setActivity('Document preview ready — review full content and target');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setDocumentCreateBusy(false); }
+  }
+  async function confirmStructuredDocument() {
+    if (!documentCreateReview || !documentCreateReviewed ||
+        documentCreateBusy || documentCreateReview.chatId !== chatId) return;
+    const review = documentCreateReview;
+    setDocumentCreateBusy(true);
+    setError('');
+    try {
+      const receipt = await invoke('lu_confirm_document_create', {
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (receipt) {
+        setLatestDocumentCreated({...receipt,chatId:review.chatId});
+        setActivity('Created ' + receipt.documentFormat.toUpperCase() + ': ' + receipt.fileName);
+        await refreshChats();
+        if (currentChat.current === review.chatId)
+          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+      } else {
+        setActivity('Document creation denied in native confirmation');
+      }
+    } catch (error) {
+      setError('Document creation not confirmed. Check recovery before retrying: ' + String(error));
+    } finally {
+      setDocumentCreateReview(null);
+      setDocumentCreateReviewed(false);
+      setDocumentCreateBusy(false);
+    }
+  }
+  async function denyStructuredDocument() {
+    if (!documentCreateReview || documentCreateBusy) return;
+    setDocumentCreateBusy(true);
+    try {
+      await invoke('lu_deny_document_create', {
+        chatId:documentCreateReview.chatId,
+        reviewId:documentCreateReview.reviewId
+      });
+      setDocumentCreateReview(null);
+      setDocumentCreateReviewed(false);
+      setActivity('Document creation denied; no file was written');
+    } catch (error) { setError(String(error)); }
+    finally { setDocumentCreateBusy(false); }
+  }
+
+  async function reviewOfficeRevision() {
+    if (!chatId || officeRevisionBusy || officeRevisionReview ||
+        !officePatch.expectedOld.trim() || !officePatch.newValue.trim()) return;
+    setOfficeRevisionBusy(true);
+    setError('');
+    try {
+      const review=await invoke('lu_review_office_revision', {
+        chatId,proposal:officePatch
+      });
+      if (review) {
+        setOfficeRevisionReview(review);
+        setOfficeRevisionReviewed(false);
+        setOfficeRevisionOpen(false);
+        setActivity('Office revision ready — review exact change and preserved package parts');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setOfficeRevisionBusy(false); }
+  }
+  async function confirmOfficeRevision() {
+    if (!officeRevisionReview || !officeRevisionReviewed ||
+        officeRevisionBusy || officeRevisionReview.chatId !== chatId) return;
+    const review=officeRevisionReview;
+    setOfficeRevisionBusy(true);
+    setError('');
+    try {
+      const receipt=await invoke('lu_confirm_office_revision', {
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (receipt) {
+        setLatestOfficeRevision({...receipt,chatId:review.chatId});
+        setActivity('Saved new document revision: ' + receipt.targetNewName);
+        await refreshChats();
+        if (currentChat.current === review.chatId)
+          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+      } else {
+        setActivity('Office revision denied in native confirmation');
+      }
+    } catch (error) {
+      setError('Office revision was not verified. Check recovery before retrying: ' + String(error));
+    } finally {
+      setOfficeRevisionReview(null);
+      setOfficeRevisionReviewed(false);
+      setOfficeRevisionBusy(false);
+    }
+  }
+  async function denyOfficeRevision() {
+    if (!officeRevisionReview || officeRevisionBusy) return;
+    setOfficeRevisionBusy(true);
+    try {
+      await invoke('lu_deny_office_revision', {
+        chatId:officeRevisionReview.chatId,
+        reviewId:officeRevisionReview.reviewId
+      });
+      setOfficeRevisionReview(null);
+      setOfficeRevisionReviewed(false);
+      setActivity('Office revision denied; original file unchanged');
+    } catch (error) { setError(String(error)); }
+    finally { setOfficeRevisionBusy(false); }
+  }
+
+  async function reviewNativeFileTransfer(operation) {
+    if (!chatId || fileTransferBusy || fileTransferReview || working || chatBusy) return;
+    setFileTransferBusy(true);
+    setError('');
+    try {
+      const view=await invoke('lu_review_file_transfer', {chatId,operation});
+      if (view) {
+        setFileTransferReview(view);
+        setFileTransferReviewed(false);
+        setActivity('Review the exact file content hash and action before approval');
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setFileTransferBusy(false); }
+  }
+  async function confirmNativeFileTransfer() {
+    if (!fileTransferReview || !fileTransferReviewed || fileTransferBusy ||
+        fileTransferReview.chatId !== chatId) return;
+    const view=fileTransferReview;
+    setFileTransferBusy(true);
+    setError('');
+    try {
+      const receipt=await invoke('lu_confirm_file_transfer', {
+        chatId:view.chatId,reviewId:view.reviewId
+      });
+      if (receipt) {
+        setLatestFileTransfer({...receipt,chatId:view.chatId});
+        setActivity('File ' + receipt.operation + ' completed: ' + receipt.targetName);
+        await refreshChats();
+        if (currentChat.current === view.chatId)
+          setHistory(await invoke('lu_history', {chatId:view.chatId}));
+      } else {
+        setActivity('File operation denied in native confirmation');
+      }
+    } catch (error) {
+      setError('File operation uncertain or rejected. Review before retrying: ' + String(error));
+    } finally {
+      setFileTransferReview(null);
+      setFileTransferReviewed(false);
+      setFileTransferBusy(false);
+    }
+  }
+  async function denyNativeFileTransfer() {
+    if (!fileTransferReview || fileTransferBusy) return;
+    setFileTransferBusy(true);
+    try {
+      await invoke('lu_deny_file_transfer', {
+        chatId:fileTransferReview.chatId,reviewId:fileTransferReview.reviewId
+      });
+      setFileTransferReview(null);
+      setFileTransferReviewed(false);
+      setActivity('File operation denied; original file preserved');
+    } catch (error) { setError(String(error)); }
+    finally { setFileTransferBusy(false); }
+  }
+
+  async function refreshTrashHistory(targetChat = chatId) {
+    if (!targetChat) return;
+    try {
+      const records = await invoke('lu_file_trash_history', {chatId:targetChat});
+      if (currentChat.current === targetChat) setTrashHistory(records || []);
+    } catch (error) { setError('File custody could not be verified: ' + String(error)); }
+  }
+  async function reviewNativeTrashFile() {
+    if (!chatId || trashBusy || trashReview || restoreReview || working || chatBusy) return;
+    setTrashBusy(true); setError('');
+    try {
+      const proposal = await invoke('lu_review_file_trash', {chatId});
+      if (proposal) {
+        setTrashReview(proposal);
+        setTrashReviewed(false);
+        setTrashHistoryOpen(true);
+      }
+    } catch (error) { setError(String(error)); }
+    finally { setTrashBusy(false); }
+  }
+  async function confirmNativeTrash() {
+    const review = trashReview;
+    if (!review || !trashReviewed || trashBusy || review.chatId!==chatId) return;
+    setTrashBusy(true); setError('');
+    try {
+      const applied=await invoke('lu_confirm_file_trash',{
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (applied) {
+        setLatestCustodyOutcome({...applied,chatId:review.chatId});
+        setActivity('Reversible trash recorded: ' + applied.original);
+        await refreshTrashHistory(review.chatId);
+        await refreshChats();
+        if (currentChat.current===review.chatId)
+          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+      } else {
+        setActivity('File trash denied in native confirmation');
+      }
+    } catch(error) {
+      setError('Trash was rejected or its effect is uncertain. Inspect custody history; never retry blindly: '+String(error));
+      await refreshTrashHistory(review.chatId);
+    } finally {
+      setTrashReview(null);
+      setTrashReviewed(false);
+      setTrashBusy(false);
+    }
+  }
+  async function denyNativeTrash() {
+    if (!trashReview || trashBusy) return;
+    setTrashBusy(true);
+    try {
+      await invoke('lu_deny_file_trash',{
+        chatId:trashReview.chatId,reviewId:trashReview.reviewId
+      });
+      setTrashReview(null);setTrashReviewed(false);
+      setActivity('Reversible file operation denied; no files moved');
+    } catch(error){setError(String(error));}
+    finally {setTrashBusy(false);}
+  }
+  async function reviewRecordedRestore(custodyId) {
+    if (!chatId || trashBusy || trashReview || restoreReview) return;
+    setTrashBusy(true);setError('');
+    try {
+      const review=await invoke('lu_review_file_restore',{chatId,custodyId});
+      setRestoreReview(review);
+      setRestoreReviewed(false);
+      setTrashHistoryOpen(true);
+    } catch(error){setError('Cannot review restore: '+String(error));}
+    finally{setTrashBusy(false);}
+  }
+  async function confirmRecordedRestore() {
+    const review=restoreReview;
+    if (!review || !restoreReviewed || trashBusy || review.chatId!==chatId) return;
+    setTrashBusy(true);setError('');
+    try {
+      const result=await invoke('lu_confirm_file_restore',{
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (result) {
+        setLatestCustodyOutcome({...result,chatId:review.chatId});
+        setActivity('Verified original file restored: '+result.original);
+        await refreshTrashHistory(review.chatId);
+        await refreshChats();
+        if (currentChat.current===review.chatId)
+          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+      } else {
+        setActivity('Restore denied in native confirmation');
+      }
+    } catch(error){
+      setError('Restore was rejected or interrupted; inspect custody history before any further write: '+String(error));
+      await refreshTrashHistory(review.chatId);
+    } finally {
+      setRestoreReview(null);
+      setRestoreReviewed(false);
+      setTrashBusy(false);
+    }
+  }
+  async function denyRecordedRestore() {
+    if (!restoreReview || trashBusy) return;
+    setTrashBusy(true);
+    try {
+      await invoke('lu_deny_file_restore',{
+        chatId:restoreReview.chatId,reviewId:restoreReview.reviewId
+      });
+      setRestoreReview(null);setRestoreReviewed(false);
+      setActivity('Separate restoration denied');
+    } catch(error){setError(String(error));}
+    finally {setTrashBusy(false);}
+  }
+
+  async function refreshWave2Recovery(targetChat = chatId) {
+    if (!targetChat || wave2RecoveryBusy) return;
+    setWave2RecoveryBusy(true);
+    try {
+      const records=await invoke('lu_wave2_recovery',{chatId:targetChat});
+      setWave2RecoveryByChat(prev=>({...prev,[targetChat]:records}));
+    } catch (error) {
+      setError('Cannot inspect Wave 2 operation journal: '+String(error));
+    } finally {
+      setWave2RecoveryBusy(false);
+    }
+  }
+
+  function updateOfficeBatchField(index,key,value) {
+    setOfficeBatchDraft(previous=>previous.map((patch,i)=>
+      i===index ? {...patch,[key]:value} : patch));
+  }
+  async function reviewOfficeBatch() {
+    if (!chatId || officeBatchBusy || officeBatchReview ||
+        officeBatchDraft.length < 2 || officeBatchDraft.length > 32 ||
+        officeBatchDraft.some(p=>!p.expectedOld.trim() || !p.newValue.trim())) return;
+    setOfficeBatchBusy(true);setError('');
+    try {
+      const review=await invoke('lu_review_office_batch',{
+        chatId,proposals:officeBatchDraft
+      });
+      if (review) {
+        setOfficeBatchReview(review);
+        setOfficeBatchReviewed(false);
+        setOfficeBatchOpen(false);
+        setActivity('Multi-edit Office package ready for complete review');
+      }
+    } catch(error){setError(String(error));}
+    finally{setOfficeBatchBusy(false);}
+  }
+  async function confirmOfficeBatch() {
+    const review=officeBatchReview;
+    if (!review || !officeBatchReviewed || officeBatchBusy ||
+        review.chatId !== chatId) return;
+    setOfficeBatchBusy(true);setError('');
+    try {
+      const receipt=await invoke('lu_confirm_office_batch',{
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (receipt) {
+        setLatestOfficeBatch({...receipt,chatId:review.chatId});
+        setActivity('Created approved multi-edit version: '+receipt.fileName);
+        await refreshChats();
+        if (currentChat.current===review.chatId)
+          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+      }else{setActivity('Office batch denied by native confirmation');}
+    }catch(error){
+      setError('Office batch rejected or uncertain. Inspect recovery before retry: '+String(error));
+    }finally{
+      setOfficeBatchReview(null);setOfficeBatchReviewed(false);setOfficeBatchBusy(false);
+    }
+  }
+  async function denyOfficeBatch() {
+    if (!officeBatchReview || officeBatchBusy) return;
+    setOfficeBatchBusy(true);
+    try {
+      await invoke('lu_deny_office_batch',{
+        chatId:officeBatchReview.chatId,reviewId:officeBatchReview.reviewId
+      });
+      setOfficeBatchReview(null);setOfficeBatchReviewed(false);
+      setActivity('Office batch denied; no revision created');
+    }catch(error){setError(String(error));}
+    finally{setOfficeBatchBusy(false);}
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1114,6 +1600,14 @@ function App() {
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
+        {wave2FileBusy && <section className="readProposalCard" role="status"
+          aria-live="polite" aria-label="Native file operation in progress">
+          <strong>Native file operation in progress</strong>
+          <small>Lu is handling a native picker, confirmation, bounded document/archiving work,
+            or receipt verification. Byte-level progress is not available in this workflow.
+            No automatic retry occurs if a write is interrupted; inspect File operations or
+            File recovery before taking another action.</small>
+        </section>}
         {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>}
         {Object.values(readProposals).filter(proposal => proposal.chatId === chatId).map(proposal =>
           <section key={proposal.proposalId} className="readProposalCard" role="group"
@@ -1132,6 +1626,473 @@ function App() {
             </div>
           </section>
         )}
+        {(wave2RecoveryByChat[chatId] || []).length > 0 && <section
+          className="readProposalCard" role="region" aria-label="Durable Wave 2 operation recovery">
+          <strong>File and document operation history</strong>
+          <small>Read-only records reloaded from Lu's durable host intent and effect journals.
+            A matched receipt confirms a past journaled effect, not that no external process
+            has subsequently changed the files.</small>
+          {(wave2RecoveryByChat[chatId] || []).map(operation=>
+            <div key={operation.effectCallId} className="readProposalCard">
+              <strong>{operation.summary} — {operation.state.replaceAll('_',' ')}</strong>
+              <code className="writeTarget">{operation.exactTarget}</code>
+              <small>Tool: {operation.toolId}</small>
+              <small>Approved SHA-256: {operation.approvedSha256}</small>
+              <small>Effect ID: {operation.effectCallId}</small>
+              <small>{operation.assessment}</small>
+              {operation.targetIntegrity && operation.targetIntegrity !== 'NOT_RECHECKED' &&
+                <small>Current output integrity: {operation.targetIntegrity}</small>}
+              {!operation.receiptMatched &&
+                <small>Do not automatically retry. Reconcile the filesystem and journal first.</small>}
+            </div>
+          )}
+        </section>}
+        {trashReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard" role="group" aria-label="Review reversible file trash">
+          <strong>Move the EXACT selected file into Lu's reversible custody</strong>
+          <small>Native-selected original file:</small>
+          <code className="writeTarget">{trashReview.source}</code>
+          <small>Lu-generated custody filename, in the same directory:</small>
+          <code className="writeTarget">{trashReview.storedName}</code>
+          <small>{trashReview.bytes} bytes · SHA-256 {trashReview.sha256}</small>
+          <small>The original filename disappears on success. The same bytes are retained
+            under a new Lu custody name in the same folder, NOT the system Recycle Bin.
+            Restoration requires a separate human approval.</small>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={trashReviewed}
+              onChange={e=>setTrashReviewed(e.target.checked)}/>
+            I reviewed the exact file, checksum, custody filename, and reversible rename.
+          </label>
+          <small>An independent native confirmation still controls the write. Interrupted
+            actions are never automatically retried.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!trashReviewed || trashBusy}
+              onClick={()=>void confirmNativeTrash()}>Approve trash in native dialog</button>
+            <button type="button" className="subtleButton" disabled={trashBusy}
+              onClick={()=>void denyNativeTrash()}>Deny trash</button>
+          </div>
+        </section>}
+        {restoreReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard" role="group" aria-label="Review recorded file restoration">
+          <strong>Restore a journal-verified file to its ORIGINAL filename</strong>
+          <small>Custody ID: {restoreReview.custodyId}</small>
+          <small>Exact restoration destination:</small>
+          <code className="writeTarget">{restoreReview.original}</code>
+          <small>Existing custody name: {restoreReview.trashEntry}</small>
+          <small>{restoreReview.bytes} bytes · SHA-256 {restoreReview.sha256}</small>
+          <small>Lu will never overwrite an existing file. Only a previously applied native
+            custody receipt is eligible for restore. This requires a new one-use authorization.</small>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={restoreReviewed}
+              onChange={e=>setRestoreReviewed(e.target.checked)}/>
+            I reviewed the exact restoration destination, verified custody hash, and no-overwrite rule.
+          </label>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!restoreReviewed || trashBusy}
+              onClick={()=>void confirmRecordedRestore()}>Approve restore in native dialog</button>
+            <button type="button" className="subtleButton" disabled={trashBusy}
+              onClick={()=>void denyRecordedRestore()}>Deny restore</button>
+          </div>
+        </section>}
+        {latestCustodyOutcome?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Reversible file operation: {latestCustodyOutcome.state}</strong>
+          <small>Original filename: {latestCustodyOutcome.original}</small>
+          <small>{latestCustodyOutcome.bytes} bytes · SHA-256 {latestCustodyOutcome.sha256}</small>
+          <small>Custody ID: {latestCustodyOutcome.custodyId}</small>
+          <small>Native effect receipt: {latestCustodyOutcome.effectCallId}</small>
+        </section>}
+        {trashHistoryOpen && chatId && <section className="readProposalCard"
+          role="region" aria-label="Durable file custody and recovery">
+          <strong>File custody and recovery</strong>
+          <small>Read-only inspection of your journaled file trash and restore operations.
+            Status is rechecked against stored receipts and the current filesystem.
+            Uncertain operations require manual reconciliation; no automatic retry.</small>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton" disabled={trashBusy}
+              onClick={()=>void refreshTrashHistory()}>Refresh custody status</button>
+            <button type="button" className="subtleButton"
+              onClick={()=>setTrashHistoryOpen(false)}>Close history</button>
+          </div>
+          {!trashHistory.length && <small>No durable file custody records for this chat.</small>}
+          {trashHistory.map(item=><div key={item.custodyId} className="readProposalCard"
+            role="group" aria-label={'Custody for '+item.original}>
+            <strong>{item.original} — {item.state.replaceAll('_',' ')}</strong>
+            <small>{item.bytes} bytes · SHA-256 {item.sha256}</small>
+            <small>Observation: {item.observation.replaceAll('_',' ')}</small>
+            <small>Trash receipt: {item.trashEffectId}</small>
+            {item.restoreEffectId && <small>Restore receipt: {item.restoreEffectId}</small>}
+            {item.restorable ?
+              <button type="button" className="primaryButton"
+                disabled={trashBusy || Boolean(restoreReview) || Boolean(trashReview)}
+                onClick={()=>void reviewRecordedRestore(item.custodyId)}>
+                Review restoration
+              </button>
+              : <small>{item.state==='UNCERTAIN' || item.observation.includes('NOT_')
+                  ? 'No repeat or automatic recovery is authorized for this record.'
+                  : 'Restore is not currently available for this record.'}</small>}
+          </div>)}
+        </section>}
+        {fileTransferReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Review exact file copy or move">
+          <strong>{fileTransferReview.operation==='move' ? 'MOVE existing file' : 'COPY existing file'}
+            into a NEW filename</strong>
+          <small>Native-picked source:</small>
+          <code className="writeTarget">{fileTransferReview.sourceDisplay}</code>
+          <strong>Host-generated new destination (never overwrites)</strong>
+          <code className="writeTarget">{fileTransferReview.destinationDisplay}</code>
+          <small>{fileTransferReview.bytes} bytes · source SHA-256: {fileTransferReview.sourceSha256}</small>
+          <small>{fileTransferReview.removesOriginal
+            ? 'MOVE removes the original name after linking the new one. A failed unlink requires manual reconciliation.'
+            : 'COPY keeps the original file unchanged.'}</small>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={fileTransferReviewed}
+              onChange={e=>setFileTransferReviewed(e.target.checked)}/>
+            I reviewed the source, destination, SHA-256 and {fileTransferReview.operation} consequences.
+          </label>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!fileTransferReviewed || fileTransferBusy}
+              onClick={()=>void confirmNativeFileTransfer()}>Approve in native confirmation</button>
+            <button type="button" className="subtleButton" disabled={fileTransferBusy}
+              onClick={()=>void denyNativeFileTransfer()}>Deny operation</button>
+          </div>
+        </section>}
+        {latestFileTransfer?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>File {latestFileTransfer.operation} complete: {latestFileTransfer.targetName}</strong>
+          <code className="writeTarget">{latestFileTransfer.exactDestination}</code>
+          <small>{latestFileTransfer.bytes} bytes · SHA-256: {latestFileTransfer.sha256}</small>
+          <small>{latestFileTransfer.sourceRemoved
+            ? 'Original filename removed.'
+            : 'Original file retained.'} Effect receipt: {latestFileTransfer.effectCallId}</small>
+        </section>}
+        {officeBatchOpen && !officeBatchReview && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Prepare a multi-edit Office revision">
+          <strong>Revise multiple Word, PowerPoint or Excel fields in one new version</strong>
+          <small>Select the original document and a NEW output folder through native pickers.
+            Every existing value must match. No modifications are made until final native approval.</small>
+          {officeBatchDraft.map((patch,i)=><fieldset key={i} className="readProposalCard">
+            <legend>Change {i+1} of {officeBatchDraft.length}</legend>
+            <label className="editReviewAck">Kind
+              <select value={patch.kind} onChange={e=>updateOfficeBatchField(i,'kind',e.target.value)}>
+                <option value="word_text">Word text run</option>
+                <option value="slide_text">PowerPoint slide text</option>
+                <option value="cell_number">Excel numeric cell</option>
+                <option value="cell_boolean">Excel boolean cell</option>
+                <option value="cell_text">Excel inline text cell</option>
+              </select>
+            </label>
+            {(patch.kind==='word_text'||patch.kind==='slide_text') &&
+              <label className="editReviewAck">Text run index (zero based)
+                <input type="number" min="0" max="9999" value={patch.textIndex}
+                  onChange={e=>updateOfficeBatchField(i,'textIndex',
+                    Math.max(0,Number(e.target.value)||0))}/>
+              </label>}
+            {patch.kind==='slide_text' && <label className="editReviewAck">Slide number
+              <input type="number" min="1" max="256" value={patch.slideNumber}
+                onChange={e=>updateOfficeBatchField(i,'slideNumber',
+                  Math.max(1,Number(e.target.value)||1))}/>
+            </label>}
+            {patch.kind.startsWith('cell_') && <>
+              <label className="editReviewAck">Worksheet number
+                <input type="number" min="1" max="256" value={patch.sheetNumber}
+                  onChange={e=>updateOfficeBatchField(i,'sheetNumber',
+                    Math.max(1,Number(e.target.value)||1))}/>
+              </label>
+              <label className="editReviewAck">Cell address
+                <input maxLength={8} value={patch.address}
+                  onChange={e=>updateOfficeBatchField(i,'address',e.target.value.toUpperCase())}/>
+              </label>
+            </>}
+            <label className="editReviewAck">Expected old value
+              <textarea className="editFullText" rows={2} maxLength={32768}
+                value={patch.expectedOld}
+                onChange={e=>updateOfficeBatchField(i,'expectedOld',e.target.value)}/>
+            </label>
+            <label className="editReviewAck">New value
+              <textarea className="editFullText" rows={2} maxLength={32768}
+                value={patch.newValue}
+                onChange={e=>updateOfficeBatchField(i,'newValue',e.target.value)}/>
+            </label>
+            <button type="button" className="subtleButton"
+              disabled={officeBatchDraft.length<=2}
+              onClick={()=>setOfficeBatchDraft(prev=>prev.filter((_,j)=>j!==i))}>
+              Remove change
+            </button>
+          </fieldset>)}
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={officeBatchDraft.length>=32}
+              onClick={()=>setOfficeBatchDraft(prev=>[...prev,{
+                kind:prev[0]?.kind||'word_text',textIndex:prev.length,
+                slideNumber:1,sheetNumber:1,address:'A1',expectedOld:'',newValue:''
+              }])}>Add change</button>
+            <button type="button" className="primaryButton"
+              disabled={officeBatchBusy || officeBatchDraft.some(p=>!p.expectedOld.trim()||!p.newValue.trim())}
+              onClick={()=>void reviewOfficeBatch()}>Native-pick source and review full batch</button>
+            <button type="button" className="subtleButton"
+              onClick={()=>setOfficeBatchOpen(false)}>Close</button>
+          </div>
+        </section>}
+        {officeBatchReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Review all Office revision changes and unchanged package parts">
+          <strong>Approve an exact {officeBatchReview.changes.length}-change Office version</strong>
+          <small>Original document:</small>
+          <code className="writeTarget">{officeBatchReview.sourceDisplay}</code>
+          <small>New version destination (never overwritten):</small>
+          <code className="writeTarget">{officeBatchReview.destinationDisplay}</code>
+          <small>Original SHA-256: {officeBatchReview.originalSha256}</small>
+          <small>Approved new package SHA-256: {officeBatchReview.revisedSha256}</small>
+          <small>{officeBatchReview.changedParts} · {officeBatchReview.revisedBytes} bytes</small>
+          <strong>All ordered exact changes</strong>
+          {officeBatchReview.changes.map((change,i)=><div key={i} className="readProposalCard">
+            <strong>{i+1}. {change.kind}: {change.target}</strong>
+            <small>Before</small>
+            <pre className="editFullText">{change.expectedOld}</pre>
+            <small>After</small>
+            <pre className="editFullText">{change.newValue}</pre>
+          </div>)}
+          <details open>
+            <summary>Every unchanged package part ({officeBatchReview.unaffectedParts.length})</summary>
+            <pre className="editFullText" aria-label="All unaffected Office part hashes">
+              {officeBatchReview.unaffectedParts.map(p=>p[0]+' · '+p[1]).join('\n')}
+            </pre>
+          </details>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={officeBatchReviewed}
+              onChange={e=>setOfficeBatchReviewed(e.target.checked)}/>
+            I reviewed every before/after change, exact file paths, and whole-package hashes.
+          </label>
+          <small>This batch is all-or-nothing before publication. The original remains unchanged.
+            A separate native confirmation is required for this single-use write.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!officeBatchReviewed || officeBatchBusy}
+              onClick={()=>void confirmOfficeBatch()}>Approve full batch in native dialog</button>
+            <button type="button" className="subtleButton" disabled={officeBatchBusy}
+              onClick={()=>void denyOfficeBatch()}>Deny all edits</button>
+          </div>
+        </section>}
+        {latestOfficeBatch?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Office multi-edit version created: {latestOfficeBatch.fileName}</strong>
+          <code className="writeTarget">{latestOfficeBatch.exactDestination}</code>
+          <small>{latestOfficeBatch.bytesWritten} bytes · SHA-256: {latestOfficeBatch.sha256}</small>
+          <small>Durable journal receipt: {latestOfficeBatch.effectCallId}</small>
+        </section>}
+        {officeRevisionOpen && !officeRevisionReview && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Prepare an existing Office document revision">
+          <strong>Revise existing Word, PowerPoint, or Excel document</strong>
+          <small>The original file is selected with a native picker and never overwritten.
+            A second native picker chooses the folder for a NEW versioned revision.</small>
+          <label className="editReviewAck">Change type
+            <select value={officePatch.kind}
+              onChange={e=>setOfficePatch(prev=>({...prev,kind:e.target.value}))}>
+              <option value="word_text">Word: text run</option>
+              <option value="slide_text">PowerPoint: slide text run</option>
+              <option value="cell_number">Excel: numeric cell</option>
+              <option value="cell_boolean">Excel: boolean cell</option>
+              <option value="cell_text">Excel: inline text cell</option>
+            </select>
+          </label>
+          {(officePatch.kind==='word_text' || officePatch.kind==='slide_text') && <label className="editReviewAck">
+            Text run index (0-based)
+            <input type="number" min="0" max="9999" value={officePatch.textIndex}
+              onChange={e=>setOfficePatch(prev=>({...prev,textIndex:Math.max(0,Number(e.target.value)||0)}))}/>
+          </label>}
+          {officePatch.kind==='slide_text' && <label className="editReviewAck">
+            Slide number (1-based)
+            <input type="number" min="1" max="256" value={officePatch.slideNumber}
+              onChange={e=>setOfficePatch(prev=>({...prev,slideNumber:Math.max(1,Number(e.target.value)||1)}))}/>
+          </label>}
+          {officePatch.kind.startsWith('cell_') && <>
+            <label className="editReviewAck">Worksheet number (1-based)
+              <input type="number" min="1" max="256" value={officePatch.sheetNumber}
+                onChange={e=>setOfficePatch(prev=>({...prev,sheetNumber:Math.max(1,Number(e.target.value)||1)}))}/>
+            </label>
+            <label className="editReviewAck">Cell address
+              <input value={officePatch.address} maxLength={8}
+                onChange={e=>setOfficePatch(prev=>({...prev,address:e.target.value.toUpperCase()}))}
+                placeholder="B2"/>
+            </label>
+          </>}
+          <label className="editReviewAck">Expected existing value (must match exactly)
+            <textarea rows={2} className="editFullText" maxLength={32768}
+              value={officePatch.expectedOld} onChange={e=>
+                setOfficePatch(prev=>({...prev,expectedOld:e.target.value}))}/>
+          </label>
+          <label className="editReviewAck">New value
+            <textarea rows={2} className="editFullText" maxLength={32768}
+              value={officePatch.newValue} onChange={e=>
+                setOfficePatch(prev=>({...prev,newValue:e.target.value}))}/>
+          </label>
+          <small>Unsupported formulas, signatures, macros, rich objects or unsafe structures are refused.
+            Office revisions are new files; they never overwrite the selected original.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!chatId || officeRevisionBusy || !officePatch.expectedOld.trim() ||
+                !officePatch.newValue.trim()}
+              onClick={()=>void reviewOfficeRevision()}>Choose source & output folder</button>
+            <button type="button" className="subtleButton"
+              onClick={()=>setOfficeRevisionOpen(false)}>Close</button>
+          </div>
+        </section>}
+        {officeRevisionReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard"
+          role="group" aria-label="Review exact Office document revision">
+          <strong>New Office revision; original stays unchanged</strong>
+          <small>Original source (SHA-256 {officeRevisionReview.originalSha256}):</small>
+          <code className="writeTarget">{officeRevisionReview.sourceDisplay}</code>
+          <small>New output (SHA-256 {officeRevisionReview.revisedSha256}):</small>
+          <code className="writeTarget">{officeRevisionReview.destinationDisplay}</code>
+          <small>Changed package part: {officeRevisionReview.targetPart}.
+            Total revised document size: {officeRevisionReview.revisedBytes} bytes.</small>
+          <strong>Exact proposed change</strong>
+          <small>Before</small>
+          <pre className="editFullText">{officeRevisionReview.originalValue}</pre>
+          <small>After</small>
+          <pre className="editFullText">{officeRevisionReview.newValue}</pre>
+          <details open>
+            <summary>All unchanged package parts ({officeRevisionReview.unaffectedParts.length})</summary>
+            <pre className="editFullText" aria-label="Preserved Office package part checksums">
+              {officeRevisionReview.unaffectedParts.map(x => x.partName + ' · ' + x.sha256).join('\n')}
+            </pre>
+          </details>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={officeRevisionReviewed}
+              onChange={e=>setOfficeRevisionReviewed(e.target.checked)}/>
+            I reviewed the exact change, original and new paths, and all preserved package parts.
+          </label>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!officeRevisionReviewed || officeRevisionBusy}
+              onClick={()=>void confirmOfficeRevision()}>Approve new revision in native dialog</button>
+            <button type="button" className="subtleButton" disabled={officeRevisionBusy}
+              onClick={()=>void denyOfficeRevision()}>Deny revision</button>
+          </div>
+        </section>}
+        {latestOfficeRevision?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Office document revision created: {latestOfficeRevision.targetNewName}</strong>
+          <code className="writeTarget">{latestOfficeRevision.exactDestination}</code>
+          <small>{latestOfficeRevision.bytesWritten} bytes · SHA-256 {latestOfficeRevision.sha256}</small>
+          <small>Effect receipt: {latestOfficeRevision.effectCallId}. Original file preserved.</small>
+        </section>}
+        {documentComposerOpen && !documentCreateReview && <section
+          className="readProposalCard editProposalCard" aria-label="Create structured Office document">
+          <strong>Create a new structured Word or PowerPoint document</strong>
+          <small>Lu will generate the file from these reviewed words, but only your native folder picker
+            and independent native confirmation may authorize writing it.</small>
+          <label className="editReviewAck">Document format
+            <select value={documentDraft.format} onChange={e =>
+              setDocumentDraft(prev=>({...prev,format:e.target.value}))}>
+              <option value="docx">Word DOCX</option>
+              <option value="pptx">PowerPoint PPTX</option>
+            </select>
+          </label>
+          <label className="editReviewAck">Document title
+            <input value={documentDraft.title} maxLength={256}
+              onChange={e=>setDocumentDraft(prev=>({...prev,title:e.target.value}))}
+              placeholder="Document or presentation title"/>
+          </label>
+          <label className="editReviewAck">Complete text
+            <textarea className="editFullText" rows={8} maxLength={16384}
+              value={documentDraft.content}
+              onChange={e=>setDocumentDraft(prev=>({...prev,content:e.target.value}))}
+              placeholder={documentDraft.format==='pptx'
+                ? 'Bullet lines on slide one\n\nSlide two title\nBullet lines on slide two'
+                : 'First paragraph\nSecond paragraph'}/>
+          </label>
+          <small>{documentDraft.format==='pptx'
+            ? 'For presentations, blank lines divide slides. A single block uses the document title for slide one.'
+            : 'For Word, each nonempty line becomes a paragraph after the title.'}</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton" disabled={documentCreateBusy ||
+              !chatId || !documentDraft.title.trim() || !documentDraft.content.trim()}
+              onClick={() => void reviewStructuredDocument()}>Choose output folder and review</button>
+            <button type="button" className="subtleButton"
+              onClick={() => setDocumentComposerOpen(false)}>Close</button>
+          </div>
+        </section>}
+        {documentCreateReview?.chatId === chatId && <section className="readProposalCard editProposalCard"
+          role="group" aria-label="Review complete structured document creation">
+          <strong>New {documentCreateReview.documentFormat.toUpperCase()} document (no overwrite)</strong>
+          <code className="writeTarget">{documentCreateReview.exactDestination}</code>
+          <small>{documentCreateReview.bytes} bytes · {documentCreateReview.contentUnits} paragraphs/slides</small>
+          <small>Exact package SHA-256: {documentCreateReview.sha256}</small>
+          <strong>Title: {documentCreateReview.title}</strong>
+          <small>Review ALL proposed content before confirming:</small>
+          <pre className="editFullText" aria-label="All proposed document text">{documentCreateReview.content}</pre>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={documentCreateReviewed}
+              onChange={e => setDocumentCreateReviewed(e.target.checked)}/>
+            I reviewed the entire new document content, exact file destination, and package hash.
+          </label>
+          <small>A separate native confirmation still grants the single-use write. Existing files
+            are never replaced. Interrupted writes require recovery review.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!documentCreateReviewed || documentCreateBusy}
+              onClick={() => void confirmStructuredDocument()}>Confirm in native dialog</button>
+            <button type="button" className="subtleButton" disabled={documentCreateBusy}
+              onClick={() => void denyStructuredDocument()}>Deny document creation</button>
+          </div>
+        </section>}
+        {latestDocumentCreated?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Created {latestDocumentCreated.documentFormat.toUpperCase()}:
+            {latestDocumentCreated.fileName}</strong>
+          <code className="writeTarget">{latestDocumentCreated.exactDestination}</code>
+          <small>{latestDocumentCreated.bytesWritten} bytes · SHA-256: {latestDocumentCreated.sha256}</small>
+          <small>Durable effect receipt: {latestDocumentCreated.effectCallId}</small>
+        </section>}
+        {archiveReview?.chatId === chatId && <section className="readProposalCard editProposalCard"
+          role="group" aria-label="Review complete archive extraction">
+          <strong>Extract archive into a NEW folder</strong>
+          <small>Trusted OS file picker selected this archive; Lu has not extracted anything.</small>
+          <code className="writeTarget">{archiveReview.sourceDisplay}</code>
+          <strong>Exact destination (new folder only)</strong>
+          <code className="writeTarget">{archiveReview.destinationDisplay}</code>
+          <small>{archiveReview.files} files · {archiveReview.totalBytes} expanded bytes</small>
+          <small>Entire tree manifest SHA-256: {archiveReview.manifestSha256}</small>
+          <details open>
+            <summary>Complete archive contents ({archiveReview.entries.length} entries)</summary>
+            <pre className="editFullText" aria-label="All archive members">{archiveReview.entries.map((entry,i) =>
+              (i + 1) + '. ' + entry.kind + ' · ' + entry.path +
+              (entry.kind === 'file' ? ' · ' + entry.bytes + ' bytes · ' + entry.sha256 : '')
+            ).join('\n')}</pre>
+          </details>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={archiveReviewed}
+              onChange={e => setArchiveReviewed(e.target.checked)}/>
+            I have reviewed the complete member list, destination, and no-overwrite behavior.
+          </label>
+          <small>Lu will ask again in a native confirmation dialog. If extraction is interrupted,
+            partial files are retained for manual recovery and will never be silently retried.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!archiveReviewed || archiveBusy}
+              onClick={() => void confirmArchiveTree()}>
+              Approve in native confirmation
+            </button>
+            <button type="button" className="subtleButton" disabled={archiveBusy}
+              onClick={() => void denyArchiveTree()}>Deny extraction</button>
+            {archiveBusy && <button type="button" className="subtleButton"
+              disabled={archiveCancelRequested}
+              onClick={() => void requestArchiveCancellation()}>
+              {archiveCancelRequested ? 'Cancellation requested' : 'Cancel running extraction'}
+            </button>}
+          </div>
+        </section>}
+        {latestArchiveExtract?.chatId === chatId && <section className="readProposalCard" role="status">
+          <strong>Archive extracted into {latestArchiveExtract.targetFolder}</strong>
+          <code className="writeTarget">{latestArchiveExtract.exactDestination}</code>
+          <small>{latestArchiveExtract.filesExtracted} verified files · {latestArchiveExtract.bytesExtracted} bytes</small>
+          <small>Manifest SHA-256: {latestArchiveExtract.manifestSha256}</small>
+          <small>Durable effect receipt: {latestArchiveExtract.effectCallId}</small>
+        </section>}
         {Object.values(writeProposals).filter(p => p.chatId === chatId).map(proposal =>
           <section key={proposal.proposalId} className="readProposalCard writeProposalCard"
             role="group" aria-label="Review proposed new file">
@@ -1376,6 +2337,56 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || wave2RecoveryBusy}
+              title="Read-only durable history of approved archives, documents and file operations"
+              onClick={()=>void refreshWave2Recovery(chatId)}>
+              {wave2RecoveryBusy ? 'Checking operations…' : 'File operations'}
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || trashBusy || Boolean(trashReview) || Boolean(restoreReview)}
+              title="Native-pick one file and review a reversible same-directory custody operation"
+              onClick={()=>void reviewNativeTrashFile()}>Trash file</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || trashBusy} title="Inspect journaled trash/restore receipts, including interrupted operations"
+              onClick={()=>{setTrashHistoryOpen(v=>!v);void refreshTrashHistory();}}>
+              File recovery
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
+              title="Native-pick an existing file, review exact SHA-256 and approve a no-clobber copy"
+              onClick={()=>void reviewNativeFileTransfer('copy')}>Copy file</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
+              title="Native-pick an existing file and approve a same-directory move into a new filename"
+              onClick={()=>void reviewNativeFileTransfer('move')}>Move file</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || officeBatchBusy || Boolean(officeBatchReview)}
+              title="Review up to 32 Word, PowerPoint or Excel changes, then create one new version"
+              onClick={()=>setOfficeBatchOpen(v=>!v)}>
+              {officeBatchOpen ? 'Close batch' : 'Batch Office'}
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || officeRevisionBusy || Boolean(officeRevisionReview)}
+              title="Revise one existing Office field while preserving original and unrelated package contents"
+              onClick={()=>setOfficeRevisionOpen(v=>!v)}>
+              {officeRevisionOpen ? 'Close revision' : 'Revise Office'}
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || documentCreateBusy || Boolean(documentCreateReview)}
+              title="Create a new DOCX or PPTX through a native folder picker and exact-content approval"
+              onClick={() => setDocumentComposerOpen(v=>!v)}>
+              {documentComposerOpen ? 'Close document' : '+ Document'}
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || archiveBusy || Boolean(archiveReview)}
+              title="Use native file and folder pickers to safely review an archive and extract it into one NEW folder"
+              onClick={() => void reviewArchiveTree()}>{archiveBusy ? 'Archive…' : 'Extract archive'}</button>
+            {archiveBusy && !archiveReview && <button type="button"
+              className="subtleButton" disabled={archiveCancelRequested}
+              onClick={()=>void cancelArchivePreview()}>
+              {archiveCancelRequested?'Stopping archive preview…':'Cancel archive preview'}
+            </button>}
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
             <button type="button" className="subtleButton" disabled={!loaded}
               onClick={()=>void attachReaderDocument()}>+ Read file</button>

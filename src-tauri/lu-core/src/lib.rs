@@ -8,7 +8,9 @@
 //! will decode and validate generated Protobuf messages at each boundary; this
 //! crate deliberately does not pretend opaque bytes have been validated.
 
-#![forbid(unsafe_code)]
+// Unsafe is denied across Lu Core. Only the isolated, reviewed native
+// libarchive FFI adapter is allowed to bind an OS-owned shared library.
+#![deny(unsafe_code)]
 
 pub mod agent_tool_loop;
 pub mod ansf;
@@ -62,8 +64,19 @@ pub mod model_turn_journal;
 pub mod multimodal_http;
 pub mod multimodal_saved_turn;
 pub mod native_archive_inspect;
+pub mod native_zip_extract;
+pub mod native_archive_tree;
+pub mod native_archive_process;
+pub mod native_archive_tree_tool;
+pub mod native_zip_extract_tool;
 pub mod native_iso9660;
 pub mod native_linux_archive;
+#[allow(unsafe_code)] // FFI boundary only: bounded libarchive calls and dynamic loader.
+pub mod native_libarchive;
+pub mod native_seven_rar;
+pub mod native_rpm;
+pub mod native_cpio;
+pub mod native_ar_deb;
 pub mod native_linux_archive_tool;
 pub mod native_iso_extract_tool;
 pub mod native_archive_create;
@@ -73,6 +86,14 @@ pub mod native_reader_pdf;
 pub mod native_reader_openxml;
 pub mod native_reader_office;
 pub mod native_spreadsheet_create;
+pub mod native_csv_edit;
+pub mod native_docx_create;
+pub mod native_office_revision;
+pub mod native_office_revision_tool;
+pub mod native_office_batch_tool;
+pub mod native_pptx_create;
+pub mod native_pptx_tool;
+pub mod native_docx_tool;
 pub mod native_spreadsheet_tool;
 pub mod native_reader_odf;
 pub mod native_reader_turn;
@@ -86,6 +107,9 @@ pub mod native_background_control;
 pub mod native_background_process;
 pub mod native_file_extra;
 pub mod native_file_transfer;
+pub mod native_file_transfer_tool;
+pub mod native_file_trash_tool;
+pub mod native_trash_custody;
 pub mod native_git_inspect;
 pub mod native_files;
 pub mod native_atomic_write;

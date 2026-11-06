@@ -3,8 +3,8 @@
 //! This is NOT an LLM tool and DOES NOT grant filesystem authority.
 //! Host must bind exact source and target to a persisted user turn, durable
 //! effect journal and trusted single-directory handle before calling this.
-//! Moving a file uses a same-directory hard link then source unlink. An
-//! unlink failure leaves BOTH names visible and must be reconciled as UNCERTAIN.
+//! Moving uses an OS-native atomic no-clobber rename, retaining opened
+//! identity. Post-publication uncertainty is journaled, never auto-retried.
 use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{io::{Read, Write}, path::Path};
@@ -54,12 +54,15 @@ fn verify(root: &Dir, name: &str) -> Result<cap_std::fs::File, TransferError> {
     }
     if m.len() > MAX_TRANSFER_BYTES { return Err(TransferError::TooLarge); }
     let file = root.open(name).map_err(|_| TransferError::SourceUnavailable)?;
+    #[cfg(windows)]
+    crate::windows_file_guard::reject_opened_file_reparse(&file)
+        .map_err(|_|TransferError::SourceNotRegular)?;
     let opened = file.metadata().map_err(|e| TransferError::Io(e.to_string()))?;
     if !opened.is_file() { return Err(TransferError::SourceNotRegular); }
     if opened.len() > MAX_TRANSFER_BYTES { return Err(TransferError::TooLarge); }
     Ok(file)
 }
-fn source_hash(mut file: cap_std::fs::File) -> Result<(u64, String), TransferError> {
+fn source_hash(mut file: impl Read) -> Result<(u64, String), TransferError> {
     let mut hash = Sha256::new();
     let mut size = 0_u64;
     let mut buf = [0_u8; 64 * 1024];
@@ -71,6 +74,30 @@ fn source_hash(mut file: cap_std::fs::File) -> Result<(u64, String), TransferErr
         hash.update(&buf[..n]);
     }
     Ok((size, format!("{:x}", hash.finalize())))
+}
+fn opened_identity(file:&cap_std::fs::File)->Result<String,TransferError>{
+    let opened=file.try_clone().map_err(|e|TransferError::Io(e.to_string()))?
+        .into_std();
+    #[cfg(windows)]
+    {return crate::windows_file_guard::opened_file_identity(&opened)
+        .map_err(|_|TransferError::SourceChanged)}
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m=opened.metadata().map_err(|_|TransferError::SourceChanged)?;
+        if !m.is_file(){return Err(TransferError::SourceChanged)}
+        return Ok(format!("{:016x}{:016x}",m.dev(),m.ino()))
+    }
+    #[cfg(not(any(windows,unix)))]
+    {Err(TransferError::SourceChanged)}
+}
+fn valid_sha(s:&str)->bool{
+    s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
+}
+/// Read-only source identity witness, never a permission.
+pub fn source_digest(root:&Dir,name:&str)->Result<(u64,String),TransferError>{
+    if !plain_filename(name){return Err(TransferError::InvalidName)}
+    source_hash(verify(root,name)?)
 }
 fn preflight(root: &Dir, from: &str, to: &str) -> Result<(), TransferError> {
     if !plain_filename(from) || !plain_filename(to) { return Err(TransferError::InvalidName); }
@@ -88,6 +115,21 @@ fn preflight(root: &Dir, from: &str, to: &str) -> Result<(), TransferError> {
 /// Hard-link publication is atomic with no-clobber semantics.
 pub fn copy_new_in_dir(
     root: &Dir, source: &str, target: &str, host_stage_id: &str
+) -> Result<TransferReceipt, TransferError> {
+    copy_new_internal(root,source,target,host_stage_id,None)
+}
+/// Host-pinned digest prevents a source-content substitution from being
+/// committed as an approved copy even when the file changes during streaming.
+pub fn copy_new_checked_in_dir(
+    root: &Dir, source: &str, target: &str,
+    host_stage_id: &str, expected_sha256: &str
+) -> Result<TransferReceipt, TransferError> {
+    if !valid_sha(expected_sha256){return Err(TransferError::SourceChanged)}
+    copy_new_internal(root,source,target,host_stage_id,Some(expected_sha256))
+}
+fn copy_new_internal(
+    root: &Dir, source: &str, target: &str,
+    host_stage_id: &str, expected_sha256: Option<&str>
 ) -> Result<TransferReceipt, TransferError> {
     preflight(root, source, target)?;
     if !stage_id_ok(host_stage_id) { return Err(TransferError::InvalidStage); }
@@ -116,16 +158,27 @@ pub fn copy_new_in_dir(
         if input.metadata().map_err(|e| TransferError::Io(e.to_string()))?.len() != count {
             return Err(TransferError::Io("source size changed during copy".into()));
         }
+        let observed=format!("{:x}", hasher.finalize());
+        if expected_sha256.is_some_and(|approved|approved!=observed) {
+            return Err(TransferError::SourceChanged);
+        }
         output.sync_all().map_err(|e| TransferError::Io(e.to_string()))?;
-        Ok((count, format!("{:x}", hasher.finalize())))
+        Ok((count, observed))
     })();
     drop(output);
     let (bytes, sha256) = match result {
         Ok(x) => x,
-        Err(e) => { let _ = root.remove_file(&stage); return Err(e); }
+        Err(e) => {
+            if root.remove_file(&stage).is_err(){
+                return Err(TransferError::PublishedNeedsReconciliation)
+            }
+            return Err(e)
+        }
     };
     if let Err(e) = root.hard_link(&stage, root, target) {
-        let _ = root.remove_file(&stage);
+        if root.remove_file(&stage).is_err(){
+            return Err(TransferError::PublishedNeedsReconciliation)
+        }
         return Err(if e.kind() == std::io::ErrorKind::AlreadyExists {
             TransferError::TargetExists
         } else { TransferError::Io(e.to_string()) });
@@ -143,18 +196,127 @@ pub fn copy_new_in_dir(
 pub fn move_new_in_dir(root: &Dir, source: &str, target: &str)
     -> Result<TransferReceipt, TransferError>
 {
+    move_new_internal(root,source,target,None)
+}
+/// An exact approved digest is required for model-initiated moves. Host
+/// dispatch must additionally lock source identity across the rename window.
+pub fn move_new_checked_in_dir(
+    root:&Dir,source:&str,target:&str,expected_sha256:&str
+)->Result<TransferReceipt,TransferError>{
+    if !valid_sha(expected_sha256){return Err(TransferError::SourceChanged)}
+    move_new_internal(root,source,target,Some(expected_sha256))
+}
+fn move_new_internal(root:&Dir,source:&str,target:&str,expected_sha256:Option<&str>)
+    ->Result<TransferReceipt,TransferError>
+{
     preflight(root, source, target)?;
-    let file = verify(root, source)?;
-    let (bytes, sha256) = source_hash(file)?;
-    root.hard_link(source, root, target).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::AlreadyExists { TransferError::TargetExists }
-        else { TransferError::Io(e.to_string()) }
-    })?;
-    root.remove_file(source).map_err(|_| TransferError::PublishedNeedsReconciliation)?;
+    move_new_with_guard(root,source,target,expected_sha256,||{})
+}
+fn move_new_with_guard(
+    root:&Dir,source:&str,target:&str,expected_sha256:Option<&str>,
+    on_published:impl FnOnce(),
+)->Result<TransferReceipt,TransferError>{
+    let mut original=verify(root,source)?;
+    let original_identity=opened_identity(&original)?;
+    let (bytes,sha256)=source_hash(&mut original)?;
+    if expected_sha256.is_some_and(|approved|approved!=sha256){
+        return Err(TransferError::SourceChanged)
+    }
+    // The fault hook runs before the single OS namespace transition.
+    // A native handle-bound rename on Windows cannot move a substituted
+    // SOURCE file. Linux renameat2 is atomic/no-clobber; a racing substitute
+    // is detected by the independent opened-file identity proof below.
+    on_published();
+    #[cfg(windows)]
+    {
+        let selected=original.try_clone().map_err(|_|TransferError::SourceChanged)?
+            .into_std();
+        let directory=root.try_clone().map_err(|_|TransferError::SourceChanged)?
+            .into_std_file();
+        crate::windows_file_guard::rename_opened_file_noreplace(
+            &selected,&directory,target
+        ).map_err(|e|{
+            if e.kind()==std::io::ErrorKind::AlreadyExists{
+                TransferError::TargetExists
+            }else{TransferError::Io(e.to_string())}
+        })?;
+    }
+    #[cfg(target_os="linux")]
+    {
+        let directory=root.try_clone()
+            .map_err(|_|TransferError::SourceChanged)?.into_std_file();
+        lu_win_worker_job::unix_owned::rename_noreplace(
+            &directory,source,target
+        ).map_err(|e|{
+            if e.kind()==std::io::ErrorKind::AlreadyExists{
+                TransferError::TargetExists
+            }else{TransferError::Io(e.to_string())}
+        })?;
+    }
+    #[cfg(not(any(windows,target_os="linux")))]
+    return Err(TransferError::Io("Atomic no-clobber move unavailable".into()));
+    // From here on the native rename may have committed. ANY validation
+    // failure is UNCERTAIN and must never be auto-retried.
+    let mut linked=verify(root,target)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
+    if opened_identity(&linked).ok().as_deref()!=Some(&original_identity){
+        return Err(TransferError::PublishedNeedsReconciliation)
+    }
+    let target_observed=source_hash(&mut linked)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
+    if target_observed!=(bytes,sha256.clone()){
+        return Err(TransferError::PublishedNeedsReconciliation)
+    }
+    // No separate source unlink is permitted. The native no-replace rename
+    // already moved the exact opened object (Windows) or atomically moved one
+    // name (Linux). A replaced/new source is retained and flagged UNCERTAIN.
+    match root.symlink_metadata(source){
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+        _=>return Err(TransferError::PublishedNeedsReconciliation),
+    }
     Ok(TransferReceipt {
         source: source.into(), target: target.into(), bytes, sha256,
         source_removed: true,
     })
+}
+#[cfg(test)]
+mod move_race_tests{
+    use super::*;
+    use cap_std::ambient_authority;
+    use std::fs;
+    #[test]
+    fn source_swapped_for_identical_bytes_after_link_never_deleted(){
+        let dir=std::env::temp_dir().join(format!(
+            "lu-move-race-{}",std::process::id()
+        ));
+        let _=fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("source.txt"),b"identical").unwrap();
+        let root=Dir::open_ambient_dir(&dir,ambient_authority()).unwrap();
+        let result=move_new_with_guard(
+            &root,"source.txt","target.txt",None,
+            ||{
+                fs::rename(dir.join("source.txt"),dir.join("parked.txt")).unwrap();
+                fs::write(dir.join("source.txt"),b"identical").unwrap();
+            },
+        );
+        assert_eq!(result,Err(TransferError::PublishedNeedsReconciliation));
+        // No bytes were destroyed, even though a concurrent process swapped
+        // an equal-content pathname at the exact OS-rename boundary.
+        #[cfg(windows)]
+        {
+            assert_eq!(fs::read(dir.join("source.txt")).unwrap(),b"identical");
+            assert_eq!(fs::read(dir.join("target.txt")).unwrap(),b"identical");
+            assert!(!dir.join("parked.txt").exists());
+        }
+        #[cfg(target_os="linux")]
+        {
+            assert!(!dir.join("source.txt").exists());
+            assert_eq!(fs::read(dir.join("target.txt")).unwrap(),b"identical");
+            assert_eq!(fs::read(dir.join("parked.txt")).unwrap(),b"identical");
+        }
+        drop(root);fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 /// Durable host-owned receipt for a reversible trash operation.
@@ -182,12 +344,29 @@ fn check_target_absent(root: &Dir, target: &str) -> Result<(), TransferError> {
 pub fn trash_in_dirs(
     root: &Dir, trash: &Dir, source: &str, host_trash_id: &str
 ) -> Result<TrashReceipt, TransferError> {
+    trash_in_dirs_internal(root,trash,source,host_trash_id,None)
+}
+/// Exact approved content digest is checked before the trash entry's first
+/// filesystem mutation. A model-requested deletion cannot bypass this fence.
+pub fn trash_checked_in_dirs(
+    root:&Dir,trash:&Dir,source:&str,host_trash_id:&str,approved_sha256:&str
+)->Result<TrashReceipt,TransferError>{
+    if !valid_sha(approved_sha256){return Err(TransferError::SourceChanged)}
+    trash_in_dirs_internal(root,trash,source,host_trash_id,Some(approved_sha256))
+}
+fn trash_in_dirs_internal(
+    root:&Dir,trash:&Dir,source:&str,host_trash_id:&str,
+    approved_sha256:Option<&str>,
+)->Result<TrashReceipt,TransferError>{
     if !plain_filename(source) { return Err(TransferError::InvalidName); }
     if !stage_id_ok(host_trash_id) { return Err(TransferError::InvalidStage); }
     let trash_entry = format!("lu-trash-{host_trash_id}");
     check_target_absent(trash, &trash_entry)?;
     let file = verify(root, source)?;
     let (bytes, sha256) = source_hash(file)?;
+    if approved_sha256.is_some_and(|approved|approved!=sha256) {
+        return Err(TransferError::SourceChanged);
+    }
     root.hard_link(source, trash, &trash_entry).map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             TransferError::TargetExists

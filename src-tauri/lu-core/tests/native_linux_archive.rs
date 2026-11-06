@@ -49,7 +49,7 @@ fn tar_and_targz_create_inspect_extract_and_no_overwrite(){
         assert_eq!(manifest.entries[0].path,"alpha.txt");
         assert_eq!(manifest.entries[0].uncompressed_bytes,12);
         let first=&manifest.entries[0];
-        let renamed=format!("extracted-{}",name.replace('.','-'));
+        let renamed=format!("extracted-{}",name.replace('.',"-"));
         let extracted=extract_linux_archive_member(
             &dir,name,&first.path,&dir,&renamed,"transaction-0123456789abcdef",
             &first.sha256

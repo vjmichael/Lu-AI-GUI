@@ -1,0 +1,208 @@
+name: Lu Wave 2 Format-Aware Files and Archives
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'lu-desktop/**'
+      - '.github/workflows/lu-wave2-files.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-wave2-files-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source inventory
+        run: node scripts/verify-source-tree.mjs
+      - name: Require Wave 2 modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'pub mod native_zip_extract;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_zip_extract_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_csv_edit;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_docx_create;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_docx_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_file_transfer_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_office_revision;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_pptx_create;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_pptx_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_archive_tree;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_archive_tree_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_cpio;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_ar_deb;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_libarchive;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_seven_rar;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_rpm;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_office_batch_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_file_trash_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_office_revision_tool;' src-tauri/lu-core/src/lib.rs
+  native:
+    needs: source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Install Linux compression fixtures
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils bzip2 zstd
+      - name: Build pinned Windows libarchive codecs for 7z/RAR/XZ/BZip2/Zstd
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vcpkg=Join-Path $env:RUNNER_TEMP 'lu-vcpkg'
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git $vcpkg
+          git -C $vcpkg checkout 99aeb3ff0978ab22d0e5c6b199faacb06bd5e25b
+          & (Join-Path $vcpkg 'bootstrap-vcpkg.bat') -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed' }
+          $root=Join-Path $env:RUNNER_TEMP 'lu-vcpkg-installed'
+          & (Join-Path $vcpkg 'vcpkg.exe') install 'libarchive[core,bzip2,lzma,zstd]:x64-windows' --x-install-root $root
+          if ($LASTEXITCODE -ne 0) { throw 'native codec build failed' }
+          $triplet=Join-Path $root 'x64-windows'
+          $testDir='src-tauri/lu-core/target/debug/deps'
+          & './scripts/stage-lu-native-codecs.ps1' -VcpkgInstalledRoot $triplet -TestExecutableDir $testDir
+      - name: Verify pinned native Windows codecs are staged
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir='src-tauri/lu-core/target/debug/deps/lu-native-codecs'
+          if (!(Test-Path (Join-Path $dir 'manifest.json'))) { throw 'Missing codec manifest' }
+          if (!((Test-Path (Join-Path $dir 'archive.dll')) -or
+            (Test-Path (Join-Path $dir 'libarchive.dll')))) { throw 'Native codec DLL missing' }
+      - name: Compile and run Wave 1 + Wave 2 Rust Core regression suite
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture
+      - name: Focus ZIP extraction, full human grant and CSV edit
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_zip_extract -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_zip_extract_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_csv_edit -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_docx_create -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_docx_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_file_transfer_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_office_revision -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_pptx_create -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_pptx_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_tree -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_linux_packages -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_7z_rar -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_rpm -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_tree_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_file_trash_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_trash_custody::tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_office_revision_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_office_batch_tool_authority -- --nocapture
+      - name: Native archive reader and XZ/BZip2/Zstd writer smoke
+        shell: bash
+        env:
+          LU_REQUIRE_NATIVE_CODEC: "1"
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_codecs -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_rpm -- --nocapture
+      - name: Stage Windows native library bundle as CI artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-wave2-native-codecs-windows
+          path: lu-desktop/src-tauri/resources/lu-native-codecs/
+          if-no-files-found: error
+          retention-days: 7
+      - name: No lockfile drift
+        shell: bash
+        run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock
+
+  desktop-ui:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: lu-desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Build actual React bundle
+        run: npm run build
+      - name: Verify Wave 2 native approval wiring
+        run: npm run check
+      - name: Test React UI interaction utilities
+        run: npm run test:ui
+  desktop-native-windows:
+    needs: [source, desktop-ui, native]
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-wave2-native-codecs-windows
+          path: lu-desktop/src-tauri/resources/lu-native-codecs
+      - name: Stage CI-only non-executable Tauri resource placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build desktop frontend for Tauri validation
+        working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
+      - name: Compile actual Tauri desktop host including archive approvals
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute native archive picker security and review queue tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib archive_desktop::tests -- --nocapture
+      - name: Execute actual archive child-mode validation and no-clobber tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib archive_process_worker::tests -- --nocapture
+      - name: Execute bounded structured document native review tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib document_create_desktop::tests -- --nocapture
+      - name: Execute native Office multi-edit batch preview and approval tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib office_batch_desktop::tests -- --nocapture
+      - name: Execute bounded existing Office review and source identity tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib office_revision_desktop::tests -- --nocapture
+      - name: Execute native same-directory copy/move review and denial tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib file_transfer_desktop::tests -- --nocapture
+      - name: Execute reversible trash review and restart-denial tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib file_trash_desktop::tests -- --nocapture
+      - name: Native restart-persistent operation history and ToolReply verification
+        run: |
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib wave2_recovery::tests -- --nocapture
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib wave2_recovery::archive_restart_tests -- --nocapture

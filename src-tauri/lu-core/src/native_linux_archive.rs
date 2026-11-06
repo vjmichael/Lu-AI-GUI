@@ -1,8 +1,9 @@
 //! TOOLS-LINUX-ARCHIVE: bounded TAR and conventional Linux compression
 //! primitives. Source and destination are host-opened Dir capabilities, not
 //! model supplied root paths. No shell, mount, symlink, device or ownership
-//! restoration. Linux xz/bzip2/zstd use fixed absolute trusted system binaries;
-//! gzip uses in-process flate2. These are not independently authorized tools.
+//! restoration. XZ/bzip2/Zstandard use a vetted native libarchive DLL on
+//! Windows, OS-owned libarchive on Linux, with only an explicit fixed-path
+//! Linux command fallback if the library is missing. Gzip uses flate2.
 use std::{
     collections::{BTreeMap,BTreeSet},
     io::{Read,Write},
@@ -104,9 +105,10 @@ fn read_bounded(root:&Dir,name:&str)->Result<Vec<u8>,LinuxArchiveError>{
     if !flat_name(name){return Err(LinuxArchiveError::InvalidName)}
     let meta=root.symlink_metadata(name).map_err(io)?;
     if !meta.is_file()||meta.file_type().is_symlink(){return Err(LinuxArchiveError::NotFile)}
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(LinuxArchiveError::NotFile)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(LinuxArchiveError::NotFile) }
     }
     if meta.len()>MAX_ARCHIVE{return Err(LinuxArchiveError::TooLarge)}
     let mut file=root.open(name).map_err(io)?;
@@ -124,8 +126,8 @@ fn fixed_backend(format:LinuxArchiveFormat)->Result<(&'static str,&'static [&'st
     let (name,args)=match format{
         LinuxArchiveFormat::Xz=>
             ("xz",&["-dc"] as &'static [&'static str]),
-        LinuxArchiveFormat::Bzip2=>("bzip2",&["-dc"]),
-        LinuxArchiveFormat::Zstd=>("zstd",&["-dcq"]),
+        LinuxArchiveFormat::Bzip2=>("bzip2",&["-dc"] as &'static [&'static str]),
+        LinuxArchiveFormat::Zstd=>("zstd",&["-dcq"] as &'static [&'static str]),
         _=>return Err(LinuxArchiveError::UnsupportedFormat),
     };
     for prefix in ["/usr/bin/","/bin/"]{
@@ -141,8 +143,50 @@ fn fixed_backend(format:LinuxArchiveFormat)->Result<(&'static str,&'static [&'st
     }
     Err(LinuxArchiveError::BackendUnavailable)
 }
+fn native_backend(
+    format:LinuxArchiveFormat,compress:bool,input:&[u8]
+)->Result<Vec<u8>,LinuxArchiveError>{
+    let native=match format{
+        LinuxArchiveFormat::Xz=>crate::native_libarchive::NativeFormat::RawXz,
+        LinuxArchiveFormat::Bzip2=>crate::native_libarchive::NativeFormat::RawBzip2,
+        LinuxArchiveFormat::Zstd=>crate::native_libarchive::NativeFormat::RawZstd,
+        _=>return Err(LinuxArchiveError::UnsupportedFormat),
+    };
+    let result=if compress{
+        crate::native_libarchive::compress_raw(native,input)
+    }else{
+        crate::native_libarchive::expand_raw(native,input)
+    };
+    result.map_err(|e|match e{
+        crate::native_libarchive::NativeArchiveError::BackendMissing=>
+            LinuxArchiveError::BackendUnavailable,
+        crate::native_libarchive::NativeArchiveError::TooLarge=>
+            LinuxArchiveError::TooLarge,
+        _=>LinuxArchiveError::BackendFailed,
+    })
+}
+#[cfg(windows)]
+fn run_backend(format:LinuxArchiveFormat,compress:bool,input:&[u8])
+    ->Result<Vec<u8>,LinuxArchiveError>{
+    // All xz/bzip2/zstd operations are native library calls in the app.
+    // Windows never runs an external compression program, .bat or shell.
+    native_backend(format,compress,input)
+}
+#[cfg(not(windows))]
+fn run_backend(format:LinuxArchiveFormat,compress:bool,input:&[u8])
+    ->Result<Vec<u8>,LinuxArchiveError>{
+    // Prefer the native library across supported POSIX platforms.
+    // Existing Linux fallback is used ONLY if the libarchive shared library
+    // is absent; corrupt input never triggers an alternative decoder.
+    match native_backend(format,compress,input){
+        Ok(bytes)=>return Ok(bytes),
+        Err(LinuxArchiveError::BackendUnavailable)=>{},
+        Err(e)=>return Err(e),
+    }
+    run_fixed_system_backend(format,compress,input)
+}
 #[cfg(unix)]
-fn run_backend(
+fn run_fixed_system_backend(
     format:LinuxArchiveFormat,compress:bool,input:&[u8],
 )->Result<Vec<u8>,LinuxArchiveError>{
     let (program,_) = fixed_backend(format)?;
@@ -151,14 +195,14 @@ fn run_backend(
             LinuxArchiveFormat::Xz=>&["-zc","-T1"],
             LinuxArchiveFormat::Bzip2=>&["-zc"],
             LinuxArchiveFormat::Zstd=>&["-zcq","-T1"],
-            _=>return Err(LinuxArchiveError::UnsupportedFormat)
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
         }
     }else{
         match format{
             LinuxArchiveFormat::Xz=>&["-dc"],
             LinuxArchiveFormat::Bzip2=>&["-dc"],
             LinuxArchiveFormat::Zstd=>&["-dcq"],
-            _=>return Err(LinuxArchiveError::UnsupportedFormat)
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
         }
     };
     let mut child=Command::new(program)
@@ -169,8 +213,6 @@ fn run_backend(
     let mut stdout=child.stdout.take().ok_or(LinuxArchiveError::BackendFailed)?;
     let payload=input.to_vec();
     let writer=thread::spawn(move||stdin.write_all(&payload).is_ok());
-    // A watchdog owns the child through a mutex while the main thread reads.
-    // On any over-limit/deadline the process is killed and reaped.
     let child=Arc::new(std::sync::Mutex::new(child));
     let (cancel_tx,cancel_rx)=mpsc::channel::<()>();
     let watchdog_child=Arc::clone(&child);
@@ -195,9 +237,9 @@ fn run_backend(
     Ok(output)
 }
 #[cfg(not(unix))]
-fn run_backend(_:LinuxArchiveFormat,_:bool,_:&[u8])
+fn run_fixed_system_backend(_:LinuxArchiveFormat,_:bool,_:&[u8])
     ->Result<Vec<u8>,LinuxArchiveError>{
-    Err(LinuxArchiveError::UnsupportedPlatform)
+    Err(LinuxArchiveError::BackendUnavailable)
 }
 fn expand(format:LinuxArchiveFormat,data:&[u8])->Result<Vec<u8>,LinuxArchiveError>{
     match format.compressor(){
@@ -338,6 +380,10 @@ fn tar_entries(data:&[u8])->Result<Vec<ParsedEntry>,LinuxArchiveError>{
         if let Some(long)=pending_path.take(){name=long}
         let is_directory=kind==b'5';
         if is_directory{name=name.trim_end_matches('/').into();}
+        // Conventional archives use a single root ./ prefix; permit just
+        // this normalization while still rejecting traversal and links.
+        if name=="."&&is_directory&&size==0{offset=padded;continue}
+        if let Some(normalized)=name.strip_prefix("./"){name=normalized.to_owned()}
         if !member_name(&name){return Err(LinuxArchiveError::UnsafeEntry)}
         let key=name.to_lowercase();
         if !seen.insert(key){return Err(LinuxArchiveError::DuplicateEntry)}
@@ -397,6 +443,52 @@ pub fn inspect_linux_archive(
         format,total_entries:count,entries,total_uncompressed_bytes:total,
         input_bytes,truncated,
     })
+}
+/// Return bounded validated directory/file members for a NEW tree extraction.
+/// A tar member is never used as a host pathname without the separate
+/// destination-root checks in native_archive_tree. No symlinks or special files.
+/// Bounded memory-only decoder for validated Linux distribution packages.
+pub fn linux_archive_tree_members_from_bytes(
+    name:&str,encoded:&[u8]
+)->Result<Vec<(String,bool,Vec<u8>)>,LinuxArchiveError>{
+    if encoded.len() as u64>MAX_ARCHIVE{return Err(LinuxArchiveError::TooLarge)}
+    let format=detect_linux_archive(name).ok_or(LinuxArchiveError::UnsupportedFormat)?;
+    let raw=expand(format,encoded)?;
+    if !format.is_tar(){
+        let suffix=match format{
+            LinuxArchiveFormat::Gzip=>".gz",LinuxArchiveFormat::Xz=>".xz",
+            LinuxArchiveFormat::Bzip2=>".bz2",LinuxArchiveFormat::Zstd=>".zst",
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
+        };
+        let output=&name[..name.len()-suffix.len()];
+        if !flat_name(output){return Err(LinuxArchiveError::InvalidName)}
+        return Ok(vec![(output.into(),false,raw)])
+    }
+    let entries=tar_entries(&raw)?;
+    let mut total=0usize;
+    let mut output=Vec::new();
+    for entry in entries{
+        let bytes=raw[entry.data_start..entry.data_end].to_vec();
+        total=total.checked_add(bytes.len()).ok_or(LinuxArchiveError::TooLarge)?;
+        if total>MAX_UNPACKED{return Err(LinuxArchiveError::TooLarge)}
+        output.push((entry.path,entry.is_directory,bytes));
+    }
+    Ok(output)
+}
+/// Decode one compressed stream without publishing, mounting or executing.
+/// Only used after the enclosing CPIO/DEB container was bounded and checked.
+pub fn expand_bounded_linux_stream(
+    encoding:LinuxArchiveFormat,encoded:&[u8]
+)->Result<Vec<u8>,LinuxArchiveError>{
+    if encoded.len() as u64>MAX_ARCHIVE{return Err(LinuxArchiveError::TooLarge)}
+    if encoding.is_tar(){return Err(LinuxArchiveError::UnsupportedFormat)}
+    expand(encoding,encoded)
+}
+pub fn linux_archive_tree_members(
+    root:&Dir,name:&str
+)->Result<Vec<(String,bool,Vec<u8>)>,LinuxArchiveError>{
+    let encoded=read_bounded(root,name)?;
+    linux_archive_tree_members_from_bytes(name,&encoded)
 }
 /// Hash the exact selected decoded member without publishing. The returned
 /// digest is an integrity hint for trusted user preview, never a permission.

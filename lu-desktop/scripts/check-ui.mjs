@@ -33,6 +33,124 @@ const tests = [
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
+  ['archive review uses supervised native decoding and scoped preview cancellation',
+    host.includes('state.archive_reviews.stage_supervised(') &&
+    host.includes('fn lu_cancel_archive_preview(') &&
+    ui.includes("invoke('lu_cancel_archive_preview'") &&
+    ui.includes('Cancel archive preview')],
+  ['archive recovery independently observes approved full-tree integrity after restart',
+    host.includes('state.wave2_recovery.record_archive_intent(') &&
+    ui.includes('operation.targetIntegrity') &&
+    host.includes('pinned.approved_manifest()')],
+  ['archive worker has a host-owned scoped cancellation control and no auto-replay',
+    ui.includes("invoke('lu_cancel_archive_tree'") &&
+    ui.includes('Cancel running extraction') &&
+    host.includes('fn lu_cancel_archive_tree(') &&
+    host.includes('archive_runs: archive_desktop::ArchiveRunRegistry') &&
+    host.includes('run_guard.cancellation()')],
+  ['archive desktop review is pinned to native pickers and full-manifest user acknowledgement',
+    ui.includes("invoke('lu_review_archive_tree'") &&
+    ui.includes("invoke('lu_confirm_archive_tree'") &&
+    ui.includes("invoke('lu_deny_archive_tree'") &&
+    ui.includes('archiveReview.entries.map') &&
+    ui.includes('disabled={!archiveReviewed || archiveBusy}') &&
+    ui.includes('manual recovery') &&
+    host.includes('fn lu_review_archive_tree(') &&
+    host.includes('fn lu_confirm_archive_tree(') &&
+    host.includes('fn lu_deny_archive_tree(') &&
+    host.includes('archive_reviews: archive_desktop::ArchiveReviewQueue') &&
+    host.includes('app.dialog().message(modal)') &&
+    host.includes('state.archive_reviews.consume(')],
+  ['structured DOCX/PPTX writer uses complete draft review and a separate native confirmation',
+    ui.includes("invoke('lu_review_document_create'") &&
+    ui.includes("invoke('lu_confirm_document_create'") &&
+    ui.includes("invoke('lu_deny_document_create'") &&
+    ui.includes('documentCreateReview.content') &&
+    ui.includes('disabled={!documentCreateReviewed || documentCreateBusy}') &&
+    host.includes('fn lu_review_document_create(') &&
+    host.includes('fn lu_confirm_document_create(') &&
+    host.includes('fn lu_deny_document_create(') &&
+    host.includes('document_create_reviews: document_create_desktop::DocumentCreateQueue') &&
+    host.includes('state.document_create_reviews.consume(')],
+  ['existing Office revisions use native source and output pickers, complete change review and independent approval',
+    ui.includes("invoke('lu_review_office_revision'") &&
+    ui.includes("invoke('lu_confirm_office_revision'") &&
+    ui.includes("invoke('lu_deny_office_revision'") &&
+    ui.includes('officeRevisionReview.unaffectedParts.map') &&
+    ui.includes('disabled={!officeRevisionReviewed || officeRevisionBusy}') &&
+    host.includes('fn lu_review_office_revision(') &&
+    host.includes('fn lu_confirm_office_revision(') &&
+    host.includes('fn lu_deny_office_revision(') &&
+    host.includes('office_revision_reviews: office_revision_desktop::OfficeRevisionQueue') &&
+    host.includes('state.office_revision_reviews.consume(')],
+  ['native file copy/move review binds host-selected source, exact content hash and native one-use confirmation',
+    ui.includes("invoke('lu_review_file_transfer'") &&
+    ui.includes("invoke('lu_confirm_file_transfer'") &&
+    ui.includes("invoke('lu_deny_file_transfer'") &&
+    ui.includes('fileTransferReview.sourceSha256') &&
+    ui.includes('disabled={!fileTransferReviewed || fileTransferBusy}') &&
+    host.includes('fn lu_review_file_transfer(') &&
+    host.includes('fn lu_confirm_file_transfer(') &&
+    host.includes('fn lu_deny_file_transfer(') &&
+    host.includes('file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue') &&
+    host.includes('state.file_transfer_reviews.consume(')],
+  ['reversible file trash and restore are native-picked, separately reviewed, and verified against custody history',
+    ui.includes("invoke('lu_review_file_trash'") &&
+    ui.includes("invoke('lu_confirm_file_trash'") &&
+    ui.includes("invoke('lu_deny_file_trash'") &&
+    ui.includes("invoke('lu_file_trash_history'") &&
+    ui.includes("invoke('lu_review_file_restore'") &&
+    ui.includes("invoke('lu_confirm_file_restore'") &&
+    ui.includes("invoke('lu_deny_file_restore'") &&
+    ui.includes('trashReview.sha256') &&
+    ui.includes('restoreReview.sha256') &&
+    ui.includes('disabled={!trashReviewed || trashBusy}') &&
+    ui.includes('disabled={!restoreReviewed || trashBusy}') &&
+    ui.includes('item.restorable ?') &&
+    ui.includes('Uncertain operations require manual reconciliation') &&
+    host.includes('fn lu_review_file_trash(') &&
+    host.includes('fn lu_confirm_file_trash(') &&
+    host.includes('fn lu_file_trash_history(') &&
+    host.includes('fn lu_review_file_restore(') &&
+    host.includes('fn lu_confirm_file_restore(') &&
+    host.includes('trash_custody.reconcile_interrupted()') &&
+    host.includes('file_trash_desktop::TrashQueue')],
+  ['Wave 2 history survives restart from host intents and typed journal receipts without retry controls',
+    ui.includes("invoke('lu_wave2_recovery'") &&
+    ui.includes('operation.receiptMatched') &&
+    ui.includes('operation.state.replaceAll') &&
+    host.includes('fn lu_wave2_recovery(') &&
+    host.includes('wave2_recovery: wave2_recovery::Wave2OperationLedger') &&
+    host.includes('state.wave2_recovery.record_intent(') &&
+    host.includes('state.wave2_recovery.list(')],
+  ['one reversible trash custody authority and one set of UI review controls',
+    host.includes('mod file_trash_desktop;') &&
+    !host.includes('mod trash_desktop;') &&
+    host.includes('native_trash_custody::TrashCustodyLedger') &&
+    host.includes('trash_custody.reconcile_interrupted()') &&
+    (ui.match(/const \[trashReview, setTrashReview\]/g) || []).length === 1 &&
+    (ui.match(/const \[trashBusy, setTrashBusy\]/g) || []).length === 1 &&
+    (ui.match(/aria-label="Review reversible file trash"/g) || []).length === 1 &&
+    !ui.includes("invoke('lu_review_trash_file'") &&
+    !host.includes('fn lu_review_trash_file(')],
+  ['file operation UI reports active native work without fabricating completion or percent',
+    ui.includes('const wave2FileBusy = archiveBusy') &&
+    ui.includes('aria-label="Native file operation in progress"') &&
+    ui.includes('Byte-level progress is not available') &&
+    ui.includes('No automatic retry occurs') &&
+    ui.includes('File recovery before taking another action')],
+  ['bounded Office batch native review binds full before-after diff and unchanged package hashes',
+    ui.includes("invoke('lu_review_office_batch'") &&
+    ui.includes("invoke('lu_confirm_office_batch'") &&
+    ui.includes("invoke('lu_deny_office_batch'") &&
+    ui.includes('officeBatchReview.changes.map') &&
+    ui.includes('officeBatchReview.unaffectedParts.map') &&
+    ui.includes('disabled={!officeBatchReviewed || officeBatchBusy}') &&
+    host.includes('fn lu_review_office_batch(') &&
+    host.includes('fn lu_confirm_office_batch(') &&
+    host.includes('fn lu_deny_office_batch(') &&
+    host.includes('office_batch_reviews: office_batch_desktop::OfficeBatchQueue') &&
+    host.includes('state.wave2_recovery.record_intent(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {

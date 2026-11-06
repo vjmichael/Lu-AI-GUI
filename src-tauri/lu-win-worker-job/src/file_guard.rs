@@ -5,7 +5,7 @@
 #![cfg(windows)]
 use std::{
     ffi::c_void, fs::File, io,
-    os::windows::{fs::MetadataExt, io::AsRawHandle},
+    os::windows::{fs::MetadataExt, io::{AsRawHandle,FromRawHandle}},
 };
 const FILE_STANDARD_INFO:u32=1;
 const FILE_STREAM_INFO:u32=7;
@@ -47,7 +47,26 @@ extern "system" {
         file_information:*mut c_void,
         buffer_size:u32
     )->i32;
+    fn ReOpenFile(
+        original:*mut c_void,desired_access:u32,share_mode:u32,flags:u32
+    )->*mut c_void;
 }
+// RootDirectory + relative FileName is required to keep the selected
+// destination directory HANDLE authoritative across concurrent renames.
+// Some Win32 FileRenameInfo implementations reject that combination with
+// ERROR_INVALID_PARAMETER (87), even when the fields are documented.
+// Native NtSetInformationFile(FileRenameInformation=10) accepts the pinned
+// relative directory handle. No absolute path or new source lookup is used.
+#[link(name="ntdll")]
+extern "system" {
+    fn NtSetInformationFile(
+        file:*mut c_void,status:*mut IoStatusBlock,
+        information:*const c_void,bytes:u32,information_class:u32
+    )->i32;
+    fn RtlNtStatusToDosError(status:i32)->u32;
+}
+#[repr(C)]
+struct IoStatusBlock{status:usize,information:usize}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub struct WindowsFileIdentity {
     volume_serial:u64,
@@ -194,4 +213,112 @@ mod tests {
         }
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+
+/// A directory identity witness from a live Win32 directory HANDLE, not a
+/// pathname. Reparse-point or missing native file ID is rejected.
+pub fn opened_directory_identity(file:&File)->io::Result<String>{
+    let metadata=file.metadata()?;
+    if !metadata.is_dir()||metadata.file_attributes()&0x0000_0400!=0{
+        return Err(unsafe_target("unsafe directory or reparse point"))
+    }
+    let mut id=FileIdInfo::default();
+    query(file,FILE_ID_INFO,&mut id)?;
+    if id.file_id==[0;16]{
+        return Err(unsafe_target("directory has no stable native file ID"))
+    }
+    let mut value=format!("{:016x}",id.volume_serial_number);
+    for byte in id.file_id{value.push_str(&format!("{byte:02x}"))}
+    Ok(value)
+}
+
+
+/// Stable 128-bit file identity, allowed after a hard link has increased the
+/// link count. This is an observation, not an authorization or deletion API.
+pub fn opened_file_identity(file:&File)->io::Result<String>{
+    let metadata=file.metadata()?;
+    if !metadata.is_file()||metadata.file_attributes()&0x0000_0400!=0{
+        return Err(unsafe_target("file is not an ordinary opened file"))
+    }
+    let mut id=FileIdInfo::default();
+    query(file,FILE_ID_INFO,&mut id)?;
+    if id.file_id==[0;16]{
+        return Err(unsafe_target("file has no stable native file ID"))
+    }
+    let mut value=format!("{:016x}",id.volume_serial_number);
+    for byte in id.file_id{value.push_str(&format!("{byte:02x}"))}
+    Ok(value)
+}
+
+
+/// Atomic handle-relative, no-overwrite rename of the already opened file.
+/// A substituted SOURCE pathname cannot redirect this to a different file.
+/// All Win32 ABI and raw handle ownership stay inside this audited boundary.
+pub fn rename_opened_file_noreplace(
+    source:&File,destination_dir:&File,target:&str
+)->io::Result<()>{
+    const DELETE:u32=0x0001_0000;
+    const FILE_SHARE_ALL:u32=0x0000_0007;
+    const FILE_RENAME_INFORMATION:u32=10;
+    if target.is_empty()||target.len()>255||target=="."||target==".."||
+        target.ends_with(' ')||target.ends_with('.')||
+        target.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':')){
+        return Err(unsafe_target("invalid no-clobber move destination"))
+    }
+    let original_id=opened_file_identity(source)?;
+    opened_directory_identity(destination_dir)?;
+    // ReOpenFile retains the original FILE OBJECT, not a second pathname
+    // lookup. Request DELETE access only for this exact opened file.
+    let raw=unsafe{ReOpenFile(
+        source.as_raw_handle().cast::<c_void>(),DELETE,
+        FILE_SHARE_ALL,0,
+    )};
+    if raw.is_null()||raw as isize==-1{
+        return Err(io::Error::last_os_error())
+    }
+    // SAFETY: ReOpenFile returned a new, exclusively owned valid HANDLE.
+    let reopened=unsafe{File::from_raw_handle(raw.cast())};
+    if opened_file_identity(&reopened)?!=original_id{
+        return Err(unsafe_target("source file object changed"))
+    }
+    let utf16=target.encode_utf16().collect::<Vec<_>>();
+    if utf16.is_empty()||utf16.len()>256{
+        return Err(unsafe_target("destination name too long"))
+    }
+    #[repr(C)]
+    struct RenameInfo{
+        replace_if_exists:u32,
+        reserved:u32,
+        root_directory:*mut c_void,
+        filename_bytes:u32,
+        filename:[u16;256],
+    }
+    let mut info=RenameInfo{
+        replace_if_exists:0,reserved:0,
+        root_directory:destination_dir.as_raw_handle().cast::<c_void>(),
+        filename_bytes:(utf16.len()*2) as u32,
+        filename:[0;256],
+    };
+    info.filename[..utf16.len()].copy_from_slice(&utf16);
+    // SAFETY: valid opened DELETE handle and initialized repr(C) buffer;
+    // The full 256-wide-char array is an allocation bound, not the supplied
+    // native filename length. Header + EXACT UTF-16 bytes is the ABI size.
+    let info_len=(std::mem::offset_of!(RenameInfo,filename)
+        +utf16.len()*std::mem::size_of::<u16>()) as u32;
+    let mut io_status=IoStatusBlock{status:0,information:0};
+    let status=unsafe{NtSetInformationFile(
+        reopened.as_raw_handle().cast::<c_void>(),
+        &mut io_status,
+        (&info as *const RenameInfo).cast::<c_void>(),
+        info_len,FILE_RENAME_INFORMATION,
+    )};
+    if status!=0{
+        let win32=unsafe{RtlNtStatusToDosError(status)};
+        return Err(io::Error::from_raw_os_error(win32 as i32))
+    }
+    // The caller independently verifies the target's opened file ID, full
+    // bytes, and expected old-name absence. Even a successful syscall alone
+    // never implies a completed/authorized effect receipt.
+    Ok(())
 }

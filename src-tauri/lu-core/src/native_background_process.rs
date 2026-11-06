@@ -169,6 +169,14 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             BackgroundProcessError::SpawnFailed
         })?;
+        #[cfg(windows)]
+        if plan.args.first().and_then(|s|s.to_str())
+            .is_some_and(|mode|matches!(mode,
+                "--lu-archive-extract-worker"|"--lu-archive-preview-worker"))
+            &&job.set_memory_limit(1024*1024*1024).is_err(){
+            let _=self.store.fail_pending(&plan.task_id);
+            return Err(BackgroundProcessError::SpawnFailed)
+        }
         let mut child=command.spawn().map_err(|_|{
             let _=self.store.fail_pending(&plan.task_id);
             BackgroundProcessError::SpawnFailed
