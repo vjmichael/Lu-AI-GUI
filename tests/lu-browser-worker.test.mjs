@@ -100,7 +100,8 @@ test('bounded keyboard and accessibility operations require known actions', asyn
   const context={routeWebSocket:async()=>{},route:async()=>{},pages:()=>[page],close:async()=>{}};
   const session=new BrowserSession({origins:['https://archive.example'],
     profileDirectory:'/host/chosen/profile',
-    chromiumProvider:{launchPersistentContext:async()=>context}});
+    chromiumProvider:{launchPersistentContext:async()=>context},
+    windowController:nativeWindow()});
   await session.start();
   assert.equal((await session.execute({op:'press',key:'Enter'})).status,'KEY_PRESSED');
   assert.deepEqual(pressed,['Enter']);
