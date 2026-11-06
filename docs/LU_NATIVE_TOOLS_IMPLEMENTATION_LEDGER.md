@@ -207,3 +207,5 @@ WAVE2-RECOVERY-03B: DurableDispatcher now recognizes the built-in archive extrac
 
 
 WAVE2-RECOVERY-03C: Before archive execution the desktop now persists the entire bounded, canonical tree-manifest snapshot as part of the approved intent (schema 2). Restart recovery validates snapshots and independently rehashes the actual full extracted tree. It displays current VERIFIED/MISSING/INCOMPLETE_OR_CHANGED/UNAVAILABLE status alongside the immutable historical journal receipt, and never auto-retries. Existing schema-1 records retain receipt-only NOT_RECHECKED semantics. Native integration and installed Windows verification pending.
+
+WAVE2-RECOVERY-03D: Windows source and archive-tree reads/recovery checks now reject reparse attributes on already-opened capability handles. This replaces the redundant symlink-only Windows checks in the ZIP/child-folder path and adds opened-file checks for transfer sources, completion markers and recovered files. Native Windows acceptance remains pending.

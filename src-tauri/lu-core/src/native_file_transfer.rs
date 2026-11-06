@@ -54,6 +54,9 @@ fn verify(root: &Dir, name: &str) -> Result<cap_std::fs::File, TransferError> {
     }
     if m.len() > MAX_TRANSFER_BYTES { return Err(TransferError::TooLarge); }
     let file = root.open(name).map_err(|_| TransferError::SourceUnavailable)?;
+    #[cfg(windows)]
+    crate::windows_file_guard::reject_opened_file_reparse(&file)
+        .map_err(|_|TransferError::SourceNotRegular)?;
     let opened = file.metadata().map_err(|e| TransferError::Io(e.to_string()))?;
     if !opened.is_file() { return Err(TransferError::SourceNotRegular); }
     if opened.len() > MAX_TRANSFER_BYTES { return Err(TransferError::TooLarge); }

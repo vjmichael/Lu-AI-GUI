@@ -148,12 +148,10 @@ fn package_zip(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<Vec<Node
     if !stat.is_file()||stat.file_type().is_symlink()||stat.len()>MAX_ARCHIVE_BYTES{
         return Err(TreeExtractError::InvalidArchive)
     }
-    #[cfg(windows)] {
-        // cap_std::fs::Metadata does not expose Windows file_attributes;
-        // preserve the no-follow symlink check on capability-scoped metadata.
-        if stat.file_type().is_symlink() { return Err(TreeExtractError::InvalidArchive) }
-    }
     let file=root.open(name).map_err(io)?;
+    #[cfg(windows)]
+    crate::windows_file_guard::reject_opened_file_reparse(&file)
+        .map_err(|_|TreeExtractError::InvalidArchive)?;
     let mut zip=ZipArchive::new(file).map_err(|_|TreeExtractError::InvalidArchive)?;
     if zip.len()>MAX_ENTRIES||zip.has_overlapping_entries()
         .map_err(|_|TreeExtractError::InvalidArchive)?
@@ -324,12 +322,11 @@ fn open_or_create_child(current:&Dir,name:&str)->Result<Dir,TreeExtractError>{
     if !meta.is_dir()||meta.file_type().is_symlink(){
         return Err(TreeExtractError::UnsafeMember)
     }
-    #[cfg(windows)] {
-        // cap_std::fs::Metadata does not expose Windows file_attributes;
-        // preserve the no-follow symlink check on capability-scoped metadata.
-        if meta.file_type().is_symlink() { return Err(TreeExtractError::UnsafeMember) }
-    }
-    current.open_dir(name).map_err(io)
+    let child=current.open_dir(name).map_err(io)?;
+    #[cfg(windows)]
+    crate::windows_file_guard::reject_opened_directory_reparse(&child)
+        .map_err(|_|TreeExtractError::UnsafeMember)?;
+    Ok(child)
 }
 fn publish_node(root:&Dir,entry:&Node,cancel:&ArchiveCancellation)->Result<(),TreeExtractError>{
     cancel.checkpoint()?;
@@ -387,6 +384,9 @@ pub fn extract_archive_tree_new_cancellable(
     root?;
     let result=(||->Result<(),TreeExtractError>{
         let folder=destination_parent.open_dir(new_folder).map_err(io)?;
+        #[cfg(windows)]
+        crate::windows_file_guard::reject_opened_directory_reparse(&folder)
+            .map_err(|_|TreeExtractError::UnsafeMember)?;
         // Parent-first directories; files after full-tree preflight.
         nodes.sort_by_key(|n|(if n.is_dir{0}else{1},n.path.matches('/').count()));
         for node in &nodes{publish_node(&folder,node,cancel)?}
@@ -433,6 +433,10 @@ pub fn observe_tree_completion(
         Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
         Err(e)=>return Err(io(e)),
     };
+    #[cfg(windows)]
+    if crate::windows_file_guard::reject_opened_directory_reparse(&folder).is_err(){
+        return Ok(false)
+    }
     let marker_meta=match folder.symlink_metadata(MARKER){
         Ok(m)=>m,
         Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
@@ -446,6 +450,10 @@ pub fn observe_tree_completion(
         Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
         Err(e)=>return Err(io(e)),
     };
+    #[cfg(windows)]
+    if crate::windows_file_guard::reject_opened_file_reparse(&f).is_err(){
+        return Ok(false)
+    }
     f.take(65).read_to_string(&mut marker).map_err(io)?;
     if marker!=approved.sha256{return Ok(false)}
     let mut expected=BTreeMap::<String,Option<&TreeManifestEntry>>::new();
@@ -489,14 +497,13 @@ fn verify_existing_directory(
         if !observed.insert(key){return Ok(false)}
         let meta=root.symlink_metadata(name).map_err(io)?;
         if meta.file_type().is_symlink(){return Ok(false)}
-        #[cfg(windows)] {
-        // cap_std::fs::Metadata does not expose Windows file_attributes;
-        // preserve the no-follow symlink check on capability-scoped metadata.
-        if meta.file_type().is_symlink() { return Ok(false) }
-    }
         if meta.is_dir(){
             if spec.is_some_and(|s|!s.is_directory){return Ok(false)}
             let child=root.open_dir(name).map_err(io)?;
+            #[cfg(windows)]
+            if crate::windows_file_guard::reject_opened_directory_reparse(&child).is_err(){
+                return Ok(false)
+            }
             if !verify_existing_directory(
                 &child,&path,depth+1,expected,observed,total
             )?{return Ok(false)}
@@ -505,6 +512,10 @@ fn verify_existing_directory(
             if spec.is_directory||meta.len()!=spec.uncompressed_bytes ||
                 meta.len()>MAX_FILE as u64 {return Ok(false)}
             let mut file=root.open(name).map_err(io)?;
+            #[cfg(windows)]
+            if crate::windows_file_guard::reject_opened_file_reparse(&file).is_err(){
+                return Ok(false)
+            }
             let mut hasher=Sha256::new();
             let mut count=0u64;
             let mut buffer=[0u8;64*1024];
