@@ -1019,6 +1019,103 @@ fn lu_vision_capability(
     })
 }
 
+/// Exact whole-run find/replace for Word, using the existing strict Office
+/// revision pipeline. Source and NEW output file come from native OS dialogs.
+/// All changed run indices and the resulting package hash are reviewed first.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct WordReplaceReceiptView{
+    new_file_name:String,
+    replacements:usize,
+    source_sha256:String,
+    revised_sha256:String,
+    source_preserved:bool,
+    message:&'static str,
+}
+#[tauri::command]
+async fn lu_office_word_replace_all(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,old_text:String,new_text:String
+)->Result<Option<WordReplaceReceiptView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for Word editing")?;
+    if old_text.trim().is_empty()||new_text.trim().is_empty()
+        ||old_text.len()>8192||new_text.len()>8192||old_text==new_text{
+        return Err("Word replacement needs distinct bounded text".into());
+    }
+    let source=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().file()
+            .add_filter("Word document",&["docx"])
+            .blocking_pick_file()
+    }).await.map_err(|_|"Native Word source picker unavailable")?;
+    let Some(source)=source else{return Ok(None)};
+    let source=source.into_path().map_err(|_|"Selected Word source must be local")?;
+    let (original_name,source_dir)=office_revision_desktop::open_parent(&source)?;
+    if !original_name.to_ascii_lowercase().ends_with(".docx"){
+        return Err("Select a Word .docx document".into());
+    }
+    let original=office_revision_desktop::read_selected(&source_dir,&original_name)?;
+    let original_sha=format!("{:x}",Sha256::digest(&original));
+    let plan=lu_core::native_office_replace_all::plan_word_run_replace_all(
+        &original,&original_sha,&old_text,&new_text
+    ).map_err(|e|format!("Word replacement not supported for this document: {e:?}"))?;
+    let proposed=format!(
+        "Replace exactly {} whole Word text runs in a NEW document?\n\n\
+         Source SHA-256: {}\nRevised SHA-256: {}\n\
+         Text before: {}\nText after: {}\n\n\
+         All other Office package parts stay unchanged at the extracted-byte \
+         level. Word text split across formatting runs is NOT guessed. \
+         A new filename will be required; the source is never overwritten.",
+        plan.plan.match_count,plan.plan.original_sha256,
+        plan.plan.revised_sha256,old_text,new_text
+    );
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(proposed)
+            .title("Lu — Review exact Word replacements")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Choose new Word file".into(),"Cancel".into()
+            )).blocking_show()
+    }).await.map_err(|_|"Native Word replacement approval unavailable")?;
+    if !approved{return Ok(None);}
+    let output=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().file().add_filter("Word document",&["docx"])
+            .set_file_name("Lu Word revision.docx").blocking_save_file()
+    }).await.map_err(|_|"Native Word destination picker unavailable")?;
+    let Some(output)=output else{return Ok(None)};
+    let output=output.into_path().map_err(|_|"Word destination must be local")?;
+    if output==source ||!output.extension().and_then(|e|e.to_str())
+        .is_some_and(|e|e.eq_ignore_ascii_case("docx")){
+        return Err("Select a distinct NEW DOCX output file".into());
+    }
+    if std::fs::symlink_metadata(&output).is_ok(){
+        return Err("Output exists; Word revision never overwrites existing files".into());
+    }
+    let new_name=output.file_name().and_then(|s|s.to_str())
+        .ok_or("Invalid Word destination filename")?.to_owned();
+    let output_dir=office_revision_desktop::open_folder(
+        output.parent().ok_or("Word output folder unavailable")?
+    )?;
+    let stage_id=next_id("word-replace-");
+    let count=plan.plan.match_count;
+    let expected=plan.plan.revised_sha256;
+    let edits=plan.edits;
+    let receipt=tauri::async_runtime::spawn_blocking(move||
+        lu_core::native_office_revision::publish_office_revision_batch_new(
+            &source_dir,&original_name,&output_dir,&new_name,&stage_id,
+            &original_sha,&expected,&edits
+        ).map(|_|WordReplaceReceiptView{
+            new_file_name:new_name,replacements:count,
+            source_sha256:original_sha,revised_sha256:expected,
+            source_preserved:true,
+            message:"Non-destructive Word revision; unchanged parts retained as document content. Review the generated DOCX before use.",
+        }).map_err(|e|format!("Word revision publication refused: {e:?}"))
+    ).await.map_err(|_|"Word replacement worker unavailable")??;
+    Ok(Some(receipt))
+}
+
 /// Offline, operator-selected image OCR. Text remains UNVERIFIED and is not
 /// silently inserted into a model prompt, citation ledger or saved conversation.
 /// Pinned Tesseract + English data are bundled only after licensed runtime
@@ -4557,6 +4654,7 @@ pub fn run() {
             lu_load_diagnostics,
             lu_vision_capability,
             lu_ocr_read_selected_image,
+            lu_office_word_replace_all,
             lu_image_workspace_export,
             lu_image_workspace_history,
             lu_environment_status,
