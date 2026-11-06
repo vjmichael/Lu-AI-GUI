@@ -25,10 +25,11 @@ use windows_sys::Win32::{
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            ConvertStringSidToSidW, LookupAccountNameW, GetNamedSecurityInfoW,
+            ConvertStringSidToSidW, GetNamedSecurityInfoW,
             SE_FILE_OBJECT,
         },
-        CheckTokenMembership, EqualSid, GetTokenInformation, GetAclInformation, GetAce,
+        CheckTokenMembership, EqualSid, LookupAccountNameW,
+        GetTokenInformation, GetAclInformation, GetAce,
         GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
         AclSizeInformation, DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED,
         ACCESS_ALLOWED_ACE_TYPE,
