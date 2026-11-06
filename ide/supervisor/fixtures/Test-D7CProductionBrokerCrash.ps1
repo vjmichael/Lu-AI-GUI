@@ -80,6 +80,21 @@ try {
       [D7CNativeWitness]::WaitForSingleObject($childHandle,0) -ne 258) {
     throw 'DENIED: no live worker kernel handle before crash'
   }
+  # Hostile test: another same-session process tries to signal the
+  # publicly named recovery event while the owner and child are live.
+  # The production broker MUST ignore this event for normal completion.
+  $releaseName="Local\LuIdeD7BrokerRelease-$jobId-$($plan.Substring(0,16))"
+  $early=[D7CNativeWitness]::OpenEventW(0x0002,$false,$releaseName)
+  if ($early -eq [IntPtr]::Zero) { throw 'DENIED: recovery event missing before crash' }
+  try {
+    if (![D7CNativeWitness]::SetEvent($early)) {
+      throw 'DENIED: hostile event test could not signal event'
+    }
+  } finally { [void][D7CNativeWitness]::CloseHandle($early) }
+  Start-Sleep -Milliseconds 300
+  if ([D7CNativeWitness]::WaitForSingleObject($childHandle,0) -ne 258) {
+    throw 'DENIED: forged early release killed the live child'
+  }
   Stop-Process -Id $owner.Id -Force
   [void]$owner.WaitForExit(8000)
   if (!$owner.HasExited) { throw 'DENIED: owner survived injected crash' }
