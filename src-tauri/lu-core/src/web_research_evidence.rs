@@ -383,6 +383,27 @@ impl EvidenceLedger {
             })
         ).optional()?.ok_or(EvidenceError::Missing)
     }
+    /// Read a bounded, most-recent-first list of observations for one
+    /// already chat-scoped SQLite ledger. Never join this with the
+    /// bibliographic research_sources table or inherit its citation status.
+    pub fn recent_browser_observations(
+        &self,limit:usize
+    )->Result<Vec<BrowserEvidenceRecord>,EvidenceError>{
+        if !(1..=32).contains(&limit){return Err(EvidenceError::Invalid);}
+        let mut stmt=self.connection.prepare(
+            "SELECT generation_id,call_id,source_url,observation_kind,
+             observed_sha256,excerpt,excerpt_truncated,observed_text_bytes
+             FROM research_browser_observations ORDER BY rowid DESC LIMIT ?1"
+        )?;
+        let mapped=stmt.query_map([limit as i64],|row|Ok(BrowserEvidenceRecord{
+            generation_id:row.get(0)?,call_id:row.get(1)?,
+            url:row.get(2)?,observation_kind:row.get(3)?,
+            observed_sha256:row.get(4)?,excerpt:row.get(5)?,
+            excerpt_truncated:row.get::<_,i64>(6)?==1,
+            observed_text_bytes:row.get::<_,i64>(7)? as usize,
+        }))?;
+        Ok(mapped.collect::<Result<_,_>>()?)
+    }
     /// Exact quotation appears in retained Browser excerpt, not a validated
     /// publication. The returned boolean MUST NOT be treated as a
     /// bibliographic PASSAGE_VERIFIED status.
@@ -534,6 +555,8 @@ mod browser_evidence_tests {
         assert!(!ledger.has_browser_excerpt("g-1","browser-call-1","fabricated").unwrap());
         assert!(!ledger.eligible_for_reviewed_bibliography("paper-1").unwrap());
         assert_eq!(ledger.status("paper-1").unwrap(),SourceStatus::Discovered);
+        assert_eq!(ledger.recent_browser_observations(16).unwrap(),vec![captured.clone()]);
+        assert!(ledger.recent_browser_observations(0).is_err());
         assert_eq!(ledger.observe_browser_text("g-1","browser-call-1",
             "https://archive.example/article","READ","A genuine extracted passage",false)
             .unwrap(),captured);
