@@ -289,7 +289,10 @@ pub fn inspect_untrusted_witness(
         states.push(body.state.clone());
     }
     if states.is_empty() || (states.contains(&"tree_empty".to_owned()) &&
-        !states.windows(3).any(|w| w == ["owner_exited", "kill_requested", "tree_empty"])) {
+        !states.windows(3).any(|w|
+            w[0] == "owner_exited" &&
+            w[1] == "kill_requested" &&
+            w[2] == "tree_empty")) {
         return Err(denied());
     }
     Ok(states)
@@ -481,5 +484,58 @@ pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
             unsafe { ResetEvent(release.0); }
         }
         thread::sleep(TICK);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn fixture() -> (PathBuf, String, String) {
+        let root = std::env::temp_dir().join(format!(
+            "lu-ide-broker-witness-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        (root, format!("job-{}", "b".repeat(32)), "a".repeat(64))
+    }
+
+    #[test]
+    fn witness_order_and_integrity_replay_are_separate_from_trust() {
+        let (root, id, hash) = fixture();
+        let mut receipt = Journal::create(&root, &id, &hash, 101, 301,
+            &"d".repeat(48)).unwrap();
+        receipt.record("ready").unwrap();
+        receipt.record("owner_exited").unwrap();
+        receipt.record("kill_requested").unwrap();
+        receipt.record("tree_empty").unwrap();
+        drop(receipt);
+        assert_eq!(inspect_untrusted_witness(&root, &id, &hash).unwrap(), vec![
+            "ready", "owner_exited", "kill_requested", "tree_empty"
+        ]);
+        let path = witness_file(&id, &hash, &root).unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(&path, original.replace("tree_empty", "forged_tree_empty")).unwrap();
+        assert!(inspect_untrusted_witness(&root, &id, &hash).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn missing_witness_and_name_replay_cannot_count_as_cleanup() {
+        let (root, id, hash) = fixture();
+        assert!(inspect_untrusted_witness(&root, &id, &hash).is_err());
+        assert!(witness_file("../escape", &hash, &root).is_err());
+        assert!(witness_file(&id, "not-a-plan-hash", &root).is_err());
+        let mut receipt = Journal::create(&root, &id, &hash, 55, 90,
+            &"f".repeat(48)).unwrap();
+        receipt.record("ready").unwrap();
+        assert!(Journal::create(&root, &id, &hash, 55, 90,
+            &"f".repeat(48)).is_err());
+        drop(receipt);
+        assert_eq!(
+            inspect_untrusted_witness(&root, &id, &hash).unwrap(),
+            vec!["ready"]
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }
