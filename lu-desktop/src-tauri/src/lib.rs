@@ -1637,7 +1637,8 @@ async fn lu_research_crossref(
 async fn lu_image_workspace_export(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,image_ref:String,operation:String,
-    x:Option<u32>,y:Option<u32>,width:u32,height:u32
+    x:Option<u32>,y:Option<u32>,width:u32,height:u32,
+    block_size:Option<u32>,stroke:Option<u32>,color:Option<u32>
 )->Result<Option<image_workspace_desktop::ImageExportReceipt>,String>{
     use lu_core::native_image_revision::ImageRevisionOperation as Operation;
     state.chats.history(&chat_id)
@@ -1651,7 +1652,27 @@ async fn lu_image_workspace_export(
             width,height
         },
         "resize"=>Operation::Resize{width,height},
-        _=>return Err("Only deterministic crop and resize are supported".into()),
+        "rotate90"=>Operation::Rotate90,
+        "flip_h"=>Operation::FlipHorizontal,
+        "redact"=>Operation::Redact{
+            x:x.ok_or("Mask requires X")?,y:y.ok_or("Mask requires Y")?,
+            width,height,
+        },
+        "pixelate"=>Operation::Pixelate{
+            x:x.ok_or("Mosaic requires X")?,y:y.ok_or("Mosaic requires Y")?,
+            width,height,block_size:block_size.unwrap_or(12),
+        },
+        "rectangle"=>{
+            let rgb=color.unwrap_or(0xff5500);
+            if rgb>0xffffff {return Err("Invalid annotation color".into());}
+            Operation::Rectangle{
+                x:x.ok_or("Rectangle requires X")?,
+                y:y.ok_or("Rectangle requires Y")?,
+                width,height,rgb:[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8],
+                stroke:stroke.unwrap_or(3),
+            }
+        },
+        _=>return Err("Unknown deterministic image revision operation".into()),
     };
     let image=lu_core::native_image_revision::transform_admitted_image(
         &source,edit
