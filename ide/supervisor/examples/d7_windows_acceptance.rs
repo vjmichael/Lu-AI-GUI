@@ -175,6 +175,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("PASS: real native Windows Cargo Job cancelled with verified tree kill, no outputs, and durable restart receipt");
         return Ok(());
     }
+    // Debug values are bounded status/receipt metadata only. No project
+    // paths, model output, service credentials or source bytes are logged.
+    eprintln!(
+        "NATIVE_CARGO_ACCEPTANCE phase={:?} exit_code={:?} timed_out={} output_bytes={} digest_present={}",
+        result.summary.phase, result.exit_code, result.timed_out,
+        result.output_bytes, result.output_sha256.len() == 64,
+    );
     if result.summary.phase != JobPhase::Completed
         || result.exit_code != Some(0)
         || result.output_sha256.len() != 64
