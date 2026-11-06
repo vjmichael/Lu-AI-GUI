@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b10609a76a4fc2f50081fbb2cb75c686c3739142",
-  "trackedFileCount": 402,
+  "sourceCommitBeforeLock": "4e9fe1ce6b29586948f592ce46494f0ed8f43c1e",
+  "trackedFileCount": 410,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -684,6 +684,14 @@
       "blob": "fee5732d8233f7e995c874ec122cbebc34e85c7f"
     },
     {
+      "path": "src-tauri/lu-core/src/browser_preferences.rs",
+      "blob": "6275cef1b4fea579e7df2886cc88a7a44bc32bb0"
+    },
+    {
+      "path": "src-tauri/lu-core/src/browser_visibility_settings.rs",
+      "blob": "54f40d1b9eaf7ee3fbd09af0131949fbeeb07029"
+    },
+    {
       "path": "src-tauri/lu-core/src/capability_router.rs",
       "blob": "e5bc987e677e70a6cccb81068cf8997ae3dd0a03"
     },
@@ -833,7 +841,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "afec6e78048db89acb1c0bd9fa5fca56a3270a4b"
+      "blob": "f81255f8086ae0d366fffe484951dfc701cb371d"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1154,6 +1162,30 @@
     {
       "path": "src-tauri/lu-core/src/vision_routing.rs",
       "blob": "72f57d779ba76a5ee170be357ac56bf0045dc501"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_analysis.rs",
+      "blob": "779d23d81b052be852cd126cffec0254d82d62d3"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_evidence.rs",
+      "blob": "0b2c37214c77c8d5ccb81e76c5d47ad74aa6f1e7"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_maturity.rs",
+      "blob": "0e33bb0efedb0c1f516ed9f0c59d225296c3ef1e"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_planner.rs",
+      "blob": "36a8f7355c6f7ad1df315de6e759c9a0eb547846"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_premise.rs",
+      "blob": "e42df3b200c6be8ad436db4a16df0a2a4683ffdb"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_sufficiency.rs",
+      "blob": "37b06316ec6efdc5e0e369bd6119009ad391e992"
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
