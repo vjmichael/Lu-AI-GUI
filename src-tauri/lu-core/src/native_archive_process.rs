@@ -172,3 +172,52 @@ mod tests{
         drop(substituted);drop(pinned);fs::remove_dir_all(&tmp).unwrap();
     }
 }
+
+
+// Genuine OS-process failure is journal-uncertain, not a reusable clean
+// cancellation. The worker manager's separate native tests cover group kill.
+#[cfg(all(test,unix))]
+mod failure_matrix{
+    use super::*;
+    use std::fs;
+    use cap_std::ambient_authority;
+    #[test]
+    fn failed_owned_worker_preserves_target_absence_and_blocks_replay(){
+        let tmp=std::env::temp_dir().join(format!(
+            "lu-archive-worker-failure-{}",std::process::id()
+        ));
+        let _=fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let dir=Dir::open_ambient_dir(&tmp,ambient_authority()).unwrap();
+        fs::write(tmp.join("source.txt"),b"source").unwrap();
+        crate::native_linux_archive::create_linux_archive_new(
+            &dir,"source.tar",&["source.txt".into()],
+            "archive-worker-stage-123456789"
+        ).unwrap();
+        let manifest=crate::native_archive_tree::preview_archive_tree(
+            &dir,"source.tar"
+        ).unwrap();
+        let store=Arc::new(TaskStore::open(std::path::Path::new(":memory:")).unwrap());
+        let supervisor=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let plan=SupervisedArchivePlan{
+            processes:supervisor,tasks:store.clone(),
+            executable:PathBuf::from("/bin/false").canonicalize().unwrap(),
+            source_parent:tmp.clone(),destination_parent:tmp.clone(),
+            source_parent_identity:opened_directory_identity(&dir).unwrap(),
+            destination_parent_identity:opened_directory_identity(&dir).unwrap(),
+            manifest:manifest.clone(),workspace_id:"c-test".into(),
+            task_id:"archive-fail-123".into(),
+        };
+        let first=plan.execute(&dir,"source.tar",&dir,"new",&manifest.sha256,
+            &ArchiveCancellation::default());
+        assert_eq!(first,Err(TreeExtractError::PublishedNeedsReconciliation));
+        assert!(!tmp.join("new").exists());
+        assert_eq!(store.get("archive-fail-123").unwrap().unwrap().state,
+            TaskState::Failed);
+        let second=plan.execute(&dir,"source.tar",&dir,"new",&manifest.sha256,
+            &ArchiveCancellation::default());
+        assert_eq!(second,Err(TreeExtractError::PublishedNeedsReconciliation));
+        assert!(!tmp.join("new").exists());
+        drop(plan);drop(dir);fs::remove_dir_all(tmp).unwrap();
+    }
+}

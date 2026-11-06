@@ -213,3 +213,21 @@ pub fn opened_directory_identity(file:&File)->io::Result<String>{
     for byte in id.file_id{value.push_str(&format!("{byte:02x}"))}
     Ok(value)
 }
+
+
+/// Stable 128-bit file identity, allowed after a hard link has increased the
+/// link count. This is an observation, not an authorization or deletion API.
+pub fn opened_file_identity(file:&File)->io::Result<String>{
+    let metadata=file.metadata()?;
+    if !metadata.is_file()||metadata.file_attributes()&0x0000_0400!=0{
+        return Err(unsafe_target("file is not an ordinary opened file"))
+    }
+    let mut id=FileIdInfo::default();
+    query(file,FILE_ID_INFO,&mut id)?;
+    if id.file_id==[0;16]{
+        return Err(unsafe_target("file has no stable native file ID"))
+    }
+    let mut value=format!("{:016x}",id.volume_serial_number);
+    for byte in id.file_id{value.push_str(&format!("{byte:02x}"))}
+    Ok(value)
+}

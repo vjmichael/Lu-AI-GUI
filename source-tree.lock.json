@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2cc3ef11a04d74aa7de7847a4c36e18460b2ea05",
+  "sourceCommitBeforeLock": "6a9246b1e588dc11f9fcd04264d70115cd737082",
   "trackedFileCount": 391,
   "files": [
     {
@@ -37,7 +37,7 @@
     },
     {
       "path": ".github/workflows/lu-wave2-files.yml",
-      "blob": "ace77e95a3ca18fbc86b1bc2604eb9fad9798cc9"
+      "blob": "53986a106404ae8860ffb992d68c53c038f6d45e"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "263d84140a69df0b79c0a9cf593d1c29d635f51c"
+      "blob": "4ea2dd5c61256672f43e1da2715df2ad40ef8bd9"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE2_ADVANCED_FORMATS_AND_OFFICE.md",
-      "blob": "9ee9e75bb598cb4ce888478e9a21976ce7073224"
+      "blob": "aea68ea334d230e06cf6f1ae74a4fc1e42587d73"
     },
     {
       "path": "docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_process.rs",
-      "blob": "ef9fdde10bca38b854e4ac663c82d92c534c82ba"
+      "blob": "0a94b0114982dfb174652a0d166f11480b6c73ab"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
@@ -917,7 +917,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
-      "blob": "28c1a6a4ebfce7fb93f64c9856303ab10edc18d3"
+      "blob": "a528bdbe12429d0aac7c88aa2216cfe5ff86b04f"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer_tool.rs",
@@ -1113,7 +1113,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/windows_file_guard.rs",
-      "blob": "086201d40b7bc789f609c97dc357fae9ecef0cc4"
+      "blob": "32cc8a75c03aacfa452b86be4b881609c6914fd7"
     },
     {
       "path": "src-tauri/lu-core/src/wire.rs",
@@ -1553,7 +1553,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/file_guard.rs",
-      "blob": "021869000df39da9c42a258966e9a5fba162d7e4"
+      "blob": "ca54113675ada5ce025dc3122c40fe9b2b3536ea"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",

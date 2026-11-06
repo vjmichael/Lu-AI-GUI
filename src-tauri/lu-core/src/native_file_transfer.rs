@@ -62,7 +62,7 @@ fn verify(root: &Dir, name: &str) -> Result<cap_std::fs::File, TransferError> {
     if opened.len() > MAX_TRANSFER_BYTES { return Err(TransferError::TooLarge); }
     Ok(file)
 }
-fn source_hash(mut file: cap_std::fs::File) -> Result<(u64, String), TransferError> {
+fn source_hash(mut file: impl Read) -> Result<(u64, String), TransferError> {
     let mut hash = Sha256::new();
     let mut size = 0_u64;
     let mut buf = [0_u8; 64 * 1024];
@@ -74,6 +74,22 @@ fn source_hash(mut file: cap_std::fs::File) -> Result<(u64, String), TransferErr
         hash.update(&buf[..n]);
     }
     Ok((size, format!("{:x}", hash.finalize())))
+}
+fn opened_identity(file:&cap_std::fs::File)->Result<String,TransferError>{
+    let opened=file.try_clone().map_err(|e|TransferError::Io(e.to_string()))?
+        .into_std();
+    #[cfg(windows)]
+    {return crate::windows_file_guard::opened_file_identity(&opened)
+        .map_err(|_|TransferError::SourceChanged)}
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m=opened.metadata().map_err(|_|TransferError::SourceChanged)?;
+        if !m.is_file(){return Err(TransferError::SourceChanged)}
+        return Ok(format!("{:016x}{:016x}",m.dev(),m.ino()))
+    }
+    #[cfg(not(any(windows,unix)))]
+    {Err(TransferError::SourceChanged)}
 }
 fn valid_sha(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
@@ -194,29 +210,43 @@ fn move_new_internal(root:&Dir,source:&str,target:&str,expected_sha256:Option<&s
     ->Result<TransferReceipt,TransferError>
 {
     preflight(root, source, target)?;
-    let file = verify(root, source)?;
-    let (bytes, sha256) = source_hash(file)?;
-    if expected_sha256.is_some_and(|approved|approved!=sha256) {
-        return Err(TransferError::SourceChanged);
+    move_new_with_guard(root,source,target,expected_sha256,||{})
+}
+fn move_new_with_guard(
+    root:&Dir,source:&str,target:&str,expected_sha256:Option<&str>,
+    on_published:impl FnOnce(),
+)->Result<TransferReceipt,TransferError>{
+    let mut original=verify(root,source)?;
+    let original_identity=opened_identity(&original)?;
+    let (bytes,sha256)=source_hash(&mut original)?;
+    if expected_sha256.is_some_and(|approved|approved!=sha256){
+        return Err(TransferError::SourceChanged)
     }
     root.hard_link(source, root, target).map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists { TransferError::TargetExists }
         else { TransferError::Io(e.to_string()) }
     })?;
-    // hard_link resolves SOURCE by name again. An attacker could substitute
-    // it between the approved digest and link; refuse unlink until the
-    // published target itself is rehashed and still matches that approval.
-    // Once the link exists, any mismatch is UNCERTAIN, not a safe retry.
-    let target_observed=source_hash(verify(root,target)
-        .map_err(|_|TransferError::PublishedNeedsReconciliation)?)
+    // After the link exists, never delete SOURCE based solely on equal
+    // bytes. Equal-content files may be different filesystem objects.
+    // Retain the original opened handle throughout this verification.
+    on_published();
+    let mut linked=verify(root,target)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
+    if opened_identity(&linked).ok().as_deref()!=Some(&original_identity){
+        return Err(TransferError::PublishedNeedsReconciliation)
+    }
+    let target_observed=source_hash(&mut linked)
         .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
     if target_observed!=(bytes,sha256.clone()){
         return Err(TransferError::PublishedNeedsReconciliation)
     }
-    let source_observed=source_hash(verify(root,source)
-        .map_err(|_|TransferError::PublishedNeedsReconciliation)?)
+    let mut source_now=verify(root,source)
         .map_err(|_|TransferError::PublishedNeedsReconciliation)?;
-    if source_observed!=target_observed {
+    if opened_identity(&source_now).ok().as_deref()!=Some(&original_identity){
+        return Err(TransferError::PublishedNeedsReconciliation)
+    }
+    if source_hash(&mut source_now)
+        .map_err(|_|TransferError::PublishedNeedsReconciliation)?!=target_observed{
         return Err(TransferError::PublishedNeedsReconciliation)
     }
     // No pathname-only verification can make this final unlink atomic against
@@ -227,6 +257,34 @@ fn move_new_internal(root:&Dir,source:&str,target:&str,expected_sha256:Option<&s
         source: source.into(), target: target.into(), bytes, sha256,
         source_removed: true,
     })
+}
+#[cfg(test)]
+mod move_race_tests{
+    use super::*;
+    use cap_std::ambient_authority;
+    use std::fs;
+    #[test]
+    fn source_swapped_for_identical_bytes_after_link_never_deleted(){
+        let dir=std::env::temp_dir().join(format!(
+            "lu-move-race-{}",std::process::id()
+        ));
+        let _=fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("source.txt"),b"identical").unwrap();
+        let root=Dir::open_ambient_dir(&dir,ambient_authority()).unwrap();
+        let result=move_new_with_guard(
+            &root,"source.txt","target.txt",None,
+            ||{
+                fs::rename(dir.join("source.txt"),dir.join("parked.txt")).unwrap();
+                fs::write(dir.join("source.txt"),b"identical").unwrap();
+            },
+        );
+        assert_eq!(result,Err(TransferError::PublishedNeedsReconciliation));
+        assert_eq!(fs::read(dir.join("source.txt")).unwrap(),b"identical");
+        assert_eq!(fs::read(dir.join("target.txt")).unwrap(),b"identical");
+        assert_eq!(fs::read(dir.join("parked.txt")).unwrap(),b"identical");
+        drop(root);fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 /// Durable host-owned receipt for a reversible trash operation.
