@@ -79,14 +79,19 @@ fn read_small(dir: &Dir, path: &str) -> Option<String> {
     let leaf = parts.pop()?;
     let folder = descend(dir.try_clone().ok()?, &parts).ok()?;
     let metadata = folder.symlink_metadata(&leaf).ok()?;
-    if !metadata.is_file() || metadata.file_type().is_symlink()
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
         || metadata.len() > MAX_GIT_REF_BYTES
     {
         return None;
     }
     let mut data = String::new();
-    folder.open(&leaf).ok()?.take(MAX_GIT_REF_BYTES + 1)
-        .read_to_string(&mut data).ok()?;
+    folder
+        .open(&leaf)
+        .ok()?
+        .take(MAX_GIT_REF_BYTES + 1)
+        .read_to_string(&mut data)
+        .ok()?;
     if data.len() as u64 > MAX_GIT_REF_BYTES {
         return None;
     }
@@ -129,17 +134,20 @@ fn git_snapshot(dir: &Dir) -> GitObservation {
     if validate_relative(branch, false).is_err() {
         return unknown();
     }
-    let local = read_small(dir, &format!(".git/refs/heads/{branch}"))
-        .filter(|s| hex_commit(s));
-    let tracking = read_small(dir, &format!(".git/refs/remotes/origin/{branch}"))
-        .filter(|s| hex_commit(s));
+    let local = read_small(dir, &format!(".git/refs/heads/{branch}")).filter(|s| hex_commit(s));
+    let tracking =
+        read_small(dir, &format!(".git/refs/remotes/origin/{branch}")).filter(|s| hex_commit(s));
     let comparison = match (&local, &tracking) {
         (Some(a), Some(b)) if a == b => "local_tracking_equal",
         (Some(_), Some(_)) => "local_tracking_differs",
         _ => "not_verified",
     };
     GitObservation {
-        state: if local.is_some() { "loose_ref_observed" } else { "ref_unverifiable" },
+        state: if local.is_some() {
+            "loose_ref_observed"
+        } else {
+            "ref_unverifiable"
+        },
         branch: Some(branch.to_owned()),
         local_head: local,
         local_tracking_head: tracking,
@@ -151,8 +159,18 @@ fn git_snapshot(dir: &Dir) -> GitObservation {
 
 fn root_artifact_candidate(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    [".exe", ".msi", ".zip", ".tar", ".gz", ".deb", ".rpm", ".appimage"]
-        .iter().any(|ext| lower.ends_with(ext))
+    [
+        ".exe",
+        ".msi",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".deb",
+        ".rpm",
+        ".appimage",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext))
         || lower.contains("benchmark")
         || lower.contains("results")
         || lower.contains("manifest")
@@ -168,19 +186,26 @@ fn category(path: &str) -> &'static str {
         || lower.starts_with(".venv/")
     {
         "toolchain_candidate"
-    } else if lower.ends_with(".exe") || lower.ends_with(".msi")
-        || lower.ends_with(".deb") || lower.ends_with(".rpm")
-        || lower.ends_with(".appimage") {
+    } else if lower.ends_with(".exe")
+        || lower.ends_with(".msi")
+        || lower.ends_with(".deb")
+        || lower.ends_with(".rpm")
+        || lower.ends_with(".appimage")
+    {
         "installer_or_executable"
-    } else if lower.ends_with(".zip") || lower.ends_with(".tar")
-        || lower.ends_with(".gz") {
+    } else if lower.ends_with(".zip") || lower.ends_with(".tar") || lower.ends_with(".gz") {
         "archive"
     } else {
         "build_artifact_or_metadata"
     }
 }
 
-fn verify_file(folder: &Dir, name: &str, path: String, remaining: &mut u64) -> Option<EvidenceFile> {
+fn verify_file(
+    folder: &Dir,
+    name: &str,
+    path: String,
+    remaining: &mut u64,
+) -> Option<EvidenceFile> {
     let metadata = folder.symlink_metadata(name).ok()?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return None;
@@ -209,7 +234,14 @@ fn verify_file(folder: &Dir, name: &str, path: String, remaining: &mut u64) -> O
             (Some(format!("{:x}", hasher.finalize())), "sha256_observed")
         }
     } else {
-        (None, if size > MAX_HASH_BYTES { "over_digest_limit" } else { "scan_budget_exhausted" })
+        (
+            None,
+            if size > MAX_HASH_BYTES {
+                "over_digest_limit"
+            } else {
+                "scan_budget_exhausted"
+            },
+        )
     };
     Some(EvidenceFile {
         relative_path: path.clone(),
@@ -266,9 +298,14 @@ impl IdeWorkspaceRegistry {
                     complete = false;
                     break;
                 }
-                let path = if name.is_empty() { filename.clone() }
-                    else { format!("{name}/{filename}") };
-                if let Some(item) = verify_file(&folder, &filename, path, &mut remaining_digest_bytes) {
+                let path = if name.is_empty() {
+                    filename.clone()
+                } else {
+                    format!("{name}/{filename}")
+                };
+                if let Some(item) =
+                    verify_file(&folder, &filename, path, &mut remaining_digest_bytes)
+                {
                     files.push(item);
                 }
             }
@@ -276,7 +313,10 @@ impl IdeWorkspaceRegistry {
                 break;
             }
         }
-        let toolchain_readiness = if files.iter().any(|file| file.category == "toolchain_candidate") {
+        let toolchain_readiness = if files
+            .iter()
+            .any(|file| file.category == "toolchain_candidate")
+        {
             "present_unverified"
         } else {
             "not_verified"
@@ -307,6 +347,9 @@ mod tests {
     #[test]
     fn benchmark_and_installer_classification_is_descriptive_only() {
         assert_eq!(category("Delivered/app.exe"), "installer_or_executable");
-        assert_eq!(category("benchmarks/results.json"), "benchmark_or_result_evidence");
+        assert_eq!(
+            category("benchmarks/results.json"),
+            "benchmark_or_result_evidence"
+        );
     }
 }

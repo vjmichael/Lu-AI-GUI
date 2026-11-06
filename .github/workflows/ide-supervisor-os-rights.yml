@@ -1,0 +1,45 @@
+name: IDE native restricted-rights admission probes
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/sandbox/**'
+      - 'ide/docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md'
+      - '.github/workflows/ide-supervisor-os-rights.yml'
+  push:
+    paths:
+      - 'ide/sandbox/**'
+      - '.github/workflows/ide-supervisor-os-rights.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-restricted-token:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile Windows restricted token probe
+        run: cargo build --manifest-path ide/sandbox/Cargo.toml --bin windows_restricted_token_probe --release
+      - name: Test OS restricted-token primitive
+        run: cargo run --manifest-path ide/sandbox/Cargo.toml --bin windows_restricted_token_probe --release
+      - name: Verify formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/sandbox/Cargo.toml -- --check
+
+  linux-cgroup-delegation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile Linux cgroup-v2 admission probe
+        run: cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_probe --release
+      - name: Check delegated CPU memory and PID quota controls
+        run: cargo run --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_probe --release
+      - name: Verify formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/sandbox/Cargo.toml -- --check

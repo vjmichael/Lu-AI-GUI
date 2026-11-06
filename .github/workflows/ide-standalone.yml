@@ -8,6 +8,13 @@ on:
       - "ide/host/**"
       - "ide/proto/**"
       - ".github/workflows/ide-standalone.yml"
+  pull_request:
+    branches: [ide/workspace-development]
+    paths:
+      - "ide/app/**"
+      - "ide/host/**"
+      - "ide/proto/**"
+      - ".github/workflows/ide-standalone.yml"
   workflow_dispatch:
 
 permissions:
