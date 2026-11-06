@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "eb793abce5888ee099b0bde5f5c77593d9251ed8",
+  "sourceCommitBeforeLock": "540f89c80528ae5f91f8474c03bd101c9f2bd04b",
   "trackedFileCount": 481,
   "files": [
     {
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "ccb1550d6056de512bfe42dd1bc5bc04c1aeeae2"
+      "blob": "f6fd0be5d5bda0889fa83083a6344601385d3624"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -141,7 +141,7 @@
     },
     {
       "path": "docs/LU_TOOL_COMPLETION_WAVES.md",
-      "blob": "7acf870b94b2c51fc5a308dad0037610e195a085"
+      "blob": "592465527d15c540a34efc3db2a3ae36d375af2a"
     },
     {
       "path": "docs/LU_V1_01_WINDOWS_ICON_IMPORT_DEV_20261103.md",
@@ -405,11 +405,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/image_workspace_desktop.rs",
-      "blob": "3fc3bf66bfd40fd4ca0b42b64a02a0149767e2a9"
+      "blob": "25691501320c7babad09b77ea8a9b089778ce793"
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "3d9e1c553d50918e1ac40c9b6102801a3d86980a"
+      "blob": "8de605575fa0d87dc09784cdcaf6bfcaa48f8626"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -549,7 +549,7 @@
     },
     {
       "path": "lu-desktop/tests/image-workspace-history.test.mjs",
-      "blob": "4aada60fcba83f767c988fcb9be2d67a54f1db38"
+      "blob": "59d848b21d78a2f64ccd77d71af9d1ecba87c1a2"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -697,7 +697,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "ac2baf92715e628414481b97d3951fd7c64f9a97"
+      "blob": "34b33881ba5e202f2387c1082629ea823d882d5c"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
