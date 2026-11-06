@@ -679,6 +679,9 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                 auto_scan_cursor=notice.sequence;
                 let chat_id=notice.workspace_id;
                 if !chat_id.starts_with("c-")
+                  // Ending a screen-observer lease is NOT a reason to wake
+                  // an AI model, even for opted-in Background notifications.
+                  ||notice.task_id.starts_with("obs-")
                   ||attempted.get(&chat_id).is_some_and(|seq|*seq>=notice.sequence)
                   ||!state.background_tasks.auto_continue_enabled(&chat_id)
                      .unwrap_or(false)

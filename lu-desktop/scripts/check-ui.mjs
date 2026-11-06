@@ -14,6 +14,7 @@ const tests = [
     ui.includes('Observe & Learn · Lu UI only') &&
     ui.includes('Can see desktop: No') &&
     ui.includes("observeAction('stop')") &&
+    host.includes('notice.task_id.starts_with("obs-")') &&
     css.includes('.observePilot')],
   ['Wave 4 browser preference remains a host-only render setting without navigation authority',
     host.includes('fn lu_browser_visibility(') &&
