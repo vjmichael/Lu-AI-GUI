@@ -5,6 +5,7 @@ use zip::{ZipWriter,ZipArchive,write::SimpleFileOptions,CompressionMethod};
 use lu_core::{
     native_office_revision::{
         OfficeRevisionEdit,OfficeRevisionError,render_office_revision,publish_office_revision_new,
+        render_office_revision_batch,publish_office_revision_batch_new,
     },
     native_docx_create::{render_docx,DocxBlock,DocxBlockKind},
     native_spreadsheet_create::{render_xlsx,SpreadsheetCell,CellValue},
@@ -132,4 +133,74 @@ fn package_edits_fail_on_changed_baseline_unsupported_cell_and_signed_parts(){
         &OfficeRevisionEdit::WordRun{
             text_index:0,expected_old:"before".into(),new_text:"after".into(),
         }).unwrap_err(),OfficeRevisionError::UnsupportedPackage);
+}
+
+#[test]
+fn batch_word_changes_are_atomic_and_preserve_original_and_unmodified_parts(){
+    let original=render_docx(&[
+        DocxBlock{kind:DocxBlockKind::Title,text:"Title before".into()},
+        DocxBlock{kind:DocxBlockKind::Paragraph,text:"First body".into()},
+        DocxBlock{kind:DocxBlockKind::Paragraph,text:"Second body".into()},
+    ]).unwrap();
+    let edits=vec![
+        OfficeRevisionEdit::WordRun{
+            text_index:0,expected_old:"Title before".into(),
+            new_text:"Revised title".into(),
+        },
+        OfficeRevisionEdit::WordRun{
+            text_index:2,expected_old:"Second body".into(),
+            new_text:"Revised body".into(),
+        },
+    ];
+    let revised=render_office_revision_batch(&original,&hash(&original),&edits).unwrap();
+    let text=read_docx_bytes(&revised.revised_bytes,4096).unwrap().text;
+    assert!(text.contains("Revised title"));
+    assert!(text.contains("Revised body"));
+    assert!(text.contains("First body"));
+    assert_eq!(part(&original,"word/styles.xml"),
+        part(&revised.revised_bytes,"word/styles.xml"));
+    let (root,dir)=fixture();
+    fs::write(root.join("original.docx"),&original).unwrap();
+    let receipt=publish_office_revision_batch_new(
+        &dir,"original.docx",&dir,"new-version.docx",
+        "office-batch-123456789",&hash(&original),&revised.revised_sha256,&edits
+    ).unwrap();
+    assert_eq!(receipt.sha256,revised.revised_sha256);
+    assert_eq!(fs::read(root.join("original.docx")).unwrap(),original);
+    assert_eq!(fs::read(root.join("new-version.docx")).unwrap(),revised.revised_bytes);
+    assert!(publish_office_revision_batch_new(
+        &dir,"original.docx",&dir,"new-version.docx",
+        "office-batch-987654321",&hash(&original),&revised.revised_sha256,&edits
+    ).is_err());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn batch_rejects_ambiguous_cells_and_partial_change_without_publication(){
+    let original=render_xlsx("Sheet",&[
+        SpreadsheetCell{row:1,column:1,value:CellValue::Number(4.0)},
+        SpreadsheetCell{row:2,column:1,value:CellValue::Number(5.0)},
+    ]).unwrap();
+    let source=hash(&original);
+    let edits=vec![
+        OfficeRevisionEdit::CellNumber{
+            sheet_number:1,address:"A1".into(),expected_old:4.0,new_number:8.0,
+        },
+        OfficeRevisionEdit::CellNumber{
+            sheet_number:1,address:"A2".into(),expected_old:999.0,new_number:3.0,
+        },
+    ];
+    assert_eq!(render_office_revision_batch(&original,&source,&edits).unwrap_err(),
+        OfficeRevisionError::SourceChanged);
+    let ambiguous=vec![edits[0].clone(),edits[0].clone()];
+    assert_eq!(render_office_revision_batch(&original,&source,&ambiguous).unwrap_err(),
+        OfficeRevisionError::AmbiguousTarget);
+    let (root,dir)=fixture();
+    fs::write(root.join("source.xlsx"),&original).unwrap();
+    assert!(publish_office_revision_batch_new(
+        &dir,"source.xlsx",&dir,"never-create.xlsx",
+        "office-batch-refuse-001",&source,&"0".repeat(64),&edits
+    ).is_err());
+    assert!(!root.join("never-create.xlsx").exists());
+    assert_eq!(fs::read(root.join("source.xlsx")).unwrap(),original);
+    drop(dir);fs::remove_dir_all(root).unwrap();
 }
