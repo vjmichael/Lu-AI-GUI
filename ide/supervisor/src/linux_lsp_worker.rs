@@ -201,7 +201,7 @@ impl Drop for LinuxLspProcess {
         if !self.released { let _ = self.group.kill_and_verify(); }
     }
 }
-pub(crate) fn start_linux_lsp(
+pub fn start_linux_lsp(
     supervisor: Arc<Supervisor>, job_id: &str, plan: &JobPlan,
     current_native_head: &str, input: &PublishedInput,
     release_root: &Path,
@@ -278,7 +278,7 @@ pub(crate) fn start_linux_lsp(
     )?;
     Ok(LinuxLspSession {gateway})
 }
-pub(crate) struct LinuxLspSession { gateway: LspGateway }
+pub struct LinuxLspSession { gateway: LspGateway }
 impl LinuxLspSession {
     pub fn initialize(&mut self) -> Result<(), SupervisorError> { self.gateway.initialize() }
     pub fn open(&mut self, source: DiagnosticSource, uri: &str, text: &str)
