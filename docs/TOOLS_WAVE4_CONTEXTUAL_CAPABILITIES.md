@@ -36,3 +36,8 @@ Advanced GitHub operations belong to Lu IDE DLC, not the Core Git domain.
 Explicit human status questions in normal Send reuse the existing BackgroundProcess reconciliation and durable TaskStore. A new chat-scoped SQL query filters before its limit; only host-owned task IDs, state enums and recorded percentages enter a marked GGUF context snapshot. No worker-authored text, private paths, other chat data, scheduler, new execution tool, process cancellation or authority is introduced. Native and desktop tests were added. Installed Windows GGUF and Linux/Windows CI remain pending.
 
 Browser, Research, Environment, Vision and Image Workspace remain distinct open Wave 4 domains.
+
+
+## WAVE4-ENV-01 — local environment observation (source implemented)
+
+A current human question such as "Show my system specs" now enriches an ordinary GGUF chat turn with a freshly collected, bounded and host-owned environment snapshot. Reuses the existing compute_inventory CPU, instruction and platform GPU-hint collectors. Reports OS family, architecture, logical CPU availability and vetted CPU feature hints. Windows GPU probing remains unverified; Linux node counts remain hints, never backend initialization or successful inference. No shell, package manager, environment-variable dump, model-selected executable or permission is introduced. Dedicated Windows native classifier/snapshot tests added. Software version and executable fingerprint attestation remain open for later ENV slices; release and installed acceptance pending.

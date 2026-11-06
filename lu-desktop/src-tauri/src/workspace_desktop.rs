@@ -83,12 +83,12 @@ pub(crate) fn explicit_read_git_request(prompt:&str)->bool{
     let lower=current.to_ascii_lowercase();
     if ["how to ","how do i ","what is ","what does ","explain ",
         "do not ","don't ","without ","no tools","don't run",
-        "git add","git commit","git push","git pull","git fetch",
+        "git add","git commit ","git push","git pull","git fetch",
         "git checkout","git clean","git reset","git rebase","git merge",
         "git switch","git stash","delete ","remove ","rewrite ",
         "stage ","commit ","push ","checkout ","reset ",
         "rename ","modify ","write ","create "]
-        .iter().any(|term|lower.contains(term)){
+        .iter().any(|term|lower.contains(term)) || lower.ends_with("git commit"){
         return false
     }
     ["git status","git log","git diff","git history",
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn git_read_only_discovery_requires_explicit_nonmutating_user_request(){
         for request in ["Check git status in this repository",
-            "Show git log","Review git diff for this project",
+            "Show git log","Show git commits","Review git diff for this project",
             "Please inspect repository history"]{
             assert!(explicit_read_git_request(request),"{request}");
         }

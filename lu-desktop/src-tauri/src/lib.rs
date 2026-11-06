@@ -6,6 +6,7 @@ mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
 mod background_context;
+mod environment_context;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -1215,6 +1216,15 @@ async fn generate_internal(
                     .map_err(|_|"Scoped background status unavailable")?;
                 model_prompt.push_str("\n\n");
                 model_prompt.push_str(&background_context::snapshot(&rows,&chat_id));
+            }
+            // WAVE4-ENV-01: fresh host diagnostics, never a model-selected
+            // shell, environment variable dump or backend-readiness claim.
+            if origin==GenerationOrigin::Human&&images.is_empty()&&
+                environment_context::explicit_environment_status_request(&prompt){
+                model_prompt.push_str("\n\n");
+                model_prompt.push_str(
+                    &environment_context::fresh_environment_snapshot()
+                );
             }
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {

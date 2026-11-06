@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ca1581cc0b1b9ca275934b6f6ebba1d5eb2e5251",
-  "trackedFileCount": 398,
+  "sourceCommitBeforeLock": "1570fed2b403f5fb95c7417e58dd262487e2230f",
+  "trackedFileCount": 399,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -45,7 +45,7 @@
     },
     {
       "path": ".github/workflows/lu-wave4-contextual-tools.yml",
-      "blob": "59bffbe834b124ddb18297ebc489e3b996871cda"
+      "blob": "796a4220ee3c92712ae5a98cafbd6c209591969b"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -93,7 +93,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "221f62e784bfe0e6b38b7d997b9984dc5f11424e"
+      "blob": "f0f0f71c22dae29c1729306ab34c463ddf3a5dfc"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -173,7 +173,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE4_CONTEXTUAL_CAPABILITIES.md",
-      "blob": "3e40af6ecae3b3f2a405cdb2140e52244c8e3e59"
+      "blob": "ff656b0a03e4675f9350bda6849621c7f60d635e"
     },
     {
       "path": "docs/WIN_LOAD_01_HOST_TRACE_20261103.md",
@@ -336,6 +336,10 @@
       "blob": "cd43312fff8784a870ff1f60c408f52ada739bb7"
     },
     {
+      "path": "lu-desktop/src-tauri/src/environment_context.rs",
+      "blob": "348f63c9ac96d4437f08f2e0c08b1651a049a3b9"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/file_scan_worker.rs",
       "blob": "a013cc499b13179b74a196cd49ce8733a253d5e3"
     },
@@ -353,7 +357,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "3aa950cc70d1d9df4c0fa945292dfb74af2794db"
+      "blob": "d7fe68ca63d9607b84d63ff2e7aee4f6a99d73e8"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -409,7 +413,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "07eafca6bf7d080c665126170556d014377fc3c1"
+      "blob": "2677948643e3845e36b6ff976a9885d4de63dae9"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
