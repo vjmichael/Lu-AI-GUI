@@ -25,9 +25,13 @@ use windows_sys::Win32::{
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            ConvertStringSidToSidW, LookupAccountNameW,
+            ConvertStringSidToSidW, LookupAccountNameW, GetNamedSecurityInfoW,
+            SE_FILE_OBJECT,
         },
-        CheckTokenMembership, EqualSid, GetTokenInformation, ImpersonateSelf,
+        CheckTokenMembership, EqualSid, GetTokenInformation, GetAclInformation, GetAce,
+        GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
+        AclSizeInformation, DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED,
+        ACCESS_ALLOWED_ACE_TYPE,
         IsTokenRestricted, OpenProcessToken, OpenThreadToken, RevertToSelf,
         SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenIsAppContainer, TokenUser,
     },
@@ -195,7 +199,7 @@ fn process_creation(process: HANDLE) -> Result<u64, SupervisorError> {
     }
     Ok(((c.dwHighDateTime as u64) << 32) | c.dwLowDateTime as u64)
 }
-fn hash_executable(expected_path: &Path, expected_hash: &str) -> Result<(), SupervisorError> {
+pub(crate) fn hash_executable(expected_path: &Path, expected_hash: &str) -> Result<(), SupervisorError> {
     if expected_hash.len() != 64 || !expected_hash.bytes().all(|b| b.is_ascii_hexdigit())
         || !expected_path.is_absolute() { return Err(denied()); }
     let md = fs::symlink_metadata(expected_path).map_err(|_| denied())?;
@@ -265,6 +269,62 @@ pub fn authenticate_client(
         (&mut in_container as *mut u32).cast(), size_of::<u32>() as u32, &mut size)
     } == 0 || in_container != 0 { return Err(denied()); }
     Ok(VerifiedClientLease { handle: process, pid, creation_time: created })
+}
+
+/// Independently check installer expectations at runtime. Root and config
+/// must have protected DACLs granting only SYSTEM and this service SID.
+/// No broad user, administrator, or inherited ACE can be silently adopted.
+pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> {
+    let system = parse_sid("S-1-5-18")?;
+    let service = parse_sid(&sid_of_service()?)?;
+    for path in [root.to_path_buf(), root.join("service.json")] {
+        let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
+        if meta.file_attributes() & 0x400 != 0 { return Err(denied()); }
+        let mut dacl = ptr::null_mut();
+        let mut descriptor = ptr::null_mut();
+        let result = unsafe { GetNamedSecurityInfoW(
+            wide(path.as_os_str()).as_ptr(), SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION, ptr::null_mut(), ptr::null_mut(),
+            &mut dacl, ptr::null_mut(), &mut descriptor,
+        ) };
+        if result != 0 || descriptor.is_null() || dacl.is_null() {
+            return Err(denied());
+        }
+        let owned = OwnedSid(descriptor);
+        let mut control = 0u16;
+        let mut revision = 0u32;
+        if unsafe { GetSecurityDescriptorControl(owned.0, &mut control, &mut revision) } == 0
+            || control & SE_DACL_PROTECTED == 0 { return Err(denied()); }
+        let mut info = ACL_SIZE_INFORMATION::default();
+        if unsafe { GetAclInformation(dacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation)
+        } == 0 || info.AceCount < 2 || info.AceCount > 8 { return Err(denied()); }
+        let mut seen_system = false;
+        let mut seen_service = false;
+        for i in 0..info.AceCount {
+            let mut entry = ptr::null_mut();
+            if unsafe { GetAce(dacl, i, &mut entry) } == 0 || entry.is_null() {
+                return Err(denied());
+            }
+            let ace = unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
+            if ace.Header.AceType != ACCESS_ALLOWED_ACE_TYPE
+                || ace.Header.AceFlags & 0x10 != 0
+                || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+                return Err(denied());
+            }
+            let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+            if unsafe { EqualSid(sid, system.0) } != 0 {
+                seen_system = true;
+            } else if unsafe { EqualSid(sid, service.0) } != 0 {
+                seen_service = true;
+            } else {
+                return Err(denied());
+            }
+        }
+        if !seen_system || !seen_service { return Err(denied()); }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
