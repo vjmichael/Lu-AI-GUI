@@ -630,6 +630,12 @@ message OfficeBooleanPatch {
   bool expected_old = 3;
   bool new_boolean = 4;
 }
+message OfficeStringPatch {
+  uint32 sheet_number = 1;
+  string address = 2;
+  string expected_old = 3;
+  string new_text = 4;
+}
 message OfficeRevisionRequest {
   string source_name = 1;
   string target_new_name = 2;
@@ -640,6 +646,7 @@ message OfficeRevisionRequest {
     OfficeTextPatch slide_text = 6;
     OfficeNumberPatch cell_number = 7;
     OfficeBooleanPatch cell_boolean = 8;
+    OfficeStringPatch cell_text = 9;
   }
 }
 message OfficeRevisionResult {
@@ -658,6 +665,7 @@ message OfficeBatchPatch {
     OfficeTextPatch slide_text = 2;
     OfficeNumberPatch cell_number = 3;
     OfficeBooleanPatch cell_boolean = 4;
+    OfficeStringPatch cell_text = 5;
   }
 }
 message OfficeBatchRevisionRequest {
