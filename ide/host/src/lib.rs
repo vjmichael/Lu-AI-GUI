@@ -19,6 +19,7 @@ pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
 pub mod lsp;
+pub mod lsp_session;
 pub mod proposal;
 pub mod resource_probe;
 pub mod review;
