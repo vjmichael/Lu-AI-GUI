@@ -74,8 +74,11 @@ foreach($item in $manifest.files) {
 }
 $exeDigest = $files['tesseract.exe']
 $env:LU_OCR_TESSERACT_SHA256 = $exeDigest
+$engDigest = $files['tessdata/eng.traineddata']
+$env:LU_OCR_ENG_SHA256 = $engDigest
 if ($env:GITHUB_ENV) {
   Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_OCR_TESSERACT_SHA256=$exeDigest"
+  Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_OCR_ENG_SHA256=$engDigest"
 }
 Write-Output 'Offline OCR resources staged and SHA-256 checked. Build with the Tauri OCR overlay.'
 Write-Output 'Bundling still requires a reviewed license manifest and independent native acceptance.'
