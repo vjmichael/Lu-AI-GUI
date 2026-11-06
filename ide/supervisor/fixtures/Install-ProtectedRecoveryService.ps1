@@ -71,8 +71,15 @@ try {
   $args=@('create',$serviceName,'type=','own','start=','demand',
     'obj=','NT AUTHORITY\LocalService','binPath=','"'+$serviceExe+'"',
     'DisplayName=','Lu IDE Recovery Broker')
-  & sc.exe @args | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'DENIED: SCM service creation failed' }
+  # Preserve the native SCM error code and Win32 message. Hiding this
+  # output previously reduced a real Windows 2022 failure to an opaque
+  # "SCM service creation failed" even though the pinned build succeeded.
+  $scOutput=@(& sc.exe @args 2>&1 | ForEach-Object { [string]$_ })
+  $scExit=$LASTEXITCODE
+  if ($scExit -ne 0) {
+    throw ("DENIED: SCM service creation failed (exit={0}): {1}" -f
+      $scExit, ($scOutput -join ' | '))
+  }
   $created=$true
   & sc.exe sidtype $serviceName restricted | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted service SID installation failed' }
@@ -95,9 +102,12 @@ try {
   $settings|ConvertTo-Json -Depth 4|Set-Content -LiteralPath $config -Encoding utf8 -NoNewline
   & icacls.exe $config /inheritance:r /grant:r ($system+':F') ($serviceSid+':M') | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected config ACL failed' }
+  $allowed=@($system,$serviceSid)
   $configAcl=Get-Acl -LiteralPath $config
   if (!$configAcl.AreAccessRulesProtected -or
-      @($configAcl.Access|Where-Object {$_.IdentityReference.Value -notin $allowed}).Count) {
+      @($configAcl.Access|Where-Object {
+        $_.AccessControlType -ne 'Allow' -or $_.IdentityReference.Value -notin $allowed
+      }).Count) {
     throw 'DENIED: service configuration ACL not private'
   }
   & icacls.exe $root /inheritance:r /grant:r (
@@ -105,7 +115,6 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: private evidence DACL provisioning failed' }
   $acl=Get-Acl -LiteralPath $root
   if (!$acl.AreAccessRulesProtected) { throw 'DENIED: evidence directory inherits parent ACL' }
-  $allowed=@($system,$serviceSid)
   foreach ($entry in $acl.Access) {
     if ($entry.AccessControlType -ne 'Allow' -or $entry.IdentityReference.Value -notin $allowed) {
       throw "DENIED: unexpected evidence ACE: $($entry.IdentityReference.Value)"
