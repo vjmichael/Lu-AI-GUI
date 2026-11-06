@@ -18,7 +18,11 @@ fn smoke() -> Result<(), String> {
     use std::{path::PathBuf, ptr};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS},
-        System::JobObjects::CreateJobObjectW,
+        System::{
+            JobObjects::CreateJobObjectW,
+            Pipes::{CreateNamedPipeW, PIPE_ACCESS_DUPLEX, PIPE_READMODE_MESSAGE,
+                PIPE_TYPE_MESSAGE, PIPE_WAIT, PIPE_REJECT_REMOTE_CLIENTS},
+        },
     };
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.len() != 2 { return Err("service path + fixed hash required".into()); }
@@ -53,6 +57,25 @@ fn smoke() -> Result<(), String> {
     if !lease.alive() { return Err("protected service departed after READY".into()); }
     lease.release_empty()
         .map_err(|e| format!("protected release: {}", e.code()))?;
+    // No ordinary interactive user may create another server instance on the
+    // service's name, even when the caller is an administrator in CI.
+    let rogue = unsafe { CreateNamedPipeW(
+        ws(lu_ide_execution_supervisor::windows_service_security::SERVICE_ENDPOINT).as_ptr(),
+        PIPE_ACCESS_DUPLEX,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+        16, 4096, 4096, 0, ptr::null(),
+    ) };
+    if rogue != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        unsafe { CloseHandle(rogue); }
+        return Err("same-user process created a forged service pipe".into());
+    }
+    // The protected witness/config bytes cannot be modified under ordinary
+    // interactive rights, regardless of who launched the native IDE.
+    let config_path = config.private_witness_directory.join("service.json");
+    if std::fs::OpenOptions::new().append(true).open(&config_path).is_ok() {
+        return Err("interactive host can append to protected config".into());
+    }
+    println!("PASS: rogue pipe instance and interactive config tampering rejected");
     println!("PASS: kernel-attested service admission and durable empty Job release");
     Ok(())
 }
