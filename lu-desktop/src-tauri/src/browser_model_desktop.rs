@@ -15,6 +15,10 @@ use lu_core::{
     registry::NativeToolRegistry,
 };
 use std::collections::BTreeSet;
+use lu_core::web_research_citation::{
+    BrowserCitationSource,audit_browser_research_answer,
+    render_observed_source_appendix,
+};
 use serde::Serialize;
 
 struct BrowserReadOnlyPolicy;
@@ -362,7 +366,7 @@ pub(crate) async fn lu_generate_browser(
             });
             let deadline=std::time::Instant::now()+Duration::from_secs(600);
             let mut recent=Vec::<String>::new();
-            let mut evidence=BTreeMap::<String,String>::new();
+            let mut evidence=BTreeMap::<String,(String,BrowserCitationSource)>::new();
             let mut calls_seen=HashSet::<String>::new();
             let mut attempts=0usize;
             loop{
@@ -496,7 +500,14 @@ pub(crate) async fn lu_generate_browser(
                             owner.chats.append_browser_observation(
                                 &chat_id,&gid,&host_call,&proposal.tool_name,&record
                             )?;
-                            evidence.insert(identity,record.clone());
+                            evidence.insert(identity,(
+                                record.clone(),BrowserCitationSource{
+                                    url:saved.source_url,
+                                    content_sha256:saved.observed_sha256,
+                                    excerpt:saved.excerpt,
+                                    truncated:saved.excerpt_truncated,
+                                }
+                            ));
                             recent.push(record);
                         }
                     }else {
@@ -515,7 +526,23 @@ pub(crate) async fn lu_generate_browser(
                 return Err("Browser did not produce a readable source".into());
             }
             if ticket.cancelled(){return Err("Cancelled Browser research".into());}
-            let source_records:Vec<String>=evidence.into_values().collect();
+            // Only sources actually included in the final prompt may be cited.
+            // Earlier observed receipts remain durable in the Research ledger
+            // but are not implicitly added to model-visible citation scope.
+            let mut source_records=Vec::<String>::new();
+            let mut citation_sources=Vec::<BrowserCitationSource>::new();
+            let mut budget=prompt.len()+256;
+            for (_identity,(record,source)) in evidence {
+                let item_len=record.len()+64;
+                if budget.saturating_add(item_len)>14*1024 {continue;}
+                budget+=item_len;
+                source_records.push(record);
+                citation_sources.push(source);
+                if source_records.len()>=120{break;}
+            }
+            if citation_sources.is_empty(){
+                return Err("No Browser observations fit the trusted citation budget".into());
+            }
             let final_prompt=browser_research_prompt(
                 &prompt,&source_records,true
             )?;
@@ -526,10 +553,9 @@ pub(crate) async fn lu_generate_browser(
             if ticket.cancelled(){
                 let _=owner.supervisor.cancel(&session_id,&gid,&next_id("req-"));
             }
+            // Buffer the untrusted model draft. Do not stream or persist it
+            // as an assistant answer until deterministic citation audit passes.
             let mut answer=String::new();
-            let mut last_checkpoint=std::time::Instant::now();
-            let mut last_bytes=0usize;
-            let mut token_index=0u32;
             let forward=|wire:Vec<u8>|->Result<(),BridgeError>{
                 let frame=decode_frame(&wire).map_err(BridgeError::Wire)?;
                 if let Some(proto::inference_frame::Body::Event(event))=frame.body {
@@ -538,18 +564,6 @@ pub(crate) async fn lu_generate_browser(
                             return Err(BridgeError::WrongOperation);
                         }
                         answer.push_str(&chunk.text);
-                        if answer.len().saturating_sub(last_bytes)>=512
-                            ||last_checkpoint.elapsed()>=Duration::from_millis(750){
-                            owner.chats.append_progress(&chat_id,&gid,&answer)
-                                .map_err(|_|BridgeError::WrongOperation)?;
-                            last_checkpoint=std::time::Instant::now();
-                            last_bytes=answer.len();
-                        }
-                        app.emit("lu-token",ChatEvent{
-                            chat_id:chat_id.clone(),generation_id:gid.clone(),
-                            text:chunk.text,index:token_index,
-                        }).map_err(|_|BridgeError::WrongOperation)?;
-                        token_index=token_index.saturating_add(1);
                     }
                 }
                 Ok(())
@@ -559,23 +573,30 @@ pub(crate) async fn lu_generate_browser(
                 Vec::new(),forward
             );
             if let Err(e)=generation{
-                if !answer.is_empty(){
-                    owner.chats.append_progress(&chat_id,&gid,&answer)?;
-                }
                 return Err(format!("Browser final answer failed: {e:?}"));
             }
             if ticket.cancelled()||!grant_current(
                 &owner,&task_id,&chat_id,&gid
             ){
-                if !answer.is_empty(){
-                    owner.chats.append_progress(&chat_id,&gid,&answer)?;
-                }
                 return Err("Cancelled or revoked Browser final answer".into());
             }
-            if answer.trim().is_empty(){
-                return Err("Browser research returned an empty answer".into());
+            audit_browser_research_answer(&answer,&citation_sources)
+                .map_err(|e|format!("Browser citation audit rejected unsupported answer: {e:?}"))?;
+            let appendix=render_observed_source_appendix(&citation_sources);
+            if answer.len().saturating_add(appendix.len())>200*1024{
+                return Err("Audited Browser answer exceeds output budget".into());
+            }
+            answer.push_str(&appendix);
+            if ticket.cancelled()||!grant_current(
+                &owner,&task_id,&chat_id,&gid
+            ){
+                return Err("Cancelled before audited Browser answer publication".into());
             }
             owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            app.emit("lu-token",ChatEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                text:answer.clone(),index:0,
+            }).map_err(|_|"Audited Browser output notification failed")?;
             owner.chats.complete(&chat_id,&gid)?;
             Ok(answer)
         })();
@@ -634,9 +655,13 @@ fn browser_research_prompt(
         ));
     }
     if final_answer{
-        prompt.push_str("\n[Answer the user's question using only the actual observed sources. ");
-        prompt.push_str("Link any observed source URLs where possible. Do not claim independent ");
-        prompt.push_str("bibliographic or passage verification. Explain gaps and uncertainty.]\n");
+        prompt.push_str("\n[Answer using ONLY the observations numbered above. ");
+        prompt.push_str("Place an exact [[B1]], [[B2]], etc. source marker in EVERY prose paragraph. ");
+        prompt.push_str("Only quote text appearing verbatim in the numbered source for that paragraph. ");
+        prompt.push_str("DO NOT write URLs, Markdown links, uncited paragraphs, invented sources ");
+        prompt.push_str("or conventional numbered footnotes. The trusted host adds source URLs ");
+        prompt.push_str("and observed-text hashes after checking citations. ");
+        prompt.push_str("These are browser observations, not independently verified publications.]\n");
     }else{
         prompt.push_str("\n[Continue investigation using only lu_browser_read on the approved ");
         prompt.push_str("origins. Use navigate/read/accessibility to observe real source text. ");
