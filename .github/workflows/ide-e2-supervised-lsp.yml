@@ -71,6 +71,14 @@ jobs:
           node-version: '22'
       - name: Generate first-party Tauri resource icon
         run: node ide/app/scripts/make-icon.mjs
+      # Tauri generate_context! refuses missing frontendDist even for cargo
+      # check. Build actual browser assets, never a dummy empty directory.
+      - name: Build genuine standalone frontend before Tauri compile
+        shell: bash
+        run: |
+          cd ide/app
+          npm install --no-audit --no-fund
+          npm run build
       - name: Compile standalone desktop with read-only LSP status and provider catalog
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
       - name: Compile release-gated protected native Windows language service host

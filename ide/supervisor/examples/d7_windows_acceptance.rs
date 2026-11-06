@@ -3,13 +3,13 @@
 //! Windows toolchain bundle, then run:
 //! cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
 //! This fixture supplies its own isolated test-only approval, never a user job.
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "windows-worker")))]
 fn main() {
-    eprintln!("DENIED: Windows-only native acceptance");
+    eprintln!("DENIED: Windows plus windows-worker feature required for native worker acceptance");
     std::process::exit(2);
 }
 
-#[cfg(all(windows, not(feature = "protected-recovery-service")))]
+#[cfg(all(windows, feature = "windows-worker", not(feature = "protected-recovery-service")))]
 fn require_independent_broker_release(
     root: &std::path::Path,
     job_id: &str,
@@ -36,7 +36,7 @@ fn require_independent_broker_release(
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "windows-worker"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         snapshot::publish_input,

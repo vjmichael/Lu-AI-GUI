@@ -1256,14 +1256,18 @@ mod tests {
         sup.record_human_approval(&task.job_id, &task.plan_sha256, &"b".repeat(40), true)
             .unwrap();
         inject_running(&sup, &task);
-        sup.mark_protected_recovery_pending(&task.job_id).unwrap();
-        assert_eq!(sup.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
-        assert!(sup.inspect().unwrap()[0].requires_reconciliation);
+        // Only interrupted, journal-reopened jobs may enter protected
+        // recovery. A live job cannot forge a service cleanup receipt.
+        drop(sup);
+        let interrupted = Supervisor::open(p.clone()).unwrap();
+        interrupted.mark_protected_recovery_pending(&task.job_id).unwrap();
+        assert_eq!(interrupted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
         assert_eq!(
-            sup.prepare(plan()).unwrap_err(),
+            interrupted.prepare(plan()).unwrap_err(),
             SupervisorError::Quarantined
         );
-        drop(sup);
+        drop(interrupted);
         let restarted = Supervisor::open(p.clone()).unwrap();
         assert_eq!(
             restarted.inspect().unwrap()[0].phase,

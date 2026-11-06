@@ -281,10 +281,23 @@ struct BoundedWrite {
 /// on the UI/worker actor itself; a dedicated bounded-channel writer owns the
 /// only host write handle. If it stalls, return within three seconds and kill
 /// the underlying Job Object before any further request is accepted.
+// A kernel pipe handle is process-wide, but the single writer thread
+// receives exclusive ownership. Do not make generic HANDLE wrappers Send.
+struct ThreadOwnedStdin(Handle);
+// SAFETY: the owned handle moves once to a single writer thread; it is
+// never concurrently accessed elsewhere, and its Drop closes that handle.
+unsafe impl Send for ThreadOwnedStdin {}
+impl ThreadOwnedStdin {
+    fn raw(&self) -> HANDLE {
+        self.0 .0
+    }
+}
+
 fn start_writer(
     stdin_write: Handle,
 ) -> Result<(SyncSender<BoundedWrite>, JoinHandle<()>), SupervisorError> {
     let (tx, rx): (SyncSender<BoundedWrite>, Receiver<BoundedWrite>) = mpsc::sync_channel(1);
+    let write_pipe = ThreadOwnedStdin(stdin_write);
     let thread = thread::Builder::new()
         .name("lu-e2-lsp-stdin".into())
         .spawn(move || {
@@ -294,7 +307,7 @@ fn start_writer(
                     let mut written = 0u32;
                     if unsafe {
                         WriteFile(
-                            stdin_write.0,
+                            write_pipe.raw(),
                             part.as_ptr(),
                             part.len() as u32,
                             &mut written,
