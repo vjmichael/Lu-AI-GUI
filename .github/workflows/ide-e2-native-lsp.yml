@@ -7,6 +7,11 @@ on:
       - '.github/workflows/ide-e2-native-lsp.yml'
   push:
     branches: ['ide/wave-e2-supervised-lsp-editor-20261106']
+# Coalesce superseded exact-head runs instead of filling the native CI queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
