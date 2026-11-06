@@ -163,6 +163,7 @@ pub enum JobPhase {
     Authorized,
     AdmissionPending,
     Running,
+    ReleasePending,
     CancelRequested,
     Cancelled,
     Completed,
@@ -183,6 +184,10 @@ fn valid_change(previous: Option<JobPhase>, next: JobPhase) -> bool {
             | (Some(JobPhase::AdmissionPending), JobPhase::Denied)
             | (Some(JobPhase::AdmissionPending), JobPhase::RecoveryRequired)
             | (Some(JobPhase::Running), JobPhase::CancelRequested)
+            | (Some(JobPhase::Running), JobPhase::ReleasePending)
+            | (Some(JobPhase::ReleasePending), JobPhase::Completed)
+            | (Some(JobPhase::ReleasePending), JobPhase::Failed)
+            | (Some(JobPhase::ReleasePending), JobPhase::RecoveryRequired)
             | (Some(JobPhase::Running), JobPhase::Completed)
             | (Some(JobPhase::Running), JobPhase::Failed)
             | (Some(JobPhase::Running), JobPhase::RecoveryRequired)
@@ -321,6 +326,7 @@ impl Store {
                 job.phase,
                 JobPhase::AdmissionPending
                     | JobPhase::Running
+                    | JobPhase::ReleasePending
                     | JobPhase::CancelRequested
                     | JobPhase::RecoveryRequired
                     | JobPhase::Uncertain
@@ -660,7 +666,7 @@ impl Supervisor {
         let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::ReleasePending | JobPhase::CancelRequested
         ) {
             return Err(SupervisorError::InvalidTransition);
         }
@@ -678,6 +684,21 @@ impl Supervisor {
             state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
         }
         result
+    }
+
+    /// E2 protected two-phase session termination: after the native kernel
+    /// Job is empty, fsync intent to release the independent SCM service
+    /// BEFORE relinquishing its retained Job handle. A host crash or failed
+    /// service ACK at this phase remains quarantined on journal replay.
+    fn native_mark_release_pending(&self, job_id: &str) -> Result<(), SupervisorError> {
+        let mut state=self.state.lock().map_err(|_|SupervisorError::JournalUnavailable)?;
+        let job=state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        if job.phase!=JobPhase::Running {return Err(SupervisorError::InvalidTransition);}
+        self.append(&mut state,job_id,&job.plan.project_id,&job.plan_hash,
+            JobPhase::ReleasePending,"native_tree_empty_release_pending",
+            "independent_service_ack_required")?;
+        state.jobs.get_mut(job_id).unwrap().phase=JobPhase::ReleasePending;
+        Ok(())
     }
 
     /// Final outcome requires the OS process tree to have fully exited
@@ -719,7 +740,7 @@ impl Supervisor {
             .get(job_id)
             .ok_or(SupervisorError::NoSuchJob)?
             .clone();
-        if job.phase != JobPhase::Running {
+        if !matches!(job.phase, JobPhase::Running | JobPhase::ReleasePending) {
             return Err(SupervisorError::InvalidTransition);
         }
         if !tree_reaped || !outputs_bounded {
