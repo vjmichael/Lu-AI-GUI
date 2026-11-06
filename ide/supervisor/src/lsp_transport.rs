@@ -8,7 +8,28 @@
 use crate::{JobPhase, NativeTreeTerminator, OsContainmentProof, Supervisor, SupervisorError};
 use lu_ide_workspace::lsp::{DiagnosticSource, MAX_MESSAGE};
 use lu_ide_workspace::lsp_session::{LspError, LspEvent, LspPhase, LspSession, Position};
-use std::{io, sync::Arc, time::{Duration, Instant}};
+use std::{io, path::Path, sync::Arc, time::{Duration, Instant}};
+
+/// Mint an LSP URI ONLY for a native-staged, absolute file from the worker's
+/// own read-only/private workspace. The server cannot choose a URI to open.
+pub(crate) fn trusted_staged_file_uri(path: &Path) -> Result<String, SupervisorError> {
+    if !path.is_absolute() { return Err(SupervisorError::WrongProjectOrSource); }
+    let raw = path.to_str().ok_or(SupervisorError::WrongProjectOrSource)?
+        .replace('\\', "/");
+    if raw.len() > 1400 || raw.chars().any(char::is_control) {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    let mut out = String::from("file:///");
+    for b in raw.trim_start_matches('/').bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'-' | b'_' | b':' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    if out.len() > 2048 { return Err(SupervisorError::WrongProjectOrSource); }
+    Ok(out)
+}
 
 const MAX_CHUNK: usize = 16 * 1024;
 const MAX_PENDING_OUTPUT: usize = MAX_MESSAGE + 256;
