@@ -173,10 +173,14 @@ impl LspGateway {
         let verified = self.process.as_mut().ok_or(SupervisorError::Quarantined)?
             .terminate_tree_and_verify()?;
         if !verified { return self.deny_and_quarantine(); }
-        self.supervisor.native_finish(&self.job_id, true, true, true)?;
-        self.finished = true; // Receipt is durable; do not append Cancelled.
+        // Mark the Job as pending protected-service release first. If either
+        // process or host crashes before ACK and final receipt, replay must
+        // quarantine this Job rather than inventing a successful shutdown.
+        self.supervisor.native_mark_release_pending(&self.job_id)?;
         self.process.as_mut().ok_or(SupervisorError::Quarantined)?
             .release_after_verified_terminal()?;
+        self.supervisor.native_finish(&self.job_id, true, true, true)?;
+        self.finished = true; // Durable final receipt follows independent ACK.
         Ok(())
     }
 }
