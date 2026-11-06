@@ -17,6 +17,10 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
     use std::ptr;
     use windows_sys::Win32::{
         Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE},
+        Security::{
+            Authorization::{SetSecurityInfo, SE_FILE_OBJECT},
+            GetSecurityDescriptorDacl, DACL_SECURITY_INFORMATION,
+        },
         Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
             CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_REJECT_REMOTE_CLIENTS,
@@ -36,24 +40,57 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
     OsRng.fill_bytes(&mut random);
     let nonce: String = random.iter().map(|b| format!("{b:02x}")).collect();
     let endpoint = ws(&format!(r"\\.\pipe\LuIdeD7AclProbe{nonce}"));
-    // The only server is the test fixture's own protected, unique instance.
+    // The real SCM service has the protected service SID needed to
+    // CREATE a pipe under that final DACL. This ordinary host does not:
+    // build one unguessable CI-only instance under its local default ACL,
+    // then replace its DACL with the identical service-issued ACL BEFORE
+    // any client opens. This tests client access, not service identity.
     const FIRST_INSTANCE: u32 = 0x0008_0000;
+    const WRITE_DAC: u32 = 0x0004_0000;
     let server = unsafe {
         CreateNamedPipeW(
             endpoint.as_ptr(),
-            PIPE_ACCESS_DUPLEX | FIRST_INSTANCE,
+            PIPE_ACCESS_DUPLEX | FIRST_INSTANCE | WRITE_DAC,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
             1,
             4096,
             4096,
             0,
-            &acl.attributes,
+            ptr::null(),
         )
     };
     if server.is_null() || server == INVALID_HANDLE_VALUE {
-        return Err(format!("DENIED: exact-user CI pipe creation Win32={}", unsafe {
-            GetLastError()
-        }));
+        return Err(format!("DENIED: CI pipe creation Win32={}", unsafe { GetLastError() }));
+    }
+    let mut present = 0i32;
+    let mut defaulted = 0i32;
+    let mut dacl = ptr::null_mut();
+    let extracted = unsafe {
+        GetSecurityDescriptorDacl(
+            acl.attributes.lpSecurityDescriptor,
+            &mut present,
+            &mut dacl,
+            &mut defaulted,
+        )
+    };
+    if extracted == 0 || present == 0 || dacl.is_null() {
+        unsafe { CloseHandle(server); }
+        return Err("DENIED: exact-user service DACL extraction failed".into());
+    }
+    let applied = unsafe {
+        SetSecurityInfo(
+            server,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            dacl,
+            ptr::null_mut(),
+        )
+    };
+    if applied != 0 {
+        unsafe { CloseHandle(server); }
+        return Err(format!("DENIED: exact-user CI DACL application Win32={applied}"));
     }
     // Match the production client precisely: no broad pipe-create right,
     // no privileged alternate identity and no forged service response.
