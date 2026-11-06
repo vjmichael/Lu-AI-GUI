@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-06 — D7D protected Windows recovery service (draft)
+- Added separately restricted SCM LocalService native broker, mutual kernel-verified named-pipe identities, service-owned direct ProgramData evidence ACLs, bounded request protocol, explicit cross-session Global Job ACL, and fsynced READY/release witnesses.
+- Added worker \`protected-recovery-service\` opt-in and two-phase restart reconciliation. Recovery retains quarantine until protected service ACK and original Job's native recheck.
+- Added Windows SCM smoke and independently observed owner-crash/Job kill/restarted-client fixtures in PR #63. Exact-head Windows CI and installed desktop acceptance not yet passed; Run remains disabled.
+
 ## 2026-11-05 — D6 fixed AppContainer + Job Object admission
 - Added per-probe zero-capability AppContainer profile, fixed self-copy staged inside profile, STARTUPINFOEX security capabilities, pre-resume Job Object assignment with kill-on-close/memory/PID limits, token check and host secret-read denial. Failures do not fall back to unrestricted CreateProcess.
 - Added Windows CI build/runtime probe/formatting workflow and acceptance boundaries. Fixed prior D4 formatting of Linux cgroup and Windows restricted-token probes from exact CI output. Source/worker and desktop effects remain disabled until actual Windows platform and installed acceptance.
