@@ -1107,6 +1107,7 @@ async fn lu_office_word_replace_all(
     if std::fs::symlink_metadata(&output).is_ok(){
         return Err("Output exists; Word revision never overwrites existing files".into());
     }
+    let destination_display=output.to_string_lossy().into_owned();
     let new_name=output.file_name().and_then(|s|s.to_str())
         .ok_or("Invalid Word destination filename")?.to_owned();
     let output_dir=office_revision_desktop::open_folder(
@@ -1147,6 +1148,11 @@ async fn lu_office_word_replace_all(
         },
     };
     let owner=Arc::clone(state.inner());
+    owner.wave2_recovery.record_intent(
+        &chat_id,&call_id,"lu.office.word_replace_all",
+        &destination_display,&new_name,&expected,
+        "Exact reviewed multi-run Word change, original file preserved"
+    )?;
     if owner.effects.prepare(&call)
         .map_err(|_|"Durable Word replacement intent refused")?
         !=PrepareOutcome::New{
@@ -3578,6 +3584,11 @@ async fn lu_confirm_archive_batch(
                     .map_err(|_|"Archive batch intent serialization failed")?,
             },
         };
+        owner.wave2_recovery.record_batch_intent(
+            &chat_id,&effect_id,&view.group_display,&view.group_name,
+            approved_manifest,
+            "User-reviewed exact multi-archive extraction into a NEW group",
+        )?;
         if owner.effects.prepare(&call)
             .map_err(|_|"Could not persist approved archive batch")?
             !=PrepareOutcome::New{
