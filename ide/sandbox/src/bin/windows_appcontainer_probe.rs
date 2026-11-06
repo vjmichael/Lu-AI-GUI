@@ -389,7 +389,7 @@ mod windows {
         }
         let temp = std::env::temp_dir();
         let env: Vec<u16> = format!(
-            "SystemRoot={}\\0TEMP={}\\0TMP={}\\0\\0",
+            "SystemRoot={}\0TEMP={}\0TMP={}\0\0",
             system_root.to_string_lossy(),
             temp.display(),
             temp.display()
