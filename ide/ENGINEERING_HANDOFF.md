@@ -27,6 +27,10 @@ Source control is now a real sidebar section using typed `git.status` and native
 
 Inventory baselines now store the observed Git worktree clean/dirty state (with backwards-compatible defaults for older snapshots). Comparisons distinguish becoming dirty from merely having a matching commit hash; an unchanged commit **never** proves the local source is unchanged. Native fixture regression included. Exact-head CI [42127486856](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42127486856) queued; installed GUI and live GitHub reconciliation unverified.
 
+## Wave B3 — Find in Project
+
+Separate branch `ide/project-search-20261105` adds bounded `source.findProject` native search over **saved UTF-8 files** (not unsaved buffers) using registered project directory capability, no shell/network/worker. The new Find in Project pane includes literal case-sensitive/insensitive search, revisioned match results, line + UTF-16 column/byte offsets, and exact-revision navigation that refuses stale results or dirty-draft coordinate reuse. Query, files, depth, bytes and matches are capped; incomplete coverage is visible. See [design and gates](docs/IDE_PROJECT_SEARCH.md). Source implemented, exact-head Linux/frontend/Windows CI and Windows installed UX unverified. Does not modify or depend on draft PR #43.
+
 ## Wave B1 human Find and Replace
 
 The standalone editor now has Ctrl+H and a Find/Replace bar: bounded literal case-sensitive/insensitive matching with correct CodeMirror UTF-16 offsets, Replace One or confirmed Replace All. Replacement is an unsaved **single CodeMirror transaction**, not a host write; saved file revision checks remain unchanged. The operation checks expected draft and consumes its nonce so remounting a tab does not replay it. New JS tests live in `app/tests/find_replace.test.mjs`.
