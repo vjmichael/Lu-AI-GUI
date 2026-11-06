@@ -1038,7 +1038,20 @@ async fn lu_generate(
     prompt: String,
     image_refs: Vec<String>,
     max_new_tokens: u32,
+    read_only_workspace: Option<bool>,
 ) -> Result<String, String> {
+    if read_only_workspace.unwrap_or(false){
+        // Wave 3: only an operator-set boolean reaches Tauri. The actual
+        // directory can *only* be selected in the native picker, and the
+        // existing WorkspaceReadTurnSession grants read-only capabilities for
+        // exactly one authenticated USER turn; no file writes are enabled.
+        workspace_desktop::validate_workspace_send_request(
+            &prompt,&image_refs,max_new_tokens,
+        ).map_err(str::to_owned)?;
+        return workspace_desktop::ask_workspace_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+        ).await?.ok_or_else(||"Workspace folder was not selected".into())
+    }
     generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
         prompt,image_refs,max_new_tokens,GenerationOrigin::Human).await
 }

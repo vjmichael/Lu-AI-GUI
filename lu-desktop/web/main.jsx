@@ -49,6 +49,9 @@ function App() {
   const [backgroundTerminalNotice,setBackgroundTerminalNotice] = useState(null);
   const [autoBackgroundContinuation,setAutoBackgroundContinuation] = useState(false);
   const [working, setWorking] = useState(false);
+  // An opt-in for exactly one ordinary Send. This boolean is never authority:
+  // the host still requires an actual native directory picker.
+  const [workspaceToolsNextSend,setWorkspaceToolsNextSend] = useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
@@ -1292,6 +1295,13 @@ function App() {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
+    const useWorkspaceTools=workspaceToolsNextSend;
+    if (useWorkspaceTools && (images.length || textFiles.length)){
+      setError('Workspace tools require a text-only question. Remove attachments or turn off workspace tools.');return;
+    }
+    if (useWorkspaceTools && input.length>8192){
+      setError('Workspace tool questions must be at most 8192 characters.');return;
+    }
     let submitted;
     try { submitted = buildSubmittedPrompt(input, textFiles); }
     catch (error) {setError(String(error));return;}
@@ -1305,6 +1315,9 @@ function App() {
       currentChat.current = activeId;
       setChatId(activeId);
     }
+    // A workspace opt-in is consumed on this Send even if the picker is
+    // denied/cancelled. No future conversation inherits a filesystem grant.
+    if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
     draftText.current = '';
@@ -1322,7 +1335,8 @@ function App() {
     try {
       const output = await invoke('lu_generate', {
         sessionId: runtime.sessionId, chatId: activeId,
-        prompt: submitted, imageRefs: refs, maxNewTokens: 512
+        prompt: submitted, imageRefs: refs, maxNewTokens: 512,
+        readOnlyWorkspace: useWorkspaceTools
       });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
@@ -2398,6 +2412,16 @@ function App() {
               disabled={!loaded||chatBusy||working||!prompt.trim()}
               title="Select one folder and let Lu read, search and inspect ZIP metadata inside it for this turn only"
               onClick={()=>void askWorkspaceDirectory()}>Ask Workspace</button>
+            <button type="button" className="subtleButton"
+              aria-pressed={workspaceToolsNextSend}
+              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
+              title="On the next normal Send, choose a folder in the native picker and let Lu use approved read-only tools for that one turn"
+              onClick={()=>setWorkspaceToolsNextSend(value=>!value)}>
+              {workspaceToolsNextSend?'Workspace tools: next Send ✓':'Use workspace tools on Send'}
+            </button>
+            {workspaceToolsNextSend && <span className="composerHelp" role="status">
+              Next Send will open a native folder picker. Read-only access is granted for that turn only.
+            </span>}
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>

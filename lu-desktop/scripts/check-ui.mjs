@@ -6,6 +6,12 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 3 normal Send one-turn workspace route is explicitly opt-in and uses native picker',
+    ui.includes('readOnlyWorkspace: useWorkspaceTools') &&
+    ui.includes('Use workspace tools on Send') &&
+    ui.includes('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') &&
+    host.includes('workspace_desktop::ask_workspace_for_chat(') &&
+    host.includes('workspace_desktop::validate_workspace_send_request(')],
   ['native GGUF import and generate remain Lu-only', ui.includes("invoke('lu_import_model')") && ui.includes("invoke('lu_generate'")],
   ['no Jan execution paths introduced', !/jan_llama|JanInference|jan-cowork/.test(ui + host)],
   ['new chats and conversation history are host-owned', ui.includes("invoke('lu_new_chat')") && ui.includes("invoke('lu_chats')") && host.includes('fn lu_new_chat(')],

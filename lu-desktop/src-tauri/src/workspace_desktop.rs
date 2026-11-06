@@ -1,6 +1,7 @@
 //! Explicit, human-selected read-only workspace session for a Lu chat.
 //! The folder is selected by a native dialog; no WebView or model string can
-//! supply the filesystem root. This is opt-in, not normal Send tool routing.
+//! supply the filesystem root. Wave 3 can also enter through normal Send,
+//! only when the user explicitly selects read-only workspace tools for that turn.
 use super::*;
 use lu_core::{
     conversation_authority::TrustedUserTurnVerifier,
@@ -26,6 +27,22 @@ impl TrustedUserTurnVerifier for PersistedWorkspaceTurn<'_> {
     }
 }
 
+/// Normal Send can request only a boolean, not a directory or capability.
+/// The same native picker and authenticated workspace turn are reused.
+pub(crate) fn validate_workspace_send_request(
+    prompt:&str,image_refs:&[String],max_new_tokens:u32
+)->Result<(),&'static str>{
+    if prompt.trim().is_empty()||prompt.len()>8*1024{
+        return Err("Workspace prompt must be 1–8192 bytes")
+    }
+    if !image_refs.is_empty(){
+        return Err("Use normal Send for image attachments; workspace tools are text-only")
+    }
+    if max_new_tokens!=512{
+        return Err("Workspace tool turns require the fixed 512-token step budget")
+    }
+    Ok(())
+}
 /// Native folder-selection is an explicit read grant to that directory for
 /// one turn. No child paths can be selected by a WebView; no write grant exists.
 #[tauri::command]
@@ -36,6 +53,17 @@ pub(crate) async fn lu_workspace_ask_directory(
     chat_id:String,
     prompt:String,
 )->Result<Option<String>,String> {
+    ask_workspace_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt).await
+}
+/// Shared by the legacy Ask Workspace button and the Wave 3 normal Send
+/// opt-in. Both always require the OS picker and a new persisted user turn.
+pub(crate) async fn ask_workspace_for_chat(
+    app:AppHandle,
+    state:Arc<DesktopState>,
+    session_id:String,
+    chat_id:String,
+    prompt:String,
+)->Result<Option<String>,String>{
     if prompt.trim().is_empty()||prompt.len()>8*1024 {
         return Err("Workspace question must be 1–8192 bytes".into())
     }
@@ -74,7 +102,7 @@ pub(crate) async fn lu_workspace_ask_directory(
         chat_id:chat_id.clone(),generation_id:generation_id.clone(),
         phase:"queued",position,
     });
-    let host=Arc::clone(state.inner());
+    let host=Arc::clone(&state);
     let event_app=app.clone();
     let gid=generation_id.clone();
     let outcome=tauri::async_runtime::spawn_blocking(move||{
@@ -156,6 +184,14 @@ pub(crate) async fn lu_workspace_ask_directory(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn normal_send_workspace_mode_never_accepts_images_or_unbounded_prompts(){
+        assert!(validate_workspace_send_request("List the project", &[], 512).is_ok());
+        assert!(validate_workspace_send_request("", &[], 512).is_err());
+        assert!(validate_workspace_send_request(&"x".repeat(8193), &[], 512).is_err());
+        assert!(validate_workspace_send_request("Read", &["img-1".into()], 512).is_err());
+        assert!(validate_workspace_send_request("Read", &[], 4096).is_err());
+    }
     #[test]
     fn workspace_read_grant_requires_persisted_exact_user_turn() {
         let root=std::env::temp_dir().join(next_id("lu-workspace-verifier-"));
