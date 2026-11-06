@@ -192,8 +192,10 @@ pub(crate) async fn lu_browser_model_read(
             if ticket.cancelled()||!grant_current(
                 &owner,&task_id,&chat_id,&user_turn_id
             ){return Err("Cancelled or revoked Browser read".into());}
+            // The model's call ID is not a trusted evidence identity.
+            let host_call=next_id("browser-call-");
             let invocation=catalog.encode_call(
-                &advertised,&call.tool_name,&call.call_id,None,
+                &advertised,&call.tool_name,&host_call,None,
                 &call.arguments_json
             ).map_err(|_|"Model proposed an invalid Browser operation")?;
             let result=tauri::async_runtime::block_on(
@@ -219,10 +221,23 @@ pub(crate) async fn lu_browser_model_read(
                 return Err("Browser read escaped approved HTTPS origins".into());
             }
             let (excerpt,truncated)=if is_text_read {
-                body.get("text").and_then(|v|v.as_str())
-                    .map(bounded_excerpt)
-                    .map(|(text,truncated)|(Some(text),truncated))
-                    .unwrap_or((None,false))
+                let source_url=url.as_deref().ok_or("Browser read has no URL")?;
+                let original=body.get("text").and_then(|v|v.as_str())
+                    .filter(|t|!t.trim().is_empty())
+                    .ok_or("Browser read has no page text")?;
+                let worker_truncated=body.get("truncated").and_then(|v|v.as_bool())
+                    .ok_or("Browser read lacks truncation evidence")?;
+                if ticket.cancelled()||!grant_current(
+                    &owner,&task_id,&chat_id,&user_turn_id
+                ){return Err("Browser scope revoked before Research evidence write".into());}
+                // Persist only AFTER native tool dispatch and redirect scope
+                // verification, never from a model's function arguments.
+                let saved=owner.research.record_browser_read(
+                    &chat_id,&user_turn_id,&host_call,source_url,&status,
+                    original,worker_truncated
+                )?;
+                let (summary,shortened)=bounded_excerpt(original);
+                (Some(summary),shortened||saved.excerpt_truncated)
             }else{(None,false)};
             observed.push(BrowserObservedPage{
                 status:status.clone(),url,excerpt,truncated
@@ -257,7 +272,6 @@ pub(crate) async fn lu_generate_browser(
     max_new_tokens:u32,
 )->Result<String,String>{
     use std::collections::{BTreeMap,HashSet};
-    use sha2::{Sha256,Digest};
     if prompt.trim().is_empty()||prompt.len()>12*1024
        ||!(1..=4096).contains(&max_new_tokens){
         return Err("Browser research prompt exceeds trusted limits".into());
@@ -463,12 +477,22 @@ pub(crate) async fn lu_generate_browser(
                         if text.trim().is_empty(){
                             return Err("Browser returned empty source text".into());
                         }
-                        let digest=format!("{:x}",Sha256::digest(text.as_bytes()));
-                        let identity=format!("{}#{}",url,digest);
+                        let worker_truncated=body.get("truncated")
+                            .and_then(|v|v.as_bool())
+                            .ok_or("Browser read lacks truncation evidence")?;
+                        if ticket.cancelled()||!grant_current(
+                            &owner,&task_id,&chat_id,&gid
+                        ){return Err("Browser task revoked before evidence write".into());}
+                        let saved=owner.research.record_browser_read(
+                            &chat_id,&gid,&host_call,url,kind,text,worker_truncated
+                        )?;
+                        let identity=format!("{}#{}",saved.source_url,saved.observed_sha256);
                         let snippet:String=text.chars().take(1200).collect();
                         if !evidence.contains_key(&identity){
-                            let record=format!("URL: {}\nSHA256: {}\nExcerpt: {}",
-                                url,digest,snippet);
+                            let record=format!(
+                                "URL: {}\nObserved text SHA256: {}\nObservation status: BROWSER_OBSERVED_UNTRUSTED\nExcerpt: {}",
+                                saved.source_url,saved.observed_sha256,snippet
+                            );
                             owner.chats.append_browser_observation(
                                 &chat_id,&gid,&host_call,&proposal.tool_name,&record
                             )?;
