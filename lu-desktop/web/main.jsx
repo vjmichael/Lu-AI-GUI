@@ -47,6 +47,9 @@ function App() {
   const [browserRuntime,setBrowserRuntime] = useState(null);
   const [browserOrigins,setBrowserOrigins]=useState('https://example.org');
   const [browserBusy,setBrowserBusy]=useState(false);
+  const [browserReadBusy,setBrowserReadBusy]=useState(false);
+  const [browserReadResult,setBrowserReadResult]=useState(null);
+  const [browserReadError,setBrowserReadError]=useState('');
   const [researchAvailable,setResearchAvailable]=useState(false);
   const [researchQuery,setResearchQuery]=useState('');
   const [researchBusy,setResearchBusy]=useState(false);
@@ -255,6 +258,22 @@ function App() {
       }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function inspectWithBrowserModel(){
+    if(!chatId||!runtime.sessionId||!browserRuntime?.running||browserReadBusy)return;
+    const selectedChat=chatId;
+    setBrowserReadBusy(true);setBrowserReadError('');setBrowserReadResult(null);
+    try{
+      const result=await invoke('lu_browser_model_read',{
+        sessionId:runtime.sessionId,chatId:selectedChat
+      });
+      setBrowserReadResult(result);
+      setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+    }catch(error){
+      setBrowserReadError(String(error));
+      await invoke('lu_browser_runtime_status')
+        .then(setBrowserRuntime).catch(()=>{});
+    }finally{setBrowserReadBusy(false);}
   }
   async function browserOperation(name,args={}){
     if(browserBusy)return;
@@ -3061,6 +3080,13 @@ function App() {
                 Authorize read-only Browser
               </button>}
             {browserRuntime?.running && <>
+              <button type="button" disabled={browserBusy||browserReadBusy||!runtime.sessionId
+                  ||browserRuntime.humanVerificationRequired}
+                onClick={()=>void inspectWithBrowserModel()}>
+                {browserReadBusy?'Running supervised Browser model read…':
+                  'Let Lu inspect this approved browser'}
+              </button>
+
               <button type="button" disabled={browserBusy}
                 onClick={()=>browserOperation('lu_browser_set_visible',{visible:true})}>
                 Show browser
@@ -3079,7 +3105,18 @@ function App() {
             </>}
           </div>
           <small>Browser navigation requires a currently authenticated human conversation and separate native approval.
-            This control does not grant browser interaction or model tool use.</small>
+            Lu's supervised read-only inspection uses the same approved turn and exact origins. It grants no form, click, typing or additional network authority.</small>
+          {browserReadError&&<small role="alert">{browserReadError}</small>}
+          {browserReadResult?.chatId===chatId&&<section aria-label="Model-guided browser observations">
+            <strong>{browserReadResult.proposalsExecuted} supervised Browser operations</strong>
+            <small>{browserReadResult.message}</small>
+            <ul>{browserReadResult.observations.map((page,index)=><li key={index}>
+              <strong>{page.status}</strong>
+              {page.url&&<small>{page.url}</small>}
+              {page.excerpt&&<pre>{page.excerpt}</pre>}
+              {page.truncated&&<small>Page excerpt truncated.</small>}
+            </li>)}</ul>
+          </section>}
         </section>
         <section className="advancedDocumentSettings" aria-label="Research discovery">
           <h3>Research · verified-evidence workflow</h3>
