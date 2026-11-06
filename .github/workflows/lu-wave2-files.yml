@@ -138,3 +138,5 @@ jobs:
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib archive_desktop::tests -- --nocapture
       - name: Execute bounded structured document native review tests
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib document_create_desktop::tests -- --nocapture
+      - name: Execute bounded existing Office review and source identity tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib office_revision_desktop::tests -- --nocapture
