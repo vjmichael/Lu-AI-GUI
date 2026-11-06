@@ -37,7 +37,7 @@ fn safe_id(s:&str)->bool{
     (16..=128).contains(&s.len())&&s.bytes().all(|b|
         b.is_ascii_alphanumeric()||b==b'-'||b==b'_')
 }
-fn open_parent(path:&Path)->Result<(String,Arc<Dir>),String>{
+pub(crate) fn open_parent(path:&Path)->Result<(String,Arc<Dir>),String>{
     let name=path.file_name().and_then(|s|s.to_str())
         .ok_or("Selected Office file has an invalid filename")?;
     if !safe_base(name)||![".docx",".pptx",".xlsx"].iter()
@@ -60,7 +60,7 @@ fn open_parent(path:&Path)->Result<(String,Arc<Dir>),String>{
         .map_err(|_|"Cannot pin selected Office folder")?);
     Ok((name.into(),cap))
 }
-fn open_folder(path:&Path)->Result<Arc<Dir>,String>{
+pub(crate) fn open_folder(path:&Path)->Result<Arc<Dir>,String>{
     let meta=fs::symlink_metadata(path).map_err(|_|"Output folder unavailable")?;
     if !meta.is_dir()||meta.file_type().is_symlink(){
         return Err("Office output folder cannot be a link".into())
@@ -74,7 +74,7 @@ fn open_folder(path:&Path)->Result<Arc<Dir>,String>{
     Ok(Arc::new(Dir::open_ambient_dir(path,ambient_authority())
         .map_err(|_|"Cannot pin output folder")?))
 }
-fn output_name(source:&str,id:&str)->Result<String,String>{
+pub(crate) fn output_name(source:&str,id:&str)->Result<String,String>{
     let (stem,ext)=source.rsplit_once('.').ok_or("Document has no extension")?;
     let suffix=id.bytes().filter(|b|b.is_ascii_alphanumeric())
         .take(12).map(char::from).collect::<String>();
@@ -97,7 +97,7 @@ pub struct OfficePatchProposal{
     pub new_value:String,
 }
 impl OfficePatchProposal{
-    fn parse(&self,source_name:&str)->Result<OfficeRevisionEdit,String>{
+    pub(crate) fn parse(&self,source_name:&str)->Result<OfficeRevisionEdit,String>{
         if self.expected_old.len()>32768 ||self.new_value.len()>32768{
             return Err("Office patch text exceeds limit".into())
         }
@@ -188,7 +188,7 @@ impl PinnedOfficeRevision{
 pub struct OfficeRevisionQueue{
     pending:Mutex<HashMap<String,PinnedOfficeRevision>>,
 }
-fn read_selected(root:&Dir,name:&str)->Result<Vec<u8>,String>{
+pub(crate) fn read_selected(root:&Dir,name:&str)->Result<Vec<u8>,String>{
     let meta=root.symlink_metadata(name).map_err(|_|"Office source unavailable")?;
     if !meta.is_file()||meta.file_type().is_symlink()
         ||meta.len()>MAX_PACKAGE as u64 {
