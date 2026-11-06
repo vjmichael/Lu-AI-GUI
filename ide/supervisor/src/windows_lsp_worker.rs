@@ -13,7 +13,7 @@ use lu_ide_workspace::{
     lsp::DiagnosticSource,
     lsp_session::{LspEvent, LspPhase, Position},
 };
-use std::{ffi::OsStr, io, sync::Arc};
+use std::{ffi::OsStr, io, sync::{Arc, mpsc::{self, SyncSender, Receiver}}, thread::JoinHandle};
 use windows_sys::Win32::{
     Foundation::{INVALID_HANDLE_VALUE, SetHandleInformation},
     Security::SECURITY_ATTRIBUTES,
@@ -189,6 +189,40 @@ fn spawn_contained_stdio(
     Ok((process, thread, host_stdin, host_stdout))
 }
 
+struct BoundedWrite {
+    bytes: Vec<u8>,
+    ack: mpsc::Sender<io::Result<()>>,
+}
+/// The child may stop reading at any moment. Never call synchronous WriteFile
+/// on the UI/worker actor itself; a dedicated bounded-channel writer owns the
+/// only host write handle. If it stalls, return within three seconds and kill
+/// the underlying Job Object before any further request is accepted.
+fn start_writer(stdin_write: Handle)
+    -> Result<(SyncSender<BoundedWrite>, JoinHandle<()>), SupervisorError> {
+    let (tx, rx): (SyncSender<BoundedWrite>, Receiver<BoundedWrite>) =
+        mpsc::sync_channel(1);
+    let thread = thread::Builder::new()
+        .name("lu-e2-lsp-stdin".into())
+        .spawn(move || {
+            for request in rx {
+                let mut result = Ok(());
+                for part in request.bytes.chunks(4096) {
+                    let mut written = 0u32;
+                    if unsafe { WriteFile(stdin_write.0, part.as_ptr(),
+                        part.len() as u32, &mut written, ptr::null_mut()) } == 0
+                        || written as usize != part.len() {
+                        result = Err(io::Error::last_os_error());
+                        break;
+                    }
+                }
+                let failed = result.is_err();
+                let _ = request.ack.send(result);
+                if failed { break; }
+            }
+        }).map_err(|_| denied())?;
+    Ok((tx, thread))
+}
+
 struct WindowsLspProcess {
     _profile: AppProfile,
     // Lease must drop BEFORE the borrowed Job HANDLE it uses in its Drop.
@@ -196,7 +230,8 @@ struct WindowsLspProcess {
     job: Job,
     process: Handle,
     _thread: Handle,
-    stdin_write: Handle,
+    write_queue: SyncSender<BoundedWrite>,
+    writer_thread: Option<JoinHandle<()>>,
     stdout_read: Handle,
     released: bool,
 }
@@ -209,18 +244,13 @@ impl RestrictedLspProcess for WindowsLspProcess {
             || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT {
             return Err(io::Error::new(io::ErrorKind::BrokenPipe, "untrusted LSP stopped"));
         }
-        // Limit individual synchronous writes to reduce pipe pressure. The
-        // supervisor can terminate the OS Job if the writer stalls; avoid
-        // feeding a growing, unbounded queue to a slow/malicious process.
-        for part in bytes.chunks(4096) {
-            let mut written = 0u32;
-            if unsafe { WriteFile(self.stdin_write.0, part.as_ptr(),
-                part.len() as u32, &mut written, ptr::null_mut()) } == 0
-                || written as usize != part.len() {
-                return Err(io::Error::last_os_error());
-            }
-        }
-        Ok(())
+        let (tx, rx) = mpsc::channel();
+        self.write_queue.try_send(BoundedWrite {
+            bytes: bytes.to_vec(), ack: tx,
+        }).map_err(|_| io::ErrorKind::WouldBlock)?;
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| io::ErrorKind::TimedOut)?
+
     }
     fn read_bounded(&mut self, limit: usize, timeout: Duration) -> io::Result<Vec<u8>> {
         if limit == 0 || limit > 16 * 1024 { return Err(io::ErrorKind::InvalidInput.into()); }
@@ -262,6 +292,10 @@ impl RestrictedLspProcess for WindowsLspProcess {
 impl Drop for WindowsLspProcess {
     fn drop(&mut self) {
         if !self.released { let _ = self.job.kill_and_verify(); }
+        // Dropping the queue closes the writer's input channel; the Job was
+        // already killed (if necessary) so any blocked WriteFile unblocks.
+        // Never join an OS thread indefinitely from an IDE shutdown path.
+        self.writer_thread.take();
     }
 }
 
@@ -339,9 +373,20 @@ pub fn start_windows_lsp(
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
     }
+    // Pipe writer is separate from the supervisor event actor. A malicious
+    // server cannot indefinitely block the desktop via synchronous WriteFile.
+    let (write_queue, writer_thread) = match start_writer(stdin_write) {
+        Ok(value) => value,
+        Err(reason) => {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(reason);
+        }
+    };
     let actor = WindowsLspProcess {
-        _profile: profile, job, lease, process, _thread: child_thread,
-        stdin_write, stdout_read, released: false,
+        _profile: profile, lease, job, process, _thread: child_thread,
+        write_queue, writer_thread: Some(writer_thread),
+        stdout_read, released: false,
     };
     let gateway = LspGateway::attach_native(
         Arc::clone(&supervisor), job_id, &plan_hash, &proof(),
