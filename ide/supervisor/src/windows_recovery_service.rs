@@ -8,7 +8,7 @@ use crate::{windows_service_security as security, SupervisorError};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     ffi::c_void,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -16,7 +16,7 @@ use std::{
     os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     ptr,
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, atomic::{AtomicU8, Ordering}},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -168,7 +168,8 @@ impl Witness {
     }
     fn record(&mut self, state: &str) -> Result<(), SupervisorError> {
         if !matches!(state, "ready" | "owner_exited" | "kill_requested"
-            | "tree_empty" | "kill_unverified" | "released_empty" | "hold_expired") {
+            | "tree_empty" | "kill_unverified" | "released_empty" | "hold_expired"
+            | "pipe_lost" | "recovered_release") {
             return Err(denied());
         }
         let when = SystemTime::now().duration_since(UNIX_EPOCH)
@@ -203,7 +204,8 @@ fn valid_sha(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 fn validate_request(r: &Admission) -> bool {
-    r.schema == "lu.ide.d7d.admission.v1" && r.operation == "admit"
+    r.schema == "lu.ide.d7d.admission.v1"
+        && matches!(r.operation.as_str(), "admit" | "recover")
         && valid_id(&r.job_id) && valid_sha(&r.plan_sha256)
         && r.owner_pid != 0 && r.owner_creation != 0
         && r.nonce.len() == 48 && r.nonce.bytes().all(|b| b.is_ascii_hexdigit())
@@ -253,33 +255,114 @@ fn send(pipe: HANDLE, nonce: &str, state: &str) -> Result<(), SupervisorError> {
     }
     Ok(())
 }
-static ACTIVE: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-struct Active(String);
+
+// State 0 = owner running, 1 = owner dead + Job reaped and witnessed,
+// 2 = authenticated restart requested release, 3 = release fsynced.
+// An in-memory flag is not a durable cleanup receipt, and never substitutes
+// for reopening the kernel Job. It only coordinates two protected service
+// threads so the independent holder can fsync before closing its handle.
+static ACTIVE: OnceLock<Mutex<HashMap<String, Arc<AtomicU8>>>> = OnceLock::new();
+fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicU8>>> {
+    ACTIVE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn key(id: &str, hash: &str) -> String { format!("{id}-{hash}") }
+struct Active {
+    key: String,
+    state: Arc<AtomicU8>,
+}
 impl Active {
-    fn admit(id: String) -> Result<Self, SupervisorError> {
-        let mut items = ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
-            .lock().map_err(|_| denied())?;
-        if !items.insert(id.clone()) { return Err(denied()); }
-        Ok(Self(id))
+    fn admit(key: String) -> Result<Self, SupervisorError> {
+        let mut entries = registry().lock().map_err(|_| denied())?;
+        if entries.contains_key(&key) { return Err(denied()); }
+        let state = Arc::new(AtomicU8::new(0));
+        entries.insert(key.clone(), Arc::clone(&state));
+        Ok(Self { key, state })
     }
 }
 impl Drop for Active {
     fn drop(&mut self) {
-        if let Ok(mut items) = ACTIVE.get_or_init(|| Mutex::new(HashSet::new())).lock() {
-            items.remove(&self.0);
+        if let Ok(mut entries) = registry().lock() {
+            entries.remove(&self.key);
         }
     }
 }
+fn hold_for_recovery(
+    owner: HANDLE, job: HANDLE, witness: &mut Witness, active: &Active,
+    owner_already_exited: bool,
+) -> Result<(), SupervisorError> {
+    if !owner_already_exited {
+        let began = Instant::now();
+        while began.elapsed() < HOLD {
+            match unsafe { WaitForSingleObject(owner, 0) } {
+                WAIT_OBJECT_0 => {
+                    witness.record("owner_exited")?;
+                    break;
+                }
+                WAIT_TIMEOUT => thread::sleep(TICK),
+                _ => return Err(denied()),
+            }
+        }
+        if unsafe { WaitForSingleObject(owner, 0) } != WAIT_OBJECT_0 {
+            witness.record("hold_expired")?;
+            return Err(denied());
+        }
+    }
+    if !matches!(job_empty(job), Ok(true)) { return Err(denied()); }
+    active.state.store(1, Ordering::Release);
+    let began = Instant::now();
+    while began.elapsed() < HOLD {
+        if active.state.load(Ordering::Acquire) == 2 {
+            if !matches!(job_empty(job), Ok(true)) { return Err(denied()); }
+            // Once this is fsynced, a restarted host can accept the ACK.
+            witness.record("recovered_release")?;
+            active.state.store(3, Ordering::Release);
+            return Ok(());
+        }
+        thread::sleep(TICK);
+    }
+    witness.record("hold_expired")?;
+    Ok(())
+}
+fn recover(
+    pipe: HANDLE, request: &Admission, config: &InstalledConfig,
+) -> Result<(), SupervisorError> {
+    let active = registry().lock().map_err(|_| denied())?
+        .get(&key(&request.job_id, &request.plan_sha256))
+        .cloned().ok_or_else(denied)?;
+    if active.load(Ordering::Acquire) != 1 { return Err(denied()); }
+    // A recovery grant is never file-only evidence. Service itself reopens
+    // the exact original named Job, and independently checks zero processes.
+    let job = Handle::new(unsafe { OpenJobObjectW(
+        JOB_QUERY, 0, job_name(&request.job_id, &request.plan_sha256).as_ptr(),
+    ) })?;
+    if !matches!(job_empty(job.0), Ok(true)) { return Err(denied()); }
+    security::verify_private_evidence_root(&config.evidence_root)?;
+    active.compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
+        .map_err(|_| denied())?;
+    let began = Instant::now();
+    while began.elapsed() < Duration::from_secs(8) {
+        if active.load(Ordering::Acquire) == 3 {
+            // The original owner thread fsynced 'recovered_release' before 3.
+            return send(pipe, &request.nonce, "recovered_release");
+        }
+        thread::sleep(TICK);
+    }
+    Err(denied()) // never invent an acknowledgement on timeout
+}
 fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> {
-    let request: Admission = serde_json::from_slice(&read_message(pipe)?).map_err(|_| denied())?;
+    let request: Admission = serde_json::from_slice(&read_message(pipe)?)
+        .map_err(|_| denied())?;
     if !validate_request(&request) { return Err(denied()); }
-    // This keeps a live kernel handle to the exact client PID and creation time
-    // for the full admission, including after the original process exits.
+    // The kernel client PID and creation time, token SID, and approved host
+    // binary are always revalidated even on a recovered connection.
     let owner = security::authenticate_client(
         pipe, request.owner_pid, request.owner_creation,
         &config.expected_host_executable, &config.expected_host_sha256,
     )?;
-    let _active = Active::admit(format!("{}-{}", request.job_id, request.plan_sha256))?;
+    if request.operation == "recover" {
+        return recover(pipe, &request, config);
+    }
+    let active = Active::admit(key(&request.job_id, &request.plan_sha256))?;
     let job = Handle::new(unsafe { OpenJobObjectW(
         JOB_QUERY | JOB_TERMINATE | SYNCHRONIZE, 0,
         job_name(&request.job_id, &request.plan_sha256).as_ptr(),
@@ -296,30 +379,30 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
                 let killed = kill_and_verify(job.0);
                 witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
                 if !killed { return Err(denied()); }
-                // Keep original job alive long enough for an independently
-                // restarted supervisor to inspect it. A JSON line cannot
-                // replace that kernel observation.
-                let began = Instant::now();
-                while began.elapsed() < HOLD { thread::sleep(Duration::from_secs(1)); }
-                witness.record("hold_expired")?;
-                return Ok(());
+                return hold_for_recovery(
+                    owner.process_handle(), job.0, &mut witness, &active, true,
+                );
             }
             WAIT_TIMEOUT => {}
             _ => return Err(denied()),
         }
-        // A broken connection while the original host still lives is a loss
-        // of trusted witness: revoke execution and do not claim success.
+        // Pipe break is not a safe release: kill and retain the kernel Job
+        // until the original OS process exits, then enter bounded hold.
         let mut available = 0u32;
         if unsafe { PeekNamedPipe(pipe, ptr::null_mut(), 0, ptr::null_mut(),
             &mut available, ptr::null_mut()) } == 0 {
+            witness.record("pipe_lost")?;
             witness.record("kill_requested")?;
             let killed = kill_and_verify(job.0);
             witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
-            return Err(denied());
+            if !killed { return Err(denied()); }
+            return hold_for_recovery(
+                owner.process_handle(), job.0, &mut witness, &active, false,
+            );
         }
         if available > 0 {
             #[derive(Deserialize)]
-            #[serde(rename_all="camelCase", deny_unknown_fields)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
             struct Release { schema: String, operation: String, nonce: String }
             let message: Release = serde_json::from_slice(&read_message(pipe)?)
                 .map_err(|_| denied())?;
@@ -328,8 +411,12 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
                 || message.nonce != request.nonce
                 || !matches!(job_empty(job.0), Ok(true)) {
                 witness.record("kill_requested")?;
-                let _ = kill_and_verify(job.0);
-                return Err(denied());
+                let killed = kill_and_verify(job.0);
+                witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
+                if !killed { return Err(denied()); }
+                return hold_for_recovery(
+                    owner.process_handle(), job.0, &mut witness, &active, false,
+                );
             }
             witness.record("released_empty")?;
             send(pipe, &request.nonce, "released_empty")?;
