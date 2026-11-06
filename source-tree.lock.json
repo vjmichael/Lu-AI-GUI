@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "540f89c80528ae5f91f8474c03bd101c9f2bd04b",
+  "sourceCommitBeforeLock": "af5a09a5fcbd4ff760c4adc1ee7b1563e81045db",
   "trackedFileCount": 481,
   "files": [
     {
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "f6fd0be5d5bda0889fa83083a6344601385d3624"
+      "blob": "ad671c86fb7d300c75af9debadc3e43f2e24ba8c"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -549,7 +549,7 @@
     },
     {
       "path": "lu-desktop/tests/image-workspace-history.test.mjs",
-      "blob": "59d848b21d78a2f64ccd77d71af9d1ecba87c1a2"
+      "blob": "a8fbd7c3408db007d9989c396437c186f6c85b49"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -697,7 +697,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "34b33881ba5e202f2387c1082629ea823d882d5c"
+      "blob": "e87c246cc719e81c1ace5db95979024242e04228"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
