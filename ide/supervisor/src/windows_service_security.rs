@@ -160,7 +160,10 @@ fn parse_sid(text: &str) -> Result<OwnedSid, SupervisorError> {
 /// the Windows SCM native test returned startup stage 103 at that call.
 /// Duplicate only for a membership query, preserving restricted SID semantics.
 /// Both failures and a missing/disabled service group deny admission.
-fn enabled_member_of_primary_token(primary: HANDLE, sid: *mut c_void) -> Result<bool, SupervisorError> {
+fn enabled_member_of_primary_token(
+    primary: HANDLE,
+    sid: *mut c_void,
+) -> Result<bool, SupervisorError> {
     let mut duplicate = ptr::null_mut();
     if unsafe { DuplicateToken(primary, SecurityImpersonation, &mut duplicate) } == 0 {
         return Err(denied());
@@ -582,9 +585,7 @@ pub fn authenticate_service_server(
     let token = Handle::new(raw)?;
     let service = parse_sid(&sid_of_service()?)?;
     let local = parse_sid("S-1-5-19")?;
-    if !enabled_member_of_primary_token(token.0, service.0)?
-        || !token_user_is(token.0, local.0)?
-    {
+    if !enabled_member_of_primary_token(token.0, service.0)? || !token_user_is(token.0, local.0)? {
         return Err(denied());
     }
     if unsafe { IsTokenRestricted(token.0) } == 0 {
@@ -691,9 +692,9 @@ mod tests {
         // installation, privileged rights, or a fictional recovery receipt.
         let mut raw = ptr::null_mut();
         assert_ne!(
-            unsafe { OpenProcessToken(
-                GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw
-            ) },
+            unsafe {
+                OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw)
+            },
             0
         );
         let primary = Handle::new(raw).unwrap();
