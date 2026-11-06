@@ -2,6 +2,7 @@
 
 ## Wave E2 — Supervised language services and editor presentation (2026-11-06)
 
+- **Independent real-server protocol smoke:** local `clangd 17.0.0` stdio fixture successfully exchanged initialize, versioned diagnostics, hover, same-file definition and completion messages. Sanitized wire frames in `ide/host/fixtures/clangd17_real_wire.json` are replayed by Rust E2 tests. This is **not** D7D contained server execution or installed IDE acceptance. Restricted clangd completion text edits are now accepted only for the current identifier prefix/cursor after human selection.
 - **Branch:** \`ide/wave-e2-supervised-lsp-editor-20261106\` stacked on Wave E1 PR #64; source-only integration, not a release-ready real server session.
 - **Native host protocol:** \`lsp_session.rs\` implements LSP initialize/initialized, revision-bound didOpen/didChange, hover/completion/definition requests, exact-version diagnostics, explicit workspace/configuration nulls, and denial of server-initiated edits and commands. Tests use bounded actual LSP JSON-RPC wire frames.
 - **Protected supervisor bridge:** optional \`lsp-transport\` internally binds a running D3 job and plan hash, complete OS-proof contract, per-chunk quotas, and process-tree kill. It cannot launch an executable itself; Windows protected Job/SCM and Linux delegated cgroup pipe adapters remain missing and MUST be implemented before activation.
