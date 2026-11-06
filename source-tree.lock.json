@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b78b693d9a4baa675c7bb9f7cf30d83aad11e6d9",
+  "sourceCommitBeforeLock": "d191c56ecf96c2a2e32de47665852e46a3553b61",
   "trackedFileCount": 474,
   "files": [
     {
@@ -293,7 +293,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "cea344d4f7df934800cf935fd52f28c49a44537a"
+      "blob": "10fc0e37ba0d765d0a7b670010ca87ea94f45e7d"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -497,7 +497,7 @@
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
-      "blob": "dee51a606a359617afe774067276c27a07b7ccac"
+      "blob": "214cda7b14b5c581b483d10f8d54e41fd30ce136"
     },
     {
       "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
@@ -1377,7 +1377,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_research_evidence.rs",
-      "blob": "209e65e4d180f1a5fdab3f8d22e6191edb574008"
+      "blob": "c0c64be2c48bf43f03818052903f1d0b186bf1d4"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_maturity.rs",
