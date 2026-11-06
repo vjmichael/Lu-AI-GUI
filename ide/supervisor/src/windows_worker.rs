@@ -219,6 +219,19 @@ fn digest_tree(root: &Path, destination: Option<&Path>,
         &mut hash, max_files, max_bytes)?;
     Ok(format!("{:x}", hash.finalize()))
 }
+/// Internal native-host helper to bind a provisioned offline bundle to an
+/// exact JobPlan. No executable path, bundle path or digest is accepted from
+/// the WebView or model; the caller must authenticate installation provenance.
+pub fn trusted_offline_toolchain_digest(bundle: &Path) -> Result<String, SupervisorError> {
+    if !clean_meta(&bundle.join("bin/cargo.exe"))?.is_file()
+        || !clean_meta(&bundle.join("bin/rustc.exe"))?.is_file()
+        || !clean_meta(&bundle.join("lib"))?.is_dir()
+        || !clean_meta(&bundle.join("cargo-home"))?.is_dir() {
+        return Err(denied());
+    }
+    digest_tree(bundle, None, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)
+}
+
 fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str) -> Result<(), SupervisorError> {
     if !expected.bytes().all(|x| x.is_ascii_hexdigit()) || expected.len() != 64 {
         return Err(SupervisorError::InvalidPlan);
