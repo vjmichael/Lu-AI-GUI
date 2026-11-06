@@ -1210,6 +1210,111 @@ async fn lu_ocr_read_selected_image(
     Ok(Some(output))
 }
 
+/// A native GGUF+MMProj semantic pixel probe. Synthetic images and answers
+/// are host-generated privately; no prompt text can reveal the actual color.
+/// Four unpredictable one-turn image challenges must ALL succeed on exactly
+/// the same loaded model session. No model-rights, network grants, or
+/// persistent chat turns are created. Queue and cancellation are shared.
+#[tauri::command]
+async fn lu_vision_run_probe(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<VisionCapabilityView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation to run vision probe")?;
+    let owner=Arc::clone(state.inner());
+    let snapshot=owner.supervisor.status()
+        .map_err(|_|"Vision model status unavailable")?;
+    let sid=snapshot.session_id.ok_or("Load a GGUF before probing vision")?;
+    let model=snapshot.model_ref.ok_or("No loaded model identity")?;
+    let admitted=owner.catalog.lock().map_err(|_|"Model catalog unavailable")?
+        .iter().any(|m|m.model_ref==model&&m.projector_attached);
+    if !admitted{
+        return Err("Loaded GGUF has no admitted MMProj for pixel probes".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(
+            "Run four private, real GGUF/MMProj image-inference challenges \
+             against the currently loaded model? Each image contains only \
+             synthetic colored pixels. Lu checks exact answers; no private \
+             images are read, no browser is opened, and no chat/tool \
+             permission is created."
+        ).title("Lu — Verify native image understanding")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Run image probe".into(),"Cancel".into()
+        )).blocking_show()
+    }).await.map_err(|_|"Vision native approval unavailable")?;
+    if !approved{return Err("Vision probe cancelled by user".into());}
+    let owner=Arc::clone(state.inner());
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        use rand::seq::SliceRandom;
+        use vision_context::{VisionProbeReceipt,PROBE_PROMPT,PROBE_COLORS};
+        // A fresh random challenge order is important: an always-guessing
+        // text-only model cannot pass by recognizing a deterministic sequence.
+        let mut order=[0usize,1,2,3];
+        order.shuffle(&mut rand::rngs::OsRng);
+        let mut passed=0u32;
+        for index in order{
+            let current=owner.supervisor.status()
+                .map_err(|_|"Loaded model status changed during visual probe")?;
+            if current.session_id.as_deref()!=Some(&sid)
+                ||current.model_ref.as_deref()!=Some(&model){
+                return Err("Model changed during vision probe".into());
+            }
+            let image=vision_context::image_for_probe(index)?;
+            let gid=next_id("g-");
+            let rid=next_id("req-");
+            let (ticket,_)=owner.generation_queue.enqueue(&sid,&chat_id,&gid)?;
+            ticket.wait_for_slot()?;
+            if ticket.cancelled(){return Err("Vision probe cancelled".into());}
+            owner.supervisor.reserve_generation_images_with_history(
+                &sid,&gid,&rid,PROBE_PROMPT,32,&[image.clone()],&[]
+            ).map_err(|e|format!("Vision native reservation refused: {e:?}"))?;
+            if ticket.cancelled(){
+                let _=owner.supervisor.cancel(&sid,&gid,&next_id("req-"));
+                return Err("Vision probe cancelled".into());
+            }
+            let mut answer=String::new();
+            let emit=|wire:Vec<u8>|->Result<(),BridgeError>{
+                let frame=decode_frame(&wire).map_err(BridgeError::Wire)?;
+                if let Some(proto::inference_frame::Body::Event(event))=frame.body{
+                    if let Some(proto::inference_event::Kind::TextChunk(chunk))=event.kind{
+                        answer.push_str(&chunk.text);
+                        if answer.len()>256{return Err(BridgeError::WrongOperation);}
+                    }
+                }
+                Ok(())
+            };
+            owner.supervisor.run_reserved_images_with_history(
+                &sid,&gid,&rid,PROBE_PROMPT,32,vec![image],vec![],emit
+            ).map_err(|e|format!("Native image inference failed: {e:?}"))?;
+            // Case folding is allowed; explanatory text or extra words
+            // invalidate the response instead of being treated as correct.
+            if answer.trim().eq_ignore_ascii_case(PROBE_COLORS[index].0){
+                passed+=1;
+            }
+        }
+        let verified=passed==4;
+        let receipt=VisionProbeReceipt{
+            session_id:sid.clone(),model_ref:model.clone(),
+            challenges_passed:passed,total_challenges:4,passed:verified,
+        };
+        let mut slot=owner.vision_probe.lock()
+            .map_err(|_|"Vision proof state unavailable")?;
+        *slot=Some(receipt);
+        Ok(VisionCapabilityView{
+            session_id:Some(sid),model_ref:Some(model),
+            status:if verified{"verified"}else{"unverified"},
+            detail:if verified{
+                "Native image probe passed 4/4 private pixel challenges for this exact loaded session. Not an independent accuracy benchmark."
+            }else{
+                "Native image probe failed at least one of four color challenges. Image understanding remains unverified."
+            },
+        })
+    }).await.map_err(|_|"Native image-probe worker unavailable")??;
+    Ok(result)
+}
+
 /// Returns *measured* browser runtime status and reconciles a crashed native
 /// Chromium/Playwright session. No browser launch, navigation or rights here.
 #[tauri::command]
@@ -4748,6 +4853,7 @@ pub fn run() {
             lu_load_model,
             lu_load_diagnostics,
             lu_vision_capability,
+            lu_vision_run_probe,
             lu_ocr_read_selected_image,
             lu_office_word_replace_all,
             lu_image_workspace_export,
