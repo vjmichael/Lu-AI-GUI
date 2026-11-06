@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import {
-  newBufferIdentity, advanceBufferIdentity, captureBufferSpan,
+  newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
+  captureBufferSpan,
   resolveBufferSpan, formatBufferReference,
 } from '../web/buffer_identity.js';
 
@@ -164,4 +165,27 @@ test('snapshot range tampering and wrong source identity never authorize reuse',
     'stale_buffer_reference');
   assert.throws(() => advanceBufferIdentity({ ...identity,
     revision: Number.MAX_SAFE_INTEGER }), /BUFFER_REVISION_EXHAUSTED/);
+});
+
+test('late Save may rebase the original draft after typing, but not a reopened tab', () => {
+  const opened = original();
+  const typedAgain = advanceBufferIdentity(advanceBufferIdentity(opened));
+  const saved = 'e'.repeat(64);
+  const good = rebaseBufferAfterSave(typedAgain, opened, saved);
+  assert.equal(good.status, 'rebased');
+  assert.equal(good.identity.revision, 3);
+  assert.equal(good.identity.savedRevision, saved);
+  assert.equal(good.identity.bufferId, opened.bufferId);
+  const reopened = newBufferIdentity(opened.projectId, opened.relativePath,
+    opened.savedRevision, '12345678-abcd-4321-aaaa-123456789abc');
+  const wrong = rebaseBufferAfterSave(reopened, opened, saved);
+  assert.equal(wrong.status, 'replaced_buffer');
+  assert.strictEqual(wrong.identity, reopened);
+  assert.equal(reopened.savedRevision, opened.savedRevision);
+  const wrongSource = rebaseBufferAfterSave({
+    ...typedAgain, projectId: 'another',
+  }, opened, saved);
+  assert.equal(wrongSource.status, 'replaced_buffer');
+  const badHash = rebaseBufferAfterSave(typedAgain, opened, 'not-a-hash');
+  assert.equal(badHash.status, 'replaced_buffer');
 });
