@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "49bca18519be74a45756ba1c6791beaba68e6ad6",
-  "trackedFileCount": 344,
+  "sourceCommitBeforeLock": "22fa2bcf32bcb73858f9962d0ead376070f808b3",
+  "trackedFileCount": 348,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -37,7 +37,7 @@
     },
     {
       "path": ".github/workflows/lu-wave2-files.yml",
-      "blob": "f2929eb894d0f9837d582e1336ac5ed120d1ae90"
+      "blob": "d22749062d529b478241fbb8a4352f9f6057c17a"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "9f78f45dd3fc0bab3e08a0b1f917958de1a563d7"
+      "blob": "0d70755da77831bbb22f00dbae27cb3599318af2"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -565,7 +565,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "42381f292df594cd663fa6ecf5b4e7e821bae36f"
+      "blob": "803b1e64cb4afca2f4bb8c72865205d78151834c"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -745,7 +745,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "dab9490cfa1ef6f750a658e7aa83a04107a25576"
+      "blob": "edc6bb1487ea83e776d78f3463320bfaedf13d18"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -830,6 +830,14 @@
     {
       "path": "src-tauri/lu-core/src/native_csv_edit.rs",
       "blob": "0e421b6c8cfe2a09d9a49fb6cb48ab2aa5332127"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_docx_create.rs",
+      "blob": "9a1fec79aa432ce096a2f5d16f31ae41bdd46107"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_docx_tool.rs",
+      "blob": "2d44aa05b5f6c14a136679c74d1168ffe95c9f66"
     },
     {
       "path": "src-tauri/lu-core/src/native_edit_existing.rs",
@@ -1234,6 +1242,14 @@
     {
       "path": "src-tauri/lu-core/tests/native_dispatch_error_codes.rs",
       "blob": "8e8b79d6a6c1cc51e393622049264c5da8fd953e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_docx_create.rs",
+      "blob": "e625a391bd40cd4ff7155c7e5026e2c2fd5e74a2"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_docx_tool_authority.rs",
+      "blob": "51d54fbecc9bea8b1c21f9cf160dd6e901905d95"
     },
     {
       "path": "src-tauri/lu-core/tests/native_edit_existing_authority.rs",
