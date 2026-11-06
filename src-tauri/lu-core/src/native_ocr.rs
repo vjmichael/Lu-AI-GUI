@@ -75,7 +75,7 @@ fn verified_engine(binary:&Path,expected_sha:&str)->Result<String,OcrFailure>{
 /// original image. A model cannot pass a filename or executable path.
 pub fn recognize_pinned_image(
     bytes:&[u8],engine:&Path,expected_engine_sha256:&str,
-    tessdata:&Path,
+    tessdata:&Path,expected_english_sha256:&str,
 )->Result<OcrObservation,OcrFailure>{
     let fmt=image_format(bytes)?;
     let digest=verified_engine(engine,expected_engine_sha256)?;
@@ -89,6 +89,9 @@ pub fn recognize_pinned_image(
         ||trained.len()>50*1024*1024{
         return Err(OcrFailure::Unavailable);
     }
+    // A reviewed installer's language data can be modified or replaced
+    // after staging. Rehash the exact asset before every image read.
+    let _english_sha=verified_engine(&eng,expected_english_sha256)?;
     let mut worker=Command::new(engine);
     // No shell, no ambient TESSDATA_PREFIX, user profile or network paths.
     worker.env_clear()
@@ -97,12 +100,16 @@ pub fn recognize_pinned_image(
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child=worker.spawn().map_err(|_|OcrFailure::WorkerFailed)?;
     let mut stdin=child.stdin.take().ok_or(OcrFailure::WorkerFailed)?;
-    if stdin.write_all(bytes).is_err(){
-        let _=child.kill();let _=child.wait();
-        return Err(OcrFailure::WorkerFailed);
-    }
-    drop(stdin);
     let stdout=child.stdout.take().ok_or(OcrFailure::WorkerFailed)?;
+    // Both pipes are serviced on dedicated bounded workers. A malicious
+    // broken OCR process that never reads stdin must not hang the host's
+    // user-visible request indefinitely. The worker is killed on deadline.
+    let owned_image=bytes.to_vec();
+    let writer=thread::spawn(move||{
+        let result=stdin.write_all(&owned_image);
+        drop(stdin);
+        result
+    });
     let reader=thread::spawn(move||{
         let mut out=Vec::new();
         let result=stdout.take((MAX_TEXT_BYTES+1) as u64).read_to_end(&mut out);
@@ -112,8 +119,11 @@ pub fn recognize_pinned_image(
     loop{
         match child.try_wait(){
             Ok(Some(status))=>{
+                let sent=writer.join().map_err(|_|OcrFailure::WorkerFailed)?;
                 let (r,data)=reader.join().map_err(|_|OcrFailure::WorkerFailed)?;
-                if r.is_err()||!status.success(){return Err(OcrFailure::WorkerFailed);}
+                if sent.is_err()||r.is_err()||!status.success(){
+                    return Err(OcrFailure::WorkerFailed);
+                }
                 if data.len()>MAX_TEXT_BYTES{return Err(OcrFailure::TooLarge);}
                 let text=String::from_utf8(data)
                     .map_err(|_|OcrFailure::UnsupportedEncoding)?;
@@ -136,7 +146,9 @@ pub fn recognize_pinned_image(
             _=>{
                 let _=child.kill();
                 let _=child.wait();
-                // The bounded pipe reader terminates when the child dies.
+                // Killing the process closes both pipe endpoints so both
+                // bounded workers can join without leaving live tasks.
+                let _=writer.join();
                 let _=reader.join();
                 return Err(OcrFailure::Timeout);
             },
