@@ -65,6 +65,12 @@ fn patch(r:&proto::OfficeRevisionRequest)->Result<OfficeRevisionEdit,OfficeRevis
                 expected_old:p.expected_old,new_boolean:p.new_boolean,
             })
         },
+        Some(proto::office_revision_request::Change::CellText(p))=>{
+            Ok(OfficeRevisionEdit::CellInlineText{
+                sheet_number:p.sheet_number as usize,address:p.address.clone(),
+                expected_old:p.expected_old.clone(),new_text:p.new_text.clone(),
+            })
+        },
         None=>Err(OfficeRevisionError::InvalidTarget),
     }
 }
@@ -77,7 +83,8 @@ fn valid_kind(r:&proto::OfficeRevisionRequest)->bool{
         (Some(proto::office_revision_request::Change::WordText(_)),"docx")|
         (Some(proto::office_revision_request::Change::SlideText(_)),"pptx")|
         (Some(proto::office_revision_request::Change::CellNumber(_)),"xlsx")|
-        (Some(proto::office_revision_request::Change::CellBoolean(_)),"xlsx"))
+        (Some(proto::office_revision_request::Change::CellBoolean(_)),"xlsx")|
+        (Some(proto::office_revision_request::Change::CellText(_)),"xlsx"))
 }
 fn preview(
     root:&Dir,r:&proto::OfficeRevisionRequest,
@@ -198,6 +205,9 @@ impl ModelToolCodec for Codec{
             "cell_boolean"=>required.iter().copied().chain([
                 "sheet_number","address","expected_old_boolean","new_boolean"
             ]).collect(),
+            "cell_text"=>required.iter().copied().chain([
+                "sheet_number","address","expected_old","new_text"
+            ]).collect(),
             _=>return Err(ModelToolError::InvalidArguments("Invalid Office edit kind".into())),
         };
         expect_fields(args,&allowed,&allowed)?;
@@ -235,6 +245,13 @@ impl ModelToolCodec for Codec{
                     address:get("address")?.into(),
                     expected_old:boolean("expected_old_boolean")?,
                     new_boolean:boolean("new_boolean")?,
+                }),
+            "cell_text"=>proto::office_revision_request::Change::CellText(
+                proto::OfficeStringPatch{
+                    sheet_number:uint("sheet_number")?,
+                    address:get("address")?.into(),
+                    expected_old:get("expected_old")?.into(),
+                    new_text:get("new_text")?.into(),
                 }),
             _=>return Err(ModelToolError::InvalidArguments("Unsupported Office edit".into())),
         };
@@ -287,7 +304,7 @@ pub fn register_office_revision_tool(
             "source_name":{"type":"string"},"target_new_name":{"type":"string"},
             "original_sha256":{"type":"string"},
             "approved_revised_sha256":{"type":"string"},
-            "kind":{"type":"string","enum":["word_text","slide_text","cell_number","cell_boolean"]},
+            "kind":{"type":"string","enum":["word_text","slide_text","cell_number","cell_boolean","cell_text"]},
             "text_index":{"type":"integer","minimum":0,"maximum":10000},
             "slide_number":{"type":"integer","minimum":1,"maximum":256},
             "sheet_number":{"type":"integer","minimum":1,"maximum":256},
