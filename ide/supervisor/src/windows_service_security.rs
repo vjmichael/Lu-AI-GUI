@@ -684,6 +684,25 @@ mod tests {
         assert!(!template.contains(";;;AN"));
     }
     #[test]
+    fn primary_process_token_is_duplicated_before_membership_check() {
+        // The documented CheckTokenMembership contract requires an
+        // impersonation token, even when verifying a process primary token.
+        // This probes only the known built-in Everyone SID, not service
+        // installation, privileged rights, or a fictional recovery receipt.
+        let mut raw = ptr::null_mut();
+        assert_ne!(
+            unsafe { OpenProcessToken(
+                GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw
+            ) },
+            0
+        );
+        let primary = Handle::new(raw).unwrap();
+        let everyone = parse_sid("S-1-1-0").unwrap();
+        assert!(enabled_member_of_primary_token(primary.0, everyone.0).unwrap());
+        let random_service = parse_sid("S-1-5-80-1-2-3-4-5").unwrap();
+        assert!(!enabled_member_of_primary_token(primary.0, random_service.0).unwrap());
+    }
+    #[test]
     fn invalid_client_image_pins_are_always_denied() {
         assert!(hash_executable(Path::new("not-absolute"), &"a".repeat(64)).is_err());
         assert!(hash_executable(Path::new("C:\\Windows\\no-such-host.exe"), "bad").is_err());
