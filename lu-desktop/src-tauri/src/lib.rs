@@ -1801,12 +1801,26 @@ async fn lu_research_campaign_start(
     ).await.map_err(|_|"Research campaign worker unavailable".to_owned()).and_then(|x|x);
     match result{
         Ok(value)=>{
-            owner.background_tasks.complete(&task_id)
-                .map_err(|_|"Research campaign completion receipt unavailable")?;
+            if value.state=="CANCELLED"{
+                // Worker has returned/reaped its owned curl before terminal
+                // cancellation is recorded; never announce false success.
+                owner.background_tasks.cancelled(&task_id)
+                    .map_err(|_|"Research cancellation receipt unavailable")?;
+            }else{
+                owner.background_tasks.complete(&task_id)
+                    .map_err(|_|"Research campaign completion receipt unavailable")?;
+            }
             Ok(value)
         },
         Err(error)=>{
-            let _=owner.background_tasks.fail(&task_id);
+            let cancelled=owner.research
+                .campaign_status(&lookup_chat,&lookup_id)
+                .is_ok_and(|v|v.state=="CANCELLED");
+            if cancelled{
+                let _=owner.background_tasks.cancelled(&task_id);
+            }else{
+                let _=owner.background_tasks.fail(&task_id);
+            }
             // Even failed steps leave durable status; a blocked campaign can
             // be inspected and explicitly resumed, not silently retried.
             owner.research.campaign_status(&lookup_chat,&lookup_id)
@@ -1860,10 +1874,37 @@ async fn lu_research_campaign_resume(
     let owner=Arc::clone(state.inner());
     let worker=Arc::clone(&owner.research);
     let _=worker.resume_campaign(&chat_id,&campaign_id)?;
+    let task_id=next_id("research-resume-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research resume task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research resume task could not start")?;
+    let query_chat=chat_id.clone();
+    let query_campaign=campaign_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         worker.run_campaign(&chat_id,&campaign_id)
     ).await.map_err(|_|"Research continuation worker unavailable".to_owned()).and_then(|x|x);
-    result
+    match result{
+        Ok(value)=>{
+            if value.state=="CANCELLED"{
+                owner.background_tasks.cancelled(&task_id)
+                    .map_err(|_|"Research resume cancellation receipt unavailable")?;
+            }else{
+                owner.background_tasks.complete(&task_id)
+                    .map_err(|_|"Research resume completion receipt unavailable")?;
+            }
+            Ok(value)
+        },
+        Err(error)=>{
+            if owner.research.campaign_status(&query_chat,&query_campaign)
+                .is_ok_and(|v|v.state=="CANCELLED"){
+                let _=owner.background_tasks.cancelled(&task_id);
+            }else{
+                let _=owner.background_tasks.fail(&task_id);
+            }
+            Err(error)
+        },
+    }
 }
 
 /// Explicit user authorization to examine the next ten candidate DOIs.
@@ -1907,17 +1948,30 @@ async fn lu_research_campaign_review(
     owner.background_tasks.start(&task_id)
         .map_err(|_|"Research review task could not start")?;
     let research=Arc::clone(&owner.research);
+    let record_chat=chat_id.clone();
+    let record_campaign=campaign_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         research.review_campaign_sources(&chat_id,&campaign_id,limit as usize)
     ).await.map_err(|_|"Research source review worker unavailable").and_then(|x|x);
     match result{
         Ok(value)=>{
-            owner.background_tasks.complete(&task_id)
-                .map_err(|_|"Review completed but task receipt unavailable")?;
+            if owner.research.campaign_status(&record_chat,&record_campaign)
+                .is_ok_and(|v|v.state=="CANCELLED"){
+                owner.background_tasks.cancelled(&task_id)
+                    .map_err(|_|"Review cancellation receipt unavailable")?;
+            }else{
+                owner.background_tasks.complete(&task_id)
+                    .map_err(|_|"Review completed but task receipt unavailable")?;
+            }
             Ok(value)
         },
         Err(error)=>{
-            let _=owner.background_tasks.fail(&task_id);
+            if owner.research.campaign_status(&record_chat,&record_campaign)
+                .is_ok_and(|v|v.state=="CANCELLED"){
+                let _=owner.background_tasks.cancelled(&task_id);
+            }else{
+                let _=owner.background_tasks.fail(&task_id);
+            }
             Err(error)
         }
     }
