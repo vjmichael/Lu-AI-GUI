@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D7 — Integrated Windows native worker (2026-11-06)
+
+- **Draft PR #58:** `ide/wave-d7-windows-native-worker-20261106`, stacked on Wave D6 PR #56 source `62986780b752f7add62f93c818a8cbac796660c8`. Do not merge in reverse order. No installed app or Lu Core worker permission added.
+- **Native Rust implementation:** `ide/supervisor/src/windows_worker.rs` is an explicit **off-by-default** `windows-worker` Cargo feature. It connects a reverified `PublishedInput` and host-pinned offline toolchain SHA-256 to a fresh profile-owned AppContainer staging tree, fixed Cargo check/test commands, a private named Windows Job with CPU/memory/PID quotas, and zero-capability `SECURITY_CAPABILITIES` process launch.
+- **Crash-window hardening:** `PROC_THREAD_ATTRIBUTE_JOB_LIST` attaches the child to the Job *during* `CreateProcessW`, prior to any instruction. Suspended child token + SID are verified. Parent Job handle is kill-on-close; launch has no unrestricted fallback.
+- **Durable outcomes:** existing D3 one-use native approval, admission, fsynced running/cancel/uncertain terminal receipts are reused; native output copying is content- and budget-checked and terminal receipt links published SHA-256. Faults immediately quarantine new work. Restart never auto-relaunches; the only completed Windows recovery path requires a still-existing kernel Job that can be killed and queried empty.
+- **Open gates:** D6's `LOCALAPPDATA` Windows error-203 repair, D7 exact-head compile/format, full pinned offline toolchain+SDK, real native Cargo fixture, hostile race/cancellation/crash matrix, durable missing-Job witness and physically installed Windows acceptance. Full production worker **not verified or activated**. See `ide/supervisor/WINDOWS_WORKER_ACCEPTANCE.md`.
+
 ## Wave D6 — Windows AppContainer + Job Object native admission (2026-11-05)
 
 - **Branch:** `ide/wave-d6-appcontainer-worker-20261105`, stacked on D5 production-worker source `341b3ab5ea268770bb01fdcf32cbb8d06452b095`. D5 Rust supervisor Windows and Linux native CI successful after formatter repair; desktop installed acceptance still open.
