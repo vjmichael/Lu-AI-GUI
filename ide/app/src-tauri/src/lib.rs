@@ -1,6 +1,8 @@
 //! Standalone IDE desktop. All project directories originate in the OS picker,
 //! not from JavaScript, model output, or a Lu IPC call.
 #![forbid(unsafe_code)]
+#[cfg(all(windows, feature = "native-lsp"))]
+mod lsp_backend;
 use std::{path::PathBuf, sync::Arc};
 
 use lu_ide_workspace::{execution_intents::ExecutionIntents, continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
@@ -320,12 +322,129 @@ struct LanguageWorkerStatus {
 /// A future E2 host broker will replace this fail-closed status only after
 /// independently attested process + permission evidence.
 #[tauri::command]
-async fn ide_lsp_worker_status() -> LanguageWorkerStatus {
+async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
+    #[cfg(all(windows, feature = "native-lsp"))]
+    {
+        let installed = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>().is_some();
+        let valid = tauri::async_runtime::spawn_blocking(move ||
+            installed && lsp_backend::installed_worker_ready(&app)
+        ).await.unwrap_or(false);
+        if valid {
+            return LanguageWorkerStatus {
+                ready: true, code: "LSP_REVIEWED_INSTALLATION_AVAILABLE",
+                detail: "Pinned language server available. Starting a session still requires native human approval and protected worker admission.",
+            };
+        }
+    }
+    #[cfg(not(all(windows, feature = "native-lsp")))]
+    let _ = app;
     LanguageWorkerStatus {
         ready: false,
         code: "LSP_PROTECTED_WORKER_UNVERIFIED",
-        detail: "Language servers are catalogued, but protected process admission and installed Windows acceptance are still pending.",
+        detail: "Protected language servers are unavailable in this build or have unverified release evidence.",
     }
+}
+
+/// E2 native feature commands are *always fail-closed by default*. A named
+/// WebView operation never grants an executable right merely by existing.
+/// Only the reviewed native-lsp build can execute, after an OS approval dialog.
+#[tauri::command]
+async fn ide_lsp_start_session(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "native-lsp"))]
+    {
+        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native = Arc::clone(state.inner());
+        let registry = Arc::clone(registry.inner());
+        let typed = serde_json::from_value::<lsp_backend::LspRequest>(request)
+            .map_err(|_| "LSP_INVALID_REQUEST")?;
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.start(&app, &registry, typed)
+        ).await.map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(windows, feature = "native-lsp")))]
+    {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
+}
+#[tauri::command]
+async fn ide_lsp_change_document(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "native-lsp"))]
+    {
+        let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native=Arc::clone(state.inner());
+        let registry=Arc::clone(registry.inner());
+        let typed=serde_json::from_value::<lsp_backend::LspRequest>(request)
+            .map_err(|_|"LSP_INVALID_REQUEST")?;
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.change(&registry,typed)
+        ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(windows, feature = "native-lsp")))]
+    {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
+}
+#[tauri::command]
+async fn ide_lsp_feature(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "native-lsp"))]
+    {
+        let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native=Arc::clone(state.inner());
+        let registry=Arc::clone(registry.inner());
+        let typed=serde_json::from_value::<lsp_backend::LspRequest>(request)
+            .map_err(|_|"LSP_INVALID_REQUEST")?;
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.feature(&registry,typed)
+        ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(windows, feature = "native-lsp")))]
+    {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
+}
+#[tauri::command]
+async fn ide_lsp_read_diagnostics(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "native-lsp"))]
+    {
+        let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native=Arc::clone(state.inner());
+        let registry=Arc::clone(registry.inner());
+        let typed=serde_json::from_value::<lsp_backend::LspRequest>(request)
+            .map_err(|_|"LSP_INVALID_REQUEST")?;
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.diagnostics(&registry,typed)
+        ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(windows, feature = "native-lsp")))]
+    {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
+}
+#[tauri::command]
+async fn ide_lsp_stop_session(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(windows, feature = "native-lsp"))]
+    {
+        let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native=Arc::clone(state.inner());
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.stop()
+        ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(windows, feature = "native-lsp")))]
+    {let _=app;Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
 }
 
 /// Read-only descriptions of known free/open-source LSP servers.
@@ -634,12 +753,23 @@ pub fn run() {
             app.manage(Arc::new(ledger));
             app.manage(Arc::new(snapshots));
             app.manage(Arc::new(IdeProposalInbox::default()));
+            #[cfg(all(windows, feature = "native-lsp"))]
+            match lsp_backend::NativeLspRuntime::new(app.handle()) {
+                Ok(native) => {app.manage(Arc::new(native));},
+                Err(code) => eprintln!("IDE LSP remains disabled: {code}"),
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
             ide_list_language_servers,
             ide_lsp_worker_status,
+            ide_lsp_start_session,
+            ide_lsp_change_document,
+            ide_lsp_feature,
+            ide_lsp_read_diagnostics,
+            ide_lsp_stop_session,
             ide_prepare_execution_intent,
             ide_decide_execution_intent,
             ide_list_execution_intents,
