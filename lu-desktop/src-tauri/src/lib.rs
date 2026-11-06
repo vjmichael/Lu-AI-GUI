@@ -1299,31 +1299,64 @@ async fn lu_ocr_read_selected_image(
     let Some(selected)=selected else{return Ok(None)};
     let path=selected.into_path()
         .map_err(|_|"OCR source must be a local image file")?;
-    let meta=std::fs::symlink_metadata(&path)
-        .map_err(|_|"OCR source no longer available")?;
-    if !meta.file_type().is_file()||meta.file_type().is_symlink()
-        ||meta.len()>12*1024*1024{
-        return Err("OCR requires an ordinary image at most 12 MiB".into());
-    }
+    // Pin and hash the native-picked source BEFORE the consent dialog.
+    // An eventual OCR worker uses these bytes, never a re-opened pathname.
+    let bytes=tauri::async_runtime::spawn_blocking(move||{
+        let meta=std::fs::symlink_metadata(&path)
+            .map_err(|_|"OCR source no longer available")?;
+        if !meta.file_type().is_file()||meta.file_type().is_symlink()
+           ||meta.len()==0||meta.len()>12*1024*1024{
+            return Err("OCR requires an ordinary image at most 12 MiB".to_owned());
+        }
+        let mut file=std::fs::File::open(&path)
+            .map_err(|_|"OCR source cannot be opened")?;
+        let opened=file.metadata().map_err(|_|"OCR source cannot be checked")?;
+        if !opened.is_file()||opened.len()!=meta.len(){
+            return Err("OCR source changed while being pinned".into());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if opened.dev()!=meta.dev()||opened.ino()!=meta.ino(){
+                return Err("OCR source inode changed while being pinned".into());
+            }
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if opened.file_attributes()&0x400!=0{
+                return Err("OCR file handle is a reparse point".into());
+            }
+        }
+        let mut bytes=Vec::with_capacity(meta.len() as usize);
+        file.take(12*1024*1024+1).read_to_end(&mut bytes)
+            .map_err(|_|"OCR source could not be pinned")?;
+        if bytes.len()>12*1024*1024||bytes.len()!=meta.len() as usize{
+            return Err("OCR source size changed during admission".into());
+        }
+        let current=std::fs::symlink_metadata(&path)
+            .map_err(|_|"OCR source changed during admission")?;
+        if !current.file_type().is_file()||current.file_type().is_symlink()
+           ||current.len()!=meta.len(){
+            return Err("OCR source changed during admission".into());
+        }
+        Ok::<Vec<u8>,String>(bytes)
+    }).await.map_err(|_|"Native OCR source admission worker unavailable")??;
+    let source_sha=format!("{:x}",Sha256::digest(&bytes));
     let approved=tauri::async_runtime::spawn_blocking({
         let app=app.clone();
-        move||app.dialog().message(
-            "Run the separately hash-pinned offline OCR worker on this \
-             selected PNG/JPEG? Lu will display the transcribed text for \
-             review. OCR output is UNVERIFIED and will never be silently \
-             promoted to a source passage or model instruction."
-        ).title("Lu — Authorize offline OCR")
+        move||app.dialog().message(format!(
+            "Run hash-pinned offline OCR on the PINNED native-picked PNG/JPEG?\n\n\
+             Source SHA-256: {}\n\n\
+             The original will not be reopened after approval. The OCR\
+             text is UNVERIFIED and must be reviewed by you.",source_sha
+        )).title("Lu — Authorize offline OCR")
           .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
               "Read image text".into(),"Cancel".into()
           )).blocking_show()
     }).await.map_err(|_|"Native OCR consent unavailable")?;
     if !approved{return Ok(None);}
     let output=tauri::async_runtime::spawn_blocking(move||{
-        let bytes=std::fs::read(&path)
-            .map_err(|_|"OCR image source changed or was unreadable")?;
-        if bytes.len()>12*1024*1024{
-            return Err("OCR source exceeded image budget".into());
-        }
         offline_ocr_view(&bytes,&executable,expected,&tessdata,expected_data)
     }).await.map_err(|_|"Native OCR execution worker unavailable")??;
     Ok(Some(output))

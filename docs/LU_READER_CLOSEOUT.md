@@ -17,6 +17,8 @@ real-model tool call.
 
 This is an updated implementation checkpoint on `lu/reader-ocr-image-closeout-20261106`, stacked on the IMAGE-WS-PREVIEW branch. The older status matrix below is retained as historical design context. The **existing** pinned Tesseract offline OCR worker is now reusable from the already-admitted original image in Image Workspace, with explicit native review, exact digest and chat/image scoped display. Reader adds ODT text, ODS A1 sheet ranges, and selected PPTX/ODP speaker notes (`notes:2`). Native PNG/JPEG decoding preflights OCR source dimensions. All extracted OCR words remain unverified human-review data; screenshots and PDF image pages are not silently treated as textual truth.
 
+The subsequent OCR hardening pass now **byte-pins the native-picked image before consent**, validates Unix inode/Windows reparse attributes and shows the pinned SHA in the consent dialog. The UI offers a bounded editable transcription excerpt and rejects a corrected insertion exceeding the 16 KiB chat-draft budget. Raw OCR hashes remain distinct from user edits. Real installed OCR/runtime/large scanned-document acceptance is still open.
+
 Remaining source gaps are substantial: real scanned-PDF rasterization and OCR (not just embedded image extraction), complex PDF ToUnicode/CMaps/object streams, secure worker-isolated hostile parsing, more large Office document progressive reading, accessible charts/formulas/layout and long-tail format adapters. Native Windows/Linux, physical Windows installation, GGUF/MMProj and real corpus acceptance have **not** been run on this source. Historical `RDR-04 Not implemented` is superseded only for PNG/JPEG offline OCR and does not imply scanned-PDF completion.
 
 ## Already implemented in source

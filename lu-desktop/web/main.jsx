@@ -42,6 +42,7 @@ function App() {
   const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
   const [ocrBusy,setOcrBusy]=useState(false);
   const [ocrObservation,setOcrObservation]=useState(null);
+  const [ocrReviewText,setOcrReviewText]=useState('');
   const [visionCapability,setVisionCapability] = useState(null);
   const [visionProbeBusy,setVisionProbeBusy]=useState(false); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
@@ -627,24 +628,29 @@ function App() {
     const sourceChat=chatId,sourceRef=imageViewer?.imageRef;
     if(!sourceChat||!sourceRef||ocrBusy)return;
     const key=JSON.stringify([sourceChat,sourceRef]);
-    setOcrBusy(true);setOcrObservation(null);setError('');
+    setOcrBusy(true);setOcrObservation(null);setOcrReviewText('');setError('');
     try{
       const result=await invoke('lu_ocr_read_attached_image',{
         chatId:sourceChat,imageRef:sourceRef
       });
       if(result&&ocrImageScopeRef.current===key){
         setOcrObservation({chatId:sourceChat,imageRef:sourceRef,...result});
+        setOcrReviewText(result.text.slice(0,12_000));
       }
     }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
     finally{setOcrBusy(false);}
   }
   async function readOfflineImageText(){
     if(!chatId||ocrBusy)return;
-    setOcrBusy(true);setOcrObservation(null);setError('');
+    const sourceChat=chatId,key=ocrImageScopeRef.current;
+    setOcrBusy(true);setOcrObservation(null);setOcrReviewText('');setError('');
     try{
-      const result=await invoke('lu_ocr_read_selected_image',{chatId});
-      if(result)setOcrObservation({chatId,...result});
-    }catch(e){setError(String(e));}
+      const result=await invoke('lu_ocr_read_selected_image',{chatId:sourceChat});
+      if(result&&ocrImageScopeRef.current===key){
+        setOcrObservation({chatId:sourceChat,...result});
+        setOcrReviewText(result.text.slice(0,12_000));
+      }
+    }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
     finally{setOcrBusy(false);}
   }
   const currentImagePreviewKey=JSON.stringify([
@@ -3516,15 +3522,28 @@ function App() {
             (!ocrObservation.imageRef||ocrObservation.imageRef===imageViewer?.imageRef)&&<div>
             <small>Unverified OCR · source SHA-256 {ocrObservation.sourceSha256}
               · text SHA-256 {ocrObservation.textSha256}</small>
-            <textarea readOnly rows={5} aria-label="Review unverified OCR transcription"
-              value={ocrObservation.text}/>
+            <small>Editable OCR review, maximum 12,000 characters.
+              The worker text SHA-256 identifies the uncorrected transcript,
+              not any edits made here.
+              {ocrObservation.text.length>12_000&&
+                ' Longer OCR output was clipped for this draft review.'}</small>
+            <textarea rows={5} maxLength={12_000}
+              aria-label="Review and correct unverified OCR transcription"
+              value={ocrReviewText}
+              onChange={e=>setOcrReviewText(e.target.value)}/>
             <button type="button" onClick={()=>{
               if(ocrObservation?.chatId!==chatId||
                 (ocrObservation.imageRef&&ocrObservation.imageRef!==imageViewer?.imageRef))return;
-              setPrompt(p=>p+(p?'\n\n':'')+
-                '[User-reviewed OCR transcription — verify against original image]\n'+
-                ocrObservation.text);
-              setOcrObservation(null);
+              const edited=ocrReviewText.trim();
+              if(!edited){setError('Review some OCR text before inserting it.');return;}
+              const candidate=prompt+(prompt?'\n\n':'')+
+                '[User-edited OCR transcription — unverified image text]\n'+edited;
+              if(candidate.length>16*1024){
+                setError('The OCR excerpt exceeds Lu\'s 16 KiB chat draft limit. Shorten it.');
+                return;
+              }
+              setPrompt(candidate);
+              setOcrObservation(null);setOcrReviewText('');
             }}>Insert reviewed OCR text into draft</button>
           </div>}
         </div>
