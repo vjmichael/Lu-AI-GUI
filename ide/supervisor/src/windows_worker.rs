@@ -153,18 +153,29 @@ fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str) -> Result<(), Sup
     }
     if !clean_meta(&bundle.join("lib"))?.is_dir()
         || !clean_meta(&bundle.join("cargo-home"))?.is_dir() { return Err(denied()); }
-    if digest_tree(bundle, Some(dest), MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)? != expected {
+    let parent = dest.parent().ok_or_else(denied)?;
+    let name = dest.file_name().ok_or_else(denied)?;
+    let (_, copied_hash) = publish_into_native_parent(
+        bundle, parent, name, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES,
+        1024 * 1024 * 1024
+    )?;
+    if copied_hash != expected {
         return Err(SupervisorError::WrongProjectOrSource);
-    }
-    if digest_tree(dest, None, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)? != expected {
-        return Err(denied());
     }
     Ok(())
 }
 fn stage_workspace(input: &PublishedInput, dest: &Path)
     -> Result<(), SupervisorError> {
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
-    digest_tree(&input.root, Some(dest), 12_000, 512 * 1024 * 1024)?;
+    let parent = dest.parent().ok_or_else(denied)?;
+    let name = dest.file_name().ok_or_else(denied)?;
+    let (_, staged_hash) = publish_into_native_parent(
+        &input.root, parent, name, 12_000, 512 * 1024 * 1024,
+        64 * 1024 * 1024
+    )?;
+    if staged_hash != input.seal.source_sha256 {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
     let staged = PublishedInput { root: dest.to_path_buf(), seal: input.seal.clone() };
     verify_input(&staged).map_err(|_| denied())
 }
