@@ -31,7 +31,7 @@ use std::{
 
 #[cfg(feature = "lsp-transport")]
 #[path = "linux_lsp_worker.rs"]
-pub(crate) mod lsp_native;
+pub mod lsp_native;
 const BWRAP: &str = "/usr/bin/bwrap";
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";
