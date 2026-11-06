@@ -70,7 +70,7 @@
       "id": "typescript-language-server",
       "category": "node",
       "mode": "deferred",
-      "licenseExpression": "MIT",
+      "licenseExpression": "MIT AND Apache-2.0",
       "noticeUpstream": "https://github.com/typescript-language-server/typescript-language-server",
       "dependencies": [
         "Node.js runtime",
