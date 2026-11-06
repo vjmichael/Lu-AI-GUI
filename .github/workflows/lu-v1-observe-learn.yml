@@ -6,6 +6,7 @@ on:
       - 'src-tauri/lu-core/src/native_observe_ansf.rs'
       - 'src-tauri/lu-core/src/native_observe_scope.rs'
       - 'src-tauri/lu-core/src/native_gui_verification.rs'
+      - 'src-tauri/lu-observe-capture-worker/**'
       - 'docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md'
       - 'lu-desktop/**'
       - 'src-tauri/lu-core/src/lib.rs'
@@ -102,8 +103,29 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Compile Windows.Graphics.Capture picker and D3D11 one-shot worker
+        run: cargo build --release --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml
+      - name: Pin compiled Windows capture worker digest for desktop host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $worker='src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
+          if (!(Test-Path -LiteralPath $worker)) {throw 'Real WGC worker not built'}
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $worker).Hash.ToLowerInvariant()
+          if ($sha.Length -ne 64) {throw 'Unusable worker digest'}
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_OBSERVE_CAPTURE_WORKER_SHA256=$sha"
+          Set-Content -LiteralPath 'lu-observe-capture-worker.sha256' -Value $sha -NoNewline
       - run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib observe_desktop::tests -- --nocapture
+      - name: Publish compiled Windows picker for isolated native evaluation
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-observe-capture-win-x64-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe
+            lu-observe-capture-worker.sha256
       - name: Check desktop source lockfile
         shell: bash
         run: git diff --exit-code -- lu-desktop/src-tauri/Cargo.lock

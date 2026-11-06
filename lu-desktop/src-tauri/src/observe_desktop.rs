@@ -9,6 +9,7 @@ use lu_core::{
     native_observe_learn::{Consent,Controller,Decision,Error as ObserveError,Mode,NativeEvent,Signal},
     native_observe_scope::{ScopedObservationGrant,SelectedTargets},
     tasks::TaskStore,
+    native_background_process::{BackgroundProcessSupervisor,TrustedWorkerPlan},
 };
 
 const LEASE_MS:u64=30*60*1000;
@@ -30,6 +31,7 @@ pub(crate) struct ObserveView {
 struct Session {
     controller:Controller,
     scope:Option<ScopedObservationGrant>,
+    capture_task_id:Option<String>,
     session_id:Option<String>,
     chat_id:Option<String>,
     sequence:u64,
@@ -39,17 +41,18 @@ struct Session {
 pub(crate) struct ObserveHost {
     inner:Mutex<Session>,
     task_store:Arc<TaskStore>,
+    capture_processes:Arc<BackgroundProcessSupervisor>,
     epoch:Instant,
 }
 fn format_error(e:ObserveError)->String{format!("Observe session refused: {e:?}")}
 impl ObserveHost {
-    pub(crate) fn new(task_store:Arc<TaskStore>)->Self{
+    pub(crate) fn new(task_store:Arc<TaskStore>,capture_processes:Arc<BackgroundProcessSupervisor>)->Self{
         Self{
-            task_store,
+            task_store,capture_processes,
             epoch:Instant::now(),
             inner:Mutex::new(Session{
                 controller:Controller::default(),
-                scope:None,
+                scope:None,capture_task_id:None,
                 session_id:None,chat_id:None,sequence:0,
                 event_count:0,recommendations:0,
             }),
@@ -112,6 +115,7 @@ impl ObserveHost {
             return Err(format!("Could not start observation task: {e:?}"));
         }
         session.scope=Some(bound_scope);
+        session.capture_task_id=None;
         session.session_id=Some(session_id);
         session.chat_id=Some(chat_id.to_owned());
         session.sequence=0;session.event_count=0;session.recommendations=0;
@@ -120,6 +124,18 @@ impl ObserveHost {
     /// Immediately wipe the in-memory consent before marking the durable
     /// task terminal. No worker process is associated with this event session.
     fn revoke(&self,session:&mut Session)->Result<(),String>{
+        // Stop any captured window/display operation (including an open OS
+        // picker) before dropping consent. Uncertain reaping is an error.
+        if let Some(capture_id)=session.capture_task_id.as_ref(){
+            let _=self.capture_processes.poll();
+            if self.capture_processes.can_cancel(capture_id){
+                let chat=session.chat_id.as_deref()
+                    .ok_or("Missing owned capture workspace")?;
+                self.capture_processes.cancel_owned(capture_id,chat)
+                    .map_err(|e|format!("Capture process could not be reaped: {e:?}"))?;
+            }
+        }
+        session.capture_task_id=None;
         let task_id=session.session_id.take();
         session.controller.stop();
         session.scope=None;
@@ -148,7 +164,7 @@ impl ObserveHost {
                 self.revoke(&mut session)?;
             }
             return Ok(Self::view(&Session{
-                controller:Controller::default(),scope:None,
+                controller:Controller::default(),scope:None,capture_task_id:None,
                 session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
             }));
@@ -199,6 +215,39 @@ impl ObserveHost {
         self.revoke(s)?;
         Ok(Self::view(s))
     }
+    /// Extra user-approved OS picker: chooses ONE window or monitor, not
+    /// automatically within the Lu-only semantic observation app scope.
+    /// No image bytes are returned to the model or WebView.
+    pub(crate) fn launch_one_shot(
+        &self,chat_id:&str,plan:TrustedWorkerPlan
+    )->Result<String,String>{
+        if !plan.task_id.starts_with("obs-frame-")
+          ||plan.workspace_id!=chat_id
+          ||plan.args.len()!=2
+          ||plan.args[0]!="--lu-observe-one-shot"
+          ||plan.args[1].to_string_lossy().len()!=32
+          ||!plan.args[1].to_string_lossy().bytes().all(|b|b.is_ascii_hexdigit())
+          ||!plan.progress_protocol
+          ||plan.max_runtime_seconds!=Some(90){
+            return Err("Invalid host-owned capture plan".into());
+        }
+        let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut session)?;
+        let s=Self::owned(&mut session,chat_id)?;
+        if s.controller.mode()!=Mode::Active{
+            return Err("Start Observe & Learn for this conversation first".into());
+        }
+        if s.capture_task_id.as_ref().is_some_and(|task|
+            self.capture_processes.can_cancel(task)){
+            return Err("An approved capture picker is already running".into());
+        }
+        let id=plan.task_id.clone();
+        self.capture_processes.start_host_approved(plan)
+            .map_err(|e|format!("Trusted capture worker could not start: {e:?}"))?;
+        s.capture_task_id=Some(id.clone());
+        Ok(id)
+    }
+
     /// Renderer hints contain no text or pixels. They are NOT verified GUI
     /// outcomes, even when a label says "error". Trustworthy pass/fail must
     /// originate in an independent, native test verifier.
@@ -242,7 +291,8 @@ mod tests{
     #[test]
     fn native_tasks_are_reused_and_observation_is_stopped_by_default(){
         let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
-        let host=ObserveHost::new(Arc::clone(&store));
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
         assert_eq!(host.status("c-main").unwrap().mode,"off");
         let initial=host.start("c-main","obs-one".into()).unwrap();
         assert_eq!(initial.mode,"active");
@@ -264,7 +314,8 @@ mod tests{
     #[test]
     fn another_conversation_cannot_steal_session_and_no_restart_grant(){
         let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
-        let host=ObserveHost::new(Arc::clone(&store));
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
         host.start("c-owner","obs-scoped".into()).unwrap();
         assert!(host.pause("c-intruder").is_err());
         assert!(host.stop("c-intruder").is_err());
@@ -277,7 +328,8 @@ mod tests{
         // The existing TaskStore startup recovery marks running records as
         // interrupted; a newly constructed host has no observation grant.
         assert_eq!(store.reconcile_interrupted().unwrap(),1);
-        let after=ObserveHost::new(Arc::clone(&store));
+        let after=ObserveHost::new(Arc::clone(&store),Arc::new(
+            BackgroundProcessSupervisor::new(Arc::clone(&store))));
         assert_eq!(after.status("c-owner").unwrap().mode,"off");
         assert_eq!(store.get("obs-scoped").unwrap().unwrap().state,TaskState::Cancelled);
         assert_eq!(store.get("obs-restart").unwrap().unwrap().state,TaskState::Interrupted);

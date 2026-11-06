@@ -31,7 +31,10 @@ function App() {
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
-  const [observeView,setObserveView] = useState({mode:'off'}); // no screen capture, Lu UI hints only
+  const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
+  const [captureWorkerReady,setCaptureWorkerReady]=useState(false);
+  const [captureTaskId,setCaptureTaskId]=useState(null);
+  const [captureStarting,setCaptureStarting]=useState(false);
   const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
   const [browserPreferenceError,setBrowserPreferenceError] = useState('');
   const [textFiles, setTextFiles] = useState([]);
@@ -197,6 +200,12 @@ function App() {
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
   useEffect(()=>{
+    invoke('lu_observe_capture_available')
+      .then(v=>setCaptureWorkerReady(Boolean(v)))
+      .catch(()=>setCaptureWorkerReady(false));
+  },[]);
+  useEffect(()=>{
+    setCaptureTaskId(null);
     if(!chatId){
       // Telling the native host that there is no active chat revokes any
       // Lu-UI observation lease rather than letting it run unseen.
@@ -226,6 +235,15 @@ function App() {
     if(!chatId||!error||observeView.mode!=='active'||observeView.chatId!==chatId)return;
     invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'}).catch(()=>{});
   },[chatId,error,observeView.mode]);
+  async function observeCaptureOneShot(){
+    if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
+    setCaptureStarting(true);
+    try{
+      const id=await invoke('lu_observe_capture_one_shot',{chatId});
+      if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
+    }catch(e){setError(String(e));}
+    finally{setCaptureStarting(false);}
+  }
   function observeAction(action){
     if(!chatId)return;
     invoke('lu_observe_'+action,{chatId})
@@ -1760,8 +1778,8 @@ function App() {
                observeView.mode==='paused'?'Paused':'Off'}
             </span>
           </div>
-          <small>Can see desktop: No · Screenshots: Off · AI prompts issued: 0.
-            This pilot observes only Lu's own state changes, not other apps or your screen.</small>
+          <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
+            A separately approved Windows picker can capture exactly one frame, but does not give the model its pixels.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
               <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}
@@ -1769,9 +1787,20 @@ function App() {
               <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
             {observeView.mode==='paused' &&
               <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
+            {observeView.mode==='active' && captureWorkerReady &&
+              <button type="button" disabled={captureStarting}
+                onClick={observeCaptureOneShot}>
+                {captureStarting?'Opening Windows picker…':'Select window/display · capture one frame'}
+              </button>}
             {observeView.mode!=='off' &&
               <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
           </div>
+          {observeView.mode==='active' && !captureWorkerReady &&
+            <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
+          {captureTaskId && <small role="status">
+            One-shot Windows frame capture task: {captureTaskId}.
+            Check Background Tasks for the frame receipt. No image pixels are retained or sent to the model.
+          </small>}
           {observeView.mode!=='off'&&
             <small>Observed state-change hints: {observeView.nativeEventCount||0}.
               No automatically saved learning or GUI test verdict.</small>}

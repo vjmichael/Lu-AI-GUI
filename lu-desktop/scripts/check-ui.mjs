@@ -7,6 +7,14 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Observe WGC one-shot is explicit, pinned, supervised, user-selected and does not claim visual understanding',
+    host.includes('async fn lu_observe_capture_one_shot(') &&
+    host.includes('LU_OBSERVE_CAPTURE_WORKER_SHA256') &&
+    host.includes('observer.launch_one_shot(&chat_id,plan)') &&
+    host.includes('lu_observe_capture_available,') &&
+    ui.includes("invoke('lu_observe_capture_one_shot',{chatId})") &&
+    ui.includes('Select window/display · capture one frame') &&
+    ui.includes('No image pixels are retained or sent to the model')],
   ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
     host.includes('fn lu_observe_self_signal(') &&
     host.includes('fn lu_observe_status(') &&

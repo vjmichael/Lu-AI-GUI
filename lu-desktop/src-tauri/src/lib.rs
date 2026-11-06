@@ -585,7 +585,9 @@ impl DesktopState {
             )
         );
 
-        let observe=Arc::new(observe_desktop::ObserveHost::new(Arc::clone(&background_tasks)));
+        let observe=Arc::new(observe_desktop::ObserveHost::new(
+            Arc::clone(&background_tasks),Arc::clone(&background_processes)
+        ));
         Ok(Self {
             observe,
             background_processes,
@@ -3536,6 +3538,93 @@ fn lu_observe_self_signal(
     state.observe.self_signal(&chat_id,&kind,ready)
 }
 
+/// The picker is an OS-controlled, *additional* permission. It may select a
+/// full display, so this single-frame capture is intentionally distinct from
+/// the Lu-only semantic-observation scope and has no automatic model access.
+#[tauri::command]
+async fn lu_observe_capture_one_shot(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<String>,String>{
+    #[cfg(not(windows))]
+    {
+        let _=app;let _=state;let _=chat_id;
+        return Err("Windows Graphics Capture requires interactive Windows".into());
+    }
+    #[cfg(windows)]
+    {
+        state.chats.history(&chat_id)
+            .map_err(|_|"Choose an existing conversation")?;
+        let running=state.observe.status(&chat_id)?;
+        if running.mode!="active"{
+            return Err("Start Observe & Learn before selecting a capture source".into());
+        }
+        // Pinned by Windows build/installer before Lu itself is compiled.
+        // An absent signature or missing binary fails closed; never fall back
+        // to PATH, downloads, shell, model-provided executables, or dummy data.
+        let expected=option_env!("LU_OBSERVE_CAPTURE_WORKER_SHA256")
+            .ok_or("The verified Windows capture worker is not installed")?
+            .to_owned();
+        if expected.len()!=64||!expected.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err("Installed capture worker signature is invalid".into());
+        }
+        let approved=tauri::async_runtime::spawn_blocking(move||{
+            app.dialog().message(
+                "Use Windows' system picker to choose ONE application window \
+                 OR ONE entire display for a single frame?\n\n\
+                 If you pick a monitor, the selected display may include \
+                 private windows unrelated to Lu. This is an additional \
+                 permission separate from Lu-only event observation.\n\n\
+                 Lu will read one frame into temporary GPU/CPU memory and \
+                 immediately discard it. Only a nonce-salted capture receipt \
+                 is kept in your local Background Tasks; no screenshot, \
+                 window title, clipboard, microphone or pixel data is saved, \
+                 sent to the AI model, or uploaded. You may cancel the picker \
+                 or stop observation at any time."
+            ).title("Lu — Windows capture of one selected source")
+             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                 "Open Windows capture picker".into(),
+                 "Cancel".into(),
+             )).blocking_show()
+        }).await.map_err(|_|"Windows capture confirmation unavailable")?;
+        if !approved{return Ok(None);}
+        let observer=Arc::clone(&state.observe);
+        tauri::async_runtime::spawn_blocking(move||{
+            // The installed worker lives alongside Lu. Its exact hash was
+            // compiled into this host; native supervisor checks again at
+            // execution and refuses reparse points or changed executables.
+            let current=std::env::current_exe()
+                .map_err(|_|"Lu installation path unavailable")?;
+            let executable=current.with_file_name("lu-observe-capture-worker.exe");
+            let task_id=next_id("obs-frame-");
+            let nonce=next_id("");
+            let plan=lu_core::native_background_process::TrustedWorkerPlan{
+                task_id,
+                workspace_id:chat_id.clone(),
+                executable,
+                expected_sha256:expected,
+                args:vec!["--lu-observe-one-shot".into(),nonce.into()],
+                progress_protocol:true,
+                max_runtime_seconds:Some(90),
+            };
+            observer.launch_one_shot(&chat_id,plan).map(Some)
+        }).await.map_err(|_|"Native Windows picker worker unavailable")?
+    }
+}
+
+#[tauri::command]
+fn lu_observe_capture_available()->bool{
+    #[cfg(windows)]
+    {
+        option_env!("LU_OBSERVE_CAPTURE_WORKER_SHA256").is_some_and(|digest|
+            digest.len()==64&&digest.bytes().all(|b|b.is_ascii_hexdigit()))
+            &&std::env::current_exe().ok().map(|path|
+                path.with_file_name("lu-observe-capture-worker.exe").is_file())
+                .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    { false }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -3563,6 +3652,8 @@ pub fn run() {
             lu_observe_resume,
             lu_observe_stop,
             lu_observe_self_signal,
+            lu_observe_capture_one_shot,
+            lu_observe_capture_available,
             lu_browser_visibility,
             lu_set_browser_visibility,
             lu_unload_model,

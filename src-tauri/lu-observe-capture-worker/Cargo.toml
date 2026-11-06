@@ -1,0 +1,18 @@
+[package]
+name = "lu-observe-capture-worker"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Host-supervised one-shot Windows.Graphics.Capture picker worker for Lu"
+
+# Built as a separately version-pinned native tool and launched by Lu's
+# existing digest-verified BackgroundProcessSupervisor. No autonomous agent.
+[dependencies]
+windows-capture = "=2.0.1"
+sha2 = "=0.10.9"
+
+[profile.release]
+lto = "thin"
+strip = true
