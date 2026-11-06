@@ -1221,6 +1221,16 @@ async fn lu_browser_stop(
 fn lu_research_available(state:State<'_,Arc<DesktopState>>)->bool{
     state.research.available()
 }
+/// Read-only, per-conversation Browser evidence inventory. No network call,
+/// model authority, claimed academic citation or cross-chat aggregation.
+#[tauri::command]
+fn lu_research_browser_evidence(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<research_desktop::ResearchBrowserEvidenceView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for Browser evidence")?;
+    state.research.browser_evidence(&chat_id)
+}
 /// A deliberate USER research request, with native network consent. Results
 /// are UNVERIFIED discovery leads and never enter an LLM prompt as citations.
 #[tauri::command]
@@ -4168,6 +4178,7 @@ pub fn run() {
             lu_browser_visibility,
             lu_browser_runtime_status,
             lu_research_available,
+            lu_research_browser_evidence,
             lu_research_openalex,
             lu_research_crossref,
             lu_browser_start,
