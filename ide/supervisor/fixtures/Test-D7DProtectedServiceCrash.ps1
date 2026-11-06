@@ -37,6 +37,8 @@ public static class D7DProtectedObserver {
   public struct BasicAccounting {
     public long TotalUserTime;
     public long TotalKernelTime;
+    public long ThisPeriodTotalUserTime;
+    public long ThisPeriodTotalKernelTime;
     public uint TotalPageFaultCount;
     public uint TotalProcesses;
     public uint ActiveProcesses;
@@ -98,6 +100,7 @@ try {
   while ([DateTime]::UtcNow -lt $deadline) {
     $accounting=New-Object 'D7DProtectedObserver+BasicAccounting'
     $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
+    if ($size -ne 48) { throw "DENIED: Job accounting ABI size mismatch: $size" }
     if (![D7DProtectedObserver]::QueryInformationJobObject(
         $job,1,[ref]$accounting,$size,[IntPtr]::Zero)) {
       # The error code distinguishes stale/revoked original Job handle from
