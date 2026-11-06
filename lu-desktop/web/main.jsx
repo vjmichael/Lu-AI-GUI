@@ -227,14 +227,16 @@ function App() {
       .then(v=>setResearchAvailable(Boolean(v)))
       .catch(()=>setResearchAvailable(false));
   },[settingsOpen]);
-  async function runResearchDiscovery(){
-    if(!chatId||researchBusy||!researchAvailable)return;
+  async function runResearchDiscovery(page=1){
+    const selectedPage=Number.isInteger(page)?page:1;
+    if(!chatId||researchBusy||!researchAvailable
+      ||selectedPage<1||selectedPage>5)return;
     const sourceChat=chatId;
     setResearchBusy(true);
     setResearchError('');
     setResearchResult(null);
     try{
-      const result=await invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery});
+      const result=await invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery,page:selectedPage});
       // Preserve the requesting chat as part of the displayed evidence scope.
       setResearchResult({...result,chatId:sourceChat});
     }catch(e){setResearchError(String(e));}
@@ -3056,7 +3058,7 @@ function App() {
              unverified leads, never citations, until registry and document evidence are checked.</p>
           <label htmlFor="researchQuery">Research question or subject</label>
           <input id="researchQuery" value={researchQuery} disabled={researchBusy}
-            onChange={e=>setResearchQuery(e.target.value)}
+            onChange={e=>{setResearchQuery(e.target.value);setResearchResult(null);}}
             placeholder="e.g., spatial reasoning and GUI automation" />
           <div className="settingsActions">
             <button type="button" disabled={!chatId||!researchAvailable||researchBusy||!researchQuery.trim()}
@@ -3082,6 +3084,17 @@ function App() {
               {researchMetadataByChat[chatId+'|'+l.sourceId]&&
                 <small>{researchMetadataByChat[chatId+'|'+l.sourceId].message}</small>}
             </li>)}</ul>
+            <div className="settingsActions">
+              <button type="button" disabled={researchBusy||researchResult.page<=1}
+                onClick={()=>void runResearchDiscovery(researchResult.page-1)}>
+                Previous discovery page
+              </button>
+              <small>Page {researchResult.page} of at most 5 · leads are not citations</small>
+              <button type="button" disabled={researchBusy||!researchResult.nextPage}
+                onClick={()=>void runResearchDiscovery(researchResult.nextPage)}>
+                Next discovery page
+              </button>
+            </div>
           </div>}
         </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
