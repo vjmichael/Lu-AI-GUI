@@ -10,6 +10,7 @@ use lu_core::{
     journal::{EffectJournal,EffectState},
     model::ModelToolCatalog,
     native_file_transfer::{source_digest,TrashReceipt},
+    native_trash_custody::{TrashCustodyLedger,CustodyRecord,CustodyState},
     native_file_trash_tool::{
         register_trash_restore_tools,ExactTrashPolicy,ExactRestorePolicy,
         TRASH_ID,RESTORE_ID,TRASH_INPUT,TRASH_OUTPUT,RESTORE_INPUT,RESTORE_OUTPUT,
@@ -40,6 +41,7 @@ async fn reversible_trash_and_restore_require_independent_exact_grants(){
         &registry,&mut catalog,Arc::clone(&source),Arc::clone(&trash),None
     ).unwrap();
     let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let ledger=TrashCustodyLedger::open(&root.join("custody.sqlite")).unwrap();
     let auth=ConversationAuthority::new();
     let policy=PolicyEngine::new();
     let origin=BoundCallOrigin{
@@ -89,6 +91,14 @@ async fn reversible_trash_and_restore_require_independent_exact_grants(){
             }.encode_to_vec(),
         },
     };
+    let intended=CustodyRecord{
+        id:"ct-real-record-001".into(),chat_id:"trash-chat".into(),
+        parent:root.to_string_lossy().into_owned(),original:"document.txt".into(),
+        trash_entry:format!("lu-trash-{}",request.call_id),bytes:9,
+        sha256:digest.clone(),trash_effect_id:request.call_id.clone(),
+        restore_effect_id:None,state:CustodyState::Pending,
+    };
+    ledger.stage(&intended).unwrap();
     let output=auth.dispatch_bound_durable(
         &registry,&journal,request.clone(),origin.clone(),&fence
     ).await.unwrap();
@@ -102,6 +112,13 @@ async fn reversible_trash_and_restore_require_independent_exact_grants(){
         bytes:custody.bytes,sha256:custody.sha256,
     };
     assert!(root.join("trash").join(&verified_receipt.trash_entry).is_file());
+    let archived=ledger.confirm_trash(&intended.id,&intended.chat_id,&journal).unwrap();
+    assert_eq!(archived.state,CustodyState::Trashed);
+    let (verified,receipt)=ledger.validated_trash_receipt(
+        &intended.id,&intended.chat_id,&journal
+    ).unwrap();
+    assert_eq!(verified.sha256,digest);
+    assert_eq!(receipt,verified_receipt);
     let restore_registry=NativeToolRegistry::new();
     let mut restore_catalog=ModelToolCatalog::new();
     register_trash_restore_tools(
@@ -122,6 +139,8 @@ async fn reversible_trash_and_restore_require_independent_exact_grants(){
             }.encode_to_vec(),
         },
     };
+    let pending=ledger.begin_restore(&intended.id,&intended.chat_id,&restore.call_id).unwrap();
+    assert_eq!(pending.state,CustodyState::Restoring);
     let restored=auth.dispatch_bound_durable(
         &restore_registry,&journal,restore.clone(),origin.clone(),&restore_fence
     ).await.unwrap();
@@ -131,11 +150,17 @@ async fn reversible_trash_and_restore_require_independent_exact_grants(){
     assert_eq!(fs::read(root.join("document.txt")).unwrap(),b"retain me");
     assert!(!root.join("trash").join(&verified_receipt.trash_entry).exists());
     assert_eq!(journal.get(&restore.call_id).unwrap().unwrap().state,EffectState::Applied);
+    assert_eq!(ledger.confirm_restore(&intended.id,&intended.chat_id,&journal)
+        .unwrap().state,CustodyState::Restored);
+    assert!(ledger.validated_trash_receipt(&intended.id,&intended.chat_id,&journal).is_err());
     auth.revoke_task(&origin.task_id).unwrap();
     assert!(matches!(auth.dispatch_bound_durable(
         &restore_registry,&journal,restore,origin,&restore_fence
     ).await,Err(DispatchError::Denied(_))));
-    drop(journal);drop(restore_catalog);drop(restore_registry);
+    drop(ledger);drop(journal);drop(restore_catalog);drop(restore_registry);
+    let persisted=TrashCustodyLedger::open(&root.join("custody.sqlite")).unwrap();
+    assert_eq!(persisted.list_chat("trash-chat").unwrap()[0].state,CustodyState::Restored);
+    drop(persisted);
     drop(catalog);drop(registry);drop(trash);drop(source);
     fs::remove_dir_all(root).unwrap();
 }
