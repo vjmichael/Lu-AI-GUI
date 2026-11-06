@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7b5b1759ad393a98bb18a69efdd7e33f3e0a4f04",
-  "trackedFileCount": 415,
+  "sourceCommitBeforeLock": "dc1e138359a4eaef4caf5e7ae965c96f35f15009",
+  "trackedFileCount": 418,
   "files": [
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "6f4482688b052f9831295d24caea9c854e630693"
+      "blob": "5d450a7e70f117d55cef87041f80a9ad88967f69"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -97,15 +97,19 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "190e70982d7f5a793f901a194b9d11ab5959eaad"
+      "blob": "b9e9bdcd511375a0b94c57b288af726a37b504a3"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
       "blob": "f9e15064a8f22f8d2a8e2e9f30ef033066a33931"
     },
     {
+      "path": "docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md",
+      "blob": "c8d08a9cb86e05016d0d163472daef7371523980"
+    },
+    {
       "path": "docs/LU_OBSERVE_LEARN_V1.md",
-      "blob": "de63ca396b63899a40ca0672f52953b459ba43a0"
+      "blob": "427828ac53d569aa29108256b182916a71b4c48e"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -393,7 +397,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "b75ac3a8aa11987d4b849487eba1ea0c4d108f7f"
+      "blob": "9f6abd47c3b5484e8a72171f4aab576a07d6dfb9"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -853,7 +857,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "a9fc3b813e699094e55b825510039cacb63190f0"
+      "blob": "773716f8f8865e9ac8bc12263477c7995fb7ab06"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1000,6 +1004,10 @@
       "blob": "34a784371ca65e46f65159a037560a2402d434ff"
     },
     {
+      "path": "src-tauri/lu-core/src/native_gui_verification.rs",
+      "blob": "80c74d3d118d8feaf02f75451fd169129e42c8ac"
+    },
+    {
       "path": "src-tauri/lu-core/src/native_iso9660.rs",
       "blob": "7951e378b19885c1dc748789edd4b7b417e57900"
     },
@@ -1026,6 +1034,10 @@
     {
       "path": "src-tauri/lu-core/src/native_observe_learn.rs",
       "blob": "f7781c0cb3f3af456611a473844be6b975539998"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_observe_scope.rs",
+      "blob": "10d9ab96ff8aeaab959312730aeca91c2e278a35"
     },
     {
       "path": "src-tauri/lu-core/src/native_office_batch_tool.rs",

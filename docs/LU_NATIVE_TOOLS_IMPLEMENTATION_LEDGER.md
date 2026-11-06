@@ -286,3 +286,8 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **OBSERVE-LEARN-02 SAFETY/CI REFINEMENT (2026-11-06):** Changing chats or opening no chat revokes the current native observation session rather than hiding an active lease. OBS task terminal notices are excluded from background auto-continuation, so stopping observation cannot quietly trigger a model call. Dedicated CI now builds/tests React on Linux and compiles/tests the actual Windows Tauri desktop/observe host (compile-time engine resources only, not a packaged installer). Source committed; tests/physical acceptance must still pass.
+
+
+**OBSERVE-SCOPE-03 SOURCE IMPLEMENTED (2026-11-06):** One host-only typed scope evaluator for selected window instances, application(s), monitor(s), virtual desktop(s) and intersection filters. Source proof/lease expiry/protected window checks fail closed. Own-UI pilot binds exactly Lu and does not grant screen pixels or other app visibility. Windows/Wayland native picker, OS membership, redaction and installed testing OPEN.
+
+**OBSERVE-GUI-VERIFY-04 SOURCE IMPLEMENTED (2026-11-06):** Exact intended source revision, running artifact SHA-256, authenticated app identity, and separate Accessibility, Visual and NativeOutcome evidence requirements. All independently verified matching checks -> PASS; independently witnessed mismatch -> FAIL; unverifiable, missing, contradictory or wrong build -> INCONCLUSIVE. This is a source contract, NOT a working GUI test executor, visual capture, auto-build, learning or self-repair. Existing Lu IDE supervisor and per-effect host grants remain authoritative. See docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md.

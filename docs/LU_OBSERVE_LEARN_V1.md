@@ -52,3 +52,8 @@ The current Lu application pilot will observe only explicitly approved semantic 
 
 
 **Chat-switch privacy fence:** The existing Tauri status endpoint immediately revokes a live observation if the user switches to another conversation or no conversation. The native task becomes CANCELLED; it never silently observes under a hidden prior grant. A new host after restart has no consent even if the previous task was INTERRUPTED. This is verified by focused native host tests, not yet physical desktop acceptance.
+
+
+## OBSERVE-SCOPE-03 / OBSERVE-GUI-VERIFY-04
+
+Selected app/window/monitor and physical versus virtual desktop scopes are now distinct typed native contracts. Expected-build versus actual-running-application comparison has a separate host-owned PASS/FAIL/INCONCLUSIVE policy. Neither is a working OS capture adapter yet. See docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md.

@@ -7,6 +7,7 @@ use std::{sync::{Arc,Mutex},time::Instant};
 use serde::Serialize;
 use lu_core::{
     native_observe_learn::{Consent,Controller,Decision,Error as ObserveError,Mode,NativeEvent,Signal},
+    native_observe_scope::{ScopedObservationGrant,SelectedTargets},
     tasks::TaskStore,
 };
 
@@ -28,6 +29,7 @@ pub(crate) struct ObserveView {
 }
 struct Session {
     controller:Controller,
+    scope:Option<ScopedObservationGrant>,
     session_id:Option<String>,
     chat_id:Option<String>,
     sequence:u64,
@@ -47,6 +49,7 @@ impl ObserveHost {
             epoch:Instant::now(),
             inner:Mutex::new(Session{
                 controller:Controller::default(),
+                scope:None,
                 session_id:None,chat_id:None,sequence:0,
                 event_count:0,recommendations:0,
             }),
@@ -80,6 +83,19 @@ impl ObserveHost {
             return Err("Stop the existing observation first".into());
         }
         let now=self.now();
+        // The pilot has exactly one *host-selected* target, Lu itself.
+        // Future OS pickers may construct other scope variants, but an
+        // untrusted renderer cannot widen this target list.
+        let bound_scope=ScopedObservationGrant{
+            lease_id:session_id.clone(),
+            expires_at_ms:now.saturating_add(LEASE_MS),
+            selected:SelectedTargets::Applications(vec![APP_ID.to_owned()]),
+            app_filter:vec![],monitor_filter:vec![],
+            virtual_desktop_filter:vec![],
+            allow_redacted_snapshots:false,
+        };
+        bound_scope.validate(now)
+            .map_err(|_|"Invalid native observation scope")?;
         session.controller.start(Consent{
             session_id:session_id.clone(),
             app_ids:vec![APP_ID.to_owned()],
@@ -95,6 +111,7 @@ impl ObserveHost {
             let _=self.task_store.fail_pending(&session_id);
             return Err(format!("Could not start observation task: {e:?}"));
         }
+        session.scope=Some(bound_scope);
         session.session_id=Some(session_id);
         session.chat_id=Some(chat_id.to_owned());
         session.sequence=0;session.event_count=0;session.recommendations=0;
@@ -105,6 +122,7 @@ impl ObserveHost {
     fn revoke(&self,session:&mut Session)->Result<(),String>{
         let task_id=session.session_id.take();
         session.controller.stop();
+        session.scope=None;
         session.chat_id=None;
         session.sequence=0;
         if let Some(task_id)=task_id{
@@ -130,7 +148,8 @@ impl ObserveHost {
                 self.revoke(&mut session)?;
             }
             return Ok(Self::view(&Session{
-                controller:Controller::default(),session_id:None,chat_id:None,
+                controller:Controller::default(),scope:None,
+                session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
             }));
         }
@@ -196,6 +215,10 @@ impl ObserveHost {
         let s=Self::owned(&mut s,chat_id)?;
         if s.controller.mode()!=Mode::Active{
             return Err("Observation is not active".into());
+        }
+        if !s.scope.as_ref().is_some_and(|g|
+            g.accepts_untrusted_app_hint(APP_ID)){
+            return Err("This source is not within the native observation scope".into());
         }
         let sequence=s.sequence.checked_add(1).ok_or("Observation sequence overflow")?;
         let decision=s.controller.ingest(NativeEvent{

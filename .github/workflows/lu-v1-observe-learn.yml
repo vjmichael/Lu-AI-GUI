@@ -4,6 +4,9 @@ on:
     paths:
       - 'src-tauri/lu-core/src/native_observe_learn.rs'
       - 'src-tauri/lu-core/src/native_observe_ansf.rs'
+      - 'src-tauri/lu-core/src/native_observe_scope.rs'
+      - 'src-tauri/lu-core/src/native_gui_verification.rs'
+      - 'docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md'
       - 'lu-desktop/**'
       - 'src-tauri/lu-core/src/lib.rs'
       - 'docs/LU_OBSERVE_LEARN_V1.md'
@@ -38,6 +41,8 @@ jobs:
           toolchain: '1.98.0'
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_ansf::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
       - shell: bash
         run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock
   native-windows:
@@ -52,6 +57,8 @@ jobs:
           toolchain: '1.98.0'
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_ansf::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
       - shell: bash
         run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock
   desktop-ui:
