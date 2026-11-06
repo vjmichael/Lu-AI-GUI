@@ -58,9 +58,16 @@ pub struct ExactHeadCiEvidence {
 }
 
 const REQUIRED: [(&str, &str, &[&str]); 2] = [
-    ("standalone_ide", ".github/workflows/ide-standalone.yml",
-     &["host-linux", "frontend", "desktop-windows"]),
-    ("continuity", ".github/workflows/ide-continuity.yml", &["continuity"]),
+    (
+        "standalone_ide",
+        ".github/workflows/ide-standalone.yml",
+        &["host-linux", "frontend", "desktop-windows"],
+    ),
+    (
+        "continuity",
+        ".github/workflows/ide-continuity.yml",
+        &["continuity"],
+    ),
 ];
 
 fn valid_sha(s: &str) -> bool {
@@ -97,9 +104,14 @@ fn empty_workflow(name: &'static str, jobs: &'static [&'static str]) -> CiWorkfl
         head_sha: None,
         run_status: "not_observed",
         conclusion: "unknown",
-        jobs: jobs.iter().map(|name| CiJobEvidence {
-            name, status: "not_observed", conclusion: "unknown",
-        }).collect(),
+        jobs: jobs
+            .iter()
+            .map(|name| CiJobEvidence {
+                name,
+                status: "not_observed",
+                conclusion: "unknown",
+            })
+            .collect(),
         verdict: "not_observed",
         jobs_truncated: false,
     }
@@ -108,9 +120,15 @@ fn empty_workflow(name: &'static str, jobs: &'static [&'static str]) -> CiWorkfl
 /// Strictly match a workflow definition, not just arbitrary run/job labels.
 fn matches_workflow(run: &Value, path: &str, head: &str) -> bool {
     run.get("head_sha").and_then(Value::as_str) == Some(head)
-        && run.get("path").and_then(Value::as_str)
-            .and_then(|s| s.split('@').next()) == Some(path)
-        && run.get("id").and_then(Value::as_u64).is_some_and(|id| id > 0)
+        && run
+            .get("path")
+            .and_then(Value::as_str)
+            .and_then(|s| s.split('@').next())
+            == Some(path)
+        && run
+            .get("id")
+            .and_then(Value::as_u64)
+            .is_some_and(|id| id > 0)
 }
 
 /// Pure classifier: successful run metadata without all required exact-head jobs is not proof.
@@ -123,9 +141,13 @@ fn assess_workflow(
     repository: &str,
 ) -> CiWorkflowEvidence {
     let mut out = empty_workflow(name, expected);
-    let Some(run_id) = run.get("id").and_then(Value::as_u64) else { return out };
+    let Some(run_id) = run.get("id").and_then(Value::as_u64) else {
+        return out;
+    };
     out.run_id = Some(run_id);
-    out.run_url = Some(format!("https://github.com/{repository}/actions/runs/{run_id}"));
+    out.run_url = Some(format!(
+        "https://github.com/{repository}/actions/runs/{run_id}"
+    ));
     out.head_sha = Some(head.to_owned());
     out.run_status = status(run.get("status").and_then(Value::as_str));
     out.conclusion = conclusion(run.get("conclusion").and_then(Value::as_str));
@@ -139,7 +161,9 @@ fn assess_workflow(
         return out;
     };
     out.jobs_truncated = all_jobs.len() > MAX_JOBS
-        || payload.get("total_count").and_then(Value::as_u64)
+        || payload
+            .get("total_count")
+            .and_then(Value::as_u64)
             .is_none_or(|total| total > MAX_JOBS as u64 || total > all_jobs.len() as u64);
     if out.jobs_truncated {
         out.verdict = "jobs_partial";
@@ -149,30 +173,47 @@ fn assess_workflow(
     let mut complete = true;
     let mut failed = false;
     for job in &mut out.jobs {
-        let matches: Vec<&Value> = all_jobs.iter().filter(|item|
-            item.get("name").and_then(Value::as_str) == Some(job.name)
-        ).collect();
+        let matches: Vec<&Value> = all_jobs
+            .iter()
+            .filter(|item| item.get("name").and_then(Value::as_str) == Some(job.name))
+            .collect();
         if matches.len() != 1 {
             complete = false;
-            job.status = if matches.is_empty() { "not_observed" } else { "ambiguous" };
+            job.status = if matches.is_empty() {
+                "not_observed"
+            } else {
+                "ambiguous"
+            };
             continue;
         }
         let item = matches[0];
-        if item.get("head_sha").and_then(Value::as_str)
-            .is_some_and(|sha| sha != head) {
+        if item
+            .get("head_sha")
+            .and_then(Value::as_str)
+            .is_some_and(|sha| sha != head)
+        {
             complete = false;
             job.status = "head_mismatch";
             continue;
         }
         job.status = status(item.get("status").and_then(Value::as_str));
         job.conclusion = conclusion(item.get("conclusion").and_then(Value::as_str));
-        if job.status != "completed" || job.conclusion != "success" { complete = false; }
-        if matches!(job.conclusion, "failure" | "timed_out" | "cancelled") { failed = true; }
+        if job.status != "completed" || job.conclusion != "success" {
+            complete = false;
+        }
+        if matches!(job.conclusion, "failure" | "timed_out" | "cancelled") {
+            failed = true;
+        }
     }
-    out.verdict = if out.run_status != "completed" { "pending" }
-        else if out.conclusion != "success" || failed { "failed_exact_head" }
-        else if complete { "passed_exact_head" }
-        else { "incomplete_job_evidence" };
+    out.verdict = if out.run_status != "completed" {
+        "pending"
+    } else if out.conclusion != "success" || failed {
+        "failed_exact_head"
+    } else if complete {
+        "passed_exact_head"
+    } else {
+        "incomplete_job_evidence"
+    };
     out
 }
 
@@ -187,7 +228,10 @@ fn blank(project_id: &str, git: &crate::git_status::GitWorktreeInspection) -> Ex
         checked_unix_seconds: None,
         verdict: "unverified",
         error_code: None,
-        workflows: REQUIRED.iter().map(|(name, _, jobs)| empty_workflow(name, jobs)).collect(),
+        workflows: REQUIRED
+            .iter()
+            .map(|(name, _, jobs)| empty_workflow(name, jobs))
+            .collect(),
         runs_listing_partial: false,
         local_head_changed_during_check: false,
         installation_acceptance: "not_tested",
@@ -197,18 +241,25 @@ fn blank(project_id: &str, git: &crate::git_status::GitWorktreeInspection) -> Ex
 }
 
 fn get_json(agent: &ureq::Agent, uri: &str, limit: u64) -> Result<Value, &'static str> {
-    let response = agent.get(uri)
+    let response = agent
+        .get(uri)
         .set("Accept", "application/vnd.github+json")
         .set("User-Agent", "Lu-IDE-exact-head-CI/0.1")
-        .call().map_err(|e| match e {
+        .call()
+        .map_err(|e| match e {
             ureq::Error::Status(401 | 403, _) => "GITHUB_ACCESS_LIMITED",
             ureq::Error::Status(404, _) => "GITHUB_NOT_FOUND_OR_PRIVATE",
             _ => "GITHUB_REQUEST_FAILED",
         })?;
     let mut bytes = Vec::new();
-    response.into_reader().take(limit + 1).read_to_end(&mut bytes)
+    response
+        .into_reader()
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
         .map_err(|_| "GITHUB_RESPONSE_UNAVAILABLE")?;
-    if bytes.len() as u64 > limit { return Err("GITHUB_RESPONSE_TOO_LARGE"); }
+    if bytes.len() as u64 > limit {
+        return Err("GITHUB_RESPONSE_TOO_LARGE");
+    }
     serde_json::from_slice(&bytes).map_err(|_| "GITHUB_RESPONSE_INVALID")
 }
 
@@ -233,13 +284,20 @@ impl IdeWorkspaceRegistry {
             out.error_code = Some("GIT_REPOSITORY_UNAVAILABLE");
             return out;
         };
-        if repo.workdir().and_then(|w| fs::canonicalize(w).ok()).as_deref()
-            != Some(root.as_path()) {
+        if repo
+            .workdir()
+            .and_then(|w| fs::canonicalize(w).ok())
+            .as_deref()
+            != Some(root.as_path())
+        {
             out.error_code = Some("GIT_REPOSITORY_OUTSIDE_PROJECT");
             return out;
         }
-        let Some((owner, name)) = repo.find_remote("origin").ok()
-            .and_then(|r| r.url().and_then(github_repo)) else {
+        let Some((owner, name)) = repo
+            .find_remote("origin")
+            .ok()
+            .and_then(|r| r.url().and_then(github_repo))
+        else {
             out.error_code = Some("GITHUB_ORIGIN_UNAVAILABLE");
             return out;
         };
@@ -247,24 +305,32 @@ impl IdeWorkspaceRegistry {
         out.repository = Some(repository.clone());
         // Fixed HTTPS origin, validated owner/repository and 40-digit local SHA.
         let base = format!("https://api.github.com/repos/{repository}");
-        let agent = ureq::AgentBuilder::new().redirects(0)
+        let agent = ureq::AgentBuilder::new()
+            .redirects(0)
             .timeout_connect(Duration::from_secs(4))
             .timeout_read(Duration::from_secs(6))
-            .timeout_write(Duration::from_secs(4)).build();
+            .timeout_write(Duration::from_secs(4))
+            .build();
         let uri = format!("{base}/actions/runs?head_sha={head}&per_page={MAX_RUNS}");
         let runs_response = match get_json(&agent, &uri, MAX_RUN_RESPONSE_BYTES) {
             Ok(value) => value,
-            Err(code) => { out.error_code = Some(code); return out; }
+            Err(code) => {
+                out.error_code = Some(code);
+                return out;
+            }
         };
         let Some(runs) = runs_response.get("workflow_runs").and_then(Value::as_array) else {
             out.error_code = Some("GITHUB_RESPONSE_INVALID");
             return out;
         };
         out.runs_listing_partial = runs.len() > MAX_RUNS
-            || runs_response.get("total_count").and_then(Value::as_u64)
+            || runs_response
+                .get("total_count")
+                .and_then(Value::as_u64)
                 .is_none_or(|total| total > MAX_RUNS as u64);
         for (i, (kind, path, expected_jobs)) in REQUIRED.iter().enumerate() {
-            let selected = runs.iter()
+            let selected = runs
+                .iter()
                 .filter(|r| matches_workflow(r, path, head))
                 .max_by_key(|r| r.get("id").and_then(Value::as_u64).unwrap_or(0));
             let Some(run) = selected else { continue };
@@ -272,7 +338,12 @@ impl IdeWorkspaceRegistry {
             let jobs_uri = format!("{base}/actions/runs/{id}/jobs?per_page={MAX_JOBS}");
             let jobs = get_json(&agent, &jobs_uri, MAX_JOBS_RESPONSE_BYTES);
             out.workflows[i] = assess_workflow(
-                kind, expected_jobs, run, jobs.as_ref().ok(), head, &repository,
+                kind,
+                expected_jobs,
+                run,
+                jobs.as_ref().ok(),
+                head,
+                &repository,
             );
             if let Err(code) = jobs {
                 out.error_code = Some(code);
@@ -280,16 +351,27 @@ impl IdeWorkspaceRegistry {
         }
 
         let after = self.inspect_git_worktree(project_id);
-        out.local_head_changed_during_check = after.local_head != out.local_head
-            || after.state != "local_repository_inspected";
+        out.local_head_changed_during_check =
+            after.local_head != out.local_head || after.state != "local_repository_inspected";
         out.checked_unix_seconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs());
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs());
         out.verdict = if out.local_head_changed_during_check {
             "local_head_changed_during_check"
-        } else if out.workflows.iter().any(|w| w.verdict == "failed_exact_head") {
+        } else if out
+            .workflows
+            .iter()
+            .any(|w| w.verdict == "failed_exact_head")
+        {
             "exact_head_ci_failed"
-        } else if out.workflows.iter().all(|w| w.verdict == "passed_exact_head")
-            && !out.runs_listing_partial && out.error_code.is_none() {
+        } else if out
+            .workflows
+            .iter()
+            .all(|w| w.verdict == "passed_exact_head")
+            && !out.runs_listing_partial
+            && out.error_code.is_none()
+        {
             "exact_commit_ci_passed"
         } else if out.workflows.iter().any(|w| w.run_id.is_some()) {
             "partial_or_pending_evidence"
@@ -308,9 +390,17 @@ mod tests {
         let run = serde_json::json!({"id": 10,"head_sha": "a".repeat(40),
             "path": ".github/workflows/ide-standalone.yml@refs/pull/4/merge"});
         let sha = "a".repeat(40);
-        assert!(matches_workflow(&run, ".github/workflows/ide-standalone.yml", &sha));
+        assert!(matches_workflow(
+            &run,
+            ".github/workflows/ide-standalone.yml",
+            &sha
+        ));
         assert!(!matches_workflow(&run, ".github/workflows/other.yml", &sha));
-        assert!(!matches_workflow(&run, ".github/workflows/ide-standalone.yml", &"b".repeat(40)));
+        assert!(!matches_workflow(
+            &run,
+            ".github/workflows/ide-standalone.yml",
+            &"b".repeat(40)
+        ));
     }
     #[test]
     fn exact_head_pass_requires_all_expected_jobs() {
@@ -321,11 +411,32 @@ mod tests {
             {"name":"frontend","status":"completed","conclusion":"success","head_sha":sha},
             {"name":"desktop-windows","status":"completed","conclusion":"success","head_sha":sha}
         ]});
-        assert_eq!(assess_workflow("standalone_ide", REQUIRED[0].2, &run, Some(&jobs), &sha,
-            "owner/repo").verdict, "passed_exact_head");
-        let partial = serde_json::json!({"total_count": 2,"jobs":[jobs["jobs"][0],jobs["jobs"][1]]});
-        assert_ne!(assess_workflow("standalone_ide",REQUIRED[0].2,&run,Some(&partial),&sha,
-            "owner/repo").verdict, "passed_exact_head");
+        assert_eq!(
+            assess_workflow(
+                "standalone_ide",
+                REQUIRED[0].2,
+                &run,
+                Some(&jobs),
+                &sha,
+                "owner/repo"
+            )
+            .verdict,
+            "passed_exact_head"
+        );
+        let partial =
+            serde_json::json!({"total_count": 2,"jobs":[jobs["jobs"][0],jobs["jobs"][1]]});
+        assert_ne!(
+            assess_workflow(
+                "standalone_ide",
+                REQUIRED[0].2,
+                &run,
+                Some(&partial),
+                &sha,
+                "owner/repo"
+            )
+            .verdict,
+            "passed_exact_head"
+        );
     }
     #[test]
     fn never_promote_ambiguous_duplicate_or_other_head_jobs() {
@@ -338,10 +449,30 @@ mod tests {
         let wrong = serde_json::json!({"total_count": 1,"jobs": [
             {"name":"continuity","status":"completed","conclusion":"success","head_sha":"b".repeat(40)}
         ]});
-        assert_ne!(assess_workflow("continuity",REQUIRED[1].2,&run,Some(&dup),&sha,
-            "owner/repo").verdict,"passed_exact_head");
-        assert_ne!(assess_workflow("continuity",REQUIRED[1].2,&run,Some(&wrong),&sha,
-            "owner/repo").verdict,"passed_exact_head");
+        assert_ne!(
+            assess_workflow(
+                "continuity",
+                REQUIRED[1].2,
+                &run,
+                Some(&dup),
+                &sha,
+                "owner/repo"
+            )
+            .verdict,
+            "passed_exact_head"
+        );
+        assert_ne!(
+            assess_workflow(
+                "continuity",
+                REQUIRED[1].2,
+                &run,
+                Some(&wrong),
+                &sha,
+                "owner/repo"
+            )
+            .verdict,
+            "passed_exact_head"
+        );
         assert!(!valid_sha("not-a-commit"));
     }
 }
