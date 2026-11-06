@@ -21,6 +21,8 @@
 | A3 bounded local artifact and toolchain-candidate inventory | **Implemented in source** | CI on latest source pending | Installed acceptance open |
 | A3 persistent snapshot and compare | **Implemented in source** | Native regression fixtures added; CI pending | Installed acceptance open |
 | A3 native local Git dirty/untracked inspection | **Implemented in source** | Exact-head CI pending | Windows UI open |
+| Wave C1 local staged/unstaged Git diff/history | **Implemented on isolated branch** | CI pending | Installed UI open |
+| Wave C2 targeted resource SHA probe | **Implemented on isolated branch** | CI pending | Installed UI open |
 | A3 full live GitHub and external toolchain reconciliation | **Not implemented** | Not tested | Open |
 | Live Lu connector, worker execution, LSP/build/test/package | **Deferred/not implemented as IDE runtime** | Not tested | Open |
 
@@ -29,6 +31,16 @@
 - **Source:** `host/src/capabilities.rs`, `host/src/capability_schemas.json`, standalone Tauri `ide_list_capabilities`, React Capabilities screen.
 - Host-created, versioned descriptors for **21 existing** project, source, review, save, proposal, continuity, inventory and Git/GitHub operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
+
+## Wave C — Development truth (independent source implementation)
+
+- Isolated feature branch `ide/wave-c-development-truth-20261105` while Wave B PRs remain in their own GitHub acceptance queues. **Do not mark the completed Wave B source work as Windows-accepted yet.**
+- Implemented `host/src/git_evidence.rs` to inspect staged/unstaged local Git patch text and 30 local commits, bounded to 64 KiB of patch and 80 changed files. It refuses parent repository inspection, excludes untracked *contents* from patch, performs no Git command or mutation, and labels remote state as `not_queried`.
+- Added typed `git.diff` and `git.history` and an explicit human **Inspect diff and history** action in Source control.
+- Implemented `host/src/resource_probe.rs` for exact relative-path SHA-256 and metadata under the registered project. Missing/oversized/not-regular/changed files are not mislabeled as verified. **Executable readiness remains not tested**; no shell, package install or Lua/Lu bridge.
+- Added typed `resource.probe` and a **Recheck file bytes** button in Continuity. The registry now describes **24 native operations** with typed schema parity verified structurally (24 descriptors / 24 schemas / 25 registered handlers including discovery).
+- Native fixture tests cover Git patch separation, bounded history, root isolation, symlink and traversal, resource SHA and missing/over-limit cases. Frontend contract tests and isolated PR CI trigger added. Full semantics: [Wave C development truth](docs/IDE_WAVE_C_DEVELOPMENT_TRUTH.md).
+- **Acceptance status:** source implemented; exact-head Linux/frontend/Windows CI and installed Windows UI remain open. No global executable toolchain inspection, authenticated private remote comparison, or real worker execution claimed.
 
 ## Wave B1 — Human Find and Replace (source implemented, exact-head CI open)
 
