@@ -159,7 +159,10 @@ impl LspSession {
         &mut self, source: DiagnosticSource, native_uri: &str, text: &str,
     ) -> Result<Vec<u8>, LspError> {
         if self.phase != LspPhase::Ready { return Err(LspError::NotReady); }
-        if !source.valid() || !native_uri.starts_with("file:///")
+        if !source.valid() || !crate::lsp::available_servers()
+            .iter().any(|server| server.id == self.server_id
+                && server.language_ids.contains(&source.language_id.as_str()))
+            || !native_uri.starts_with("file:///")
             || native_uri.len() > 2048 || native_uri.contains('\n')
             || text.len() > MAX_TEXT_BYTES || self.doc.is_some() {
             return Err(LspError::UntrustedUri);
@@ -268,6 +271,18 @@ impl LspSession {
                     // workspace/applyEdit and workspace/executeCommand.
                     let id = &message["id"];
                     if !id.is_null() {
+                        // Some legitimate servers request workspace settings.
+                        // Return an explicit array of nulls, never project
+                        // configuration paths, credentials or executable edits.
+                        if method == "workspace/configuration" {
+                            if let Some(items) = message["params"]["items"].as_array() {
+                                if items.len() <= 16 {
+                                    replies.push(encode_frame(&json!({"jsonrpc":"2.0",
+                                        "id":id, "result":vec![Value::Null;items.len()]}))?);
+                                    continue;
+                                }
+                            }
+                        }
                         replies.push(encode_frame(&json!({"jsonrpc":"2.0","id":id,
                             "error":{"code":-32601,"message":"Method not allowed"}}))?);
                     }
@@ -313,8 +328,13 @@ impl LspSession {
     fn parse_diagnostics(&self, params: &Value) -> Option<Vec<Diagnostic>> {
         let doc = self.doc.as_ref()?;
         if params["uri"].as_str()? != doc.uri { return None; }
-        if let Some(version) = params.get("version").and_then(Value::as_u64) {
-            if version != doc.version { return None; }
+        // LSP allows a missing version, but an unversioned asynchronous
+        // notification after didChange could refer to stale bytes. Accept it
+        // only before the first edit; require an exact version thereafter.
+        match params.get("version").and_then(Value::as_u64) {
+            Some(version) if version == doc.version => {},
+            None if doc.version == 1 => {},
+            _ => return None,
         }
         let input = params["diagnostics"].as_array()?;
         let mut diagnostics = Vec::new();
