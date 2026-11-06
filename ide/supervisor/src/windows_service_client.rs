@@ -1,24 +1,29 @@
 //! D7D native-host lease on an authenticated, separately protected SCM service.
 //! A ready response alone is insufficient: the server's kernel process ID,
 //! fixed installed binary digest and restricted service token are all checked.
-use crate::{windows_broker::{current_owner_creation, TrustedBroker},
-    windows_service_security as security, SupervisorError};
+use crate::{
+    windows_broker::{current_owner_creation, TrustedBroker},
+    windows_service_security as security, SupervisorError,
+};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::c_void,
     mem::size_of,
-    ptr,
-    thread,
+    ptr, thread,
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
-        ERROR_FILE_NOT_FOUND, ERROR_PIPE_BUSY},
+    Foundation::{
+        CloseHandle, GetLastError, ERROR_FILE_NOT_FOUND, ERROR_PIPE_BUSY, HANDLE,
+        INVALID_HANDLE_VALUE,
+    },
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
     System::{
-        JobObjects::{QueryInformationJobObject, TerminateJobObject,
-            JobObjectBasicAccountingInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION},
+        JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject, TerminateJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        },
         Pipes::PeekNamedPipe,
         Threading::GetCurrentProcessId,
     },
@@ -41,12 +46,19 @@ fn acceptance_trace(stage: &'static str) {
 struct Handle(HANDLE);
 impl Handle {
     fn new(handle: HANDLE) -> Result<Self, SupervisorError> {
-        if handle == INVALID_HANDLE_VALUE || handle.is_null() { Err(denied()) }
-        else { Ok(Self(handle)) }
+        if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+            Err(denied())
+        } else {
+            Ok(Self(handle))
+        }
     }
 }
 impl Drop for Handle {
-    fn drop(&mut self) { unsafe { CloseHandle(self.0); } }
+    fn drop(&mut self) {
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
 }
 
 fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
@@ -82,14 +94,20 @@ fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Admission<'a> {
-    schema: &'static str, operation: &'static str,
-    job_id: &'a str, plan_sha256: &'a str,
-    owner_pid: u32, owner_creation: u64, nonce: &'a str,
+    schema: &'static str,
+    operation: &'static str,
+    job_id: &'a str,
+    plan_sha256: &'a str,
+    owner_pid: u32,
+    owner_creation: u64,
+    nonce: &'a str,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Release<'a> {
-    schema: &'static str, operation: &'static str, nonce: &'a str,
+    schema: &'static str,
+    operation: &'static str,
+    nonce: &'a str,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -99,10 +117,21 @@ struct Response {
     nonce: String,
 }
 fn write(pipe: HANDLE, bytes: &[u8]) -> Result<(), SupervisorError> {
-    if bytes.is_empty() || bytes.len() >= 2048 { return Err(denied()); }
+    if bytes.is_empty() || bytes.len() >= 2048 {
+        return Err(denied());
+    }
     let mut sent = 0u32;
-    if unsafe { WriteFile(pipe, bytes.as_ptr(), bytes.len() as u32,
-        &mut sent, ptr::null_mut()) } == 0 || sent as usize != bytes.len() {
+    if unsafe {
+        WriteFile(
+            pipe,
+            bytes.as_ptr(),
+            bytes.len() as u32,
+            &mut sent,
+            ptr::null_mut(),
+        )
+    } == 0
+        || sent as usize != bytes.len()
+    {
         return Err(denied());
     }
     Ok(())
@@ -112,36 +141,69 @@ fn read(pipe: HANDLE, nonce: &str, required: &str) -> Result<(), SupervisorError
     let mut bytes = [0u8; MAX_RESPONSE];
     let mut got = 0u32;
     loop {
-        if began.elapsed() >= Duration::from_secs(10) { return Err(denied()); }
+        if began.elapsed() >= Duration::from_secs(10) {
+            return Err(denied());
+        }
         let mut available = 0u32;
-        if unsafe { PeekNamedPipe(pipe, ptr::null_mut(), 0,
-            ptr::null_mut(), &mut available, ptr::null_mut()) } == 0 {
+        if unsafe {
+            PeekNamedPipe(
+                pipe,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                &mut available,
+                ptr::null_mut(),
+            )
+        } == 0
+        {
             return Err(denied());
         }
         if available > 0 {
-            if available as usize >= MAX_RESPONSE { return Err(denied()); }
-            if unsafe { ReadFile(pipe, bytes.as_mut_ptr(), bytes.len() as u32,
-                &mut got, ptr::null_mut()) } == 0 || got == 0
-                || got as usize >= bytes.len() { return Err(denied()); }
+            if available as usize >= MAX_RESPONSE {
+                return Err(denied());
+            }
+            if unsafe {
+                ReadFile(
+                    pipe,
+                    bytes.as_mut_ptr(),
+                    bytes.len() as u32,
+                    &mut got,
+                    ptr::null_mut(),
+                )
+            } == 0
+                || got == 0
+                || got as usize >= bytes.len()
+            {
+                return Err(denied());
+            }
             break;
         }
         thread::sleep(Duration::from_millis(50));
     }
-    let response: Response = serde_json::from_slice(&bytes[..got as usize])
-        .map_err(|_| denied())?;
-    if response.schema != "lu.ide.d7d.response.v1" || response.state != required
-        || response.nonce != nonce { return Err(denied()); }
+    let response: Response =
+        serde_json::from_slice(&bytes[..got as usize]).map_err(|_| denied())?;
+    if response.schema != "lu.ide.d7d.response.v1"
+        || response.state != required
+        || response.nonce != nonce
+    {
+        return Err(denied());
+    }
     Ok(())
 }
 fn empty(job: HANDLE) -> bool {
     let mut item = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
     let mut count = 0u32;
-    unsafe { QueryInformationJobObject(job, JobObjectBasicAccountingInformation,
-        (&mut item as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-        size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-        &mut count) != 0
-        && count == size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32
-        && item.ActiveProcesses == 0 }
+    unsafe {
+        QueryInformationJobObject(
+            job,
+            JobObjectBasicAccountingInformation,
+            (&mut item as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            &mut count,
+        ) != 0
+            && count == size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32
+            && item.ActiveProcesses == 0
+    }
 }
 /// Durable service holds the independent Job handle. The desktop never
 /// supplies a service path or hash from an editable project or prompt.
@@ -186,15 +248,30 @@ impl ServiceLease {
     }
     pub fn alive(&mut self) -> bool {
         let mut available = 0u32;
-        unsafe { PeekNamedPipe(self.pipe.0, ptr::null_mut(), 0,
-            ptr::null_mut(), &mut available, ptr::null_mut()) != 0 }
+        unsafe {
+            PeekNamedPipe(
+                self.pipe.0,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                &mut available,
+                ptr::null_mut(),
+            ) != 0
+        }
     }
     pub fn release_empty(&mut self) -> Result<(), SupervisorError> {
-        if !empty(self.job) || !self.alive() { return Err(denied()); }
+        if !empty(self.job) || !self.alive() {
+            return Err(denied());
+        }
         let release = Release {
-            schema: "lu.ide.d7d.release.v1", operation: "release", nonce: &self.nonce,
+            schema: "lu.ide.d7d.release.v1",
+            operation: "release",
+            nonce: &self.nonce,
         };
-        write(self.pipe.0, &serde_json::to_vec(&release).map_err(|_| denied())?)?;
+        write(
+            self.pipe.0,
+            &serde_json::to_vec(&release).map_err(|_| denied())?,
+        )?;
         read(self.pipe.0, &self.nonce, "released_empty")?;
         self.released = true;
         Ok(())
@@ -206,25 +283,34 @@ impl ServiceLease {
 /// recovery receipt. The protected service independently repeats the kernel
 /// check and ACKs only after its own protected evidence is durable.
 pub fn release_after_verified_recovery(
-    id: &str, plan_hash: &str, config: &TrustedBroker,
+    id: &str,
+    plan_hash: &str,
+    config: &TrustedBroker,
 ) -> Result<(), SupervisorError> {
-    if id.len() != 36 || !id.starts_with("job-")
+    if id.len() != 36
+        || !id.starts_with("job-")
         || !id[4..].bytes().all(|b| b.is_ascii_hexdigit())
         || plan_hash.len() != 64
         || !plan_hash.bytes().all(|b| b.is_ascii_hexdigit())
-        || !config.executable.is_absolute() {
+        || !config.executable.is_absolute()
+    {
         return Err(denied());
     }
     let pipe = connect_approved(config)?;
     let mut nonce_bytes = [0u8; 24];
     OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = nonce_bytes.iter()
-        .map(|b| format!("{b:02x}")).collect::<String>();
+    let nonce = nonce_bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     let request = Admission {
-        schema: "lu.ide.d7d.admission.v1", operation: "recover",
-        job_id: id, plan_sha256: plan_hash,
+        schema: "lu.ide.d7d.admission.v1",
+        operation: "recover",
+        job_id: id,
+        plan_sha256: plan_hash,
         owner_pid: unsafe { GetCurrentProcessId() },
-        owner_creation: current_owner_creation()?, nonce: &nonce,
+        owner_creation: current_owner_creation()?,
+        nonce: &nonce,
     };
     write(pipe.0, &serde_json::to_vec(&request).map_err(|_| denied())?)?;
     read(pipe.0, &nonce, "recovered_release")
@@ -235,7 +321,9 @@ impl Drop for ServiceLease {
         if !self.released {
             // Service will also kill on pipe break or host exit. A locally
             // failed operation may never use a forged READY as a release.
-            unsafe { TerminateJobObject(self.job, 1); }
+            unsafe {
+                TerminateJobObject(self.job, 1);
+            }
         }
     }
 }
