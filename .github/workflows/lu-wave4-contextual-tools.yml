@@ -36,6 +36,9 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
@@ -58,6 +61,9 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise

@@ -60,3 +60,8 @@ Reused tested TOOLS-10 browser visibility-state and SQLite preference modules on
 ## WAVE4-RESEARCH-01 — citation integrity and research analysis core (source integrated)
 
 Reused the existing TOOLS-10 verified-evidence ledger, query planner, thesis evidence analysis, premise/cross-domain revision, sufficiency and maturity modules. Discovery is not a verified citation; interpretation is not a verified passage; early missing evidence does not prove scientific absence. The native Linux and Windows test matrix includes each module. Browser/HTTPS provider ingestion, full-text extraction, durable orchestration and one-turn normal-chat Research network dispatch remain OPEN. No live web search or model browser authority was added by staging these offline modules.
+
+
+### Browser/Research import closeout step — functional host wiring OPEN
+
+Copied the existing TOOLS-10 PR #26 native browser supervisor, native browser tools, Chromium custody and visibility bridge, verified HTTPS/Crossref/OpenAlex research modules, worker script and native acceptance fixtures **without redesign**. These modules preserve explicit NetworkRead/NetworkWrite grants, user-selected origins, host-owned binaries and source verification. Merely exporting core modules does not start the browser or grant model network access. Windows/host packaging and actual one-turn desktop Browser/Research integration remain OPEN pending native acceptance.
