@@ -14,6 +14,8 @@ use zip::{ZipArchive,CompressionMethod};
 use crate::native_linux_archive::{
     linux_archive_tree_members,LinuxArchiveError,
 };
+use crate::native_cpio::{cpio_tree_members,is_cpio_name,CpioError};
+use crate::native_ar_deb::{ar_tree_members,is_ar_name,ArError};
 const MAX_ARCHIVE_BYTES:u64=128*1024*1024;
 const MAX_FILE:usize=64*1024*1024;
 const MAX_TOTAL:usize=256*1024*1024;
@@ -126,6 +128,23 @@ fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
     Ok(result)
 }
 fn package_linux(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
+    if is_cpio_name(name){
+        return cpio_tree_members(root,name).map_err(|e|match e{
+            CpioError::TooLarge=>TreeExtractError::TooLarge,
+            CpioError::UnsupportedEntry|CpioError::UnsafeEntry|
+            CpioError::DuplicateEntry=>TreeExtractError::UnsafeMember,
+            _=>TreeExtractError::InvalidArchive,
+        }).map(|items|items.into_iter().map(|(path,is_dir,bytes)|
+            Node{path,is_dir,bytes}).collect());
+    }
+    if is_ar_name(name){
+        return ar_tree_members(root,name).map_err(|e|match e{
+            ArError::TooLarge=>TreeExtractError::TooLarge,
+            ArError::UnsafeName|ArError::DuplicateName=>TreeExtractError::UnsafeMember,
+            _=>TreeExtractError::InvalidArchive,
+        }).map(|items|items.into_iter().map(|(path,is_dir,bytes)|
+            Node{path,is_dir,bytes}).collect());
+    }
     linux_archive_tree_members(root,name).map_err(|e|match e{
         LinuxArchiveError::TooLarge=>TreeExtractError::TooLarge,
         LinuxArchiveError::UnsafeEntry|LinuxArchiveError::UnsupportedEntry|
