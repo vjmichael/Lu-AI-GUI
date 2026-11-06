@@ -57,7 +57,6 @@ fn hash_file(path:&Path)->Result<String,String>{
     }
     Ok(format!("{:x}",hasher.finalize()))
 }
-#[derive(Clone)]
 struct Installation {
     bundle: PathBuf,
     service: TrustedBroker,
