@@ -19,6 +19,8 @@ default = []
 # Neither feature registers a Tauri command or an unrestricted execution API.
 linux-worker = []
 windows-worker = []
+# Explicit production opt-in; never use same-user D7C child as release authority.
+protected-recovery-service = ["windows-worker"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -30,5 +32,6 @@ cap-fs-ext = "=4.0.3"
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization",
   "Win32_Security_Isolation", "Win32_Storage_FileSystem",
-  "Win32_System_Com", "Win32_System_JobObjects", "Win32_System_Threading"
+  "Win32_System_Com", "Win32_System_JobObjects", "Win32_System_Threading",
+  "Win32_System_Pipes", "Win32_System_Services"
 ] }

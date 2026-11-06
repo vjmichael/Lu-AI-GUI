@@ -9,10 +9,14 @@
 use crate::{
     snapshot::{verify_input, PublishedInput},
     windows_cap_tree::{audit_tree, digest_tree, publish_into_native_parent},
-    windows_broker::{BrokerLease, TrustedBroker},
+    windows_broker::TrustedBroker,
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
+#[cfg(feature = "protected-recovery-service")]
+use crate::windows_service_client::ServiceLease as BrokerLease;
+#[cfg(not(feature = "protected-recovery-service"))]
+use crate::windows_broker::BrokerLease;
 use std::{
     ffi::OsStr,
     fs::{self},
@@ -118,7 +122,11 @@ fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     if !valid_job_id(id) || hash.len() != 64 || !hash.bytes().all(|x| x.is_ascii_hexdigit()) {
         return Err(SupervisorError::InvalidPlan);
     }
-    Ok(wstr(&format!("Local\\LuIdeD7-{id}-{}", &hash[..16])))
+    #[cfg(feature = "protected-recovery-service")]
+    let prefix = "Global";
+    #[cfg(not(feature = "protected-recovery-service"))]
+    let prefix = "Local";
+    Ok(wstr(&format!("{prefix}\\LuIdeD7-{id}-{}", &hash[..16])))
 }
 
 fn clean_meta(path: &Path) -> Result<fs::Metadata, SupervisorError> {
@@ -284,6 +292,15 @@ struct Job { handle: Handle }
 impl Job {
     fn create(id: &str, hash: &str, plan: &JobPlan) -> Result<Self, SupervisorError> {
         let name = job_name(id, hash)?;
+        #[cfg(feature = "protected-recovery-service")]
+        let raw = {
+            let acl = crate::windows_service_security::JobSecurity::new()?;
+            unsafe { CreateJobObjectW(&acl.attributes, name.as_ptr()) }
+        };
+        // Preserve D7C's local Job fixture without needing a service SID
+        // to be installed. No implicit protected-service downgrade exists
+        // when the dedicated D7D production feature is selected.
+        #[cfg(not(feature = "protected-recovery-service"))]
         let raw = unsafe { CreateJobObjectW(ptr::null(), name.as_ptr()) };
         let created = Handle::new(raw)?;
         if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS { return Err(denied()); }
@@ -691,6 +708,7 @@ pub fn execute_windows_worker(
 /// exact-name Windows kernel Job Object, then records verified cleanup. A
 /// missing object cannot prove that a previous process tree was killed and
 /// remains quarantined; a reboot or close-on-crash is NOT an invented receipt.
+#[cfg(not(feature = "protected-recovery-service"))]
 pub fn reconcile_windows_interrupted(supervisor: &Supervisor, id: &str)
     -> Result<JobSummary, SupervisorError> {
     let state = supervisor.inspect()?.into_iter().find(|j| j.job_id == id)
@@ -708,9 +726,55 @@ pub fn reconcile_windows_interrupted(supervisor: &Supervisor, id: &str)
     // relinquish its named handle; failure is not proof of an unsafe tree
     // and simply leaves the broker to expire its bounded recovery hold.
     if summary.phase == JobPhase::Cancelled && !summary.requires_reconciliation {
+        #[cfg(not(feature = "protected-recovery-service"))]
         let _ = crate::windows_broker::release_after_verified_recovery(
             id, &state.plan_sha256
         );
+        // Protected service retains its own kernel witness until bounded
+        // hold expiry; it does not honor same-user named release Events.
+    }
+    Ok(summary)
+}
+
+
+/// D7D two-phase restart reconciliation. The restarted host retains the
+/// original kernel Job handle across the service's fsynced release ACK.
+/// The supervisor's in-memory AND replayed quarantine remain active until
+/// that ACK and a second native Job-tree verification both succeed.
+#[cfg(feature = "protected-recovery-service")]
+pub fn reconcile_windows_interrupted_via_service(
+    supervisor: &Supervisor, id: &str, trusted_service: &TrustedBroker,
+) -> Result<JobSummary, SupervisorError> {
+    let state = supervisor.inspect()?.into_iter()
+        .find(|j| j.job_id == id).ok_or(SupervisorError::NoSuchJob)?;
+    if !state.requires_reconciliation {
+        return Err(SupervisorError::InvalidTransition);
+    }
+    let name = job_name(id, &state.plan_sha256)?;
+    let raw = unsafe { OpenJobObjectW(
+        JOB_OBJECT_QUERY_ACCESS | JOB_OBJECT_TERMINATE_ACCESS,
+        0, name.as_ptr(),
+    ) };
+    let job = Job {
+        handle: Handle::new(raw).map_err(|_| SupervisorError::Quarantined)?,
+    };
+    // A missing named Job, a stale witness or an unverified tree cannot
+    // become a terminal cleanup receipt.
+    if !matches!(job.empty(), Ok(true)) {
+        if !matches!(job.kill_and_verify(), Ok(true)) {
+            return Err(SupervisorError::Quarantined);
+        }
+    }
+    supervisor.mark_protected_recovery_pending(id)?;
+    crate::windows_service_client::release_after_verified_recovery(
+        id, &state.plan_sha256, trusted_service,
+    ).map_err(|_| SupervisorError::Quarantined)?;
+    let mut terminator = JobTerminator {
+        job: &job, id, hash: &state.plan_sha256,
+    };
+    let summary = supervisor.reconcile_interrupted_with(id, &mut terminator)?;
+    if summary.phase != JobPhase::Cancelled || summary.requires_reconciliation {
+        return Err(SupervisorError::Quarantined);
     }
     Ok(summary)
 }

@@ -14,6 +14,12 @@ pub mod linux_worker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
+pub mod windows_service_security;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
+pub mod windows_recovery_service;
+#[cfg(all(target_os = "windows", feature = "protected-recovery-service"))]
+pub mod windows_service_client;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_worker;
@@ -841,6 +847,34 @@ impl Supervisor {
         })
     }
 
+
+    /// D7D protected recovery phase 1: write durable RecoveryRequired BEFORE
+    /// asking the service to relinquish its independently-held Job handle.
+    /// This never clears quarantine and never authorizes further execution.
+    #[cfg(all(windows, feature = "protected-recovery-service"))]
+    fn mark_protected_recovery_pending(&self, job_id: &str)
+        -> Result<(), SupervisorError> {
+        let mut state = self.state.lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        if !state.quarantine.contains(job_id) {
+            return Err(SupervisorError::Quarantined);
+        }
+        let job = state.jobs.get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?.clone();
+        if job.phase == JobPhase::RecoveryRequired { return Ok(()); }
+        if !matches!(job.phase, JobPhase::AdmissionPending | JobPhase::Running |
+            JobPhase::CancelRequested) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            JobPhase::RecoveryRequired, "protected_recovery_preflight",
+            "original_kernel_job_open_and_empty_but_service_ack_pending",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
+        Ok(())
+    }
+
     /// After process or host crash, no worker is relaunched. A durable
     /// recovery-required receipt is written before contacting an OS broker.
     /// If the broker cannot prove descendant cleanup, remain quarantined.
@@ -1145,6 +1179,30 @@ mod tests {
         assert_eq!(cancelled.phase, JobPhase::Cancelled);
         assert_eq!(sup.receipt_history(&task.job_id).unwrap().len(), 3);
         drop(sup);
+        fs::remove_file(p).unwrap();
+    }
+    #[cfg(all(windows, feature = "protected-recovery-service"))]
+    #[test]
+    fn protected_recovery_preflight_survives_restart_and_blocks_new_work() {
+        let p = path();
+        let sup = Supervisor::open(p.clone()).unwrap();
+        let task = sup.prepare(plan()).unwrap();
+        sup.record_human_approval(
+            &task.job_id, &task.plan_sha256, &"b".repeat(40), true,
+        ).unwrap();
+        inject_running(&sup, &task);
+        sup.mark_protected_recovery_pending(&task.job_id).unwrap();
+        assert_eq!(sup.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(sup.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(sup.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(sup);
+        let restarted = Supervisor::open(p.clone()).unwrap();
+        assert_eq!(restarted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        // Without a separately authenticated native service confirmation,
+        // this fixture never reaches the terminal Cancelled phase.
+        drop(restarted);
         fs::remove_file(p).unwrap();
     }
     #[test]
