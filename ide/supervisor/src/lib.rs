@@ -625,6 +625,38 @@ impl Supervisor {
         Ok(())
     }
 
+    /// A native admission/kill/receipt failure must quarantine the live host
+    /// immediately, not only after a future journal replay. The in-memory
+    /// quarantine is applied even if appending the recovery receipt fails.
+    /// Only the native broker may call this method; the WebView has no route.
+    fn native_quarantine_after_error(&self, job_id: &str) -> Result<(), SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        if !matches!(
+            job.phase,
+            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+        ) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        state.quarantine.insert(job_id.to_owned());
+        let result = self.append(
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::RecoveryRequired,
+            "native_os_outcome_uncertain",
+            "do_not_restart_or_reuse_outputs",
+        );
+        if result.is_ok() {
+            state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
+        }
+        result
+    }
+
     /// Final outcome requires the OS process tree to have fully exited
     /// and the output broker to have verified bounded captured artifacts.
     fn native_finish(
