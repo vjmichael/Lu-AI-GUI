@@ -89,3 +89,23 @@ Do not promote Wave 2 to complete from source-level implementation or queued Git
 - `native_file_transfer_tool.rs` registers separate model-visible `lu_file_copy` and `lu_file_move` typed Protobuf operations, both `WriteWorkspace` effects, with exact source/target/digest `ExactFileTransferPolicy`; no model-originated path, parameter or hash grants permission.
 - Added native tests for an authenticated user turn, exact grant, durable write receipts, replay denial after revocation, copy no-clobber, move source removal and changed-source refusal.
 - Not yet completed: trusted desktop approval UI, cross-directory moves, safe nested folders, trash/restore model adapters, stronger Windows native file identity and installed Windows acceptance.
+
+## Wave 2 final source-integration update — 2026-11-05
+
+The following **development-source** areas were added after the initial ZIP/CSV/DOCX/file-transfer slices. This update is **NOT** evidence of native CI or installed-desktop acceptance:
+
+| Area | Added source | Remaining acceptance |
+| --- | --- | --- |
+| Existing DOCX/PPTX/XLSX revisions | `native_office_revision.rs` creates a non-overwriting revised copy, preserving every unchanged OOXML part's uncompressed contents; targeted Word run, PowerPoint run or simple numeric/boolean cell supported. `native_office_revision_tool.rs` binds full source/new version SHA and selected edit. | No in-place Office edit; no arbitrary workbook layouts, signatures, macros, styles/templates/rich structures; full diff preview UI and installed model tool tests needed |
+| Presentation Write | `native_pptx_create.rs`, `native_pptx_tool.rs` text-first multi-slide OOXML and exact host-approved bytes; real Reader round-trip and durable authorization tests | Template/theme/master/layout, charts, images, full fidelity, desktop UI and native acceptance |
+| Full archive tree extraction | `native_archive_tree.rs`, `native_archive_tree_tool.rs` parse bounded ZIP/TAR-family trees, reject unsafe entries, create one new folder, publish completion marker only on success, and verify the entire tree during post-crash observation | Multi-file operations are NOT atomic; interrupted folders remain until reconciliation, not automatically replayed; Windows reparse/race hardening and installed GUI needed |
+| Reversible filesystem trash/restore | `native_file_trash_tool.rs` typed independent trash/restore tools; restore requires host-persisted actual receipt; receipt SHA checked before restore; durability and revocation tests | Windows native identity/race tests, other volume support, folder-level trash/restore, integration with desktop directory picker |
+| ZIP Deflate | `native_zip_extract.rs` supports Stored/Deflate, per-file SHA256 and CRC32, path/symlink/size checks | Other compression methods, encrypted ZIPs, full malicious archive corpus; Windows native acceptance |
+
+### Explicitly not completed by this branch
+- Real desktop native approval panels for structured Office writes/revisions and archive/folder operations. Existing text create/edit approval infrastructure is the starting point but not a replacement for format-specific review.
+- Real 7z / RAR reading and extraction engines, UDF ISO, legacy Office binary files, broad PDF editing, full Word/PowerPoint rich-object authoring.
+- Comprehensive transaction-wide crash injection, partial-directory resumability, cross-process/multi-volume rename race hardening.
+- Exact-head Linux/Windows Rust compiler suite green, installed Windows desktop and actual GGUF/MMProj model execution.
+
+**Rule:** Wave 2 source integration is broad, but **Wave 2 is OPEN** until all acceptance criteria and remaining declared tool capabilities are satisfied. Never mark this wave complete solely from source commits or queued GitHub Actions.
