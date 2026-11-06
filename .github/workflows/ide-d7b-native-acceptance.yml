@@ -73,6 +73,14 @@ jobs:
         run: |
           $lock=Get-Content $env:LU_IDE_D7_BUNDLE_LOCK -Raw|ConvertFrom-Json
           if ($lock.windowsSdk -ne '10.0.26100.0' -or $lock.target -ne 'x86_64-pc-windows-msvc' -or $lock.reviewedPinMatched -or $lock.bundleSha256.Length -ne 64) { throw 'Untrusted or unsupported toolchain lock state' }
+      - name: Provision exact native broker binary for real offline Cargo admission
+        shell: pwsh
+        run: |
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features windows-worker --bin windows_recovery_broker
+          if ($LASTEXITCODE -ne 0) { throw 'Independent recovery broker build failed' }
+          $broker=Join-Path $PWD 'ide/supervisor/target/debug/windows_recovery_broker.exe'
+          if (!(Test-Path -LiteralPath $broker)) { throw 'Pinned native broker absent' }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_IDE_D7_BROKER_EXE=$broker"
       - name: Attempt genuine offline Cargo check within AppContainer supervisor
         shell: pwsh
         run: |
