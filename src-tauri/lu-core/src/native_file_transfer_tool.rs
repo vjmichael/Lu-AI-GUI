@@ -14,8 +14,8 @@ use crate::{
         move_new_checked_in_dir,TransferError},
     registry::NativeToolRegistry,wire::proto,
 };
-pub const COPY_ID:&str="lu.files.copy_new";
-pub const MOVE_ID:&str="lu.files.move_new";
+pub const COPY_ID:&str="lu.files.transfer.copy_new";
+pub const MOVE_ID:&str="lu.files.transfer.move_new";
 pub const INPUT:&str="type.googleapis.com/lu.v1.FileTransferRequest";
 pub const OUTPUT:&str="type.googleapis.com/lu.v1.FileTransferResult";
 pub const COPY_MODEL:&str="lu_file_copy";
