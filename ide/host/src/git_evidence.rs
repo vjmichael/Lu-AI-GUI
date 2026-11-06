@@ -1,9 +1,9 @@
 //! Wave C1: read-only Git patch and commit history for the exact registered root.
 //! No git CLI, hooks, fetch, push, checkout, index mutation or Lu adapter.
-use std::fs;
+use crate::IdeWorkspaceRegistry;
 use git2::{DiffFormat, DiffOptions, Repository, Sort};
 use serde::Serialize;
-use crate::IdeWorkspaceRegistry;
+use std::fs;
 
 const MAX_PATCH_BYTES: usize = 64 * 1024;
 const MAX_DIFF_FILES: usize = 80;
@@ -46,10 +46,12 @@ pub struct GitHistoryEvidence {
     pub live_remote: &'static str,
 }
 
-fn registered_repo(registry: &IdeWorkspaceRegistry, project_id: &str)
-    -> Result<Repository, &'static str>
-{
-    let root = registry.registered_git_root(project_id)
+fn registered_repo(
+    registry: &IdeWorkspaceRegistry,
+    project_id: &str,
+) -> Result<Repository, &'static str> {
+    let root = registry
+        .registered_git_root(project_id)
         .map_err(|_| "PROJECT_NOT_OPEN")?;
     let repo = Repository::open(&root).map_err(|_| "GIT_REPOSITORY_UNAVAILABLE")?;
     let workdir = repo.workdir().ok_or("BARE_REPOSITORY_UNSUPPORTED")?;
@@ -64,24 +66,32 @@ impl IdeWorkspaceRegistry {
     /// The difference between HEAD and the index, or the index and worktree.
     /// The second scope deliberately omits untracked content; use git.status
     /// for the existence of untracked files. This API never stages a file.
-    pub fn inspect_git_diff(&self, project_id: &str, scope: &str)
-        -> Result<GitDiffEvidence, &'static str>
-    {
+    pub fn inspect_git_diff(
+        &self,
+        project_id: &str,
+        scope: &str,
+    ) -> Result<GitDiffEvidence, &'static str> {
         if scope != "staged" && scope != "worktree" {
             return Err("INVALID_GIT_DIFF_SCOPE");
         }
         let repo = registered_repo(self, project_id)?;
-        let local_head = repo.head().ok().and_then(|h| h.target())
+        let local_head = repo
+            .head()
+            .ok()
+            .and_then(|h| h.target())
             .map(|oid| oid.to_string());
         let mut opts = DiffOptions::new();
-        opts.context_lines(2).interhunk_lines(0)
-            .include_untracked(false).recurse_untracked_dirs(false);
+        opts.context_lines(2)
+            .interhunk_lines(0)
+            .include_untracked(false)
+            .recurse_untracked_dirs(false);
         let diff = if scope == "staged" {
             let tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
             repo.diff_tree_to_index(tree.as_ref(), None, Some(&mut opts))
         } else {
             repo.diff_index_to_workdir(None, Some(&mut opts))
-        }.map_err(|_| "GIT_DIFF_UNAVAILABLE")?;
+        }
+        .map_err(|_| "GIT_DIFF_UNAVAILABLE")?;
 
         let files_changed = diff.deltas().count();
         let mut bytes = Vec::new();
@@ -89,7 +99,9 @@ impl IdeWorkspaceRegistry {
         let mut current_file: Option<Vec<u8>> = None;
         let mut shown_files = 0usize;
         diff.print(DiffFormat::Patch, |delta, _hunk, line| {
-            let path = delta.new_file().path()
+            let path = delta
+                .new_file()
+                .path()
                 .or_else(|| delta.old_file().path())
                 .map(|p| p.to_string_lossy().as_bytes().to_vec());
             if current_file != path {
@@ -112,15 +124,22 @@ impl IdeWorkspaceRegistry {
                 truncated = true;
                 return true;
             }
-            if let Some(mark) = prefix { bytes.push(mark); }
+            if let Some(mark) = prefix {
+                bytes.push(mark);
+            }
             bytes.extend_from_slice(content);
             true
-        }).map_err(|_| "GIT_DIFF_UNAVAILABLE")?;
+        })
+        .map_err(|_| "GIT_DIFF_UNAVAILABLE")?;
         let patch = String::from_utf8_lossy(&bytes).into_owned();
         Ok(GitDiffEvidence {
             schema_version: 1,
             project_id: project_id.to_owned(),
-            scope: if scope == "staged" { "staged" } else { "worktree" },
+            scope: if scope == "staged" {
+                "staged"
+            } else {
+                "worktree"
+            },
             local_head,
             files_changed,
             patch,
@@ -134,11 +153,15 @@ impl IdeWorkspaceRegistry {
 
     /// History of the local HEAD only. It is not evidence that GitHub is
     /// current and does not run arbitrary revision expressions.
-    pub fn inspect_git_history(&self, project_id: &str)
-        -> Result<GitHistoryEvidence, &'static str>
-    {
+    pub fn inspect_git_history(
+        &self,
+        project_id: &str,
+    ) -> Result<GitHistoryEvidence, &'static str> {
         let repo = registered_repo(self, project_id)?;
-        let local_head = repo.head().ok().and_then(|h| h.target())
+        let local_head = repo
+            .head()
+            .ok()
+            .and_then(|h| h.target())
             .map(|oid| oid.to_string());
         let mut commits = Vec::new();
         let mut truncated = false;
@@ -153,11 +176,15 @@ impl IdeWorkspaceRegistry {
                     break;
                 }
                 let oid = id.map_err(|_| "GIT_HISTORY_UNAVAILABLE")?;
-                let commit = repo.find_commit(oid)
+                let commit = repo
+                    .find_commit(oid)
                     .map_err(|_| "GIT_HISTORY_UNAVAILABLE")?;
-                let summary: String = commit.summary()
-                    .unwrap_or("(no message)").chars()
-                    .take(MAX_SUMMARY_CHARS).collect();
+                let summary: String = commit
+                    .summary()
+                    .unwrap_or("(no message)")
+                    .chars()
+                    .take(MAX_SUMMARY_CHARS)
+                    .collect();
                 commits.push(GitHistoryEntry {
                     commit_sha: oid.to_string(),
                     summary,

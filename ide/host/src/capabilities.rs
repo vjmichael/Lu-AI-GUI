@@ -38,79 +38,246 @@ pub struct CapabilityCatalog {
 macro_rules! capability {
     ($id:literal, $command:literal, $title:literal, $description:literal,
      $effect:literal, $precondition:literal, $evidence:literal) => {
-        ($id, $command, $title, $description, $effect, $precondition, $evidence)
+        (
+            $id,
+            $command,
+            $title,
+            $description,
+            $effect,
+            $precondition,
+            $evidence,
+        )
     };
 }
 
-type CapabilityMeta = (&'static str, &'static str, &'static str,
-    &'static str, &'static str, &'static str, &'static str);
+type CapabilityMeta = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
 
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
-            capability!("resource.probe", "ide_probe_project_resource", "Inspect resource bytes",
-                "Read exact scoped file metadata and SHA-256 without executing it.",
-                "read", "open registered project, validated relative file path",
-                "observed bytes and digest, missing/changed state, explicit untested execution"),
-            capability!("inventory.capture", "ide_capture_project_inventory", "Record verified inventory snapshot",
-                "Persist observed artifact paths and hashes for future comparison; no execution.",
-                "catalog_write", "open project and explicit user snapshot request",
-                "historical observed byte hashes; no software usability claim"),
-            capability!("inventory.compare", "ide_compare_project_inventory", "Compare inventory",
-                "Read-only comparison of latest bounded project evidence with saved baseline.",
-                "read", "open project; baseline optional",
-                "matched/changed/missing/new/unverifiable observed bytes"),
-            capability!("git.compareLive", "ide_compare_live_github", "Compare with live GitHub",
-                "Explicit read-only HTTPS check against the public GitHub origin branch head.",
-                "network_read", "human request, supported public github.com origin, exact registered project",
-                "remote commit SHA and checked time; independently labeled local and dirty state"),
-            capability!("git.diff", "ide_read_git_diff", "Review Git changes",
-                "Read staged or unstaged local Git patch text, capped at 64 KiB.",
-                "read", "active registered Git project, staged/worktree scope",
-                "bounded patch and local HEAD, with explicit truncation and untracked exclusion"),
-            capability!("git.history", "ide_read_git_history", "Review local commit history",
-                "Read recent local HEAD commits without fetching or changing Git.",
-                "read", "active registered Git project with optional local HEAD",
-                "up to 30 local commit IDs, summaries and times; no remote assertion"),
-            capability!("git.status", "ide_read_git_status", "Inspect source control",
-                "Read local Git modified, staged and untracked paths with trusted native libgit2.",
-                "read", "registered open project; no network or Git write",
-                "bounded local worktree status and stored upstream comparison"),
-            capability!("continuity.read", "ide_read_project_context", "Read project continuity",
-                "Read bounded host observations and revisioned untrusted project notes.",
-                "read", "registered and active project",
-                "historical events, document revisions and explicitly unknown external state"),
-            capability!("project.list", "ide_list_projects", "List projects",
-                "Read IDE-registered project summaries.", "read", "IDE host available", "registered project summaries"),
-            capability!("project.select", "ide_choose_project", "Choose project folder",
-                "Open native OS directory picker and register selected project.", "catalog_write", "explicit human picker selection", "updated project catalog"),
-            capability!("project.open", "ide_open_project", "Open registered project",
-                "Activate an existing project in the IDE.", "session_write", "registered project ID", "active project summary"),
-            capability!("project.close", "ide_close_project", "Close project",
-                "Close an open IDE project, without deleting its files.", "session_write", "open project ID", "inactive project summary"),
-            capability!("project.unregister", "ide_unregister_project", "Remove project from IDE",
-                "Remove project registration only; never remove files on disk.", "catalog_write", "registered project ID and user intent", "catalog without project"),
-            capability!("source.list", "ide_list_source_directory", "List source directory",
-                "Capability-scoped, bounded listing of one directory.", "read", "registered and open project", "relative paths and truncation flag"),
-            capability!("source.preview", "ide_preview_source_file", "Read source file",
-                "Read bounded UTF-8 text and its saved SHA-256 revision.", "read", "open project and safe relative path", "text and saved source revision"),
-            capability!("source.readSpan", "ide_read_source_span", "Read source lines",
-                "Read exact numbered lines from a specified saved revision.", "read", "open project and matching saved revision", "line text, UTF-8 byte offsets and newline identity"),
-            capability!("source.review", "ide_review_source_change", "Review source change",
-                "Calculate bounded diff preview without saving.", "read", "matching saved revision and bounded proposed text", "diff hunks with exactness and truncation"),
-            capability!("source.save", "ide_save_source_file", "Save source file",
-                "Explicit host revision-checked file write; discovery does not authorize it.", "file_write", "explicit human Save and matching saved revision", "post-write file content and revision"),
-            capability!("proposal.import", "ide_import_proposal", "Import proposal",
-                "Validate untrusted proposal as data in volatile inbox.", "session_write", "bounded valid proposal", "inbox summary; no filesystem write"),
-            capability!("proposal.list", "ide_list_proposals", "List proposals",
-                "Inspect volatile proposal inbox.", "read", "IDE host available", "proposal summaries"),
-            capability!("proposal.review", "ide_review_proposal", "Review proposal",
-                "Read verified proposal details and bounded diffs.", "read", "existing inbox item", "preview with exactness and truncation"),
-            capability!("proposal.decide", "ide_decide_proposal", "Decide proposal",
-                "Record human approval for staging only or rejection.", "session_write", "human review and unchanged proposal digest", "recorded review decision; no file write"),
-            capability!("proposal.stage", "ide_stage_proposal", "Stage proposal",
-                "Return approved edit data for unsaved editor drafts only.", "read", "previous human approval and current source revisions", "validated staging data; no file write"),
-            capability!("proposal.discard", "ide_discard_proposal", "Discard proposal",
-                "Remove an inbox item without changing source files.", "session_write", "existing inbox item", "updated volatile inbox")
+        capability!(
+            "resource.probe",
+            "ide_probe_project_resource",
+            "Inspect resource bytes",
+            "Read exact scoped file metadata and SHA-256 without executing it.",
+            "read",
+            "open registered project, validated relative file path",
+            "observed bytes and digest, missing/changed state, explicit untested execution"
+        ),
+        capability!(
+            "inventory.capture",
+            "ide_capture_project_inventory",
+            "Record verified inventory snapshot",
+            "Persist observed artifact paths and hashes for future comparison; no execution.",
+            "catalog_write",
+            "open project and explicit user snapshot request",
+            "historical observed byte hashes; no software usability claim"
+        ),
+        capability!(
+            "inventory.compare",
+            "ide_compare_project_inventory",
+            "Compare inventory",
+            "Read-only comparison of latest bounded project evidence with saved baseline.",
+            "read",
+            "open project; baseline optional",
+            "matched/changed/missing/new/unverifiable observed bytes"
+        ),
+        capability!(
+            "git.compareLive",
+            "ide_compare_live_github",
+            "Compare with live GitHub",
+            "Explicit read-only HTTPS check against the public GitHub origin branch head.",
+            "network_read",
+            "human request, supported public github.com origin, exact registered project",
+            "remote commit SHA and checked time; independently labeled local and dirty state"
+        ),
+        capability!(
+            "git.diff",
+            "ide_read_git_diff",
+            "Review Git changes",
+            "Read staged or unstaged local Git patch text, capped at 64 KiB.",
+            "read",
+            "active registered Git project, staged/worktree scope",
+            "bounded patch and local HEAD, with explicit truncation and untracked exclusion"
+        ),
+        capability!(
+            "git.history",
+            "ide_read_git_history",
+            "Review local commit history",
+            "Read recent local HEAD commits without fetching or changing Git.",
+            "read",
+            "active registered Git project with optional local HEAD",
+            "up to 30 local commit IDs, summaries and times; no remote assertion"
+        ),
+        capability!(
+            "git.status",
+            "ide_read_git_status",
+            "Inspect source control",
+            "Read local Git modified, staged and untracked paths with trusted native libgit2.",
+            "read",
+            "registered open project; no network or Git write",
+            "bounded local worktree status and stored upstream comparison"
+        ),
+        capability!(
+            "continuity.read",
+            "ide_read_project_context",
+            "Read project continuity",
+            "Read bounded host observations and revisioned untrusted project notes.",
+            "read",
+            "registered and active project",
+            "historical events, document revisions and explicitly unknown external state"
+        ),
+        capability!(
+            "project.list",
+            "ide_list_projects",
+            "List projects",
+            "Read IDE-registered project summaries.",
+            "read",
+            "IDE host available",
+            "registered project summaries"
+        ),
+        capability!(
+            "project.select",
+            "ide_choose_project",
+            "Choose project folder",
+            "Open native OS directory picker and register selected project.",
+            "catalog_write",
+            "explicit human picker selection",
+            "updated project catalog"
+        ),
+        capability!(
+            "project.open",
+            "ide_open_project",
+            "Open registered project",
+            "Activate an existing project in the IDE.",
+            "session_write",
+            "registered project ID",
+            "active project summary"
+        ),
+        capability!(
+            "project.close",
+            "ide_close_project",
+            "Close project",
+            "Close an open IDE project, without deleting its files.",
+            "session_write",
+            "open project ID",
+            "inactive project summary"
+        ),
+        capability!(
+            "project.unregister",
+            "ide_unregister_project",
+            "Remove project from IDE",
+            "Remove project registration only; never remove files on disk.",
+            "catalog_write",
+            "registered project ID and user intent",
+            "catalog without project"
+        ),
+        capability!(
+            "source.list",
+            "ide_list_source_directory",
+            "List source directory",
+            "Capability-scoped, bounded listing of one directory.",
+            "read",
+            "registered and open project",
+            "relative paths and truncation flag"
+        ),
+        capability!(
+            "source.preview",
+            "ide_preview_source_file",
+            "Read source file",
+            "Read bounded UTF-8 text and its saved SHA-256 revision.",
+            "read",
+            "open project and safe relative path",
+            "text and saved source revision"
+        ),
+        capability!(
+            "source.readSpan",
+            "ide_read_source_span",
+            "Read source lines",
+            "Read exact numbered lines from a specified saved revision.",
+            "read",
+            "open project and matching saved revision",
+            "line text, UTF-8 byte offsets and newline identity"
+        ),
+        capability!(
+            "source.review",
+            "ide_review_source_change",
+            "Review source change",
+            "Calculate bounded diff preview without saving.",
+            "read",
+            "matching saved revision and bounded proposed text",
+            "diff hunks with exactness and truncation"
+        ),
+        capability!(
+            "source.save",
+            "ide_save_source_file",
+            "Save source file",
+            "Explicit host revision-checked file write; discovery does not authorize it.",
+            "file_write",
+            "explicit human Save and matching saved revision",
+            "post-write file content and revision"
+        ),
+        capability!(
+            "proposal.import",
+            "ide_import_proposal",
+            "Import proposal",
+            "Validate untrusted proposal as data in volatile inbox.",
+            "session_write",
+            "bounded valid proposal",
+            "inbox summary; no filesystem write"
+        ),
+        capability!(
+            "proposal.list",
+            "ide_list_proposals",
+            "List proposals",
+            "Inspect volatile proposal inbox.",
+            "read",
+            "IDE host available",
+            "proposal summaries"
+        ),
+        capability!(
+            "proposal.review",
+            "ide_review_proposal",
+            "Review proposal",
+            "Read verified proposal details and bounded diffs.",
+            "read",
+            "existing inbox item",
+            "preview with exactness and truncation"
+        ),
+        capability!(
+            "proposal.decide",
+            "ide_decide_proposal",
+            "Decide proposal",
+            "Record human approval for staging only or rejection.",
+            "session_write",
+            "human review and unchanged proposal digest",
+            "recorded review decision; no file write"
+        ),
+        capability!(
+            "proposal.stage",
+            "ide_stage_proposal",
+            "Stage proposal",
+            "Return approved edit data for unsaved editor drafts only.",
+            "read",
+            "previous human approval and current source revisions",
+            "validated staging data; no file write"
+        ),
+        capability!(
+            "proposal.discard",
+            "ide_discard_proposal",
+            "Discard proposal",
+            "Remove an inbox item without changing source files.",
+            "session_write",
+            "existing inbox item",
+            "updated volatile inbox"
+        ),
     ]
 }
 
@@ -125,9 +292,10 @@ fn schema_document() -> Value {
 /// its nested $ref values must resolve without requiring a separate file.
 fn self_contained_schema(mut shape: Value, definitions: &Value) -> Value {
     if let Some(properties) = shape.as_object_mut() {
-        properties.insert("$schema".to_owned(), Value::String(
-            "https://json-schema.org/draft/2020-12/schema".to_owned(),
-        ));
+        properties.insert(
+            "$schema".to_owned(),
+            Value::String("https://json-schema.org/draft/2020-12/schema".to_owned()),
+        );
         properties.insert("$defs".to_owned(), definitions.clone());
     }
     shape
@@ -141,25 +309,28 @@ pub fn list_capabilities() -> CapabilityCatalog {
     let operations = &schemas["operations"];
     let capabilities = metadata()
         .into_iter()
-        .map(|(id, command, title, description, effect, precondition, evidence)| {
-            let schema = operations.get(id)
-                .expect("every native descriptor must have an operation schema");
-            CapabilityDescriptor {
-                id,
-                version: SCHEMA_VERSION,
-                command,
-                title,
-                description,
-                effect,
-                request_schema: self_contained_schema(schema["request"].clone(), &definitions),
-                result_schema: self_contained_schema(schema["result"].clone(), &definitions),
-                error_schema: serde_json::json!({"type":"string","minLength":1,
+        .map(
+            |(id, command, title, description, effect, precondition, evidence)| {
+                let schema = operations
+                    .get(id)
+                    .expect("every native descriptor must have an operation schema");
+                CapabilityDescriptor {
+                    id,
+                    version: SCHEMA_VERSION,
+                    command,
+                    title,
+                    description,
+                    effect,
+                    request_schema: self_contained_schema(schema["request"].clone(), &definitions),
+                    result_schema: self_contained_schema(schema["result"].clone(), &definitions),
+                    error_schema: serde_json::json!({"type":"string","minLength":1,
                     "description":"Stable native error code; not execution authority"}),
-                precondition,
-                evidence,
-                cancellation: "single bounded host call; no background task",
-            }
-        })
+                    precondition,
+                    evidence,
+                    cancellation: "single bounded host call; no background task",
+                }
+            },
+        )
         .collect();
 
     CapabilityCatalog {
@@ -199,14 +370,25 @@ mod tests {
             assert!(item.request_schema["required"].is_array());
             assert!(item.request_schema["properties"].is_object());
             let required = item.request_schema["required"].as_array().unwrap();
-            assert_eq!(required.len(), item.request_schema["properties"].as_object().unwrap().len());
-            for property in item.request_schema["properties"].as_object().unwrap().values() {
+            assert_eq!(
+                required.len(),
+                item.request_schema["properties"].as_object().unwrap().len()
+            );
+            for property in item.request_schema["properties"]
+                .as_object()
+                .unwrap()
+                .values()
+            {
                 assert!(property.get("type").is_some() || property.get("$ref").is_some());
             }
-            assert!(item.result_schema.get("type").is_some()
-                || item.result_schema.get("$ref").is_some());
-            assert!(matches!(item.effect,
-                "read" | "network_read" | "session_write" | "catalog_write" | "file_write"));
+            assert!(
+                item.result_schema.get("type").is_some()
+                    || item.result_schema.get("$ref").is_some()
+            );
+            assert!(matches!(
+                item.effect,
+                "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
+            ));
         }
         assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 30);
     }
@@ -222,7 +404,10 @@ mod tests {
         assert_eq!(save.result_schema["$ref"], "#/$defs/TextPreview");
         assert!(save.result_schema["$defs"]["TextPreview"].is_object());
         assert_eq!(stage.result_schema["$ref"], "#/$defs/ApprovedStaging");
-        assert_eq!(spans.request_schema["properties"]["firstLine"]["type"], "integer");
+        assert_eq!(
+            spans.request_schema["properties"]["firstLine"]["type"],
+            "integer"
+        );
         assert_eq!(spans.result_schema["$ref"], "#/$defs/SourceSpan");
         assert!(save.precondition.contains("explicit human Save"));
         assert!(stage.evidence.contains("no file write"));
