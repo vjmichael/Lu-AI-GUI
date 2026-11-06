@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8b1343f0e92333f99d909a837785ecf81f7d66ff",
+  "sourceCommitBeforeLock": "20032f50554224df731a609c750554a0419b6b2c",
   "trackedFileCount": 474,
   "files": [
     {
@@ -457,7 +457,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
-      "blob": "44605eba597cc1a6472270aec5215d32a06afaea"
+      "blob": "6f61ea252dec556caf935220b51d8c464c0b010d"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -1893,7 +1893,7 @@
     },
     {
       "path": "tests/lu-browser-worker.test.mjs",
-      "blob": "a879fdcf13d5de72f16d97fdaa206b0ec0c06534"
+      "blob": "01b9b62a32cd0900a57eb56398c31f07a13b26bc"
     },
     {
       "path": "tests/source-identity.test.mjs",
