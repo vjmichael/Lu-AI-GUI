@@ -276,8 +276,9 @@ mod windows {
         match TcpStream::connect_timeout(&loopback, Duration::from_millis(800)) {
             Ok(_) => Ok(Some(13)),
             Err(err) if err.raw_os_error() == Some(10013) => Ok(Some(0)),
-            // Expose the native WinSock code for acceptance diagnosis;
-            // any failure other than WSAEACCES is still a failed test.
+            // Encode the actual WinSock failure for native CI diagnosis.
+            // Do NOT turn an arbitrary timeout, routing error or refusal
+            // into a security pass. Only WSAEACCES above passes.
             Err(err) => Ok(Some(1000 + err.raw_os_error().unwrap_or(99))),
         }
     }
