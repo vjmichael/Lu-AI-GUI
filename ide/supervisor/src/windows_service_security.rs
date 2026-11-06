@@ -100,6 +100,21 @@ fn parse_sid(text: &str) -> Result<OwnedSid, SupervisorError> {
     }
     Ok(OwnedSid(sid))
 }
+/// Account identity is TokenUser, not a TokenGroups membership assertion.
+/// LocalService is a logon identity, so CheckTokenMembership alone is wrong.
+fn token_user_is(token: HANDLE, expected: *mut c_void) -> Result<bool, SupervisorError> {
+    let mut len = 0u32;
+    unsafe { GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut len); }
+    if len < size_of::<TOKEN_USER>() as u32 || len > 8192 { return Err(denied()); }
+    let mut storage = vec![0usize; (len as usize).div_ceil(size_of::<usize>())];
+    if unsafe { GetTokenInformation(
+        token, TokenUser, storage.as_mut_ptr().cast(), len, &mut len,
+    ) } == 0 { return Err(denied()); }
+    let user = unsafe { (*(storage.as_ptr() as *const TOKEN_USER)).User.Sid };
+    if user.is_null() { return Err(denied()); }
+    Ok(unsafe { EqualSid(user, expected) } != 0)
+}
+
 fn token_user_equal(a: HANDLE, b: HANDLE) -> Result<bool, SupervisorError> {
     fn sid(token: HANDLE) -> Result<Vec<u8>, SupervisorError> {
         let mut len = 0_u32;
@@ -138,9 +153,7 @@ pub fn assert_restricted_local_service() -> Result<(), SupervisorError> {
         || service_member == 0 { return Err(denied()); }
     // Service must NOT be LocalSystem and must run with restricted SIDs.
     if unsafe { IsTokenRestricted(token.0) } == 0 { return Err(denied()); }
-    let mut local_token = 0_i32;
-    if unsafe { CheckTokenMembership(token.0, local_service_sid.0, &mut local_token) } == 0
-        || local_token == 0 { return Err(denied()); }
+    if !token_user_is(token.0, local_service_sid.0)? { return Err(denied()); }
     Ok(())
 }
 pub struct PipeSecurity {
@@ -359,10 +372,10 @@ pub fn authenticate_service_server(
     let token = Handle::new(raw)?;
     let service = parse_sid(&sid_of_service()?)?;
     let local = parse_sid("S-1-5-19")?;
-    for sid in [service.0, local.0] {
-        let mut present = 0;
-        if unsafe { CheckTokenMembership(token.0, sid, &mut present) } == 0
-            || present == 0 { return Err(denied()); }
+    let mut present = 0;
+    if unsafe { CheckTokenMembership(token.0, service.0, &mut present) } == 0
+        || present == 0 || !token_user_is(token.0, local.0)? {
+        return Err(denied());
     }
     if unsafe { IsTokenRestricted(token.0) } == 0 { return Err(denied()); }
     Ok(())
@@ -402,7 +415,7 @@ pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> 
                 return Err(denied());
             }
             let ace = unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
-            if ace.Header.AceType != ACCESS_ALLOWED_ACE_TYPE
+            if ace.Header.AceType != 0
                 || ace.Header.AceFlags & 0x10 != 0
                 || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
                 return Err(denied());
