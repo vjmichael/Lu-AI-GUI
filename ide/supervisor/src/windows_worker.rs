@@ -27,9 +27,10 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, LocalFree, HANDLE, ERROR_ALREADY_EXISTS, WAIT_OBJECT_0, WAIT_TIMEOUT},
     Security::{
-        Authorization::ConvertSidToStringSidW, FreeSid,
+        Authorization::ConvertSidToStringSidW, EqualSid, FreeSid,
+        GetTokenInformation,
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath},
-        PSID, SECURITY_CAPABILITIES,
+        PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenAppContainerSid, TokenIsAppContainer,
     },
     System::{
         Com::CoTaskMemFree,
@@ -43,7 +44,7 @@ use windows_sys::Win32::{
         },
         Threading::{
             CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, ResumeThread, TerminateProcess,
+            InitializeProcThreadAttributeList, OpenProcessToken, ResumeThread, TerminateProcess,
             UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW,
             CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
             PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
@@ -414,6 +415,39 @@ impl NativeTreeTerminator for JobTerminator<'_> {
         self.job.kill_and_verify()
     }
 }
+#[repr(C)]
+struct AppContainerTokenInfo { sid: PSID }
+
+fn verify_suspended_appcontainer_token(process: HANDLE, expected_sid: PSID)
+    -> Result<(), SupervisorError> {
+    let mut raw: HANDLE = ptr::null_mut();
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut raw) } == 0 {
+        return Err(denied());
+    }
+    let token = Handle::new(raw)?;
+    let mut present = 0_u32;
+    let mut len = 0_u32;
+    if unsafe { GetTokenInformation(token.0, TokenIsAppContainer,
+        (&mut present as *mut u32).cast(), size_of::<u32>() as u32, &mut len) } == 0
+        || present != 1 { return Err(denied()); }
+    let mut size = 0_u32;
+    unsafe { GetTokenInformation(token.0, TokenAppContainerSid,
+        ptr::null_mut(), 0, &mut size); }
+    if size < size_of::<AppContainerTokenInfo>() as u32 || size > 4096 {
+        return Err(denied());
+    }
+    let mut buffer = vec![0_usize; (size as usize).div_ceil(size_of::<usize>())];
+    if unsafe { GetTokenInformation(token.0, TokenAppContainerSid,
+        buffer.as_mut_ptr().cast(), size, &mut len) } == 0 {
+        return Err(denied());
+    }
+    let found = unsafe { (*(buffer.as_ptr() as *const AppContainerTokenInfo)).sid };
+    if found.is_null() || unsafe { EqualSid(found, expected_sid) } == 0 {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 fn terminate_unassigned(process: HANDLE) -> Result<(), SupervisorError> {
     if unsafe { TerminateProcess(process, 103) } == 0
         || unsafe { WaitForSingleObject(process, 5000) } != WAIT_OBJECT_0 {
@@ -499,8 +533,13 @@ fn launch_appcontainer(profile: &AppProfile, job: &Job, executable: &Path,
     // The unique Job must contain the suspended child already, because
     // membership was supplied as a creation attribute rather than an
     // after-creation assignment subject to host-crash races.
-    if !matches!(job.empty(), Ok(false)) {
-        terminate_unassigned(process.0)?;
+    if !matches!(job.empty(), Ok(false))
+        || verify_suspended_appcontainer_token(process.0, profile.sid).is_err() {
+        // Already in the Job Object at process creation; a verified Job kill
+        // applies even if the token differs from the expected profile SID.
+        if !matches!(job.kill_and_verify(), Ok(true)) {
+            return Err(SupervisorError::Quarantined);
+        }
         return Err(denied());
     }
     Ok((process, thread))
