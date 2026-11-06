@@ -56,6 +56,8 @@ function App() {
   const [researchResult,setResearchResult]=useState(null);
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
   const [researchError,setResearchError]=useState('');
+  const [browserEvidenceByChat,setBrowserEvidenceByChat]=useState({});
+  const [browserEvidenceBusy,setBrowserEvidenceBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -260,6 +262,17 @@ function App() {
       }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function reviewBrowserEvidence(){
+    if(!chatId||browserEvidenceBusy)return;
+    const selectedChat=chatId;
+    setBrowserEvidenceBusy(true);setResearchError('');
+    try{
+      const list=await invoke('lu_research_browser_evidence',{chatId:selectedChat});
+      // Keep the host's read-only records scoped to the selected conversation.
+      setBrowserEvidenceByChat(old=>({...old,[selectedChat]:list}));
+    }catch(e){setResearchError(String(e));}
+    finally{setBrowserEvidenceBusy(false);}
   }
   async function inspectWithBrowserModel(){
     if(!chatId||!runtime.sessionId||!browserRuntime?.running||browserReadBusy)return;
@@ -3158,6 +3171,26 @@ function App() {
           <h3>Research · verified-evidence workflow</h3>
           <p>OpenAlex discovery is a separately approved read-only operation. Search results are
              unverified leads, never citations, until registry and document evidence are checked.</p>
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||browserEvidenceBusy}
+              onClick={()=>void reviewBrowserEvidence()}>
+              {browserEvidenceBusy?'Reading evidence…':'Review observed Browser evidence'}
+            </button>
+          </div>
+          <small>Browser reads are local, untrusted observations, not independently
+            corroborated sources or verified academic citations. Their exact
+            post-redirect URLs and text digests come from Lu's supervised worker.</small>
+          {Array.isArray(browserEvidenceByChat[chatId])&&
+            <div className="researchResults" aria-label="Observed Browser evidence">
+              <strong>{browserEvidenceByChat[chatId].length} recent Browser observations · UNCORROBORATED</strong>
+              <ul>{browserEvidenceByChat[chatId].map(item=><li key={item.callId}>
+                <strong>{item.sourceUrl}</strong>
+                <small>Observed SHA-256: {item.observedSha256}</small>
+                <small>{item.verificationStatus} · citation verified: no</small>
+                <pre>{item.excerpt.slice(0,1500)}</pre>
+                {item.excerptTruncated&&<small>Excerpt incomplete; only saved text can be checked.</small>}
+              </li>)}</ul>
+            </div>}
           <label htmlFor="researchQuery">Research question or subject</label>
           <input id="researchQuery" value={researchQuery} disabled={researchBusy}
             onChange={e=>{setResearchQuery(e.target.value);setResearchResult(null);}}
