@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE WO2/WO3 resumed engineering (2026-11-06): AppContainer network timeout acceptance requires dual live host endpoint controls, no child connections, exact token capabilities and verified Job empty; temporary `NUL` permission confined to explicit disposable CI per-profile SID and revoked before success, not release accepted; D7D service pipe binds installer-approved individual host SID and versioned service config, confirms endpoint before SCM RUNNING, repairs privileged installer AST syntax, and tightens real kernel Job crash witness. Related supervisor core Windows/Linux unit CI passed on prior exact head, but current AppContainer Cargo, SCM crash recovery, and production NUL failover are not accepted. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
 - IDE first three-work-order batch (2026-11-06): repaired Windows E2 HANDLE writer thread ownership, feature-gated native example compilation, real Tauri frontend build and interrupted recovery test; added strict child token-capability verification and bounded protected SCM pipe-denial diagnostics. Source commits `2076532`, `0e941c7`, `3c38f5e`. Native CI and protected-service acceptance remain outstanding; see `docs/IDE_WORK_BATCH_01_20261106.md`.
 
 

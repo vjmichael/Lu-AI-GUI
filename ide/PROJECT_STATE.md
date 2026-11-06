@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### Work orders 2–3: resumed implementation; native security closeout remains open (2026-11-06)
+
+[Batch 02 code/evidence ledger](docs/IDE_WORK_BATCH_02_20261106.md): WO2 AppContainer now checks real token zero capabilities, controls before/after live network probe and child listener absence, bounds real kernel Job reaping, and has an explicitly CI-only exact temporary NUL SID grant with verified normal-exit revocation after sealed staging and protected broker approval. This is **not** production-safe across host crash, so production NUL lifecycle and real confined Cargo pass remain open. WO3 service uses installer-approved exact host account SID (not broad IU) for pipe ACL/TokenUser and v2 config, starts SCM RUNNING only after creating the protected endpoint, fixes installer PowerShell parse and bounds independent kernel Job observation. Real SCM IPC, owner-crash/service-loss restart recovery remain unaccepted. Related Windows/Linux core supervisor unit CI on historical `8e5aa5a` passed; not native OS execution acceptance. PR draft, no release worker. Details in linked ledger.
+
+
 ### First three-work-order batch — source repairs committed; native gates OPEN (2026-11-06)
 
 See [IDE batch 01](docs/IDE_WORK_BATCH_01_20261106.md). Work order 1: fixed Windows LSP writer HANDLE thread transfer (`E0277`), acceptance example feature gating (`E0432`), genuine Tauri frontend assets and post-crash preflight fixture. Work order 2: actual AppContainer child kernel token capabilities inspected; Cargo still cannot open `\\.\NUL` and the D6 network denial still lacks WSAEACCES evidence. Work order 3: added fixed-stage pipe admission triage and CI logon classification; protected SCM actual IPC and restart/recovery are **not** accepted. Commits `2076532`, `0e941c7`, `3c38f5e`. Fresh exact-head CI pending. Next unblocked work remains closing orders 1–3, then 4–6; orders 7–10 later. No unsafe worker or LSP activation.
