@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     ptr,
     sync::{
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicU8, AtomicU32, Ordering},
         Arc, Mutex, OnceLock,
     },
     thread,
@@ -47,6 +47,12 @@ use windows_sys::Win32::{
     },
 };
 const NAME: &str = "LuIdeRecoveryBroker";
+// Non-sensitive SCM exit classification, not an authentication claim.
+// 10=restricted LocalService identity, 20=exact installed config/ACL,
+// 30=protected pipe ACL, 40=SERVICE_RUNNING, 50=named pipe created.
+// It is reported only on service failure, to diagnose genuine OS failures.
+static STARTUP_STAGE: AtomicU32 = AtomicU32::new(0);
+const SERVICE_SPECIFIC_ERROR: u32 = 1066;
 const JOB_QUERY: u32 = 0x0004;
 const JOB_TERMINATE: u32 = 0x0008;
 const SYNCHRONIZE: u32 = 0x00100000;
@@ -639,8 +645,11 @@ fn serve_one(pipe: Handle, config: &InstalledConfig) {
 }
 fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorError> {
     security::assert_restricted_local_service()?;
+    STARTUP_STAGE.store(10, Ordering::Relaxed);
     let config = InstalledConfig::read()?;
+    STARTUP_STAGE.store(20, Ordering::Relaxed);
     let acl = security::PipeSecurity::new()?;
+    STARTUP_STAGE.store(30, Ordering::Relaxed);
     let mut running = SERVICE_STATUS {
         dwServiceType: SERVICE_WIN32_OWN_PROCESS,
         dwCurrentState: SERVICE_RUNNING,
@@ -653,6 +662,7 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
     if unsafe { SetServiceStatus(status_handle, &mut running) } == 0 {
         return Err(denied());
     }
+    STARTUP_STAGE.store(40, Ordering::Relaxed);
     let mut first = true;
     loop {
         // PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE prevent remote
@@ -670,6 +680,7 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
                 &acl.attributes,
             )
         })?;
+        STARTUP_STAGE.store(50, Ordering::Relaxed);
         first = false;
         if unsafe { ConnectNamedPipe(pipe.0, ptr::null_mut()) } == 0
             && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED
@@ -719,7 +730,15 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
     }
     let result = std::panic::catch_unwind(|| run_service(handle));
     status.dwCurrentState = SERVICE_STOPPED;
-    status.dwWin32ExitCode = if matches!(result, Ok(Ok(()))) { 0 } else { 1 };
+    let ok = matches!(result, Ok(Ok(())));
+    status.dwWin32ExitCode = if ok { 0 } else { SERVICE_SPECIFIC_ERROR };
+    // Non-secret fixed stage number only; never report the raw error object,
+    // project data, policy token, executable path, or service credentials.
+    status.dwServiceSpecificExitCode = if ok {
+        0
+    } else {
+        100 + STARTUP_STAGE.load(Ordering::Relaxed)
+    };
     status.dwCheckPoint = 0;
     status.dwWaitHint = 0;
     let _ = SetServiceStatus(handle, &status);
