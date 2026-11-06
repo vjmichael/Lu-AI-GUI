@@ -23,7 +23,7 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, HANDLE, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
                  WAIT_OBJECT_0, WAIT_TIMEOUT},
-    Storage::FileSystem::{ReadFile, WriteFile},
+    Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
     System::{
         JobObjects::{OpenJobObjectW, QueryInformationJobObject, TerminateJobObject,
             JobObjectBasicAccountingInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION},
@@ -235,14 +235,30 @@ fn kill_and_verify(job: HANDLE) -> bool {
     false
 }
 fn read_message(pipe: HANDLE) -> Result<Vec<u8>, SupervisorError> {
-    let mut bytes = [0u8; MAX_MESSAGE];
-    let mut size = 0u32;
-    if unsafe { ReadFile(pipe, bytes.as_mut_ptr(), MAX_MESSAGE as u32,
-        &mut size, ptr::null_mut()) } == 0 || size == 0
-        || size as usize >= MAX_MESSAGE {
-        return Err(denied());
+    // Never let an interactive client occupy a service thread forever by
+    // connecting without sending an admission. Message bodies are atomic
+    // and capped before ReadFile consumes the pending message.
+    let began = Instant::now();
+    while began.elapsed() < Duration::from_secs(8) {
+        let mut available = 0u32;
+        if unsafe { PeekNamedPipe(pipe, ptr::null_mut(), 0,
+            ptr::null_mut(), &mut available, ptr::null_mut()) } == 0 {
+            return Err(denied());
+        }
+        if available > 0 {
+            if available as usize >= MAX_MESSAGE { return Err(denied()); }
+            let mut bytes = [0u8; MAX_MESSAGE];
+            let mut size = 0u32;
+            if unsafe { ReadFile(pipe, bytes.as_mut_ptr(), MAX_MESSAGE as u32,
+                &mut size, ptr::null_mut()) } == 0 || size == 0
+                || size as usize >= MAX_MESSAGE {
+                return Err(denied());
+            }
+            return Ok(bytes[..size as usize].to_vec());
+        }
+        thread::sleep(TICK);
     }
-    Ok(bytes[..size as usize].to_vec())
+    Err(denied())
 }
 fn send(pipe: HANDLE, nonce: &str, state: &str) -> Result<(), SupervisorError> {
     let bytes = serde_json::to_vec(&Response {
@@ -253,6 +269,9 @@ fn send(pipe: HANDLE, nonce: &str, state: &str) -> Result<(), SupervisorError> {
         &mut written, ptr::null_mut()) } == 0 || written as usize != bytes.len() {
         return Err(denied());
     }
+    // Without flushing, the service could DisconnectNamedPipe immediately
+    // after writing and discard an unread READY/recovery acknowledgement.
+    if unsafe { FlushFileBuffers(pipe) } == 0 { return Err(denied()); }
     Ok(())
 }
 
