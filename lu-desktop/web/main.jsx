@@ -56,6 +56,9 @@ function App() {
   const [researchResult,setResearchResult]=useState(null);
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
+  const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
+  const [researchCampaignCeiling,setResearchCampaignCeiling]=useState(120);
+  const [researchCampaignBusy,setResearchCampaignBusy]=useState(false);
   const [researchDocumentQuotes,setResearchDocumentQuotes]=useState({});
   const [researchDocumentPassages,setResearchDocumentPassages]=useState({});
   const [researchError,setResearchError]=useState('');
@@ -269,6 +272,56 @@ function App() {
       }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function refreshResearchCampaigns(selectedChat=chatId){
+    if(!selectedChat)return;
+    try{
+      const result=await invoke('lu_research_campaigns',{chatId:selectedChat});
+      setResearchCampaignsByChat(old=>({...old,[selectedChat]:result}));
+    }catch(error){setResearchError(String(error));}
+  }
+  async function runResearchCampaign(){
+    if(!chatId||researchCampaignBusy||!researchAvailable||!researchQuery.trim())return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_campaign_start',{
+        chatId:selectedChat,query:researchQuery.trim(),
+        candidateCeiling:researchCampaignCeiling
+      });
+      setResearchCampaignsByChat(old=>({
+        ...old,[selectedChat]:[result,...(old[selectedChat]||[])
+          .filter(existing=>existing.campaignId!==result.campaignId)]
+      }));
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await refreshResearchCampaigns(selectedChat);
+    }
+  }
+  async function resumeResearchCampaign(campaignId){
+    if(!chatId||researchCampaignBusy)return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      await invoke('lu_research_campaign_resume',{chatId:selectedChat,campaignId});
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await refreshResearchCampaigns(selectedChat);
+    }
+  }
+  async function cancelResearchCampaign(campaignId){
+    if(!chatId||researchCampaignBusy)return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      await invoke('lu_research_campaign_cancel',{chatId:selectedChat,campaignId});
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await refreshResearchCampaigns(selectedChat);
+    }
   }
   async function retrieveResearchDocument(sourceId){
     if(!chatId||researchBusy||!researchAvailable)return;
@@ -3283,6 +3336,42 @@ function App() {
           </div>
           <small>{researchAvailable?'Pinned HTTPS research runtime available. Native consent required.'
             :'Research network runtime is not bundled in this build; discovery remains disabled.'}</small>
+          <label>Maximum distinct DOI leads (up to 120)
+            <input type="number" min="1" max="120" value={researchCampaignCeiling}
+              onChange={e=>setResearchCampaignCeiling(Math.min(120,Math.max(1,
+                Number(e.target.value)||1)))} />
+          </label>
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||!researchAvailable||
+              !researchQuery.trim()||researchCampaignBusy}
+              onClick={()=>void runResearchCampaign()}>
+              {researchCampaignBusy?'Researching in approved catalog…':'Run bounded Research campaign'}
+            </button>
+            <button type="button" disabled={!chatId||researchCampaignBusy}
+              onClick={()=>void refreshResearchCampaigns()}>
+              Restore saved research jobs
+            </button>
+          </div>
+          {Array.isArray(researchCampaignsByChat[chatId])&&
+            <div className="researchResults" aria-label="Durable research campaigns">
+              <ul>{researchCampaignsByChat[chatId].map(job=><li key={job.campaignId}>
+                <strong>{job.query}</strong>
+                <small>{job.state} · {job.distinctDois}/{job.candidateCeiling}
+                  distinct DOI leads · {job.completedPages} pages checkpointed</small>
+                <small>{job.message}</small>
+                {job.blockedReason&&<small>Blocker: {job.blockedReason}</small>}
+                {['PAUSED','BLOCKED','RUNNING'].includes(job.state)&&
+                  <button type="button" disabled={researchCampaignBusy||!researchAvailable}
+                    onClick={()=>void resumeResearchCampaign(job.campaignId)}>
+                    Reauthorize and resume
+                  </button>}
+                {!['DONE','CANCELLED'].includes(job.state)&&
+                  <button type="button" disabled={researchCampaignBusy}
+                    onClick={()=>void cancelResearchCampaign(job.campaignId)}>
+                    Cancel campaign
+                  </button>}
+              </li>)}</ul>
+            </div>}
           {researchError&&<small role="alert">{researchError}</small>}
           {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
             <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
