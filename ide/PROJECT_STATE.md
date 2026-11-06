@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D7D — Restricted Windows recovery service (2026-11-06)
+
+- **Source branch / PR:** \`ide/wave-d7d-protected-windows-recovery-service-20261106\`, draft PR #63 stacked on D7C PR #62. This is NOT native Windows or installed-desktop acceptance.
+- **Trust boundary:** restricted LocalService / service SID principal; protected direct ProgramData evidence root and verified ACL; installed SHA-pinned binaries; mutual named-pipe authentication by kernel client/server PID, token and image; noninteractive request scopes cannot execute commands.
+- **Execution admission:** \`protected-recovery-service\` feature switches worker away from D7C same-user child keeper to independent SCM service. Explicit Global Job DACL permits restricted service to hold real kernel handle; service fsyncs READY before child resume and enforces normal empty release. Broken IPC kills and retains the Job for reconciliation, not premature release.
+- **Crash recovery:** durable RecoveryRequired preflight retains quarantine, independent original Job inspection, protected service-recovery fsynced ACK, final live Job re-verification and Cancelled receipt. A missing Job or ACK remains quarantined.
+- **CI:** native Windows SCM smoke and independently observed host-crash/child-kill/restart recovery jobs added in \`.github/workflows/ide-d7d-protected-service.yml\`; exact-head CI remained queued at this documentation update. Do NOT claim tests passed. See \`ide/supervisor/D7D_PROTECTED_SERVICE_ACCEPTANCE.md\`.
+- **Remaining:** Windows native compile and repair; real full D3 supervisor + AppContainer worker restart; service-crash and malicious IPC fault injection; signed installed binary and earlier D6/D7B acceptance. Desktop Run and Lu Core bridge **remain disabled**.
+
 ## Wave D7C — Independent native Windows recovery keeper (2026-11-06)
 
 - **Implementation:** `ide/supervisor/src/windows_broker.rs` plus fixed `src/bin/windows_recovery_broker.rs` now implement a second native process that independently holds the named Job before worker grant consumption / resume. Exact installed binary SHA is required by native `TrustedBroker`, and the supervisor PID + kernel creation time are authenticated against its live process handle.
