@@ -257,7 +257,7 @@ mod windows {
         match args.first().map(String::as_str) {
             Some("--fixture-exit") if args.len() == 1 => Ok(true),
             Some("--fixture-sleep") if args.len() == 1 => {
-                thread::sleep(Duration::from_secs(30));
+                thread::sleep(Duration::from_secs(120));
                 Ok(true)
             }
             Some("--fixture-descendant") if args.len() == 2 => {
@@ -273,7 +273,7 @@ mod windows {
                     .stderr(std::process::Stdio::null())
                     .spawn()?;
                 std::fs::write(marker_path(owner), descendant.id().to_string())?;
-                thread::sleep(Duration::from_secs(30));
+                thread::sleep(Duration::from_secs(120));
                 Ok(true)
             }
             None => Ok(false),
@@ -352,10 +352,50 @@ mod windows {
         Ok(())
     }
 
+    // A separate PowerShell process captures kernel handles to both
+    // descendants *before* forcibly killing this supervisor. The probe
+    // itself cannot certify its own post-crash cleanup.
+    fn external_crash_fixture() -> io::Result<()> {
+        let owner = std::process::id();
+        let descendant_marker = marker_path(owner);
+        let witness_marker =
+            std::env::temp_dir().join(format!("lu-ide-d7b-crash-{owner}.txt"));
+        let _ = std::fs::remove_file(&descendant_marker);
+        let _ = std::fs::remove_file(&witness_marker);
+        let tree = Contained::launch(FixedMode::SpawnGrandchild {
+            marker_owner_pid: owner,
+        })?;
+        let start = Instant::now();
+        let grandchild_id: u32 = loop {
+            if let Ok(value) = std::fs::read_to_string(&descendant_marker) {
+                break value
+                    .parse()
+                    .map_err(|_| io::Error::other("invalid grandchild PID"))?;
+            }
+            if start.elapsed() > Duration::from_secs(10) {
+                return Err(io::Error::other("grandchild marker missing"));
+            }
+            thread::sleep(Duration::from_millis(25));
+        };
+        // Only process IDs are written; the independent observer must open
+        // and retain OS process handles before killing this supervisor.
+        std::fs::write(
+            &witness_marker,
+            format!("{}\n{}\n{}\n", owner, tree.pid, grandchild_id),
+        )?;
+        // The observer is required to terminate this process externally.
+        // The owner never calls TerminateJobObject in this scenario.
+        thread::sleep(Duration::from_secs(120));
+        Err(io::Error::other("independent crash observer did not terminate owner"))
+    }
+
     pub fn main_impl() -> io::Result<()> {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if child_mode(&args)? {
             return Ok(());
+        }
+        if args.len() == 1 && args[0] == "--fixture-external-crash" {
+            return external_crash_fixture();
         }
         if !args.is_empty() {
             return Err(io::Error::other("no caller-selected actions supported"));

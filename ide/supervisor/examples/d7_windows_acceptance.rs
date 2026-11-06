@@ -17,6 +17,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     use std::{env, fs, path::PathBuf};
 
+    // Fixed acceptance modes only. No caller-selected project executable,
+    // arguments, environment, source or toolchain plan can be injected.
+    let args: Vec<String> = env::args().skip(1).collect();
+    let cancel_mode = args.len() == 1 && args[0] == "--cancel-native-worker";
+    if !args.is_empty() && !cancel_mode {
+        return Err("DENIED: unsupported native worker acceptance mode".into());
+    }
     let bundle = PathBuf::from(
         env::var_os("LU_IDE_D7_NATIVE_TOOLCHAIN")
             .ok_or("DENIED: explicit native acceptance toolchain is required")?
@@ -66,10 +73,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     supervisor.record_human_approval(
         &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true
     ).map_err(|e| format!("DENIED: fixture approval: {}", e.code()))?;
+    let cancellation = WindowsCancellation::new();
+    if cancel_mode {
+        cancellation.request_cancel();
+    }
     let result = execute_windows_worker(
         &supervisor, &prepared.job_id, &plan, &plan.source_head, &input, &bundle,
-        &native_outputs, &WindowsCancellation::new()
+        &native_outputs, &cancellation
     ).map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
+    if cancel_mode {
+        if result.summary.phase != JobPhase::Cancelled
+            || result.output_root.is_dir()
+            || !result.output_sha256.is_empty() {
+            return Err("DENIED: cancellation leaked published outputs or false completion".into());
+        }
+        let phases: Vec<JobPhase> = supervisor.receipt_history(&prepared.job_id)
+            .map_err(|e| format!("DENIED: cancellation receipts: {}", e.code()))?
+            .into_iter().map(|entry| entry.body.phase).collect();
+        if !phases.windows(2).any(|pair| {
+            pair == [JobPhase::CancelRequested, JobPhase::Cancelled]
+        }) {
+            return Err("DENIED: cancellation was not durably recorded before kernel kill".into());
+        }
+        drop(supervisor);
+        let reopened = Supervisor::open(root.join("supervisor-receipts.jsonl"))
+            .map_err(|e| format!("DENIED: cancelled journal replay: {}", e.code()))?;
+        let state = reopened.inspect()
+            .map_err(|e| format!("DENIED: cancelled replay: {}", e.code()))?;
+        if state[0].phase != JobPhase::Cancelled || state[0].requires_reconciliation {
+            return Err("DENIED: cancelled Job did not survive journal reopen".into());
+        }
+        println!("PASS: real native Windows Cargo Job cancelled with verified tree kill, no outputs, and durable restart receipt");
+        return Ok(());
+    }
     if result.summary.phase != JobPhase::Completed
         || result.exit_code != Some(0)
         || result.output_sha256.len() != 64

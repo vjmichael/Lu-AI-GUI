@@ -17,7 +17,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     mem::size_of,
-    os::windows::{ffi::{OsStrExt, OsStringExt}, fs::OpenOptionsExt},
+    os::windows::{ffi::{OsStrExt, OsStringExt}, fs::OpenOptionsExt, io::AsRawHandle},
     path::{Path, PathBuf},
     ptr,
     sync::{atomic::{AtomicBool, Ordering}, Arc},
@@ -32,6 +32,7 @@ use windows_sys::Win32::{
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath},
         PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenAppContainerSid, TokenIsAppContainer,
     },
+    Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
     System::{
         Com::CoTaskMemFree,
         JobObjects::{
@@ -63,6 +64,7 @@ const MAX_SINGLE_INPUT: u64 = 1024 * 1024 * 1024;
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const JOB_OBJECT_TERMINATE_ACCESS: u32 = 0x0008;
 const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
@@ -140,13 +142,38 @@ fn clean_part(name: &OsStr) -> Result<(), SupervisorError> {
         || text.chars().any(char::is_control) { return Err(denied()); }
     Ok(())
 }
+fn checked_file_identity(file: &File, allow_directory: bool) -> Result<(u32, u64, u64), SupervisorError> {
+    let metadata = file.metadata().map_err(io_denied)?;
+    if !(metadata.is_file() || (allow_directory && metadata.is_dir())) {
+        return Err(denied());
+    }
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
+        return Err(denied());
+    }
+    // A hard link is not a reparse point and can alias a sensitive file
+    // outside the approved tree. Reject files with any second name.
+    if metadata.is_file() && info.nNumberOfLinks != 1 { return Err(denied()); }
+    let id = ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64;
+    Ok((info.dwVolumeSerialNumber, id, metadata.len()))
+}
 fn read_regular(path: &Path) -> Result<File, SupervisorError> {
     if !clean_meta(path)?.is_file() { return Err(denied()); }
     let mut options = OpenOptions::new();
     options.read(true).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     let file = options.open(path).map_err(io_denied)?;
-    if !file.metadata().map_err(io_denied)?.is_file() { return Err(denied()); }
+    checked_file_identity(&file, false)?;
     Ok(file)
+}
+fn directory_identity(path: &Path) -> Result<(File, (u32, u64, u64)), SupervisorError> {
+    if !clean_meta(path)?.is_dir() { return Err(denied()); }
+    let mut options = OpenOptions::new();
+    options.read(true).custom_flags(
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
+    );
+    let directory = options.open(path).map_err(io_denied)?;
+    let id = checked_file_identity(&directory, true)?;
+    Ok((directory, id))
 }
 // Deterministic SHA-256 of every relative path, size and content. Every
 // source and staged toolchain file is compared, and all reparse points denied.
@@ -160,7 +187,11 @@ fn tree_transfer(
     max_files: usize,
     max_bytes: u64,
 ) -> Result<(), SupervisorError> {
-    if depth > MAX_DEPTH || !clean_meta(src)?.is_dir() { return Err(denied()); }
+    if depth > MAX_DEPTH { return Err(denied()); }
+    // A live OS handle pins this directory's identity across enumeration.
+    // Path-based child traversal still requires additional hostile rename
+    // acceptance before a same-user adversary is in the supported threat model.
+    let (_directory, directory_before) = directory_identity(src)?;
     if let Some(dst) = dest { fs::create_dir_all(dst).map_err(io_denied)?; }
     let mut children = fs::read_dir(src)
         .map_err(io_denied)?
@@ -201,6 +232,10 @@ fn tree_transfer(
                 if let Some(out) = writer.as_mut() { out.write_all(&buffer[..n]).map_err(io_denied)?; }
             }
             if bytes != meta.len() { return Err(denied()); }
+            let after = reader.metadata().map_err(io_denied)?;
+            if after.len() != meta.len() || after.modified().map_err(io_denied)?
+                != before.modified().map_err(io_denied)? { return Err(denied()); }
+            checked_file_identity(&reader, false)?;
             if let Some(out) = writer.as_mut() { out.sync_all().map_err(io_denied)?; }
             let relative = rel.to_str().ok_or_else(denied)?.replace('\\', "/");
             hash.update(relative.as_bytes()); hash.update([0]);
@@ -209,6 +244,8 @@ fn tree_transfer(
             hash.update([0]);
         } else { return Err(denied()); }
     }
+    let (_after, directory_after) = directory_identity(src)?;
+    if directory_before != directory_after { return Err(denied()); }
     Ok(())
 }
 fn digest_tree(root: &Path, destination: Option<&Path>,
@@ -476,12 +513,39 @@ fn bootstrap_environment(local: &Path, workspace: &Path, output: &Path,
         return Err(denied());
     }
     let bin = tools.join("bin");
+    let sdk_bin = tools.join("sdk-bin");
     let rustc = bin.join("rustc.exe");
+    let vc_lib = tools.join("msvc/lib/x64");
+    let vc_include = tools.join("msvc/include");
+    let sdk_lib_um = tools.join("windows-sdk/lib/um/x64");
+    let sdk_lib_ucrt = tools.join("windows-sdk/lib/ucrt/x64");
+    let sdk_include_um = tools.join("windows-sdk/include/um");
+    let sdk_include_ucrt = tools.join("windows-sdk/include/ucrt");
+    let sdk_include_shared = tools.join("windows-sdk/include/shared");
+    for required in [
+        &rustc, &bin.join("cargo.exe"), &bin.join("link.exe"),
+        &sdk_bin.join("rc.exe"), &sdk_bin.join("mt.exe"),
+        &vc_lib, &vc_include, &sdk_lib_um, &sdk_lib_ucrt,
+        &sdk_include_um, &sdk_include_ucrt, &sdk_include_shared,
+    ] {
+        let meta = clean_meta(required)?;
+        if !meta.is_dir() && !meta.is_file() { return Err(denied()); }
+    }
+    // Source, target, compiler, linker, VC libs, UCRT, headers and SDK
+    // tools must all resolve inside the *same content-sealed bundle*.
+    // Host PATH/LIB/INCLUDE and VS toolchain variables are not inherited.
+    let sdk_root = tools.join("windows-sdk");
+    let vc_root = tools.join("msvc");
+    let os_system32 = Path::new(&system).join("System32");
     let env = format!(
-        "CARGO_HOME={}\0CARGO_INCREMENTAL=0\0CARGO_NET_OFFLINE=true\0CARGO_TARGET_DIR={}\0LOCALAPPDATA={}\0PATH={}\0RUSTC={}\0SystemRoot={}\0TEMP={}\0TMP={}\0\0",
+        "CARGO_HOME={}\0CARGO_INCREMENTAL=0\0CARGO_NET_OFFLINE=true\0CARGO_TARGET_DIR={}\0INCLUDE={};{};{};{}\0LIB={};{};{}\0LOCALAPPDATA={}\0PATH={};{};{}\0RUSTC={}\0SystemRoot={}\0TEMP={}\0TMP={}\0VCToolsInstallDir={}\0WindowsSdkDir={}\0\0",
         tools.join("cargo-home").display(), output.display(),
-        appdata.to_string_lossy(), bin.display(), rustc.display(),
-        system.to_string_lossy(), local.display(), local.display()
+        vc_include.display(), sdk_include_um.display(),
+        sdk_include_ucrt.display(), sdk_include_shared.display(),
+        vc_lib.display(), sdk_lib_um.display(), sdk_lib_ucrt.display(),
+        appdata.to_string_lossy(), bin.display(), sdk_bin.display(),
+        os_system32.display(), rustc.display(), system.to_string_lossy(),
+        local.display(), local.display(), vc_root.display(), sdk_root.display()
     );
     if env.encode_utf16().count() > 32767 || workspace.to_str().is_none()
         || env.chars().any(|c| c == '\u{0001}') { return Err(denied()); }
@@ -752,6 +816,157 @@ mod tests {
         assert_eq!(CPU_RATE_HARD_CAP, 5);
         assert_eq!(CPU_RATE_HALF, 5000);
     }
+    fn test_tree() -> PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir()
+            .join(format!("lu-ide-d7b-hostile-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn hostile_hardlink_cannot_copy_external_secret() {
+        let root = test_tree();
+        let source = root.join("workspace");
+        fs::create_dir(&source).unwrap();
+        let private = root.join("outside-secret.txt");
+        fs::write(&private, b"PRIVATE SECRET NOT A WORKSPACE FILE").unwrap();
+        fs::hard_link(&private, source.join("alias.txt")).unwrap();
+        let staged = root.join("staged");
+        assert!(
+            digest_tree(&source, Some(&staged), 100, 100_000).is_err(),
+            "hardlinked outside secrets must be denied by kernel handle count"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hostile_junction_and_reparse_parent_are_rejected() {
+        let root = test_tree();
+        let workspace = root.join("workspace");
+        let outside = root.join("outside");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("host-secret.txt"), b"HOST_ONLY").unwrap();
+        std::os::windows::fs::symlink_dir(&outside, workspace.join("junction"))
+            .expect("native Windows test host must permit symlink creation");
+        assert!(
+            digest_tree(&workspace, Some(&root.join("staged")), 100, 100_000).is_err(),
+            "directory reparse must never be traversed"
+        );
+        assert!(
+            digest_tree(&workspace.join("junction"), None, 100, 100_000).is_err(),
+            "reparse root must fail before enumeration"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn staged_content_change_and_output_hardlink_are_denied() {
+        let root = test_tree();
+        let source = root.join("trusted");
+        let dest = root.join("stage");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("main.rs"), b"fn main() {}").unwrap();
+        let seal = digest_tree(&source, Some(&dest), 100, 100_000).unwrap();
+        assert_eq!(digest_tree(&dest, None, 100, 100_000).unwrap(), seal);
+        fs::write(dest.join("main.rs"), b"fn main() { panic!() }").unwrap();
+        assert_ne!(digest_tree(&dest, None, 100, 100_000).unwrap(), seal);
+        let output = root.join("output");
+        fs::create_dir_all(&output).unwrap();
+        let outside = root.join("outside.dat");
+        fs::write(&outside, b"host data").unwrap();
+        fs::hard_link(&outside, output.join("host-hardlink")).unwrap();
+        assert!(output_seal(&output).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn adversarial_parent_swap_cannot_pass_reparse_validation() {
+        let root = test_tree();
+        let source = root.join("source");
+        let outside = root.join("outside");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(source.join("Cargo.toml"), b"package metadata").unwrap();
+        fs::write(outside.join("Cargo.toml"), b"OUTSIDE").unwrap();
+        let before = digest_tree(&source, None, 100, 100_000).unwrap();
+        fs::rename(&source, root.join("source-moved")).unwrap();
+        std::os::windows::fs::symlink_dir(&outside, &source)
+            .expect("native Windows test host must permit symlink creation");
+        assert!(digest_tree(&source, None, 100, 100_000).is_err());
+        fs::remove_dir(&source).unwrap();
+        fs::rename(root.join("source-moved"), &source).unwrap();
+        assert_eq!(digest_tree(&source, None, 100, 100_000).unwrap(), before);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pinned_bundle_digest_detects_mutation_and_rejects_reuse() {
+        let root = test_tree();
+        let src = root.join("bundle");
+        fs::create_dir_all(src.join("bin")).unwrap();
+        fs::create_dir_all(src.join("lib")).unwrap();
+        fs::create_dir_all(src.join("cargo-home")).unwrap();
+        fs::write(src.join("bin/cargo.exe"), b"known-pinned-cargo").unwrap();
+        fs::write(src.join("bin/rustc.exe"), b"known-pinned-rustc").unwrap();
+        let expected = trusted_offline_toolchain_digest(&src).unwrap();
+        let first = root.join("first");
+        stage_toolchain(&src, &first, &expected).unwrap();
+        assert_eq!(digest_tree(&first, None, 100, 100_000).unwrap(), expected);
+        fs::write(src.join("bin/cargo.exe"), b"unexpected-cargo-update").unwrap();
+        assert_eq!(
+            stage_toolchain(&src, &root.join("second"), &expected).unwrap_err(),
+            SupervisorError::WrongProjectOrSource
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn quarantined_restart_cannot_invent_cleanup_for_missing_job() {
+        let root = test_tree();
+        let journal = root.join("receipts.jsonl");
+        let supervisor = Supervisor::open(journal.clone()).unwrap();
+        let plan = JobPlan {
+            project_id: format!("ide-{}", "a".repeat(32)),
+            recipe_id: "rust_check".into(),
+            source_head: "b".repeat(40),
+            input_snapshot_sha256: "c".repeat(64),
+            manifest_sha256: "d".repeat(64),
+            toolchain_sha256: "e".repeat(64),
+            runtime_limit_ms: 3000,
+            memory_limit_bytes: 128 * 1024 * 1024,
+            process_limit: 3,
+            log_limit_bytes: 65536,
+            effect_class: "test_build_isolated".into(),
+        };
+        let prepared = supervisor.prepare(plan.clone()).unwrap();
+        supervisor.record_human_approval(
+            &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true
+        ).unwrap();
+        supervisor.consume_grant_after_attestation(
+            &prepared.job_id, &plan, &proof()
+        ).unwrap();
+        supervisor.native_mark_running(&prepared.job_id).unwrap();
+        drop(supervisor);
+        let restarted = Supervisor::open(journal).unwrap();
+        assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
+        // No kernel Job was actually created, so restart may never infer a
+        // cancelled/clean outcome from a missing named Job Object.
+        assert_eq!(
+            reconcile_windows_interrupted(&restarted, &prepared.job_id).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        let after = restarted.inspect().unwrap();
+        assert!(after[0].requires_reconciliation);
+        assert_ne!(after[0].phase, JobPhase::Cancelled);
+        drop(restarted);
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn rejects_reparse_and_unknown_offline_toolchain() {
         let base = std::env::temp_dir().join(format!("lu-ide-d7-fixture-{}", std::process::id()));
