@@ -199,6 +199,38 @@ pub(crate) fn digest_tree(
         .map(|(_, hash)| hash)
 }
 
+/// Publish under an already-open, native-authorized parent directory.
+/// Both creation and writes use directory handles, so an attacker cannot
+/// redirect the final output by replacing an intermediate ambient path.
+/// The created child is exclusive and never silently reused.
+pub(crate) fn publish_into_native_parent(
+    source_path: &Path, trusted_parent: &Path, child_name: &OsStr,
+    max_files: usize, max_bytes: u64, item_limit: u64,
+) -> Result<(u64, String), SupervisorError> {
+    clean_name(child_name)?;
+    let source = safe_root(source_path)?;
+    let parent = safe_root(trusted_parent)?;
+    parent.create_dir(child_name).map_err(|_| denied())?;
+    let target = checked_child_dir(&parent, child_name)?;
+    let mut budget = Budget::default();
+    let mut tree = Sha256::new();
+    visit(&source, Some(&target), Path::new(""), 0, &mut budget,
+        &mut tree, max_files, max_bytes, item_limit)?;
+    let copied_hash = format!("{:x}", tree.finalize());
+
+    // Re-read the published bytes through their still-live directory handle;
+    // success cannot rely on a second open of a swappable absolute path.
+    let mut verified = Budget::default();
+    let mut verified_hash = Sha256::new();
+    visit(&target, None, Path::new(""), 0, &mut verified,
+        &mut verified_hash, max_files, max_bytes, item_limit)?;
+    let seal = format!("{:x}", verified_hash.finalize());
+    if budget.bytes != verified.bytes || seal != copied_hash {
+        return Err(denied());
+    }
+    Ok((verified.bytes, seal))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
