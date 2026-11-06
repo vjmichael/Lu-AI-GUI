@@ -1875,7 +1875,8 @@ async fn lu_image_workspace_export(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,image_ref:String,operation:String,
     x:Option<u32>,y:Option<u32>,width:u32,height:u32,
-    block_size:Option<u32>,stroke:Option<u32>,color:Option<u32>
+    block_size:Option<u32>,stroke:Option<u32>,color:Option<u32>,
+    steps:Option<Vec<image_workspace_desktop::ImageRevisionStep>>
 )->Result<Option<image_workspace_desktop::ImageExportReceipt>,String>{
     use lu_core::native_image_revision::ImageRevisionOperation as Operation;
     state.chats.history(&chat_id)
@@ -1911,16 +1912,27 @@ async fn lu_image_workspace_export(
         },
         _=>return Err("Unknown deterministic image revision operation".into()),
     };
-    let image=lu_core::native_image_revision::transform_admitted_image(
-        &source,edit
-    ).map_err(|e|format!("Invalid image revision: {e:?}"))?;
+    let sequence=steps.map(|items|{
+        if items.is_empty()||items.len()>12{
+            return Err("Image edit plan requires 1–12 steps".to_string());
+        }
+        items.iter().map(|step|step.operation())
+            .collect::<Result<Vec<_>,_>>()
+    }).transpose()?;
+    let image=match sequence.as_deref(){
+        Some(steps)=>lu_core::native_image_revision::transform_admitted_image_sequence(
+            &source,steps
+        ),
+        None=>lu_core::native_image_revision::transform_admitted_image(&source,edit),
+    }.map_err(|e|format!("Invalid image revision: {e:?}"))?;
     let proposed=format!(
         "Create a new PNG image revision from the already attached original?\n\n\
          Operation: {}\nOutput: {} × {} pixels\nSource image: {}\n\
          Expected revision SHA-256: {}\n\n\
          The original is never overwritten. Choose a NEW filename in the \
          following OS dialog. Any existing file is rejected.",
-        operation,image.width,image.height,image_ref,image.revision_sha256
+        if sequence.is_some(){"staged immutable assembly"}else{operation.as_str()},
+        image.width,image.height,image_ref,image.revision_sha256
     );
     let confirmed=tauri::async_runtime::spawn_blocking({
         let app=app.clone();
@@ -1957,7 +1969,15 @@ async fn lu_image_workspace_export(
             .map_err(|e|format!("Image revision ledger unavailable: {e:?}"))?;
         journal.prepare(&chat_id,&intended)
             .map_err(|e|format!("Image revision intent not persisted: {e:?}"))?;
-        match image_workspace_desktop::write_new_revision(&source,edit,&destination){
+        let result=match sequence.as_deref(){
+            Some(steps)=>image_workspace_desktop::write_new_revision_plan(
+                &source,steps,&destination
+            ),
+            None=>image_workspace_desktop::write_new_revision(
+                &source,edit,&destination
+            ),
+        };
+        match result{
             Ok(saved)=>{
                 if saved.revision_sha256!=intended.revision_sha256
                    ||saved.base_sha256!=intended.base_sha256
