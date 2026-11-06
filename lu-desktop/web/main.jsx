@@ -2953,7 +2953,7 @@ function App() {
                   {' '}{item.manifestSha256}</small>
                 <pre className="editFullText">{item.entries.map((entry,j)=>
                   (j+1)+'. '+(entry.is_directory?'directory':'file')+' · '+
-                  entry.path+(entry.is_directory?'':' · '
+                  entry.path+(entry.is_directory?'':' · '+
                     entry.uncompressed_bytes+' bytes · '+entry.sha256)
                 ).join('\n')}</pre>
               </div>)}
