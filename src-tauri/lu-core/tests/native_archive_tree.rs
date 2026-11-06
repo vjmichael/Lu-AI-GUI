@@ -83,3 +83,25 @@ fn unsafe_entry_or_unapproved_manifest_does_not_create_directory(){
     assert!(!root.join("must-not-exist").exists());
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn interrupted_tree_reconciliation_is_read_only_and_never_replays(){
+    let (root,dir)=fixture();
+    archive(&root,"source.zip",false);
+    let approved=preview_archive_tree(&dir,"source.zip").unwrap();
+    // A journaled intent can exist even if the process died before mkdir.
+    assert!(!observe_tree_completion(&dir,"not-created",&approved).unwrap());
+    fs::create_dir(root.join("partially-written")).unwrap();
+    fs::write(root.join("partially-written/stray.txt"),b"not approved").unwrap();
+    // A partially published tree has no marker. Its contents are untouched.
+    assert!(!observe_tree_completion(&dir,"partially-written",&approved).unwrap());
+    assert!(root.join("partially-written/stray.txt").exists());
+    // A marker without the complete manifest is never sufficient evidence.
+    fs::write(root.join("partially-written/.lu-extract-complete"),
+        approved.sha256.as_bytes()).unwrap();
+    assert!(!observe_tree_completion(&dir,"partially-written",&approved).unwrap());
+    fs::write(root.join("partially-written/.lu-extract-complete"),
+        b"truncated").unwrap();
+    assert!(!observe_tree_completion(&dir,"partially-written",&approved).unwrap());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}

@@ -321,9 +321,35 @@ pub fn observe_tree_completion(
     if !safe_base(folder_name)||!valid_hash(&approved.sha256){
         return Err(TreeExtractError::InvalidName)
     }
-    let folder=parent.open_dir(folder_name).map_err(io)?;
+    // Interruption before directory creation, or before the last durable marker,
+    // is incomplete—not a successful or automatically replayable extraction.
+    // Preserve all non-NotFound failures for manual reconciliation.
+    let source_meta=match parent.symlink_metadata(folder_name){
+        Ok(m)=>m,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+        Err(e)=>return Err(io(e)),
+    };
+    if !source_meta.is_dir()||source_meta.file_type().is_symlink(){
+        return Ok(false)
+    }
+    let folder=match parent.open_dir(folder_name){
+        Ok(d)=>d,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+        Err(e)=>return Err(io(e)),
+    };
+    let marker_meta=match folder.symlink_metadata(MARKER){
+        Ok(m)=>m,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+        Err(e)=>return Err(io(e)),
+    };
+    if !marker_meta.is_file()||marker_meta.file_type().is_symlink()
+        ||marker_meta.len()!=64 {return Ok(false)}
     let mut marker=String::new();
-    let f=folder.open(MARKER).map_err(io)?;
+    let f=match folder.open(MARKER){
+        Ok(file)=>file,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+        Err(e)=>return Err(io(e)),
+    };
     f.take(65).read_to_string(&mut marker).map_err(io)?;
     if marker!=approved.sha256{return Ok(false)}
     let mut expected=BTreeMap::<String,Option<&TreeManifestEntry>>::new();
