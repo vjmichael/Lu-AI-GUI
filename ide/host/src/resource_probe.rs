@@ -24,7 +24,7 @@ pub struct ProjectResourceProbe {
 }
 
 fn modified_time(metadata: &cap_std::fs::Metadata) -> Option<u64> {
-    metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs())
+    metadata.modified().ok()?.into_std().duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs())
 }
 
 impl IdeWorkspaceRegistry {
