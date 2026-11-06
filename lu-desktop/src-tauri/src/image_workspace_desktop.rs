@@ -9,7 +9,7 @@ use lu_core::{
         transform_admitted_image,transform_admitted_image_sequence,
     },
 };
-use serde::Serialize;
+use serde::{Deserialize,Serialize};
 use sha2::{Digest,Sha256};
 use std::{
     fs::{self,OpenOptions},
@@ -17,6 +17,45 @@ use std::{
     path::Path,
 };
 
+#[derive(Debug,Clone,Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub(crate) struct ImageRevisionStep{
+    pub operation:String,
+    pub x:Option<u32>,
+    pub y:Option<u32>,
+    pub width:u32,
+    pub height:u32,
+    pub block_size:Option<u32>,
+    pub stroke:Option<u32>,
+    pub color:Option<u32>,
+}
+impl ImageRevisionStep{
+    pub(crate) fn operation(&self)->Result<ImageRevisionOperation,String>{
+        use ImageRevisionOperation as Op;
+        let x=||self.x.ok_or("Image region X coordinate missing".to_string());
+        let y=||self.y.ok_or("Image region Y coordinate missing".to_string());
+        Ok(match self.operation.as_str(){
+            "crop"=>Op::Crop{x:x()?,y:y()?,width:self.width,height:self.height},
+            "resize"=>Op::Resize{width:self.width,height:self.height},
+            "rotate90"=>Op::Rotate90,
+            "flip_h"=>Op::FlipHorizontal,
+            "redact"=>Op::Redact{x:x()?,y:y()?,
+                width:self.width,height:self.height},
+            "pixelate"=>Op::Pixelate{x:x()?,y:y()?,
+                width:self.width,height:self.height,
+                block_size:self.block_size.unwrap_or(12)},
+            "rectangle"=>{
+                let rgb=self.color.unwrap_or(0xff5500);
+                if rgb>0xffffff{return Err("Invalid image annotation color".into());}
+                Op::Rectangle{x:x()?,y:y()?,
+                    width:self.width,height:self.height,
+                    rgb:[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8],
+                    stroke:self.stroke.unwrap_or(3)}
+            },
+            _=>return Err("Image assembly includes an unknown operation".into()),
+        })
+    }
+}
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct ImageExportReceipt{
