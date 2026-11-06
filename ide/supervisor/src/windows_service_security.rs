@@ -23,6 +23,7 @@ use std::{
     },
     path::Path,
     ptr,
+    sync::atomic::{AtomicU32, Ordering},
 };
 use windows_sys::Win32::{
     Foundation::{CloseHandle, LocalFree, HANDLE},
@@ -215,27 +216,39 @@ fn token_user_equal(a: HANDLE, b: HANDLE) -> Result<bool, SupervisorError> {
     }
     Ok(sid(a)? == sid(b)?)
 }
+// Fixed numeric SCM bootstrap evidence only. Never log token contents,
+// account secrets, or allow the diagnostic stage to change admission policy.
+static SERVICE_IDENTITY_STAGE: AtomicU32 = AtomicU32::new(0);
+pub(crate) fn service_identity_stage() -> u32 {
+    SERVICE_IDENTITY_STAGE.load(Ordering::Relaxed)
+}
 pub fn assert_restricted_local_service() -> Result<(), SupervisorError> {
+    SERVICE_IDENTITY_STAGE.store(1, Ordering::Relaxed);
     let mut raw = ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
         return Err(denied());
     }
     let token = Handle::new(raw)?;
+    SERVICE_IDENTITY_STAGE.store(2, Ordering::Relaxed);
     let service_sid = parse_sid(&sid_of_service()?)?;
     let local_service_sid = parse_sid("S-1-5-19")?;
+    SERVICE_IDENTITY_STAGE.store(3, Ordering::Relaxed);
     let mut service_member = 0_i32;
     if unsafe { CheckTokenMembership(token.0, service_sid.0, &mut service_member) } == 0
         || service_member == 0
     {
         return Err(denied());
     }
+    SERVICE_IDENTITY_STAGE.store(4, Ordering::Relaxed);
     // Service must NOT be LocalSystem and must run with restricted SIDs.
     if unsafe { IsTokenRestricted(token.0) } == 0 {
         return Err(denied());
     }
+    SERVICE_IDENTITY_STAGE.store(5, Ordering::Relaxed);
     if !token_user_is(token.0, local_service_sid.0)? {
         return Err(denied());
     }
+    SERVICE_IDENTITY_STAGE.store(6, Ordering::Relaxed);
     Ok(())
 }
 pub struct PipeSecurity {
