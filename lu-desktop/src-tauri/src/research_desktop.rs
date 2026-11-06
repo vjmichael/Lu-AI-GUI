@@ -4,6 +4,7 @@
 //! arbitrary curl, browser session or research agent runtime is created.
 use std::{
     fs::{self,File},io::Read,path::{Path,PathBuf},
+    sync::Mutex,collections::HashSet,
 };
 use serde::Serialize;
 use sha2::{Digest,Sha256};
@@ -238,6 +239,7 @@ pub(crate) struct ResearchReportExportView{
     pub message:&'static str,
 }
 pub(crate) struct ResearchDesktop{
+    active_campaigns:Mutex<HashSet<String>>,
     root:PathBuf,
     curl:PathBuf,
     expected_sha256:Option<&'static str>,
@@ -277,6 +279,7 @@ impl ResearchDesktop{
         #[cfg(not(windows))]
         let filename="curl";
         Self{
+            active_campaigns:Mutex::new(HashSet::new()),
             root:app_data.join("lu-research-evidence"),
             curl:resources.join("lu-research").join(filename),
             expected_sha256:option_env!("LU_RESEARCH_CURL_SHA256"),
@@ -686,16 +689,40 @@ impl ResearchDesktop{
     pub(crate) fn run_campaign(
         &self,chat_id:&str,campaign_id:&str
     )->Result<ResearchCampaignView,String>{
-        let mut latest=self.campaign_status(chat_id,campaign_id)?;
-        for _ in 0..5{
-            if matches!(latest.state.as_str(),"DONE"|"CANCELLED"){break;}
-            latest=self.advance_campaign(chat_id,campaign_id)?;
+        // An in-flight native worker owns the one campaign process lease.
+        // A post-crash RUNNING SQLite receipt is recoverable after restart
+        // because the new process has no active workers. A same-process
+        // concurrent Resume cannot duplicate or race the active curl task.
+        let key=format!("{chat_id}:{campaign_id}");
+        {
+            let mut leases=self.active_campaigns.lock()
+                .map_err(|_|"Research campaign worker lock unavailable")?;
+            if !leases.insert(key.clone()){
+                return Err("Research campaign is already running".into());
+            }
         }
-        Ok(latest)
+        let result=(||{
+            let mut latest=self.campaign_status(chat_id,campaign_id)?;
+            for _ in 0..5{
+                if matches!(latest.state.as_str(),"DONE"|"CANCELLED"){break;}
+                latest=self.advance_campaign(chat_id,campaign_id)?;
+            }
+            Ok(latest)
+        })();
+        if let Ok(mut leases)=self.active_campaigns.lock(){
+            leases.remove(&key);
+        }
+        result
     }
     pub(crate) fn resume_campaign(
         &self,chat_id:&str,campaign_id:&str
     )->Result<ResearchCampaignView,String>{
+        let key=format!("{chat_id}:{campaign_id}");
+        if self.active_campaigns.lock()
+            .map_err(|_|"Research worker lock unavailable")?
+            .contains(&key){
+            return Err("Research campaign is still running".into());
+        }
         let _=self.campaign_status(chat_id,campaign_id)?;
         let db=self.root.join(format!("{chat_id}.sqlite"));
         let mut ledger=EvidenceLedger::open(&db)
