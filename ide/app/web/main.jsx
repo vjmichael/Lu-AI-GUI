@@ -512,36 +512,38 @@ function App() {
     if (!activeProject || explorerPending || projectSearchBusy) return;
     if (projectSearchResults?.projectId !== activeProject.projectId) return;
     const key = keyFor(activeProject.projectId, match.relativePath);
-    const existing = tabs.find(tab => tab.key === key);
-    if (existing) {
-      setSection('explorer');
-      setActiveTabKey(key);
-      if (existing.dirty || existing.revision !== match.revision) {
-        setProblem('Search result refers to saved source, not this current draft/revision. ' +
-          'Review the file or refresh the project search.');
-        return;
-      }
-      const state = editorStates.current.get(key);
-      if (state) {
-        const line = state.doc.line(match.line);
-        const from = line.from + match.columnUtf16 - 1;
-        const to = from + match.matchLengthUtf16;
-        if (from >= line.from && to <= line.to) {
-          setFindRequest({ tabKey: key, from, to, nonce: ++projectSearchOpenNonce.current });
-        }
-      }
-      return;
-    }
     setExplorerPending(true);
     setProblem('');
     try {
+      // Recheck disk for both newly opened files AND existing tabs. A stored
+      // tab SHA by itself cannot prove that the disk has not since changed.
       const opened = await invoke('ide_preview_source_file', {
         projectId: activeProject.projectId,
         relativePath: match.relativePath,
       });
-      // Search matches are valid only at the exact saved SHA inspected.
       if (opened.revision !== match.revision) {
         throw new Error('FILE_CHANGED_ON_DISK: search again to refresh the result');
+      }
+      const existing = tabs.find(tab => tab.key === key);
+      if (existing) {
+        setSection('explorer');
+        setActiveTabKey(key);
+        if (existing.dirty || existing.revision !== opened.revision) {
+          setProblem('This editor draft/revision differs from the saved search result. ' +
+            'The existing draft was not modified or navigated using stale coordinates.');
+          return;
+        }
+        const state = editorStates.current.get(key);
+        if (!state) throw new Error('EDITOR_STATE_UNAVAILABLE');
+        const line = state.doc.line(match.line);
+        const from = line.from + match.columnUtf16 - 1;
+        const to = from + match.matchLengthUtf16;
+        if (from < line.from || to > line.to) {
+          throw new Error('SEARCH_RANGE_UNVERIFIABLE: source coordinates changed');
+        }
+        setFindRequest({ tabKey: key, from, to,
+          nonce: ++projectSearchOpenNonce.current });
+        return;
       }
       const state = createEditorState(opened.text, opened.relativePath,
         (editorState, draft) => onEditorChange(key, editorState, draft));
@@ -558,7 +560,8 @@ function App() {
         dirty: false, generation: 0,
       }]);
       setActiveTabKey(key);
-      setFindRequest({ tabKey: key, from, to, nonce: ++projectSearchOpenNonce.current });
+      setFindRequest({ tabKey: key, from, to,
+        nonce: ++projectSearchOpenNonce.current });
       setSection('explorer');
     } catch (error) {
       setProblem('Could not open this exact saved search result: ' + String(error));
