@@ -287,10 +287,10 @@ pub fn read_odt(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
         count+=1;if count>MAX_EVENTS{return Err(ReaderFailure::TooLarge)}
         let event=reader.read_event().map_err(|_|bad())?;
         match &event{
-            Event::Start(e) if matches!(e.name().as_ref(),b"text:p"|b"text:h")=>{
+            Event::Start(e) if (e.name().as_ref()==b"text:p"||e.name().as_ref()==b"text:h")=>{
                 depth+=1;
             },
-            Event::End(e) if matches!(e.name().as_ref(),b"text:p"|b"text:h")=>{
+            Event::End(e) if (e.name().as_ref()==b"text:p"||e.name().as_ref()==b"text:h")=>{
                 if depth==0{return Err(bad())}
                 depth-=1;if depth==0{out.push('\n')}
             },

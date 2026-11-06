@@ -50,11 +50,12 @@ fn dimensions_allowed(w:u32,h:u32)->bool{
 fn paint_brush(
     image:&mut image::RgbaImage,x:u32,y:u32,rgb:[u8;3],stroke:u32,
 ){
-    let radius=stroke.saturating_sub(1)/2;
+    let before=stroke.saturating_sub(1)/2;
+    let after=stroke/2;
     let max_x=image.width().saturating_sub(1);
     let max_y=image.height().saturating_sub(1);
-    for yy in y.saturating_sub(radius)..=y.saturating_add(radius).min(max_y){
-        for xx in x.saturating_sub(radius)..=x.saturating_add(radius).min(max_x){
+    for yy in y.saturating_sub(before)..=y.saturating_add(after).min(max_y){
+        for xx in x.saturating_sub(before)..=x.saturating_add(after).min(max_x){
             image.put_pixel(xx,yy,image::Rgba([rgb[0],rgb[1],rgb[2],255]));
         }
     }
