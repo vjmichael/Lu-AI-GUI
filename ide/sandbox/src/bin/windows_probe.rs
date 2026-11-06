@@ -15,27 +15,23 @@ mod windows {
         io,
         mem::size_of,
         os::windows::ffi::OsStrExt,
-        ptr,
-        thread,
+        ptr, thread,
         time::{Duration, Instant},
     };
     use windows_sys::Win32::{
-        Foundation::{
-            CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
-        },
+        Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
         System::{
             JobObjects::{
-                AssignProcessToJobObject, CreateJobObjectW,
-                JobObjectExtendedLimitInformation, SetInformationJobObject,
-                TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
             },
             Threading::{
-                CreateProcessW, GetExitCodeProcess, OpenProcess, ResumeThread,
-                TerminateProcess, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
+                CreateProcessW, GetExitCodeProcess, OpenProcess, ResumeThread, TerminateProcess,
+                WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
                 CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-                STARTUPINFOW, PROCESS_SYNCHRONIZE,
+                PROCESS_SYNCHRONIZE, STARTUPINFOW,
             },
         },
     };
@@ -62,7 +58,9 @@ mod windows {
         fn drop(&mut self) {
             // SAFETY: all owned handles were returned by Win32 handle-producing
             // calls, and each is wrapped exactly once; no raw handle escapes.
-            unsafe { CloseHandle(self.0); }
+            unsafe {
+                CloseHandle(self.0);
+            }
         }
     }
 
@@ -76,8 +74,9 @@ mod windows {
             match self {
                 Self::Exit => "--fixture-exit".into(),
                 Self::Sleep => "--fixture-sleep".into(),
-                Self::SpawnGrandchild { marker_owner_pid } =>
-                    format!("--fixture-descendant {marker_owner_pid}"),
+                Self::SpawnGrandchild { marker_owner_pid } => {
+                    format!("--fixture-descendant {marker_owner_pid}")
+                }
             }
         }
     }
@@ -97,17 +96,24 @@ mod windows {
                 return Err(io::Error::other("fixed acceptance executable unavailable"));
             }
             let exe_wide = wide(exe.as_os_str());
-            let mut cmd = wide(OsStr::new(&format!("\"{}\" {}", exe.display(), mode.args())));
+            let mut cmd = wide(OsStr::new(&format!(
+                "\"{}\" {}",
+                exe.display(),
+                mode.args()
+            )));
             // A narrowly populated, double-NUL-terminated environment block.
             // The fixed fixture needs the same temporary directory in parent/child.
             // No credentials, HOME, SSH, tokens or project environment are inherited.
             let temp = std::env::temp_dir();
-            let system_root = std::env::var("SystemRoot")
-                .unwrap_or_else(|_| r"C:\Windows".to_owned());
+            let system_root =
+                std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_owned());
             let environment: Vec<u16> = format!(
                 "SystemRoot={system_root}\0TEMP={}\0TMP={}\0\0",
-                temp.display(), temp.display()
-            ).encode_utf16().collect();
+                temp.display(),
+                temp.display()
+            )
+            .encode_utf16()
+            .collect();
             let mut startup = STARTUPINFOW::default();
             startup.cb = size_of::<STARTUPINFOW>() as u32;
             let mut process_info = PROCESS_INFORMATION::default();
@@ -117,11 +123,16 @@ mod windows {
             // CREATE_SUSPENDED prevents child code before Job assignment.
             let launched = unsafe {
                 CreateProcessW(
-                    exe_wide.as_ptr(), cmd.as_mut_ptr(),
-                    ptr::null(), ptr::null(), 0,
+                    exe_wide.as_ptr(),
+                    cmd.as_mut_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    0,
                     CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                    environment.as_ptr().cast(), ptr::null(),
-                    &startup, &mut process_info,
+                    environment.as_ptr().cast(),
+                    ptr::null(),
+                    &startup,
+                    &mut process_info,
                 )
             };
             if launched == 0 {
@@ -131,7 +142,9 @@ mod windows {
             let thread = match Handle::from_raw(process_info.hThread, "thread handle") {
                 Ok(value) => value,
                 Err(error) => {
-                    unsafe { TerminateProcess(process.0, 1); }
+                    unsafe {
+                        TerminateProcess(process.0, 1);
+                    }
                     return Err(error);
                 }
             };
@@ -144,13 +157,14 @@ mod windows {
             ) {
                 Ok(value) => value,
                 Err(error) => {
-                    unsafe { TerminateProcess(process.0, 1); }
+                    unsafe {
+                        TerminateProcess(process.0, 1);
+                    }
                     return Err(error);
                 }
             };
             let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            limits.BasicLimitInformation.LimitFlags =
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
                 | JOB_OBJECT_LIMIT_JOB_MEMORY
                 | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
             limits.BasicLimitInformation.ActiveProcessLimit = MAX_PROCESSES;
@@ -160,14 +174,17 @@ mod windows {
             // in type and size and stays valid throughout the OS call.
             let configured = unsafe {
                 SetInformationJobObject(
-                    job.0, JobObjectExtendedLimitInformation,
+                    job.0,
+                    JobObjectExtendedLimitInformation,
                     (&raw const limits).cast(),
                     size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
                 )
             };
             if configured == 0 {
                 let error = win_error("SetInformationJobObject");
-                unsafe { TerminateProcess(process.0, 1); }
+                unsafe {
+                    TerminateProcess(process.0, 1);
+                }
                 return Err(error);
             }
 
@@ -175,7 +192,9 @@ mod windows {
             // before any first instruction. No fallback to uncontained execution.
             if unsafe { AssignProcessToJobObject(job.0, process.0) } == 0 {
                 let error = win_error("AssignProcessToJobObject");
-                unsafe { TerminateProcess(process.0, 1); }
+                unsafe {
+                    TerminateProcess(process.0, 1);
+                }
                 return Err(error);
             }
             // SAFETY: the thread is the original primary thread of a process
@@ -185,7 +204,9 @@ mod windows {
             }
 
             Ok(Self {
-                job, process, thread,
+                job,
+                process,
+                thread,
                 pid: process_info.dwProcessId,
             })
         }
@@ -194,8 +215,12 @@ mod windows {
             let millis = u32::try_from(deadline.as_millis()).unwrap_or(u32::MAX);
             // SAFETY: self.process is a valid process handle owned by self.
             let result = unsafe { WaitForSingleObject(self.process.0, millis) };
-            if result == WAIT_TIMEOUT { return Ok(None); }
-            if result != WAIT_OBJECT_0 { return Err(win_error("WaitForSingleObject")); }
+            if result == WAIT_TIMEOUT {
+                return Ok(None);
+            }
+            if result != WAIT_OBJECT_0 {
+                return Err(win_error("WaitForSingleObject"));
+            }
             let mut code = 0u32;
             // SAFETY: output is a valid mutable pointer and process handle is
             // held alive for the full call.
@@ -212,7 +237,9 @@ mod windows {
                 return Err(win_error("TerminateJobObject"));
             }
             if self.await_exit(Duration::from_secs(5))?.is_none() {
-                return Err(io::Error::other("Job child failed to terminate on deadline"));
+                return Err(io::Error::other(
+                    "Job child failed to terminate on deadline",
+                ));
             }
             Ok(())
         }
@@ -234,7 +261,8 @@ mod windows {
                 Ok(true)
             }
             Some("--fixture-descendant") if args.len() == 2 => {
-                let owner: u32 = args[1].parse()
+                let owner: u32 = args[1]
+                    .parse()
                     .map_err(|_| io::Error::other("invalid fixed PID parameter"))?;
                 let exe = std::env::current_exe()?;
                 let descendant = std::process::Command::new(exe)
@@ -257,14 +285,22 @@ mod windows {
         // SAFETY: this handle grants only query/wait rights to the identified
         // fixture child PID. If it was already reaped, OpenProcess fails.
         let raw = unsafe {
-            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid)
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                0,
+                pid,
+            )
         };
-        if raw.is_null() { return Ok(()); }
+        if raw.is_null() {
+            return Ok(());
+        }
         let opened = Handle(raw);
         // SAFETY: opened is a live query/synchronize process handle.
         let result = unsafe { WaitForSingleObject(opened.0, 5000) };
         if result != WAIT_OBJECT_0 {
-            return Err(io::Error::other("descendant still running after Job cancellation"));
+            return Err(io::Error::other(
+                "descendant still running after Job cancellation",
+            ));
         }
         Ok(())
     }
@@ -295,7 +331,8 @@ mod windows {
         let began = Instant::now();
         let descendant_pid = loop {
             if let Ok(value) = std::fs::read_to_string(&marker) {
-                let id: u32 = value.parse()
+                let id: u32 = value
+                    .parse()
                     .map_err(|_| io::Error::other("invalid descendant marker"))?;
                 break id;
             }
@@ -309,13 +346,17 @@ mod windows {
         std::fs::remove_file(marker)?;
         println!("PASS: descendant process killed with parent Job");
         drop(tree);
-        println!("PROBE ONLY: no IDE task, build script, arbitrary source or installed desktop tested");
+        println!(
+            "PROBE ONLY: no IDE task, build script, arbitrary source or installed desktop tested"
+        );
         Ok(())
     }
 
     pub fn main_impl() -> io::Result<()> {
         let args: Vec<String> = std::env::args().skip(1).collect();
-        if child_mode(&args)? { return Ok(()); }
+        if child_mode(&args)? {
+            return Ok(());
+        }
         if !args.is_empty() {
             return Err(io::Error::other("no caller-selected actions supported"));
         }
