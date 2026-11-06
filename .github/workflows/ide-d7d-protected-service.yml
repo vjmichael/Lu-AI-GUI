@@ -95,6 +95,7 @@ jobs:
   pinned-offline-protected-cargo:
     env:
       LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
+      LU_IDE_D7_CI_ALLOW_EXACT_NUL: '1'
     runs-on: windows-2022
     timeout-minutes: 75
     permissions:

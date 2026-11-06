@@ -943,6 +943,9 @@ where
     // happens until the entire bundle has been sealed and checked.
     let profile = AppProfile::create(job_id)?;
     acceptance_trace("appcontainer_profile_created");
+    // Host-only, debug-only and disposable native CI only: exact freshly
+    // minted profile SID, never an all-AppContainer device ACL expansion.
+    let mut nul_lease = crate::windows_null_device::ci_scoped_nul_access(profile.sid)?;
     let local = profile.local_state()?;
     let workspace = local.join("workspace");
     let toolchain = local.join("toolchain");
@@ -1127,6 +1130,14 @@ where
     if !reaped {
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
+    }
+    // Revoke the exact temporary NUL device ACE while every descendant is
+    // confirmed dead and BEFORE the host writes a successful terminal receipt.
+    if let Some(lease) = nul_lease.as_mut() {
+        if lease.finish().is_err() {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
     }
     // Never publish incomplete or cancelled outputs. An unbounded or
     // unpublishable output tree yields a quarantined recovery receipt,

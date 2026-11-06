@@ -57,6 +57,8 @@ jobs:
           if-no-files-found: ignore
 
   pinned-offline-cargo:
+    env:
+      LU_IDE_D7_CI_ALLOW_EXACT_NUL: '1'
     runs-on: windows-2022
     timeout-minutes: 65
     steps:
