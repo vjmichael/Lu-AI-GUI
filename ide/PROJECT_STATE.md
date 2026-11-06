@@ -1,9 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
 **Observed date:** 2026-11-05 (America/Phoenix)  
-**Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/workspace-development`  
-**Last inspected implementation source SHA:** `a372bc7ec6c054fc28be825203ea00c94bcfd211`  
-**Current source validation:** Wave B1 source has triggered [CI 42130813013](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42130813013) (pending at last inspection). Older [CI 42128928605](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42128928605) passed Windows native host + Tauri checks at SHA `b39c6267` before new commits; remaining matrix may be superseded. **No latest exact-source CI acceptance yet.**
+**Repo:** `vjmichael/Lu-AI-GUI` · **Branch:** `ide/wave-c-development-truth-20261105` (isolated draft PR #47; not merged into workspace-development)  
+**Last inspected implementation source SHA:** `dbaa04ff41a6c1c20367f88f6c2455af47843370`  
+**Current source validation:** [PR #47 exact-source CI run 42143391542](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143391542) queued/running at last inspection. Prior [run 42143131954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143131954) passed frontend but **failed Linux** Rust E0308 (`cap_std::time::SystemTime` vs `std::time::SystemTime`). Fixed in source `dbaa04ff`; new cross-platform acceptance pending. No installed Windows acceptance.
 **Local checkout, `Delivered` folder and untracked work:** **UNKNOWN / NOT INSPECTED** in this session. Never assume GitHub is ahead of inaccessible local work.  
 **Live Lu↔IDE connection:** **DEFERRED by user**. The IDE remains standalone.
 
@@ -33,6 +33,9 @@
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
 
 ## Wave C — Development truth (independent source implementation)
+
+- [Draft PR #47](https://github.com/vjmichael/Lu-AI-GUI/pull/47), source repair SHA `dbaa04ff`. First-run [42143131954](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143131954) frontend passed, Linux failed E0308 in resource timestamp conversion. Converted cap-std time to std time before Unix offset; new exact-source [42143391542](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42143391542) pending. Native Rust/Windows launch and user acceptance remain open.
+
 
 - Isolated feature branch `ide/wave-c-development-truth-20261105` while Wave B PRs remain in their own GitHub acceptance queues. **Do not mark the completed Wave B source work as Windows-accepted yet.**
 - Implemented `host/src/git_evidence.rs` to inspect staged/unstaged local Git patch text and 30 local commits, bounded to 64 KiB of patch and 80 changed files. It refuses parent repository inspection, excludes untracked *contents* from patch, performs no Git command or mutation, and labels remote state as `not_queried`.
