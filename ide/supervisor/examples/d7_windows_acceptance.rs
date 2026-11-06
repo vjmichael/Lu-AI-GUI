@@ -7,6 +7,29 @@
 fn main() { eprintln!("DENIED: Windows-only native acceptance"); std::process::exit(2); }
 
 #[cfg(windows)]
+fn require_independent_broker_release(
+    root: &std::path::Path,
+    job_id: &str,
+    hash: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use lu_ide_execution_supervisor::windows_broker::inspect_untrusted_witness;
+    use std::{thread, time::{Duration, Instant}};
+    let start = Instant::now();
+    loop {
+        if let Ok(states) = inspect_untrusted_witness(root, job_id, hash) {
+            if states.first().map(String::as_str) == Some("ready")
+                && states.last().map(String::as_str) == Some("released_empty") {
+                return Ok(());
+            }
+        }
+        if start.elapsed() >= Duration::from_secs(8) {
+            return Err("DENIED: independent broker did not fsync normal release".into());
+        }
+        thread::sleep(Duration::from_millis(40));
+    }
+}
+
+#[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         snapshot::publish_input,
@@ -106,6 +129,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &supervisor, &prepared.job_id, &plan, &plan.source_head, &input, &bundle,
         &native_outputs, &native_broker, &cancellation
     ).map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
+    // A completed or cancelled worker also needs an independent process's
+    // fsynced Ready -> ReleasedEmpty record, not just the supervisor journal.
+    // This verifies protocol behavior; same-account receipts remain untrusted
+    // as a standalone recovery authority.
+    require_independent_broker_release(
+        &broker_receipts, &prepared.job_id, &prepared.plan_sha256
+    )?;
     if cancel_mode {
         if result.summary.phase != JobPhase::Cancelled
             || result.output_root.is_dir()
