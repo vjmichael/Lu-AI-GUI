@@ -763,7 +763,7 @@ impl ResearchDesktop{
         let key=format!("{chat_id}:{campaign_id}");
         if self.active_campaigns.lock()
             .map_err(|_|"Research worker lock unavailable")?
-            .contains(&key){
+            .contains_key(&key){
             return Err("Research campaign is still running".into());
         }
         let _=self.campaign_status(chat_id,campaign_id)?;
