@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### Confirmed D6 Windows isolation and D7C/D7D ABI repair — WO2/WO3 STILL OPEN (2026-11-06)
+
+Native D6 AppContainer job `128199718599` actually passed zero-capability, host secret denial, live loopback network isolation and Job reaping; its workflow failed only on Rustfmt, now repaired by `6fc0b36`. The independent D7C witness returned Win32 24 because its C# Job accounting ABI was 32 instead of 48 bytes; repaired in both D7C/D7D native crash witnesses by `958609d`. Protected SCM service client job `128199760472` still got pipe access denied after the exact-user DACL and v2 config; CI/debug-only read/write/control denial classification was added in `3539186`. **Neither production Cargo null-device provisioning nor protected service authenticated host-crash/restart is accepted.** See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md). GitHub native CI is verification, not a development stop.
+
 **WO2/WO3 continuing closeout:** CI-only native NUL DACL work now additionally compile-time gated with `ci-native-null-lease` (not in release/default features). Independent D7C/D7D crash observers now record native Win32 accounting query failure codes; no failed query can certify an empty Job. The release-only NUL capability/installer approach remains an unimplemented security gate; protected SCM crash and restart proof remains open. See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md). Native exact-head acceptance still required.
 
 
