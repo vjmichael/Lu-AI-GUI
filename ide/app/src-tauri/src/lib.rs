@@ -314,6 +314,9 @@ struct LanguageWorkerStatus {
     ready: bool,
     code: &'static str,
     detail: &'static str,
+    /// Only languages whose native executor AND exact release pins were verified.
+    /// The general LSP catalog is not a runnable language list.
+    supported_languages: Vec<String>,
 }
 
 /// Native admission is deliberately NOT represented by the presence of an
@@ -326,13 +329,15 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
     #[cfg(all(windows, feature = "native-lsp"))]
     {
         let installed = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>().is_some();
-        let valid = tauri::async_runtime::spawn_blocking(move ||
-            installed && lsp_backend::installed_worker_ready(&app)
-        ).await.unwrap_or(false);
-        if valid {
+        let supported = tauri::async_runtime::spawn_blocking(move || {
+            if !installed { return Vec::new(); }
+            lsp_backend::installed_languages(&app)
+        }).await.unwrap_or_default();
+        if !supported.is_empty() {
             return LanguageWorkerStatus {
                 ready: true, code: "LSP_REVIEWED_INSTALLATION_AVAILABLE",
-                detail: "Pinned language server available. Starting a session still requires native human approval and protected worker admission.",
+                detail: "Pinned native language server available. Starting a session still requires human approval and protected worker admission.",
+                supported_languages: supported,
             };
         }
     }
@@ -342,6 +347,7 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
         ready: false,
         code: "LSP_PROTECTED_WORKER_UNVERIFIED",
         detail: "Protected language servers are unavailable in this build or have unverified release evidence.",
+        supported_languages: Vec::new(),
     }
 }
 
