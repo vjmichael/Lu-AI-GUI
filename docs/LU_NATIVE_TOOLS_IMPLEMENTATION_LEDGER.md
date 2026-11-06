@@ -167,3 +167,16 @@ All four use ephemeral, chat-bound pending review queues, explicit deny, one-tim
 - Native file absence checks distinguish `NotFound` from permission/IO errors when deciding whether a trash/restore target is empty. Metadata inspection errors fail closed.
 - Dedicated UI assertions guard against reintroducing duplicate trash controls and require accurate in-progress/recovery warnings. Linux/Windows Rust CI and installed desktop smoke acceptance remain mandatory, **not completed**.
 - Step 1 still needs user-visible installed app functional verification (including native modal focus, error/denial, restart and partial-effect review). Long archive operations still lack interruptible byte-level progress; safe cancellation and crash-injection remain Step 3 hardening gates. Do not mark Wave 2 complete on source-only evidence.
+
+## Wave 2 Step 2 — Format completeness: CPIO, Unix ar and Debian packages
+
+New implementation sources:
+- `native_cpio.rs` handles bounded, fail-closed newc (070701) and additive-checksum CRC (070702), with gzip/xz/bzip2/zstd compressed wrappers. Reuses trusted decompression backend, no symlink/device/hardlink or traversal support.
+- `native_ar_deb.rs` handles bounded Unix ar/.a with short, GNU long-name and BSD extended names, and Debian .deb v2.x. Debian control and data nested TARs are separately exposed as inert virtual `control/` and `data/` trees; no installation, maintainer script execution or host system path publication.
+- `native_linux_archive.rs` now exposes a bounded in-memory TAR parser for nested package members, normalizing a single conventional leading dot-slash path and refusing parent traversal.
+- `native_archive_tree.rs` routes these formats through exact manifest hashing and brand-new-directory full-tree extraction; `native_archive_inspect.rs` exposes them via the existing read-only, per-turn native archive-list tool.
+- `archive_desktop.rs` uses friendlier suffix handling for cpio/deb/ar; the existing native picker and review/approval model applies unchanged.
+- `tests/native_linux_packages.rs` includes actual CPIO, gzip, checksum/hardlink/traversal, ar GNU long-name, minimal DEB with compressed data payload, new-folder extraction/no-clobber, malformed inputs and authenticated model tool listing acceptance.
+- `docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md` records exact limits/compatibility and remaining capabilities. Wave 2 native Linux/Windows CI now requires these tests and source exports.
+
+**Still open in Step 2:** fully working 7z/RAR compressed engines, RPM native inspect/extract, LZ4 and legacy package/archive variants, Windows-native xz/bzip2/zstd decoders, UDF ISO, broad richer Office formats and full-fidelity edits. The existing Linux external codec pathway is not equivalent to Windows in-process format parity. Exact-head compiler/behavioral CI has not been accepted. Do NOT mark this format-completeness phase finished yet.
