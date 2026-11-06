@@ -5,7 +5,7 @@ const observedDigest = value => typeof value === 'string' && /^[0-9a-f]{64}$/.te
 const row = (id, title, state, provenance, detail) =>
   ({ id, title, state, provenance, detail });
 
-export function reconcileDevelopmentEvidence(projectId, context, comparison) {
+export function reconcileDevelopmentEvidence(projectId, context, comparison, exactCi = null) {
   if (typeof projectId !== 'string' || !projectId ||
       context?.projectId !== projectId || comparison?.projectId !== projectId ||
       !context.gitWorktree || !context.inventory ||
@@ -54,6 +54,26 @@ export function reconcileDevelopmentEvidence(projectId, context, comparison) {
         : 'A baseline exists but not all artifact bytes can be compared conclusively.';
   }
 
+  const ciMatchesCurrentProject = exactCi?.projectId === projectId &&
+    exactCi.localHead && exactCi.localHead === git.localHead &&
+    exactCi.source === 'public_github_actions_explicit_read' &&
+    exactCi.localHeadChangedDuringCheck === false &&
+    exactCi.checkedUnixSeconds !== null &&
+    Number.isSafeInteger(exactCi.checkedUnixSeconds) &&
+    exactCi.credentialsUsed === false;
+  const ciVerdict = !exactCi ? 'not_inspected' :
+    !ciMatchesCurrentProject ? 'stale_or_unrelated' :
+    exactCi.verdict === 'exact_commit_ci_passed' ? 'exact_commit_ci_passed' :
+    exactCi.verdict === 'exact_head_ci_failed' ? 'exact_commit_ci_failed' :
+    exactCi.verdict === 'partial_or_pending_evidence' ? 'partial_or_pending_evidence' :
+    'unverified';
+  const ciDetail = ciVerdict === 'exact_commit_ci_passed'
+    ? 'GitHub Actions reported all required jobs successful for the observed commit; local drafts and installation are NOT covered.'
+    : ciVerdict === 'not_inspected'
+      ? 'No exact-head CI query was made in this IDE session.'
+      : ciVerdict === 'stale_or_unrelated'
+        ? 'The last checked CI receipt does not match the selected local source revision.'
+        : 'Exact-commit CI is not fully successful or evidence is missing; do not claim acceptance.';
   return {
     schemaVersion: 1,
     projectId,
@@ -82,9 +102,9 @@ export function reconcileDevelopmentEvidence(projectId, context, comparison) {
       row('host_events', 'Recorded IDE actions', context.events.length ? 'historical_events' : 'no_events',
         'local_development_ledger',
         String(context.events.length) + ' recent event(s) observed; recorded actions do not prove external effects.'),
-      row('native_ci', 'Native build and CI', 'not_inspected',
-        'no_build_receipts_in_context',
-        'No exact-head CI job receipt is ingested by this view. A source commit is not a passed test.'),
+      row('native_ci', 'Native build and CI', ciVerdict,
+        ciMatchesCurrentProject ? 'explicit_public_github_actions_exact_commit' : 'no_matching_ci_receipt',
+        ciDetail),
       row('installed_app', 'Installed desktop acceptance', 'not_inspected',
         'no_installation_receipt_in_context',
         'A present executable or installer hash does not prove installation, launch or UI behavior.'),

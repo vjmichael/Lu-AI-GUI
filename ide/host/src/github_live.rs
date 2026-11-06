@@ -78,7 +78,7 @@ fn safe_branch(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'/' | b'-' | b'_' | b'.'))
 }
 
-fn github_repo(remote: &str) -> Option<(String, String)> {
+pub(crate) fn github_repo(remote: &str) -> Option<(String, String)> {
     let path = if let Some(p) = remote.strip_prefix("https://github.com/") {
         p
     } else if let Some(p) = remote.strip_prefix("git@github.com:") {

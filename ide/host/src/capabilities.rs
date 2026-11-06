@@ -99,6 +99,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "remote commit SHA and checked time; independently labeled local and dirty state"
         ),
         capability!(
+            "git.ciExactHead",
+            "ide_read_exact_head_ci",
+            "Inspect exact-head CI evidence",
+            "Explicit bounded public GitHub Actions read for the registered project's exact local HEAD; no build or installation.",
+            "network_read",
+            "active registered Git worktree, supported public github.com origin, human action",
+            "workflow run and required job receipts bound to exact local SHA; unknowns and untested installer remain explicit"
+        ),
+        capability!(
             "git.diff",
             "ide_read_git_diff",
             "Review Git changes",
@@ -354,7 +363,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 24);
+        assert_eq!(catalog.capabilities.len(), 25);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -390,7 +399,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 30);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 31);
     }
 
     #[test]

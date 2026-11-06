@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave C5 — Exact-head CI receipts (2026-11-05)
+
+- **Implementation branch:** `ide/wave-c5-exact-ci-evidence-20261105`, stacked on C4 commit `ca606dfb378ce31945a768a23e9ab6a31cbe60e8`. C3 PR #47 and C4 PR #48 remain independent/open pending acceptance; do not merge C5 before dependencies.
+- **Source implementation:** `host/src/github_ci.rs` read-only public GitHub Actions inspector and typed `git.ciExactHead` host capability/`ide_read_exact_head_ci` Tauri command. An explicit user click queries only `https://api.github.com` for the active registered Git project's validated origin and exact local HEAD SHA. No cookies, tokens, shell, Git fetch/push, source writes or background polling.
+- Workflow receipts check the *specific* `ide-standalone.yml` (required: host-linux, frontend, desktop-windows) and `ide-continuity.yml` (required: continuity) workflow paths, matching run head SHA, matching job head SHA when present, completion and success. Missing/duplicate jobs, partial responses, failure/pending runs or local HEAD changes never count as passing. Unknown origin, private repo/rate limits, absence of runs and incomplete evidence remain explicit.
+- Human Source control view has **Check exact HEAD CI**. C4 evidence matrix and C3 Copy development checkpoint accept only cached, explicit, current SHA-bound CI receipt metadata; copying has **no** additional network request. Dirty worktree/unsaved drafts, installed Windows application, toolchain usability and individual task completion **remain unverified** by CI.
+- **Implementation verification status:** Rust pure fixture tests and Node regression tests added; exact-head Linux/frontend/Windows CI and installed Windows UI acceptance **PENDING**, not passed at authoring. No new installer claimed; local machine's Deliverables/resources uninspected.
+
 ### C4 frontend CI regression repair (2026-11-05)
 - Earlier C3 exact-head run 42145804942: Linux native and Windows desktop succeeded, frontend failed a **test-only** capability-registry regex expecting same-line Rust macro arguments. Updated the contract assertion to support multiline rustfmt and require 24 nonempty commands. Direct catalog/Tauri parity: 24=24, no missing or duplicate commands.
 - Wave C3 source was separately repaired at `efe731d874e11309f4646d150827a723ed9932f7`. This C4 stacked branch carries the same test repair independently. Latest C4 exact-head CI, installed Windows UI acceptance and toolchain execution remain open.

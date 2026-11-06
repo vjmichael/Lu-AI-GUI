@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — Wave C5 exact-source GitHub Actions receipts
+- Added native read-only `git.ciExactHead` behind a human-triggered Source control action. It derives only validated public github.com origin, queries bounded fixed api.github.com endpoints for the **exact local HEAD SHA**, checks workflow file paths and required job metadata, rejects partial results and duplicate/missing/other-head jobs, and distinguishes success/failure/running/no evidence.
+- Added typed JSON Schema v2 descriptor (25 genuine host operations, 31 nested types) and Tauri command. No credentials, arbitrary HTTP targets, background network access, project mutation, subprocess execution or Lu bridge.
+- C4 evidence matrix now uses an explicitly cached same-project, same-SHA receipt if available. C3 checkpoint export copies only a sanitized cached summary; no external query on Copy. No test run proves local dirty draft, installed desktop, or task acceptance.
+- Added `host/src/github_ci.rs` classifier unit tests and `app/tests/github_ci.test.mjs` source/schema/reconciliation regression. Exact-head CI and installed Windows acceptance pending. C5 branch stacked on C4 source `ca606dfb378ce31945a768a23e9ab6a31cbe60e8`.
+
 ## 2026-11-05 — C4 frontend registry CI repair
 - C3 CI found a macro matcher regression: rustfmt moved `capability!` arguments across lines, causing an empty match set despite 24 registered operations. Fixed the JS test regex and added an explicit 24-operation assertion. Native registry/Tauri parity inspected; no host behavior or permissions changed.
 - C4 exact-head CI remains pending following this source update. C3 fix also committed independently.

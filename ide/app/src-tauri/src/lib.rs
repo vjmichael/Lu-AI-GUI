@@ -152,6 +152,17 @@ async fn ide_compare_live_github(
     Ok(result)
 }
 
+/// Explicit read-only public GitHub Actions receipts for the exact local HEAD.
+#[tauri::command]
+async fn ide_read_exact_head_ci(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::github_ci::ExactHeadCiEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry.inspect_exact_head_ci(&project_id))
+        .await.map_err(|_| "GITHUB_CI_TASK_UNAVAILABLE".to_owned())
+}
+
 /// Bounded, source-revisioned continuity from the trusted local IDE profile.
 #[tauri::command]
 async fn ide_read_project_context(
@@ -510,6 +521,7 @@ pub fn run() {
             ide_probe_project_resource,
             ide_read_git_history,
             ide_compare_live_github,
+            ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
             ide_list_projects,

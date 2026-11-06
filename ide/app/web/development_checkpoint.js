@@ -26,7 +26,7 @@ function items(values, limit, mapper) {
     omittedFromExport: Math.max(0, array.length - limit) };
 }
 
-export function buildDevelopmentCheckpoint(projectId, context, comparison, copiedAt) {
+export function buildDevelopmentCheckpoint(projectId, context, comparison, copiedAt, exactCi = null) {
   if (typeof projectId !== 'string' || !projectId ||
       context?.projectId !== projectId || comparison?.projectId !== projectId ||
       !context.gitWorktree || !context.inventory || !Array.isArray(context.documents) ||
@@ -59,7 +59,26 @@ export function buildDevelopmentCheckpoint(projectId, context, comparison, copie
         stage: limitedText(entry.stage, 80),
       })),
     },
-    evidenceReconciliation: reconcileDevelopmentEvidence(projectId, context, comparison),
+    evidenceReconciliation: reconcileDevelopmentEvidence(projectId, context, comparison, exactCi),
+    // Cached evidence only; copying never initiates a network request.
+    // Do not export a past run as current if the source SHA no longer matches.
+    priorExplicitCi: exactCi?.projectId === projectId &&
+      exactCi?.localHead === context.gitWorktree.localHead &&
+      exactCi?.source === 'public_github_actions_explicit_read' &&
+      exactCi?.credentialsUsed === false && !exactCi?.localHeadChangedDuringCheck &&
+      Number.isSafeInteger(exactCi?.checkedUnixSeconds)
+      ? {
+          source: 'cached_explicit_github_actions_observation',
+          observedUnixSeconds: exactCi.checkedUnixSeconds,
+          commitSha: exactCi.localHead,
+          verdict: exactCi.verdict,
+          installationAcceptance: 'not_tested',
+          taskCompletionAcceptance: 'not_verified',
+          workflows: (Array.isArray(exactCi.workflows) ? exactCi.workflows : []).slice(0, 2)
+            .map(w => ({workflow: String(w.workflow).slice(0, 40),
+              runId: Number.isSafeInteger(w.runId) ? w.runId : null,
+              verdict: String(w.verdict).slice(0, 40)})),
+        } : null,
     resources: {
       provenance: 'bounded_local_project_inventory',
       discoveryComplete: inventory.discoveryComplete === true,

@@ -13,6 +13,7 @@ pub mod editor;
 pub mod git_evidence;
 pub mod git_status;
 pub mod github_live;
+pub mod github_ci;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;

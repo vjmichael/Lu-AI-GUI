@@ -65,6 +65,9 @@ function App() {
   const gitEvidenceRequest = useRef(0);
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubComparison, setGithubComparison] = useState(null);
+  const [exactCi, setExactCi] = useState(null);
+  const [exactCiBusy, setExactCiBusy] = useState(false);
+  const exactCiRequest = useRef(0);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [resourceProbe, setResourceProbe] = useState(null);
   const [resourceProbeBusy, setResourceProbeBusy] = useState(false);
@@ -89,6 +92,9 @@ function App() {
     setInventoryComparison(null);
     setGitStatus(null);
     setGithubComparison(null);
+    exactCiRequest.current += 1;
+    setExactCi(null);
+    setExactCiBusy(false);
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
@@ -102,7 +108,7 @@ function App() {
   const evidenceReconciliation = activeProject?.projectId &&
     projectContext?.projectId === activeProject.projectId &&
     inventoryComparison?.projectId === activeProject.projectId
-      ? reconcileDevelopmentEvidence(activeProject.projectId, projectContext, inventoryComparison)
+      ? reconcileDevelopmentEvidence(activeProject.projectId, projectContext, inventoryComparison, exactCi)
       : null;
   const isSource = section === 'source';
   const parentPath = directory.split('/').slice(0, -1).join('/');
@@ -191,6 +197,9 @@ function App() {
     setGitHistory(null);
     gitEvidenceRequest.current += 1;
     setGithubComparison(null); // A local refresh invalidates any prior live comparison.
+    exactCiRequest.current += 1;
+    setExactCi(null);
+    setExactCiBusy(false);
     setProblem('');
     try {
       setGitStatus(await invoke('ide_read_git_status', { projectId: activeProject.projectId }));
@@ -242,6 +251,26 @@ function App() {
     } finally { setGithubBusy(false); }
   }
 
+  async function inspectExactHeadCi() {
+    if (!activeProject?.projectId || exactCiBusy || gitBusy) return;
+    const projectId = activeProject.projectId;
+    const request = ++exactCiRequest.current;
+    setExactCiBusy(true);
+    setExactCi(null);
+    setProblem('');
+    try {
+      const result = await invoke('ide_read_exact_head_ci', { projectId });
+      if (request !== exactCiRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (result.projectId !== projectId) throw Error('GITHUB_CI_PROJECT_CONTEXT_CHANGED');
+      setExactCi(result);
+    } catch (error) {
+      if (request === exactCiRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not inspect exact-commit CI: ' + String(error));
+    } finally {
+      if (request === exactCiRequest.current) setExactCiBusy(false);
+    }
+  }
+
   async function refreshContext() {
     const projectId = activeProject?.projectId;
     if (!projectId) {
@@ -287,7 +316,7 @@ function App() {
       ]);
       if (request !== checkpointRequest.current || activeProjectIdRef.current !== projectId) return;
       const checkpoint = buildDevelopmentCheckpoint(projectId, context, comparison,
-        new Date().toISOString());
+        new Date().toISOString(), exactCi);
       if (typeof navigator.clipboard?.writeText !== 'function')
         throw Error('CLIPBOARD_UNAVAILABLE');
       await navigator.clipboard.writeText(JSON.stringify(checkpoint, null, 2));
@@ -982,6 +1011,36 @@ function App() {
               </div>
               <p>This explicitly checks the current head of a public GitHub origin branch.
                 It does not fetch files into your project, use credentials, or modify Git.</p>
+              <div className="continuityCapture">
+                <h3>Exact-commit CI evidence</h3>
+                <button type="button" className="ghostBtn"
+                  disabled={!activeProject || exactCiBusy || gitBusy}
+                  onClick={() => inspectExactHeadCi()}>
+                  {exactCiBusy ? 'Reading GitHub Actions…' : 'Check exact HEAD CI'}
+                </button>
+              </div>
+              <p>This is an explicit public GitHub Actions metadata check for the local HEAD
+                commit. It does not run tests or prove unsaved changes, a packaged installer,
+                or an installed Windows application.</p>
+              {exactCi && exactCi.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Exact-head GitHub CI evidence">
+                  <h4>Observed CI: {exactCi.verdict.replaceAll('_', ' ')}</h4>
+                  <p>Commit: <code>{exactCi.localHead || 'No local commit'}</code>
+                    {' · '} Worktree: <strong>{exactCi.worktree.replaceAll('_', ' ')}</strong></p>
+                  {exactCi.checkedUnixSeconds &&
+                    <p>Observed at {new Date(exactCi.checkedUnixSeconds * 1000).toLocaleString()}</p>}
+                  {exactCi.errorCode && <p role="status">
+                    Incomplete verification: {exactCi.errorCode.replaceAll('_', ' ')}</p>}
+                  {exactCi.workflows.map(w => <article className="continuityEvent" key={w.workflow}>
+                    <strong>{w.workflow.replaceAll('_', ' ')} · {w.verdict.replaceAll('_', ' ')}</strong>
+                    {w.runUrl && <p>Run: <a href={w.runUrl} target="_blank"
+                      rel="noreferrer">{w.runId}</a> · {w.runStatus.replaceAll('_', ' ')}</p>}
+                    {w.jobs.map(job => <p key={job.name}>{job.name}:
+                      {' '}{job.status.replaceAll('_', ' ')} / {job.conclusion.replaceAll('_', ' ')}</p>)}
+                  </article>)}
+                  <p>Installed app: <strong>Not tested</strong>. Task acceptance: <strong>
+                    Not verified</strong>. CI receipts are commit-specific and may become stale.</p>
+                </div>}
               {githubComparison && <div className="continuityDocument" aria-label="Live GitHub comparison">
                 <p><strong>{githubComparison.state.replaceAll('_', ' ')}</strong>
                   {githubComparison.repository && <> · <code>{githubComparison.repository}</code></>}

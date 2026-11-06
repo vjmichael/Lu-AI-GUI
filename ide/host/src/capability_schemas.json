@@ -1496,6 +1496,196 @@
         "lastTrustedExecution",
         "inspectionScope"
       ]
+    },
+    "ExactHeadCiEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "public_github_actions_explicit_read"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "checkedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflows": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "workflow": {
+                "type": "string"
+              },
+              "runId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "headSha": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runStatus": {
+                "type": "string"
+              },
+              "conclusion": {
+                "type": "string"
+              },
+              "jobs": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "conclusion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "status",
+                    "conclusion"
+                  ]
+                }
+              },
+              "verdict": {
+                "type": "string"
+              },
+              "jobsTruncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "workflow",
+              "runId",
+              "runUrl",
+              "headSha",
+              "runStatus",
+              "conclusion",
+              "jobs",
+              "verdict",
+              "jobsTruncated"
+            ]
+          }
+        },
+        "runsListingPartial": {
+          "type": "boolean"
+        },
+        "localHeadChangedDuringCheck": {
+          "type": "boolean"
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "taskCompletionAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        },
+        "credentialsUsed": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "source",
+        "repository",
+        "localHead",
+        "worktree",
+        "checkedUnixSeconds",
+        "verdict",
+        "errorCode",
+        "workflows",
+        "runsListingPartial",
+        "localHeadChangedDuringCheck",
+        "installationAcceptance",
+        "taskCompletionAcceptance",
+        "credentialsUsed"
+      ]
     }
   },
   "operations": {
@@ -2021,6 +2211,24 @@
       },
       "result": {
         "$ref": "#/$defs/ProjectResourceProbe"
+      }
+    },
+    "git.ciExactHead": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ExactHeadCiEvidence"
       }
     }
   }
