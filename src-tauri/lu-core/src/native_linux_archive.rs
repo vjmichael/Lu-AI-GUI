@@ -398,6 +398,34 @@ pub fn inspect_linux_archive(
         input_bytes,truncated,
     })
 }
+/// Return bounded validated directory/file members for a NEW tree extraction.
+/// A tar member is never used as a host pathname without the separate
+/// destination-root checks in native_archive_tree. No symlinks or special files.
+pub fn linux_archive_tree_members(
+    root:&Dir,name:&str
+)->Result<Vec<(String,bool,Vec<u8>)>,LinuxArchiveError>{
+    let (format,raw,_)=decoded(root,name)?;
+    if !format.is_tar(){
+        let suffix=match format{
+            LinuxArchiveFormat::Gzip=>".gz",LinuxArchiveFormat::Xz=>".xz",
+            LinuxArchiveFormat::Bzip2=>".bz2",LinuxArchiveFormat::Zstd=>".zst",
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
+        };
+        let output=&name[..name.len()-suffix.len()];
+        if !flat_name(output){return Err(LinuxArchiveError::InvalidName)}
+        return Ok(vec![(output.into(),false,raw)])
+    }
+    let entries=tar_entries(&raw)?;
+    let mut total=0usize;
+    let mut output=Vec::new();
+    for entry in entries{
+        let bytes=raw[entry.data_start..entry.data_end].to_vec();
+        total=total.checked_add(bytes.len()).ok_or(LinuxArchiveError::TooLarge)?;
+        if total>MAX_UNPACKED{return Err(LinuxArchiveError::TooLarge)}
+        output.push((entry.path,entry.is_directory,bytes));
+    }
+    Ok(output)
+}
 /// Hash the exact selected decoded member without publishing. The returned
 /// digest is an integrity hint for trusted user preview, never a permission.
 pub fn linux_archive_member_digest(
