@@ -1,9 +1,8 @@
 //! Lu IDE Wave D3: native execution-supervisor CONTROL PLANE.
 //!
-//! This crate has no spawn/exec APIs or Tauri connection. Its release build is
-//! deliberately incapable of launching project code. Native OS launch adapters
-//! must separately prove restricted rights, pre-exec containment, process-tree
-//! cancellation and crash recovery before they can be connected.
+//! This crate has no Tauri, WebView or Lu Core execution connection.
+//! Native OS workers are separate opt-in features and cannot become
+//! desktop execution authority before exact-head hostile OS acceptance.
 //!
 //! Grants are short-lived, in-memory, one-shot, project/source/recipe scoped.
 //! Historic D1 review notes, journal lines, WebView text and task claims are
@@ -12,6 +11,8 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
+pub mod windows_worker;
 pub mod snapshot;
 
 use rand::{rngs::OsRng, RngCore};
@@ -624,6 +625,38 @@ impl Supervisor {
         Ok(())
     }
 
+    /// A native admission/kill/receipt failure must quarantine the live host
+    /// immediately, not only after a future journal replay. The in-memory
+    /// quarantine is applied even if appending the recovery receipt fails.
+    /// Only the native broker may call this method; the WebView has no route.
+    fn native_quarantine_after_error(&self, job_id: &str) -> Result<(), SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        if !matches!(
+            job.phase,
+            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+        ) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        state.quarantine.insert(job_id.to_owned());
+        let result = self.append(
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::RecoveryRequired,
+            "native_os_outcome_uncertain",
+            "do_not_restart_or_reuse_outputs",
+        );
+        if result.is_ok() {
+            state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
+        }
+        result
+    }
+
     /// Final outcome requires the OS process tree to have fully exited
     /// and the output broker to have verified bounded captured artifacts.
     fn native_finish(
@@ -633,6 +666,27 @@ impl Supervisor {
         tree_reaped: bool,
         outputs_bounded: bool,
     ) -> Result<JobSummary, SupervisorError> {
+        self.native_finish_with_output(
+            job_id, succeeded, tree_reaped, outputs_bounded, None
+        )
+    }
+
+    /// The native broker may bind a published, immutable output seal to the
+    /// terminal receipt. No frontend/LLM value can supply this evidence.
+    /// Existing Linux callers retain their original receipt format.
+    fn native_finish_with_output(
+        &self,
+        job_id: &str,
+        succeeded: bool,
+        tree_reaped: bool,
+        outputs_bounded: bool,
+        output_sha256: Option<&str>,
+    ) -> Result<JobSummary, SupervisorError> {
+        if let Some(sha) = output_sha256 {
+            if !outputs_bounded || !hex_sha(sha, 64) {
+                return Err(SupervisorError::InvalidPlan);
+            }
+        }
         let mut state = self
             .state
             .lock()
@@ -664,6 +718,9 @@ impl Supervisor {
         } else {
             (JobPhase::Failed, "native_worker_failed")
         };
+        let evidence = output_sha256
+            .map(|hash| format!("tree_reaped_published_sha256_{hash}"))
+            .unwrap_or_else(|| "reaped_process_tree_bounded_outputs".to_owned());
         self.append(
             &mut state,
             job_id,
@@ -671,7 +728,7 @@ impl Supervisor {
             &job.plan_hash,
             phase,
             outcome,
-            "reaped_process_tree_bounded_outputs",
+            &evidence,
         )?;
         state.jobs.get_mut(job_id).unwrap().phase = phase;
         Ok(JobSummary {
@@ -1168,6 +1225,51 @@ mod tests {
         .unwrap();
         state.jobs.get_mut(&job.job_id).unwrap().phase = JobPhase::Running;
     }
+    #[test]
+    fn published_output_digest_is_bound_to_durable_terminal_receipt() {
+        let filename = path();
+        let sup = Supervisor::open(filename.clone()).unwrap();
+        let job = sup.prepare(plan()).unwrap();
+        sup.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&sup, &job);
+        let sha = "a".repeat(64);
+        let completed = sup.native_finish_with_output(
+            &job.job_id, true, true, true, Some(&sha)
+        ).unwrap();
+        assert_eq!(completed.phase, JobPhase::Completed);
+        let last = sup.receipt_history(&job.job_id).unwrap().pop().unwrap();
+        assert_eq!(last.body.phase, JobPhase::Completed);
+        assert!(last.body.evidence_code.contains(&sha));
+        drop(sup);
+        let reopened = Supervisor::open(filename.clone()).unwrap();
+        let last = reopened.receipt_history(&job.job_id).unwrap().pop().unwrap();
+        assert!(last.body.evidence_code.contains(&sha));
+        drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn forged_or_missing_published_output_seal_cannot_finish() {
+        let filename = path();
+        let sup = Supervisor::open(filename.clone()).unwrap();
+        let job = sup.prepare(plan()).unwrap();
+        sup.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&sup, &job);
+        assert_eq!(sup.native_finish_with_output(
+            &job.job_id, true, true, true, Some("not-a-sha")
+        ).unwrap_err(), SupervisorError::InvalidPlan);
+        let _ = sup.native_finish_with_output(
+            &job.job_id, false, false, false, None
+        );
+        assert!(sup.inspect().unwrap()[0].requires_reconciliation);
+        drop(sup);
+        fs::remove_file(filename).unwrap();
+    }
+
     #[test]
     fn cancellation_logs_request_before_verified_tree_kill() {
         let path = path();
