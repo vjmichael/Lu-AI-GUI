@@ -38,12 +38,27 @@ pub struct CapabilityCatalog {
 macro_rules! capability {
     ($id:literal, $command:literal, $title:literal, $description:literal,
      $effect:literal, $precondition:literal, $evidence:literal) => {
-        ($id, $command, $title, $description, $effect, $precondition, $evidence)
+        (
+            $id,
+            $command,
+            $title,
+            $description,
+            $effect,
+            $precondition,
+            $evidence,
+        )
     };
 }
 
-type CapabilityMeta = (&'static str, &'static str, &'static str,
-    &'static str, &'static str, &'static str, &'static str);
+type CapabilityMeta = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
 
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
@@ -117,9 +132,10 @@ fn schema_document() -> Value {
 /// its nested $ref values must resolve without requiring a separate file.
 fn self_contained_schema(mut shape: Value, definitions: &Value) -> Value {
     if let Some(properties) = shape.as_object_mut() {
-        properties.insert("$schema".to_owned(), Value::String(
-            "https://json-schema.org/draft/2020-12/schema".to_owned(),
-        ));
+        properties.insert(
+            "$schema".to_owned(),
+            Value::String("https://json-schema.org/draft/2020-12/schema".to_owned()),
+        );
         properties.insert("$defs".to_owned(), definitions.clone());
     }
     shape
@@ -133,25 +149,28 @@ pub fn list_capabilities() -> CapabilityCatalog {
     let operations = &schemas["operations"];
     let capabilities = metadata()
         .into_iter()
-        .map(|(id, command, title, description, effect, precondition, evidence)| {
-            let schema = operations.get(id)
-                .expect("every native descriptor must have an operation schema");
-            CapabilityDescriptor {
-                id,
-                version: SCHEMA_VERSION,
-                command,
-                title,
-                description,
-                effect,
-                request_schema: self_contained_schema(schema["request"].clone(), &definitions),
-                result_schema: self_contained_schema(schema["result"].clone(), &definitions),
-                error_schema: serde_json::json!({"type":"string","minLength":1,
+        .map(
+            |(id, command, title, description, effect, precondition, evidence)| {
+                let schema = operations
+                    .get(id)
+                    .expect("every native descriptor must have an operation schema");
+                CapabilityDescriptor {
+                    id,
+                    version: SCHEMA_VERSION,
+                    command,
+                    title,
+                    description,
+                    effect,
+                    request_schema: self_contained_schema(schema["request"].clone(), &definitions),
+                    result_schema: self_contained_schema(schema["result"].clone(), &definitions),
+                    error_schema: serde_json::json!({"type":"string","minLength":1,
                     "description":"Stable native error code; not execution authority"}),
-                precondition,
-                evidence,
-                cancellation: "single bounded host call; no background task",
-            }
-        })
+                    precondition,
+                    evidence,
+                    cancellation: "single bounded host call; no background task",
+                }
+            },
+        )
         .collect();
 
     CapabilityCatalog {
@@ -191,14 +210,25 @@ mod tests {
             assert!(item.request_schema["required"].is_array());
             assert!(item.request_schema["properties"].is_object());
             let required = item.request_schema["required"].as_array().unwrap();
-            assert_eq!(required.len(), item.request_schema["properties"].as_object().unwrap().len());
-            for property in item.request_schema["properties"].as_object().unwrap().values() {
+            assert_eq!(
+                required.len(),
+                item.request_schema["properties"].as_object().unwrap().len()
+            );
+            for property in item.request_schema["properties"]
+                .as_object()
+                .unwrap()
+                .values()
+            {
                 assert!(property.get("type").is_some() || property.get("$ref").is_some());
             }
-            assert!(item.result_schema.get("type").is_some()
-                || item.result_schema.get("$ref").is_some());
-            assert!(matches!(item.effect,
-                "read" | "network_read" | "session_write" | "catalog_write" | "file_write"));
+            assert!(
+                item.result_schema.get("type").is_some()
+                    || item.result_schema.get("$ref").is_some()
+            );
+            assert!(matches!(
+                item.effect,
+                "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
+            ));
         }
         assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 28);
     }
@@ -214,7 +244,10 @@ mod tests {
         assert_eq!(save.result_schema["$ref"], "#/$defs/TextPreview");
         assert!(save.result_schema["$defs"]["TextPreview"].is_object());
         assert_eq!(stage.result_schema["$ref"], "#/$defs/ApprovedStaging");
-        assert_eq!(spans.request_schema["properties"]["firstLine"]["type"], "integer");
+        assert_eq!(
+            spans.request_schema["properties"]["firstLine"]["type"],
+            "integer"
+        );
         assert_eq!(spans.result_schema["$ref"], "#/$defs/SourceSpan");
         assert!(save.precondition.contains("explicit human Save"));
         assert!(stage.evidence.contains("no file write"));
