@@ -288,7 +288,10 @@ fn live_visit(
             )?;
         } else if metadata.is_file() {
             budget.files = budget.files.checked_add(1).ok_or_else(denied)?;
-            budget.bytes = budget.bytes.checked_add(metadata.len()).ok_or_else(denied)?;
+            budget.bytes = budget
+                .bytes
+                .checked_add(metadata.len())
+                .ok_or_else(denied)?;
             if budget.files > file_limit
                 || budget.bytes > byte_limit
                 || metadata.len() > item_limit

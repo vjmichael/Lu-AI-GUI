@@ -401,10 +401,14 @@ pub fn verify_created_pipe_security(
         }
         let sid = (&ace.SidStart as *const u32).cast_mut().cast();
         if unsafe { EqualSid(sid, system.0) } != 0 {
-            if system_found { return Err(denied()); }
+            if system_found {
+                return Err(denied());
+            }
             system_found = true;
         } else if unsafe { EqualSid(sid, service.0) } != 0 {
-            if service_found { return Err(denied()); }
+            if service_found {
+                return Err(denied());
+            }
             service_found = true;
         } else if unsafe { EqualSid(sid, user.0) } != 0 {
             // Read + write + synchronize, not FILE_CREATE_PIPE_INSTANCE (4).

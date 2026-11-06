@@ -23,12 +23,11 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
         },
         Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
-            CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_REJECT_REMOTE_CLIENTS,
-            PIPE_TYPE_MESSAGE, PIPE_WAIT,
+            CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_MESSAGE,
+            PIPE_WAIT,
         },
     };
-    if std::env::var_os("GITHUB_ACTIONS").as_deref()
-        != Some(std::ffi::OsStr::new("true"))
+    if std::env::var_os("GITHUB_ACTIONS").as_deref() != Some(std::ffi::OsStr::new("true"))
         || std::env::var_os("CI").as_deref() != Some(std::ffi::OsStr::new("true"))
     {
         return Ok(());
@@ -60,7 +59,9 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
         )
     };
     if server.is_null() || server == INVALID_HANDLE_VALUE {
-        return Err(format!("DENIED: CI pipe creation Win32={}", unsafe { GetLastError() }));
+        return Err(format!("DENIED: CI pipe creation Win32={}", unsafe {
+            GetLastError()
+        }));
     }
     let mut present = 0i32;
     let mut defaulted = 0i32;
@@ -74,7 +75,9 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
         )
     };
     if extracted == 0 || present == 0 || dacl.is_null() {
-        unsafe { CloseHandle(server); }
+        unsafe {
+            CloseHandle(server);
+        }
         return Err("DENIED: exact-user service DACL extraction failed".into());
     }
     let applied = unsafe {
@@ -89,8 +92,12 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
         )
     };
     if applied != 0 {
-        unsafe { CloseHandle(server); }
-        return Err(format!("DENIED: exact-user CI DACL application Win32={applied}"));
+        unsafe {
+            CloseHandle(server);
+        }
+        return Err(format!(
+            "DENIED: exact-user CI DACL application Win32={applied}"
+        ));
     }
     // Match the production client precisely: no broad pipe-create right,
     // no privileged alternate identity and no forged service response.
@@ -112,12 +119,18 @@ fn ci_exact_user_pipe_dacl_probe() -> Result<(), String> {
     let failure = if client.is_null() || client == INVALID_HANDLE_VALUE {
         Some(unsafe { GetLastError() })
     } else {
-        unsafe { CloseHandle(client); }
+        unsafe {
+            CloseHandle(client);
+        }
         None
     };
-    unsafe { CloseHandle(server); }
+    unsafe {
+        CloseHandle(server);
+    }
     if let Some(error) = failure {
-        return Err(format!("DENIED: exact-user CI pipe self-check Win32={error}"));
+        return Err(format!(
+            "DENIED: exact-user CI pipe self-check Win32={error}"
+        ));
     }
     eprintln!("D7D_PIPE_CI_SELF_PROBE=exact_acl_client_opened");
     Ok(())

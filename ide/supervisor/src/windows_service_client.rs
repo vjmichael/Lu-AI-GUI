@@ -91,8 +91,12 @@ fn ci_probe_denied_pipe_access() {
     const READ_CONTROL_ACCESS: u32 = 0x0002_0000;
     const FILE_READ_ATTRIBUTES: u32 = 0x0000_0080;
     for (desired, allowed, denied_status, other_status) in [
-        (0, "pipe_diag_zero_access_opened", "pipe_diag_zero_access_denied",
-            "pipe_diag_zero_access_other_failure"),
+        (
+            0,
+            "pipe_diag_zero_access_opened",
+            "pipe_diag_zero_access_denied",
+            "pipe_diag_zero_access_other_failure",
+        ),
         (
             SYNCHRONIZE,
             "pipe_diag_sync_only_allowed",
