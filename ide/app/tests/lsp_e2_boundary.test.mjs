@@ -17,7 +17,18 @@ test('E2 real server launch still requires a separately verified D7D native work
   assert.match(supervisor, /job.phase != JobPhase::Running/);
   assert.match(editor, /!lspWorker\?\.ready/);
   assert.match(editor, /ide_lsp_feature/); // request reserved, not registered
-  assert.doesNotMatch(desktop, /async fn ide_lsp_feature|fn ide_lsp_read_diagnostics/);
+  assert.match(desktop, /async fn ide_lsp_feature/);
+  assert.match(desktop, /async fn ide_lsp_read_diagnostics/);
+  assert.match(desktop, /async fn ide_lsp_start_session/);
+  assert.match(desktop, /async fn ide_lsp_stop_session/);
+  assert.match(desktop, /cfg\(not\(all\(windows, feature = "native-lsp"\)\)\)/);
+  assert.match(desktop, /LSP_PROTECTED_WORKER_UNVERIFIED/);
+  const host = read('../src-tauri/src/lsp_backend.rs');
+  assert.match(host, /blocking_show\(\)/);
+  assert.match(host, /option_env!\("LU_IDE_E2_CLANGD_BUNDLE_SHA256"\)/);
+  assert.match(host, /record_human_approval/);
+  assert.match(host, /trusted_native_worker_root/);
+  assert.doesNotMatch(host, /std::process::Command|Command::new|\.spawn\(/);
   assert.doesNotMatch(supervisor, /std::process::Command|Command::new|\.spawn\(/);
   assert.match(codeMirror, /lspDiagnosticField/);
   assert.match(codeMirror, /completionApplyRequest\.expectedDraft/);
