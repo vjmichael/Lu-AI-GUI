@@ -76,3 +76,20 @@ restricted identity and filesystem/network policy, Linux cgroup-v2 resource
 admission and namespace isolation, race-safe source/toolchain snapshot
 publication, native process-tree kill and crash orphans, capped output,
 hostile fixtures and physical installed desktop acceptance.
+
+## D4 — Restricted rights and delegated quota admission primitives
+
+Fixed, separately packaged native OS probes now complement D2 Job Object and
+older Linux Bubblewrap tests. On Windows, the probe creates a SID-restricted
+token with privileges removed and verifies `IsTokenRestricted`. It never
+launches a child. On Linux, the probe checks delegation and configures
+CPU/memory/PID quotas on an EMPTY cgroup-v2 child, then deletes it; denied
+delegation is explicitly recorded, with no fallback. See
+`ide/sandbox/OS_RIGHTS_ADMISSION.md`.
+
+**This is not worker authorization.** Windows restricted token creation plus
+Job Objects still lacks verified low-integrity child execution and filesystem
+and network isolation. Linux cgroup creation plus Bubblewrap still lacks
+pre-exec attached worker/descendant tests, security broker and crash recovery.
+The D3 production admission gate remains deny-only until full OS native
+acceptance and trusted source/output publication are proven.

@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — D4 restricted-rights and cgroup-v2 admission probes
+- Added a fixed Windows native SID restricted-token primitive probe with no child execution. This is not an AppContainer or OS rights acceptance for untrusted code.
+- Added a fixed Linux delegated cgroup-v2 quota admission probe that checks CPU/memory/PID controllers, attempts bounded settings on a disposable *empty* cgroup, and denies when delegation is absent. A successful workflow can still contain an explicit controlled denial.
+- Native Windows/Linux workflow and scope document added; supervisor remains fail-closed. No Tauri or Lu bridge changes.
+
 ## 2026-11-05 — D3 supervisor authorization, receipt and recovery control plane
 - New standalone Rust `ide/supervisor` crate (no desktop/Tauri dependency): strict fixed-recipe JobPlan, current source and actual input snapshot/toolchain digest fields, bounded resource/effect budgets, fresh per-job desktop-only one-shot short-lived grant.
 - App-private append-only receipt journal with sequential SHA-256 chain and transition validation; synced writes; truncated/tampered logs reject startup. A hash chain is not an authenticated/MAC receipt.

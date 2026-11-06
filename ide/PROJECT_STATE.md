@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D4 — Native restricted-rights admission probes (2026-11-05)
+
+- **Branch:** `ide/wave-d4-native-rights-admission-20261105`, stacked on D3 source commit `080b15dbfbc231dc2b0b691cb65a03b20d1c5794`. Production supervisor remains independently gated and disconnected from Tauri.
+- **Windows:** new `ide/sandbox/src/bin/windows_restricted_token_probe.rs` validates OS `CreateRestrictedToken` using a fixed Restricted Code SID plus disabled maximum privileges, requiring `IsTokenRestricted`. No process launches. Restricted token creation does NOT by itself prove low integrity/AppContainer, filesystem or network access, or safe worker activation.
+- **Linux:** new `ide/sandbox/src/bin/linux_cgroup_probe.rs` derives current cgroup-v2 scope, refuses unsafe paths, and attempts to configure/read back CPU/memory/PID limits on a unique empty delegated child. No process launches. Missing delegation reports **DENIED** even if the workflow itself finishes successfully. This is not evidence of pre-exec process placement or subtree kill.
+- **CI:** dedicated Linux and Windows native rights-probe workflow created, exact-head results pending. No Tauri command, no general build/test execution, and no Lu Core bridge.
+- **Still open:** Windows low-integrity/restricted child and ACL/network tests, Linux cgroup atomic placement/hostile load, real worker cancellation and crash/recovery, secure native input snapshot, protected OS broker and installed Windows acceptance.
+
+
 ## Wave D3 — Production supervisor control-plane implementation (2026-11-05)
 
 - **Branch:** `ide/wave-d3-supervisor-core-20261105`, stacked on corrected D2 Windows Job Object probe commit `c091fbe174b85a0c0f90c67933fdb2069000cd24`. D2's [Windows native runtime+format workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42158228849) and continuity gate passed on that source SHA. Installed Windows acceptance is still separate and open.
