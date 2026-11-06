@@ -2386,7 +2386,7 @@ function App() {
               className="subtleButton" disabled={archiveCancelRequested}
               onClick={()=>void cancelArchivePreview()}>
               {archiveCancelRequested?'Stopping archive preview…':'Cancel archive preview'}
-            </button>
+            </button>}
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
             <button type="button" className="subtleButton" disabled={!loaded}
               onClick={()=>void attachReaderDocument()}>+ Read file</button>

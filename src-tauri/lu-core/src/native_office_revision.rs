@@ -456,7 +456,7 @@ pub fn publish_office_revision_batch_new(
         return Err(OfficeRevisionError::UnsafePackage)
     }
     #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
+        use cap_std::fs::MetadataExt;
         if meta.file_attributes()&0x400!=0{
             return Err(OfficeRevisionError::UnsafePackage)
         }
