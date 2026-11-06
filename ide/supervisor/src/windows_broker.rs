@@ -75,7 +75,11 @@ fn valid_hash(hash: &str) -> bool {
 }
 fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     if !valid_id(id) || !valid_hash(hash) { return Err(denied()); }
-    Ok(os_wide(&format!("Global\\LuIdeD7-{id}-{}", &hash[..16])))
+    #[cfg(feature = "protected-recovery-service")]
+    let prefix = "Global";
+    #[cfg(not(feature = "protected-recovery-service"))]
+    let prefix = "Local";
+    Ok(os_wide(&format!("{prefix}\\LuIdeD7-{id}-{}", &hash[..16])))
 }
 fn release_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     if !valid_id(id) || !valid_hash(hash) { return Err(denied()); }
