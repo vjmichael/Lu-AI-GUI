@@ -24,6 +24,9 @@ linux-worker = []
 windows-worker = []
 # Explicit production opt-in; never use same-user D7C child as release authority.
 protected-recovery-service = ["windows-worker"]
+# Explicit compile-time opt-in for disposable native CI ONLY. This is not a
+# production worker feature and must not be inherited by Tauri/NSIS builds.
+ci-native-null-lease = ["windows-worker"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

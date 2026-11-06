@@ -184,7 +184,8 @@ impl Drop for CiNullLease {
     }
 }
 pub(crate) fn ci_scoped_nul_access(sid: PSID) -> Result<Option<CiNullLease>, SupervisorError> {
-    let enabled = cfg!(debug_assertions)
+    let enabled = cfg!(feature = "ci-native-null-lease")
+        && cfg!(debug_assertions)
         && std::env::var_os("LU_IDE_D7_CI_ALLOW_EXACT_NUL").as_deref()
             == Some(std::ffi::OsStr::new("1"))
         && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(std::ffi::OsStr::new("true"))

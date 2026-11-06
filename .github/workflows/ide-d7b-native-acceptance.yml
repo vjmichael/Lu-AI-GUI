@@ -90,12 +90,12 @@ jobs:
         env:
           LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
         run: |
-          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer Cargo fixture denied or failed' }
       - name: Inject native cancellation and verify ordered durable receipts
         shell: pwsh
         run: |
-          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker -- --cancel-native-worker
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease -- --cancel-native-worker
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer cancellation acceptance failed' }
       - name: Save observed toolchain file lock outside worker
         if: always()

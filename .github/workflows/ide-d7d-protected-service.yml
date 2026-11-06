@@ -125,7 +125,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          cargo build --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --bin windows_recovery_service --example d7_windows_acceptance
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service,ci-native-null-lease --bin windows_recovery_service --example d7_windows_acceptance
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: production native worker compile failed' }
       - name: Execute real pinned offline Cargo job and native cancellation
         shell: pwsh
