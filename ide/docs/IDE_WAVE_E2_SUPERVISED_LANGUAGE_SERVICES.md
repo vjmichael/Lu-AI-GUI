@@ -18,6 +18,8 @@ Wave D7D restricted LocalService OS worker acceptance was queued and D6's
 zero-network AppContainer denial is not yet proven. There is no admissible
 reason to introduce a direct desktop or shell spawn to bypass those gates.
 
+**Independent protocol evidence (2026-11-06):** Clangd 17.0.0 was launched only as a controlled local disposable test fixture, never through Lu IDE or the protected Windows service. Actual initialize, diagnostics, hover, same-file definition and completion replies were observed. Its completion `textEdit` replaces exactly an identifier prefix; the parser now validates exact same-line cursor-bound ranges, refuses additional edits, commands and snippets, and leaves insertion to the human editor. The sanitized transcript is committed as `ide/host/fixtures/clangd17_real_wire.json` and used by Rust unit tests. This is real LSP interoperability evidence, **not** an OS-security or installed-app pass.
+
 ## Implemented source
 
 | Component | Current behavior | Limit |
