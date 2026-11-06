@@ -126,7 +126,7 @@ impl InstalledConfig {
             return Err(denied());
         }
         let config: Self = serde_json::from_slice(&bytes).map_err(|_| denied())?;
-        if config.schema != "lu.ide.windows.recovery-service.v1"
+        if config.schema != "lu.ide.windows.recovery-service.v2"
             || config.service_name != NAME
             || config.endpoint != security::SERVICE_ENDPOINT
             || !config.evidence_root.is_absolute()

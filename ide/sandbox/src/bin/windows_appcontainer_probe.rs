@@ -581,9 +581,11 @@ mod windows {
         listener.set_nonblocking(true)?;
         match listener.accept() {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-            Ok(_) => return Err(io::Error::other(
-                "DENIED: AppContainer child reached host loopback listener"
-            )),
+            Ok(_) => {
+                return Err(io::Error::other(
+                    "DENIED: AppContainer child reached host loopback listener",
+                ))
+            }
             Err(e) => return Err(e),
         }
         // Reconnect from the trusted host to the identical bound socket:
@@ -593,13 +595,17 @@ mod windows {
         let accepted = loop {
             match listener.accept() {
                 Ok(value) => break value,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock
-                    && start.elapsed() < Duration::from_secs(2) => {
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
-                Err(e) => return Err(io::Error::other(
-                    format!("DENIED: postflight host control failed: {e}")
-                )),
+                Err(e)
+                    if e.kind() == io::ErrorKind::WouldBlock
+                        && start.elapsed() < Duration::from_secs(2) =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => {
+                    return Err(io::Error::other(format!(
+                        "DENIED: postflight host control failed: {e}"
+                    )))
+                }
             }
         };
         drop(accepted);

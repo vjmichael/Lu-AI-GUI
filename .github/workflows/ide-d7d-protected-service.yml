@@ -32,6 +32,15 @@ jobs:
           cargo check --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --all-targets
           cargo test --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --lib
           cargo build --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --bin windows_recovery_service --bin d7d_service_smoke_fixture
+      - name: Parse pinned protected installer before privileged execution
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1').Path,
+            [ref]$tokens, [ref]$errors) | Out-Null
+          if (@($errors).Count -ne 0) { throw 'DENIED: protected installer parse failed' }
       - name: Real SCM LocalService identity and IPC acceptance
         shell: pwsh
         run: |

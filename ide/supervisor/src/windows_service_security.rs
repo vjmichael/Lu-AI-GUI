@@ -2,8 +2,8 @@
 //!
 //! Service service-name identity is checked against an OS token, not a caller
 //! provided env variable. Service DACL is explicit: LocalSystem + service SID
-//! may create server instances; Interactive may only read/write data (not
-//! FILE_CREATE_PIPE_INSTANCE). Remote pipe clients are rejected.
+//! may create server instances; only the installer-pinned host account may
+//! read/write data (not FILE_CREATE_PIPE_INSTANCE). Remote clients are rejected.
 //!
 //! A pipe request additionally requires impersonation, client PID from the
 //! kernel, matching owner PID/creation time, matching client/owner TokenUser,
