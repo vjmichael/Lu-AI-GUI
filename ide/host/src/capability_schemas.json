@@ -2020,6 +2020,131 @@
         "acceptanceGates",
         "taskAcceptance"
       ]
+    },
+    "IntentSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intentId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "recipeId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "proposedAction": {
+          "type": "string"
+        },
+        "manifestRelativePath": {
+          "type": "string"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceHead": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "worktree": {
+          "type": "string",
+          "const": "clean"
+        },
+        "createdUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expiresUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": "string"
+        },
+        "canRecordReview": {
+          "type": "boolean"
+        },
+        "execution": {
+          "type": "string",
+          "const": "never_started"
+        },
+        "executionAuthority": {
+          "type": "string",
+          "const": "not_issued"
+        },
+        "workerContainment": {
+          "type": "string",
+          "const": "not_implemented"
+        },
+        "grantTokenIssued": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "intentId",
+        "projectId",
+        "recipeId",
+        "displayName",
+        "proposedAction",
+        "manifestRelativePath",
+        "manifestSha256",
+        "sourceHead",
+        "worktree",
+        "createdUnixSeconds",
+        "expiresUnixSeconds",
+        "state",
+        "canRecordReview",
+        "execution",
+        "executionAuthority",
+        "workerContainment",
+        "grantTokenIssued"
+      ]
+    },
+    "IntentList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "private_host_execution_intent_journal"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/IntentSummary"
+          }
+        },
+        "workerExecutionEnabled": {
+          "type": "boolean",
+          "const": false
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "source",
+        "entries",
+        "workerExecutionEnabled",
+        "installationAcceptance"
+      ]
     }
   },
   "operations": {
@@ -2647,6 +2772,86 @@
       },
       "result": {
         "$ref": "#/$defs/TaskSummary"
+      }
+    },
+    "job.prepare": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipeId": {
+            "type": "string",
+            "enum": [
+              "rust_check",
+              "rust_tests",
+              "lu_ide_host_tests"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "recipeId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/IntentSummary"
+      }
+    },
+    "job.review": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "intentId": {
+            "type": "string",
+            "minLength": 39,
+            "maxLength": 39
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "record_review",
+              "cancel"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "intentId",
+          "decision"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/IntentSummary"
+      }
+    },
+    "job.list": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/IntentList"
       }
     }
   }

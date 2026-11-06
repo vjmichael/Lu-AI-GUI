@@ -1,5 +1,13 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — Wave D1 execution intent protocol (no worker launch)
+- Added a separate, bounded, append-only host execution-intent journal and 3 typed Tauri capabilities (`job.prepare`, `job.review`, `job.list`). D1 deliberately records **no execution authority**. Source Git HEAD, worktree cleanliness, fixed recipe and manifest SHA-256 are observed by native code, not submitted by the frontend.
+- Short-lived 120-second prepared plans and human review are single-session, with native revalidation; stale, edited, expired, cross-project, replayed and corrupt-record attempts fail closed. A previous review can be withdrawn without dispatch.
+- Enabled a human-facing **Job requests** screen with exact source/manifest evidence and cancellation. Explicitly states no executable process, script, model, package install or build/test worker can run.
+- Updated capability catalog to 30 operations / 38 schema definitions, existing static native/UI contract tests, and new Rust persistence/replay tests plus frontend UI/schema regression tests.
+- **Unimplemented by design:** OS process containment, process-tree cancellation, resource quotas, execution authority, launched worker receipts, crash-recovery reconciliation and installed Windows acceptance. D2 shall use a separate host-owned supervisor; D1 consent notes must NEVER be accepted as executable tokens.
+- Branch stacks on C6 accepted native CI source `c403a8ba47d6ac1662b8627ce5ab34a9a16b591e`; D1 exact-head CI pending.
+
 ## 2026-11-05 — Wave C6 task evidence and development ledger (source implementation)
 - Extended the existing private append-only `DevelopmentLedger` with typed `TaskEvent` payloads and host-backed project task summaries. Human progress edits do not rewrite or claim verified acceptance; they keep source HEAD/dirty state and required gate IDs.
 - Added `ide_record_task_update` and `ide_observe_task_ci`, both typed in the semantic capability catalog (27 native commands, 36 definitions). CI is independently fetched by the native host, matched to the current human task event and source SHA, then logged. Stale updates and duplicate/unscoped task IDs fail closed.

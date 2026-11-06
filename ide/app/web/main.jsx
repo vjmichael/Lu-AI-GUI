@@ -14,7 +14,7 @@ const sections = [
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
   { id: 'source', title: 'Source control', glyph: '⑂' },
-  { id: 'tasks', title: 'Build & tests', glyph: '▶', pending: true },
+  { id: 'tasks', title: 'Job requests', glyph: '▶' },
 ];
 
 const keyFor = (projectId, path) => projectId + ':' + path;
@@ -58,6 +58,11 @@ function App() {
   const [capabilityCatalog, setCapabilityCatalog] = useState(null);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
+  const [intentList, setIntentList] = useState(null);
+  const [intentRecipe, setIntentRecipe] = useState('lu_ide_host_tests');
+  const [intentBusy, setIntentBusy] = useState(false);
+  const [reviewIntentId, setReviewIntentId] = useState(null);
+  const intentRequest = useRef(0);
   const [contextBusy, setContextBusy] = useState(false);
   const [checkpointBusy, setCheckpointBusy] = useState(false);
   const [taskIdInput, setTaskIdInput] = useState('');
@@ -105,6 +110,10 @@ function App() {
     setCheckpointBusy(false);
     setProjectContext(null);
     setInventoryComparison(null);
+    intentRequest.current += 1;
+    setIntentList(null);
+    setIntentBusy(false);
+    setReviewIntentId(null);
     setGitStatus(null);
     setGithubComparison(null);
     exactCiRequest.current += 1;
@@ -126,6 +135,7 @@ function App() {
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
   const isContinuity = section === 'continuity';
+  const isJobs = section === 'tasks';
   // Advisory only: derives labels from two existing, separately observed native responses.
   const evidenceReconciliation = activeProject?.projectId &&
     projectContext?.projectId === activeProject.projectId &&
@@ -290,6 +300,92 @@ function App() {
         setProblem('Could not inspect exact-commit CI: ' + String(error));
     } finally {
       if (request === exactCiRequest.current) setExactCiBusy(false);
+    }
+  }
+
+  async function refreshIntents() {
+    const projectId = activeProject?.projectId;
+    if (!projectId) { setIntentList(null); return; }
+    const request = ++intentRequest.current;
+    setIntentBusy(true);
+    setProblem('');
+    try {
+      const value = await invoke('ide_list_execution_intents', { projectId });
+      if (request !== intentRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (value.projectId !== projectId || value.workerExecutionEnabled !== false)
+        throw Error('EXECUTION_INTENT_BOUNDARY_MISMATCH');
+      setIntentList(value);
+    } catch (error) {
+      if (request === intentRequest.current && activeProjectIdRef.current === projectId) {
+        setIntentList(null);
+        setProblem('Could not read job-intent history: ' + String(error));
+      }
+    } finally {
+      if (request === intentRequest.current) setIntentBusy(false);
+    }
+  }
+
+  async function prepareIntent() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || intentBusy) return;
+    const request = ++intentRequest.current;
+    setIntentBusy(true);
+    setReviewIntentId(null);
+    setProblem('');
+    try {
+      const prepared = await invoke('ide_prepare_execution_intent', {
+        projectId, recipeId: intentRecipe,
+      });
+      if (request !== intentRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (prepared.projectId !== projectId || prepared.execution !== 'never_started'
+          || prepared.grantTokenIssued !== false)
+        throw Error('EXECUTION_PREPARE_UNEXPECTED_AUTHORITY');
+      const value = await invoke('ide_list_execution_intents', { projectId });
+      if (request !== intentRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (value.projectId !== projectId || value.workerExecutionEnabled !== false)
+        throw Error('EXECUTION_HISTORY_BOUNDARY_MISMATCH');
+      setIntentList(value);
+      setHint('Job request prepared for review. No worker or build/test process was started.');
+    } catch (error) {
+      if (request === intentRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not prepare job intent: ' + String(error));
+    } finally {
+      if (request === intentRequest.current) setIntentBusy(false);
+    }
+  }
+
+  async function decideIntent(intent, decision) {
+    const projectId = activeProject?.projectId;
+    if (!projectId || intentBusy || intent.projectId !== projectId) return;
+    if (decision === 'record_review' && reviewIntentId !== intent.intentId) {
+      setProblem('Review the exact source and manifest, then confirm the no-execution notice.');
+      return;
+    }
+    const request = ++intentRequest.current;
+    setIntentBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_decide_execution_intent', {
+        projectId, intentId: intent.intentId, decision,
+      });
+      if (request !== intentRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (updated.intentId !== intent.intentId || updated.execution !== 'never_started'
+          || updated.grantTokenIssued !== false)
+        throw Error('EXECUTION_REVIEW_UNEXPECTED_AUTHORITY');
+      const value = await invoke('ide_list_execution_intents', { projectId });
+      if (request !== intentRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (value.projectId !== projectId || value.workerExecutionEnabled !== false)
+        throw Error('EXECUTION_HISTORY_BOUNDARY_MISMATCH');
+      setIntentList(value);
+      setReviewIntentId(null);
+      setHint(decision === 'cancel'
+        ? 'Job request cancelled or review withdrawn. No execution occurred.'
+        : 'Human review recorded. Execution remains unavailable until OS-supervised workers pass acceptance.');
+    } catch (error) {
+      if (request === intentRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not update job intent: ' + String(error));
+    } finally {
+      if (request === intentRequest.current) setIntentBusy(false);
     }
   }
 
@@ -904,7 +1000,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -919,8 +1015,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
+          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isJobs ? 'Review non-executable plans · No worker enabled · No grants' :
+            isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
             isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
@@ -931,7 +1028,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? refreshIntents() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -947,7 +1044,82 @@ function App() {
         <button type="button" className="noticeDismiss" aria-label="Dismiss notification"
           onClick={() => setHint('')}>×</button>
       </div>}
-      {isProposals
+      {isJobs
+        ? <section className="workspaceContent continuityWorkspace" aria-label="Execution intent review">
+            <div className="sectionHeading">
+              <h2>Job requests</h2>
+              <span>Wave D1 · Preparation only</span>
+            </div>
+            <p className="capabilityNotice"><strong>No worker is enabled.</strong> This view records bounded
+              human intentions, not permission to launch processes. No external commands,
+              project scripts, test executables, or package managers can run here.</p>
+            <div className="continuityDocument jobIntentComposer">
+              <h3>Prepare a fixed recipe</h3>
+              <p>Requires a registered project with a clean local Git HEAD and
+                a non-symlink Cargo manifest. The host verifies the manifest digest.
+                Unsaved, ignored, or external files are not certified by a Git HEAD.</p>
+              <label htmlFor="intentRecipe">Recipe</label>
+              <select id="intentRecipe" value={intentRecipe} disabled={intentBusy}
+                onChange={event => setIntentRecipe(event.target.value)}>
+                <option value="lu_ide_host_tests">Lu IDE host tests</option>
+                <option value="rust_check">Rust project type-check</option>
+                <option value="rust_tests">Rust project tests</option>
+              </select>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || intentBusy}
+                onClick={() => prepareIntent()}>
+                {intentBusy ? 'Checking…' : 'Prepare for human review'}
+              </button>
+              <p>Preparing records an intent in the private app-profile journal,
+                valid for 120 seconds in this IDE session. It never runs the recipe.</p>
+            </div>
+            {!activeProject && <p>Open a project to prepare a job request.</p>}
+            {intentBusy && <p role="status">Checking the native job-intent journal…</p>}
+            {intentList && !intentList.workerExecutionEnabled && <>
+              <p>Recorded requests: {intentList.entries.length} / 16 per project.
+                Worker containment: <strong>Not implemented</strong>.
+                Execution authority: <strong>Not issued</strong>.</p>
+              {intentList.entries.length === 0 &&
+                <p>No job intentions have been prepared for this project.</p>}
+              <div className="continuityEvents">
+                {intentList.entries.map(entry => <article className="continuityEvent" key={entry.intentId}>
+                  <div className="capabilityHeading">
+                    <strong>{entry.displayName}</strong>
+                    <span>{entry.state.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>Proposed, not executed: <code>{entry.proposedAction}</code></p>
+                  <p>Source HEAD: <code>{entry.sourceHead}</code></p>
+                  <p>Manifest: <code>{entry.manifestRelativePath}</code></p>
+                  <p>Manifest SHA-256: <code>{entry.manifestSha256}</code></p>
+                  <p>Expires: {new Date(entry.expiresUnixSeconds * 1000).toLocaleString()}</p>
+                  <p>Execution: <strong>Never started</strong>.
+                    Grant token: <strong>Not issued</strong>.</p>
+                  {entry.canRecordReview && <>
+                    <label className="jobIntentConsent">
+                      <input type="checkbox" checked={reviewIntentId === entry.intentId}
+                        disabled={intentBusy}
+                        onChange={event => setReviewIntentId(event.target.checked
+                          ? entry.intentId : null)} />
+                      I reviewed this source revision and understand no code will execute.
+                    </label>
+                    <button type="button" className="ghostBtn"
+                      disabled={reviewIntentId !== entry.intentId || intentBusy}
+                      onClick={() => decideIntent(entry, 'record_review')}>
+                      Record human review (no execution)
+                    </button>
+                  </>}
+                  {(entry.state === 'prepared_not_authorized' ||
+                    entry.state === 'human_review_recorded_no_execution' ||
+                    entry.state === 'requires_new_session_review') &&
+                    <button type="button" className="ghostBtn"
+                      disabled={intentBusy} onClick={() => decideIntent(entry, 'cancel')}>
+                      Cancel intent / withdraw review
+                    </button>}
+                </article>)}
+              </div>
+            </>}
+          </section>
+        : isProposals
         ? <section className="proposalWorkspace" aria-label="Coding proposal inbox">
           <div className="proposalIntro">
             <div>

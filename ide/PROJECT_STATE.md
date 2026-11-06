@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D1 — Host-authorized execution-intent protocol (2026-11-05)
+
+- **Implementation branch:** `ide/wave-d1-execution-intent-20261105`, stacked on C6 PR #50 exact SHA `c403a8ba47d6ac1662b8627ce5ab34a9a16b591e`. C6 source CI passed Linux, frontend, Windows Tauri, and continuity on that SHA; installed Windows app acceptance remains separately unverified. Do not merge D1 before C6 and its C3/C4/C5 ancestors.
+- **D1 scope:** Native `execution_intents.rs` defines a host-owned, append-only, private `execution-intents.jsonl` journal. Three typed operations: `job.prepare`, `job.review`, and `job.list`. The human-facing **Job requests** view records and reviews intentions, not execution. Fixed allowlisted Rust check/test recipes only; no model-supplied commands, file paths, arguments, environment variables or executable launch path.
+- **Preconditions:** a registered active Git project, clean observed HEAD and no tracked/untracked modifications, known fixed `Cargo.toml` or `ide/host/Cargo.toml` manifest with bounded SHA-256 digest and symlink/reparse checks. Preparation expires in 120 seconds, is scoped to one IDE session, and records opaque native IDs. Recording review re-reads source SHA and manifest digest; changing project/source/session or expiration blocks approval. A previous review can be withdrawn; no reusable grant is minted.
+- **Effects and recovery:** Journal appends are mutex-serialized, bounded, synced, and checked for valid monotonic transitions. Corrupt/truncated journals fail closed; on restart, unreviewed preparations require fresh review. There is **no process spawn**, no worker, no OS containment assertion, no execution token, no Git mutation and no Lu Core bridge. Approval notes are not execution authority. Required Windows Job Object/Linux cgroup containment, worker budgets, kill/recovery tests, and signed effect receipts remain **Wave D2+ gates**, not complete.
+- **Verification:** Native Rust journal tests and frontend type/schema/UI checks added. Exact-head D1 Linux, Windows, frontend and continuity acceptance are PENDING; physical installed Windows UI checks remain unverified. The project root/Delivered folder on the user's physical machine is not inspected.
+
+
 ## Wave C6 — Task evidence and development ledger integration (2026-11-05)
 
 - **Source branch:** `ide/wave-c6-task-ledger-20261105`, stacked on exact C5 source `1dd4a58d84d6bc5f383f75e463b15f82baea6de8` (C5 PR #49). Earlier C3/C4 are passing native/frontend/continuity GitHub CI on their own heads, but no physical installed Windows acceptance. The standalone IDE and Lu Core remain independent.

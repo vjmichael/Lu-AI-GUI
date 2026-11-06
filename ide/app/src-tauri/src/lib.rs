@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 use std::{path::PathBuf, sync::Arc};
 
-use lu_ide_workspace::{continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use lu_ide_workspace::{execution_intents::ExecutionIntents, continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -256,6 +256,54 @@ async fn ide_observe_task_ci(
     })
     .await
     .map_err(|_| "TASK_CI_UNAVAILABLE".to_owned())?
+}
+
+/// D1 records a bounded user-selected job *intent*, never a process launch.
+#[tauri::command]
+async fn ide_prepare_execution_intent(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    intents: State<'_, Arc<ExecutionIntents>>,
+    project_id: String,
+    recipe_id: String,
+) -> Result<lu_ide_workspace::execution_intents::IntentSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let intents = Arc::clone(intents.inner());
+    tauri::async_runtime::spawn_blocking(move ||
+        intents.prepare(&registry, &project_id, &recipe_id)
+            .map_err(|error| error.code().to_owned()))
+        .await.map_err(|_| "EXECUTION_PREPARE_UNAVAILABLE".to_owned())?
+}
+
+/// Human review/cancellation is logged but never produces a worker grant.
+#[tauri::command]
+async fn ide_decide_execution_intent(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    intents: State<'_, Arc<ExecutionIntents>>,
+    project_id: String,
+    intent_id: String,
+    decision: String,
+) -> Result<lu_ide_workspace::execution_intents::IntentSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let intents = Arc::clone(intents.inner());
+    tauri::async_runtime::spawn_blocking(move ||
+        intents.decide(&registry, &project_id, &intent_id, &decision)
+            .map_err(|error| error.code().to_owned()))
+        .await.map_err(|_| "EXECUTION_REVIEW_UNAVAILABLE".to_owned())?
+}
+
+/// Project-scoped, read-only host journal; no job can be resumed from it.
+#[tauri::command]
+async fn ide_list_execution_intents(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    intents: State<'_, Arc<ExecutionIntents>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::execution_intents::IntentList, String> {
+    let registry = Arc::clone(registry.inner());
+    let intents = Arc::clone(intents.inner());
+    tauri::async_runtime::spawn_blocking(move ||
+        intents.list(&registry, &project_id)
+            .map_err(|error| error.code().to_owned()))
+        .await.map_err(|_| "EXECUTION_LIST_UNAVAILABLE".to_owned())?
 }
 
 /// List actual host-supported operations. Discovery is not authorization.
@@ -551,6 +599,9 @@ pub fn run() {
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
+            let intents = ExecutionIntents::new(data.join("execution-intents.jsonl"))
+                .map_err(|_| std::io::Error::other("IDE execution-intent journal failed to open"))?;
+            app.manage(Arc::new(intents));
             app.manage(Arc::new(ledger));
             app.manage(Arc::new(snapshots));
             app.manage(Arc::new(IdeProposalInbox::default()));
@@ -558,6 +609,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
+            ide_prepare_execution_intent,
+            ide_decide_execution_intent,
+            ide_list_execution_intents,
             ide_read_project_context,
             ide_record_task_update,
             ide_observe_task_ci,

@@ -10,6 +10,7 @@ pub mod browser;
 pub mod capabilities;
 pub mod continuity;
 pub mod editor;
+pub mod execution_intents;
 pub mod git_evidence;
 pub mod git_status;
 pub mod github_ci;

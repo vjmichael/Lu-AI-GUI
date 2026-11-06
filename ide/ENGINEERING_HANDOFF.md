@@ -10,6 +10,10 @@ This entrypoint is intended to spare the next development conversation from redi
 ## C6 continuation pointer — task/evidence ledger (source only)
 The latest Wave 3 task bridge is `ide/host/src/task_evidence.rs` and the optional `DevelopmentEvent.task` in `ide/host/src/continuity.rs`. The native app now supports typed human progress updates and explicit host-probed task CI observations, which are materialized into `ProjectContext.tasks`. The journal remains the single private source; project Markdown is untrusted orientation, not proof of completion. Task status never accepts completed/accepted. Check `ide/docs/IDE_WAVE_C6_TASK_EVIDENCE.md` for exact evidence and acceptance limits, and always verify exact GitHub HEAD before citing CI.
  
+## Wave D1 continuation — execution intent is not executable authority
+
+D1 implements a **non-executing** human job request/review journal in `ide/host/src/execution_intents.rs`, native Tauri commands and the Job Requests screen. It is deliberately isolated from Lu runtime and the development ledger's task-acceptance claims. Source plans use only fixed rust recipes, require clean checked HEAD, fixed manifest digests, short TTL and session-local review. They never mint grants, process handles or workers. See `docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md` before any Wave D2 code. **Do not reuse D1 consent events as worker authorization**; actual OS-supervised workers need fresh, scoped, one-shot grants and native cancellation/recovery/containment hostile tests.
+
 ## Required first read (PCP-01)
 
 Before changing code, read [current project state](PROJECT_STATE.md), [chronological changelog](CHANGELOG.md), and [continuity protocol](CONTINUITY_PROTOCOL.md). Confirm real local workspace and `Delivered` contents before assuming GitHub is the most advanced source. Log unknown local or installer locations as unverified, not absent.

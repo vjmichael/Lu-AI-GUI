@@ -214,3 +214,14 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .taskGateChoices { display: flex; flex-wrap: wrap; gap: 0.65rem; border: 1px solid var(--border, #646b75); }
 .taskGateChoices label { display: inline-flex; align-items: center; gap: 0.35rem; }
 .taskEditor :focus-visible, .taskGateChoices :focus-visible { outline: 2px solid #efcb42; outline-offset: 2px; }
+
+/* Wave D1: accessible job-intent review. Never styles consent as execution success. */
+.jobIntentComposer { display: grid; gap: 0.7rem; max-width: 45rem; }
+.jobIntentComposer select {
+  padding: 0.6rem; border: 1px solid var(--border, #707781);
+  background: var(--surface, #20242c); color: inherit; border-radius: 6px;
+}
+.jobIntentConsent { display: flex; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
+.jobIntentConsent input:focus-visible, .jobIntentComposer select:focus-visible {
+  outline: 2px solid #efcb42; outline-offset: 2px;
+}

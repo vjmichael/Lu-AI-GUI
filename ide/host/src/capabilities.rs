@@ -63,6 +63,33 @@ type CapabilityMeta = (
 fn metadata() -> Vec<CapabilityMeta> {
     vec![
         capability!(
+            "job.prepare",
+            "ide_prepare_execution_intent",
+            "Prepare a non-executable job request",
+            "Persist an allowlisted recipe intention bound to the exact clean local Git HEAD and manifest digest. No worker can launch.",
+            "catalog_write",
+            "human-selected active registered project, clean Git HEAD and fixed native recipe",
+            "durable prepared intent with bounded expiration; no execution token or process"
+        ),
+        capability!(
+            "job.review",
+            "ide_decide_execution_intent",
+            "Record or withdraw human job review",
+            "Revalidate source HEAD and manifest before recording review, or cancel an intent. No execution permission is issued.",
+            "catalog_write",
+            "human decision on exact private intent ID, same app session, source still clean",
+            "durable single-use review/cancellation record with explicit no-execution status"
+        ),
+        capability!(
+            "job.list",
+            "ide_list_execution_intents",
+            "Read prepared job-intent history",
+            "List bounded project-scoped job intentions and their authoritative non-execution states.",
+            "read",
+            "active registered project",
+            "never-started job history, expiration and stale session visibility"
+        ),
+        capability!(
             "resource.probe",
             "ide_probe_project_resource",
             "Inspect resource bytes",
@@ -381,7 +408,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 27);
+        assert_eq!(catalog.capabilities.len(), 30);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -417,7 +444,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 36);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 38);
     }
 
     #[test]
