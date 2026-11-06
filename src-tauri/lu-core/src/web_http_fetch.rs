@@ -27,6 +27,22 @@ pub struct FetchedPage {
     pub http_status: u16,
     pub bytes: Vec<u8>,
     pub sha256: String,
+    /// Trusted curl's parsed response redirect target; never auto-followed.
+    pub redirect_target:Option<String>,
+}
+#[derive(Debug)]
+pub struct RedirectHop{
+    pub url:String,
+    pub status:u16,
+    pub response_sha256:String,
+}
+#[derive(Debug)]
+pub struct RetrievedRedirectChain{
+    pub hops:Vec<RedirectHop>,
+    pub final_page:FetchedPage,
+    pub chain_sha256:String,
+    pub catalog_url:String,
+    pub redirected:bool,
 }
 fn public_ipv4(v: Ipv4Addr) -> bool {
     let [a,b,c,d] = v.octets();
@@ -111,6 +127,48 @@ impl SecureHttpFetcher<'_> {
         let address=trusted_resolution(resolved)?;
         self.fetch_pinned(&canonical_url,&host,address,max_bytes)
     }
+    /// Only follows independently observed HTTPS response redirects, never
+    /// curl -L. Every hop repeats public DNS admission and exact IP pinning;
+    /// all hop identities are hashed and returned for Research provenance.
+    pub fn fetch_document_chain(
+        &self,catalog_url:&str,max_bytes:usize
+    )->Result<RetrievedRedirectChain,FetchError>{
+        let (_,catalog)=validated_host(catalog_url)?;
+        let mut current=catalog.clone();
+        let mut seen=std::collections::BTreeSet::new();
+        let mut hops=Vec::new();
+        for _ in 0..=3usize{
+            if !seen.insert(current.clone()){return Err(FetchError::InvalidResponse);}
+            let page=self.fetch_bounded(&current,max_bytes)?;
+            hops.push(RedirectHop{
+                url:page.canonical_url.clone(),status:page.http_status,
+                response_sha256:page.sha256.clone()
+            });
+            if page.http_status==200 {
+                let mut signed=String::new();
+                for hop in &hops{
+                    signed.push_str(&format!(
+                        "{}\n{}\n{}\n",hop.url,hop.status,hop.response_sha256
+                    ));
+                }
+                return Ok(RetrievedRedirectChain{
+                    redirected:hops.len()>1,
+                    catalog_url:catalog,
+                    chain_sha256:format!("{:x}",Sha256::digest(signed.as_bytes())),
+                    hops,final_page:page,
+                });
+            }
+            if !matches!(page.http_status,301|302|303|307|308){
+                return Err(FetchError::InvalidResponse);
+            }
+            let target=page.redirect_target.ok_or(FetchError::InvalidResponse)?;
+            let (_,next)=validated_host(&target)?;
+            // A same-URL loop is not a verified redirect chain.
+            if next==current{return Err(FetchError::InvalidResponse);}
+            current=next;
+        }
+        Err(FetchError::InvalidResponse)
+    }
     fn fetch_pinned(&self,url:&str,host:&str,address:Ipv4Addr,max_bytes:usize)
         -> Result<FetchedPage,FetchError> {
         if !self.curl_binary.is_absolute() || !self.curl_binary.is_file() {
@@ -128,7 +186,7 @@ impl SecureHttpFetcher<'_> {
             "--proto","=https","--proto-redir","=https","--max-redirs","0",
             "--noproxy","*","--connect-timeout","8","--max-time","25",
             "--request","GET","--output","-",
-            "--write-out","%{http_code}"]);
+            "--write-out","\n__LU_CURL_META_V1__%{http_code}|%{redirect_url}|__END__"]);
         cmd.arg("--max-filesize").arg(max_bytes.to_string());
         cmd.arg("--resolve").arg(format!("{host}:443:{address}"));
         if let Some(ca)=self.ca_bundle {
@@ -145,25 +203,47 @@ impl SecureHttpFetcher<'_> {
             .spawn().map_err(|_| FetchError::TransportFailed)?;
         let stdout=child.stdout.take().ok_or(FetchError::TransportFailed)?;
         let mut output=Vec::new();
-        let read_result=stdout.take((max_bytes+4) as u64)
+        // Final curl metadata may include a bounded redirect target. Never
+        // let a malicious response consume unbounded stdout before inspection.
+        const META_LIMIT:usize=4096;
+        let read_result=stdout.take((max_bytes+META_LIMIT+1) as u64)
             .read_to_end(&mut output);
-        if read_result.is_err() || output.len()>max_bytes+3 {
-            let _=child.kill();
-            let _=child.wait();
-            return Err(if output.len()>max_bytes+3 {
+        if read_result.is_err() || output.len()>max_bytes+META_LIMIT {
+            let _=child.kill();let _=child.wait();
+            return Err(if output.len()>max_bytes+META_LIMIT{
                 FetchError::ResponseTooLarge
-            } else {FetchError::TransportFailed});
+            }else{FetchError::TransportFailed});
         }
         let status=child.wait().map_err(|_| FetchError::TransportFailed)?;
         if !status.success() { return Err(FetchError::TransportFailed); }
-        if output.len()<3 {return Err(FetchError::InvalidResponse);}
-        let body_len=output.len()-3;
-        let http_status=std::str::from_utf8(&output[body_len..])
+        const MARKER:&[u8]=b"\n__LU_CURL_META_V1__";
+        const END:&[u8]=b"|__END__";
+        let start=output.windows(MARKER.len())
+            .rposition(|x|x==MARKER).ok_or(FetchError::InvalidResponse)?;
+        let meta=&output[start+MARKER.len()..];
+        if !meta.ends_with(END) || meta.len()>2100 {
+            return Err(FetchError::InvalidResponse);
+        }
+        let actual=&meta[..meta.len()-END.len()];
+        let separator=actual.iter().position(|b|*b==b'|')
+            .ok_or(FetchError::InvalidResponse)?;
+        let http_status=std::str::from_utf8(&actual[..separator])
             .ok().and_then(|x|x.parse::<u16>().ok())
             .ok_or(FetchError::InvalidResponse)?;
-        let bytes=output[..body_len].to_vec();
+        let redirect_raw=&actual[separator+1..];
+        let redirect_target=if redirect_raw.is_empty(){None}else{
+            let candidate=std::str::from_utf8(redirect_raw)
+                .map_err(|_|FetchError::InvalidResponse)?;
+            if candidate.contains('|')||candidate.chars().any(char::is_control)
+                ||candidate.len()>2048{return Err(FetchError::InvalidResponse);}
+            Some(candidate.to_owned())
+        };
+        if start>max_bytes {return Err(FetchError::ResponseTooLarge);}
+        let bytes=output[..start].to_vec();
         let sha256=format!("{:x}",Sha256::digest(&bytes));
-        Ok(FetchedPage { canonical_url:url.into(),http_status,bytes,sha256 })
+        Ok(FetchedPage {
+            canonical_url:url.into(),http_status,bytes,sha256,redirect_target
+        })
     }
 }
 #[cfg(test)]
@@ -196,6 +276,13 @@ mod tests {
             let address=address.parse::<IpAddr>().unwrap();
             assert_eq!(trusted_resolution([address]),Err(FetchError::UnsafeAddress));
         }
+    }
+    #[test]
+    fn https_redirects_are_never_permitted_to_resolve_private_targets(){
+        assert!(validated_host("https://publisher.example/article").is_ok());
+        assert!(validated_host("http://publisher.example/article").is_err());
+        assert!(validated_host("https://localhost/private").is_err());
+        assert!(validated_host("https://alice@publisher.example/private").is_err());
     }
     #[test]
     fn reject_private_and_mixed_dns() {
