@@ -213,6 +213,12 @@ pub fn start_linux_lsp(
         return Err(SupervisorError::WrongProjectOrSource);
     }
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    let relative = Path::new(&input.seal.manifest_relative_path);
+    if !input.root.join(relative).is_file() {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    let native_uri = crate::lsp_transport::trusted_staged_file_uri(
+        &Path::new("/workspace").join(relative))?;
     if native_lsp_bundle_digest(release_root, &plan.recipe_id)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
@@ -276,10 +282,11 @@ pub fn start_linux_lsp(
         Arc::clone(&supervisor), job_id, &plan_hash, &proof,
         Box::new(process), server_id,
     )?;
-    Ok(LinuxLspSession {gateway})
+    Ok(LinuxLspSession {gateway, native_uri})
 }
-pub struct LinuxLspSession { gateway: LspGateway }
+pub struct LinuxLspSession { gateway: LspGateway, native_uri: String }
 impl LinuxLspSession {
+    pub fn native_document_uri(&self) -> &str { &self.native_uri }
     pub fn initialize(&mut self) -> Result<(), SupervisorError> { self.gateway.initialize() }
     pub fn open(&mut self, source: DiagnosticSource, uri: &str, text: &str)
         -> Result<(), SupervisorError> { self.gateway.open(source,uri,text) }
