@@ -52,6 +52,10 @@ fn main() {
 
 #[cfg(windows)]
 mod windows_capture_worker {
+    // A child module does not implicitly import names defined in its parent.
+    // Keep the native D3D11 callback and its geometry checks bound to the
+    // same validated limits used by the host-independent unit tests.
+    use super::{frame_geometry_valid, MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT};
     use sha2::{Digest, Sha256};
     use std::{env,error::Error,io::{self,Write},time::{Instant,Duration}};
     use windows_capture::{
