@@ -66,8 +66,8 @@ $serviceSid='NT SERVICE\LuIdeRecoveryBroker'
 $system='NT AUTHORITY\SYSTEM'
 $created=$false
 try {
-  # The account is NOT LocalSystem. A restricted service SID owns its
-  # private evidence and HMAC key; interactive Users have no ACL grants.
+  # The account is NOT LocalSystem. The restricted service SID protects
+  # its private evidence; interactive Users have no ACL grants.
   $args=@('create',$serviceName,'type=','own','start=','demand',
     'obj=','NT AUTHORITY\LocalService','binPath=','"'+$serviceExe+'"',
     'DisplayName=','Lu IDE Recovery Broker')
@@ -79,22 +79,8 @@ try {
   & sc.exe privs $serviceName 'SeChangeNotifyPrivilege/SeImpersonatePrivilege' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: minimal service privilege configuration failed' }
   New-Item -ItemType Directory -Path $root -Force | Out-Null
-  & icacls.exe $root /inheritance:r /grant:r (
-      $system+':(OI)(CI)F') ($serviceSid+':(OI)(CI)M') | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'DENIED: private evidence DACL provisioning failed' }
-  $acl=Get-Acl -LiteralPath $root
-  if (!$acl.AreAccessRulesProtected) { throw 'DENIED: evidence directory inherits parent ACL' }
-  $allowed=@($system,$serviceSid)
-  foreach ($entry in $acl.Access) {
-    if ($entry.AccessControlType -ne 'Allow' -or $entry.IdentityReference.Value -notin $allowed) {
-      throw "DENIED: unexpected evidence ACE: $($entry.IdentityReference.Value)"
-    }
-  }
-  foreach ($name in $allowed) {
-    if (!(@($acl.Access|ForEach-Object {$_.IdentityReference.Value}) -contains $name)) {
-      throw "DENIED: missing private evidence ACE $name"
-    }
-  }
+  # Create and protect config before removing interactive write rights
+  # from the parent directory; do not rely on owner privilege to write data.
   $settings=[ordered]@{
     schema='lu.ide.windows.recovery-service.v1'
     serviceName=$serviceName
@@ -113,6 +99,22 @@ try {
   if (!$configAcl.AreAccessRulesProtected -or
       @($configAcl.Access|Where-Object {$_.IdentityReference.Value -notin $allowed}).Count) {
     throw 'DENIED: service configuration ACL not private'
+  }
+  & icacls.exe $root /inheritance:r /grant:r (
+      $system+':(OI)(CI)F') ($serviceSid+':(OI)(CI)M') | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'DENIED: private evidence DACL provisioning failed' }
+  $acl=Get-Acl -LiteralPath $root
+  if (!$acl.AreAccessRulesProtected) { throw 'DENIED: evidence directory inherits parent ACL' }
+  $allowed=@($system,$serviceSid)
+  foreach ($entry in $acl.Access) {
+    if ($entry.AccessControlType -ne 'Allow' -or $entry.IdentityReference.Value -notin $allowed) {
+      throw "DENIED: unexpected evidence ACE: $($entry.IdentityReference.Value)"
+    }
+  }
+  foreach ($name in $allowed) {
+    if (!(@($acl.Access|ForEach-Object {$_.IdentityReference.Value}) -contains $name)) {
+      throw "DENIED: missing private evidence ACE $name"
+    }
   }
   # Restrict service management to SYSTEM and Administrators. This changes
   # the service object DACL, not the named pipe or evidence directory DACLs.
