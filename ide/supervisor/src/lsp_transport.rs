@@ -5,14 +5,16 @@
 //! an independently protected Job/cgroup and provide its authenticated pipe
 //! handles. The desktop and untrusted project cannot construct a gateway.
 //! E2 does not yet implement those OS-specific constructors.
-use crate::{JobPhase, OsContainmentProof, Supervisor, SupervisorError};
+use crate::{JobPhase, NativeTreeTerminator, OsContainmentProof, Supervisor, SupervisorError};
 use lu_ide_workspace::lsp::{DiagnosticSource, MAX_MESSAGE};
 use lu_ide_workspace::lsp_session::{LspError, LspEvent, LspPhase, LspSession, Position};
-use std::{io, time::Duration};
+use std::{io, time::{Duration, Instant}};
 
 const MAX_CHUNK: usize = 16 * 1024;
 const MAX_PENDING_OUTPUT: usize = MAX_MESSAGE + 256;
 const READ_WAIT: Duration = Duration::from_millis(400);
+const MAX_SESSION_LIFETIME: Duration = Duration::from_secs(10 * 60);
+const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 
 /// A trusted native worker adapter must own both ends of its OS-restricted
 /// pipes and the real kernel containment handle. No blanket std::process::Child
@@ -22,6 +24,9 @@ pub(crate) trait RestrictedLspProcess: Send {
     fn read_bounded(&mut self, limit: usize, timeout: Duration) -> io::Result<Vec<u8>>;
     /// Must terminate the entire kernel Job/cgroup tree and prove it empty.
     fn terminate_tree_and_verify(&mut self) -> Result<bool, SupervisorError>;
+    /// Called only after a durable terminal receipt and verified empty tree.
+    /// A D7D service must fsync its independent release witness first.
+    fn release_after_verified_terminal(&mut self) -> Result<(), SupervisorError>;
 }
 
 pub(crate) struct LspGateway<'a> {
@@ -30,6 +35,9 @@ pub(crate) struct LspGateway<'a> {
     session: LspSession,
     process: Option<Box<dyn RestrictedLspProcess>>,
     finished: bool,
+    opened_at: Instant,
+    io_bytes: usize,
+    plan_sha256: String,
 }
 impl<'a> LspGateway<'a> {
     /// Only an already-authorized OS worker implementation can call this
@@ -59,12 +67,20 @@ impl<'a> LspGateway<'a> {
         Ok(Self {
             supervisor, job_id: job_id.to_owned(), session,
             process: Some(process), finished: false,
+            opened_at: Instant::now(), io_bytes: 0,
+            plan_sha256: expected_plan_sha256.to_owned(),
         })
     }
     fn send(&mut self, frame: &[u8]) -> Result<(), SupervisorError> {
-        if frame.len() > MAX_PENDING_OUTPUT { return Err(SupervisorError::NoContainment); }
-        self.process.as_mut().ok_or(SupervisorError::Quarantined)?
-            .write_bounded(frame).map_err(|_| SupervisorError::Quarantined)
+        if frame.len() > MAX_PENDING_OUTPUT || self.opened_at.elapsed() > MAX_SESSION_LIFETIME
+            || self.io_bytes.saturating_add(frame.len()) > MAX_TOTAL_IO {
+            return self.deny_and_quarantine();
+        }
+        self.io_bytes += frame.len();
+        let sent = self.process.as_mut().ok_or(SupervisorError::Quarantined)?
+            .write_bounded(frame);
+        if sent.is_err() { return self.deny_and_quarantine(); }
+        Ok(())
     }
     pub(crate) fn initialize(&mut self) -> Result<(), SupervisorError> {
         let data = self.session.initialize().map_err(protocol_denied)?;
@@ -89,44 +105,92 @@ impl<'a> LspGateway<'a> {
         self.send(&data)
     }
     pub(crate) fn poll(&mut self) -> Result<Vec<LspEvent>, SupervisorError> {
-        let frame = self.process.as_mut().ok_or(SupervisorError::Quarantined)?
-            .read_bounded(MAX_CHUNK, READ_WAIT).map_err(|_| SupervisorError::Quarantined)?;
-        if frame.len() > MAX_CHUNK { return Err(SupervisorError::NoContainment); }
+        if self.opened_at.elapsed() > MAX_SESSION_LIFETIME {
+            return self.deny_and_quarantine();
+        }
+        let read = self.process.as_mut().ok_or(SupervisorError::Quarantined)?
+            .read_bounded(MAX_CHUNK, READ_WAIT);
+        let frame = match read {
+            Ok(frame) => frame, Err(_) => return self.deny_and_quarantine(),
+        };
+        if frame.len() > MAX_CHUNK ||
+            self.io_bytes.saturating_add(frame.len()) > MAX_TOTAL_IO {
+            return self.deny_and_quarantine();
+        }
+        self.io_bytes += frame.len();
         if frame.is_empty() { return Ok(Vec::new()); }
-        let (events, replies) = self.session.receive(&frame).map_err(protocol_denied)?;
+        let (events, replies) = match self.session.receive(&frame) {
+            Ok(result) => result,
+            Err(_) => return self.deny_and_quarantine(),
+        };
         for outbound in replies {
             self.send(&outbound)?;
         }
         Ok(events)
     }
+    /// On an untrusted protocol fault or process communication failure, do
+    /// not keep working. Quarantine and independently kill the whole tree.
+    fn deny_and_quarantine<T>(&mut self) -> Result<T, SupervisorError> {
+        let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+        self.session.stop_uncertain();
+        if let Some(process) = self.process.as_mut() {
+            let _ = process.terminate_tree_and_verify();
+        }
+        Err(SupervisorError::Quarantined)
+    }
+    /// An orderly session ends only after the entire OS process tree is empty,
+    /// a durable D3 terminal receipt exists, and the protected D7D independent
+    /// service acknowledges its release. A graceful LSP shutdown alone is
+    /// never evidence of process-tree cleanup.
     pub(crate) fn close(mut self) -> Result<(), SupervisorError> {
         if self.session.phase() == LspPhase::Ready {
-            // Best-effort graceful shutdown, but kernel process-tree cleanup
-            // remains required even when the LSP process acknowledges exit.
             if let Ok(frame) = self.session.shutdown() {
                 let _ = self.send(&frame);
             }
         }
         let verified = self.process.as_mut().ok_or(SupervisorError::Quarantined)?
             .terminate_tree_and_verify()?;
-        if !verified {
-            let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
-            return Err(SupervisorError::Quarantined);
-        }
-        self.finished = true;
+        if !verified { return self.deny_and_quarantine(); }
+        self.supervisor.native_finish(&self.job_id, true, true, true)?;
+        self.finished = true; // Receipt is durable; do not append Cancelled.
+        self.process.as_mut().ok_or(SupervisorError::Quarantined)?
+            .release_after_verified_terminal()?;
         Ok(())
+    }
+}
+struct GatewayTerminator<'a> {
+    process: &'a mut dyn RestrictedLspProcess,
+    job_id: &'a str,
+    plan_sha256: &'a str,
+}
+impl NativeTreeTerminator for GatewayTerminator<'_> {
+    fn terminate_and_verify_tree(
+        &mut self, job_id: &str, plan_sha256: &str,
+    ) -> Result<bool, SupervisorError> {
+        if job_id != self.job_id || plan_sha256 != self.plan_sha256 {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        self.process.terminate_tree_and_verify()
     }
 }
 impl Drop for LspGateway<'_> {
     fn drop(&mut self) {
         if self.finished { return; }
+        self.session.stop_uncertain();
         if let Some(process) = self.process.as_mut() {
-            if !matches!(process.terminate_tree_and_verify(), Ok(true)) {
+            // A routine editor close, host drop or cancellation MUST fsync
+            // CancelRequested before it kills an active contained process.
+            let mut killer = GatewayTerminator {
+                process: process.as_mut(), job_id: &self.job_id,
+                plan_sha256: &self.plan_sha256,
+            };
+            if self.supervisor.cancel_running_with(&self.job_id, &mut killer).is_ok() {
+                let _ = process.release_after_verified_terminal();
+            } else {
+                let _ = process.terminate_tree_and_verify();
                 let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
             }
         }
-        // A process-tree kill alone must not produce a finished receipt;
-        // the native supervisor is responsible for terminal journal evidence.
     }
 }
 fn protocol_denied(_: LspError) -> SupervisorError {
@@ -147,6 +211,7 @@ mod tests {
                 Ok(Vec::new())
             }
             fn terminate_tree_and_verify(&mut self) -> Result<bool, SupervisorError> { Ok(true) }
+            fn release_after_verified_terminal(&mut self) -> Result<(), SupervisorError> { Ok(()) }
         }
         let p = OsContainmentProof {
             platform: "windows".into(), restricted_identity: true,
