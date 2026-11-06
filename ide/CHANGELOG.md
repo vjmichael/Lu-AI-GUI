@@ -1,6 +1,10 @@
 # Lu IDE — Development changelog
 
 ## 2026-11-06 — Wave E2 protected language-service integration (source, native pending)
+- Extended protected Windows desktop source from clangd-only to fixed native rust-analyzer, clangd and Ruff language selection; only per-language verified installation hashes unlock buttons. Ruff is restricted to diagnostics by both UI and native host.
+- Added isolated supervisor tests for durable successful close, cancelled session and failed service release quarantine after restart; added native route rejection tests.
+- Added signed-service and license-verified NSIS staging, per-machine installer config overlay, malicious resource/no-overwrite tests and queue coalescing for E1/E2 GitHub CI. No server binary is shipped and OS acceptance remains open.
+
 - Exercised actual local clangd 17 LSP protocol for initialization, diagnostics, hover, definition and completion; committed sanitized JSON-RPC transcript and fixed bounded completion-prefix textEdit handling with explicit human insertion. No native protected-worker execution claim.
 - Introduced real LSP session wire processor: initialize, safe document sync, bounded diagnostics/completions/hover/same-file definition, strict pending/revision checks and rejection of server-initiated execution or edits.
 - Added optional internal supervisor transport endpoint requiring trusted running D3 job, same plan SHA, OS containment proof and verified tree cleanup; **no unrestricted process spawn or active native LSP child**.
