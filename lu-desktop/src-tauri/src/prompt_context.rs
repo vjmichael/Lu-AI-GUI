@@ -39,6 +39,16 @@ pub fn typed_history(
 /// Unprivileged model-facing proposal hints until the native typed-tool catalog
 /// is carried in inference IPC. The real saved user prompt remains unchanged.
 /// A proposal is text data, NEVER a filesystem action or an authority grant.
+/// Wave 3: introduce only an inert model action proposal when the actual
+/// current user request unambiguously names a supported operation.
+pub fn model_native_action_hint(prompt:&str)->String{
+    if crate::native_action_proposal::classify_current_user_action(prompt).is_none(){
+        return prompt.to_owned()
+    }
+    const HINT:&str="\n\n[Lu native file-operation REVIEW proposal, unprivileged]\nIf you can help with the user's explicitly requested operation, output exactly one JSON object with only these fields: {\"kind\":\"propose_native_action\",\"action\":\"copy_file|move_file|trash_file|extract_archive|create_document|revise_office|batch_office\",\"purpose\":\"brief description\"}. Choose exactly the action the user requested; action is one enum value, not the pipe-separated alternatives. Do NOT include a path, actual filename, permission, tool ID, arguments or executable code. This is NOT execution. Lu will ask the human to choose a target with native dialogs, show a complete review and obtain explicit separate approval before any write. Never claim an action succeeded from a proposal. [/Lu native operation review proposal]";
+    if prompt.len()+HINT.len()>16*1024{return prompt.to_owned()}
+    format!("{prompt}{HINT}")
+}
 pub fn model_file_creation_hint(prompt: &str) -> String {
     let lower=prompt.to_ascii_lowercase();
     let subject=["file","document","readme","config","source code","script",
@@ -74,6 +84,16 @@ mod tests {
             text: text.into(),
             interrupted,
             cancelled: interrupted,
+        }
+    }
+    #[test]
+    fn native_review_hints_are_only_for_explicit_user_operations(){
+        let p=model_native_action_hint("Move the file notes.md");
+        assert!(p.contains("propose_native_action"));
+        assert!(p.contains("Do NOT include a path"));
+        for text in ["How do I move a file?", "Do not delete this file",
+            "What is a tar archive?"]{
+            assert_eq!(model_native_action_hint(text),text);
         }
     }
     #[test]

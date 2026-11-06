@@ -6,6 +6,13 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 3 model native-action handoff is inert, host scoped and routes to existing native review',
+    ui.includes("listen('lu-native-action-proposal'") &&
+    ui.includes("invoke('lu_accept_native_action_proposal'") &&
+    ui.includes("invoke('lu_deny_native_action_proposal'") &&
+    ui.includes('Review with native controls') &&
+    host.includes('state.native_actions.stage(') &&
+    host.includes('fn lu_accept_native_action_proposal(')],
   ['Wave 3 normal Send one-turn workspace route is explicitly opt-in and uses native picker',
     ui.includes('readOnlyWorkspace: useWorkspaceTools') &&
     ui.includes('Use workspace tools on Send') &&

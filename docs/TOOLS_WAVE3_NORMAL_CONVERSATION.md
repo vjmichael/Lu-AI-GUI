@@ -17,3 +17,9 @@ The WebView supplies neither directory paths nor permissions. A model cannot upg
 4. Wave 3 write-capable integrations require separate native full-content review, authority, journal and recovery. This first slice is deliberately read-only.
 
 No claim of full Wave 3 completion, native green CI, or release acceptance.
+
+## WAVE3-CHAT-01B: bounded native action proposals from ordinary Send
+- The completed assistant output may now contain only `{kind:"propose_native_action",action,purpose}` for a tightly enumerated list: copy_file, move_file, trash_file, extract_archive, create_document, revise_office, batch_office.
+- The host conservatively classifies the actual current user prompt and refuses proposals for different actions, ambiguous requests, negated requests, paths, permission fields, additional fields, duplicate JSON keys, other conversations or replays. Background-generated notifications cannot stage native proposals.
+- The frontend shows an inert, chat-bound proposal card. Accept consumes the staged suggestion but can **only** open the already installed native review workflow; no filesystem authority is conferred. The operator must still select the source/destination in OS dialogs, read the full review, acknowledge and approve with the native confirmation. Denials discard the proposal. `CreateDocument` and `ReviseOffice` open their existing editors rather than guessing missing values.
+- Unlike a general autonomous write-tool loop, this safety-first bridge deliberately does not permit a model JSON response to trigger a destructive action. It reuses Wave 2's durable journal and recovery machinery at actual execution.

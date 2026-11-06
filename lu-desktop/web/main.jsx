@@ -35,6 +35,7 @@ function App() {
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
   const [editProposals, setEditProposals] = useState({});
+  const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
   const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
   const [editRecovery, setEditRecovery] = useState([]);
   const [editObservations, setEditObservations] = useState({});
@@ -293,7 +294,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopBackground = () => {}, stopFinished = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopBackground = () => {}, stopFinished = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -330,6 +331,11 @@ function App() {
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
       setEditProposals(prev => ({...prev, [proposal.proposalId]:proposal}));
     }).then(fn => { if (alive) stopEditProposal = fn; else fn(); });
+    listen('lu-native-action-proposal',e=>{
+      const proposal=e.payload;
+      if (!alive||!proposal?.chatId||!proposal?.proposalId)return;
+      setNativeActionProposals(prev=>({...prev,[proposal.proposalId]:proposal}));
+    }).then(fn=>{if(alive)stopNativeAction=fn;else fn();});
     listen('lu-generation-finish', e=>{
       if (!alive || !e.payload?.chatId)return;
       const {chatId:finishedChat,generationId}=e.payload;
@@ -350,7 +356,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopBackground(); stopFinished(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopBackground(); stopFinished(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -701,6 +707,39 @@ function App() {
       setDocumentSettings(result);
       setActivity('Default restored to system Documents');
     } catch (error) { setError(String(error)); }
+  }
+  async function rejectNativeActionProposal(proposal){
+    try{
+      await invoke('lu_deny_native_action_proposal',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId,
+      });
+      setNativeActionProposals(prev=>{
+        const next={...prev};delete next[proposal.proposalId];return next;
+      });
+    }catch(error){setError(String(error));}
+  }
+  async function reviewNativeActionProposal(proposal){
+    if (!chatId||proposal.chatId!==chatId||working||chatBusy)return;
+    try{
+      const approved=await invoke('lu_accept_native_action_proposal',{
+        chatId:proposal.chatId,proposalId:proposal.proposalId,
+      });
+      setNativeActionProposals(prev=>{
+        const next={...prev};delete next[proposal.proposalId];return next;
+      });
+      // This is NOT effect approval. Every branch opens an existing native
+      // picker or a complete draft editor and requires an independent consent.
+      switch(approved.action){
+        case 'copy_file':await reviewNativeFileTransfer('copy');break;
+        case 'move_file':await reviewNativeFileTransfer('move');break;
+        case 'trash_file':await reviewNativeTrashFile();break;
+        case 'extract_archive':await reviewArchiveTree();break;
+        case 'create_document':setDocumentComposerOpen(true);break;
+        case 'revise_office':setOfficeRevisionOpen(true);break;
+        case 'batch_office':setOfficeBatchOpen(true);break;
+        default:throw Error('Unrecognized native operation review');
+      }
+    }catch(error){setError(String(error));}
   }
   async function reviewArchiveTree() {
     if (!chatId || archiveBusy || working || chatBusy) return;
@@ -1640,6 +1679,24 @@ function App() {
             </div>
           </section>
         )}
+        {Object.values(nativeActionProposals)
+          .filter(proposal=>proposal.chatId===chatId).map(proposal=>
+            <section key={proposal.proposalId} className="readProposalCard"
+              role="group" aria-label="Lu suggested native action review">
+              <strong>Review suggested action: {proposal.action.replaceAll('_',' ')}</strong>
+              <p>{proposal.purpose}</p>
+              <small>This model suggestion cannot change files. The native
+                picker and a separate approval are required before execution.</small>
+              <div className="settingsActions">
+                <button type="button" className="primaryButton"
+                  disabled={working||chatBusy}
+                  onClick={()=>void reviewNativeActionProposal(proposal)}>
+                  Review with native controls
+                </button>
+                <button type="button" className="subtleButton"
+                  onClick={()=>void rejectNativeActionProposal(proposal)}>Deny</button>
+              </div>
+            </section>)}
         {(wave2RecoveryByChat[chatId] || []).length > 0 && <section
           className="readProposalCard" role="region" aria-label="Durable Wave 2 operation recovery">
           <strong>File and document operation history</strong>
