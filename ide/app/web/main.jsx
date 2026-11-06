@@ -59,6 +59,8 @@ function App() {
   const [inboxBusy, setInboxBusy] = useState(false);
   const [capabilityCatalog, setCapabilityCatalog] = useState(null);
   const [languageServers, setLanguageServers] = useState([]);
+  const [lspSession, setLspSession] = useState(null);
+  const [lspBusy, setLspBusy] = useState(false);
   const [lspWorker, setLspWorker] = useState({
     ready: false, code: 'LSP_PROTECTED_WORKER_UNVERIFIED',
     detail: 'Protected language-server admission has not been accepted.'
@@ -166,6 +168,12 @@ function App() {
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
+  const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
+    languageForPath(activeTab.relativePath) === 'c';
+  const lspRunningForTab = !!lspSession && !!activeTab &&
+    lspSession.projectId === activeTab.projectId &&
+    lspSession.relativePath === activeTab.relativePath;
+
   const activeLspDiagnostics = useMemo(() => activeTab
     ? visibleDiagnostics(activeTab, lspNativeDiagnostics[activeTab.key]) : [],
     [activeTab, lspNativeDiagnostics]);
@@ -854,9 +862,75 @@ function App() {
     finally { setExplorerPending(false); }
   }
 
+  async function startLspSession() {
+    const tab = activeTab;
+    if (!tab || !lspAvailableForTab || lspSession || lspBusy) return;
+    setLspBusy(true);
+    setProblem('');
+    try {
+      const response = await invoke('ide_lsp_start_session',{request:{
+        projectId:tab.projectId,relativePath:tab.relativePath,
+        expectedRevision:tab.revision,bufferRevision:tab.bufferRevision ?? 0,
+        languageId:languageForPath(tab.relativePath),text:tab.draft,
+        kind:null,position:null,
+      }});
+      if (!matchesSource(tab,response)) {
+        await invoke('ide_lsp_stop_session');
+        throw new Error('Source changed during language-server admission');
+      }
+      setLspSession({projectId:tab.projectId,relativePath:tab.relativePath});
+      setLspNativeDiagnostics(previous=>({...previous,[tab.key]:response}));
+      setHint('Protected clangd session started for '+tab.relativePath+'.');
+    } catch (error) {
+      setProblem('Language server was not started: '+String(error));
+    } finally {setLspBusy(false);}
+  }
+  async function stopLspSession() {
+    if (!lspSession || lspBusy) return;
+    setLspBusy(true);
+    try {
+      await invoke('ide_lsp_stop_session');
+      setHint('Language-server session stopped and native worker released.');
+    } catch(error) {
+      setProblem('Language-server cleanup must be verified: '+String(error));
+    } finally {
+      setLspSession(null);
+      setLspNativeDiagnostics({});
+      setLspCompletions(null);
+      setLspHover(null);
+      setLspBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (!lspSession || !activeTab ||
+        lspSession.projectId!==activeTab.projectId ||
+        lspSession.relativePath!==activeTab.relativePath) return;
+    const tab = activeTab;
+    const timer=setTimeout(() => {
+      const request={
+        projectId:tab.projectId,relativePath:tab.relativePath,
+        expectedRevision:tab.revision,bufferRevision:tab.bufferRevision ?? 0,
+        languageId:languageForPath(tab.relativePath),text:tab.draft,
+        kind:null,position:null,
+      };
+      void invoke('ide_lsp_change_document',{request}).then(changed=>{
+        if (!matchesSource(tab,changed)) return;
+        return invoke('ide_lsp_read_diagnostics',{request});
+      }).then(result=>{
+        if (!result || !matchesSource(tab,result)) return;
+        setLspNativeDiagnostics(previous=>({...previous,[tab.key]:result}));
+      }).catch(error=>{
+        if (String(error).includes('LSP_STALE') ||
+            String(error).includes('LSP_BUFFER_REVISION')) return;
+        setProblem('Language service could not synchronize this draft: '+String(error));
+      });
+    },400);
+    return ()=>clearTimeout(timer);
+  },[lspSession,activeTab?.key,activeTab?.bufferRevision,activeTab?.revision]);
+
   async function requestLspFeature(kind) {
     const tab = activeTab;
-    if (!tab || !lspWorker?.ready || !languageForPath(tab.relativePath)) return;
+    if (!tab || !lspRunningForTab || !lspAvailableForTab) return;
     if (!['completion', 'hover', 'definition', 'diagnostics'].includes(kind)) return;
     // The native host must independently revalidate this current project,
     // saved disk hash, exact unsaved editor buffer revision, worker scope,
@@ -866,8 +940,8 @@ function App() {
       const command = kind === 'diagnostics' ? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature';
       const response = await invoke(command, {request: {
         projectId: tab.projectId, relativePath: tab.relativePath,
-        expectedRevision: tab.revision, bufferRevision: tab.bufferRevision,
-        languageId: languageForPath(tab.relativePath),
+        expectedRevision: tab.revision, bufferRevision: tab.bufferRevision ?? 0,
+        languageId: languageForPath(tab.relativePath), text: tab.draft,
         kind, position: {line:position.line, character:position.character}
       }});
       if (!matchesSource(tab,response)) return;
@@ -890,7 +964,7 @@ function App() {
   }
 
   function applyLspCompletion(item) {
-    if (!activeTab || !lspWorker?.ready ||
+    if (!activeTab || !lspRunningForTab ||
         !activeLspCompletions.some(choice => choice === item)) return;
     setLspCompletionApplyRequest({
       tabIdentity: activeTab.key + ':' + activeTab.generation,
