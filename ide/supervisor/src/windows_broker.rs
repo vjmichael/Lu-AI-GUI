@@ -75,7 +75,7 @@ fn valid_hash(hash: &str) -> bool {
 }
 fn job_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     if !valid_id(id) || !valid_hash(hash) { return Err(denied()); }
-    Ok(os_wide(&format!("Local\\LuIdeD7-{id}-{}", &hash[..16])))
+    Ok(os_wide(&format!("Global\\LuIdeD7-{id}-{}", &hash[..16])))
 }
 fn release_name(id: &str, hash: &str) -> Result<Vec<u16>, SupervisorError> {
     if !valid_id(id) || !valid_hash(hash) { return Err(denied()); }
