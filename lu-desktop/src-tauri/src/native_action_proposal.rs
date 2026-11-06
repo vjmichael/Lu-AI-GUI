@@ -27,6 +27,8 @@ impl NativeAction{
 pub fn classify_current_user_action(input:&str)->Option<NativeAction>{
     let lower=input.trim().to_ascii_lowercase();
     if lower.is_empty()||lower.len()>8192||
+        lower.contains("[attached text file:")||
+        lower.contains("[/attached text file]")||
         ["do not ","don't ","never ","without ","how do i ","how to ",
          "what is ","what does ","explain ","can you explain "]
         .iter().any(|s|lower.starts_with(s))||
@@ -156,7 +158,8 @@ mod tests{
         assert_eq!(classify_current_user_action("Revise an Excel spreadsheet"),Some(NativeAction::ReviseOffice));
         for input in ["How do I copy a file?", "Do not delete a file",
             "Copy and move the file", "Tell me about archives",
-            "Explain how to modify a Word document"]{
+            "Explain how to modify a Word document",
+            "Copy the file\n\n[Attached text file: note.txt]\nsecret"]{
             assert!(classify_current_user_action(input).is_none(),"{input}")
         }
     }

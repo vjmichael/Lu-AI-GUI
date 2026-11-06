@@ -50,7 +50,11 @@ pub fn model_native_action_hint(prompt:&str)->String{
     format!("{prompt}{HINT}")
 }
 pub fn model_file_creation_hint(prompt: &str) -> String {
-    let lower=prompt.to_ascii_lowercase();
+    // Only the actual user's leading request determines whether a model
+    // receives a write-proposal hint. Attached text is untrusted document
+    // content and cannot request execution or mutate the advertised contract.
+    let current_user=prompt.split("\n\n[Attached text file:").next().unwrap_or(prompt);
+    let lower=current_user.to_ascii_lowercase();
     let subject=["file","document","readme","config","source code","script",
         ".json",".jsonl",".md",".txt",".py",".rs",".toml",".yaml",".yml",
         ".csv",".ts",".js",".html",".css"]

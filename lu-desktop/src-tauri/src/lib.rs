@@ -1043,8 +1043,12 @@ async fn lu_generate(
     max_new_tokens: u32,
     read_only_workspace: Option<bool>,
 ) -> Result<String, String> {
-    if read_only_workspace.unwrap_or(false){
-        // Wave 3: only an operator-set boolean reaches Tauri. The actual
+    let requested_workspace=read_only_workspace.unwrap_or(false) ||
+        (image_refs.is_empty() &&
+            workspace_desktop::explicit_read_workspace_request(&prompt));
+    if requested_workspace{
+        // Wave 3: only an operator-set boolean or a conservative HOST
+        // classification may offer a picker. The actual
         // directory can *only* be selected in the native picker, and the
         // existing WorkspaceReadTurnSession grants read-only capabilities for
         // exactly one authenticated USER turn; no file writes are enabled.

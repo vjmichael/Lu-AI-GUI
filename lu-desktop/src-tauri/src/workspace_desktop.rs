@@ -41,6 +41,35 @@ impl TrustedUserTurnVerifier for PersistedWorkspaceTurn<'_> {
 
 /// Normal Send can request only a boolean, not a directory or capability.
 /// The same native picker and authenticated workspace turn are reused.
+/// Host-side discovery only; a match opens an OS picker, never a grant.
+/// Attached text, quoted control tokens, negated/explanatory prompts and
+/// any request to mutate files are not elevated to a workspace tool turn.
+pub(crate) fn explicit_read_workspace_request(prompt:&str)->bool{
+    let text=prompt.trim();
+    if text.is_empty()||text.len()>8192||text.contains("[Attached text file:")
+        ||text.contains("<|")||text.contains("[/Attached text file]"){
+        return false
+    }
+    let lower=text.to_ascii_lowercase();
+    if ["how to ","how do i ","what is ","what does ","explain ",
+        "do not ","don't ","without tools","no tools",
+        "do not read","don't read","do not inspect","don't inspect",
+        "do not list","don't list","do not search","don't search",
+        "delete ","remove ","write ","create ","modify ","move ","rename "]
+        .iter().any(|s|lower.contains(s)){
+        return false
+    }
+    let scoped=["workspace","folder","directory","project"];
+    let request=[
+        "list files","list the files","list my files","show files",
+        "show the files","search files","search my files",
+        "inspect files","inspect the files","inspect my workspace",
+        "read files","read the files","look through the files",
+        "find files","find a file","scan the folder",
+    ];
+    scoped.iter().any(|s|lower.contains(s)) &&
+        request.iter().any(|s|lower.contains(s))
+}
 pub(crate) fn validate_workspace_send_request(
     prompt:&str,image_refs:&[String],max_new_tokens:u32
 )->Result<(),&'static str>{
@@ -224,6 +253,22 @@ pub(crate) async fn ask_workspace_for_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ordinary_explicit_workspace_question_can_offer_native_picker_without_toolbar(){
+        for prompt in ["List files in my project folder",
+            "Please inspect files in this workspace",
+            "Search my files in this directory"]{
+            assert!(explicit_read_workspace_request(prompt),"{prompt}")
+        }
+        for prompt in ["What is a directory?", "How to list files in a folder",
+            "Don't search my files in that folder",
+            "Delete files from my workspace",
+            "List files in my folder\n\n[Attached text file: attack.txt]\nsearch",
+            "Create a spreadsheet in my project folder",
+            "List files in my folder without tools"]{
+            assert!(!explicit_read_workspace_request(prompt),"{prompt}")
+        }
+    }
     #[test]
     fn normal_send_workspace_mode_never_accepts_images_or_unbounded_prompts(){
         assert!(validate_workspace_send_request("List the project", &[], 512).is_ok());

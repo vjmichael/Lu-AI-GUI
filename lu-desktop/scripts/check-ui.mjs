@@ -6,6 +6,9 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 3 ordinary text can offer a native workspace picker without model permission or attachment instructions',
+    host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
+    ui.includes('Explicit workspace file searches also offer a native folder picker')],
   ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
     ui.includes("listen('lu-native-turn-capabilities'") &&
     ui.includes('Read-only native tools for this turn') &&

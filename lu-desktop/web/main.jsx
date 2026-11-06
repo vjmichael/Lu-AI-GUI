@@ -2560,6 +2560,7 @@ function App() {
               onClick={()=>{setToolActivityOpen(v=>!v);void refreshToolActivity(chatId);}}>
               {toolActivityOpen?'Hide tool activity':'Tool activity'}
             </button>
+            <span className="composerHelp">Explicit workspace file searches also offer a native folder picker · No automatic file permission</span>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
