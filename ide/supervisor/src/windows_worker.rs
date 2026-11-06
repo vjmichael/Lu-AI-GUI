@@ -43,7 +43,7 @@ use windows_sys::Win32::{
         Isolation::{
             CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
         },
-        TokenAppContainerSid, TokenIsAppContainer, PSID, SECURITY_ATTRIBUTES,
+        TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer, PSID, SECURITY_ATTRIBUTES,
         SECURITY_CAPABILITIES, TOKEN_QUERY,
     },
     Storage::FileSystem::{CreateFileW, CREATE_NEW, OPEN_EXISTING},
@@ -584,6 +584,32 @@ fn verify_suspended_appcontainer_token(
     }
     let found = unsafe { (*(buffer.as_ptr() as *const AppContainerTokenInfo)).sid };
     if found.is_null() || unsafe { EqualSid(found, expected_sid) } == 0 {
+        return Err(denied());
+    }
+    // Check the actual suspended child token, not merely the declared
+    // zero-capability SECURITY_CAPABILITIES attribute. A granted network
+    // capability would invalidate the execution and network isolation claim.
+    let mut needed = 0u32;
+    unsafe {
+        GetTokenInformation(token.0, TokenCapabilities, ptr::null_mut(), 0, &mut needed);
+    }
+    if needed < size_of::<u32>() as u32 || needed > 64 * 1024 {
+        return Err(denied());
+    }
+    let mut groups = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
+    let mut observed = 0u32;
+    if unsafe {
+        GetTokenInformation(
+            token.0,
+            TokenCapabilities,
+            groups.as_mut_ptr().cast(),
+            needed,
+            &mut observed,
+        )
+    } == 0
+        || observed < size_of::<u32>() as u32
+        || unsafe { *(groups.as_ptr() as *const u32) } != 0
+    {
         return Err(denied());
     }
     Ok(())
