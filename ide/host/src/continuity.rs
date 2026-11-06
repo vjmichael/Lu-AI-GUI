@@ -11,7 +11,12 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{browser::{validate_relative, BrowserError}, inventory::EvidenceInventory, git_status::GitWorktreeInspection, IdeWorkspaceRegistry};
+use crate::{
+    browser::{validate_relative, BrowserError},
+    git_status::GitWorktreeInspection,
+    inventory::EvidenceInventory,
+    IdeWorkspaceRegistry,
+};
 
 const MAX_LEDGER_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 40;
@@ -108,7 +113,10 @@ impl DevelopmentLedger {
                 return Err(ContinuityError::Corrupt);
             }
         }
-        Ok(Self { path, lock: Mutex::new(()) })
+        Ok(Self {
+            path,
+            lock: Mutex::new(()),
+        })
     }
 
     fn events(&self) -> Result<Vec<DevelopmentEvent>, ContinuityError> {
@@ -151,28 +159,38 @@ impl DevelopmentLedger {
     /// Trusted host call after an actual action; never offered as a Tauri
     /// command. A record of success is historical, not proof of present state.
     pub fn record(
-        &self, project_id: &str, operation: &str, summary: &str,
+        &self,
+        project_id: &str,
+        operation: &str,
+        summary: &str,
         source_revision: Option<&str>,
         source_path: Option<&str>,
     ) -> Result<(), ContinuityError> {
         const ALLOWED: [&str; 5] = [
-            "project.register", "project.open", "project.close",
-            "project.unregister", "source.save",
+            "project.register",
+            "project.open",
+            "project.close",
+            "project.unregister",
+            "source.save",
         ];
-        if project_id.len() > 128 || project_id.is_empty()
-            || !project_id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        if project_id.len() > 128
+            || project_id.is_empty()
+            || !project_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-')
             || !ALLOWED.contains(&operation)
             || summary.chars().count() > MAX_NOTE_CHARS
             || summary.chars().any(char::is_control)
             || source_path.is_some_and(|p| validate_relative(p, false).is_err())
-            || source_revision.is_some_and(|s| {
-                s.len() != 64 || !s.bytes().all(|c| c.is_ascii_hexdigit())
-            })
+            || source_revision
+                .is_some_and(|s| s.len() != 64 || !s.bytes().all(|c| c.is_ascii_hexdigit()))
         {
             return Err(ContinuityError::InvalidInput);
         }
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)
-            .map_err(|_| ContinuityError::Unavailable)?.as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| ContinuityError::Unavailable)?
+            .as_secs();
         let event = DevelopmentEvent {
             schema_version: 1,
             event_id: format!("evt-{:032x}", rand::random::<u128>()),
@@ -195,9 +213,13 @@ impl DevelopmentLedger {
                 return Err(ContinuityError::Full);
             }
         }
-        let mut file = OpenOptions::new().create(true).append(true)
-            .open(&self.path).map_err(|_| ContinuityError::Unavailable)?;
-        file.write_all(&bytes).map_err(|_| ContinuityError::Unavailable)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .map_err(|_| ContinuityError::Unavailable)?;
+        file.write_all(&bytes)
+            .map_err(|_| ContinuityError::Unavailable)?;
         file.sync_all().map_err(|_| ContinuityError::Unavailable)?;
         Ok(())
     }
@@ -205,17 +227,23 @@ impl DevelopmentLedger {
     /// Return task orientation, not execution readiness. Project-authored
     /// documents are untrusted evidence with exact saved revisions.
     pub fn context(
-        &self, registry: &IdeWorkspaceRegistry, project_id: &str,
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
     ) -> Result<ProjectContext, ContinuityError> {
-        let project = registry.projects()
+        let project = registry
+            .projects()
             .map_err(|_| ContinuityError::Unavailable)?
             .into_iter()
             .find(|p| p.project_id == project_id && p.active)
             .ok_or(ContinuityError::ProjectUnavailable)?;
         let all = self.events()?;
-        let events = all.into_iter().rev()
+        let events = all
+            .into_iter()
+            .rev()
             .filter(|event| event.project_id == project_id)
-            .take(MAX_EVENTS).collect();
+            .take(MAX_EVENTS)
+            .collect();
         let mut documents = Vec::new();
         for name in CONTEXT_FILES {
             let read = registry.preview_source_file(project_id, name);
@@ -232,8 +260,8 @@ impl DevelopmentLedger {
                         excerpt: Some(excerpt),
                     }
                 }
-                Err(BrowserError::Io(err))
-                    if err.kind() == std::io::ErrorKind::NotFound => ContextDocument {
+                Err(BrowserError::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ContextDocument {
                         relative_path: name,
                         availability: "missing",
                         trust: "untrusted_project_text",
@@ -241,7 +269,8 @@ impl DevelopmentLedger {
                         byte_length: None,
                         excerpt: None,
                         excerpt_truncated: false,
-                    },
+                    }
+                }
                 Err(_) => ContextDocument {
                     relative_path: name,
                     availability: "unverifiable",
@@ -255,7 +284,8 @@ impl DevelopmentLedger {
             documents.push(doc);
         }
         let git_worktree = registry.inspect_git_worktree(project_id);
-        let inventory = registry.inspect_project_evidence(project_id)
+        let inventory = registry
+            .inspect_project_evidence(project_id)
             .map_err(|_| ContinuityError::Unavailable)?;
         Ok(ProjectContext {
             schema_version: 1,
@@ -265,7 +295,10 @@ impl DevelopmentLedger {
             remote_git_state: "not_queried",
             local_artifacts: "bounded_scan",
             current_toolchain_readiness: "not_verified",
-            events, documents, inventory, git_worktree,
+            events,
+            documents,
+            inventory,
+            git_worktree,
         })
     }
 }
