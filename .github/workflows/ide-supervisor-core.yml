@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+# Keep only the newest exact PR-head OS acceptance run while older heads are superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     strategy:
