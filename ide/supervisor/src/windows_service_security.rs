@@ -33,10 +33,11 @@ use windows_sys::Win32::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
             ConvertStringSidToSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT,
         },
-        CheckTokenMembership, EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl,
-        GetTokenInformation, IsTokenRestricted, LookupAccountNameW, RevertToSelf,
-        TokenIsAppContainer, TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
-        DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
+        CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
+        GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
+        RevertToSelf, SecurityImpersonation, TokenIsAppContainer, TokenUser, ACCESS_ALLOWED_ACE,
+        ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED,
+        TOKEN_DUPLICATE, TOKEN_QUERY, TOKEN_USER,
     },
     System::{
         Pipes::{
@@ -154,6 +155,24 @@ fn parse_sid(text: &str) -> Result<OwnedSid, SupervisorError> {
     }
     Ok(OwnedSid(sid))
 }
+/// CheckTokenMembership explicitly requires an impersonation token.
+/// Never pass the service's OpenProcessToken primary-token handle directly:
+/// the Windows SCM native test returned startup stage 103 at that call.
+/// Duplicate only for a membership query, preserving restricted SID semantics.
+/// Both failures and a missing/disabled service group deny admission.
+fn enabled_member_of_primary_token(primary: HANDLE, sid: *mut c_void) -> Result<bool, SupervisorError> {
+    let mut duplicate = ptr::null_mut();
+    if unsafe { DuplicateToken(primary, SecurityImpersonation, &mut duplicate) } == 0 {
+        return Err(denied());
+    }
+    let token = Handle::new(duplicate)?;
+    let mut is_member = 0i32;
+    if unsafe { CheckTokenMembership(token.0, sid, &mut is_member) } == 0 {
+        return Err(denied());
+    }
+    Ok(is_member != 0)
+}
+
 /// Account identity is TokenUser, not a TokenGroups membership assertion.
 /// LocalService is a logon identity, so CheckTokenMembership alone is wrong.
 fn token_user_is(token: HANDLE, expected: *mut c_void) -> Result<bool, SupervisorError> {
@@ -225,7 +244,9 @@ pub(crate) fn service_identity_stage() -> u32 {
 pub fn assert_restricted_local_service() -> Result<(), SupervisorError> {
     SERVICE_IDENTITY_STAGE.store(1, Ordering::Relaxed);
     let mut raw = ptr::null_mut();
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) }
+        == 0
+    {
         return Err(denied());
     }
     let token = Handle::new(raw)?;
@@ -233,10 +254,7 @@ pub fn assert_restricted_local_service() -> Result<(), SupervisorError> {
     let service_sid = parse_sid(&sid_of_service()?)?;
     let local_service_sid = parse_sid("S-1-5-19")?;
     SERVICE_IDENTITY_STAGE.store(3, Ordering::Relaxed);
-    let mut service_member = 0_i32;
-    if unsafe { CheckTokenMembership(token.0, service_sid.0, &mut service_member) } == 0
-        || service_member == 0
-    {
+    if !enabled_member_of_primary_token(token.0, service_sid.0)? {
         return Err(denied());
     }
     SERVICE_IDENTITY_STAGE.store(4, Ordering::Relaxed);
@@ -558,15 +576,13 @@ pub fn authenticate_service_server(
     }
     hash_executable(&expected, service_sha256)?;
     let mut raw = ptr::null_mut();
-    if unsafe { OpenProcessToken(server.0, TOKEN_QUERY, &mut raw) } == 0 {
+    if unsafe { OpenProcessToken(server.0, TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
         return Err(denied());
     }
     let token = Handle::new(raw)?;
     let service = parse_sid(&sid_of_service()?)?;
     let local = parse_sid("S-1-5-19")?;
-    let mut present = 0;
-    if unsafe { CheckTokenMembership(token.0, service.0, &mut present) } == 0
-        || present == 0
+    if !enabled_member_of_primary_token(token.0, service.0)?
         || !token_user_is(token.0, local.0)?
     {
         return Err(denied());
