@@ -24,7 +24,6 @@ impl BrowserModelCodec {
             (BrowserModelKind::Read,"read")=>Ok(O::Read),
             (BrowserModelKind::Read,"status")=>Ok(O::Status),
             (BrowserModelKind::Read,"accessibility")=>Ok(O::Accessibility),
-            (BrowserModelKind::Read,"screenshot")=>Ok(O::Screenshot),
             (BrowserModelKind::Interact,"click")=>Ok(O::Click),
             (BrowserModelKind::Interact,"click_selector")=>Ok(O::ClickSelector),
             (BrowserModelKind::Interact,"type")=>Ok(O::Type),
@@ -37,7 +36,7 @@ impl BrowserModelCodec {
     }
     pub fn schema(&self)->Value {
         let operations=match self.0{
-            BrowserModelKind::Read=>vec!["navigate","read","status","accessibility","screenshot"],
+            BrowserModelKind::Read=>vec!["navigate","read","status","accessibility"],
             BrowserModelKind::Interact=>vec!["click","click_selector","type","press","scroll","back","forward"]
         };
         json!({
