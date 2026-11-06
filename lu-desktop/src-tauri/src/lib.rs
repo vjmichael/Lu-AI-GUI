@@ -4175,6 +4175,7 @@ pub fn run() {
             lu_browser_human_verified,
             lu_browser_stop,
             browser_model_desktop::lu_browser_model_read,
+            browser_model_desktop::lu_generate_browser,
             lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,
