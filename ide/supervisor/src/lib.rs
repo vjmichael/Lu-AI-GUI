@@ -634,6 +634,27 @@ impl Supervisor {
         tree_reaped: bool,
         outputs_bounded: bool,
     ) -> Result<JobSummary, SupervisorError> {
+        self.native_finish_with_output(
+            job_id, succeeded, tree_reaped, outputs_bounded, None
+        )
+    }
+
+    /// The native broker may bind a published, immutable output seal to the
+    /// terminal receipt. No frontend/LLM value can supply this evidence.
+    /// Existing Linux callers retain their original receipt format.
+    fn native_finish_with_output(
+        &self,
+        job_id: &str,
+        succeeded: bool,
+        tree_reaped: bool,
+        outputs_bounded: bool,
+        output_sha256: Option<&str>,
+    ) -> Result<JobSummary, SupervisorError> {
+        if let Some(sha) = output_sha256 {
+            if !outputs_bounded || !hex_sha(sha, 64) {
+                return Err(SupervisorError::InvalidPlan);
+            }
+        }
         let mut state = self
             .state
             .lock()
@@ -665,6 +686,9 @@ impl Supervisor {
         } else {
             (JobPhase::Failed, "native_worker_failed")
         };
+        let evidence = output_sha256
+            .map(|hash| format!("tree_reaped_published_sha256_{hash}"))
+            .unwrap_or_else(|| "reaped_process_tree_bounded_outputs".to_owned());
         self.append(
             &mut state,
             job_id,
@@ -672,7 +696,7 @@ impl Supervisor {
             &job.plan_hash,
             phase,
             outcome,
-            "reaped_process_tree_bounded_outputs",
+            &evidence,
         )?;
         state.jobs.get_mut(job_id).unwrap().phase = phase;
         Ok(JobSummary {
