@@ -1043,6 +1043,19 @@ async fn lu_generate(
     max_new_tokens: u32,
     read_only_workspace: Option<bool>,
 ) -> Result<String, String> {
+    // Git inspection is a separate read-only, host-scoped capability.
+    // It is never inferred from retrieved text, background turns, or a
+    // general workspace grant. The native picker is still mandatory.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty() &&
+        max_new_tokens==512 &&
+        workspace_desktop::explicit_read_git_request(&prompt){
+        workspace_desktop::validate_workspace_send_request(
+            &prompt,&image_refs,max_new_tokens,
+        ).map_err(str::to_owned)?;
+        return workspace_desktop::ask_git_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+        ).await?.ok_or_else(||"Git repository was not selected".into())
+    }
     let requested_workspace=read_only_workspace.unwrap_or(false) ||
         (image_refs.is_empty() &&
             workspace_desktop::explicit_read_workspace_request(&prompt));
@@ -1632,6 +1645,7 @@ fn lu_tool_turn_history(
     for (source,file) in [
         ("Workspace","lu-workspace-read-audit.sqlite"),
         ("Reader","lu-reader-turn-audit.sqlite"),
+        ("Git","lu-git-read-audit.sqlite"),
     ]{
         let path=state.catalog_path.with_file_name(file);
         // Reading history must never create a fake audit database.

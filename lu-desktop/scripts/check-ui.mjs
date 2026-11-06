@@ -7,6 +7,12 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
+    host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&
+    host.includes('workspace_desktop::ask_git_for_chat(') &&
+    workspaceHost.includes('WorkspaceReadTurnSession::new_git(') &&
+    workspaceHost.includes('trusted_git_executable()') &&
+    ui.includes('Git status, log and diff require selecting a repository')],
   ['Wave 3 ordinary Send can open trusted Reader for explicit document interpretation',
     host.includes('reader_desktop::explicit_reader_document_request(&prompt)') &&
     host.includes('reader_desktop::ask_reader_for_chat(')],

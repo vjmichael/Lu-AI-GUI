@@ -2560,7 +2560,7 @@ function App() {
               onClick={()=>{setToolActivityOpen(v=>!v);void refreshToolActivity(chatId);}}>
               {toolActivityOpen?'Hide tool activity':'Tool activity'}
             </button>
-            <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers · No automatic file permission</span>
+            <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers; Git status, log and diff require selecting a repository · No automatic file permission</span>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>

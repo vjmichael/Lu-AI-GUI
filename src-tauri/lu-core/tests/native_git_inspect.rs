@@ -3,6 +3,7 @@
 
 use lu_core::{
     agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
+    native_workspace_read_turn::WorkspaceReadTurnSession,
     contracts::{AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation},
     conversation_authority::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
@@ -290,5 +291,30 @@ fn git_root_gitdir_and_executable_are_only_host_defined() {
     assert!(register_git_inspection_tools(&reg, &mut catalog, &root, &git).is_err());
     drop(catalog); drop(reg);
     teardown(empty);
+    teardown(root);
+}
+
+#[test]
+fn wave4_git_session_only_advertises_three_host_authorized_read_tools(){
+    let (root,git)=fixture();
+    assert!(WorkspaceReadTurnSession::new_git(
+        &Verified,"wrong-chat","git-turn","git-task",&root,&git,
+    ).is_err(),"Other conversations cannot borrow this Git grant");
+    assert!(WorkspaceReadTurnSession::new_git(
+        &Verified,"git-chat","wrong-turn","git-task",&root,&git,
+    ).is_err(),"A saved exact human turn is required");
+    let session=WorkspaceReadTurnSession::new_git(
+        &Verified,"git-chat","git-turn","git-task",&root,&git,
+    ).unwrap();
+    let names=session.capabilities().unwrap().into_iter()
+        .map(|cap|(cap.public_name,cap.effect))
+        .collect::<Vec<_>>();
+    assert_eq!(names,vec![
+        ("lu_git_diff".into(),"read_workspace".into()),
+        ("lu_git_log".into(),"read_workspace".into()),
+        ("lu_git_status".into(),"read_workspace".into()),
+    ]);
+    assert_eq!(session.schemas().unwrap().len(),3);
+    drop(session);
     teardown(root);
 }
