@@ -32,6 +32,9 @@ function App() {
   const [imageViewer,setImageViewer] = useState(null);
   const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500'});
   const [imagePlan,setImagePlan]=useState({chatId:null,imageRef:null,steps:[],redo:[]});
+  const [imagePreviewBusy,setImagePreviewBusy]=useState(false);
+  const [imageAssemblyPreview,setImageAssemblyPreview]=useState(null);
+  const imagePreviewKeyRef=useRef('');
   const [imageExportBusy,setImageExportBusy]=useState(false);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
@@ -626,6 +629,13 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setOcrBusy(false);}
   }
+  const currentImagePreviewKey=JSON.stringify([
+    chatId,imageViewer?.imageRef||null,
+    imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer?.imageRef
+      ?imagePlan.steps:[]
+  ]);
+  imagePreviewKeyRef.current=currentImagePreviewKey;
+  useEffect(()=>{setImageAssemblyPreview(null);},[currentImagePreviewKey]);
   function queueImageStep(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
     const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
@@ -668,6 +678,26 @@ function App() {
       if(p.chatId!==chatId||p.imageRef!==imageViewer.imageRef||!p.redo.length)return p;
       return {...p,steps:[...p.steps,p.redo[0]],redo:p.redo.slice(1)};
     });
+  }
+  async function previewImageAssembly(){
+    const sourceChat=chatId,sourceRef=imageViewer?.imageRef;
+    if(!sourceChat||!sourceRef||imagePreviewBusy||
+       imagePlan.chatId!==sourceChat||imagePlan.imageRef!==sourceRef||
+       !imagePlan.steps.length)return;
+    const steps=imagePlan.steps.map(step=>({...step}));
+    const key=JSON.stringify([sourceChat,sourceRef,steps]);
+    setImagePreviewBusy(true);
+    try{
+      const result=await invoke('lu_image_workspace_preview',{
+        chatId:sourceChat,imageRef:sourceRef,steps
+      });
+      // A completed preview may not appear in another chat or over a
+      // different assembly if the operator edited while native code ran.
+      if(imagePreviewKeyRef.current===key){
+        setImageAssemblyPreview({key,result});
+      }
+    }catch(e){if(imagePreviewKeyRef.current===key)setError(String(e));}
+    finally{setImagePreviewBusy(false);}
   }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
@@ -3517,6 +3547,22 @@ function App() {
                 {step.operation}{['crop','redact','pixelate','rectangle','resize'].includes(step.operation)?
                   ' · '+step.width+' × '+step.height:''}
               </li>)}</ol>
+            </div>}
+          <button type="button" disabled={!chatId||imageExportBusy||imagePreviewBusy||
+              imagePlan.chatId!==chatId||imagePlan.imageRef!==imageViewer.imageRef||
+              !imagePlan.steps.length}
+            onClick={()=>void previewImageAssembly()}>
+            {imagePreviewBusy?'Preparing native preview…':'Preview staged edits'}
+          </button>
+          {imageAssemblyPreview?.key===currentImagePreviewKey&&
+            imageAssemblyPreview.result?.dataUrl&&
+            <div className="imageViewerViewport" aria-label="Native staged image preview">
+              <img src={imageAssemblyPreview.result.dataUrl}
+                alt="Preview of staged deterministic edits, not yet saved"/>
+              <small>Volatile native preview ·
+                {imageAssemblyPreview.result.width} × {imageAssemblyPreview.result.height} ·
+                SHA-256 {imageAssemblyPreview.result.revisionSha256}.
+                No file saved. Source image remains unchanged.</small>
             </div>}
           <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
             onClick={()=>void exportImageRevision()}>

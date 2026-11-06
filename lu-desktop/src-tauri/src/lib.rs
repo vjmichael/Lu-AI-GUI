@@ -2203,6 +2203,29 @@ async fn lu_research_crossref(
     }
 }
 
+/// IMAGE-WS-PREVIEW-01: preview an explicitly staged, already admitted
+/// image assembly. This is read-only and never grants model, disk, journal,
+/// browser or memory authority. The renderer cannot select a filesystem path.
+#[tauri::command]
+async fn lu_image_workspace_preview(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String,
+    steps:Vec<image_workspace_desktop::ImageRevisionStep>,
+)->Result<image_workspace_desktop::ImageAssemblyPreview,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for image preview")?;
+    if steps.is_empty()||steps.len()>12{
+        return Err("Image preview requires 1–12 staged steps".into());
+    }
+    let source=state.images.lock()
+        .map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned()
+        .ok_or("Image attachment is no longer admitted")?;
+    tauri::async_runtime::spawn_blocking(move||
+        image_workspace_desktop::preview_revision_plan(&source,&steps)
+    ).await.map_err(|_|"Native image preview worker unavailable".to_string())?
+}
+
 /// Human-picked new PNG only: no path or edit authority is exposed to the
 /// model. Current attachment bytes must be host-admitted and still pinned.
 #[tauri::command]
@@ -5243,6 +5266,7 @@ pub fn run() {
             lu_office_word_replace_all,
             lu_office_presentation_replace_all,
             lu_image_workspace_export,
+            lu_image_workspace_preview,
             lu_image_workspace_history,
             lu_environment_status,
             lu_observe_start,

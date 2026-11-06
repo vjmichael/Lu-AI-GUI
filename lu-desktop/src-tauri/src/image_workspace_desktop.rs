@@ -2,6 +2,7 @@
 //! The renderer may suggest geometry, but only already-admitted bytes and a
 //! native user-selected destination can be used. No image model, script,
 //! arbitrary edit tool or model-selected filesystem authority.
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use lu_core::{
     multimodal_saved_turn::PinnedImage,
     native_image_revision::{
@@ -70,6 +71,46 @@ pub(crate) struct ImageExportReceipt{
     pub source_unchanged:bool,
     pub overwritten_existing_file:bool,
 }
+/// A volatile preview of an explicitly staged operator edit assembly.
+/// The source remains pinned, and no file, journal, memory, network or
+/// model-facing artifact is written. The result is returned to the existing
+/// local renderer only, with a separate 4 MiB transport cap.
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ImageAssemblyPreview {
+    pub base_ref:String,
+    pub base_sha256:String,
+    pub revision_sha256:String,
+    pub width:u32,
+    pub height:u32,
+    pub png_bytes:usize,
+    pub data_url:String,
+    pub persisted:bool,
+}
+pub(crate) fn preview_revision_plan(
+    source:&PinnedImage,steps:&[ImageRevisionStep]
+)->Result<ImageAssemblyPreview,String>{
+    if steps.is_empty()||steps.len()>12{
+        return Err("Preview requires 1–12 staged image steps".into());
+    }
+    let operations=steps.iter().map(ImageRevisionStep::operation)
+        .collect::<Result<Vec<_>,_>>()?;
+    let revision=transform_admitted_image_sequence(source,&operations)
+        .map_err(|e|format!("Native image preview refused: {e:?}"))?;
+    if revision.output_png.len()>4*1024*1024{
+        return Err("Preview PNG exceeds 4 MiB; export can still use native approval".into());
+    }
+    let png_bytes=revision.output_png.len();
+    Ok(ImageAssemblyPreview{
+        base_ref:revision.base_ref,
+        base_sha256:revision.base_sha256,
+        revision_sha256:revision.revision_sha256,
+        width:revision.width,height:revision.height,png_bytes,
+        data_url:format!("data:image/png;base64,{}",STANDARD.encode(&revision.output_png)),
+        persisted:false,
+    })
+}
+
 /// Caller MUST have shown the precise digest, dimensions and the OS Save
 /// dialog. Direct tool/model access to this method is forbidden.
 pub(crate) fn write_new_revision(
@@ -153,6 +194,29 @@ mod tests{
         DynamicImage::new_rgba8(20,15)
             .write_to(&mut Cursor::new(&mut data),ImageFormat::Png).unwrap();
         admit_data_url(&format!("data:image/png;base64,{}",STANDARD.encode(data))).unwrap()
+    }
+    #[test]
+    fn read_only_assembly_preview_is_deterministic_and_does_not_touch_source(){
+        let input=source();
+        let original=input.bytes.clone();
+        let plan=[ImageRevisionStep{
+            operation:"rectangle".into(),x:Some(1),y:Some(1),
+            width:8,height:6,block_size:None,
+            stroke:Some(2),color:Some(0x2255cc)
+        }];
+        let preview=preview_revision_plan(&input,&plan).unwrap();
+        assert_eq!(preview.width,20);
+        assert_eq!(preview.height,15);
+        assert!(!preview.persisted);
+        assert_eq!(preview.base_ref,input.image_ref);
+        assert_eq!(input.bytes,original);
+        let encoded=preview.data_url.strip_prefix("data:image/png;base64,").unwrap();
+        let decoded=STANDARD.decode(encoded).unwrap();
+        assert_eq!(preview.png_bytes,decoded.len());
+        assert_eq!(preview.revision_sha256,format!("{:x}",Sha256::digest(decoded)));
+        assert!(preview_revision_plan(&input,&[]).is_err());
+        let repeated=preview_revision_plan(&input,&plan).unwrap();
+        assert_eq!(preview.revision_sha256,repeated.revision_sha256);
     }
     #[test]
     fn immutable_new_file_and_no_clobber(){
