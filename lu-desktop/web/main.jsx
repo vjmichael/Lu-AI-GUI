@@ -119,6 +119,8 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
+  const wave2FileBusy = archiveBusy || documentCreateBusy || officeRevisionBusy ||
+    fileTransferBusy || trashBusy;
   const activeChat = chats.find(c => c.chatId === chatId);
   const matchingChats = chats.filter(c => matchesChatTitle(c, chatQuery));
   const visibleJob = chatId ? jobs[chatId] : null;
@@ -1503,6 +1505,14 @@ function App() {
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
+        {wave2FileBusy && <section className="readProposalCard" role="status"
+          aria-live="polite" aria-label="Native file operation in progress">
+          <strong>Native file operation in progress</strong>
+          <small>Lu is handling a native picker, confirmation, bounded document/archiving work,
+            or receipt verification. Byte-level progress is not available in this workflow.
+            No automatic retry occurs if a write is interrupted; inspect File operations or
+            File recovery before taking another action.</small>
+        </section>}
         {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>}
         {Object.values(readProposals).filter(proposal => proposal.chatId === chatId).map(proposal =>
           <section key={proposal.proposalId} className="readProposalCard" role="group"
