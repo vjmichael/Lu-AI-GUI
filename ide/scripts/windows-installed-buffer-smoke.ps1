@@ -139,6 +139,16 @@ try {
       break
     }
   }
+  # WebView2 may expose a contenteditable CodeMirror view as Document rather
+  # than Edit. Search it only when no actual Edit control was available.
+  if($null -eq $editable) {
+    foreach($control in $controls) {
+      if($control.Current.ControlType -eq [System.Windows.Automation.ControlType]::Document) {
+        $editable=$control
+        break
+      }
+    }
+  }
   if($null -eq $editable) {throw 'CodeMirror editable surface unavailable to UI Automation'}
   $bounds=$editable.Current.BoundingRectangle
   if($bounds.IsEmpty) {throw 'CodeMirror interactive bounds empty'}
