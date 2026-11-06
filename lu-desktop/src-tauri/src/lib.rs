@@ -1871,7 +1871,11 @@ async fn lu_review_archive_tree(
     let Some((source,destination))=picked else{return Ok(None)};
     let review_id=next_id("ar-");
     let view=tauri::async_runtime::spawn_blocking(move||{
-        state.archive_reviews.stage(&chat_id,&review_id,&source,&destination)
+        let run=state.archive_runs.register(&chat_id,&review_id)?;
+        state.archive_reviews.stage_supervised(
+            &chat_id,&review_id,&source,&destination,&run.cancellation(),
+            &state.background_processes,&state.background_tasks
+        )
     }).await.map_err(|e|format!("Archive preview worker failed: {e}"))??;
     Ok(Some(view))
 }
@@ -1927,8 +1931,17 @@ async fn lu_confirm_archive_tree(
     drop(run_guard);
     Ok(Some(result))
 }
-/// A UI cancellation request is advisory until the blocking native worker
-/// reaches a checkpoint. Journal evidence is never changed by this command.
+/// Cancel an active operator preview without accepting a model-provided PID
+/// or unsigned file path. The host resolves the only active archive run.
+#[tauri::command]
+fn lu_cancel_archive_preview(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)?;
+    state.archive_runs.request_cancel_chat(&chat_id)
+}
+/// Cancellation is host-owned and reaps the supervised child. Any extraction
+/// started after EXECUTING remains UNCERTAIN unless full-tree receipt verified.
 #[tauri::command]
 fn lu_cancel_archive_tree(
     state:State<'_,Arc<DesktopState>>,chat_id:String,review_id:String
@@ -3267,6 +3280,7 @@ pub fn run() {
             lu_review_archive_tree,
             lu_confirm_archive_tree,
             lu_cancel_archive_tree,
+            lu_cancel_archive_preview,
             lu_deny_archive_tree,
             lu_review_write_destination,
             lu_confirm_write,

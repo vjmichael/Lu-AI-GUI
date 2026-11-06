@@ -33,6 +33,11 @@ const tests = [
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
+  ['archive review uses supervised native decoding and scoped preview cancellation',
+    host.includes('state.archive_reviews.stage_supervised(') &&
+    host.includes('fn lu_cancel_archive_preview(') &&
+    ui.includes("invoke('lu_cancel_archive_preview'") &&
+    ui.includes('Cancel archive preview')],
   ['archive recovery independently observes approved full-tree integrity after restart',
     host.includes('state.wave2_recovery.record_archive_intent(') &&
     ui.includes('operation.targetIntegrity') &&

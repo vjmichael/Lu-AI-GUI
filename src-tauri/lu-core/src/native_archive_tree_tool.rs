@@ -65,6 +65,33 @@ impl ToolAuthorizer for ExactArchiveTreePolicy<'_>{
         self.host_policy.authorize(call,desc)
     }
 }
+/// The installed desktop preview already came from a terminated native
+/// worker. Never re-decode an untrusted archive in the Tauri host merely
+/// to authorize its second, independently supervised extraction pass.
+pub struct SupervisedExactArchivePolicy<'a>{
+    pub host_policy:&'a dyn ToolAuthorizer,
+    pub source_name:&'a str,
+    pub destination_folder:&'a str,
+    pub manifest_sha256:&'a str,
+}
+impl ToolAuthorizer for SupervisedExactArchivePolicy<'_>{
+    fn authorize(&self,call:&ToolInvocation,desc:&ToolDescriptor)
+      ->Result<(),AuthorizationError>{
+        let deny=||AuthorizationError::new("Supervised archive was not approved");
+        if desc.id!=TOOL_ID||call.tool_id!=TOOL_ID
+            ||desc.effect!=ToolEffect::WriteWorkspace||call.input.type_url!=INPUT
+            ||!archive_name(self.source_name)||!file_name(self.destination_folder)
+            ||!hash_ok(self.manifest_sha256){return Err(deny())}
+        let r=proto::ArchiveTreeExtractRequest::decode(call.input.bytes.as_slice())
+            .map_err(|_|deny())?;
+        if r.encode_to_vec()!=call.input.bytes||r.source_name!=self.source_name
+            ||r.target_folder!=self.destination_folder
+            ||r.approved_manifest_sha256!=self.manifest_sha256{
+            return Err(deny())
+        }
+        self.host_policy.authorize(call,desc)
+    }
+}
 fn failure(e:TreeExtractError)->ToolFailure{
     let code=match e{
         TreeExtractError::TargetExists=>"TARGET_EXISTS",

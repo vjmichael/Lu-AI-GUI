@@ -40,14 +40,74 @@ fn execute(args:&[OsString])->Result<(),()>{
     }
     Ok(())
 }
+fn execute_preview(args:&[OsString])->Result<(),()>{
+    use std::{fs::{self,OpenOptions},io::Write};
+    if args.len()!=5||args[0]!=OsStr::new("--lu-archive-preview-worker"){
+        return Err(())
+    }
+    let source_path=Path::new(&args[1]);
+    let source_name=args[2].to_str().ok_or(())?;
+    let output_path=Path::new(&args[3]);
+    let identity=args[4].to_str().ok_or(())?;
+    if !source_path.is_absolute()||!output_path.is_absolute()||identity.is_empty(){
+        return Err(())
+    }
+    let source=Dir::open_ambient_dir(source_path,ambient_authority()).map_err(|_|())?;
+    if opened_directory_identity(&source).map_err(|_|())?!=identity{return Err(())}
+    let manifest=preview_archive_tree(&source,source_name).map_err(|_|())?;
+    if !lu_core::native_archive_tree::verify_tree_manifest(&manifest){
+        return Err(())
+    }
+    let bytes=serde_json::to_vec(&manifest).map_err(|_|())?;
+    if bytes.len()>1024*1024{return Err(())}
+    let mut file=OpenOptions::new().create_new(true).write(true)
+        .open(output_path).map_err(|_|())?;
+    file.write_all(&bytes).map_err(|_|())?;
+    file.sync_all().map_err(|_|())?;
+    drop(file);
+    // A file is a transport witness, not filesystem write permission.
+    let meta=fs::symlink_metadata(output_path).map_err(|_|())?;
+    if !meta.is_file()||meta.file_type().is_symlink(){return Err(())}
+    Ok(())
+}
 pub fn run_archive_process_worker()->i32{
     let args=std::env::args_os().skip(1).collect::<Vec<_>>();
-    if execute(&args).is_ok(){0}else{3}
+    if args.first().is_some_and(|s|s==OsStr::new("--lu-archive-preview-worker")){
+        if execute_preview(&args).is_ok(){0}else{3}
+    }else if execute(&args).is_ok(){0}else{3}
 }
 #[cfg(test)]
 mod tests{
     use super::*;
     use std::{fs,ffi::OsString};
+    #[test]
+    fn preview_worker_returns_exact_manifest_without_extraction(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-archive-preview-test-{}",std::process::id()
+        ));
+        let _=fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let dir=Dir::open_ambient_dir(&root,ambient_authority()).unwrap();
+        fs::write(root.join("file.txt"),b"preview").unwrap();
+        lu_core::native_linux_archive::create_linux_archive_new(
+            &dir,"preview.tar",&["file.txt".into()],
+            "archive-preview-stage-123456789"
+        ).unwrap();
+        let expected=preview_archive_tree(&dir,"preview.tar").unwrap();
+        let output=root.join("preview.json");
+        let args:Vec<OsString>=vec![
+            "--lu-archive-preview-worker".into(),root.as_os_str().into(),
+            "preview.tar".into(),output.as_os_str().into(),
+            opened_directory_identity(&dir).unwrap().into(),
+        ];
+        assert!(execute_preview(&args).is_ok());
+        let restored:lu_core::native_archive_tree::TreeManifest=
+            serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+        assert_eq!(restored,expected);
+        assert!(execute_preview(&args).is_err(),"no-clobber preview");
+        assert!(!root.join("preview-extracted").exists());
+        drop(dir);fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn mismatched_parent_identity_refuses_any_publication(){
         let root=std::env::temp_dir().join(format!(

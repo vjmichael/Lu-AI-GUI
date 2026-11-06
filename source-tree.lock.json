@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6a9246b1e588dc11f9fcd04264d70115cd737082",
+  "sourceCommitBeforeLock": "e1f66b3d9927b4d64f1bd895cdabc837291e8933",
   "trackedFileCount": 391,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "4ea2dd5c61256672f43e1da2715df2ad40ef8bd9"
+      "blob": "a200ba67d96a23d1bfd45cc186f62f4c4f3ea2f6"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/TOOLS_WAVE2_ADVANCED_FORMATS_AND_OFFICE.md",
-      "blob": "aea68ea334d230e06cf6f1ae74a4fc1e42587d73"
+      "blob": "50841d58f2585c49b744999aa03e10a8b198e6b9"
     },
     {
       "path": "docs/TOOLS_WAVE2_LINUX_PACKAGE_FORMATS.md",
@@ -249,7 +249,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "5b466b12577885b5f437bfdc8e5e1786fd5bb54b"
+      "blob": "6ab63d613fefbab7cf9126cbe316bce984e3afe4"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -297,11 +297,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_desktop.rs",
-      "blob": "cb6d227e579580c4dd51446d155e179caa1d2206"
+      "blob": "950efb71736be8822375c5e2fff352ab04dc03df"
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_process_worker.rs",
-      "blob": "743ad2c8dd8eec85ff807a6c3bac7c1dbcb11c3c"
+      "blob": "fe08f61ae9d199beb09134494eea1e24b94821cd"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -333,7 +333,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "282594b948347d364dc7889b06503e56dd01713c"
+      "blob": "a21bda507ebfe97205c2d6e20024af9461a41202"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -341,7 +341,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/main.rs",
-      "blob": "9ccf08f71068db75c6492c35dcfb1373998173d4"
+      "blob": "239325cf112525e5e3d25140fa101460e83ed4d4"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -533,7 +533,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "bbe72746c998d67f4e01a4bfaed9ed4cad0fe6c6"
+      "blob": "09cfab1adaf6a17579bf3c3b652d93656f2af508"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -861,7 +861,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree_tool.rs",
-      "blob": "97dd4e9de8a9e52d2f42418aea87bff02f7ff781"
+      "blob": "6f431305ce51380edd01f67a6dd3760e9068b98e"
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",

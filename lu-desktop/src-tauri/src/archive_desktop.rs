@@ -6,9 +6,12 @@
 //! is verified against actual member bytes before reporting success.
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self,File},
+    io::Read,
+    ffi::OsString,
     path::{Path,PathBuf},
     sync::{Arc,Mutex},
+    thread,time::Duration,
 };
 use cap_std::{ambient_authority,fs::Dir};
 use lu_core::{
@@ -16,18 +19,21 @@ use lu_core::{
     conversation_authority::{AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority},
     journal::EffectJournal,
     model::ModelToolCatalog,
-    native_archive_tree::{preview_archive_tree,observe_tree_completion,ArchiveCancellation,TreeManifest},
+    native_archive_tree::{preview_archive_tree,observe_tree_completion,verify_tree_manifest,ArchiveCancellation,TreeManifest},
     native_archive_tree_tool::{
-        register_archive_tree_extractor_supervised,ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
+        register_archive_tree_extractor_supervised,SupervisedExactArchivePolicy,TOOL_ID,INPUT,OUTPUT,
     },
     native_archive_process::{SupervisedArchivePlan,opened_directory_identity},
-    native_background_process::BackgroundProcessSupervisor,
-    tasks::TaskStore,
+    native_background_process::{
+        BackgroundProcessSupervisor,TrustedWorkerPlan,
+    },
+    tasks::{TaskStore,TaskState},
     policy::{CapabilityGrant,PolicyEngine},
     registry::NativeToolRegistry,
     wire::proto,
 };
 use prost::Message;
+use sha2::{Digest,Sha256};
 use serde::Serialize;
 use crate::chat_store::ChatStore;
 
@@ -59,6 +65,18 @@ impl ArchiveRunRegistry{
         let cancel=ArchiveCancellation::default();
         active.insert(review.into(),(chat.into(),cancel.clone()));
         Ok(ArchiveRunGuard{registry:self,review_id:review.into(),cancel})
+    }
+    /// Used while the preview review ID has not been surfaced to the UI.
+    /// The host, not WebView or a model, resolves the active review.
+    pub fn request_cancel_chat(&self,chat:&str)->Result<bool,String>{
+        let active=self.active.lock().map_err(|_|"Archive cancellation unavailable")?;
+        for (owner,token) in active.values(){
+            if owner==chat{
+                token.cancel();
+                return Ok(true)
+            }
+        }
+        Ok(false)
     }
     pub fn request_cancel(&self,chat:&str,review:&str)->Result<bool,String>{
         let active=self.active.lock().map_err(|_|"Archive cancellation unavailable")?;
@@ -217,6 +235,92 @@ impl PinnedArchiveReview{
             &&Arc::ptr_eq(&self.destination_root,&other.destination_root)
     }
 }
+struct PreviewOutput{path:PathBuf}
+impl Drop for PreviewOutput{
+    fn drop(&mut self){let _=fs::remove_file(&self.path);}
+}
+fn preview_in_owned_worker(
+    source_parent:&Path,source_name:&str,source_identity:&str,review_id:&str,
+    processes:&BackgroundProcessSupervisor,tasks:&TaskStore,
+    cancel:&ArchiveCancellation,
+)->Result<TreeManifest,String>{
+    if cancel.is_cancelled(){return Err("Archive preview cancelled".into())}
+    let output=PreviewOutput{
+        path:std::env::temp_dir().join(format!("lu-wave2-preview-{review_id}.json"))
+    };
+    let exe=std::env::current_exe().map_err(|_|"Lu worker executable unavailable")?;
+    let mut binary=File::open(&exe).map_err(|_|"Lu worker executable unreadable")?;
+    let mut hash=Sha256::new();
+    let mut buffer=[0u8;65536];
+    loop{
+        let n=binary.read(&mut buffer).map_err(|_|"Lu worker hash failed")?;
+        if n==0{break}
+        hash.update(&buffer[..n]);
+    }
+    if cancel.is_cancelled(){return Err("Archive preview cancelled".into())}
+    let task_id=format!("archive-preview-{review_id}");
+    processes.start_host_approved(TrustedWorkerPlan{
+        task_id:task_id.clone(),workspace_id:"native-wave2-archive".into(),
+        executable:exe,expected_sha256:format!("{:x}",hash.finalize()),
+        args:vec![
+            OsString::from("--lu-archive-preview-worker"),
+            source_parent.as_os_str().into(),source_name.into(),
+            output.path.as_os_str().into(),source_identity.into(),
+        ],
+        progress_protocol:false,max_runtime_seconds:Some(600),
+    }).map_err(|_|"Cannot start supervised archive preview")?;
+    struct Owned<'a>{manager:&'a BackgroundProcessSupervisor,id:String,live:bool}
+    impl Drop for Owned<'_>{
+        fn drop(&mut self){
+            if self.live{
+                let _=self.manager.cancel_owned(&self.id,"native-wave2-archive");
+            }
+        }
+    }
+    let mut owned=Owned{manager:processes,id:task_id.clone(),live:true};
+    loop{
+        processes.poll().map_err(|_|"Archive preview supervisor unavailable")?;
+        let state=tasks.get(&task_id).map_err(|_|"Archive preview state unavailable")?
+            .ok_or("Archive preview missing from native task ledger")?.state;
+        match state{
+            TaskState::Completed=>{
+                owned.live=false;
+                let metadata=fs::symlink_metadata(&output.path)
+                    .map_err(|_|"Archive preview output missing")?;
+                if !metadata.is_file()||metadata.file_type().is_symlink()
+                    ||metadata.len()>1024*1024{
+                    return Err("Untrusted archive preview result".into())
+                }
+                let mut bytes=Vec::new();
+                File::open(&output.path).map_err(|_|"Archive preview result unreadable")?
+                    .take(1024*1024+1).read_to_end(&mut bytes)
+                    .map_err(|_|"Archive preview result unreadable")?;
+                if bytes.len()>1024*1024 {
+                    return Err("Archive preview result too large".into())
+                }
+                let manifest:TreeManifest=serde_json::from_slice(&bytes)
+                    .map_err(|_|"Malformed archive preview")?;
+                if !verify_tree_manifest(&manifest){
+                    return Err("Untrusted archive preview tree".into())
+                }
+                return Ok(manifest)
+            },
+            TaskState::Failed|TaskState::Interrupted|TaskState::Cancelled|
+            TaskState::TimedOut=>{
+                owned.live=false;
+                return Err("Archive preview worker failed or was interrupted".into())
+            },
+            TaskState::Pending|TaskState::Running|TaskState::Paused=>{},
+        }
+        if cancel.is_cancelled(){
+            processes.cancel_owned(&task_id,"native-wave2-archive")
+                .map_err(|_|"Cannot stop archive preview worker")?;
+            owned.live=false;
+            return Err("Archive preview cancelled".into())
+        }
+        thread::sleep(Duration::from_millis(40));
+    }
+}
 #[derive(Default)]
 pub struct ArchiveReviewQueue{
     pending:Mutex<HashMap<String,PinnedArchiveReview>>,
@@ -264,6 +368,53 @@ impl ArchiveReviewQueue{
         entries.insert(review_id.into(),pending);
         Ok(view)
     }
+    /// Production path: even the initial preview is decoded outside Tauri.
+    pub fn stage_supervised(&self,chat_id:&str,review_id:&str,
+        source:&Path,destination:&Path,cancel:&ArchiveCancellation,
+        processes:&BackgroundProcessSupervisor,tasks:&TaskStore
+    )->Result<ArchiveReviewView,String>{
+        if chat_id.is_empty()||review_id.is_empty()||review_id.len()>128{
+            return Err("Invalid archive review identity".into())
+        }
+        let (source_name,source_parent,source_root)=physical_file(source)?;
+        let destination_root=physical_folder(destination)?;
+        let source_identity=opened_directory_identity(&source_root)
+            .map_err(|_|"Selected archive directory identity unavailable")?;
+        let destination_identity=opened_directory_identity(&destination_root)
+            .map_err(|_|"Selected target directory identity unavailable")?;
+        let manifest=preview_in_owned_worker(
+            &source_parent,&source_name,&source_identity,review_id,
+            processes,tasks,cancel,
+        )?;
+        // No filesystem side-effect has occurred in the selected destination.
+        let prefix=base_for_folder(&source_name);
+        let unique=review_id.chars().filter(|c|c.is_ascii_alphanumeric())
+            .take(12).collect::<String>();
+        let folder=format!("{prefix}-extracted-{unique}");
+        if !portable_name(&folder){
+            return Err("Invalid generated extraction folder".into())
+        }
+        match destination_root.symlink_metadata(&folder){
+            Ok(_)=>return Err("Generated extraction folder exists".into()),
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+            Err(_)=>return Err("Cannot inspect extraction destination".into()),
+        }
+        let pinned=PinnedArchiveReview{
+            chat_id:chat_id.into(),review_id:review_id.into(),
+            source_name,source_display:source.to_string_lossy().into_owned(),
+            destination_display:destination.join(&folder).to_string_lossy().into_owned(),
+            new_folder:folder,source_root,destination_root,
+            source_parent,destination_parent:destination.to_path_buf(),
+            source_identity,destination_identity,manifest,
+        };
+        let mut queue=self.pending.lock().map_err(|_|"Archive review unavailable")?;
+        if queue.len()>=MAX_PENDING||queue.contains_key(review_id){
+            return Err("Archive review capacity or identity conflict".into())
+        }
+        let view=pinned.view();
+        queue.insert(review_id.into(),pinned);
+        Ok(view)
+    }
     pub fn inspect(&self,chat_id:&str,review_id:&str)
         ->Result<PinnedArchiveReview,String>{
         let entries=self.pending.lock().map_err(|_|"Archive review unavailable")?;
@@ -305,7 +456,7 @@ pub async fn execute_reviewed_archive_tree(
         destination_parent:review.destination_parent.clone(),
         source_parent_identity:review.source_identity.clone(),
         destination_parent_identity:review.destination_identity.clone(),
-        manifest:review.manifest.clone(),workspace_id:chat_id.into(),
+        manifest:review.manifest.clone(),workspace_id:"native-wave2-archive".into(),
         task_id:format!("archive-worker-{effect_call_id}"),
     };
     register_archive_tree_extractor_supervised(&registry,&mut catalog,
@@ -336,8 +487,8 @@ pub async fn execute_reviewed_archive_tree(
         workspace_id:Some(scope),
         input:ProtoPayload{type_url:INPUT.into(),bytes:input.encode_to_vec()},
     };
-    let fence=ExactArchiveTreePolicy{
-        host_policy:&policy,trusted_source:&review.source_root,
+    let fence=SupervisedExactArchivePolicy{
+        host_policy:&policy,
         source_name:&review.source_name,
         destination_folder:&review.new_folder,
         manifest_sha256:&review.manifest.sha256,

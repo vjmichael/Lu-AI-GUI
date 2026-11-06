@@ -701,6 +701,7 @@ function App() {
   }
   async function reviewArchiveTree() {
     if (!chatId || archiveBusy || working || chatBusy) return;
+    setArchiveCancelRequested(false);
     setArchiveBusy(true);
     setError('');
     try {
@@ -712,6 +713,18 @@ function App() {
       }
     } catch (error) { setError(String(error)); }
     finally { setArchiveBusy(false); }
+  }
+  async function cancelArchivePreview() {
+    if (!chatId || !archiveBusy || archiveCancelRequested) return;
+    try {
+      const requested=await invoke('lu_cancel_archive_preview',{chatId});
+      if (requested) {
+        setArchiveCancelRequested(true);
+        setActivity('Stopping the supervised archive worker. No extraction approval was granted.');
+      } else {
+        setActivity('Archive picker or preview worker has already finished.');
+      }
+    } catch (error) {setError(String(error));}
   }
   async function confirmArchiveTree() {
     if (!archiveReview || !archiveReviewed || archiveBusy ||
@@ -2369,6 +2382,11 @@ function App() {
               disabled={!chatId || working || chatBusy || archiveBusy || Boolean(archiveReview)}
               title="Use native file and folder pickers to safely review an archive and extract it into one NEW folder"
               onClick={() => void reviewArchiveTree()}>{archiveBusy ? 'Archive…' : 'Extract archive'}</button>
+            {archiveBusy && !archiveReview && <button type="button"
+              className="subtleButton" disabled={archiveCancelRequested}
+              onClick={()=>void cancelArchivePreview()}>
+              {archiveCancelRequested?'Stopping archive preview…':'Cancel archive preview'}
+            </button>
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
             <button type="button" className="subtleButton" disabled={!loaded}
               onClick={()=>void attachReaderDocument()}>+ Read file</button>
