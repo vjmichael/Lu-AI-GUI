@@ -862,13 +862,18 @@ impl ResearchDesktop{
                     },
                     SourceStatus::MetadataCorroborated=>true,
                     SourceStatus::DocumentAccessed|SourceStatus::PassageVerified=>false,
-                    SourceStatus::Mismatch=>false,
+                    SourceStatus::Mismatch|SourceStatus::Inaccessible=>false,
                 };
                 if cancel.load(Ordering::Acquire){break;}
-                let (stage,reason)=match source_status{
+                let final_status=EvidenceLedger::open(&db)
+                    .map_err(|_|"Research evidence ledger unavailable")?
+                    .status(&source_id)
+                    .map_err(|_|"Research metadata status unavailable")?;
+                let (stage,reason)=match final_status{
                     SourceStatus::DocumentAccessed|SourceStatus::PassageVerified=>
                         ("DOCUMENT_ACCESSED","OK"),
                     SourceStatus::Mismatch=>("METADATA_MISMATCH","CATALOG_MISMATCH"),
+                    SourceStatus::Inaccessible=>("ERROR","METADATA_FAILED"),
                     _ if ready=>match self.retrieve_document_admitted(
                         chat_id,&source_id,Some(&cancel)
                     ){
