@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO2/WO3 active closeout — live native Cargo quota and exact SCM pipe denial (2026-11-06)
+
+The [batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md) records new Windows source work: capability-rooted live **metadata** quota scans during mutable Cargo writes (250 ms) while immutable content seal remains post-Job exit, Windows cap-fs `E0624` compiler repair, bounded native cancellation diagnostics, and confined in-root rename test. D7D protected SCM pipe denial now has exact host TokenUser diagnostics and a disposable same-ACL pipe control; production pipe DACL, host binary/hash and restricted LocalService identity were **not** loosened. Earlier exact native AppContainer and worker-containment probes pass; pinned Cargo success and D7D service host-crash/restart **do not**. Production NUL permission lifecycle is unimplemented. Draft PR #65, no release activation.
+
+
 ### D7D recovery ACK retry and Windows Cargo release gate (2026-11-06)
 
 **Work orders 2 and 3 are still open.** On draft [PR #65](https://github.com/vjmichael/Lu-AI-GUI/pull/65), native AppContainer admission and Windows Job worker-containment passed on exact historical head `c6d288e`; this is **not** proof that isolated Cargo compiles or that the separate recovery service passes. The real pinned Cargo still needs complete kernel/AppContainer/NUL acceptance and release-safe privilege handling.

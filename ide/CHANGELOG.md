@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE WO2/WO3 active native repairs (2026-11-06): separated mutable output live quota from post-reap immutable output seal; bounded scans at 250 ms and kept cancellation at 40 ms; fixed `cap_fs_ext::OsMetadataExt` native compiler `E0624`. D7C rooted rename acceptance now tests byte identity for either/both safe aliases; independent D7B crash witness captures native stderr on admission failure. D7D CI-only native client identity/pipe-rights probes and a disposable exact-ACL access self-check isolate genuine LocalService pipe admission denial without security bypass. Pinned Cargo, SCM recovery and release NUL remain OPEN; see `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
 - IDE WO2/WO3 continued closeout (2026-11-06): corrected native named-pipe DACL object type; kept the original kernel Job for a 60-second durable protected recovery ACK retry; added independent native host-crash repeat-ACK and eventual Job release test. Disposable NUL compatibility now refuses release compilation, while the native Cargo worker refuses unproven release NUL access before authority is consumed. Work orders remain OPEN until genuine protected SCM / pinned Cargo OS acceptance. See `docs/IDE_WORK_BATCH_02_20261106.md`.
 
 
