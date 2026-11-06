@@ -32,7 +32,8 @@ use windows_sys::Win32::{
             PIPE_REJECT_REMOTE_CLIENTS},
         Services::{RegisterServiceCtrlHandlerExW, SetServiceStatus,
             StartServiceCtrlDispatcherW, SERVICE_RUNNING, SERVICE_START_PENDING,
-            SERVICE_STOPPED, SERVICE_STATUS, SERVICE_TABLE_ENTRYW, SERVICE_WIN32_OWN_PROCESS},
+            SERVICE_STOPPED, SERVICE_STATUS, SERVICE_STATUS_HANDLE,
+            SERVICE_TABLE_ENTRYW, SERVICE_WIN32_OWN_PROCESS},
         Threading::WaitForSingleObject,
     },
 };
@@ -339,10 +340,20 @@ fn serve_one(pipe: Handle, config: &InstalledConfig) {
     let _ = serve(pipe.0, config);
     unsafe { DisconnectNamedPipe(pipe.0); }
 }
-fn run_service() -> Result<(), SupervisorError> {
+fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorError> {
     security::assert_restricted_local_service()?;
     let config = InstalledConfig::read()?;
     let acl = security::PipeSecurity::new()?;
+    let mut running = SERVICE_STATUS {
+        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+        dwCurrentState: SERVICE_RUNNING,
+        dwControlsAccepted: 0,
+        dwWin32ExitCode: 0, dwServiceSpecificExitCode: 0,
+        dwCheckPoint: 0, dwWaitHint: 0,
+    };
+    if unsafe { SetServiceStatus(status_handle, &mut running) } == 0 {
+        return Err(denied());
+    }
     let mut first = true;
     loop {
         // PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE prevent remote
@@ -379,7 +390,7 @@ unsafe extern "system" fn control(
 unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
     let handle = RegisterServiceCtrlHandlerExW(security::ws(NAME).as_ptr(),
         Some(control), ptr::null());
-    if handle == 0 { return; }
+    if handle.is_null() { return; }
     let mut status = SERVICE_STATUS {
         dwServiceType: SERVICE_WIN32_OWN_PROCESS,
         dwCurrentState: SERVICE_START_PENDING,
@@ -388,7 +399,7 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
         dwCheckPoint: 1, dwWaitHint: 20000,
     };
     if SetServiceStatus(handle, &status) == 0 { return; }
-    let result = std::panic::catch_unwind(run_service);
+    let result = std::panic::catch_unwind(|| run_service(handle));
     status.dwCurrentState = SERVICE_STOPPED;
     status.dwWin32ExitCode = if matches!(result, Ok(Ok(()))) { 0 } else { 1 };
     status.dwCheckPoint = 0;
