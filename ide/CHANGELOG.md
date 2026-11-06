@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-06 — D7D final OS acceptance matrix expansion (still draft)
+- Extended real Windows offline Cargo acceptance example for native protected-service mode, using authenticated service-release ACK rather than reading private evidence, and added a Windows 2025 full Cargo/forced cancellation workflow.
+- Added hostile service death test: approved owner detects lost SCM broker, kills the contained Job and refuses to certify a missing original Job on restart.
+- Removed invalid hard-coded SYSTEM owner from LocalService-created named pipe DACL. Exact-head native Windows jobs are queued; D6 network proof and installer acceptance remain unresolved.
+
 ## 2026-11-06 — D7D protected Windows recovery service (draft)
 - Added separately restricted SCM LocalService native broker, mutual kernel-verified named-pipe identities, service-owned direct ProgramData evidence ACLs, bounded request protocol, explicit cross-session Global Job ACL, and fsynced READY/release witnesses.
 - Added worker \`protected-recovery-service\` opt-in and two-phase restart reconciliation. Recovery retains quarantine until protected service ACK and original Job's native recheck.
