@@ -108,10 +108,13 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_pptx_tool_authority -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_tree -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_linux_packages -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_7z_rar -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_rpm -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_tree_authority -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_file_trash_tool_authority -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_trash_custody::tests -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_office_revision_tool_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_office_batch_tool_authority -- --nocapture
       - name: Native archive reader and XZ/BZip2/Zstd writer smoke
         shell: bash
         env:
@@ -189,6 +192,8 @@ jobs:
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib archive_desktop::tests -- --nocapture
       - name: Execute bounded structured document native review tests
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib document_create_desktop::tests -- --nocapture
+      - name: Execute native Office multi-edit batch preview and approval tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib office_batch_desktop::tests -- --nocapture
       - name: Execute bounded existing Office review and source identity tests
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib office_revision_desktop::tests -- --nocapture
       - name: Execute native same-directory copy/move review and denial tests
