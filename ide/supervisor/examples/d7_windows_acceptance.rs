@@ -66,9 +66,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stage_parent = root.join("stage");
     let native_outputs = root.join("native-output");
     let broker_receipts = root.join("independent-broker-receipts");
+    // Protected D7D uses the independently installed SCM executable, not
+    // the legacy D7C same-user recovery broker. The exact service binary
+    // is authenticated against the kernel service PID and its SHA-256 by
+    // windows_service_client before any child resumes.
+    #[cfg(feature = "protected-recovery-service")]
+    let expected_exe_env = "LU_IDE_D7_PROTECTED_SERVICE_EXE";
+    #[cfg(not(feature = "protected-recovery-service"))]
+    let expected_exe_env = "LU_IDE_D7_BROKER_EXE";
     let broker_bin = PathBuf::from(
-        env::var_os("LU_IDE_D7_BROKER_EXE")
-            .ok_or("DENIED: fixed Windows recovery broker must be provisioned")?
+        env::var_os(expected_exe_env)
+            .ok_or("DENIED: exact independently provisioned native recovery executable required")?
     );
     if !broker_bin.is_absolute() { return Err("DENIED: broker path must be absolute".into()); }
     // The acceptance harness self-measures this test binary. Production
