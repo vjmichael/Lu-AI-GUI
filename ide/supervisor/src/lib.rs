@@ -1,9 +1,8 @@
 //! Lu IDE Wave D3: native execution-supervisor CONTROL PLANE.
 //!
-//! This crate has no spawn/exec APIs or Tauri connection. Its release build is
-//! deliberately incapable of launching project code. Native OS launch adapters
-//! must separately prove restricted rights, pre-exec containment, process-tree
-//! cancellation and crash recovery before they can be connected.
+//! This crate has no Tauri, WebView or Lu Core execution connection.
+//! Native OS workers are separate opt-in features and cannot become
+//! desktop execution authority before exact-head hostile OS acceptance.
 //!
 //! Grants are short-lived, in-memory, one-shot, project/source/recipe scoped.
 //! Historic D1 review notes, journal lines, WebView text and task claims are
@@ -12,6 +11,8 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
+pub mod windows_worker;
 pub mod snapshot;
 
 use rand::{rngs::OsRng, RngCore};
