@@ -17,7 +17,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     mem::size_of,
-    os::windows::{ffi::{OsStrExt, OsStringExt}, fs::OpenOptionsExt},
+    os::windows::{ffi::{OsStrExt, OsStringExt}, fs::OpenOptionsExt, io::AsRawHandle},
     path::{Path, PathBuf},
     ptr,
     sync::{atomic::{AtomicBool, Ordering}, Arc},
@@ -32,6 +32,7 @@ use windows_sys::Win32::{
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath},
         PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenAppContainerSid, TokenIsAppContainer,
     },
+    Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
     System::{
         Com::CoTaskMemFree,
         JobObjects::{
@@ -63,6 +64,7 @@ const MAX_SINGLE_INPUT: u64 = 1024 * 1024 * 1024;
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const JOB_OBJECT_TERMINATE_ACCESS: u32 = 0x0008;
 const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
@@ -140,13 +142,38 @@ fn clean_part(name: &OsStr) -> Result<(), SupervisorError> {
         || text.chars().any(char::is_control) { return Err(denied()); }
     Ok(())
 }
+fn checked_file_identity(file: &File, allow_directory: bool) -> Result<(u32, u64, u64), SupervisorError> {
+    let metadata = file.metadata().map_err(io_denied)?;
+    if !(metadata.is_file() || (allow_directory && metadata.is_dir())) {
+        return Err(denied());
+    }
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
+        return Err(denied());
+    }
+    // A hard link is not a reparse point and can alias a sensitive file
+    // outside the approved tree. Reject files with any second name.
+    if metadata.is_file() && info.nNumberOfLinks != 1 { return Err(denied()); }
+    let id = ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64;
+    Ok((info.dwVolumeSerialNumber, id, metadata.len()))
+}
 fn read_regular(path: &Path) -> Result<File, SupervisorError> {
     if !clean_meta(path)?.is_file() { return Err(denied()); }
     let mut options = OpenOptions::new();
     options.read(true).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     let file = options.open(path).map_err(io_denied)?;
-    if !file.metadata().map_err(io_denied)?.is_file() { return Err(denied()); }
+    checked_file_identity(&file, false)?;
     Ok(file)
+}
+fn directory_identity(path: &Path) -> Result<(File, (u32, u64, u64)), SupervisorError> {
+    if !clean_meta(path)?.is_dir() { return Err(denied()); }
+    let mut options = OpenOptions::new();
+    options.read(true).custom_flags(
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
+    );
+    let directory = options.open(path).map_err(io_denied)?;
+    let id = checked_file_identity(&directory, true)?;
+    Ok((directory, id))
 }
 // Deterministic SHA-256 of every relative path, size and content. Every
 // source and staged toolchain file is compared, and all reparse points denied.
@@ -160,7 +187,11 @@ fn tree_transfer(
     max_files: usize,
     max_bytes: u64,
 ) -> Result<(), SupervisorError> {
-    if depth > MAX_DEPTH || !clean_meta(src)?.is_dir() { return Err(denied()); }
+    if depth > MAX_DEPTH { return Err(denied()); }
+    // A live OS handle pins this directory's identity across enumeration.
+    // Path-based child traversal still requires additional hostile rename
+    // acceptance before a same-user adversary is in the supported threat model.
+    let (_directory, directory_before) = directory_identity(src)?;
     if let Some(dst) = dest { fs::create_dir_all(dst).map_err(io_denied)?; }
     let mut children = fs::read_dir(src)
         .map_err(io_denied)?
@@ -201,6 +232,10 @@ fn tree_transfer(
                 if let Some(out) = writer.as_mut() { out.write_all(&buffer[..n]).map_err(io_denied)?; }
             }
             if bytes != meta.len() { return Err(denied()); }
+            let after = reader.metadata().map_err(io_denied)?;
+            if after.len() != meta.len() || after.modified().map_err(io_denied)?
+                != before.modified().map_err(io_denied)? { return Err(denied()); }
+            checked_file_identity(&reader, false)?;
             if let Some(out) = writer.as_mut() { out.sync_all().map_err(io_denied)?; }
             let relative = rel.to_str().ok_or_else(denied)?.replace('\\', "/");
             hash.update(relative.as_bytes()); hash.update([0]);
@@ -209,6 +244,8 @@ fn tree_transfer(
             hash.update([0]);
         } else { return Err(denied()); }
     }
+    let (_after, directory_after) = directory_identity(src)?;
+    if directory_before != directory_after { return Err(denied()); }
     Ok(())
 }
 fn digest_tree(root: &Path, destination: Option<&Path>,
