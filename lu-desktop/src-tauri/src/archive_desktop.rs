@@ -305,4 +305,52 @@ mod tests{
         assert!(!portable_name("../file"));
         assert!(!portable_name(".lu-stage-fake"));
     }
+    #[test]
+    fn desktop_preview_pins_native_selected_source_and_new_output_folder(){
+        use std::io::Write;
+        use zip::{ZipWriter,write::SimpleFileOptions,CompressionMethod};
+        let root=std::env::temp_dir().join(format!(
+            "lu-archive-desktop-{}",crate::next_id("test-")
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(root.join("output")).unwrap();
+        let source=root.join("backup.zip");
+        let mut zip=ZipWriter::new(fs::File::create(&source).unwrap());
+        zip.start_file("assets/notes.txt",SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)).unwrap();
+        zip.write_all(b"Original content").unwrap();
+        zip.finish().unwrap();
+        let q=ArchiveReviewQueue::default();
+        let view=q.stage("saved-chat","archive-review-123456789",
+            &source,&root.join("output")).unwrap();
+        assert_eq!(view.files,1);
+        assert_eq!(view.entries[0].path,"assets/notes.txt");
+        assert_eq!(view.entries[0].kind,"file");
+        assert!(!root.join("output").join(&view.target_folder).exists());
+        let pinned=q.inspect("saved-chat",&view.review_id).unwrap();
+        assert!(q.inspect("another-chat",&view.review_id).is_err());
+        assert!(pinned.same_as(&q.inspect("saved-chat",&view.review_id).unwrap()));
+        q.deny("saved-chat",&view.review_id).unwrap();
+        assert!(q.inspect("saved-chat",&view.review_id).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn archive_review_rejects_linked_input_and_linked_destination(){
+        #[cfg(unix)]{
+            use std::os::unix::fs::symlink;
+            let root=std::env::temp_dir().join(format!(
+                "lu-archive-desktop-link-{}",crate::next_id("test-")
+            ));
+            fs::create_dir_all(root.join("target")).unwrap();
+            fs::write(root.join("real.zip"),b"not even an archive").unwrap();
+            symlink("real.zip",root.join("source.zip")).unwrap();
+            symlink("target",root.join("linked-output")).unwrap();
+            let q=ArchiveReviewQueue::default();
+            assert!(q.stage("chat","review-123456789",
+                &root.join("source.zip"),&root.join("target")).is_err());
+            assert!(q.stage("chat","review-987654321",
+                &root.join("real.zip"),&root.join("linked-output")).is_err());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 }
