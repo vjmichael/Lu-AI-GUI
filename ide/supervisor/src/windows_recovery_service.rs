@@ -703,7 +703,7 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
         // PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE prevent remote
         // callers or same-user prebinding from impersonating the service.
         let mode = PIPE_ACCESS_DUPLEX | if first { PIPE_FIRST_INSTANCE } else { 0 };
-        let pipe = Handle::new(unsafe {
+        let opened = unsafe {
             CreateNamedPipeW(
                 security::ws(security::SERVICE_ENDPOINT).as_ptr(),
                 mode,
@@ -714,7 +714,19 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
                 0,
                 &acl.attributes,
             )
-        })?;
+        };
+        let pipe = match Handle::new(opened) {
+            Ok(value) => value,
+            Err(reason) if first => return Err(reason),
+            Err(_) => {
+                // A transient endpoint-allocation error must not kill the
+                // entire SCM keeper while earlier authenticated Jobs are
+                // still held by its independent connection workers.
+                // No new job is admitted without a new verified pipe.
+                thread::sleep(TICK);
+                continue;
+            }
+        };
         STARTUP_STAGE.store(50, Ordering::Relaxed);
         // Refuse an SCM RUNNING state unless the actual kernel object has
         // the exact protected DACL and excludes client pipe-instance rights.
@@ -740,7 +752,12 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
         if unsafe { ConnectNamedPipe(pipe.0, ptr::null_mut()) } == 0
             && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED
         {
-            return Err(denied());
+            // A client can connect and immediately disconnect before this
+            // call completes. It is not permitted to force the independent
+            // recovery service to terminate and abandon retained Job handles.
+            // The disconnected instance is closed without any READY receipt.
+            thread::sleep(TICK);
+            continue;
         }
         // Copy only administrator-installed configuration; no request data
         // can change executable or evidence paths.
@@ -759,13 +776,20 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
         let permit = SessionSlot(Arc::clone(&active_sessions));
         // The permit is dropped even if a native thread cannot be created;
         // never leave a stale saturated count or unbounded worker spawn.
-        thread::Builder::new()
+        if thread::Builder::new()
             .name("lu-ide-protected-ipc".into())
             .spawn(move || {
                 let _permit = permit;
                 serve_one(pipe, &cloned);
             })
-            .map_err(|_| denied())?;
+            .is_err()
+        {
+            // The already-authenticated keeper threads must survive a
+            // temporary inability to allocate one more host thread. The
+            // moved connection is dropped, so this admission has no reply.
+            thread::sleep(TICK);
+            continue;
+        }
     }
 }
 unsafe extern "system" fn control(
