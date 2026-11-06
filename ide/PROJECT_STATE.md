@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D7C — Handle-rooted Windows worker staging and publication (2026-11-06)
+
+- **Source:** `ide/wave-d7c-race-safe-native-worker-20261106`, stacked on D7B PR #60. No Tauri Run command or Lu Core bridge. Native worker remains an explicit `windows-worker` feature.
+- **Security refactor:** new `ide/supervisor/src/windows_cap_tree.rs` pins `cap-std` and `cap-fs-ext` 4.0.3 and uses Windows directory handles without FILE_SHARE_DELETE, root FILE_FLAG_OPEN_REPARSE_POINT, handle-relative child enumeration/opens, explicit no-follow files, hardlink/reparse rejection, bounded recursive SHA-256 scanning, and native-parent-relative create-new publication. Removed the old ambient `tree_transfer`.
+- **Authoritative worker integration:** the same rooted publisher now stages the verified source snapshot and pinned offline Rust/MSVC/SDK bundle, then copies and reseals outputs after Job tree reap. Exact input and bundle digests are refreshed before the one-use native grant. Reused D7/D7B receipts, Job cancellation and missing-Job quarantine without loosening denial.
+- **Hostile tests/CI:** new race test attempts repeated concurrent rename/junction swaps while requiring every accepted copy to match the pinned input; native output exclusive publication, traversal rejection, symlinked parent refusal, staged tampering. `.github/workflows/ide-d7c-windows-capability.yml` runs Windows compile/tests, repeat race, formatting, desktop isolation.
+- **Pending:** latest-head Windows CI, prior D6 network deny and D7B offline Cargo fixture, secure authority for root selection/AppContainer profile ACLs against hostile same-user modification, independent authenticated durable witness for a named Job absent after crash, and installed Windows app acceptance. D7C is **source-implemented, not production-accepted**. Details in `ide/supervisor/D7C_WINDOWS_CAPABILITY_ACCEPTANCE.md`.
+
 ## Wave D7B — Pinned Windows SDK and hostile acceptance (2026-11-06)
 
 - **Source / PR:** `ide/wave-d7b-windows-acceptance-20261106`, draft [PR #60](https://github.com/vjmichael/Lu-AI-GUI/pull/60), stacked on D7 #58; preserve D6 → D7 → D7B merge order.
