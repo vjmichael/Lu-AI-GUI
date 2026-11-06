@@ -61,16 +61,21 @@ fn base(state: &'static str, error: Option<&'static str>) -> LiveGitHubCompariso
 fn safe_component(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= MAX_REPO_COMPONENT_BYTES
-        && s.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
-        && s != "." && s != ".."
+        && s.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+        && s != "."
+        && s != ".."
 }
 
 fn safe_branch(s: &str) -> bool {
-    !s.is_empty() && s.len() <= MAX_BRANCH_BYTES
-        && !s.starts_with('/') && !s.ends_with('/')
-        && !s.contains("..") && !s.contains("//")
-        && s.bytes().all(|c| c.is_ascii_alphanumeric()
-            || matches!(c, b'/' | b'-' | b'_' | b'.'))
+    !s.is_empty()
+        && s.len() <= MAX_BRANCH_BYTES
+        && !s.starts_with('/')
+        && !s.ends_with('/')
+        && !s.contains("..")
+        && !s.contains("//")
+        && s.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'/' | b'-' | b'_' | b'.'))
 }
 
 fn github_repo(remote: &str) -> Option<(String, String)> {
@@ -135,8 +140,7 @@ impl IdeWorkspaceRegistry {
         out.stored_tracking_head = local.upstream_head.clone();
         out.worktree = local.worktree;
         if local.worktree == "clean" || local.worktree == "dirty" {
-            out.dirty_file_count =
-                Some(local.modified_or_staged_count + local.untracked_count);
+            out.dirty_file_count = Some(local.modified_or_staged_count + local.untracked_count);
         }
 
         let Ok(root) = self.registered_git_root(project_id) else {
@@ -170,9 +174,7 @@ impl IdeWorkspaceRegistry {
                 return out;
             }
         };
-        let Some((owner, repository)) =
-            remote.url().and_then(github_repo)
-        else {
+        let Some((owner, repository)) = remote.url().and_then(github_repo) else {
             out.error_code = Some("NOT_A_SUPPORTED_GITHUB_REMOTE");
             return out;
         };
@@ -191,7 +193,8 @@ impl IdeWorkspaceRegistry {
             .timeout_read(Duration::from_secs(5))
             .timeout_write(Duration::from_secs(4))
             .build();
-        let response = match agent.get(&uri)
+        let response = match agent
+            .get(&uri)
             .set("Accept", "application/vnd.github+json")
             .set("User-Agent", "Lu-IDE-continuity/0.1")
             .call()
@@ -214,9 +217,11 @@ impl IdeWorkspaceRegistry {
             }
         };
         let mut bytes = Vec::new();
-        if response.into_reader()
+        if response
+            .into_reader()
             .take(MAX_RESPONSE_BYTES + 1)
-            .read_to_end(&mut bytes).is_err()
+            .read_to_end(&mut bytes)
+            .is_err()
             || bytes.len() as u64 > MAX_RESPONSE_BYTES
         {
             out.error_code = Some("GITHUB_RESPONSE_UNVERIFIABLE");
@@ -234,13 +239,15 @@ impl IdeWorkspaceRegistry {
             return out;
         }
         out.github_head = Some(payload.commit.sha);
-        out.local_vs_github =
-            compare_hash(out.local_head.as_deref(), out.github_head.as_deref());
+        out.local_vs_github = compare_hash(out.local_head.as_deref(), out.github_head.as_deref());
         out.tracking_vs_github = compare_hash(
-            out.stored_tracking_head.as_deref(), out.github_head.as_deref()
+            out.stored_tracking_head.as_deref(),
+            out.github_head.as_deref(),
         );
         out.checked_unix_seconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs());
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs());
         out.github_data_verified_as_current = true;
         out.state = "public_branch_observed";
         out
@@ -275,8 +282,10 @@ mod tests {
         assert!(!safe_branch("foo?bar"));
         assert_eq!(branch_api_path("feature/safe"), "feature%2Fsafe");
         assert_eq!(compare_hash(Some("a"), Some("a")), "same_commit");
-        assert_eq!(compare_hash(Some("a"), Some("b")),
-            "different_commit_ancestry_unknown");
+        assert_eq!(
+            compare_hash(Some("a"), Some("b")),
+            "different_commit_ancestry_unknown"
+        );
         assert_eq!(compare_hash(None, Some("b")), "unverifiable");
     }
 }

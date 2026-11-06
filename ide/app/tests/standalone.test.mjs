@@ -32,7 +32,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github'
+    'ide_find_in_project', 'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github'
   ].sort());
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
@@ -296,7 +296,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 21);
+  assert.equal(Object.keys(schemas.operations).length, 22);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -371,7 +371,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger', 'snapshots'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
@@ -477,4 +477,28 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(editor, /view\.dispatch\(\{ changes, scrollIntoView: true \}\)/);
   assert.match(editor, /expectedDraft/);
   assert.doesNotMatch(planner, /invoke\(|window\.fetch|\.writeText\(/);
+});
+
+test('B3 project search is explicit saved-file read-only with exact revision navigation', () => {
+  const web = read('../web/main.jsx');
+  const native = read('../src-tauri/src/lib.rs');
+  const host = read('../../host/src/project_search.rs');
+  const capabilities = read('../../host/src/capabilities.rs');
+  const schema = JSON.parse(read('../../host/src/capability_schemas.json'));
+  assert.match(web, /aria-label="Find in project"/);
+  assert.match(web, /invoke\('ide_find_in_project'/);
+  assert.match(web, /opened\.revision !== match\.revision/);
+  assert.match(web, /existing\.dirty \|\| existing\.revision !== opened\.revision/);
+  assert.match(web, /Recheck disk for both newly opened files AND existing tabs/);
+  assert.match(web, /setFindRequest\(\{ tabKey: key, from, to/);
+  assert.match(native, /async fn ide_find_in_project/);
+  assert.match(host, /source_capability\(project_id\)/);
+  assert.match(host, /MAX_TOTAL_BYTES: u64 = 16 \* 1024 \* 1024/);
+  assert.match(host, /meta\.file_type\(\)\.is_symlink\(\)/);
+  assert.doesNotMatch(host, /Command::new|std::process::Command/);
+  assert.match(capabilities, /capability!\("source\.findProject"/);
+  assert.equal(schema.operations['source.findProject'].result.$ref,
+    '#/$defs/ProjectSearchResult');
+  assert.equal(schema.operations['source.findProject'].request.properties.caseSensitive.type,
+    'boolean');
 });

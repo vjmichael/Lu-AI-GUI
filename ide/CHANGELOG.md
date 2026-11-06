@@ -2,6 +2,11 @@
 
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
+## 2026-11-05 — Wave B3 Find in Project (source implementation)
+- Added scoped, read-only recursive literal search over saved UTF-8 project files. Hard bounds on query, entry traversal, depth, file size, total bytes and returned matches; skips generated trees, binaries and symlinks. Reports partial coverage rather than guessing completeness.
+- Added typed `source.findProject` host operation, native Tauri request, human sidebar pane with case toggle, source paths, byte/UTF-16 locations and revision-tagged results. Opening a hit rechecks the saved SHA and never overwrites dirty editor drafts.
+- Native fixtures and frontend contract/navigation tests are committed, but exact-head CI and physical Windows acceptance are pending. Full semantics: [IDE-B3](docs/IDE_PROJECT_SEARCH.md). Work is isolated from buffer identity PR #43 and installed acceptance PR #45.
+
 ## 2026-11-05 — Wave B1 Find and Replace (source committed)
 - Implemented Ctrl+H Find and Replace in human editor with literal case-sensitive/insensitive search, Replace One, confirmation-gated Replace All, and an explicit scan cap that refuses incomplete bulk edits.
 - Changes apply only to the active unsaved CodeMirror buffer in one undoable transaction, with an expected-document check and consumed nonce to avoid accidental reapplication on remount. Explicit human Save and revision conflict handling remain authoritative; no new native file-write API.

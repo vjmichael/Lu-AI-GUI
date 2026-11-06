@@ -30,6 +30,15 @@
 - Host-created, versioned descriptors for **21 existing** project, source, review, save, proposal, continuity, inventory and Git/GitHub operations. Request/result JSON schemas are typed, with nested structures and self-contained JSON Schema 2020-12 definitions. Response includes typed error schema. **Discovery is not permission, execution or a Lu bridge.**
 - UI shows concise operation input/result signatures, with full schema expansion on demand. Rust validation and frontend structural/command parity tests added.
 
+## Wave B3 — Find in Project (separate feature branch; CI open)
+
+- Feature branch `ide/project-search-20261105` is isolated from ongoing [buffer identity PR #43](https://github.com/vjmichael/Lu-AI-GUI/pull/43) and [installed Windows PR #45](https://github.com/vjmichael/Lu-AI-GUI/pull/45), so they can verify without supersession.
+- Implemented `host/src/project_search.rs`: read-only literal search under an existing native registered project directory capability; no arbitrary absolute path, shell, network or source file mutation. Bounded by 128-byte query, 320 files, 3,000 entries, 12 directory levels, 256 KiB per file, 16 MiB total bytes and 240 matches.
+- Matches return exact saved source SHA-256, UTF-8 byte offsets, 1-based line and CodeMirror UTF-16 column, bounded snippets. The host marks truncated and skipped coverage explicitly.
+- Typed `source.findProject` read capability and Tauri `ide_find_in_project` extend the registry from 21 to **22** operations; the human Find in Project pane searches on explicit request and refuses stale disk revisions when opening a result. Existing dirty drafts are never overwritten or blindly navigated using disk coordinates.
+- Native tests cover Unicode + CRLF, binary/generated exclusions, symlink bypass, closed projects, invalid queries and match limits; frontend contract checks added. Details: [IDE-B3](docs/IDE_PROJECT_SEARCH.md).
+- **Verification:** source committed but native Linux, Windows Tauri, frontend and installed UX checks are not yet accepted. The user has not tested this pane on their Windows desktop.
+
 ## Wave B1 — Human Find and Replace (source implemented, exact-head CI open)
 
 - `app/web/find_replace.js` is a pure bounded literal match-and-replace planner for the **active unsaved CodeMirror draft only**. Matches preserve UTF-16 offsets, escape regex metacharacters and optionally match case. All-or-nothing replacement refuses scans above 10,000 matches; no partial bulk edit or direct disk write.
