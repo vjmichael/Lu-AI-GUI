@@ -91,6 +91,7 @@ pub mod native_background_control;
 pub mod native_background_process;
 pub mod native_file_extra;
 pub mod native_file_transfer;
+pub mod native_file_transfer_tool;
 pub mod native_git_inspect;
 pub mod native_files;
 pub mod native_atomic_write;
