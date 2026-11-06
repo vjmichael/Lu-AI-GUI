@@ -17,6 +17,7 @@ use crate::native_linux_archive::{
 use crate::native_cpio::{cpio_tree_members,is_cpio_name,CpioError};
 use crate::native_ar_deb::{ar_tree_members,is_ar_name,ArError};
 use crate::native_seven_rar::{seven_rar_tree_members,detect_7z_rar,SevenRarError};
+use crate::native_rpm::{rpm_tree_members,RpmError};
 const MAX_ARCHIVE_BYTES:u64=128*1024*1024;
 const MAX_FILE:usize=64*1024*1024;
 const MAX_TOTAL:usize=256*1024*1024;
@@ -129,6 +130,14 @@ fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
     Ok(result)
 }
 fn package_linux(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
+    if name.to_ascii_lowercase().ends_with(".rpm"){
+        return rpm_tree_members(root,name).map_err(|e|match e{
+            RpmError::TooLarge=>TreeExtractError::TooLarge,
+            RpmError::UnsafePayload|RpmError::UnsafeSource=>TreeExtractError::UnsafeMember,
+            _=>TreeExtractError::InvalidArchive,
+        }).map(|items|items.into_iter().map(|(path,is_dir,bytes)|
+            Node{path,is_dir,bytes}).collect());
+    }
     if detect_7z_rar(name).is_some(){
         return seven_rar_tree_members(root,name).map_err(|e|match e{
             SevenRarError::TooLarge=>TreeExtractError::TooLarge,
