@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a5328dd472e1f53d9b4f22321d578ef366617c0f",
-  "trackedFileCount": 462,
+  "sourceCommitBeforeLock": "f92646590ae2a5bfe32207a814060daf56125bb4",
+  "trackedFileCount": 464,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -53,7 +53,7 @@
     },
     {
       "path": ".github/workflows/lu-wave4-contextual-tools.yml",
-      "blob": "2fd344fb90f3b27ae4e6c050472de1776dc16632"
+      "blob": "7cdb6639661c779fb9fc1b6ca0f87046ad76e5fe"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "9f4bb0532d10ac7228fff0f96dfeed4d82b91927"
+      "blob": "8be9412f307843b6c0398b166d6e04dc414290c0"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -397,7 +397,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "2143fc157e1e78224318c78f4ad33be585467bb2"
+      "blob": "c121c689cd886946312fe0767231f01781b8fbd5"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -522,6 +522,10 @@
     {
       "path": "lu-desktop/tests/image-edit-intent.test.mjs",
       "blob": "f1578b68236576d345ca6bf70606d1c94a198c94"
+    },
+    {
+      "path": "lu-desktop/tests/image-workspace-history.test.mjs",
+      "blob": "4aada60fcba83f767c988fcb9be2d67a54f1db38"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -661,7 +665,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "03b63dc391f0a29e25db3b10d5da4ea8a6b7e218"
+      "blob": "2a87e8ae0cf13ac70de06b7379ed5d901005a919"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -973,7 +977,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "0b47da9aa681bacc4b8135e37facd94ab896aca1"
+      "blob": "f417fed1a3cc3c0bd70e91c829b48617f56867c7"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1134,6 +1138,10 @@
     {
       "path": "src-tauri/lu-core/src/native_image_revision.rs",
       "blob": "6963b6178d1e39a95d559c0873f5a2d1ee5660ef"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_image_revision_history.rs",
+      "blob": "5b78540e24c4ab01c85e6ea5454753e0d0b3341c"
     },
     {
       "path": "src-tauri/lu-core/src/native_iso9660.rs",
