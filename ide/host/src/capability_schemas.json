@@ -1410,6 +1410,92 @@
         "truncated",
         "liveRemote"
       ]
+    },
+    "ProjectResourceProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "missing_in_registered_project",
+            "not_regular_file",
+            "present_unhashed_over_limit",
+            "changed_during_probe",
+            "bytes_observed"
+          ]
+        },
+        "byteLength": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modifiedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        },
+        "executableUsable": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "lastTrustedExecution": {
+          "type": "string",
+          "const": "not_inspected"
+        },
+        "inspectionScope": {
+          "type": "string",
+          "const": "registered_project_only"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "relativePath",
+        "state",
+        "byteLength",
+        "sha256",
+        "modifiedUnixSeconds",
+        "digestStatus",
+        "executableUsable",
+        "lastTrustedExecution",
+        "inspectionScope"
+      ]
     }
   },
   "operations": {
@@ -1911,6 +1997,30 @@
       },
       "result": {
         "$ref": "#/$defs/GitHistoryEvidence"
+      }
+    },
+    "resource.probe": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectResourceProbe"
       }
     }
   }
