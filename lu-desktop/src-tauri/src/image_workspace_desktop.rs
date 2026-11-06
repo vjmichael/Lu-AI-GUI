@@ -61,9 +61,21 @@ pub(crate) fn write_new_revision(
     }
     // The saved bytes were not decoded from UI base64, but from the original
     // pinned image; the output checksum is checked after the write.
-    let written=fs::read(destination).map_err(|_|"Cannot recheck saved image")?;
+    let written=match fs::read(destination){
+        Ok(bytes)=>bytes,
+        Err(_)=>{
+            // An export cannot be reported as a successful immutable
+            // revision unless the exact saved bytes were reopened.
+            let _=fs::remove_file(destination);
+            return Err("Cannot recheck saved image".into());
+        }
+    };
     let digest=format!("{:x}",Sha256::digest(&written));
     if digest!=result.revision_sha256{
+        // Roll back this newly created output rather than leaving a corrupt
+        // revision alongside an unmodified source. create_new above rules
+        // out silent overwrite of any pre-existing document.
+        let _=fs::remove_file(destination);
         return Err("Saved revision digest differs from intended output".into());
     }
     Ok(ImageExportReceipt{

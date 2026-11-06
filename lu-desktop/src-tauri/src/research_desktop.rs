@@ -138,6 +138,16 @@ impl ResearchDesktop{
 mod tests{
     use super::*;
     #[test]
+    fn staged_builder_signed_windows_curl_matches_exact_compiled_digest(){
+        #[cfg(windows)]
+        if let Some(expected)=option_env!("LU_RESEARCH_CURL_SHA256"){
+            let candidate=Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/lu-research/curl.exe");
+            assert!(verified_file(&candidate,expected),
+                "Windows Research client or compiled digest differs");
+        }
+    }
+    #[test]
     fn no_runtime_or_unapproved_binary_cannot_be_research_network_authority(){
         let host=ResearchDesktop::new(
             PathBuf::from("/nonexistent-runtime"),PathBuf::from("/nonexistent-data")

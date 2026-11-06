@@ -325,3 +325,16 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **OBSERVE-WIN-08 FOREGROUND APP IDENTITY SOURCE (2026-11-06):** Separate user-approved 4-second focused-window WGC mode via Window::foreground, validates non-self PID and capturable top-level HWND, rechecks same HWND/PID at frame callback. Single window only; no persistent watcher, screen pixels output, automatic model handoff, window titles or process ID in receipt. Existing picker remains separate. This HWND/PID check is not full process-lifetime attestation, visual redaction or trusted host-visible source receipt. Windows installed tests still OPEN.
+
+
+### WAVE4 TOOL INTEGRATION 2026-11-06 — candidate acceptance and hardening
+
+**BROWSER:** Added a separate Windows/Linux native GitHub Actions candidate-acceptance workflow. It installs the declared Playwright version in isolated CI, assembles the headed Chromium/Node/Playwright candidate using existing verified source, checks every enumerated payload hash, and tries the existing end-to-end headed BrowserSession test under actual Windows or Linux Xvfb. Only candidate metadata, not an executable runtime, is retained for short-lived approval. **A successfully tested candidate is NOT automatically promoted to reviewed production, bundled with Lu, or granted any web navigation permissions.** Actual vendor signing, full payload digest approval, packaging and installed Windows acceptance remain OPEN.
+
+**RESEARCH:** Added an opt-in Windows build path to stage the OS System32 curl.exe only after a Valid Microsoft Authenticode signature check, pin its SHA-256 into the Tauri host, and include its exact bytes through the existing Research Tauri overlay. Added a Windows native CI job checking signed client, executable version and compiled-in digest. No PATH, model-specified curl, automatic web browsing, unverified citations or silent network authorization. Bundled runtime and live provider acceptance remain OPEN until the Windows CI and installed app prove them.
+
+**BACKGROUND:** Sanitize every legacy TaskStore task ID before embedding it in an ordinary GGUF status observation. IDs containing prompt delimiters, controls, newlines or punctuation outside a minimal token grammar are omitted. Chat-scoping, state enums and percentages are unchanged. Added adversarial task ID fixture. Native CI pending.
+
+**ENVIRONMENT / VISION:** Existing host-native environment status remains read-only and distinguishes detected CPU/platform hints from actually verified GPU backend execution. Loaded MMProj remains an admitted projector, not a proved visual understanding session. No synthetic backend/vision success is claimed. Native/installed GGUF acceptance still OPEN.
+
+**IMAGE WORKSPACE:** Recheck of newly exported immutable PNG revisions now explicitly removes the newly created output if reopening or digest validation fails, rather than leaving an unverified image revision as a successful artifact. Existing crop/resize, no-clobber and source preservation remain. Persistent revision graph, masks/annotation and full installed Windows acceptance still OPEN.
