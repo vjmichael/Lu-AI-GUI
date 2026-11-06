@@ -1,5 +1,8 @@
 use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::PathBuf,
+};
 
 struct Picker(Option<PathBuf>);
 impl NativeDirectoryPicker for Picker {
@@ -10,13 +13,18 @@ impl NativeDirectoryPicker for Picker {
 
 fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String) {
     let root = std::env::temp_dir().join(format!(
-        "lu-ide-search-{}-{:016x}", std::process::id(), rand::random::<u64>()
+        "lu-ide-search-{}-{:016x}",
+        std::process::id(),
+        rand::random::<u64>()
     ));
     let source = root.join("project");
     fs::create_dir_all(&source).unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-    let id = registry.register_from_native_picker(&mut Picker(Some(source)))
-        .unwrap().unwrap().project_id;
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(source)))
+        .unwrap()
+        .unwrap()
+        .project_id;
     (root, registry, id)
 }
 
@@ -62,7 +70,10 @@ fn huge_or_binary_or_generated_inputs_are_never_searched_as_source() {
     assert_eq!(result.matches.len(), 1);
     assert_eq!(result.matches[0].relative_path, "fine.txt");
     assert!(result.skipped_files >= 2);
-    assert_eq!(result.scope, "saved_utf8_text_excluding_generated_directories");
+    assert_eq!(
+        result.scope,
+        "saved_utf8_text_excluding_generated_directories"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -75,7 +86,11 @@ fn symlink_file_and_directory_cannot_escape_selected_root() {
     fs::create_dir_all(root.join("outside")).unwrap();
     fs::write(root.join("outside/secret.txt"), b"needle").unwrap();
     symlink(root.join("outside"), project.join("linked-directory")).unwrap();
-    symlink(root.join("outside/secret.txt"), project.join("linked-file.txt")).unwrap();
+    symlink(
+        root.join("outside/secret.txt"),
+        project.join("linked-file.txt"),
+    )
+    .unwrap();
     let result = registry.find_in_project(&id, "needle", true).unwrap();
     assert!(result.matches.is_empty());
     fs::remove_dir_all(root).unwrap();
@@ -85,16 +100,29 @@ fn symlink_file_and_directory_cannot_escape_selected_root() {
 fn malformed_query_and_closed_project_fail_closed() {
     let (root, registry, id) = fixture();
     for query in ["", "  ", "\n", "abc\0def"] {
-        assert_eq!(registry.find_in_project(&id, query, false).unwrap_err().code(),
-            "INVALID_SEARCH_QUERY");
+        assert_eq!(
+            registry
+                .find_in_project(&id, query, false)
+                .unwrap_err()
+                .code(),
+            "INVALID_SEARCH_QUERY"
+        );
     }
     assert_eq!(
-        registry.find_in_project(&id, &"x".repeat(129), false).unwrap_err().code(),
+        registry
+            .find_in_project(&id, &"x".repeat(129), false)
+            .unwrap_err()
+            .code(),
         "INVALID_SEARCH_QUERY"
     );
     registry.close(&id).unwrap();
-    assert_eq!(registry.find_in_project(&id, "source", true).unwrap_err().code(),
-        "PROJECT_NOT_OPEN");
+    assert_eq!(
+        registry
+            .find_in_project(&id, "source", true)
+            .unwrap_err()
+            .code(),
+        "PROJECT_NOT_OPEN"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
