@@ -58,6 +58,8 @@ use windows_sys::Win32::{
     },
 };
 
+#[cfg(all(feature = "lsp-transport", feature = "protected-recovery-service"))]
+pub(crate) mod lsp_native;
 const MAX_BUNDLE_FILES: usize = 60_000;
 const MAX_BUNDLE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_OUTPUT_FILES: usize = 6000;
@@ -268,12 +270,30 @@ fn read_wide(value: *const u16) -> Result<String, SupervisorError> {
 }
 struct Attributes(Vec<usize>);
 impl Attributes {
-    fn new() -> Result<Self, SupervisorError> {
+    fn new() -> Result<Self, SupervisorError> { Self::with_count(2) }
+    /// E2 requires a THIRD attribute: the explicit inherited stdio HANDLE_LIST.
+    /// The original worker retains exactly two attributes and zero inherited
+    /// handles. Do not widen the default Cargo build worker's OS rights.
+    #[cfg(feature = "lsp-transport")]
+    fn with_count(count: u32) -> Result<Self, SupervisorError> {
+        if !(2..=3).contains(&count) { return Err(denied()); }
         let mut size = 0_usize;
-        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), 2, 0, &mut size); }
+        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), count, 0, &mut size); }
         if size == 0 || size > 32768 { return Err(denied()); }
         let mut bytes = vec![0_usize; size.div_ceil(size_of::<usize>())];
-        if unsafe { InitializeProcThreadAttributeList(bytes.as_mut_ptr().cast(), 2, 0, &mut size) } == 0 {
+        if unsafe { InitializeProcThreadAttributeList(bytes.as_mut_ptr().cast(), count, 0, &mut size) } == 0 {
+            return Err(denied());
+        }
+        Ok(Self(bytes))
+    }
+    #[cfg(not(feature = "lsp-transport"))]
+    fn with_count(count: u32) -> Result<Self, SupervisorError> {
+        if count != 2 { return Err(denied()); }
+        let mut size = 0_usize;
+        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), count, 0, &mut size); }
+        if size == 0 || size > 32768 { return Err(denied()); }
+        let mut bytes = vec![0_usize; size.div_ceil(size_of::<usize>())];
+        if unsafe { InitializeProcThreadAttributeList(bytes.as_mut_ptr().cast(), count, 0, &mut size) } == 0 {
             return Err(denied());
         }
         Ok(Self(bytes))
