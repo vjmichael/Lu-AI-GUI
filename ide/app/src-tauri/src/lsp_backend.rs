@@ -348,7 +348,11 @@ impl NativeLspRuntime {
         ->Result<Value,String>{
         self.use_active(registry,request,|active,req|{
             let kind=req.kind.as_deref().ok_or("LSP_METHOD_REQUIRED")?;
-            if !matches!(kind,"completion"|"hover"|"definition"){
+            if !matches!(kind,"completion"|"hover"|"definition")
+                ||active.source.language_id=="python" {
+                // Ruff handles linting/diagnostics, not Pyright's symbol
+                // navigation or intelligent completion. This is a native
+                // authorization boundary, not merely a disabled UI control.
                 return Err("LSP_METHOD_DENIED".into());
             }
             let pos=req.position.clone().ok_or("LSP_POSITION_REQUIRED")?;
