@@ -12,6 +12,7 @@ pub mod continuity;
 pub mod editor;
 pub mod inbox;
 pub mod inventory;
+pub mod resource_probe;
 pub mod inventory_history;
 pub mod git_status;
 pub mod git_evidence;
