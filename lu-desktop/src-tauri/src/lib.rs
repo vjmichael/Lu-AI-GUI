@@ -2395,6 +2395,14 @@ async fn lu_confirm_office_batch(
         return Err("Office batch preview changed during native confirmation".into())
     }
     let turn=next_id("g-");let effect_id=next_id("g-");
+    state.wave2_recovery.record_intent(
+        &chat_id,&effect_id,lu_core::native_office_batch_tool::TOOL_ID,
+        &view.destination_display,
+        view.destination_display.rsplit(|c|c=='/'||c=='\\').next()
+            .ok_or("Office batch output filename missing")?,
+        &view.revised_sha256,
+        "Create new exact-approved 2–32 change Office version",
+    )?;
     Ok(Some(office_batch_desktop::apply(
         &state.chats,&state.effects,&chat_id,&turn,&effect_id,&reviewed,
     ).await?))
