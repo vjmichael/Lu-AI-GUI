@@ -77,6 +77,15 @@ function App() {
   const [officeRevisionReviewed, setOfficeRevisionReviewed] = useState(false);
   const [officeRevisionBusy, setOfficeRevisionBusy] = useState(false);
   const [latestOfficeRevision, setLatestOfficeRevision] = useState(null);
+  const [officeBatchOpen, setOfficeBatchOpen] = useState(false);
+  const [officeBatchDraft, setOfficeBatchDraft] = useState([
+    {kind:'word_text',textIndex:0,slideNumber:1,sheetNumber:1,address:'A1',expectedOld:'',newValue:''},
+    {kind:'word_text',textIndex:1,slideNumber:1,sheetNumber:1,address:'A1',expectedOld:'',newValue:''}
+  ]);
+  const [officeBatchReview, setOfficeBatchReview] = useState(null);
+  const [officeBatchReviewed, setOfficeBatchReviewed] = useState(false);
+  const [officeBatchBusy, setOfficeBatchBusy] = useState(false);
+  const [latestOfficeBatch, setLatestOfficeBatch] = useState(null);
   const [fileTransferReview, setFileTransferReview] = useState(null);
   const [fileTransferReviewed, setFileTransferReviewed] = useState(false);
   const [fileTransferBusy, setFileTransferBusy] = useState(false);
@@ -1045,6 +1054,63 @@ function App() {
     }
   }
 
+  function updateOfficeBatchField(index,key,value) {
+    setOfficeBatchDraft(previous=>previous.map((patch,i)=>
+      i===index ? {...patch,[key]:value} : patch));
+  }
+  async function reviewOfficeBatch() {
+    if (!chatId || officeBatchBusy || officeBatchReview ||
+        officeBatchDraft.length < 2 || officeBatchDraft.length > 32 ||
+        officeBatchDraft.some(p=>!p.expectedOld.trim() || !p.newValue.trim())) return;
+    setOfficeBatchBusy(true);setError('');
+    try {
+      const review=await invoke('lu_review_office_batch',{
+        chatId,proposals:officeBatchDraft
+      });
+      if (review) {
+        setOfficeBatchReview(review);
+        setOfficeBatchReviewed(false);
+        setOfficeBatchOpen(false);
+        setActivity('Multi-edit Office package ready for complete review');
+      }
+    } catch(error){setError(String(error));}
+    finally{setOfficeBatchBusy(false);}
+  }
+  async function confirmOfficeBatch() {
+    const review=officeBatchReview;
+    if (!review || !officeBatchReviewed || officeBatchBusy ||
+        review.chatId !== chatId) return;
+    setOfficeBatchBusy(true);setError('');
+    try {
+      const receipt=await invoke('lu_confirm_office_batch',{
+        chatId:review.chatId,reviewId:review.reviewId
+      });
+      if (receipt) {
+        setLatestOfficeBatch({...receipt,chatId:review.chatId});
+        setActivity('Created approved multi-edit version: '+receipt.fileName);
+        await refreshChats();
+        if (currentChat.current===review.chatId)
+          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+      }else{setActivity('Office batch denied by native confirmation');}
+    }catch(error){
+      setError('Office batch rejected or uncertain. Inspect recovery before retry: '+String(error));
+    }finally{
+      setOfficeBatchReview(null);setOfficeBatchReviewed(false);setOfficeBatchBusy(false);
+    }
+  }
+  async function denyOfficeBatch() {
+    if (!officeBatchReview || officeBatchBusy) return;
+    setOfficeBatchBusy(true);
+    try {
+      await invoke('lu_deny_office_batch',{
+        chatId:officeBatchReview.chatId,reviewId:officeBatchReview.reviewId
+      });
+      setOfficeBatchReview(null);setOfficeBatchReviewed(false);
+      setActivity('Office batch denied; no revision created');
+    }catch(error){setError(String(error));}
+    finally{setOfficeBatchBusy(false);}
+  }
+
   async function reviewWriteDestination(proposal, destinationMode = 'user_documents') {
     setError('');
     try {
@@ -1671,6 +1737,120 @@ function App() {
             ? 'Original filename removed.'
             : 'Original file retained.'} Effect receipt: {latestFileTransfer.effectCallId}</small>
         </section>}
+        {officeBatchOpen && !officeBatchReview && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Prepare a multi-edit Office revision">
+          <strong>Revise multiple Word, PowerPoint or Excel fields in one new version</strong>
+          <small>Select the original document and a NEW output folder through native pickers.
+            Every existing value must match. No modifications are made until final native approval.</small>
+          {officeBatchDraft.map((patch,i)=><fieldset key={i} className="readProposalCard">
+            <legend>Change {i+1} of {officeBatchDraft.length}</legend>
+            <label className="editReviewAck">Kind
+              <select value={patch.kind} onChange={e=>updateOfficeBatchField(i,'kind',e.target.value)}>
+                <option value="word_text">Word text run</option>
+                <option value="slide_text">PowerPoint slide text</option>
+                <option value="cell_number">Excel numeric cell</option>
+                <option value="cell_boolean">Excel boolean cell</option>
+              </select>
+            </label>
+            {(patch.kind==='word_text'||patch.kind==='slide_text') &&
+              <label className="editReviewAck">Text run index (zero based)
+                <input type="number" min="0" max="9999" value={patch.textIndex}
+                  onChange={e=>updateOfficeBatchField(i,'textIndex',
+                    Math.max(0,Number(e.target.value)||0))}/>
+              </label>}
+            {patch.kind==='slide_text' && <label className="editReviewAck">Slide number
+              <input type="number" min="1" max="256" value={patch.slideNumber}
+                onChange={e=>updateOfficeBatchField(i,'slideNumber',
+                  Math.max(1,Number(e.target.value)||1))}/>
+            </label>}
+            {patch.kind.startsWith('cell_') && <>
+              <label className="editReviewAck">Worksheet number
+                <input type="number" min="1" max="256" value={patch.sheetNumber}
+                  onChange={e=>updateOfficeBatchField(i,'sheetNumber',
+                    Math.max(1,Number(e.target.value)||1))}/>
+              </label>
+              <label className="editReviewAck">Cell address
+                <input maxLength={8} value={patch.address}
+                  onChange={e=>updateOfficeBatchField(i,'address',e.target.value.toUpperCase())}/>
+              </label>
+            </>}
+            <label className="editReviewAck">Expected old value
+              <textarea className="editFullText" rows={2} maxLength={32768}
+                value={patch.expectedOld}
+                onChange={e=>updateOfficeBatchField(i,'expectedOld',e.target.value)}/>
+            </label>
+            <label className="editReviewAck">New value
+              <textarea className="editFullText" rows={2} maxLength={32768}
+                value={patch.newValue}
+                onChange={e=>updateOfficeBatchField(i,'newValue',e.target.value)}/>
+            </label>
+            <button type="button" className="subtleButton"
+              disabled={officeBatchDraft.length<=2}
+              onClick={()=>setOfficeBatchDraft(prev=>prev.filter((_,j)=>j!==i))}>
+              Remove change
+            </button>
+          </fieldset>)}
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={officeBatchDraft.length>=32}
+              onClick={()=>setOfficeBatchDraft(prev=>[...prev,{
+                kind:prev[0]?.kind||'word_text',textIndex:prev.length,
+                slideNumber:1,sheetNumber:1,address:'A1',expectedOld:'',newValue:''
+              }])}>Add change</button>
+            <button type="button" className="primaryButton"
+              disabled={officeBatchBusy || officeBatchDraft.some(p=>!p.expectedOld.trim()||!p.newValue.trim())}
+              onClick={()=>void reviewOfficeBatch()}>Native-pick source and review full batch</button>
+            <button type="button" className="subtleButton"
+              onClick={()=>setOfficeBatchOpen(false)}>Close</button>
+          </div>
+        </section>}
+        {officeBatchReview?.chatId===chatId && <section
+          className="readProposalCard editProposalCard" role="group"
+          aria-label="Review all Office revision changes and unchanged package parts">
+          <strong>Approve an exact {officeBatchReview.changes.length}-change Office version</strong>
+          <small>Original document:</small>
+          <code className="writeTarget">{officeBatchReview.sourceDisplay}</code>
+          <small>New version destination (never overwritten):</small>
+          <code className="writeTarget">{officeBatchReview.destinationDisplay}</code>
+          <small>Original SHA-256: {officeBatchReview.originalSha256}</small>
+          <small>Approved new package SHA-256: {officeBatchReview.revisedSha256}</small>
+          <small>{officeBatchReview.changedParts} · {officeBatchReview.revisedBytes} bytes</small>
+          <strong>All ordered exact changes</strong>
+          {officeBatchReview.changes.map((change,i)=><div key={i} className="readProposalCard">
+            <strong>{i+1}. {change.kind}: {change.target}</strong>
+            <small>Before</small>
+            <pre className="editFullText">{change.expectedOld}</pre>
+            <small>After</small>
+            <pre className="editFullText">{change.newValue}</pre>
+          </div>)}
+          <details open>
+            <summary>Every unchanged package part ({officeBatchReview.unaffectedParts.length})</summary>
+            <pre className="editFullText" aria-label="All unaffected Office part hashes">
+              {officeBatchReview.unaffectedParts.map(p=>p[0]+' · '+p[1]).join('\n')}
+            </pre>
+          </details>
+          <label className="editReviewAck">
+            <input type="checkbox" checked={officeBatchReviewed}
+              onChange={e=>setOfficeBatchReviewed(e.target.checked)}/>
+            I reviewed every before/after change, exact file paths, and whole-package hashes.
+          </label>
+          <small>This batch is all-or-nothing before publication. The original remains unchanged.
+            A separate native confirmation is required for this single-use write.</small>
+          <div className="settingsActions">
+            <button type="button" className="primaryButton"
+              disabled={!officeBatchReviewed || officeBatchBusy}
+              onClick={()=>void confirmOfficeBatch()}>Approve full batch in native dialog</button>
+            <button type="button" className="subtleButton" disabled={officeBatchBusy}
+              onClick={()=>void denyOfficeBatch()}>Deny all edits</button>
+          </div>
+        </section>}
+        {latestOfficeBatch?.chatId===chatId && <section className="readProposalCard" role="status">
+          <strong>Office multi-edit version created: {latestOfficeBatch.fileName}</strong>
+          <code className="writeTarget">{latestOfficeBatch.exactDestination}</code>
+          <small>{latestOfficeBatch.bytesWritten} bytes · SHA-256: {latestOfficeBatch.sha256}</small>
+          <small>Durable journal receipt: {latestOfficeBatch.effectCallId}</small>
+        </section>}
         {officeRevisionOpen && !officeRevisionReview && <section
           className="readProposalCard editProposalCard" role="group"
           aria-label="Prepare an existing Office document revision">
@@ -2142,6 +2322,12 @@ function App() {
               disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
               title="Native-pick an existing file and approve a same-directory move into a new filename"
               onClick={()=>void reviewNativeFileTransfer('move')}>Move file</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId || working || chatBusy || officeBatchBusy || Boolean(officeBatchReview)}
+              title="Review up to 32 Word, PowerPoint or Excel changes, then create one new version"
+              onClick={()=>setOfficeBatchOpen(v=>!v)}>
+              {officeBatchOpen ? 'Close batch' : 'Batch Office'}
+            </button>
             <button type="button" className="subtleButton"
               disabled={!chatId || working || chatBusy || officeRevisionBusy || Boolean(officeRevisionReview)}
               title="Revise one existing Office field while preserving original and unrelated package contents"
