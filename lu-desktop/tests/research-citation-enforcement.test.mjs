@@ -37,7 +37,7 @@ test('citation audit denies model URLs, fake labels, unsupported quotations and 
   assert.match(citation,/sources\[\*n-1\]\.excerpt\.contains\(passage\)/);
   assert.match(browser,/audit_browser_research_answer\(&answer,&citation_sources\)/);
   assert.match(browser,/let appendix=render_observed_source_appendix\(&citation_sources\)/);
-  assert.match(browser,/Host.*source URLs/s);
+  assert.match(browser,/trusted host adds source URLs/);
   assert.match(browser,/let mut evidence=BTreeMap::<String,\(String,BrowserCitationSource\)>::new\(\)/);
   assert.match(browser,/let mut source_records=Vec::<String>::new\(\)/);
 });
