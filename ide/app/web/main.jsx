@@ -896,6 +896,7 @@ function App() {
       tabIdentity: activeTab.key + ':' + activeTab.generation,
       expectedDraft: activeTab.draft,
       insertText: item.insertText,
+      replaceFrom: item.replaceFrom, replaceTo: item.replaceTo,
       nonce: Date.now(),
     });
     setLspCompletions(null);
