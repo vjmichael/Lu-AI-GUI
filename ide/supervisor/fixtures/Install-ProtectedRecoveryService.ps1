@@ -42,7 +42,10 @@ if ([string]::IsNullOrWhiteSpace($ApprovedHostUserSid)) {
   # under another account must explicitly specify the intended IDE user SID.
   $ApprovedHostUserSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 }
-if ($ApprovedHostUserSid -notmatch '^S-1-5-21-(\d+-){3}\d+ -ine $ExpectedServiceSha256 -or $observedHost -ine $ExpectedHostSha256) {
+if ($ApprovedHostUserSid -notmatch '^S-1-5-21-(\d+-){3}\d+$') {
+  throw 'DENIED: only an exact individual host account SID is permitted'
+}
+if ($observedService -ine $ExpectedServiceSha256 -or $observedHost -ine $ExpectedHostSha256) {
   throw 'DENIED: installed service/host executable did not match reviewed pin'
 }
 $allowUnsigned=$CiAcceptanceUnsigned -and $env:GITHUB_ACTIONS -eq 'true' -and
