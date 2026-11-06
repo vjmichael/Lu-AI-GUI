@@ -74,6 +74,8 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - name: Native Windows Job Object cancellation and durable worker receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
       - shell: bash
         run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock
