@@ -736,6 +736,11 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
     // project data, policy token, executable path, or service credentials.
     status.dwServiceSpecificExitCode = if ok {
         0
+    } else if STARTUP_STAGE.load(Ordering::Relaxed) == 0 {
+        // An OS-token startup failure happens before stage 10. The
+        // low fixed substage 101..106 distinguishes Win32 token checks
+        // without disclosing the service or host identity.
+        100 + security::service_identity_stage()
     } else {
         100 + STARTUP_STAGE.load(Ordering::Relaxed)
     };
