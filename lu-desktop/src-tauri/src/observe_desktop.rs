@@ -343,6 +343,45 @@ impl ObserveHost {
         }))
     }
 
+    /// An actual native Lu supervisor failure can create a content-free
+    /// observation note even when the renderer never emitted a hint.
+    /// Called only by the trusted desktop host, never a Tauri command.
+    /// Failure to note cannot alter model completion or grant any tool.
+    pub(crate) fn host_model_failure(&self,chat_id:&str)->Result<(),String>{
+        let mut s=self.inner.lock().map_err(|_|"Observation lock unavailable")?;
+        self.refresh_expiry(&mut s)?;
+        if s.controller.mode()!=Mode::Active
+            ||s.chat_id.as_deref()!=Some(chat_id){
+            return Ok(());
+        }
+        let seq=s.sequence.checked_add(1)
+            .ok_or("Observation sequence overflow")?;
+        let event=NativeEvent{
+            app_id:APP_ID.into(),sequence:seq,signal:Signal::ErrorIndicator,
+            requests_redacted_snapshot:false,
+        };
+        // No GPU inference is auto-started, and the event can't report a
+        // verified GUI test because it only establishes host engine failure.
+        let decision=s.controller.ingest(event,self.now(),false)
+            .map_err(format_error)?;
+        s.sequence=seq;s.event_count=s.event_count.saturating_add(1);
+        let session=s.session_id.clone().ok_or("Observation session missing")?;
+        let lane=s.awareness.as_mut().ok_or("Awareness lane unavailable")?;
+        let result=lane.ingest(&session,chat_id,AwarenessSignal{
+            sequence:seq,source:AwarenessSource::NativeRuntime,
+            signal:AwarenessKind::ErrorIndicator,
+        },self.now(),HostReadiness::default())
+            .map_err(|_|"Native runtime notation refused")?;
+        if let Some(note)=result.notation{
+            self.task_store.append_awareness_note(&session,chat_id,&note)
+                .map_err(|_|"Native runtime note could not be recorded")?;
+            s.notes_logged=s.notes_logged.saturating_add(1);
+        }
+        if matches!(decision,Decision::RecommendInference{..}){
+            s.recommendations=s.recommendations.saturating_add(1);
+        }
+        Ok(())
+    }
     /// Renderer hints contain no text or pixels. They are NOT verified GUI
     /// outcomes, even when a label says "error". Trustworthy pass/fail must
     /// originate in an independent, native test verifier.
