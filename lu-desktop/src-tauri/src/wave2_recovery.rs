@@ -8,7 +8,7 @@ use std::{fs::{self,File,OpenOptions},io::{Read,Write},path::{Path,PathBuf},sync
 use lu_core::{
     journal::{EffectJournal,EffectState},
     native_archive_tree_tool,
-    native_docx_tool,native_pptx_tool,native_office_revision_tool,
+    native_docx_tool,native_pptx_tool,native_office_revision_tool,native_office_batch_tool,
     native_file_transfer_tool,
     wire::{self,proto},
 };
@@ -30,6 +30,7 @@ fn known_tool(s:&str)->bool{
         native_docx_tool::TOOL_ID|
         native_pptx_tool::TOOL_ID|
         native_office_revision_tool::TOOL_ID|
+        native_office_batch_tool::TOOL_ID|
         native_file_transfer_tool::COPY_ID|
         native_file_transfer_tool::MOVE_ID)
 }
@@ -39,6 +40,7 @@ fn expected_output(s:&str)->Option<&'static str>{
         native_docx_tool::TOOL_ID=>Some(native_docx_tool::OUTPUT),
         native_pptx_tool::TOOL_ID=>Some(native_pptx_tool::OUTPUT),
         native_office_revision_tool::TOOL_ID=>Some(native_office_revision_tool::OUTPUT),
+        native_office_batch_tool::TOOL_ID=>Some(native_office_batch_tool::OUTPUT),
         native_file_transfer_tool::COPY_ID|native_file_transfer_tool::MOVE_ID=>
             Some(native_file_transfer_tool::OUTPUT),
         _=>None,
@@ -164,7 +166,8 @@ impl Wave2OperationLedger{
                     else{return false};
                 r.file_name==rec.target_name&&r.sha256==rec.approved_sha256
             },
-            native_office_revision_tool::TOOL_ID=>{
+            native_office_revision_tool::TOOL_ID|
+            native_office_batch_tool::TOOL_ID=>{
                 let Ok(r)=proto::OfficeRevisionResult::decode(data.as_slice())
                     else{return false};
                 r.target_new_name==rec.target_name&&
