@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- WO2 native Windows preparation: fixed-service, elevated-only NUL device DACL bootstrap (service SID only, exact rights, no AppContainer wildcard ACE), compiled but not invoked or release accepted; durable per-job service grant/revoke still pending (2026-11-06).
+
 - WO2/WO3 closeout: D7B native pinned Windows Cargo actual AppContainer build/output and cancellation tests PASS on 1090800 (CI-only NUL); production NUL broker remains open. WO3 protected service pipe denies all access even for matching approved user; added token-restriction diagnostic, bypass-resistant exact ACE verification and optional diagnostic fixture that does not suppress real SCM failure (2026-11-06).
 
 - WO2/WO3 code closeout continuation (2026-11-06): capability-rooted quota scanning replaces mutable 40-ms output hashing; final full hash/seal still post-Job. Corrected `cap_fs_ext::OsMetadataExt` native E0624; added bounded cancel-vs-walltime-vs-output traces. CI-only D7D exact-user DACL control and current TokenUser diagnostic isolate protected service access denial without weakening ACL. Protected recovery service handler concurrency capped at 12 with RAII session release, keeping held kernel Jobs from being dropped on client flooding. Applied native Rustfmt exact diffs. All actual pinned Cargo and SCM hostile acceptance remain open; see `docs/IDE_WORK_BATCH_02_20261106.md`.

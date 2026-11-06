@@ -1,5 +1,7 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**WO2 production NUL authority bootstrap added for native review:** fixed-service SID, elevated-only, per-boot READ_CONTROL/WRITE_DAC helper; per-job service-owned grant/revoke and boot reconciliation still open. See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md). No production worker launch.
+
 **WO2 pinned Windows native Cargo success (D7B exact commit 1090800):** real isolated Cargo Completed exit 0, output sealed and durable restart; real cancellation Job reaped and no output. CI-only exact-SID NUL permission does NOT finish production privilege lifecycle. **WO3 SCM service still denied at pipe open despite exact user SID match.** Native token diagnostic and nonblocking disposable pipe test added, protected service ACL preserved. See Batch 02 ledger.
 
 ### WO2/WO3 active Windows repairs — no release acceptance (2026-11-06)
