@@ -20,6 +20,7 @@ mod workspace_desktop;
 mod archive_desktop;
 mod document_create_desktop;
 mod office_revision_desktop;
+mod office_batch_desktop;
 mod file_transfer_desktop;
 mod file_trash_desktop;
 mod wave2_recovery;
@@ -190,6 +191,7 @@ struct DesktopState {
     archive_reviews: archive_desktop::ArchiveReviewQueue,
     document_create_reviews: document_create_desktop::DocumentCreateQueue,
     office_revision_reviews: office_revision_desktop::OfficeRevisionQueue,
+    office_batch_reviews: office_batch_desktop::OfficeBatchQueue,
     file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue,
     trash_reviews: file_trash_desktop::TrashQueue,
     restore_reviews: file_trash_desktop::RestoreQueue,
@@ -582,6 +584,7 @@ impl DesktopState {
             archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
             document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
             office_revision_reviews: office_revision_desktop::OfficeRevisionQueue::default(),
+            office_batch_reviews: office_batch_desktop::OfficeBatchQueue::default(),
             file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue::default(),
             trash_reviews: file_trash_desktop::TrashQueue::default(),
             restore_reviews: file_trash_desktop::RestoreQueue::default(),
@@ -2331,6 +2334,81 @@ fn lu_wave2_recovery(
     state.wave2_recovery.list(&chat_id,&state.effects)
 }
 
+/// Native-picked existing Office batch: 2–32 proposed edits, exact final
+/// package hash, every prior field value and all unaffected package parts.
+#[tauri::command]
+async fn lu_review_office_batch(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    proposals:Vec<office_revision_desktop::OfficePatchProposal>,
+)->Result<Option<office_batch_desktop::OfficeBatchView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let selected=tauri::async_runtime::spawn_blocking(move||{
+        let source=app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        let Some(source)=source else{return Ok(None)};
+        let folder=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(folder.map(|folder|(source,folder)))
+    }).await.map_err(|e|format!("Office batch source/destination pickers failed: {e}"))??;
+    let Some((source,folder))=selected else{return Ok(None)};
+    let id=next_id("ob-");
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        state.office_batch_reviews.stage(
+            &chat_id,&id,&source,&folder,&proposals
+        )
+    }).await.map_err(|e|format!("Office batch preview worker failed: {e}"))??;
+    Ok(Some(result))
+}
+#[tauri::command]
+async fn lu_confirm_office_batch(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<office_batch_desktop::OfficeBatchReceipt>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let before=state.office_batch_reviews.inspect(&chat_id,&review_id)?;
+    let view=before.view();
+    let message=format!(
+        "Create a NEW multi-edit Office document version?\n\nOriginal: {}\nNew file: {}\nChanges: {}\nAffected: {}\nOriginal SHA-256: {}\nApproved new package SHA-256: {}\nUnaffected parts: {}\n\nConfirm only after reviewing all individual before/after edits and unchanged parts in Lu. This one-use authorization is never auto-retried.",
+        view.source_display,view.destination_display,view.changes.len(),
+        view.changed_parts,view.original_sha256,view.revised_sha256,
+        view.unaffected_parts.len(),
+    );
+    let yes=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Approve exact Office batch")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new version".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native Office batch confirmation failed: {e}"))?;
+    if !yes{
+        state.office_batch_reviews.take(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let reviewed=state.office_batch_reviews.take(&chat_id,&review_id)?;
+    if !before.same(&reviewed){
+        return Err("Office batch preview changed during native confirmation".into())
+    }
+    let turn=next_id("g-");let effect_id=next_id("g-");
+    Ok(Some(office_batch_desktop::apply(
+        &state.chats,&state.effects,&chat_id,&turn,&effect_id,&reviewed,
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_office_batch(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.office_batch_reviews.take(&chat_id,&review_id)?;
+    Ok(())
+}
+
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
@@ -3152,6 +3230,9 @@ pub fn run() {
             lu_review_file_transfer,
             lu_confirm_file_transfer,
             lu_deny_file_transfer,
+            lu_review_office_batch,
+            lu_confirm_office_batch,
+            lu_deny_office_batch,
             lu_review_office_revision,
             lu_confirm_office_revision,
             lu_deny_office_revision,
