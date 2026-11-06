@@ -67,6 +67,15 @@ function App() {
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
 
+  useEffect(() => {
+    // Invalidate in-flight project evidence when the selected project changes.
+    gitEvidenceRequest.current += 1;
+    setGitEvidenceBusy(false);
+    setGitDiff(null);
+    setGitHistory(null);
+    setResourceProbe(null);
+  }, [activeProject?.projectId]);
+
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
   const anyDirty = tabs.some(tab => tab.dirty);
@@ -871,6 +880,7 @@ function App() {
                       setGitDiff(null);
                       setGitHistory(null);
                       gitEvidenceRequest.current += 1;
+                      setGitEvidenceBusy(false);
                     }}>
                     <option value="worktree">Unstaged changes</option>
                     <option value="staged">Staged changes</option>
@@ -883,7 +893,8 @@ function App() {
               </div>
               <p>Local-only evidence. Untracked file contents are not included in patch text.
                 Diff previews are capped at 64 KiB and may be incomplete. No Git command is executed.</p>
-              {gitDiff && <div className="continuityDocument" aria-label="Local Git patch">
+              {gitDiff && gitDiff.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Local Git patch">
                 <p><strong>{gitDiff.scope === 'staged' ? 'Staged' : 'Unstaged'} changes</strong>
                   {' · '}{gitDiff.filesChanged} changed file(s)
                   {' · '}{gitDiff.patchBytes.toLocaleString()} patch bytes
@@ -892,7 +903,8 @@ function App() {
                   ? <pre className="gitPatchPreview">{gitDiff.patch}</pre>
                   : <p>No tracked patch changes in the selected scope.</p>}
               </div>}
-              {gitHistory && <div className="continuityDocument" aria-label="Local Git history">
+              {gitHistory && gitHistory.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Local Git history">
                 <h4>Local HEAD history</h4>
                 {gitHistory.commits.length === 0 && <p>No local commits found.</p>}
                 {gitHistory.commits.map(item => <p key={item.commitSha}>
