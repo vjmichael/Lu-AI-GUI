@@ -816,6 +816,94 @@ mod tests {
         assert_eq!(CPU_RATE_HARD_CAP, 5);
         assert_eq!(CPU_RATE_HALF, 5000);
     }
+    fn test_tree() -> PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir()
+            .join(format!("lu-ide-d7b-hostile-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn hostile_hardlink_cannot_copy_external_secret() {
+        let root = test_tree();
+        let source = root.join("workspace");
+        fs::create_dir(&source).unwrap();
+        let private = root.join("outside-secret.txt");
+        fs::write(&private, b"PRIVATE SECRET NOT A WORKSPACE FILE").unwrap();
+        fs::hard_link(&private, source.join("alias.txt")).unwrap();
+        let staged = root.join("staged");
+        assert!(
+            digest_tree(&source, Some(&staged), 100, 100_000).is_err(),
+            "hardlinked outside secrets must be denied by kernel handle count"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hostile_junction_and_reparse_parent_are_rejected() {
+        let root = test_tree();
+        let workspace = root.join("workspace");
+        let outside = root.join("outside");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("host-secret.txt"), b"HOST_ONLY").unwrap();
+        std::os::windows::fs::symlink_dir(&outside, workspace.join("junction"))
+            .expect("native Windows test host must permit symlink creation");
+        assert!(
+            digest_tree(&workspace, Some(&root.join("staged")), 100, 100_000).is_err(),
+            "directory reparse must never be traversed"
+        );
+        assert!(
+            digest_tree(&workspace.join("junction"), None, 100, 100_000).is_err(),
+            "reparse root must fail before enumeration"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn staged_content_change_and_output_hardlink_are_denied() {
+        let root = test_tree();
+        let source = root.join("trusted");
+        let dest = root.join("stage");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("main.rs"), b"fn main() {}").unwrap();
+        let seal = digest_tree(&source, Some(&dest), 100, 100_000).unwrap();
+        assert_eq!(digest_tree(&dest, None, 100, 100_000).unwrap(), seal);
+        fs::write(dest.join("main.rs"), b"fn main() { panic!() }").unwrap();
+        assert_ne!(digest_tree(&dest, None, 100, 100_000).unwrap(), seal);
+        let output = root.join("output");
+        fs::create_dir_all(&output).unwrap();
+        let outside = root.join("outside.dat");
+        fs::write(&outside, b"host data").unwrap();
+        fs::hard_link(&outside, output.join("host-hardlink")).unwrap();
+        assert!(output_seal(&output).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn adversarial_parent_swap_cannot_pass_reparse_validation() {
+        let root = test_tree();
+        let source = root.join("source");
+        let outside = root.join("outside");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(source.join("Cargo.toml"), b"[package]\\nname=\\"x\\"").unwrap();
+        fs::write(outside.join("Cargo.toml"), b"OUTSIDE").unwrap();
+        let before = digest_tree(&source, None, 100, 100_000).unwrap();
+        fs::rename(&source, root.join("source-moved")).unwrap();
+        std::os::windows::fs::symlink_dir(&outside, &source)
+            .expect("native Windows test host must permit symlink creation");
+        assert!(digest_tree(&source, None, 100, 100_000).is_err());
+        fs::remove_dir(&source).unwrap();
+        fs::rename(root.join("source-moved"), &source).unwrap();
+        assert_eq!(digest_tree(&source, None, 100, 100_000).unwrap(), before);
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn rejects_reparse_and_unknown_offline_toolchain() {
         let base = std::env::temp_dir().join(format!("lu-ide-d7-fixture-{}", std::process::id()));
