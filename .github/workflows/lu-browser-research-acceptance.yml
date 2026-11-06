@@ -10,6 +10,13 @@ on:
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'src-tauri/lu-core/src/web_research_evidence.rs'
+      - 'lu-desktop/tests/browser-model-read.test.mjs'
+      - 'lu-desktop/src-tauri/src/browser_model_desktop.rs'
+      - 'src-tauri/lu-core/src/inference_host.rs'
+      - 'src-tauri/lu-core/src/inference_bridge.rs'
+      - 'src-tauri/lu-core/src/inference_supervisor.rs'
+      - 'src-tauri/lu-core/src/persistent_llama_backend.rs'
+      - 'src-tauri/lu-core/src/multimodal_http.rs'
       - 'lu-desktop/tests/browser-ci-candidate.test.mjs'
       - 'lu-desktop/tests/browser-ci-executable.test.mjs'
       - 'src-tauri/lu-core/workers/lu_browser_worker.mjs'
@@ -32,6 +39,7 @@ jobs:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
       - run: node --test lu-desktop/tests/research-source-route.test.mjs
+      - run: node --test lu-desktop/tests/browser-model-read.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
   browser-candidate:
     needs: source
@@ -95,6 +103,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.98.0'
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib multimodal_http::tests::browser_tool_stream_accepts_clean_stop_but_not_bare_done
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
@@ -136,3 +145,5 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Research HTTPS client did not execute'}
       - name: Verify research native host with compiled-in client digest
         run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib research_desktop::tests
+      - name: Compile and test scoped native Browser model dispatch on Windows
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib browser_model_desktop::tests
