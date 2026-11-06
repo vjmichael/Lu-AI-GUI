@@ -53,3 +53,12 @@ test('Preview is bounded untrusted evidence, never raw screenshots or invented c
   assert.match(ui,/page\.excerpt&&<pre>/);
   assert.doesNotMatch(bridge,/response\.image|base64|screenshot_bytes/);
 });
+
+test('text-only browser model tool schema does not advertise screenshots',()=>{
+  const codec=file('../../src-tauri/lu-core/src/browser_model_codec.rs');
+  const request=file('../../src-tauri/lu-core/src/browser_model_request.rs');
+  assert.match(codec,/BrowserModelKind::Read=>vec!\["navigate","read","status","accessibility"\]/);
+  assert.match(request,/let expected=\["navigate","read","status","accessibility"\]/);
+  assert.doesNotMatch(codec,/BrowserModelKind::Read,"screenshot"/);
+  assert.match(codec,/model_read_catalog_excludes_screenshot_bytes/);
+});
