@@ -247,7 +247,8 @@ export class BrowserSession {
       approvedUrl(this.page.url(),this.origins);
       // History navigation can land on an authentication or CAPTCHA gate;
       // do not silently continue autonomous browsing in that state.
-      const text=await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const text=await this.page.locator('body').innerText({timeout:5000})
+        .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
       const challenge=challengeKind(text);
       if(challenge) return this.#requestHuman(challenge);
       return {status:'NAVIGATED',url:this.page.url()};
@@ -255,7 +256,8 @@ export class BrowserSession {
     if (op === 'accessibility') {
       // The accessibility path is not an escape hatch around read()'s
       // CAPTCHA/login takeover gate.
-      const text=await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const text=await this.page.locator('body').innerText({timeout:5000})
+        .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
       const challenge=challengeKind(text);
       if(challenge)return this.#requestHuman(challenge);
       const tree=await this.page.locator('body').ariaSnapshot({timeout:5000});
@@ -278,7 +280,8 @@ export class BrowserSession {
     }
     if (op === 'screenshot') {
       // Prevent screenshot() from bypassing human challenge handoff.
-      const text=await this.page.locator('body').innerText({timeout:5000}).catch(()=>'');
+      const text=await this.page.locator('body').innerText({timeout:5000})
+        .catch(()=>{throw new BrowserGateError('CHALLENGE_STATE_UNAVAILABLE');});
       const challenge=challengeKind(text);
       if(challenge)return this.#requestHuman(challenge);
       let image;
