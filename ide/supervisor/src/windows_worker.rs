@@ -1361,6 +1361,9 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    // The original same-user kernel-Job recovery entrypoint is deliberately
+    // absent in protected-service builds, where release requires the SCM ACK.
+    #[cfg(not(feature = "protected-recovery-service"))]
     #[test]
     fn quarantined_restart_cannot_invent_cleanup_for_missing_job() {
         let root = test_tree();
