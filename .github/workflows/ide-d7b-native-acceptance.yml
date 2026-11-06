@@ -78,6 +78,11 @@ jobs:
         run: |
           cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer Cargo fixture denied or failed' }
+      - name: Inject native cancellation and verify ordered durable receipts
+        shell: pwsh
+        run: |
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker -- --cancel-native-worker
+          if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer cancellation acceptance failed' }
       - name: Save observed toolchain file lock outside worker
         if: always()
         uses: actions/upload-artifact@v4
