@@ -6,7 +6,7 @@
 #[cfg(not(windows))]
 fn main() { eprintln!("DENIED: Windows-only native acceptance"); std::process::exit(2); }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(feature = "protected-recovery-service")))]
 fn require_independent_broker_release(
     root: &std::path::Path,
     job_id: &str,
@@ -129,10 +129,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &supervisor, &prepared.job_id, &plan, &plan.source_head, &input, &bundle,
         &native_outputs, &native_broker, &cancellation
     ).map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
-    // A completed or cancelled worker also needs an independent process's
-    // fsynced Ready -> ReleasedEmpty record, not just the supervisor journal.
-    // This verifies protocol behavior; same-account receipts remain untrusted
-    // as a standalone recovery authority.
+    // D7C test mode can only audit its same-user journal as diagnostic data.
+    // D7D protected mode cannot read the service's ACL-isolated journal:
+    // execute_windows_worker instead waits for an authenticated independent
+    // SCM service ACK after its protected fsynced "released_empty" receipt.
+    #[cfg(not(feature = "protected-recovery-service"))]
     require_independent_broker_release(
         &broker_receipts, &prepared.job_id, &prepared.plan_sha256
     )?;
@@ -181,6 +182,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter().any(|x| x.requires_reconciliation) {
         return Err("DENIED: unexpected incomplete journal after restart".into());
     }
+    #[cfg(feature = "protected-recovery-service")]
+    println!("PASS: native protected SCM service + real AppContainer Cargo check, Job quotas, signed-by-service release ACK, published output digest, durable reopen");
+    #[cfg(not(feature = "protected-recovery-service"))]
     println!("PASS: native AppContainer Cargo check, Job quotas, published output digest, durable reopen");
     println!("OUTPUT: {}", result.output_root.display());
     println!("NOTE: test fixture only; untested hostile crashes and installed desktop remain separate");
