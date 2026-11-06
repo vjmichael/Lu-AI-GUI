@@ -61,6 +61,8 @@ function App() {
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubComparison, setGithubComparison] = useState(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [resourceProbe, setResourceProbe] = useState(null);
+  const [resourceProbeBusy, setResourceProbeBusy] = useState(false);
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
@@ -231,6 +233,25 @@ function App() {
     } finally {
       setContextBusy(false);
     }
+  }
+
+  async function inspectResource(relativePath) {
+    if (!activeProject?.projectId || resourceProbeBusy) return;
+    const projectId = activeProject.projectId;
+    setResourceProbeBusy(true);
+    setResourceProbe(null);
+    setProblem('');
+    try {
+      const observed = await invoke('ide_probe_project_resource', {
+        projectId, relativePath,
+      });
+      if (observed.projectId !== projectId || observed.relativePath !== relativePath) {
+        throw Error('RESOURCE_PROBE_CONTEXT_CHANGED');
+      }
+      setResourceProbe(observed);
+    } catch (error) {
+      setProblem('Could not verify current resource bytes: ' + String(error));
+    } finally { setResourceProbeBusy(false); }
   }
 
   async function captureInventorySnapshot() {
@@ -972,8 +993,25 @@ function App() {
                   <p>{file.sizeBytes.toLocaleString()} bytes · {file.state.replaceAll('_', ' ')}
                     {' · '}{file.digestStatus.replaceAll('_', ' ')}</p>
                   {file.sha256 && <code>SHA-256: {file.sha256}</code>}
+                  <button type="button" className="ghostBtn" disabled={resourceProbeBusy}
+                    onClick={() => inspectResource(file.relativePath)}>
+                    {resourceProbeBusy && resourceProbe?.relativePath === file.relativePath
+                      ? 'Inspecting…' : 'Recheck file bytes'}
+                  </button>
                 </article>)}
               </div>
+              {resourceProbe && resourceProbe.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Current resource evidence">
+                  <h4>Current resource: <code>{resourceProbe.relativePath}</code></h4>
+                  <p><strong>{resourceProbe.state.replaceAll('_', ' ')}</strong>
+                    {' · '} {resourceProbe.byteLength === null
+                      ? 'Size unavailable' : resourceProbe.byteLength.toLocaleString() + ' bytes'}
+                    {' · '} {resourceProbe.digestStatus.replaceAll('_', ' ')}</p>
+                  {resourceProbe.sha256 && <p>Observed SHA-256:
+                    <code> {resourceProbe.sha256}</code></p>}
+                  <p>Executable usability: <strong>Not tested</strong>.
+                    A file hash does not prove an installer or compiler launches.</p>
+                </div>}
               <h3>Changes since recorded evidence</h3>
               {!inventoryComparison?.baselinePresent
                 ? <p>No earlier snapshot recorded for this project. Record one to compare later.</p>
