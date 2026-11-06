@@ -23,7 +23,7 @@ pub enum CitationAuditError {
 }
 fn source_valid(s:&BrowserCitationSource)->bool{
     s.url.starts_with("https://")&&s.url.len()<=2048
-        &&!s.url.chars().any(char::is_whitespace)
+        &&!s.url.chars().any(|c|c.is_whitespace()||c.is_control())
         &&!s.url.contains('@')&&!s.url.contains('\\')
         &&s.content_sha256.len()==64
         &&s.content_sha256.bytes().all(|b|b.is_ascii_hexdigit())
@@ -97,11 +97,18 @@ pub fn audit_browser_research_answer(
     if sources.iter().any(|s|!source_valid(s)){
         return Err(CitationAuditError::InvalidSource);
     }
-    if answer.trim().is_empty()||answer.len()>200*1024
-        ||answer.chars().any(|c|c=='\0')
-        ||answer.contains("https://")||answer.contains("http://")
-        ||answer.contains("](")||answer.contains("<a ")
-        ||answer.contains("www."){
+    if answer.trim().is_empty()||answer.len()>200*1024 {
+        return Err(CitationAuditError::InvalidAnswer);
+    }
+    if answer.chars().any(|c|c=='\0'
+        ||(c.is_control()&&c!='\n'&&c!='\r'&&c!='\t')){
+        return Err(CitationAuditError::InvalidAnswer);
+    }
+    // Check case-insensitively. The native host alone emits URLs after audit.
+    let lower=answer.to_ascii_lowercase();
+    if lower.contains("https://")||lower.contains("http://")
+        ||lower.contains("](")||lower.contains("<a ")
+        ||lower.contains("www."){
         return Err(CitationAuditError::UnapprovedLink);
     }
     let mut any=false;
@@ -168,6 +175,7 @@ mod tests{
             "Invented source [[B3]].",
             "Bad numeric reference [99] and real [[B1]].",
             "Source: https://evil.example/article [[B1]].",
+            "Source: HTTPS://EVIL.example/article [[B1]].",
             "Click [here](javascript:alert(1)) [[B1]].",
             "Claims [[B1]]\n\nAnother unsupported paragraph.",
             "Fabricated “important new discovery” [[B1]].",
