@@ -1722,10 +1722,24 @@ async fn lu_research_retrieve_document(
             Ok(document)
         },
         Err(err)=>{
-            let _=owner.background_tasks.fail(&task_id);
+            if err=="Research document retrieval cancelled by user"{
+                // The worker has already exited and curl was killed/reaped.
+                let _=owner.background_tasks.cancelled(&task_id);
+            }else{
+                let _=owner.background_tasks.fail(&task_id);
+            }
             Err(err)
         },
     }
+}
+/// Revoke only the currently owned document read for this conversation.
+#[tauri::command]
+fn lu_research_cancel_document(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,source_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation to cancel document retrieval")?;
+    state.research.cancel_document(&chat_id,&source_id)
 }
 /// Exact source quote verification reads the already locally stored,
 /// hash-checked document. This command never performs network retrieval.
@@ -5153,6 +5167,7 @@ pub fn run() {
             lu_research_openalex,
             lu_research_crossref,
             lu_research_retrieve_document,
+            lu_research_cancel_document,
             lu_research_verify_document_passage,
             lu_research_campaign_start,
             lu_research_campaigns,
