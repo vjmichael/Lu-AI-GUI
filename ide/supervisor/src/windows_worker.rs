@@ -267,6 +267,30 @@ fn output_seal(root: &Path) -> Result<(u64, String), SupervisorError> {
     Ok((counter.bytes, format!("{:x}", hash.finalize())))
 }
 
+/// Publish only fully scanned, size-limited output from a terminated kernel
+/// Job into the native application profile. The AppContainer has no access to
+/// this parent. Reseal the copied bytes before returning an output coordinate.
+fn publish_output(
+    child_output: &Path, trusted_native_parent: &Path, id: &str
+) -> Result<(PathBuf, u64, String), SupervisorError> {
+    if !valid_job_id(id) || !clean_meta(trusted_native_parent)?.is_dir() {
+        return Err(denied());
+    }
+    let parent = fs::canonicalize(trusted_native_parent).map_err(io_denied)?;
+    let source = fs::canonicalize(child_output).map_err(io_denied)?;
+    if parent.starts_with(&source) || source.starts_with(&parent) { return Err(denied()); }
+    let (bytes, original_hash) = output_seal(child_output)?;
+    let destination = parent.join(id);
+    fs::create_dir(&destination).map_err(io_denied)?; // existing job = deny
+    let copied = digest_tree(child_output, Some(&destination),
+        MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES)?;
+    let (published_bytes, published_hash) = output_seal(&destination)?;
+    if original_hash != copied || copied != published_hash || bytes != published_bytes {
+        return Err(denied());
+    }
+    Ok((destination, published_bytes, published_hash))
+}
+
 struct AppProfile { name: Vec<u16>, sid: PSID }
 impl Drop for AppProfile {
     fn drop(&mut self) {
@@ -501,7 +525,7 @@ fn proof() -> OsContainmentProof {
 pub fn execute_windows_worker(
     supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
     input: &PublishedInput, trusted_offline_toolchain_root: &Path,
-    cancel: &WindowsCancellation,
+    trusted_native_output_parent: &Path, cancel: &WindowsCancellation,
 ) -> Result<WindowsExecutionResult, SupervisorError> {
     if !valid_job_id(job_id) || plan.input_snapshot_sha256 != input.seal.source_sha256
         || plan.manifest_sha256 != input.seal.manifest_sha256 {
@@ -515,6 +539,12 @@ pub fn execute_windows_worker(
     let workspace = local.join("workspace");
     let toolchain = local.join("toolchain");
     let output = local.join("output");
+    if !clean_meta(trusted_native_output_parent)?.is_dir() {
+        return Err(denied());
+    }
+    let private_parent = fs::canonicalize(trusted_native_output_parent).map_err(io_denied)?;
+    if private_parent.starts_with(&local) || local.starts_with(&private_parent)
+        || private_parent.starts_with(&input.root) { return Err(denied()); }
     stage_workspace(input, &workspace)?;
     stage_toolchain(trusted_offline_toolchain_root, &toolchain, &plan.toolchain_sha256)?;
     fs::create_dir(&output).map_err(io_denied)?;
@@ -580,19 +610,28 @@ pub fn execute_windows_worker(
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
     let reaped = naturally_empty || job.kill_and_verify()?;
-    let bounded = output_seal(&output);
-    let (bytes, hash) = bounded.unwrap_or((0, String::new()));
+    // Never publish incomplete or cancelled outputs. An unbounded or
+    // unpublishable output tree yields a quarantined recovery receipt,
+    // not a 'successful build' based only on Cargo's exit status.
+    let publication = if stopped {
+        None
+    } else {
+        publish_output(&output, &private_parent, job_id).ok()
+    };
     let summary = if stopped {
         supervisor.inspect()?.into_iter().find(|j| j.job_id == job_id)
             .ok_or(SupervisorError::NoSuchJob)?
     } else {
-        supervisor.native_finish(job_id,
-            exit_code == Some(0) && naturally_empty && bounded.is_ok(),
-            reaped, bounded.is_ok())?
+        supervisor.native_finish_with_output(
+            job_id, exit_code == Some(0) && naturally_empty && publication.is_some(),
+            reaped, publication.is_some(),
+            publication.as_ref().map(|(_, _, sha)| sha.as_str()))?
     };
+    let (output_root, output_bytes, output_sha256) =
+        publication.unwrap_or((PathBuf::new(), 0, String::new()));
     Ok(WindowsExecutionResult {
-        summary, exit_code, output_root: output,
-        output_bytes: bytes, output_sha256: hash, timed_out,
+        summary, exit_code, output_root, output_bytes,
+        output_sha256, timed_out,
     })
 }
 
