@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO2/WO3 further source hardening: NUL CI compatibility requires explicit `ci-native-null-lease` **compile-time** feature plus disposable debug CI environment; D7C/D7D hostile observers now surface native Win32 Job query failures rather than ambiguous empty/denied evidence. Production capability provisioning and independent SCM crash recovery still open. Draft PR #65, no release enablement.
+
+
 - IDE WO2/WO3 resumed engineering (2026-11-06): AppContainer network timeout acceptance requires dual live host endpoint controls, no child connections, exact token capabilities and verified Job empty; temporary `NUL` permission confined to explicit disposable CI per-profile SID and revoked before success, not release accepted; D7D service pipe binds installer-approved individual host SID and versioned service config, confirms endpoint before SCM RUNNING, repairs privileged installer AST syntax, and tightens real kernel Job crash witness. Related supervisor core Windows/Linux unit CI passed on prior exact head, but current AppContainer Cargo, SCM crash recovery, and production NUL failover are not accepted. See `docs/IDE_WORK_BATCH_02_20261106.md`.
 
 

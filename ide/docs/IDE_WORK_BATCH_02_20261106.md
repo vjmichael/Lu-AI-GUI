@@ -18,3 +18,11 @@ Source implementation on draft PR #65 (not a release acceptance):
 
 **Remaining roadmap held:** WO1 exact Windows compile/fixture evidence; WO4 Linux delegated containment; WO5 protected LSP; WO6 build/test/DAP; WO7 signed NSIS; WO8 installed E2E; WO9 advanced workflows; WO10 optional Lu self-development. Do not promote WO2/3 to done or move to WO4–10 before code/security closeout.
 
+
+### Continuation — compile-time CI-only NUL control and independent crash witness diagnostics
+
+- Commit `2f2043d` adds a separate `ci-native-null-lease` Cargo feature to the existing debug+GitHub-runners+explicit-environment gates, so production builds cannot activate global Windows NUL DACL editing merely by setting environment variables. Only pinned offline D7B/D7D CI worker jobs request the feature.
+- The D7C/D7D hostile witnesses now report fixed Win32 kernel Job query errors (without treating a failed query as an empty Job). This distinguishes ACL/query-rights defects from a real surviving descendant.
+- A *candidate* production architecture is a signed-installer-provisioned private, non-network capability SID for NUL, shared by per-job unique AppContainer package SIDs, with strict token capability comparison and uninstall rollback. Microsoft's `DeriveCapabilitySidsFromName` supports constructing such a capability, but **this has not been implemented or security-accepted**. It must not be assumed equivalent to today's zero-capability policy before native network and ACL checks.
+- Release blocker unchanged: kernel NUL CI DACL lease is disposable-only; separately approved production permission lifecycle is still missing. D7D needs authenticated service admission and durable crash/service-loss acceptance before a production worker can be enabled.
+

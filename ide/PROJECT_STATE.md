@@ -1,5 +1,8 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**WO2/WO3 continuing closeout:** CI-only native NUL DACL work now additionally compile-time gated with `ci-native-null-lease` (not in release/default features). Independent D7C/D7D crash observers now record native Win32 accounting query failure codes; no failed query can certify an empty Job. The release-only NUL capability/installer approach remains an unimplemented security gate; protected SCM crash and restart proof remains open. See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md). Native exact-head acceptance still required.
+
+
 ### Work orders 2–3: resumed implementation; native security closeout remains open (2026-11-06)
 
 [Batch 02 code/evidence ledger](docs/IDE_WORK_BATCH_02_20261106.md): WO2 AppContainer now checks real token zero capabilities, controls before/after live network probe and child listener absence, bounds real kernel Job reaping, and has an explicitly CI-only exact temporary NUL SID grant with verified normal-exit revocation after sealed staging and protected broker approval. This is **not** production-safe across host crash, so production NUL lifecycle and real confined Cargo pass remain open. WO3 service uses installer-approved exact host account SID (not broad IU) for pipe ACL/TokenUser and v2 config, starts SCM RUNNING only after creating the protected endpoint, fixes installer PowerShell parse and bounds independent kernel Job observation. Real SCM IPC, owner-crash/service-loss restart recovery remain unaccepted. Related Windows/Linux core supervisor unit CI on historical `8e5aa5a` passed; not native OS execution acceptance. PR draft, no release worker. Details in linked ledger.

@@ -115,7 +115,10 @@ try {
     $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
     if (![D7CNativeWitness]::QueryInformationJobObject(
         $jobHandle,1,[ref]$accounting,$size,[IntPtr]::Zero)) {
-      throw 'DENIED: kernel Job accounting query failed'
+      # The error code distinguishes stale/revoked original Job handle from
+      # malformed accounting fixture; never convert a query error to PASS.
+      $osCode=[Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      throw "DENIED: kernel Job accounting query failed (Win32=$osCode)"
     }
     if ($accounting.ActiveProcesses -eq 0) {
       $empty=$true
