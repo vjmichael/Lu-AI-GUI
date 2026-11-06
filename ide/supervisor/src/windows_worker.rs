@@ -555,6 +555,29 @@ pub fn execute_windows_worker(
     trusted_native_output_parent: &Path, trusted_broker: &TrustedBroker,
     cancel: &WindowsCancellation,
 ) -> Result<WindowsExecutionResult, SupervisorError> {
+    // Existing entrypoint preserves the original rule: callers must have
+    // obtained an unexpired human grant before invoking worker execution.
+    // It MUST fail closed if costly staging consumes the 60-second grant.
+    execute_windows_worker_after_staging_approval(
+        supervisor, job_id, plan, current_host_observed_head, input,
+        trusted_offline_toolchain_root, trusted_native_output_parent,
+        trusted_broker, cancel, || Ok(())
+    )
+}
+
+/// Production host may provide a synchronous native approval callback after
+/// sealed input/toolchain preflight and before any child is created, for a
+/// genuinely fresh on-screen approval. The acceptance fixture injects an
+/// isolated test-only approval; this is not a WebView or Lu Core capability.
+/// An untrusted model/tool cannot supply this callback.
+pub fn execute_windows_worker_after_staging_approval<F>(
+    supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+    current_host_observed_head: &str,
+    input: &PublishedInput, trusted_offline_toolchain_root: &Path,
+    trusted_native_output_parent: &Path, trusted_broker: &TrustedBroker,
+    cancel: &WindowsCancellation, approve_after_staging: F,
+) -> Result<WindowsExecutionResult, SupervisorError>
+where F: FnOnce() -> Result<(), SupervisorError> {
     if !valid_job_id(job_id) || plan.source_head != current_host_observed_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
         || plan.manifest_sha256 != input.seal.manifest_sha256 {
@@ -598,6 +621,10 @@ pub fn execute_windows_worker(
     if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
+    // Source identity and the exact native execution bundle are now sealed.
+    // Only NOW request/consume fresh one-use authority. No untrusted program
+    // has been started, and the 60-second grant TTL remains unchanged.
+    approve_after_staging()?;
     let plan_hash = supervisor.inspect()?.into_iter()
         .find(|x| x.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?.plan_sha256;
     let job = Job::create(job_id, &plan_hash, plan)?;
