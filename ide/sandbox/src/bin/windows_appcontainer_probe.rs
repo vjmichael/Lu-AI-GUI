@@ -32,7 +32,7 @@ mod windows {
             Isolation::{
                 CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
             },
-            TokenIsAppContainer, PSID, SECURITY_CAPABILITIES, TOKEN_QUERY,
+            TokenCapabilities, TokenIsAppContainer, PSID, SECURITY_CAPABILITIES, TOKEN_QUERY,
         },
         System::{
             Com::CoTaskMemFree,
@@ -263,6 +263,35 @@ mod windows {
         };
         if got == 0 || appcontainer != 1 {
             return Ok(Some(10));
+        }
+        // Independently inspect the *actual child kernel token*, not just
+        // the intended zero-capability CreateProcess attribute supplied by
+        // the parent. No capability may be silently added at admission.
+        let mut required = 0u32;
+        unsafe {
+            GetTokenInformation(token.0, TokenCapabilities, ptr::null_mut(), 0, &mut required);
+        }
+        if required < size_of::<u32>() as u32 || required > 64 * 1024 {
+            return Ok(Some(14));
+        }
+        let mut capability_words =
+            vec![0usize; (required as usize).div_ceil(size_of::<usize>())];
+        let mut returned = 0u32;
+        let cap_ok = unsafe {
+            GetTokenInformation(
+                token.0,
+                TokenCapabilities,
+                capability_words.as_mut_ptr().cast(),
+                required,
+                &mut returned,
+            )
+        };
+        if cap_ok == 0 || returned < size_of::<u32>() as u32 {
+            return Ok(Some(14));
+        }
+        let capabilities = unsafe { *(capability_words.as_ptr() as *const u32) };
+        if capabilities != 0 {
+            return Ok(Some(15));
         }
         match fs::read(secret) {
             Ok(_) => return Ok(Some(11)),
@@ -527,6 +556,8 @@ mod windows {
         }
         if exit != 0 {
             let reason = match exit {
+                14 => "unable to inspect actual AppContainer token capabilities",
+                15 => "actual AppContainer token has unexpected capabilities",
                 1399 => "timeout without raw WinSock denial",
                 1398 => "unexpected out-of-range WinSock error",
                 1397 => "connection refused without raw WinSock error",
