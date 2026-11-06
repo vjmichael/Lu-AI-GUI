@@ -529,6 +529,19 @@ pub fn execute_windows_worker(
             io::Error::other("no native journal parent")
         }).and_then(fs::canonicalize)).map_err(io_denied)?;
     if journal_canonical.starts_with(&local) { return Err(denied()); }
+    // D7C: revalidate the exact bytes to be executed immediately before
+    // consuming one-shot authority. This is deliberately performed against
+    // the AppContainer-owned staged copy, not the original project path.
+    // The native profile still requires OS ACL hardening against hostile
+    // same-account write access before production acceptance.
+    let final_input = PublishedInput {
+        root: workspace.clone(),
+        seal: input.seal.clone(),
+    };
+    verify_input(&final_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
     let plan_hash = supervisor.inspect()?.into_iter()
         .find(|x| x.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?.plan_sha256;
     let job = Job::create(job_id, &plan_hash, plan)?;
