@@ -9,6 +9,9 @@ use lu_core::{
     journal::{EffectJournal,EffectState},
     native_archive_tree_tool,
     native_archive_tree::{TreeManifest,verify_tree_manifest,observe_tree_completion},
+    native_archive_batch::{
+        ArchiveBatchManifest,verify_archive_batch_plan,observe_archive_batch_completion,
+    },
     native_docx_tool,native_pptx_tool,native_office_revision_tool,native_office_batch_tool,
     native_file_transfer_tool,
     wire::{self,proto},
@@ -16,6 +19,9 @@ use lu_core::{
 use prost::Message;
 use serde::{Deserialize,Serialize};
 
+const ARCHIVE_BATCH_TOOL_ID:&str="lu.archive.batch_extract";
+const ARCHIVE_BATCH_OUTPUT:&str="type.googleapis.com/lu.v1.ArchiveBatchExtractReceipt";
+const WORD_REPLACE_TOOL_ID:&str="lu.office.word_replace_all";
 const MAX_RECORDS:usize=2048;
 const MAX_RECORD_BYTES:u64=1024*1024;
 fn effect_id(s:&str)->bool{
@@ -26,7 +32,7 @@ fn sha_ok(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
 }
 fn known_tool(s:&str)->bool{
-    matches!(s,
+    s==ARCHIVE_BATCH_TOOL_ID||s==WORD_REPLACE_TOOL_ID||matches!(s,
         native_archive_tree_tool::TOOL_ID|
         native_docx_tool::TOOL_ID|
         native_pptx_tool::TOOL_ID|
@@ -37,6 +43,8 @@ fn known_tool(s:&str)->bool{
 }
 fn expected_output(s:&str)->Option<&'static str>{
     match s{
+        ARCHIVE_BATCH_TOOL_ID=>Some(ARCHIVE_BATCH_OUTPUT),
+        WORD_REPLACE_TOOL_ID=>Some(native_office_revision_tool::OUTPUT),
         native_archive_tree_tool::TOOL_ID=>Some(native_archive_tree_tool::OUTPUT),
         native_docx_tool::TOOL_ID=>Some(native_docx_tool::OUTPUT),
         native_pptx_tool::TOOL_ID=>Some(native_pptx_tool::OUTPUT),
@@ -60,6 +68,8 @@ struct IntentRecord{
     summary:String,
     #[serde(default,skip_serializing_if="Option::is_none")]
     archive_manifest:Option<TreeManifest>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    archive_batch_manifest:Option<ArchiveBatchManifest>,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -99,7 +109,7 @@ impl Wave2OperationLedger{
         exact_target:&str,target_name:&str,approved_sha256:&str,summary:&str
     )->Result<(),String>{
         self.record_with_manifest(chat,effect,tool,exact_target,target_name,
-            approved_sha256,summary,None)
+            approved_sha256,summary,None,None)
     }
     /// Bind a complete native-reviewed archive snapshot to the pre-effect
     /// intent. A legacy receipt-only record is never treated as full tree proof.
@@ -110,12 +120,31 @@ impl Wave2OperationLedger{
             return Err("Untrusted approved archive manifest".into())
         }
         self.record_with_manifest(chat,effect,native_archive_tree_tool::TOOL_ID,
-            exact_target,target_name,&manifest.sha256,summary,Some(manifest))
+            exact_target,target_name,&manifest.sha256,summary,Some(manifest),None)
+    }
+    /// Preserve the complete approved multi-archive plan before any output
+    /// directory is created. A partial batch can be verified *read-only*
+    /// after restart without submitting an effect again.
+    pub fn record_batch_intent(
+        &self,chat:&str,effect:&str,exact_target:&str,target_name:&str,
+        plan:&ArchiveBatchManifest,summary:&str
+    )->Result<(),String>{
+        if !verify_archive_batch_plan(plan){
+            return Err("Untrusted approved multi-archive plan".into());
+        }
+        self.record_with_manifest(
+            chat,effect,ARCHIVE_BATCH_TOOL_ID,
+            exact_target,target_name,&plan.sha256,summary,None,Some(plan)
+        )
     }
     fn record_with_manifest(&self,chat:&str,effect:&str,tool:&str,
         exact_target:&str,target_name:&str,approved_sha256:&str,summary:&str,
-        manifest:Option<&TreeManifest>
+        manifest:Option<&TreeManifest>,
+        batch_manifest:Option<&ArchiveBatchManifest>
     )->Result<(),String>{
+        if batch_manifest.is_some()&&tool!=ARCHIVE_BATCH_TOOL_ID{
+            return Err("Archive batch plan cannot authorize another tool".into());
+        }
         if manifest.is_some()&&tool!=native_archive_tree_tool::TOOL_ID{
             return Err("Archive snapshot cannot authorize another tool".into())
         }
@@ -127,11 +156,12 @@ impl Wave2OperationLedger{
             return Err("Invalid Wave 2 review intent".into())
         }
         let record=IntentRecord{
-            schema:if manifest.is_some(){2}else{1},
+            schema:if batch_manifest.is_some(){3}else if manifest.is_some(){2}else{1},
             chat_id:chat.into(),effect_call_id:effect.into(),
             tool_id:tool.into(),exact_target:exact_target.into(),
             target_name:target_name.into(),approved_sha256:approved_sha256.into(),
             summary:summary.into(),archive_manifest:manifest.cloned(),
+            archive_batch_manifest:batch_manifest.cloned(),
         };
         let bytes=serde_json::to_vec(&record).map_err(|_|"Recovery intent encoding failed")?;
         if bytes.len()>MAX_RECORD_BYTES as usize{
@@ -182,6 +212,16 @@ impl Wave2OperationLedger{
             return false
         };
         match rec.tool_id.as_str(){
+            ARCHIVE_BATCH_TOOL_ID=>{
+                let Ok(r)=proto::ArchiveBatchExtractReceipt::decode(data.as_slice())
+                    else{return false};
+                let Some(plan)=rec.archive_batch_manifest.as_ref() else{return false};
+                r.group_name==rec.target_name
+                    &&r.manifest_sha256==rec.approved_sha256
+                    &&r.archive_count as usize==plan.items.len()
+                    &&r.file_count as usize==plan.total_files
+                    &&r.expanded_bytes==plan.total_bytes
+            },
             native_archive_tree_tool::TOOL_ID=>{
                 let Ok(r)=proto::ArchiveTreeExtractResult::decode(data.as_slice())
                     else{return false};
@@ -198,6 +238,7 @@ impl Wave2OperationLedger{
                     else{return false};
                 r.file_name==rec.target_name&&r.sha256==rec.approved_sha256
             },
+            WORD_REPLACE_TOOL_ID|
             native_office_revision_tool::TOOL_ID|
             native_office_batch_tool::TOOL_ID=>{
                 let Ok(r)=proto::OfficeRevisionResult::decode(data.as_slice())
@@ -264,6 +305,39 @@ impl Wave2OperationLedger{
             Err(_)=>"UNAVAILABLE".into(),
         }
     }
+    fn inspect_archive_batch_target(rec:&IntentRecord)->String{
+        let Some(plan)=rec.archive_batch_manifest.as_ref() else{
+            return "NOT_RECHECKED".into();
+        };
+        if !verify_archive_batch_plan(plan)||plan.sha256!=rec.approved_sha256{
+            return "INVALID_SNAPSHOT".into();
+        }
+        let target=Path::new(&rec.exact_target);
+        if !target.is_absolute()
+            ||target.file_name().and_then(|n|n.to_str())!=Some(rec.target_name.as_str()){
+            return "INVALID_TARGET".into();
+        }
+        let Some(parent)=target.parent() else{return "INVALID_TARGET".into()};
+        let metadata=match fs::symlink_metadata(parent){
+            Ok(meta)=>meta,
+            Err(_)=>return "UNAVAILABLE".into(),
+        };
+        if !metadata.is_dir()||metadata.file_type().is_symlink(){
+            return "UNAVAILABLE".into();
+        }
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes()&0x400!=0{return "UNAVAILABLE".into();}
+        }
+        let Ok(root)=cap_std::fs::Dir::open_ambient_dir(
+            parent,cap_std::ambient_authority()
+        )else{return "UNAVAILABLE".into()};
+        match observe_archive_batch_completion(&root,&rec.target_name,plan){
+            Ok(true)=>"VERIFIED".into(),
+            Ok(false)=>"INCOMPLETE_OR_CHANGED".into(),
+            Err(_)=>"UNAVAILABLE".into(),
+        }
+    }
     pub fn list(&self,chat:&str,effects:&EffectJournal)
         ->Result<Vec<OperationRecoveryView>,String>{
         let mut out=Vec::new();
@@ -278,17 +352,23 @@ impl Wave2OperationLedger{
             let id=&name[10..name.len()-5];
             if !effect_id(id){return Err("Invalid recovery entry name".into())}
             let rec=self.read_intent(id)?;
-            if !matches!(rec.schema,1|2)||rec.effect_call_id!=id||
+            if !matches!(rec.schema,1|2|3)||rec.effect_call_id!=id||
                 !known_tool(&rec.tool_id)||!sha_ok(&rec.approved_sha256)||
                 (rec.schema==2&&rec.archive_manifest.is_none())||
+                (rec.schema==3&&rec.archive_batch_manifest.is_none())||
                 rec.archive_manifest.as_ref().is_some_and(|m|
                     rec.tool_id!=native_archive_tree_tool::TOOL_ID||
-                    !verify_tree_manifest(m)||m.sha256!=rec.approved_sha256){
+                    !verify_tree_manifest(m)||m.sha256!=rec.approved_sha256)||
+                rec.archive_batch_manifest.as_ref().is_some_and(|p|
+                    rec.tool_id!=ARCHIVE_BATCH_TOOL_ID||
+                    !verify_archive_batch_plan(p)||p.sha256!=rec.approved_sha256){
                 return Err("Untrusted recovery record".into())
             }
             if rec.chat_id!=chat{continue}
             let integrity=if rec.tool_id==native_archive_tree_tool::TOOL_ID{
                 Self::inspect_archive_target(&rec)
+            }else if rec.tool_id==ARCHIVE_BATCH_TOOL_ID{
+                Self::inspect_archive_batch_target(&rec)
             }else{"NOT_RECHECKED".into()};
             let evidence=effects.get(id).map_err(|_|"Effect journal unavailable")?;
             let (state,receipt_matched,assessment)=match evidence{
@@ -322,7 +402,8 @@ impl Wave2OperationLedger{
                     (status.into(),matched,description.into())
                 },
             };
-            let assessment=if rec.tool_id==native_archive_tree_tool::TOOL_ID &&
+            let assessment=if (rec.tool_id==native_archive_tree_tool::TOOL_ID
+                ||rec.tool_id==ARCHIVE_BATCH_TOOL_ID) &&
                 integrity!="NOT_RECHECKED"{
                 format!("{assessment}; current full-tree integrity: {integrity}. Historical journal state is unchanged; no automatic replay")
             }else{assessment};
