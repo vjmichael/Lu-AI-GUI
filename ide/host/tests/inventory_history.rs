@@ -21,8 +21,11 @@ fn fixture() -> (PathBuf, IdeWorkspaceRegistry, String, InventorySnapshots) {
     fs::create_dir_all(project.join("Delivered")).unwrap();
     fs::write(project.join("Delivered/alpha.exe"), b"version-one").unwrap();
     let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-    let id = registry.register_from_native_picker(&mut Picker(Some(project)))
-        .unwrap().unwrap().project_id;
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(project)))
+        .unwrap()
+        .unwrap()
+        .project_id;
     let snapshots = InventorySnapshots::new(root.join("evidence-baselines.json")).unwrap();
     (root, registry, id, snapshots)
 }
@@ -50,10 +53,16 @@ fn restart_recovers_baseline_and_identifies_changed_and_missing_artifacts() {
     let missing = snapshots.compare(&registry, &id).unwrap();
     assert_eq!(missing.entries[0].status, "missing_in_scanned_scope");
     assert_eq!(missing.live_remote, "not_queried");
-    fs::write(root.join("project/Delivered/new.exe"), b"new observed bytes").unwrap();
+    fs::write(
+        root.join("project/Delivered/new.exe"),
+        b"new observed bytes",
+    )
+    .unwrap();
     let new_file = snapshots.compare(&registry, &id).unwrap();
-    assert!(new_file.entries.iter().any(|item|
-        item.relative_path == "Delivered/new.exe"
+    assert!(new_file
+        .entries
+        .iter()
+        .any(|item| item.relative_path == "Delivered/new.exe"
             && item.status == "new_in_scanned_scope"));
     fs::remove_dir_all(root).unwrap();
 }
