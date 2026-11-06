@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — Wave C3 bounded development checkpoint export
+- Implemented human-initiated **Copy development checkpoint**, with fresh read-only host context + inventory comparison, strict project-ID matching, stale-request invalidation, versioned bounded JSON and explicit non-atomic/provenance limits.
+- Exports local Git state, source revision IDs, known artifact bytes/digests, baseline transitions and host event IDs, **not** source text, untrusted document excerpts, event summaries, absolute project roots, passwords, live GitHub contents or execution authority.
+- Added `development_checkpoint.js` and Node tests for missing/mismatched project evidence, bounded output, private content exclusion and UI action wiring; local pure tests passed, integration CI and Windows installed acceptance pending.
+- Isolated Wave C PR #47; predecessor HEAD `26040e8331f5a5b8053f4af8248a88d9d551f04f`. Do not call clipboard/installer accepted before exact-head checks and installed UI acceptance.
+
 This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for what is authoritative *now*, and [CONTINUITY_PROTOCOL.md](CONTINUITY_PROTOCOL.md) before any new development session.
 
 ## 2026-11-05 — Wave C first native CI repair (pending recheck)

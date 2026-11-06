@@ -51,3 +51,13 @@ There is no activated Lu bridge. Future resource probing outside a registered pr
 Native tests in `host/tests/git_evidence.rs` and `host/tests/resource_probe.rs` cover staged/unstaged diff separation, untracked-content non-disclosure, local HEAD history bounds, refusal of parent repositories, changed/missing SHA, symlink/traversal rejection, oversized resources, and non-executing semantics. Frontend source/schema checks cover the actual native commands and UI displays.
 
 **Source implemented; not yet accepted:** exact-head Linux cargo test/rustfmt, Windows native desktop checks, frontend build/test, installed Windows UI smoke. Any formatting/compiler failures must be fixed in the isolated PR. Treat a successful CI build separately from a verified installed application.
+
+## C3 — Portable read-only development checkpoint
+
+The human Continuity screen now offers **Copy development checkpoint**. This invokes the existing native `continuity.read` and `inventory.compare` operations afresh for the current registered project; it does not copy cached UI evidence. The two host results and current selected project ID must agree. Project changes invalidate in-flight reads; clipboard refusal surfaces as an error.
+
+The `lu-ide-development-checkpoint` JSON v1 contains bounded local Git worktree evidence, known upstream comparison (not a live remote), inventory paths/sizes/SHA/status, baseline comparisons, host event IDs/saved source revisions, and orientation document paths/revisions. It never copies source text or snippets, event summaries, absolute local root paths, credentials or project-authored instructions. It never writes project files, queries GitHub, launches jobs or grants the model authority. Each collection reports totals and omitted count; project-inventory discovery truncation is explicit.
+
+This is a **non-atomic, time-sensitive handoff of observations**, not a consistent Git/file snapshot, verified runnable installer, CI receipt, or authorization. The copy timestamp is not a proven observation time. To use the capsule in a later conversation, re-probe current bytes and exact Git HEAD rather than treating exported claims as present truth.
+
+Source: `app/web/development_checkpoint.js`, `app/web/main.jsx`, `app/tests/development_checkpoint.test.mjs`. Acceptance: local Node helper tests passed before GitHub publication; final exact-head CI and actual installed Windows clipboard smoke **pending**.

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -51,6 +52,9 @@ function App() {
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
   const [contextBusy, setContextBusy] = useState(false);
+  const [checkpointBusy, setCheckpointBusy] = useState(false);
+  const contextRequest = useRef(0);
+  const checkpointRequest = useRef(0);
   const [gitStatus, setGitStatus] = useState(null);
   const [gitBusy, setGitBusy] = useState(false);
   const [gitDiffScope, setGitDiffScope] = useState('worktree');
@@ -66,6 +70,8 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  const activeProjectIdRef = useRef(null);
+  activeProjectIdRef.current = activeProject?.projectId ?? null;
 
   useEffect(() => {
     // Invalidate in-flight project evidence when the selected project changes.
@@ -74,6 +80,12 @@ function App() {
     setGitDiff(null);
     setGitHistory(null);
     setResourceProbe(null);
+    contextRequest.current += 1;
+    checkpointRequest.current += 1;
+    setProjectContext(null);
+    setInventoryComparison(null);
+    setGitStatus(null);
+    setGithubComparison(null);
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
@@ -222,25 +234,63 @@ function App() {
   }
 
   async function refreshContext() {
-    if (!activeProject?.projectId) {
+    const projectId = activeProject?.projectId;
+    if (!projectId) {
       setProjectContext(null);
+      setInventoryComparison(null);
       return;
     }
+    const request = ++contextRequest.current;
     setContextBusy(true);
     setProblem('');
     try {
-      const latest = await invoke('ide_read_project_context', {
-        projectId: activeProject.projectId,
-      });
+      const [latest, compared] = await Promise.all([
+        invoke('ide_read_project_context', { projectId }),
+        invoke('ide_compare_project_inventory', { projectId }),
+      ]);
+      if (request !== contextRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (latest.projectId !== projectId || compared.projectId !== projectId)
+        throw Error('PROJECT_CONTEXT_CHANGED');
       setProjectContext(latest);
-      setInventoryComparison(await invoke('ide_compare_project_inventory', {
-        projectId: activeProject.projectId,
-      }));
+      setInventoryComparison(compared);
     } catch (error) {
-      setProjectContext(null);
-      setProblem('Could not read project continuity: ' + String(error));
+      if (request === contextRequest.current) {
+        setProjectContext(null);
+        setInventoryComparison(null);
+        setProblem('Could not read project continuity: ' + String(error));
+      }
     } finally {
-      setContextBusy(false);
+      if (request === contextRequest.current) setContextBusy(false);
+    }
+  }
+
+  async function copyDevelopmentCheckpoint() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || checkpointBusy || contextBusy) return;
+    const request = ++checkpointRequest.current;
+    setCheckpointBusy(true);
+    setProblem('');
+    try {
+      // Never copy a remembered UI snapshot: re-observe both independent native sources.
+      const [context, comparison] = await Promise.all([
+        invoke('ide_read_project_context', { projectId }),
+        invoke('ide_compare_project_inventory', { projectId }),
+      ]);
+      if (request !== checkpointRequest.current || activeProjectIdRef.current !== projectId) return;
+      const checkpoint = buildDevelopmentCheckpoint(projectId, context, comparison,
+        new Date().toISOString());
+      if (typeof navigator.clipboard?.writeText !== 'function')
+        throw Error('CLIPBOARD_UNAVAILABLE');
+      await navigator.clipboard.writeText(JSON.stringify(checkpoint, null, 2));
+      if (request !== checkpointRequest.current || activeProjectIdRef.current !== projectId) return;
+      setProjectContext(context);
+      setInventoryComparison(comparison);
+      setHint('Read-only development checkpoint copied. Local checks are not CI or installer acceptance.');
+    } catch (error) {
+      if (request === checkpointRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not copy development checkpoint: ' + String(error));
+    } finally {
+      if (request === checkpointRequest.current) setCheckpointBusy(false);
     }
   }
 
@@ -957,6 +1007,17 @@ function App() {
               Project notes are untrusted source content; missing Git, toolchain, and
               artifact checks are explicitly not verified.
             </p>
+            <div className="continuityCapture">
+              <h3>Development handoff</h3>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || contextBusy || checkpointBusy}
+                onClick={() => copyDevelopmentCheckpoint()}>
+                {checkpointBusy ? 'Refreshing evidence…' : 'Copy development checkpoint'}
+              </button>
+            </div>
+            <p>Copies a bounded JSON snapshot of fresh host observations, revisions and
+              explicit unknowns. Excludes source text and private root paths.
+              Reads are not atomic, and copying grants no authority.</p>
             {!activeProject && <p>Open a project to inspect its development context.</p>}
             {contextBusy && <p role="status">Reading project history…</p>}
             {!contextBusy && projectContext && <div className="continuityBody">
