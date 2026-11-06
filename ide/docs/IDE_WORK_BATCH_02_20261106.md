@@ -40,3 +40,9 @@ Source implementation on draft PR #65 (not a release acceptance):
 
 The signed service pipe still returned `pipe_open_access_denied` in real Windows smoke job `128199760472`; the prior exact-host-user ACL alone did not fix it. Commit `3539186` added **CI/debug-only** read/write/control access classification while keeping all failed opens denied. Commit `d65c202` adds a *server-side kernel-object DACL readback* before reporting SCM RUNNING: exactly three explicit allow ACEs (SYSTEM, service SID, installer-pinned host SID), protected DACL, and client read/write/synchronize WITHOUT FILE_CREATE_PIPE_INSTANCE. Any missing/extra ACE or readback error prevents service startup. The verifier uses actual `GetSecurityInfo`, not the originally authored SDDL string. This is pre-acceptance source implementation; independent D7D pipe authentication and host-crash/restart tests remain open.
 
+
+### Continued code repair — durable protected recovery ACK (2026-11-06)
+
+- D7D service now retains its *original*, proven-empty named Job for a bounded 60-second replay window after fsyncing `recovered_release`. If a properly authenticated host loses the first response, a fresh nonce may receive the same state only after the service independently reopens that still-live Job, confirms zero active processes and checks the protected evidence root. Unknown/unreaped/in-flight states still fail closed. This corrects a restart liveness gap without accepting file-only recovery.
+- The disposable `ci-native-null-lease` feature now triggers a compile-time error when enabled in a non-debug/release build. This does not make the global NUL ACE lifecycle safe for production; proper privileged crash-safe cleanup remains open.
+- These are committed source changes only, and no Windows native acceptance is implied before exact-head OS CI proves the retry, identity and containment behavior.

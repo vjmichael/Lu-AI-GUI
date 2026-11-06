@@ -3,6 +3,10 @@
 //! AC/all-package access, disable AppContainer, or alter production device ACLs.
 //! This temporary per-job kernel ACE is still a host-global mutation. A host
 //! crash may leave it until reboot, so it is FORBIDDEN in release builds.
+// The runtime guard is not enough: a build mistakenly enabling the disposable
+// CI capability in a release must fail during compilation, not at runtime.
+#[cfg(all(feature = "ci-native-null-lease", not(debug_assertions)))]
+compile_error!("DENIED: disposable kernel NUL DACL lease must never ship in release builds");
 use crate::SupervisorError;
 use std::{ffi::c_void, mem::size_of, ptr};
 use windows_sys::Win32::{

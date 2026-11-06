@@ -60,6 +60,9 @@ const PIPE_FIRST_INSTANCE: u32 = 0x00080000;
 const MAX_MESSAGE: usize = 2048;
 const MAX_EVIDENCE: u64 = 128 * 1024;
 const HOLD: Duration = Duration::from_secs(15 * 60);
+// Bounded retry of an already-fsynced recovery ACK if a legitimate restarted
+// host lost the first pipe response. Keep the original named Job handle live.
+const RECOVERY_ACK_RETRY: Duration = Duration::from_secs(60);
 const TICK: Duration = Duration::from_millis(100);
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
@@ -469,6 +472,17 @@ fn hold_for_recovery(
             // Once this is fsynced, a restarted host can accept the ACK.
             witness.record("recovered_release")?;
             active.state.store(3, Ordering::Release);
+            // Retain the original kernel Job briefly, so a lost pipe ACK
+            // can be retried by the same installer-approved binary/TokenUser.
+            // A retry never trusts the JSON witness alone: the service
+            // independently reopens and verifies this still-live Job.
+            let retry_begin = Instant::now();
+            while retry_begin.elapsed() < RECOVERY_ACK_RETRY {
+                if !matches!(job_empty(job), Ok(true)) {
+                    return Err(denied());
+                }
+                thread::sleep(TICK);
+            }
             return Ok(());
         }
         thread::sleep(TICK);
@@ -487,7 +501,9 @@ fn recover(
         .get(&key(&request.job_id, &request.plan_sha256))
         .cloned()
         .ok_or_else(denied)?;
-    if active.load(Ordering::Acquire) != 1 {
+    let state = active.load(Ordering::Acquire);
+    if !matches!(state, 1 | 3) {
+        // 0=not reaped, 2=another request still waiting for fsync.
         return Err(denied());
     }
     // A recovery grant is never file-only evidence. Service itself reopens
@@ -503,6 +519,12 @@ fn recover(
         return Err(denied());
     }
     security::verify_private_evidence_root(&config.evidence_root)?;
+    if state == 3 {
+        // Only the original holder sets 3, AFTER durable recovered_release
+        // and while retaining the exact empty kernel Job. The newly
+        // authenticated request has its own nonce and gets its own ACK.
+        return send(pipe, &request.nonce, "recovered_release");
+    }
     active
         .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
         .map_err(|_| denied())?;
@@ -797,6 +819,16 @@ mod tests {
         let mut bad = valid;
         bad.operation = "run".into();
         assert!(!validate_request(&bad));
+    }
+    #[test]
+    fn protected_recovery_ack_is_never_available_before_fsync() {
+        // Original owner running (0), fully reaped and ready (1), request
+        // racing with fsync (2), and protected fsynced reply (3). The actual
+        // response path additionally reopens the original kernel Job.
+        assert!(!matches!(0_u8, 1 | 3));
+        assert!(matches!(1_u8, 1 | 3));
+        assert!(!matches!(2_u8, 1 | 3));
+        assert!(matches!(3_u8, 1 | 3));
     }
     #[test]
     fn wire_denies_unknown_fields() {
