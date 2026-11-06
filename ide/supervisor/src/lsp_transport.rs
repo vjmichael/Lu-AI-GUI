@@ -82,6 +82,7 @@ impl LspGateway {
         if sent.is_err() { return self.deny_and_quarantine(); }
         Ok(())
     }
+    pub(crate) fn phase(&self) -> LspPhase { self.session.phase() }
     pub(crate) fn initialize(&mut self) -> Result<(), SupervisorError> {
         let data = self.session.initialize().map_err(protocol_denied)?;
         self.send(&data)
