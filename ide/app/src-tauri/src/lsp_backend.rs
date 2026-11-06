@@ -271,7 +271,7 @@ impl NativeLspRuntime {
             .filter(|sha|sha.len()==40&&sha.bytes().all(|b|b.is_ascii_hexdigit()))
             .unwrap_or_else(||"0".repeat(40));
         let plan=JobPlan{
-            project_id:request.project_id.clone(),recipe_id:format!("lsp_{}",server_id.replace('-','_')),
+            project_id:request.project_id.clone(),recipe_id:format!("lsp_{}",server_id.replace('-', "_")),
             source_head:observed.clone(),
             input_snapshot_sha256:input.seal.source_sha256.clone(),
             manifest_sha256:input.seal.manifest_sha256.clone(),
