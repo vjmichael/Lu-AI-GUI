@@ -22,7 +22,6 @@ mod document_create_desktop;
 mod office_revision_desktop;
 mod file_transfer_desktop;
 mod file_trash_desktop;
-mod trash_desktop;
 mod wave2_recovery;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -195,8 +194,6 @@ struct DesktopState {
     trash_reviews: file_trash_desktop::TrashQueue,
     restore_reviews: file_trash_desktop::RestoreQueue,
     trash_custody: lu_core::native_trash_custody::TrashCustodyLedger,
-    trash_reviews: trash_desktop::TrashReviewQueue,
-    trash_custody: trash_desktop::TrashCustodyStore,
     wave2_recovery: wave2_recovery::Wave2OperationLedger,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
@@ -589,8 +586,6 @@ impl DesktopState {
             trash_reviews: file_trash_desktop::TrashQueue::default(),
             restore_reviews: file_trash_desktop::RestoreQueue::default(),
             trash_custody,
-            trash_reviews: trash_desktop::TrashReviewQueue::default(),
-            trash_custody: trash_desktop::TrashCustodyStore::new(&root)?,
             wave2_recovery: wave2_recovery::Wave2OperationLedger::new(&root)?,
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
@@ -2180,118 +2175,6 @@ fn lu_deny_file_transfer(
     state.file_transfer_reviews.deny(&chat_id,&review_id)
 }
 
-/// Native-only file picker returns a bounded source-hash review. No effect
-/// occurs until the user checks the preview and accepts a second native modal.
-#[tauri::command]
-async fn lu_review_trash_file(
-    app:AppHandle,
-    state:State<'_,Arc<DesktopState>>,
-    chat_id:String,
-)->Result<Option<trash_desktop::TrashReviewView>,String>{
-    let state=Arc::clone(state.inner());
-    state.chats.history(&chat_id)?;
-    let picked=tauri::async_runtime::spawn_blocking(move||{
-        app.dialog().file().blocking_pick_file()
-            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
-    }).await.map_err(|e|format!("Native trash picker failed: {e}"))??;
-    let Some(selected)=picked else{return Ok(None)};
-    let id=next_id("tr-");
-    let view=tauri::async_runtime::spawn_blocking(move||{
-        state.trash_reviews.stage(&chat_id,&id,&selected)
-    }).await.map_err(|e|format!("Trash preview worker failed: {e}"))??;
-    Ok(Some(view))
-}
-#[tauri::command]
-async fn lu_confirm_trash_file(
-    app:AppHandle,
-    state:State<'_,Arc<DesktopState>>,
-    chat_id:String,
-    review_id:String,
-)->Result<Option<trash_desktop::TrashOutcomeView>,String>{
-    let state=Arc::clone(state.inner());
-    state.chats.history(&chat_id)?;
-    let initial=state.trash_reviews.inspect(&chat_id,&review_id)?;
-    let view=initial.view();
-    let message=format!(
-        "Move this exact file into Lu's reversible trash?\n\nOriginal: {}\nSize: {} bytes\nSHA-256: {}\n\nLu retains a verified recovery receipt. Trash uses an atomic same-volume hardlink/unlink, not the OS recycle bin; external volumes might be unsupported. If interrupted, the result requires manual review. Only this one file is authorized.",
-        view.exact_source,view.size,view.sha256,
-    );
-    let confirmed=tauri::async_runtime::spawn_blocking(move||{
-        app.dialog().message(message)
-            .title("Lu — Approve reversible trash")
-            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                "Move to Lu trash".into(),"Cancel".into(),
-            )).blocking_show()
-    }).await.map_err(|e|format!("Native trash confirmation failed: {e}"))?;
-    if !confirmed{
-        state.trash_reviews.deny(&chat_id,&review_id)?;
-        return Ok(None)
-    }
-    let selected=state.trash_reviews.consume(&chat_id,&review_id)?;
-    if !selected.same_as(&initial){
-        return Err("Trash preview changed during confirmation".into())
-    }
-    let user_turn=next_id("g-");
-    let effect_id=next_id("g-");
-    Ok(Some(trash_desktop::execute_approved_trash(
-        &state.chats,&state.effects,&state.trash_custody,
-        &chat_id,&user_turn,&effect_id,&selected,
-    ).await?))
-}
-#[tauri::command]
-fn lu_deny_trash_file(
-    state:State<'_,Arc<DesktopState>>,
-    chat_id:String,
-    review_id:String,
-)->Result<(),String>{
-    state.chats.history(&chat_id)?;
-    state.trash_reviews.deny(&chat_id,&review_id)
-}
-/// Read-only custody list. The durable journal must say APPLIED and match a
-/// trusted host-stored receipt before a restore can become AVAILABLE.
-#[tauri::command]
-fn lu_trash_custody(
-    state:State<'_,Arc<DesktopState>>,
-    chat_id:String,
-)->Result<Vec<trash_desktop::TrashCustodyView>,String>{
-    state.chats.history(&chat_id)?;
-    state.trash_custody.list(&chat_id,&state.effects)
-}
-#[tauri::command]
-async fn lu_confirm_restore_file(
-    app:AppHandle,
-    state:State<'_,Arc<DesktopState>>,
-    chat_id:String,
-    source_effect_id:String,
-)->Result<Option<trash_desktop::RestoreOutcomeView>,String>{
-    let state=Arc::clone(state.inner());
-    state.chats.history(&chat_id)?;
-    // The UI may identify a visible custody ID, but the host must re-derive
-    // and verify its actual applied journal receipt and original directory.
-    let (intent,receipt,_)=state.trash_custody.restore_candidate(
-        &chat_id,&source_effect_id,&state.effects
-    )?;
-    let exact=intent.source_parent.join(&receipt.original);
-    let warning=format!(
-        "Restore this verified Lu trash receipt to its original path?\n\nReceipt: {}\nRestore destination: {}\nSize: {} bytes\nSHA-256: {}\n\nExisting files will NEVER be replaced. This is a separate single-use write approval; interrupted restores are never automatically retried.",
-        receipt.trash_entry,exact.display(),receipt.bytes,receipt.sha256,
-    );
-    let confirmed=tauri::async_runtime::spawn_blocking(move||{
-        app.dialog().message(warning)
-            .title("Lu — Approve exact trash restoration")
-            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                "Restore verified file".into(),"Cancel".into(),
-            )).blocking_show()
-    }).await.map_err(|e|format!("Native restore confirmation failed: {e}"))?;
-    if !confirmed{return Ok(None)}
-    let user_turn=next_id("g-");
-    let effect_id=next_id("g-");
-    Ok(Some(trash_desktop::execute_approved_restore(
-        &state.chats,&state.effects,&state.trash_custody,
-        &chat_id,&user_turn,&effect_id,&source_effect_id
-    ).await?))
-}
-
 /// Select a regular file through a native OS dialog. This only previews the
 /// exact SHA-256 and generated same-folder custody name; it does not delete.
 #[tauri::command]
@@ -3259,11 +3142,6 @@ pub fn run() {
             lu_reset_default_document_folder,
             lu_open_created_folder,
             lu_wave2_recovery,
-            lu_review_trash_file,
-            lu_confirm_trash_file,
-            lu_deny_trash_file,
-            lu_trash_custody,
-            lu_confirm_restore_file,
             lu_review_file_trash,
             lu_confirm_file_trash,
             lu_deny_file_trash,
