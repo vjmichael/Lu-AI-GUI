@@ -6,6 +6,10 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 3 live tool status follows trusted dispatch checkpoints and stays chat-scoped',
+    ui.includes("listen('lu-native-tool-progress'") &&
+    ui.includes('Lu · using approved native tool') &&
+    host.includes('workspace_desktop::ask_workspace_for_chat(')],
   ['Wave 3 native tool evidence is a read-only, chat-scoped audit without model bytes',
     ui.includes("invoke('lu_tool_turn_history'") &&
     ui.includes('Native tool activity') &&

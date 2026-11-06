@@ -7,7 +7,7 @@
 //! Tool registration is not itself authorization.
 use std::{collections::BTreeSet, path::Path, time::{Duration,SystemTime}};
 use crate::{
-    agent_tool_loop::{NativeToolTurn,ToolTurnError},
+    agent_tool_loop::{NativeToolTurn,ToolTurnError,ToolDispatchCheckpoint},
     contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
     conversation_authority::{
         AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
@@ -21,7 +21,7 @@ use crate::{
     native_files::register_bundled_file_tools,
     registry::NativeToolRegistry,
     supervised_tool_generation::{
-        run_supervised_native_turn_journaled,ModelStepGenerator,
+        run_supervised_native_turn_journaled_observed,ModelStepGenerator,
         NativeGenerationError,NativeTurnReport,NativeTurnServices,
     },
 };
@@ -123,12 +123,21 @@ impl WorkspaceReadTurnSession{
         &mut self,prompt:&str,model:&mut dyn ModelStepGenerator,
         cancel:&Cancellation,journal:&ModelTurnJournal,
     )->Result<NativeTurnReport,NativeGenerationError>{
+        self.run_journaled_observed(prompt,model,cancel,journal,&|_|{}).await
+    }
+    /// Host-only content-free dispatch checkpoints. Never send model
+    /// arguments, source bytes, private filenames or effect grant IDs.
+    pub async fn run_journaled_observed(
+        &mut self,prompt:&str,model:&mut dyn ModelStepGenerator,
+        cancel:&Cancellation,journal:&ModelTurnJournal,
+        observe:&(dyn Fn(ToolDispatchCheckpoint)+Send+Sync),
+    )->Result<NativeTurnReport,NativeGenerationError>{
         let services=NativeTurnServices{
             catalog:&self.catalog,registry:&self.registry,
             authority:&self.authority,host_policy:&self.policy,
         };
-        let result=run_supervised_native_turn_journaled(
-            prompt,&mut self.turn,model,&services,cancel,journal
+        let result=run_supervised_native_turn_journaled_observed(
+            prompt,&mut self.turn,model,&services,cancel,journal,observe
         ).await;
         let _=self.authority.revoke_task(&self.task_id);
         result

@@ -38,6 +38,7 @@ function App() {
   const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
+  const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
   const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
   const [editRecovery, setEditRecovery] = useState([]);
@@ -297,7 +298,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopBackground = () => {}, stopFinished = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopBackground = () => {}, stopFinished = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -339,9 +340,21 @@ function App() {
       if (!alive||!proposal?.chatId||!proposal?.proposalId)return;
       setNativeActionProposals(prev=>({...prev,[proposal.proposalId]:proposal}));
     }).then(fn=>{if(alive)stopNativeAction=fn;else fn();});
+    listen('lu-native-tool-progress',e=>{
+      const update=e.payload;
+      if (!alive||!update?.chatId||!update?.generationId)return;
+      if (!['model_step','tool_started','tool_returned'].includes(update.phase))return;
+      setToolProgressByChat(prev=>({
+        ...prev,[update.chatId]:update,
+      }));
+    }).then(fn=>{if(alive)stopToolProgress=fn;else fn();});
     listen('lu-generation-finish', e=>{
       if (!alive || !e.payload?.chatId)return;
       const {chatId:finishedChat,generationId}=e.payload;
+      setToolProgressByChat(prev=>{
+        if (prev[finishedChat]?.generationId!==generationId)return prev;
+        const next={...prev};delete next[finishedChat];return next;
+      });
       setJobs(prev=>prev[finishedChat]?.generationId===generationId
         ?removeJob(prev,finishedChat):prev);
       // Native auto turns aren't initiated by a WebView invoke. Read their
@@ -359,7 +372,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopBackground(); stopFinished(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopBackground(); stopFinished(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -1650,7 +1663,14 @@ function App() {
         {visibleJob && <div className="message assistant streaming"><span className="messageRole">
           {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'
-           : visibleJob.cancelling ? 'Lu · stopping' : 'Lu · generating'}
+           : visibleJob.cancelling ? 'Lu · stopping'
+           : toolProgressByChat[chatId]?.generationId===visibleJob.generationId
+             ? toolProgressByChat[chatId]?.phase==='tool_started'
+               ? 'Lu · using approved native tool'
+               : toolProgressByChat[chatId]?.phase==='tool_returned'
+                 ? 'Lu · checking tool result'
+                 : 'Lu · thinking with tools'
+             : 'Lu · generating'}
           </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}</div>}
       </div>
         {!atBottom && <button type="button" className="jumpLatest" onClick={jumpToLatest}

@@ -5,6 +5,7 @@
 use super::*;
 use lu_core::{
     conversation_authority::TrustedUserTurnVerifier,
+    agent_tool_loop::ToolDispatchCheckpoint,
     inference_host::Cancellation,
     model_turn_journal::ModelTurnJournal,
     native_workspace_read_turn::WorkspaceReadTurnSession,
@@ -12,6 +13,11 @@ use lu_core::{
 };
 use std::sync::{Arc,Mutex};
 
+#[derive(Clone,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+struct NativeToolProgress{
+    chat_id:String,generation_id:String,phase:String,
+}
 struct PersistedWorkspaceTurn<'a> {
     chats:&'a ChatStore,
     conversation_id:&'a str,
@@ -127,10 +133,17 @@ pub(crate) async fn ask_workspace_for_chat(
                 &host.catalog_path.with_file_name("lu-workspace-read-audit.sqlite")
             ).map_err(|e|format!("Workspace audit: {e:?}"))?;
             let notify_step=Arc::clone(&current_step);
+            let step_app=event_app.clone();
+            let step_chat=chat_id.clone();
+            let step_generation=gid.clone();
             let observer=Arc::new(move|step:&str|{
                 if let Ok(mut current)=notify_step.lock(){
                     *current=Some(step.to_owned());
                 }
+                let _=step_app.emit("lu-native-tool-progress",NativeToolProgress{
+                    chat_id:step_chat.clone(),generation_id:step_generation.clone(),
+                    phase:"model_step".into(),
+                });
             });
             let mut model=SupervisorModelStep::new(
                 &host.supervisor,session_id.clone(),gid.clone(),
@@ -150,8 +163,22 @@ pub(crate) async fn ask_workspace_for_chat(
                  native tool before answering. User request: {}",
                 prompt,
             );
-            let result=tauri::async_runtime::block_on(turn.run_journaled(
-                &user_prompt,&mut model,&cancellation,&journal
+            let dispatch_app=event_app.clone();
+            let dispatch_chat=chat_id.clone();
+            let dispatch_generation=gid.clone();
+            let observe=move|step:ToolDispatchCheckpoint|{
+                let phase=match step{
+                    ToolDispatchCheckpoint::Entered=>"tool_started",
+                    ToolDispatchCheckpoint::Returned=>"tool_returned",
+                };
+                let _=dispatch_app.emit("lu-native-tool-progress",NativeToolProgress{
+                    chat_id:dispatch_chat.clone(),
+                    generation_id:dispatch_generation.clone(),
+                    phase:phase.into(),
+                });
+            };
+            let result=tauri::async_runtime::block_on(turn.run_journaled_observed(
+                &user_prompt,&mut model,&cancellation,&journal,&observe,
             )).map_err(|e|format!("Workspace tool turn: {e:?}"))?;
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled workspace generation".into())
