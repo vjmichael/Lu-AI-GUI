@@ -32,6 +32,9 @@ function App() {
   const [imageViewer,setImageViewer] = useState(null);
   const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500'});
   const [imagePlan,setImagePlan]=useState({chatId:null,imageRef:null,steps:[],redo:[]});
+  const [imagePreviewBusy,setImagePreviewBusy]=useState(false);
+  const [imageAssemblyPreview,setImageAssemblyPreview]=useState(null);
+  const imagePreviewKeyRef=useRef('');
   const [imageExportBusy,setImageExportBusy]=useState(false);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
@@ -626,6 +629,13 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setOcrBusy(false);}
   }
+  const currentImagePreviewKey=JSON.stringify([
+    chatId,imageViewer?.imageRef||null,
+    imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer?.imageRef
+      ?imagePlan.steps:[]
+  ]);
+  imagePreviewKeyRef.current=currentImagePreviewKey;
+  useEffect(()=>{setImageAssemblyPreview(null);},[currentImagePreviewKey]);
   function queueImageStep(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
     const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
@@ -669,38 +679,64 @@ function App() {
       return {...p,steps:[...p.steps,p.redo[0]],redo:p.redo.slice(1)};
     });
   }
+  async function previewImageAssembly(){
+    const sourceChat=chatId,sourceRef=imageViewer?.imageRef;
+    if(!sourceChat||!sourceRef||imagePreviewBusy||
+       imagePlan.chatId!==sourceChat||imagePlan.imageRef!==sourceRef||
+       !imagePlan.steps.length)return;
+    const steps=imagePlan.steps.map(step=>({...step}));
+    const key=JSON.stringify([sourceChat,sourceRef,steps]);
+    setImagePreviewBusy(true);
+    try{
+      const result=await invoke('lu_image_workspace_preview',{
+        chatId:sourceChat,imageRef:sourceRef,steps
+      });
+      // A completed preview may not appear in another chat or over a
+      // different assembly if the operator edited while native code ran.
+      if(imagePreviewKeyRef.current===key){
+        setImageAssemblyPreview({key,result});
+      }
+    }catch(e){if(imagePreviewKeyRef.current===key)setError(String(e));}
+    finally{setImagePreviewBusy(false);}
+  }
   async function exportImageRevision(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
-    const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
-    const geometry=region||imageEdit.mode==='resize';
-    const width=geometry?Number(imageEdit.width):imageViewer.width;
-    const height=geometry?Number(imageEdit.height):imageViewer.height;
+    // A staged immutable assembly is authoritative for export. Values in
+    // the currently visible single-step form must not veto a valid staged plan.
+    const queuedPlan=imagePlan.chatId===chatId&&
+      imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length?
+      imagePlan.steps:null;
+    const region=!queuedPlan&&['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
+    const geometry=region||(!queuedPlan&&imageEdit.mode==='resize');
+    const width=queuedPlan?1:(geometry?Number(imageEdit.width):imageViewer.width);
+    const height=queuedPlan?1:(geometry?Number(imageEdit.height):imageViewer.height);
     const x=region?Number(imageEdit.x):0,y=region?Number(imageEdit.y):0;
     const blockSize=Number(imageEdit.blockSize);
     const stroke=Number(imageEdit.stroke);
     const hex=/^#[0-9a-fA-F]{6}$/.test(imageEdit.color||'')?
       parseInt(imageEdit.color.slice(1),16):null;
-    if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
+    if(!queuedPlan&&(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
        width<1||height<1||width>8192||height>8192||width*height>32000000||
        (region&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
          x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))||
        (imageEdit.mode==='pixelate'&&(!Number.isSafeInteger(blockSize)||
          blockSize<2||blockSize>128))||
        (imageEdit.mode==='rectangle'&&(hex===null||!Number.isSafeInteger(stroke)||
-         stroke<1||stroke>64))){
+         stroke<1||stroke>64)))){
       setError('Choose valid dimensions, mask/annotation region and color.');return;
     }
     setImageExportBusy(true);setImageExportReceipt(null);
     try{
       const saved=await invoke('lu_image_workspace_export',{
-        chatId,imageRef:imageViewer.imageRef,operation:imageEdit.mode,
+        chatId,imageRef:imageViewer.imageRef,
+        // When steps are supplied, the native host ignores the single-step
+        // operation. A validated harmless resize keeps the legacy signature.
+        operation:queuedPlan?'resize':imageEdit.mode,
         x:region?x:null,y:region?y:null,width,height,
-        blockSize:imageEdit.mode==='pixelate'?blockSize:null,
-        stroke:imageEdit.mode==='rectangle'?stroke:null,
-        color:imageEdit.mode==='rectangle'?hex:null,
-        steps:imagePlan.chatId===chatId&&
-          imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length?
-          imagePlan.steps:null
+        blockSize:!queuedPlan&&imageEdit.mode==='pixelate'?blockSize:null,
+        stroke:!queuedPlan&&imageEdit.mode==='rectangle'?stroke:null,
+        color:!queuedPlan&&imageEdit.mode==='rectangle'?hex:null,
+        steps:queuedPlan
       });
       if(saved){
         setImageExportReceipt(saved);
@@ -3422,7 +3458,10 @@ function App() {
               const width=e.currentTarget.naturalWidth,height=e.currentTarget.naturalHeight;
               setImageViewer(v=>v&&v.imageRef===viewedDraftImage.imageRef
                 ?({...v,width,height}):v);
-              setImageEdit({mode:'resize',x:'0',y:'0',width:String(width),height:String(height)});
+              setImageEdit({
+                mode:'resize',x:'0',y:'0',width:String(width),height:String(height),
+                blockSize:'12',stroke:'3',color:'#ff5500'
+              });
               setImageExportReceipt(null);
             }}
             style={{transform:'scale('+imageViewer.zoom+')'}}/>
@@ -3517,6 +3556,22 @@ function App() {
                 {step.operation}{['crop','redact','pixelate','rectangle','resize'].includes(step.operation)?
                   ' · '+step.width+' × '+step.height:''}
               </li>)}</ol>
+            </div>}
+          <button type="button" disabled={!chatId||imageExportBusy||imagePreviewBusy||
+              imagePlan.chatId!==chatId||imagePlan.imageRef!==imageViewer.imageRef||
+              !imagePlan.steps.length}
+            onClick={()=>void previewImageAssembly()}>
+            {imagePreviewBusy?'Preparing native preview…':'Preview staged edits'}
+          </button>
+          {imageAssemblyPreview?.key===currentImagePreviewKey&&
+            imageAssemblyPreview.result?.dataUrl&&
+            <div className="imageViewerViewport" aria-label="Native staged image preview">
+              <img src={imageAssemblyPreview.result.dataUrl}
+                alt="Preview of staged deterministic edits, not yet saved"/>
+              <small>Volatile native preview ·
+                {imageAssemblyPreview.result.width} × {imageAssemblyPreview.result.height} ·
+                SHA-256 {imageAssemblyPreview.result.revisionSha256}.
+                No file saved. Source image remains unchanged.</small>
             </div>}
           <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
             onClick={()=>void exportImageRevision()}>
