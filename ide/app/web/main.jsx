@@ -168,8 +168,13 @@ function App() {
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
+  const currentLanguageId = languageForPath(activeTab?.relativePath);
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
-    languageForPath(activeTab.relativePath) === 'c';
+    !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
+    lspWorker.supportedLanguages.includes(currentLanguageId);
+  const lspProviderForTab = currentLanguageId === 'rust' ? 'rust-analyzer' :
+    currentLanguageId === 'python' ? 'Ruff' : 'clangd';
+  const lspSupportsNavigation = currentLanguageId !== 'python';
   const lspRunningForTab = !!lspSession && !!activeTab &&
     lspSession.projectId === activeTab.projectId &&
     lspSession.relativePath === activeTab.relativePath;
@@ -880,7 +885,7 @@ function App() {
       }
       setLspSession({projectId:tab.projectId,relativePath:tab.relativePath});
       setLspNativeDiagnostics(previous=>({...previous,[tab.key]:response}));
-      setHint('Protected clangd session started for '+tab.relativePath+'.');
+      setHint('Protected '+lspProviderForTab+' session started for '+tab.relativePath+'.');
     } catch (error) {
       setProblem('Language server was not started: '+String(error));
     } finally {setLspBusy(false);}
@@ -939,6 +944,7 @@ function App() {
     const tab = activeTab;
     if (!tab || !lspRunningForTab || !lspAvailableForTab) return;
     if (!['completion', 'hover', 'definition', 'diagnostics'].includes(kind)) return;
+    if (kind !== 'diagnostics' && !lspSupportsNavigation) return;
     // The native host must independently revalidate this current project,
     // saved disk hash, exact unsaved editor buffer revision, worker scope,
     // peer identity and user approval before forwarding an LSP message.
@@ -1808,7 +1814,7 @@ function App() {
               </article>)}
             </div>
             <p className="capabilityNotice">
-              Planned installer bundles: native rust-analyzer, clangd and Ruff first;
+              Installer candidates: native rust-analyzer, clangd and Ruff;
               Node-dependent Pyright and TypeScript are separate license and dependency
               reviews. No binary is packaged or downloaded by the current alpha.
             </p>
@@ -1913,23 +1919,23 @@ function App() {
                   </button>
                   {lspAvailableForTab && !lspSession && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
-                    title="Require native human consent, then start isolated clangd"
+                    title={'Require native human consent, then start isolated '+lspProviderForTab}
                     onClick={() => void startLspSession()}>
-                    {lspBusy ? 'Starting…' : 'Start clangd'}</button>}
+                    {lspBusy ? 'Starting…' : 'Start '+lspProviderForTab}</button>}
                   {lspRunningForTab && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
                     onClick={() => void stopLspSession()}>
-                    {lspBusy ? 'Stopping…' : 'Stop clangd'}</button>}
+                    {lspBusy ? 'Stopping…' : 'Stop '+lspProviderForTab}</button>}
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspRunningForTab || lspBusy}
-                    title={lspRunningForTab ? 'Ask native protected clangd for completions' :
+                    disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
+                    title={lspRunningForTab ? 'Ask protected '+lspProviderForTab+' for completions' :
                       'Start a consented protected clangd session first'}
                     onClick={() => void requestLspFeature('completion')}>Complete</button>
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspRunningForTab || lspBusy}
+                    disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
                     onClick={() => void requestLspFeature('hover')}>Hover</button>
                   <button type="button" className="ghostBtn editorToolButton"
-                    disabled={!lspRunningForTab || lspBusy}
+                    disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
                     onClick={() => void requestLspFeature('definition')}>Definition</button>
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy}
@@ -2046,7 +2052,7 @@ function App() {
                 <pre>{activeLspHover}</pre>
               </section>}
               <div className="editorInfoBar">
-                {lspRunningForTab ? 'Protected clangd running · approved session · ' :
+                {lspRunningForTab ? 'Protected '+lspProviderForTab+' running · approved session · ' :
                   'Language intelligence requires protected worker and native consent · '}
                 Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
