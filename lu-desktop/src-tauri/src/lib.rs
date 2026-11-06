@@ -1661,6 +1661,63 @@ async fn lu_research_campaign_resume(
     result
 }
 
+/// Explicit user authorization to examine the next ten candidate DOIs.
+#[tauri::command]
+async fn lu_research_campaign_review(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,campaign_id:String,limit:u32
+)->Result<research_desktop::ResearchCampaignReviewView,String>{
+    if !(1..=10).contains(&limit){
+        return Err("Research review is limited to ten candidates per approval".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for Research")?;
+    if !state.research.available(){
+        return Err("Pinned HTTPS Research client unavailable".into());
+    }
+    let status=state.research.campaign_status(&chat_id,&campaign_id)?;
+    if status.state=="CANCELLED"{
+        return Err("Cancelled campaign cannot run further reviews".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=status.query.clone();
+        move||app.dialog().message(format!(
+            "Review up to {} existing DOI leads against Crossref and their \
+             independently cataloged public HTTPS publisher URLs?\n\n\
+             Research query: {}\n\n\
+             Each network response is bounded. Lu records mismatch, \
+             unsupported document and full-text status separately. This \
+             does not authorize model URL selection or manufacture citations.",
+            limit,query
+        )).title("Lu — Authorize bounded Research source review")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Review next sources".into(),"Cancel".into()
+        )).blocking_show()
+    }).await.map_err(|_|"Research source approval unavailable")?;
+    if !approved{return Err("Research review cancelled by user".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-review-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research review task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research review task could not start")?;
+    let research=Arc::clone(&owner.research);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        research.review_campaign_sources(&chat_id,&campaign_id,limit as usize)
+    ).await.map_err(|_|"Research source review worker unavailable").and_then(|x|x);
+    match result{
+        Ok(value)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Review completed but task receipt unavailable")?;
+            Ok(value)
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(error)
+        }
+    }
+}
+
 /// Explicit human-authored claim. A native source recheck is mandatory:
 /// HTML/browser quotations are NOT full-document evidence, and model text
 /// cannot self-approve scientific interpretations.
@@ -4681,6 +4738,7 @@ pub fn run() {
             lu_research_campaigns,
             lu_research_campaign_resume,
             lu_research_campaign_cancel,
+            lu_research_campaign_review,
             lu_research_add_claim,
             lu_research_claims,
             lu_research_export_report,
