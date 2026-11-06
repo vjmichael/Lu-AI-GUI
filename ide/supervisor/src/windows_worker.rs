@@ -684,7 +684,21 @@ pub fn execute_windows_worker(
     // All descendants must exit or be killed, including after the Cargo
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
-    let reaped = naturally_empty || job.kill_and_verify()?;
+    let reaped = if naturally_empty {
+        true
+    } else {
+        match job.kill_and_verify() {
+            Ok(value) => value,
+            Err(reason) => {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(reason);
+            }
+        }
+    };
+    if !reaped {
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
     // Never publish incomplete or cancelled outputs. An unbounded or
     // unpublishable output tree yields a quarantined recovery receipt,
     // not a 'successful build' based only on Cargo's exit status.
