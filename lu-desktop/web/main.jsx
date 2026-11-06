@@ -55,6 +55,9 @@ function App() {
   const [researchBusy,setResearchBusy]=useState(false);
   const [researchResult,setResearchResult]=useState(null);
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
+  const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
+  const [researchDocumentQuotes,setResearchDocumentQuotes]=useState({});
+  const [researchDocumentPassages,setResearchDocumentPassages]=useState({});
   const [researchError,setResearchError]=useState('');
   const [browserEvidenceByChat,setBrowserEvidenceByChat]=useState({});
   const [browserEvidenceBusy,setBrowserEvidenceBusy]=useState(false);
@@ -266,6 +269,37 @@ function App() {
       }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function retrieveResearchDocument(sourceId){
+    if(!chatId||researchBusy||!researchAvailable)return;
+    const selectedChat=chatId;
+    setResearchBusy(true);setResearchError('');
+    try{
+      const document=await invoke('lu_research_retrieve_document',{
+        chatId:selectedChat,sourceId
+      });
+      setResearchDocumentsByChat(old=>({
+        ...old,[selectedChat+'|'+sourceId]:document
+      }));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchBusy(false);}
+  }
+  async function verifyResearchDocumentPassage(sourceId){
+    if(!chatId||researchBusy)return;
+    const selectedChat=chatId;
+    const key=selectedChat+'|'+sourceId;
+    const quote=(researchDocumentQuotes[key]||'').trim();
+    if(quote.length<4||quote.length>4096)return;
+    setResearchBusy(true);setResearchError('');
+    try{
+      const proof=await invoke('lu_research_verify_document_passage',{
+        chatId:selectedChat,sourceId,quote
+      });
+      setResearchDocumentPassages(old=>({...old,[key]:proof}));
+    }catch(error){
+      setResearchDocumentPassages(old=>({...old,[key]:null}));
+      setResearchError(String(error));
+    }finally{setResearchBusy(false);}
   }
   async function reviewBrowserEvidence(){
     if(!chatId||browserEvidenceBusy)return;
@@ -3265,6 +3299,36 @@ function App() {
               </button>
               {researchMetadataByChat[chatId+'|'+l.sourceId]&&
                 <small>{researchMetadataByChat[chatId+'|'+l.sourceId].message}</small>}
+              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
+                <button type="button" disabled={researchBusy||!researchAvailable}
+                  onClick={()=>void retrieveResearchDocument(l.sourceId)}>
+                  Retrieve bounded PDF/HTML document
+                </button>}
+              {researchDocumentsByChat[chatId+'|'+l.sourceId]&&
+                <div className="researchResults" aria-label="Retrieved research document">
+                  <small>{researchDocumentsByChat[chatId+'|'+l.sourceId].message}</small>
+                  <small>Final HTTPS URL: {researchDocumentsByChat[chatId+'|'+l.sourceId].finalUrl}</small>
+                  <small>Redirect-chain SHA-256: {researchDocumentsByChat[chatId+'|'+l.sourceId].redirectChainSha256}</small>
+                  <small>{researchDocumentsByChat[chatId+'|'+l.sourceId].format} · {researchDocumentsByChat[chatId+'|'+l.sourceId].documentAccessed?'Document text accessed':'Unverified document candidate'}</small>
+                  <pre>{researchDocumentsByChat[chatId+'|'+l.sourceId].excerpt}</pre>
+                  {researchDocumentsByChat[chatId+'|'+l.sourceId].documentAccessed&&
+                    <>
+                      <input aria-label="Exact quote from retrieved document"
+                        value={researchDocumentQuotes[chatId+'|'+l.sourceId]||''}
+                        onChange={e=>{
+                          const key=chatId+'|'+l.sourceId;
+                          setResearchDocumentQuotes(old=>({...old,[key]:e.target.value}));
+                          setResearchDocumentPassages(old=>({...old,[key]:null}));
+                        }} placeholder="Copy an exact PDF passage" />
+                      <button type="button" disabled={researchBusy||
+                        !(researchDocumentQuotes[chatId+'|'+l.sourceId]||'').trim()}
+                        onClick={()=>void verifyResearchDocumentPassage(l.sourceId)}>
+                        Verify stored PDF passage
+                      </button>
+                      {researchDocumentPassages[chatId+'|'+l.sourceId]&&
+                        <small>Passage verified against stored PDF text; model interpretation remains unverified.</small>}
+                    </>}
+                </div>}
             </li>)}</ul>
             <div className="settingsActions">
               <button type="button" disabled={researchBusy||researchResult.page<=1}
