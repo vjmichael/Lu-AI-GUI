@@ -87,7 +87,8 @@ fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
     let mut total=0usize;
     for index in 0..zip.len(){
         let mut entry=zip.by_index(index).map_err(|_|TreeExtractError::InvalidArchive)?;
-        let raw=entry.name().trim_end_matches('/').to_owned();
+        let raw=entry.name().map_err(|_|TreeExtractError::InvalidArchive)?
+            .trim_end_matches('/').to_owned();
         if !safe_part(&raw)||entry.is_symlink()||entry.encrypted(){
             return Err(TreeExtractError::UnsafeMember)
         }
