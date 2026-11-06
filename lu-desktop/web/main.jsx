@@ -72,6 +72,7 @@ function App() {
   });
   const [researchClaimsByChat,setResearchClaimsByChat]=useState({});
   const [researchReportTitle,setResearchReportTitle]=useState('Research evidence report');
+  const [wordReplaceFormat,setWordReplaceFormat]=useState('docx');
   const [wordReplaceOld,setWordReplaceOld]=useState('');
   const [wordReplaceNew,setWordReplaceNew]=useState('');
   const [wordReplaceBusy,setWordReplaceBusy]=useState(false);
@@ -597,9 +598,12 @@ function App() {
        ||wordReplaceOld===wordReplaceNew)return;
     setWordReplaceBusy(true);setWordReplaceReceipt(null);setError('');
     try{
-      const receipt=await invoke('lu_office_word_replace_all',{
-        chatId,oldText:wordReplaceOld,newText:wordReplaceNew
-      });
+      const receipt=await invoke(
+        wordReplaceFormat==='pptx'
+          ?'lu_office_presentation_replace_all':'lu_office_word_replace_all',{
+          chatId,oldText:wordReplaceOld,newText:wordReplaceNew
+        }
+      );
       if(receipt)setWordReplaceReceipt(receipt);
     }catch(e){setError(String(e));}
     finally{setWordReplaceBusy(false);}
@@ -3976,12 +3980,18 @@ function App() {
             </div>
           </div>}
         </section>
-        <section className="researchResults" aria-label="Non-destructive Word text replacement">
-          <h3>Word document editing</h3>
-          <small>Replace matching complete text runs across a DOCX. Lu retains the
-            original, shows the expected new SHA-256, and asks you to save to a
-            separate file using native dialogs. Word text split across styled
-            runs is deliberately not guessed or rewritten.</small>
+        <section className="researchResults" aria-label="Non-destructive Office text replacement">
+          <h3>Word and PowerPoint text editing</h3>
+          <small>Replace matching complete text runs across a DOCX or PPTX,
+            preserving the original document and non-target package content.
+            Text spanning separately styled runs is not guessed or merged.</small>
+          <label>Document format
+            <select value={wordReplaceFormat}
+              onChange={e=>{setWordReplaceFormat(e.target.value);setWordReplaceReceipt(null);}}>
+              <option value="docx">Word (.docx)</option>
+              <option value="pptx">PowerPoint (.pptx)</option>
+            </select>
+          </label>
           <label>Exact existing text
             <input value={wordReplaceOld}
               onChange={e=>setWordReplaceOld(e.target.value)}/>
@@ -3994,7 +4004,8 @@ function App() {
             !wordReplaceOld.trim()||!wordReplaceNew.trim()||
             wordReplaceOld===wordReplaceNew}
             onClick={()=>void replaceWordTextRuns()}>
-            {wordReplaceBusy?'Preparing exact Word revision…':'Select Word document and replace'}
+            {wordReplaceBusy?'Preparing exact Office revision…':
+              'Select '+(wordReplaceFormat==='docx'?'Word':'PowerPoint')+' document and replace'}
           </button>
           {wordReplaceReceipt&&<small role="status">
             Created {wordReplaceReceipt.newFileName}: {wordReplaceReceipt.replacements}
