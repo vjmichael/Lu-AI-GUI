@@ -1154,6 +1154,15 @@ where
             Err(_) => true, // structural violation or quota exceeded
         };
         if request || deadline_exceeded || output_invalid {
+            // Fixed CI/debug-only categories. They carry no paths, source,
+            // stderr, user data or machine-specific security identifiers.
+            if request {
+                acceptance_trace("runtime_user_cancel_requested");
+            } else if deadline_exceeded {
+                acceptance_trace("runtime_walltime_limit_exceeded");
+            } else {
+                acceptance_trace("runtime_live_output_policy_denied");
+            }
             // An output policy denial is NOT evidence of a runtime timeout.
             timed_out = deadline_exceeded;
             stopped = true;
