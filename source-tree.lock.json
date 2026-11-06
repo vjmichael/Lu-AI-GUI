@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "aab4bf68a77c9839025a2d8c7354de9740b0252a",
+  "sourceCommitBeforeLock": "4e96bc2eae958397cc8d737fc5d128d2f197f3f2",
   "trackedFileCount": 371,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "57c3c05704686d985c6be4893d1635a3b1d8a14b"
+      "blob": "2c453b59fd89a10f5d88ce9c582364affbf3f888"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -241,7 +241,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "c68f67757c04a081baefccc42e9e663eaef04f03"
+      "blob": "973ef2bdc0ccf45373d353209582bc4154223181"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -309,7 +309,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/file_trash_desktop.rs",
-      "blob": "8231eb95f80f90273c24c62434578b802f7b9a64"
+      "blob": "ea14aa98a1e3c2295794308d5b16a0fb7ef18539"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
