@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "525a346fa4e096b4351200c1aa7ef6eae4fb86e3",
+  "sourceCommitBeforeLock": "249f99069648cb2ac2912eb11613f3021c19f763",
   "trackedFileCount": 461,
   "files": [
     {
@@ -1813,7 +1813,7 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "0d957c9621499f7eb52f716f1c3cd979e00db38a"
+      "blob": "3b944d7450bf3e9d1976c2fef41a3b5d177b8bb2"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
