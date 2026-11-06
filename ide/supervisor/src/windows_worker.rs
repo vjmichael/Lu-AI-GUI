@@ -34,8 +34,8 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT,
+        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE,
+        INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Security::{
         Authorization::ConvertSidToStringSidW,
@@ -43,8 +43,10 @@ use windows_sys::Win32::{
         Isolation::{
             CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
         },
-        TokenAppContainerSid, TokenIsAppContainer, PSID, SECURITY_CAPABILITIES, TOKEN_QUERY,
+        TokenAppContainerSid, TokenIsAppContainer, PSID, SECURITY_ATTRIBUTES,
+        SECURITY_CAPABILITIES, TOKEN_QUERY,
     },
+    Storage::FileSystem::{CreateFileW, CREATE_NEW, OPEN_EXISTING},
     System::{
         Com::CoTaskMemFree,
         JobObjects::{
@@ -60,7 +62,7 @@ use windows_sys::Win32::{
             InitializeProcThreadAttributeList, OpenProcessToken, ResumeThread, TerminateProcess,
             UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
             CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
-            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
+            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTF_USESTDHANDLES, STARTUPINFOEXW,
         },
     },
 };
@@ -77,6 +79,12 @@ const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
 const JOB_OBJECT_TERMINATE_ACCESS: u32 = 0x0008;
 const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
+const PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE: usize = 0x0002_0002;
+const GENERIC_READ_ACCESS: u32 = 0x8000_0000;
+const GENERIC_WRITE_ACCESS: u32 = 0x4000_0000;
+const FILE_SHARE_READ_VALUE: u32 = 1;
+const FILE_SHARE_WRITE_VALUE: u32 = 2;
+const FILE_ATTRIBUTE_NORMAL_VALUE: u32 = 0x80;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
 // ENABLE(1) | HARD_CAP(4), CpuRate = 5000/10000 (50%).
 const CPU_RATE_HARD_CAP: u32 = 0x1 | 0x4;
@@ -360,7 +368,8 @@ fn read_wide(value: *const u16) -> Result<String, SupervisorError> {
 struct Attributes(Vec<usize>);
 impl Attributes {
     fn new() -> Result<Self, SupervisorError> {
-        Self::with_count(2)
+        // Two explicitly scoped stdio handles, no ambient inheritance.
+        Self::with_count(3)
     }
     /// E2 requires a THIRD attribute: the explicit inherited stdio HANDLE_LIST.
     /// The original worker retains exactly two attributes and zero inherited
@@ -388,7 +397,7 @@ impl Attributes {
     }
     #[cfg(not(feature = "lsp-transport"))]
     fn with_count(count: u32) -> Result<Self, SupervisorError> {
-        if count != 2 {
+        if count != 3 {
             return Err(denied());
         }
         let mut size = 0_usize;
@@ -683,6 +692,39 @@ fn command_for(
     }
     Ok((exe, wstr(&command)))
 }
+/// Fixed NUL stdin and one write-only diagnostic log, located strictly
+/// inside the worker's already-contained output. Kernel HANDLE_LIST blocks
+/// every unrelated native host handle, including journal and credentials.
+fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorError> {
+    if !clean_meta(output)?.is_dir() { return Err(denied()); }
+    let mut sec = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: ptr::null_mut(),
+        bInheritHandle: 1,
+    };
+    let nul = unsafe {
+        CreateFileW(
+            wstr("NUL").as_ptr(), GENERIC_READ_ACCESS,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            &mut sec, OPEN_EXISTING, 0, ptr::null_mut(),
+        )
+    };
+    if nul.is_null() || nul == INVALID_HANDLE_VALUE { return Err(denied()); }
+    let nul = Handle::new(nul)?;
+    let file = output.join("cargo-diagnostics.log");
+    let diagnostics = unsafe {
+        CreateFileW(
+            wide(file.as_os_str()).as_ptr(), GENERIC_WRITE_ACCESS,
+            0, &mut sec, CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL_VALUE, ptr::null_mut(),
+        )
+    };
+    if diagnostics.is_null() || diagnostics == INVALID_HANDLE_VALUE {
+        return Err(denied());
+    }
+    Ok((nul, Handle::new(diagnostics)?))
+}
+
 fn launch_appcontainer(
     profile: &AppProfile,
     job: &Job,
@@ -690,6 +732,7 @@ fn launch_appcontainer(
     command: &mut Vec<u16>,
     cwd: &Path,
     environment: &[u16],
+    output: &Path,
 ) -> Result<(Handle, Handle), SupervisorError> {
     let mut cap = SECURITY_CAPABILITIES::default();
     cap.AppContainerSid = profile.sid;
@@ -728,8 +771,21 @@ fn launch_appcontainer(
     {
         return Err(denied());
     }
+    let (stdin_nul, diagnostic_log) = isolated_cargo_stdio(output)?;
+    let inherited = [stdin_nul.0, diagnostic_log.0];
+    if unsafe {
+        UpdateProcThreadAttribute(
+            attrs.raw(), 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
+            inherited.as_ptr().cast(), size_of::<[HANDLE; 2]>(),
+            ptr::null_mut(), ptr::null(),
+        )
+    } == 0 { return Err(denied()); }
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = stdin_nul.0;
+    startup.StartupInfo.hStdOutput = diagnostic_log.0;
+    startup.StartupInfo.hStdError = diagnostic_log.0;
     startup.lpAttributeList = attrs.raw();
     let mut proc = PROCESS_INFORMATION::default();
     let exe_wide = wide(executable.as_os_str());
@@ -740,7 +796,7 @@ fn launch_appcontainer(
             command.as_mut_ptr(),
             ptr::null(),
             ptr::null(),
-            0,
+            1, // inherit only the two kernel-allowlisted stdio handles
             CREATE_SUSPENDED
                 | CREATE_NO_WINDOW
                 | CREATE_UNICODE_ENVIRONMENT
@@ -945,7 +1001,7 @@ where
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     acceptance_trace("one_use_grant_consumed");
     let (process, thread) =
-        match launch_appcontainer(&profile, &job, &exe, &mut command, &workspace, &env) {
+        match launch_appcontainer(&profile, &job, &exe, &mut command, &workspace, &env, &output) {
             Ok(value) => value,
             Err(reason) => {
                 // An OS failure that cannot prove the suspended process was
