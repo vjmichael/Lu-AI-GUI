@@ -252,4 +252,128 @@ mod tests {
         ).is_err());
         let _ = std::fs::remove_file(root);
     }
+    #[derive(Default)]
+    struct MockState {
+        killed: std::sync::atomic::AtomicUsize,
+        released: std::sync::atomic::AtomicUsize,
+    }
+    struct MockProcess {
+        state: Arc<MockState>,
+        fail_release: bool,
+    }
+    impl RestrictedLspProcess for MockProcess {
+        fn write_bounded(&mut self, _: &[u8]) -> io::Result<()> { Ok(()) }
+        fn read_bounded(&mut self, _: usize, _: Duration) -> io::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+        fn terminate_tree_and_verify(&mut self) -> Result<bool, SupervisorError> {
+            self.state.killed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(true)
+        }
+        fn release_after_verified_terminal(&mut self) -> Result<(), SupervisorError> {
+            if self.fail_release { return Err(SupervisorError::NoContainment); }
+            self.state.released.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    fn admitted_fixture() -> (Arc<Supervisor>, String, String, std::path::PathBuf) {
+        let nonce = format!("{}-{}", std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let journal = std::env::temp_dir().join(format!("lu-e2-receipt-{nonce}.jsonl"));
+        let supervisor = Arc::new(Supervisor::open(journal.clone()).unwrap());
+        let plan = crate::JobPlan {
+            project_id: format!("ide-{}", "a".repeat(32)),
+            recipe_id: "lsp_clangd".to_owned(),
+            source_head: "b".repeat(40),
+            input_snapshot_sha256: "c".repeat(64),
+            manifest_sha256: "d".repeat(64),
+            toolchain_sha256: "e".repeat(64),
+            runtime_limit_ms: 60_000,
+            memory_limit_bytes: 128 * 1024 * 1024,
+            process_limit: 2,
+            log_limit_bytes: 32 * 1024,
+            effect_class: "language_analysis_isolated".to_owned(),
+        };
+        let summary = supervisor.prepare(plan.clone()).unwrap();
+        supervisor.record_human_approval(
+            &summary.job_id, &summary.plan_sha256, &plan.source_head, true
+        ).unwrap();
+        let proof = OsContainmentProof {
+            platform: "windows".into(), restricted_identity: true,
+            filesystem_access_limited: true, network_access_limited: true,
+            child_contained_before_resume: true, process_tree_kill_verified: true,
+            memory_quota: true, cpu_quota: true, pid_quota: true,
+            protected_journal_broker: true,
+        };
+        supervisor.consume_grant_after_attestation(
+            &summary.job_id, &plan, &proof
+        ).unwrap();
+        supervisor.native_mark_running(&summary.job_id).unwrap();
+        (supervisor, summary.job_id, summary.plan_sha256, journal)
+    }
+    fn proof_fixture() -> OsContainmentProof {
+        OsContainmentProof {
+            platform: "windows".into(), restricted_identity: true,
+            filesystem_access_limited: true, network_access_limited: true,
+            child_contained_before_resume: true, process_tree_kill_verified: true,
+            memory_quota: true, cpu_quota: true, pid_quota: true,
+            protected_journal_broker: true,
+        }
+    }
+    #[test]
+    fn protected_lsp_normal_close_persists_terminal_receipt_before_restart() {
+        let (supervisor, id, sha, journal) = admitted_fixture();
+        let evidence = Arc::new(MockState::default());
+        let gateway = LspGateway::attach_native(
+            Arc::clone(&supervisor), &id, &sha, &proof_fixture(),
+            Box::new(MockProcess { state: Arc::clone(&evidence), fail_release: false }),
+            "clangd",
+        ).unwrap();
+        gateway.close().unwrap();
+        assert!(evidence.killed.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+        assert_eq!(evidence.released.load(std::sync::atomic::Ordering::SeqCst), 1);
+        drop(supervisor);
+        let read = Supervisor::open(journal.clone()).unwrap().inspect().unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].phase, JobPhase::Completed);
+        assert!(!read[0].requires_reconciliation);
+        let _ = std::fs::remove_file(journal);
+    }
+    #[test]
+    fn dropped_lsp_actor_is_durably_cancelled_before_os_tree_kill() {
+        let (supervisor, id, sha, journal) = admitted_fixture();
+        let evidence = Arc::new(MockState::default());
+        let gateway = LspGateway::attach_native(
+            Arc::clone(&supervisor), &id, &sha, &proof_fixture(),
+            Box::new(MockProcess { state: Arc::clone(&evidence), fail_release: false }),
+            "clangd",
+        ).unwrap();
+        drop(gateway);
+        assert!(evidence.killed.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+        assert_eq!(evidence.released.load(std::sync::atomic::Ordering::SeqCst), 1);
+        drop(supervisor);
+        let read = Supervisor::open(journal.clone()).unwrap().inspect().unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].phase, JobPhase::Cancelled);
+        assert!(!read[0].requires_reconciliation);
+        let _ = std::fs::remove_file(journal);
+    }
+    #[test]
+    fn failed_protected_service_release_quarantines_even_when_tree_is_empty() {
+        let (supervisor, id, sha, journal) = admitted_fixture();
+        let gateway = LspGateway::attach_native(
+            Arc::clone(&supervisor), &id, &sha, &proof_fixture(),
+            Box::new(MockProcess { state: Arc::new(MockState::default()), fail_release: true }),
+            "clangd",
+        ).unwrap();
+        assert!(gateway.close().is_err());
+        drop(supervisor);
+        let read = Supervisor::open(journal.clone()).unwrap().inspect().unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].phase, JobPhase::RecoveryRequired);
+        assert!(read[0].requires_reconciliation);
+        let _ = std::fs::remove_file(journal);
+    }
+
 }
