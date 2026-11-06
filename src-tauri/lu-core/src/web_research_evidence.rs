@@ -544,6 +544,52 @@ impl EvidenceLedger {
         let rows=stmt.query_map(params![id,limit as i64],|r|r.get(0))?;
         Ok(rows.collect::<Result<Vec<_>,_>>()?)
     }
+    /// Read-only, chat-scoped campaign outcome inventory. A source marked
+    /// failed remains visible; it is not silently counted as verified.
+    pub fn campaign_review_rows(
+        &self,id:&str,limit:usize
+    )->Result<Vec<(String,String,String)>,EvidenceError>{
+        if !Self::campaign_safe_id(id)||!(1..=120).contains(&limit){
+            return Err(EvidenceError::Invalid);
+        }
+        let _=self.campaign_status(id)?;
+        let mut stmt=self.connection.prepare(
+            "SELECT source_id,stage,reason_code
+             FROM research_campaign_source_review
+             WHERE campaign_id=?1 ORDER BY source_id LIMIT ?2"
+        )?;
+        let mapped=stmt.query_map(params![id,limit as i64],|r|
+            Ok((r.get(0)?,r.get(1)?,r.get(2)?))
+        )?;
+        Ok(mapped.collect::<Result<Vec<_>,_>>()?)
+    }
+    /// A user may explicitly retry only transport/unsupported outcomes.
+    /// Verified metadata and exact PDF passages remain unchanged; this
+    /// removes just one previous campaign review receipt.
+    pub fn retry_campaign_source(
+        &mut self,id:&str,source_id:&str
+    )->Result<(),EvidenceError>{
+        if !Self::campaign_safe_id(id)||!bounded(source_id,128){
+            return Err(EvidenceError::Invalid);
+        }
+        let state:Option<String>=self.connection.query_row(
+            "SELECT stage FROM research_campaign_source_review
+             WHERE campaign_id=?1 AND source_id=?2",
+            params![id,source_id],|r|r.get(0)
+        ).optional()?;
+        if !state.as_deref().is_some_and(|x|matches!(
+            x,"ERROR"|"DOCUMENT_UNAVAILABLE"|"METADATA_CORROBORATED"
+        )){
+            return Err(EvidenceError::Invalid);
+        }
+        let updated=self.connection.execute(
+            "DELETE FROM research_campaign_source_review
+             WHERE campaign_id=?1 AND source_id=?2",
+            params![id,source_id]
+        )?;
+        if updated!=1{return Err(EvidenceError::Missing);}
+        Ok(())
+    }
     pub fn campaign_review_progress(
         &self,id:&str
     )->Result<(u32,u32,u32),EvidenceError>{
