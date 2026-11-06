@@ -34,7 +34,7 @@ use windows_sys::Win32::{
     System::{
         Com::CoTaskMemFree,
         JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
+            CreateJobObjectW, JobObjectBasicAccountingInformation,
             JobObjectExtendedLimitInformation, JobObjectCpuRateControlInformation,
             OpenJobObjectW, QueryInformationJobObject, SetInformationJobObject,
             TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
@@ -68,6 +68,9 @@ const JOB_OBJECT_QUERY_ACCESS: u32 = 0x0004;
 // ENABLE(1) | HARD_CAP(4), CpuRate = 5000/10000 (50%).
 const CPU_RATE_HARD_CAP: u32 = 0x1 | 0x4;
 const CPU_RATE_HALF: u32 = 5000;
+// Process creation atomically attaches the child to this Job Object (Win10+).
+// The old create-suspended / assign / resume pattern has a crash orphan gap.
+const PROC_THREAD_ATTRIBUTE_JOB_LIST_VALUE: usize = 131085;
 
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
 fn io_denied<T>(_: T) -> SupervisorError { denied() }
@@ -317,10 +320,10 @@ struct Attributes(Vec<usize>);
 impl Attributes {
     fn new() -> Result<Self, SupervisorError> {
         let mut size = 0_usize;
-        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &mut size); }
+        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), 2, 0, &mut size); }
         if size == 0 || size > 32768 { return Err(denied()); }
         let mut bytes = vec![0_usize; size.div_ceil(size_of::<usize>())];
-        if unsafe { InitializeProcThreadAttributeList(bytes.as_mut_ptr().cast(), 1, 0, &mut size) } == 0 {
+        if unsafe { InitializeProcThreadAttributeList(bytes.as_mut_ptr().cast(), 2, 0, &mut size) } == 0 {
             return Err(denied());
         }
         Ok(Self(bytes))
@@ -444,6 +447,15 @@ fn launch_appcontainer(profile: &AppProfile, job: &Job, executable: &Path,
         PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
         (&cap as *const SECURITY_CAPABILITIES).cast(), size_of::<SECURITY_CAPABILITIES>(),
         ptr::null_mut(), ptr::null()) } == 0 { return Err(denied()); }
+    // OS assigns the job at CreateProcessW, before any suspended child
+    // exists. If the broker crashes at any point after creation, closing its
+    // Job handle kills the contained child; no unassigned orphan gap.
+    let jobs = [job.handle.0];
+    if unsafe { UpdateProcThreadAttribute(attrs.raw(), 0,
+        PROC_THREAD_ATTRIBUTE_JOB_LIST_VALUE, jobs.as_ptr().cast(),
+        size_of::<HANDLE>(), ptr::null_mut(), ptr::null()) } == 0 {
+        return Err(denied());
+    }
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.lpAttributeList = attrs.raw();
@@ -460,7 +472,10 @@ fn launch_appcontainer(profile: &AppProfile, job: &Job, executable: &Path,
     let thread = match Handle::new(proc.hThread) {
         Ok(t) => t, Err(e) => { terminate_unassigned(process.0)?; return Err(e); }
     };
-    if unsafe { AssignProcessToJobObject(job.handle.0, process.0) } == 0 {
+    // The unique Job must contain the suspended child already, because
+    // membership was supplied as a creation attribute rather than an
+    // after-creation assignment subject to host-crash races.
+    if !matches!(job.empty(), Ok(false)) {
         terminate_unassigned(process.0)?;
         return Err(denied());
     }
@@ -472,7 +487,7 @@ fn proof() -> OsContainmentProof {
         restricted_identity: true, // OS AppContainer SID in SECURITY_CAPABILITIES
         filesystem_access_limited: true, // profile-owned local storage, no host handles
         network_access_limited: true, // zero declared AppContainer capabilities
-        child_contained_before_resume: true,
+        child_contained_before_resume: true, // atomic PROC_THREAD_ATTRIBUTE_JOB_LIST
         process_tree_kill_verified: true, // native query + terminate (not just close)
         memory_quota: true, cpu_quota: true, pid_quota: true,
         protected_journal_broker: true, // no journal path or handles passed to child
