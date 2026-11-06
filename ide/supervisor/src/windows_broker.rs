@@ -13,7 +13,7 @@
 //! not authenticated recovery proof; never clear quarantine from a file alone.
 use crate::SupervisorError;
 use rand::{rngs::OsRng, RngCore};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
@@ -213,6 +213,86 @@ impl Journal {
         self.previous = entry_hash;
         Ok(())
     }
+}
+
+/// File-level chain and sequence validation is useful for fault injection,
+/// diagnostics and auditing. It is NOT authentication of the originating
+/// Windows process or its account: do not use this to clear quarantine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UntrustedWitnessBody {
+    schema: String,
+    seq: u64,
+    id: String,
+    plan_sha256: String,
+    owner_pid: u32,
+    owner_creation: u64,
+    nonce_sha256: String,
+    state: String,
+    unix_ms: u128,
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct UntrustedLine {
+    body: UntrustedWitnessBody,
+    prior: String,
+    entry_sha256: String,
+}
+pub fn inspect_untrusted_witness(
+    root: &Path, id: &str, plan_sha256: &str
+) -> Result<Vec<String>, SupervisorError> {
+    let path = witness_file(id, plan_sha256, root)?;
+    let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
+    if !meta.is_file() || meta.file_attributes() & 0x400 != 0 ||
+        meta.len() > WITNESS_LIMIT || meta.len() == 0 {
+        return Err(denied());
+    }
+    let mut bytes = Vec::new();
+    File::open(&path).map_err(|_| denied())?
+        .take(WITNESS_LIMIT + 1)
+        .read_to_end(&mut bytes).map_err(|_| denied())?;
+    if bytes.len() as u64 > WITNESS_LIMIT || !bytes.ends_with(b"\n") {
+        return Err(denied());
+    }
+    let mut previous = "0".repeat(64);
+    let mut states = Vec::new();
+    let mut owner = None;
+    let mut creation = None;
+    let mut nonce = None;
+    for (seq, item) in bytes.split(|b| *b == b'\n')
+        .filter(|item| !item.is_empty()).enumerate() {
+        let record: UntrustedLine = serde_json::from_slice(item).map_err(|_| denied())?;
+        let body = &record.body;
+        if body.schema != "lu.ide.d7c.independent-broker.v1" ||
+            body.seq != seq as u64 || body.id != id ||
+            body.plan_sha256 != plan_sha256 ||
+            !valid_hash(&body.nonce_sha256) ||
+            (seq == 0 && body.state != "ready") ||
+            record.prior != previous ||
+            !matches!(body.state.as_str(),
+                "ready" | "owner_exited" | "kill_requested" | "tree_empty" |
+                "kill_unverified" | "released_empty" | "recovery_hold_expired") {
+            return Err(denied());
+        }
+        if seq > 0 && (owner != Some(body.owner_pid)
+            || creation != Some(body.owner_creation)
+            || nonce.as_deref() != Some(body.nonce_sha256.as_str())) {
+            return Err(denied());
+        }
+        let mut digest = Sha256::new();
+        digest.update(previous.as_bytes());
+        digest.update(serde_json::to_vec(body).map_err(|_| denied())?);
+        let actual_hash = format!("{:x}", digest.finalize());
+        if record.entry_sha256 != actual_hash { return Err(denied()); }
+        previous = actual_hash;
+        owner = Some(body.owner_pid);
+        creation = Some(body.owner_creation);
+        nonce = Some(body.nonce_sha256.clone());
+        states.push(body.state.clone());
+    }
+    if states.is_empty() || (states.contains(&"tree_empty".to_owned()) &&
+        !states.windows(3).any(|w| w == ["owner_exited", "kill_requested", "tree_empty"])) {
+        return Err(denied());
+    }
+    Ok(states)
 }
 
 /// Native host-owned config; MUST be installed from reviewed source and be
