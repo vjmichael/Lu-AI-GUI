@@ -68,6 +68,17 @@ const tests = [
     host.includes('fn lu_deny_office_revision(') &&
     host.includes('office_revision_reviews: office_revision_desktop::OfficeRevisionQueue') &&
     host.includes('state.office_revision_reviews.consume(')],
+  ['native file copy/move review binds host-selected source, exact content hash and native one-use confirmation',
+    ui.includes("invoke('lu_review_file_transfer'") &&
+    ui.includes("invoke('lu_confirm_file_transfer'") &&
+    ui.includes("invoke('lu_deny_file_transfer'") &&
+    ui.includes('fileTransferReview.sourceSha256') &&
+    ui.includes('disabled={!fileTransferReviewed || fileTransferBusy}') &&
+    host.includes('fn lu_review_file_transfer(') &&
+    host.includes('fn lu_confirm_file_transfer(') &&
+    host.includes('fn lu_deny_file_transfer(') &&
+    host.includes('file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue') &&
+    host.includes('state.file_transfer_reviews.consume(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
