@@ -64,6 +64,62 @@ impl Drop for Handle {
     }
 }
 
+/// CI/debug-only read-vs-write probe after real pipe access denial. It
+/// cannot authenticate or authorize: every opened diagnostic handle is closed
+/// without writing any message. Production never uses these probes.
+fn ci_probe_denied_pipe_access() {
+    if !cfg!(debug_assertions)
+        || std::env::var_os("GITHUB_ACTIONS").as_deref()
+            != Some(std::ffi::OsStr::new("true"))
+        || std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
+            != Some(std::ffi::OsStr::new("1"))
+    {
+        return;
+    }
+    const READ_CONTROL_ACCESS: u32 = 0x0002_0000;
+    for (desired, allowed, denied_status, other_status) in [
+        (
+            FILE_READ_DATA | SYNCHRONIZE,
+            "pipe_diag_read_allowed",
+            "pipe_diag_read_access_denied",
+            "pipe_diag_read_other_failure",
+        ),
+        (
+            FILE_WRITE_DATA | SYNCHRONIZE,
+            "pipe_diag_write_allowed",
+            "pipe_diag_write_access_denied",
+            "pipe_diag_write_other_failure",
+        ),
+        (
+            READ_CONTROL_ACCESS | SYNCHRONIZE,
+            "pipe_diag_control_allowed",
+            "pipe_diag_control_access_denied",
+            "pipe_diag_control_other_failure",
+        ),
+    ] {
+        let handle = unsafe {
+            CreateFileW(
+                security::ws(security::SERVICE_ENDPOINT).as_ptr(),
+                desired,
+                0,
+                ptr::null(),
+                OPEN_EXISTING,
+                SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
+                ptr::null_mut(),
+            )
+        };
+        if handle != INVALID_HANDLE_VALUE && !handle.is_null() {
+            let _opened_but_untrusted = Handle(handle);
+            acceptance_trace(allowed);
+        } else if unsafe { GetLastError() } == 5 {
+            acceptance_trace(denied_status);
+        } else {
+            // Busy/missing also fall here; no implied access conclusion.
+            acceptance_trace(other_status);
+        }
+    }
+}
+
 fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
     // A just-started SCM service can be running before the first pipe instance
     // is visible. Retry only absent/busy, never ACCESS_DENIED or other errors.
@@ -101,6 +157,7 @@ fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
         if error != ERROR_FILE_NOT_FOUND && error != ERROR_PIPE_BUSY {
             if error == 5 {
                 acceptance_trace("pipe_open_access_denied");
+                ci_probe_denied_pipe_access();
             } else {
                 acceptance_trace("pipe_open_other_os_denial");
             }
