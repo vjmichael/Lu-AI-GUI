@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -51,14 +52,43 @@ function App() {
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
   const [contextBusy, setContextBusy] = useState(false);
+  const [checkpointBusy, setCheckpointBusy] = useState(false);
+  const contextRequest = useRef(0);
+  const checkpointRequest = useRef(0);
   const [gitStatus, setGitStatus] = useState(null);
   const [gitBusy, setGitBusy] = useState(false);
+  const [gitDiffScope, setGitDiffScope] = useState('worktree');
+  const [gitDiff, setGitDiff] = useState(null);
+  const [gitHistory, setGitHistory] = useState(null);
+  const [gitEvidenceBusy, setGitEvidenceBusy] = useState(false);
+  const gitEvidenceRequest = useRef(0);
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubComparison, setGithubComparison] = useState(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [resourceProbe, setResourceProbe] = useState(null);
+  const [resourceProbeBusy, setResourceProbeBusy] = useState(false);
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  const activeProjectIdRef = useRef(null);
+  activeProjectIdRef.current = activeProject?.projectId ?? null;
+
+  useEffect(() => {
+    // Invalidate in-flight project evidence when the selected project changes.
+    gitEvidenceRequest.current += 1;
+    setGitEvidenceBusy(false);
+    setGitDiff(null);
+    setGitHistory(null);
+    setResourceProbe(null);
+    contextRequest.current += 1;
+    checkpointRequest.current += 1;
+    setContextBusy(false);
+    setCheckpointBusy(false);
+    setProjectContext(null);
+    setInventoryComparison(null);
+    setGitStatus(null);
+    setGithubComparison(null);
+  }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
@@ -150,6 +180,9 @@ function App() {
       return;
     }
     setGitBusy(true);
+    setGitDiff(null);
+    setGitHistory(null);
+    gitEvidenceRequest.current += 1;
     setGithubComparison(null); // A local refresh invalidates any prior live comparison.
     setProblem('');
     try {
@@ -158,6 +191,33 @@ function App() {
       setGitStatus(null);
       setProblem('Could not inspect source control: ' + String(error));
     } finally { setGitBusy(false); }
+  }
+
+  async function loadGitEvidence() {
+    if (!activeProject?.projectId || gitEvidenceBusy) return;
+    const projectId = activeProject.projectId;
+    const request = ++gitEvidenceRequest.current;
+    setGitEvidenceBusy(true);
+    setGitDiff(null);
+    setGitHistory(null);
+    setProblem('');
+    try {
+      const [diff, history] = await Promise.all([
+        invoke('ide_read_git_diff', { projectId, scope: gitDiffScope }),
+        invoke('ide_read_git_history', { projectId }),
+      ]);
+      if (request !== gitEvidenceRequest.current) return;
+      if (diff.projectId !== projectId || history.projectId !== projectId) {
+        throw Error('GIT_PROJECT_CONTEXT_CHANGED');
+      }
+      setGitDiff(diff);
+      setGitHistory(history);
+    } catch (error) {
+      if (request === gitEvidenceRequest.current)
+        setProblem('Could not inspect local Git diff/history: ' + String(error));
+    } finally {
+      if (request === gitEvidenceRequest.current) setGitEvidenceBusy(false);
+    }
   }
 
   async function compareLiveGitHub() {
@@ -176,26 +236,83 @@ function App() {
   }
 
   async function refreshContext() {
-    if (!activeProject?.projectId) {
+    const projectId = activeProject?.projectId;
+    if (!projectId) {
       setProjectContext(null);
+      setInventoryComparison(null);
       return;
     }
+    const request = ++contextRequest.current;
     setContextBusy(true);
     setProblem('');
     try {
-      const latest = await invoke('ide_read_project_context', {
-        projectId: activeProject.projectId,
-      });
+      const [latest, compared] = await Promise.all([
+        invoke('ide_read_project_context', { projectId }),
+        invoke('ide_compare_project_inventory', { projectId }),
+      ]);
+      if (request !== contextRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (latest.projectId !== projectId || compared.projectId !== projectId)
+        throw Error('PROJECT_CONTEXT_CHANGED');
       setProjectContext(latest);
-      setInventoryComparison(await invoke('ide_compare_project_inventory', {
-        projectId: activeProject.projectId,
-      }));
+      setInventoryComparison(compared);
     } catch (error) {
-      setProjectContext(null);
-      setProblem('Could not read project continuity: ' + String(error));
+      if (request === contextRequest.current) {
+        setProjectContext(null);
+        setInventoryComparison(null);
+        setProblem('Could not read project continuity: ' + String(error));
+      }
     } finally {
-      setContextBusy(false);
+      if (request === contextRequest.current) setContextBusy(false);
     }
+  }
+
+  async function copyDevelopmentCheckpoint() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || checkpointBusy || contextBusy) return;
+    const request = ++checkpointRequest.current;
+    setCheckpointBusy(true);
+    setProblem('');
+    try {
+      // Never copy a remembered UI snapshot: re-observe both independent native sources.
+      const [context, comparison] = await Promise.all([
+        invoke('ide_read_project_context', { projectId }),
+        invoke('ide_compare_project_inventory', { projectId }),
+      ]);
+      if (request !== checkpointRequest.current || activeProjectIdRef.current !== projectId) return;
+      const checkpoint = buildDevelopmentCheckpoint(projectId, context, comparison,
+        new Date().toISOString());
+      if (typeof navigator.clipboard?.writeText !== 'function')
+        throw Error('CLIPBOARD_UNAVAILABLE');
+      await navigator.clipboard.writeText(JSON.stringify(checkpoint, null, 2));
+      if (request !== checkpointRequest.current || activeProjectIdRef.current !== projectId) return;
+      setProjectContext(context);
+      setInventoryComparison(comparison);
+      setHint('Read-only development checkpoint copied. Local checks are not CI or installer acceptance.');
+    } catch (error) {
+      if (request === checkpointRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not copy development checkpoint: ' + String(error));
+    } finally {
+      if (request === checkpointRequest.current) setCheckpointBusy(false);
+    }
+  }
+
+  async function inspectResource(relativePath) {
+    if (!activeProject?.projectId || resourceProbeBusy) return;
+    const projectId = activeProject.projectId;
+    setResourceProbeBusy(true);
+    setResourceProbe(null);
+    setProblem('');
+    try {
+      const observed = await invoke('ide_probe_project_resource', {
+        projectId, relativePath,
+      });
+      if (observed.projectId !== projectId || observed.relativePath !== relativePath) {
+        throw Error('RESOURCE_PROBE_CONTEXT_CHANGED');
+      }
+      setResourceProbe(observed);
+    } catch (error) {
+      setProblem('Could not verify current resource bytes: ' + String(error));
+    } finally { setResourceProbeBusy(false); }
   }
 
   async function captureInventorySnapshot() {
@@ -805,6 +922,50 @@ function App() {
               {gitStatus.truncated && <p role="status">
                 More than 120 changed files were found. The visible list is truncated.</p>}
               <div className="continuityCapture">
+                <h3>Review local differences and commits</h3>
+                <div className="gitReviewControls">
+                  <label htmlFor="git-diff-scope">Diff source</label>
+                  <select id="git-diff-scope" value={gitDiffScope}
+                    disabled={gitEvidenceBusy}
+                    onChange={event => {
+                      setGitDiffScope(event.target.value);
+                      setGitDiff(null);
+                      setGitHistory(null);
+                      gitEvidenceRequest.current += 1;
+                      setGitEvidenceBusy(false);
+                    }}>
+                    <option value="worktree">Unstaged changes</option>
+                    <option value="staged">Staged changes</option>
+                  </select>
+                  <button type="button" className="ghostBtn" disabled={gitEvidenceBusy || gitBusy}
+                    onClick={() => loadGitEvidence()}>
+                    {gitEvidenceBusy ? 'Inspecting…' : 'Inspect diff and history'}
+                  </button>
+                </div>
+              </div>
+              <p>Local-only evidence. Untracked file contents are not included in patch text.
+                Diff previews are capped at 64 KiB and may be incomplete. No Git command is executed.</p>
+              {gitDiff && gitDiff.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Local Git patch">
+                <p><strong>{gitDiff.scope === 'staged' ? 'Staged' : 'Unstaged'} changes</strong>
+                  {' · '}{gitDiff.filesChanged} changed file(s)
+                  {' · '}{gitDiff.patchBytes.toLocaleString()} patch bytes
+                  {gitDiff.truncated && ' · truncated'}</p>
+                {gitDiff.patch
+                  ? <pre className="gitPatchPreview">{gitDiff.patch}</pre>
+                  : <p>No tracked patch changes in the selected scope.</p>}
+              </div>}
+              {gitHistory && gitHistory.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Local Git history">
+                <h4>Local HEAD history</h4>
+                {gitHistory.commits.length === 0 && <p>No local commits found.</p>}
+                {gitHistory.commits.map(item => <p key={item.commitSha}>
+                  <code>{item.commitSha.slice(0, 12)}</code> · {item.summary}
+                </p>)}
+                {gitHistory.truncated && <p role="status">History limited to 30 commits.</p>}
+                <p>Locally stored history only; not evidence of current GitHub state.</p>
+              </div>}
+              <div className="continuityCapture">
                 <h3>Compare with live GitHub</h3>
                 <button type="button" className="ghostBtn"
                   disabled={githubBusy || gitBusy}
@@ -848,6 +1009,17 @@ function App() {
               Project notes are untrusted source content; missing Git, toolchain, and
               artifact checks are explicitly not verified.
             </p>
+            <div className="continuityCapture">
+              <h3>Development handoff</h3>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || contextBusy || checkpointBusy}
+                onClick={() => copyDevelopmentCheckpoint()}>
+                {checkpointBusy ? 'Refreshing evidence…' : 'Copy development checkpoint'}
+              </button>
+            </div>
+            <p>Copies a bounded JSON snapshot of fresh host observations, revisions and
+              explicit unknowns. Excludes source text and private root paths.
+              Reads are not atomic, and copying grants no authority.</p>
             {!activeProject && <p>Open a project to inspect its development context.</p>}
             {contextBusy && <p role="status">Reading project history…</p>}
             {!contextBusy && projectContext && <div className="continuityBody">
@@ -896,8 +1068,25 @@ function App() {
                   <p>{file.sizeBytes.toLocaleString()} bytes · {file.state.replaceAll('_', ' ')}
                     {' · '}{file.digestStatus.replaceAll('_', ' ')}</p>
                   {file.sha256 && <code>SHA-256: {file.sha256}</code>}
+                  <button type="button" className="ghostBtn" disabled={resourceProbeBusy}
+                    onClick={() => inspectResource(file.relativePath)}>
+                    {resourceProbeBusy && resourceProbe?.relativePath === file.relativePath
+                      ? 'Inspecting…' : 'Recheck file bytes'}
+                  </button>
                 </article>)}
               </div>
+              {resourceProbe && resourceProbe.projectId === activeProject?.projectId &&
+                <div className="continuityDocument" aria-label="Current resource evidence">
+                  <h4>Current resource: <code>{resourceProbe.relativePath}</code></h4>
+                  <p><strong>{resourceProbe.state.replaceAll('_', ' ')}</strong>
+                    {' · '} {resourceProbe.byteLength === null
+                      ? 'Size unavailable' : resourceProbe.byteLength.toLocaleString() + ' bytes'}
+                    {' · '} {resourceProbe.digestStatus.replaceAll('_', ' ')}</p>
+                  {resourceProbe.sha256 && <p>Observed SHA-256:
+                    <code> {resourceProbe.sha256}</code></p>}
+                  <p>Executable usability: <strong>Not tested</strong>.
+                    A file hash does not prove an installer or compiler launches.</p>
+                </div>}
               <h3>Changes since recorded evidence</h3>
               {!inventoryComparison?.baselinePresent
                 ? <p>No earlier snapshot recorded for this project. Record one to compare later.</p>
