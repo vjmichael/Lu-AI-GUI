@@ -26,7 +26,7 @@ use std::{
         process::CommandExt,
     },
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
     ptr,
     sync::mpsc,
     thread,
@@ -307,8 +307,9 @@ pub struct TrustedBroker {
 }
 pub struct BrokerLease {
     child: Child,
+    stdin: ChildStdin,
+    nonce: String,
     job: HANDLE,
-    release_name: Vec<u16>,
     released: bool,
     _pinned_binary: File,
 }
@@ -358,11 +359,18 @@ impl BrokerLease {
             .env_clear()
             .env("SystemRoot", std::env::var_os("SystemRoot").ok_or_else(denied)?)
             .env("LOCALAPPDATA", std::env::var_os("LOCALAPPDATA").ok_or_else(denied)?)
-            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null())
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
             .creation_flags(CREATE_NO_WINDOW);
         let mut child = command.spawn().map_err(|_| denied())?;
         let stdout = match child.stdout.take() {
             Some(stdout) => stdout,
+            None => {
+                let _ = child.kill(); let _ = child.wait();
+                return Err(denied());
+            }
+        };
+        let stdin = match child.stdin.take() {
+            Some(stdin) => stdin,
             None => {
                 let _ = child.kill(); let _ = child.wait();
                 return Err(denied());
@@ -383,7 +391,7 @@ impl BrokerLease {
             return Err(denied());
         }
         Ok(Self {
-            child, job, release_name: release_name(id, plan_hash)?,
+            child, stdin, nonce, job,
             released: false, _pinned_binary: binary,
         })
     }
@@ -401,11 +409,12 @@ impl BrokerLease {
         self.released = true;
         Ok(())
     }
-    fn signal_release(&self) -> Result<(), SupervisorError> {
-        let event = Handle::new(unsafe {
-            OpenEventW(EVENT_MODIFY_STATE, 0, self.release_name.as_ptr())
-        })?;
-        if unsafe { SetEvent(event.0) } == 0 { return Err(denied()); }
+    fn signal_release(&mut self) -> Result<(), SupervisorError> {
+        // The only normal release comes from the parent-owned anonymous pipe,
+        // not a named event that another same-user process could spoof.
+        self.stdin.write_all(format!("RELEASE {}\n", self.nonce).as_bytes())
+            .map_err(|_| denied())?;
+        self.stdin.flush().map_err(|_| denied())?;
         Ok(())
     }
 }
@@ -476,6 +485,15 @@ pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
     // the process that spawned this fixed executable can read.
     println!("READY {nonce}");
     std::io::stdout().flush().map_err(|_| denied())?;
+    // A private anonymous stdin pipe is the only authority for normal
+    // release. The public named recovery Event is ignored while the
+    // original supervisor is still alive; no spoof can release its keeper.
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let mut line = String::new();
+        let result = BufReader::new(std::io::stdin()).read_line(&mut line);
+        let _ = sender.send((result, line));
+    });
     loop {
         let owner_wait = unsafe { WaitForSingleObject(owner.0, 0) };
         if owner_wait == WAIT_OBJECT_0 {
@@ -503,13 +521,21 @@ pub fn guard_process(args: &[String]) -> Result<(), SupervisorError> {
             return Ok(());
         }
         if owner_wait != WAIT_TIMEOUT { return Err(denied()); }
-        if unsafe { WaitForSingleObject(release.0, 0) } == WAIT_OBJECT_0 {
-            if matches!(job_empty(job.0), Ok(true)) {
-                receipts.record("released_empty")?;
-                return Ok(());
+        match receiver.try_recv() {
+            Ok((Ok(size), line)) if size > 0 &&
+                line == format!("RELEASE {nonce}\n") => {
+                if matches!(job_empty(job.0), Ok(true)) {
+                    receipts.record("released_empty")?;
+                    return Ok(());
+                }
+                return Err(denied());
             }
-            // Never accept a forged "release" while any worker is alive.
-            unsafe { ResetEvent(release.0); }
+            Ok(_) => return Err(denied()), // invalid or truncated parent pipe
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                // Owner process handle is still the independent authority.
+                // A broken pipe alone cannot prove a crash or cleanup.
+            }
         }
         thread::sleep(TICK);
     }
