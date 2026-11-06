@@ -1,0 +1,65 @@
+name: Lu Wave 2 Format-Aware Files and Archives
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'lu-desktop/**'
+      - '.github/workflows/lu-wave2-files.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-wave2-files-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source inventory
+        run: node scripts/verify-source-tree.mjs
+      - name: Require Wave 2 modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'pub mod native_zip_extract;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_zip_extract_tool;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_csv_edit;' src-tauri/lu-core/src/lib.rs
+  native:
+    needs: source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Install Linux compression fixtures
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils bzip2 zstd
+      - name: Compile and run Wave 1 + Wave 2 Rust Core regression suite
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture
+      - name: Focus ZIP extraction, full human grant and CSV edit
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_zip_extract -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_zip_extract_authority -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_csv_edit -- --nocapture
+      - name: No lockfile drift
+        shell: bash
+        run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock
