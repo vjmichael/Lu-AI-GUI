@@ -165,3 +165,63 @@ fn malicious_or_truncated_ar_and_deb_are_refused(){
     assert!(!root.join("escape.o").exists());
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
+
+struct ApprovedHuman;
+impl lu_core::conversation_authority::TrustedUserTurnVerifier for ApprovedHuman{
+    fn verify_user_turn(&self,conversation:&str,user_turn:&str)->bool{
+        conversation=="packages-chat"&&user_turn=="packages-user"
+    }
+}
+struct ReadGrant;
+impl lu_core::contracts::ToolAuthorizer for ReadGrant{
+    fn authorize(&self,_:&lu_core::contracts::ToolInvocation,
+        _:&lu_core::contracts::ToolDescriptor
+    )->Result<(),lu_core::contracts::AuthorizationError>{Ok(())}
+}
+#[tokio::test]
+async fn model_archive_list_uses_native_cpio_with_strict_output_budget(){
+    use lu_core::{
+        agent_tool_loop::{NativeToolTurn,ToolTurnOutcome},
+        conversation_authority::{
+            AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
+        },
+        contracts::ToolEffect,
+        model::ModelToolCatalog,
+        native_archive_inspect::register_archive_inspection_tool,
+        registry::NativeToolRegistry,
+    };
+    let (root,dir)=fixture();
+    let bytes=cpio("usr/local/share/file.txt",b"content",true);
+    fs::write(root.join("archive.cpio"),&bytes).unwrap();
+    let registry=NativeToolRegistry::new();
+    let mut catalog=ModelToolCatalog::new();
+    register_archive_inspection_tool(&registry,&mut catalog,&root).unwrap();
+    let auth=ConversationAuthority::new();
+    let origin=BoundCallOrigin{
+        conversation_id:"packages-chat".into(),
+        user_turn_id:"packages-user".into(),task_id:"package-read-task".into(),
+    };
+    auth.open_user_task(TaskAuthority{
+        conversation_id:origin.conversation_id.clone(),
+        user_turn_id:origin.user_turn_id.clone(),
+        task_id:origin.task_id.clone(),execution_scope_id:"packages-scope".into(),
+        capabilities:vec![AuthorizedCapability{
+            tool_id:"lu.archive.list".into(),effect:ToolEffect::ReadWorkspace,
+        }],expires_at:None,
+    },&ApprovedHuman).unwrap();
+    let available=std::collections::BTreeSet::from(["lu_archive_list".to_owned()]);
+    let mut turn=NativeToolTurn::new_read_only(
+        &catalog,&registry,&auth,origin,"packages-scope".into(),&available
+    ).unwrap();
+    let prompt=r#"{"kind":"tool","name":"lu_archive_list","arguments":{"path":"archive.cpio","max_entries":1}}"#;
+    let reply=turn.handle_model_reply(prompt,&catalog,&registry,&auth,&ReadGrant)
+        .await.unwrap();
+    let ToolTurnOutcome::ToolResult{data,..}=reply else{panic!("No typed package result")};
+    assert_eq!(data["ok"],true);
+    assert_eq!(data["result"]["entries"][0]["path"],"usr/local/share/file.txt");
+    assert_eq!(data["result"]["entries"].as_array().unwrap().len(),1);
+    assert_eq!(data["result"]["total_entries"],1);
+    assert_eq!(fs::read(root.join("archive.cpio")).unwrap(),bytes);
+    assert_eq!(fs::read_dir(&root).unwrap().count(),1);
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
