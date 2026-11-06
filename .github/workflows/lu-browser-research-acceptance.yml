@@ -106,6 +106,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Stage inert compile-only Lu inference dependencies
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
       - name: Stage only Microsoft-signed Windows System32 curl
         shell: pwsh
         run: ./scripts/stage-research-windows.ps1
