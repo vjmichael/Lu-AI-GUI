@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           for ($n = 0; $n -lt 3; $n++) {
-            cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker hostile_concurrent_child_rename_cannot_escape_pinned_root -- --exact --nocapture
+            cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker hostile_concurrent_child_rename_cannot_escape_pinned_root -- --nocapture
             if ($LASTEXITCODE -ne 0) { throw "D7C OS race iteration $n failed" }
           }
       - name: Require exact Rust formatting
