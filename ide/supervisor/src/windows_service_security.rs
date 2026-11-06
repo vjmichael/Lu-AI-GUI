@@ -32,13 +32,14 @@ use windows_sys::Win32::{
         GetTokenInformation, GetAclInformation, GetAce,
         GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
         AclSizeInformation, DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED,
-        IsTokenRestricted, OpenProcessToken, OpenThreadToken, RevertToSelf,
+        IsTokenRestricted, RevertToSelf,
         SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenIsAppContainer, TokenUser,
     },
     System::{
         Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId,
             ImpersonateNamedPipeClient},
         Threading::{GetCurrentProcess, GetCurrentThread, GetProcessTimes,
+            OpenProcessToken, OpenThreadToken,
             OpenProcess, QueryFullProcessImageNameW},
     },
 };
