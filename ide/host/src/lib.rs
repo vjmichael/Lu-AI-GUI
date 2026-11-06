@@ -10,15 +10,15 @@ pub mod browser;
 pub mod capabilities;
 pub mod continuity;
 pub mod editor;
+pub mod git_status;
+pub mod github_live;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
-pub mod git_status;
-pub mod github_live;
+pub mod project_search;
 pub mod proposal;
 pub mod review;
 pub mod source_span;
-pub mod project_search;
 pub mod wire;
 
 use std::{
@@ -248,9 +248,7 @@ impl IdeWorkspaceRegistry {
 
     /// Trusted-host-only filesystem locator for read-only native Git inspection.
     /// Never expose this absolute path to the WebView or model capability catalog.
-    pub(crate) fn registered_git_root(
-        &self, project_id: &str,
-    ) -> Result<PathBuf, IdeError> {
+    pub(crate) fn registered_git_root(&self, project_id: &str) -> Result<PathBuf, IdeError> {
         if !wire::valid_project_id(project_id) {
             return Err(IdeError::UnknownProject);
         }
@@ -259,8 +257,11 @@ impl IdeWorkspaceRegistry {
         if !active.contains(project_id) {
             return Err(IdeError::NotActive);
         }
-        let root = records.get(project_id)
-            .ok_or(IdeError::UnknownProject)?.root.clone();
+        let root = records
+            .get(project_id)
+            .ok_or(IdeError::UnknownProject)?
+            .root
+            .clone();
         if safe_root(&root)? != root {
             return Err(IdeError::InvalidSelection);
         }
