@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D2-W1 — Windows fixed-fixture Job Object containment probe (2026-11-05)
+
+- **Source branch:** `ide/wave-d2-windows-job-probe-20261105`, stacked on D1 PR #51 SHA `ef623bfd22f8dfc8b1674a44911e98825be8ab53`. This is a standalone OS diagnostic, **not** a production worker, and does not alter the Lu IDE app or Core.
+- Reused the existing `ide/sandbox` experiment (Linux Bubblewrap native probes already documented). Added isolated `src/bin/windows_probe.rs` with a fixed self-executing Windows fixture, Win32 Job Object limits and **suspended-create → assign-to-job → resume** ordering. Any OS API admission failure kills/denies the child, no fallback.
+- The probe tests a successful contained child, a timed-out fixed sleeper terminated via `TerminateJobObject`, and a fixed grandchild killed with the parent Job. Uses `KILL_ON_JOB_CLOSE`, a 128 MiB job memory quota, active process cap 4, no inherited handles, and minimized environment (SystemRoot/TEMP/TMP). All modes are compiled in; no user/model arbitrary commands or arguments.
+- A dedicated `.github/workflows/ide-sandbox-windows.yml` runs the **actual Windows native** probe; docs at `ide/sandbox/WINDOWS_JOB_PROBE.md`. No test result is claimed before its CI runs. Linux existing 5/5 Bubblewrap probes remain historical reference, not a new D2 pass.
+- **Still open:** Windows restricted token/file/network confinement, worker exact input snapshot, credential broker, cancellation races, crash-restart orphan reconciliation, Linux process quota/descendant admission, actual build/test worker, physical installed Windows acceptance. Do not wire a Run button until separately proven.
+
+
 ### D1 first-head CI repairs
 - Initial D1 frontend workflow had 55 passing tests, one failing contract test: an existing static parser mistook the Tauri-managed `intents` state handle for an external request field. Filtered `intents` as host state; the JSON schema still accepts only `projectId` and `recipeId` for prepare.
 - Initial Linux native host suite compiled and tested successfully, then failed formatting only in the new `execution_intents.rs`. Applied **all 34 actual rustfmt hunks** from the exact CI job log and made the fixed recipe array `static`. Exact-head rerun required; not yet proven on revised source.

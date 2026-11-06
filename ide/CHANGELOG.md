@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — Wave D2-W1 Windows Job Object containment probes
+- Reused existing experimental `ide/sandbox` crate, without linking it to Lu IDE/Tauri. Added compiled-in Windows probe binary and target-specific `windows-sys` dependency. No general-purpose subprocess or arbitrary project code execution surface is added.
+- Fixed acceptance fixtures cover suspended-create/Job assignment/resume, bounded job-memory and process-count limits, deadline kill, and child+grandchild cleanup. Startup environment stripped to SystemRoot/TEMP/TMP. Job Object is killed on handle close; worker is not exposed to users.
+- Added separate native Windows-only workflow `ide-sandbox-windows.yml`, documentation and central project handoff pointers. D2 remains experimental, full security and installed-Windows app acceptance open.
+
 ## 2026-11-05 — D1 native/frontend CI repair
 - Reconciled Rustfmt's 34 exact hunks from first D1 native job. Native Rust tests passed on predecessor but formatter check failed; no process launch was added. `RECIPES` moved to static storage for lifetime clarity.
 - Frontend test updated to exclude host-only Tauri `intents` state from WebView request field schema parity. The new D1 UI and typed native schema remained unchanged.

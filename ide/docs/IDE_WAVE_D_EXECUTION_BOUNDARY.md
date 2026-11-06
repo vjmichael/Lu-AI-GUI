@@ -41,3 +41,11 @@ No untrusted process is launched, so D1 has **not** demonstrated Windows Job Obj
 ## Current acceptance status
 
 D1 source is implemented and subject to CI. GitHub native matrix and installed-app behavior must be independently checked at exact head. Wave D is not complete until D2's real OS worker/containment gates pass on both intended platforms.
+
+## D2-W1 — Independent Windows Job Object acceptance fixture
+
+Source lives under the *existing*, unconnected `ide/sandbox` experiment, in `src/bin/windows_probe.rs`. It is not linked into the IDE host or WebView, does not consume D1 historical reviews, and cannot run user or AI selected projects. The only child modes are compiled-in self-executing fixtures. The Windows native Job Object path uses `CreateProcessW(CREATE_SUSPENDED)`, configures `KILL_ON_JOB_CLOSE`, a job memory limit and process cap, assigns the child, then resumes it, avoiding pre-containment execution. The fixed tests also terminate a deadline-exceeding child and its spawned grandchild. The Windows workflow separately tests these OS primitives.
+
+**Scope warning:** Job Objects manage CPU/resource/process-tree effects; they are not a Windows restricted token, AppContainer, filesystem jail, network broker or full hostile-code containment. Independent worker activation requires additional OS security boundaries and crash/kill race proofs. A successful fixed-fixture CI is not installed-app acceptance nor proof of arbitrary build/test script safety.
+
+The Linux legacy Bubblewrap native probe crate is reused rather than rewritten; its previous 5/5 kernel checks do not prove process quotas or full descendant cleanup. Both platforms must meet all D2 gates before any future `job.run` capability is advertised.
