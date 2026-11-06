@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### E2 Windows CI repairs — native evidence, not release acceptance (2026-11-06)
+
+PR #65 native Windows logs identify two independent defects: AppContainer Cargo cannot open Windows `\\.\NUL` for rustc child stdin (Cargo 101, compiler never started); a hostile rename test incorrectly required an unchanged *within-root directory name* while simulating an attacker. The latter test is corrected to require copied-file integrity, matching output digest and no external secret. Native Rustfmt 1.99 failures in service security and two probe fixtures were repaired. The device access problem **remains blocked** without explicit independent least-privilege OS authorization/proof. Cancelled checkout jobs had misleading manifest-not-found messages; they are not Cargo path bugs. See `ide/docs/E2_NATIVE_CI_FAILURE_TRIAGE_20261106.md` for exact jobs, commits and continuing gates. No protected LSP, signed installer or installed-app acceptance is claimed.
+
+
 ### E2B native integration continuation — 2026-11-06
 
 - **Language routing:** the feature-gated Windows Tauri backend now selects clangd for C/C++, rust-analyzer for Rust, and Ruff for Python diagnostics only. The host independently validates filename extension and language ID, checks each server against its own compile-time approved installer hash, and publishes only installed, verified language IDs to the editor. JS cannot start unverified catalog-only servers.

@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- E2 exact native Windows failure repair (2026-11-06): corrected hostile inside-root child-rename **test assumptions** without permitting a junction/secret escape; applied native Windows Rustfmt 1.99 formatting to service token, AppContainer network probe and crash witness. Recorded Cargo's still-blocking AppContainer `NUL` device denial (exit 101; compiler never launched), distinguishing it from a missing rustc or a successful native sandbox check. Also identified cancelled-checkout manifest errors as cancellation artifacts. Source-only commits `940d395`, `01950f1`, `ed7c038`, `5052622`; native exact-head results and installed-app security remain open.
+
+
 - Native CI repair closeout: inspected historical D7D/D7B/D7C/E1/AppContainer job logs; fixed Rust unsafe-block parsing and Win32 threading token imports, pinned offline VS 17.14 jobs to Windows 2022, installed Rustfmt in Rust 1.99.1 CI, applied native E1 rustfmt diffs, and classified a previously ambiguous AppContainer network timeout without granting acceptance. Added exact-head failure ledger `ide/docs/E2_NATIVE_CI_FAILURE_TRIAGE_20261106.md`.
 
 - Native E2 repair: reproduced CI `PermissionDenied` in the hostile LSP snapshot test (fixed test-only write permissions), applied formatter-provided host and supervisor Rustfmt changes, and added bounded exit/reporting for failing D7B Cargo plus debug-only authenticated SCM admission stages for failing D7D without changing kernel security decisions.

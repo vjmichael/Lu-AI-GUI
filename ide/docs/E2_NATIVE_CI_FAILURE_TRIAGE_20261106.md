@@ -1,5 +1,14 @@
 # Lu IDE E2 native CI failure triage — 2026-11-06
 
+### 2026-11-06 — E2 Windows native repair pass (observed failures, acceptance still gated)
+
+- Inspected PR #65 at `1e402b3e8360bf1960e81ea7cb67368a15535d39`: D7B pinned Cargo job `128167781806` built native Windows supervisor and got a real restricted AppContainer Cargo exit 101. Actual stderr: Rust's child spawn could not open Windows `\\.\NUL` for `rustc -vV` stdin (OS error 5). The compiler child **never executed**; this is a system device-DACL boundary, not a missing Rust compiler. **Unresolved:** no AppContainer device ACL changes, elevated host-wide grant, relaxed token, fallback worker or fake pass. Re-run with only an independently reviewed, least-privilege null-device provisioning design.
+- Windows D7B job `128167782167` and Windows D7 job `128167780908`: 34 supervisor tests passed, one hostile rename test asserted a *stable original path* during an adversarial in-root rename. Commit `940d395` now tests the actual security property: a successful copy must reseal to its output, contain one authorized byte-identical file at one of the two in-root names and never contain the outside secret. Higher-layer snapshot identity/digest admission is **unchanged**. This source correction still awaits independent passing native tests.
+- Rustfmt 1.99 exact diagnostics applied to Windows service identity checks (`01950f1`), AppContainer network probe (`ed7c038`) and crash-observer probe (`5052622`). No security checks loosened, and no native format pass is inferred.
+- E2/E1 Windows job logs `128167784419` and `128167784054` complained that `ide/host/Cargo.toml` did not exist **after checkout was cancelled before repository materialization** by newer exact-head pushes. Do not edit correct Cargo paths or treat these cancellation artifacts as genuine source failures.
+- New current-head Windows D7D protected service, D7B Cargo, D6 AppContainer, E2 protected clangd, Linux and unsigned default NSIS jobs were queued/running at last observation. Their outcomes must be read at the new commit, not copied from historical runs. The Linux hosted runner still has no delegated writable cgroup. Protected clangd, signed licensed NSIS, desktop LSP interaction, post-crash service reconciliation and strict network isolation remain **NOT ACCEPTED**.
+
+
 This is a **commit-scoped** repair ledger. It records observed CI failures separately from source-level proposed repairs and actual later acceptance. No new success is inferred from a pushed fix.
 
 ## Confirmed failed runs (historical heads)
