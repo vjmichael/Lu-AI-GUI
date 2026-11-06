@@ -52,3 +52,8 @@ A native frame-layout validator checks width/height bounds, BGRA row pitch, uppe
 A separately approved foreground-app mode uses the existing Windows worker and host supervisor. The user has four seconds to focus the intended app after native confirmation. Windows Window::foreground() yields an HWND and owning PID; the worker verifies that it is a capturable top-level window owned by a different process and captures only that window, never a full monitor. It rechecks HWND validity and PID again when the frame arrives. No title, path, raw pixel buffer, or PID is returned; only the original nonce-salted digest receipt.
 
 This is not a durable process-lifetime token and does not yield an app identity to Lu's main host. It is useful one-shot source assurance, but it is NOT an authorization for continuous app observation, virtual desktop access or direct LLM vision. Real Windows CI and physical GUI acceptance are still required.
+
+
+### OBSERVE-WIN-08 — active-pixel receipt normalization
+
+The D3D11 BGRA receipt hashes only `width × 4` active pixel bytes for each row using the validated row pitch. Alignment padding is not image data and must not influence the receipt. No pixel bytes leave the supervised capture worker. This is source hardening, **not** independent Windows GUI verification or an installed acceptance claim.

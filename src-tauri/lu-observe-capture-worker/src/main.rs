@@ -123,7 +123,14 @@ mod windows_capture_worker {
             sha.update(self.nonce.as_bytes());
             sha.update(width.to_le_bytes());
             sha.update(height.to_le_bytes());
-            sha.update(buffer);
+            // Hash only active BGRA pixels. D3D11 row-pitch padding is not
+            // image content and must not affect a privacy-preserving receipt.
+            let pitch=row_pitch as usize;
+            let active_bytes=(width as usize)*4;
+            for row in 0..height as usize {
+                let start=row*pitch;
+                sha.update(&buffer[start..start+active_bytes]);
+            }
             let digest=format!("{:x}",sha.finalize());
             // FrameBuffer release unmaps staging surface when dropped.
             // The operating system owns the GPU/driver buffers; Lu does not

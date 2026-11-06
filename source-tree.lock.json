@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1e18f6f3b856d76c2c6352c86b05784813fd8e29",
+  "sourceCommitBeforeLock": "525a346fa4e096b4351200c1aa7ef6eae4fb86e3",
   "trackedFileCount": 461,
   "files": [
     {
@@ -161,7 +161,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "adf5968bc15627f21a899bd94382e8ada20f6add"
+      "blob": "dc4e21b762906e256a6383cc9438827376e3d917"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -1813,7 +1813,7 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "f0489ae15310f07befa176bcd5b430c22dee40b4"
+      "blob": "0d957c9621499f7eb52f716f1c3cd979e00db38a"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
