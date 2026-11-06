@@ -103,7 +103,7 @@ fn portable_name(s:&str)->bool{
         &&!s.ends_with('.')&&!s.ends_with(' ')
         &&!s.chars().any(|c|c.is_control()||matches!(c,'/'|'\\'|':'))
 }
-fn physical_file(path:&Path)->Result<(String,PathBuf,Arc<Dir>),String>{
+pub(crate) fn physical_file(path:&Path)->Result<(String,PathBuf,Arc<Dir>),String>{
     let name=path.file_name().and_then(|n|n.to_str())
         .ok_or("Archive filename is not valid UTF-8")?.to_owned();
     if !portable_name(&name){
