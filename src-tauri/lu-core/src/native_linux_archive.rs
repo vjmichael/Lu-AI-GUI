@@ -105,9 +105,10 @@ fn read_bounded(root:&Dir,name:&str)->Result<Vec<u8>,LinuxArchiveError>{
     if !flat_name(name){return Err(LinuxArchiveError::InvalidName)}
     let meta=root.symlink_metadata(name).map_err(io)?;
     if !meta.is_file()||meta.file_type().is_symlink(){return Err(LinuxArchiveError::NotFile)}
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(LinuxArchiveError::NotFile)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(LinuxArchiveError::NotFile) }
     }
     if meta.len()>MAX_ARCHIVE{return Err(LinuxArchiveError::TooLarge)}
     let mut file=root.open(name).map_err(io)?;

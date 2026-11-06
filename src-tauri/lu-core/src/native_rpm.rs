@@ -126,9 +126,10 @@ pub fn rpm_tree_members(root:&Dir,name:&str)
     let meta=root.symlink_metadata(name).map_err(|e|RpmError::Io(e.to_string()))?;
     if !meta.is_file()||meta.file_type().is_symlink()
         ||meta.len()>MAX_SOURCE{return Err(RpmError::UnsafeSource)}
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(RpmError::UnsafeSource)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(RpmError::UnsafeSource) }
     }
     let file=root.open(name).map_err(|e|RpmError::Io(e.to_string()))?;
     if !file.metadata().map_err(|e|RpmError::Io(e.to_string()))?.is_file(){

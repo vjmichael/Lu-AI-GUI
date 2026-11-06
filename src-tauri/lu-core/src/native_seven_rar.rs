@@ -31,9 +31,10 @@ pub fn seven_rar_tree_members(
     let meta=root.symlink_metadata(name).map_err(|e|SevenRarError::Io(e.to_string()))?;
     if !meta.is_file()||meta.file_type().is_symlink()||
         meta.len()>MAX_SOURCE{return Err(SevenRarError::NotRegular)}
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(SevenRarError::NotRegular)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(SevenRarError::NotRegular) }
     }
     let file=root.open(name).map_err(|e|SevenRarError::Io(e.to_string()))?;
     let opened=file.metadata().map_err(|e|SevenRarError::Io(e.to_string()))?;

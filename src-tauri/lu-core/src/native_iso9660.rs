@@ -107,8 +107,9 @@ fn open_iso(root:&Dir,source:&str)->Result<(cap_std::fs::File,u64,Record),IsoErr
     let meta=root.symlink_metadata(source).map_err(fail)?;
     if !meta.is_file() || meta.file_type().is_symlink(){return Err(IsoError::NotFile)}
     #[cfg(windows)] {
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes() & 0x400 != 0 {return Err(IsoError::NotFile)}
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(IsoError::NotFile) }
     }
     if meta.len()<17*SECTOR || meta.len()>MAX_IMAGE{return Err(IsoError::TooLarge)}
     let mut file=root.open(source).map_err(fail)?;

@@ -167,9 +167,10 @@ pub fn ar_tree_members(root:&Dir,name:&str)
     if !meta.is_file()||meta.file_type().is_symlink()||meta.len()>MAX_INPUT{
         return Err(ArError::UnsafeSource)
     }
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(ArError::UnsafeSource)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(ArError::UnsafeSource) }
     }
     let file=root.open(name).map_err(|e|ArError::Io(e.to_string()))?;
     let m=file.metadata().map_err(|e|ArError::Io(e.to_string()))?;

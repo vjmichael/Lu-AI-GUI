@@ -54,9 +54,10 @@ fn source_zip(root:&Dir,name:&str)->Result<ZipArchive<cap_std::fs::File>,ZipExtr
     if !meta.is_file()||meta.file_type().is_symlink(){
         return Err(ZipExtractError::NotRegularFile)
     }
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(ZipExtractError::NotRegularFile)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(ZipExtractError::NotRegularFile) }
     }
     if meta.len()>MAX_ARCHIVE{return Err(ZipExtractError::TooLarge)}
     let handle=root.open(name).map_err(io)?;

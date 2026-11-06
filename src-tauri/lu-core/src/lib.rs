@@ -8,7 +8,9 @@
 //! will decode and validate generated Protobuf messages at each boundary; this
 //! crate deliberately does not pretend opaque bytes have been validated.
 
-#![forbid(unsafe_code)]
+// Unsafe is denied across Lu Core. Only the isolated, reviewed native
+// libarchive FFI adapter is allowed to bind an OS-owned shared library.
+#![deny(unsafe_code)]
 
 pub mod agent_tool_loop;
 pub mod ansf;
@@ -68,6 +70,7 @@ pub mod native_archive_tree_tool;
 pub mod native_zip_extract_tool;
 pub mod native_iso9660;
 pub mod native_linux_archive;
+#[allow(unsafe_code)] // FFI boundary only: bounded libarchive calls and dynamic loader.
 pub mod native_libarchive;
 pub mod native_seven_rar;
 pub mod native_rpm;

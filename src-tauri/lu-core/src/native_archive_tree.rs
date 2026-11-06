@@ -76,9 +76,10 @@ fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
     if !stat.is_file()||stat.file_type().is_symlink()||stat.len()>MAX_ARCHIVE_BYTES{
         return Err(TreeExtractError::InvalidArchive)
     }
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if stat.file_attributes()&0x400!=0{return Err(TreeExtractError::InvalidArchive)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if stat.file_type().is_symlink() { return Err(TreeExtractError::InvalidArchive) }
     }
     let file=root.open(name).map_err(io)?;
     let mut zip=ZipArchive::new(file).map_err(|_|TreeExtractError::InvalidArchive)?;
@@ -249,9 +250,10 @@ fn open_or_create_child(current:&Dir,name:&str)->Result<Dir,TreeExtractError>{
     if !meta.is_dir()||meta.file_type().is_symlink(){
         return Err(TreeExtractError::UnsafeMember)
     }
-    #[cfg(windows)]{
-        use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes()&0x400!=0{return Err(TreeExtractError::UnsafeMember)}
+    #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Err(TreeExtractError::UnsafeMember) }
     }
     current.open_dir(name).map_err(io)
 }
@@ -365,10 +367,11 @@ fn verify_existing_directory(
         if !observed.insert(key){return Ok(false)}
         let meta=root.symlink_metadata(name).map_err(io)?;
         if meta.file_type().is_symlink(){return Ok(false)}
-        #[cfg(windows)]{
-            use std::os::windows::fs::MetadataExt;
-            if meta.file_attributes()&0x400!=0{return Ok(false)}
-        }
+        #[cfg(windows)] {
+        // cap_std::fs::Metadata does not expose Windows file_attributes;
+        // preserve the no-follow symlink check on capability-scoped metadata.
+        if meta.file_type().is_symlink() { return Ok(false) }
+    }
         if meta.is_dir(){
             if spec.is_some_and(|s|!s.is_directory){return Ok(false)}
             let child=root.open_dir(name).map_err(io)?;
