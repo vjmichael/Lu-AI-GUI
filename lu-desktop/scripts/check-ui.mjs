@@ -7,6 +7,11 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
+    ui.includes('Image Workspace · read-only preview') &&
+    ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
+    ui.includes('Crop, resize, annotations and AI edits are not enabled') &&
+    css.includes('.imageViewerDialog')],
   ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
     host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&
     host.includes('workspace_desktop::ask_git_for_chat(') &&

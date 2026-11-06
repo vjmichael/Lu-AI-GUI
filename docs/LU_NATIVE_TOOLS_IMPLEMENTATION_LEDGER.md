@@ -266,3 +266,6 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 
 
 **WAVE4-ENV-01 SOURCE IMPLEMENTED (2026-11-06):** Explicit current-human environment/system-specs question adds a fresh host-observed OS/arch/available-CPU/instruction/GPU-hint snapshot to the normal GGUF turn. Reuses compute_inventory and does not infer a working backend from device presence. No arbitrary environment variable reads, shell, package installs, paths or model rights. Windows platform GPU probe, software-version/executable-hash attestation, actual model execution and installed acceptance remain OPEN. Fixed WAVE4-GIT-01 substring classifier: read-only "Show git commits" is no longer mistaken for an imperative "git commit"; native tests pending.
+
+
+**WAVE4-IMAGE-WS-01 SOURCE IMPLEMENTED (2026-11-06):** Carried original Image Workspace intent guard and tests from draft PR #35 into the active Wave 4 source, correcting C0 character validation. Normal Lu composer now offers a zoomable READ-ONLY preview of an already admitted draft PNG/JPEG image, with no file edits or implicit model authority. CI UI source check and intent geometry tests included. Persisted image viewer, host revision lookup/grants, crash-safe immutable editor, AI edit backend and installed acceptance remain OPEN.

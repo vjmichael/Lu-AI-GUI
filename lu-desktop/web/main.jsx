@@ -29,6 +29,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
+  const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -136,6 +137,7 @@ function App() {
   const previewUrls = useRef(new Set());
   const selected = models.find(m => m.modelRef === selectedModel);
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
+  const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
   const wave2FileBusy = archiveBusy || documentCreateBusy || officeRevisionBusy ||
@@ -520,6 +522,7 @@ function App() {
     });
   }
   function removeImage(imageRef) {
+    if (imageViewer?.imageRef===imageRef) setImageViewer(null);
     const image = draftImages.current.find(i => i.imageRef === imageRef);
     if (image?.previewUrl) { URL.revokeObjectURL(image.previewUrl); previewUrls.current.delete(image.previewUrl); }
     draftImages.current = draftImages.current.filter(i => i.imageRef !== imageRef);
@@ -1393,6 +1396,7 @@ function App() {
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
+    setImageViewer(null);
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
     draftText.current = '';
@@ -2469,6 +2473,7 @@ function App() {
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
               <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
+              {im.previewUrl && <button type="button" onClick={()=>setImageViewer({imageRef:im.imageRef,zoom:1})} aria-label={'View image '+(im.name||'draft')}>View</button>}
               <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
             {textFiles.map((file,i)=><span key={i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
@@ -2568,6 +2573,31 @@ function App() {
           </div></form>}
       </div>
     </main>
+    {viewedDraftImage?.previewUrl && <div className="imageViewerBackdrop" role="presentation"
+      onClick={()=>setImageViewer(null)}>
+      <section className="imageViewerDialog" role="dialog" aria-modal="true"
+        aria-label="Image Workspace preview" onClick={e=>e.stopPropagation()}>
+        <header>
+          <strong>Image Workspace · read-only preview</strong>
+          <button type="button" aria-label="Close image preview"
+            onClick={()=>setImageViewer(null)}>×</button>
+        </header>
+        <small>{viewedDraftImage.name||'Attached image'} · {viewedDraftImage.detectedMimeType||viewedDraftImage.mimeType||'Verified image'}</small>
+        <div className="imageViewerViewport" aria-label="Zoomable original draft image">
+          <img src={viewedDraftImage.previewUrl} alt="Original attached image, unmodified"
+            style={{transform:'scale('+imageViewer.zoom+')'}}/>
+        </div>
+        <footer>
+          <button type="button" disabled={imageViewer.zoom<=0.5}
+            onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.max(0.5,+(v.zoom-0.25).toFixed(2))}))}>Zoom out</button>
+          <span>{Math.round(imageViewer.zoom*100)}%</span>
+          <button type="button" disabled={imageViewer.zoom>=3}
+            onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.min(3,+(v.zoom+0.25).toFixed(2))}))}>Zoom in</button>
+          <button type="button" onClick={()=>setImageViewer(null)}>Close</button>
+        </footer>
+        <small>Original image only. Crop, resize, annotations and AI edits are not enabled until native revision and approval support is verified.</small>
+      </section>
+    </div>}
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
     {backgroundPaneOpen && <div className="backgroundPaneBackdrop" role="presentation"
       onClick={()=>setBackgroundPaneOpen(false)}>
