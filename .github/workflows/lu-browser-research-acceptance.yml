@@ -41,6 +41,7 @@ jobs:
       - run: node --test lu-desktop/tests/research-source-route.test.mjs
       - run: node --test lu-desktop/tests/browser-model-read.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
+      - run: node --test tests/lu-browser-worker.test.mjs
   browser-candidate:
     needs: source
     strategy:
