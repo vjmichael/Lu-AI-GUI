@@ -358,8 +358,7 @@ mod windows {
     fn external_crash_fixture() -> io::Result<()> {
         let owner = std::process::id();
         let descendant_marker = marker_path(owner);
-        let witness_marker =
-            std::env::temp_dir().join(format!("lu-ide-d7b-crash-{owner}.txt"));
+        let witness_marker = std::env::temp_dir().join(format!("lu-ide-d7b-crash-{owner}.txt"));
         let _ = std::fs::remove_file(&descendant_marker);
         let _ = std::fs::remove_file(&witness_marker);
         let tree = Contained::launch(FixedMode::SpawnGrandchild {
@@ -386,7 +385,9 @@ mod windows {
         // The observer is required to terminate this process externally.
         // The owner never calls TerminateJobObject in this scenario.
         thread::sleep(Duration::from_secs(120));
-        Err(io::Error::other("independent crash observer did not terminate owner"))
+        Err(io::Error::other(
+            "independent crash observer did not terminate owner",
+        ))
     }
 
     pub fn main_impl() -> io::Result<()> {
