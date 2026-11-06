@@ -1302,6 +1302,72 @@ async fn lu_research_openalex(
     }
 }
 
+/// A native, per-request approval precedes bounded HTTPS document retrieval.
+/// The URL comes from this chat's prior Crossref-corroborated source, not UI or
+/// model text. Each publisher redirect is separately HTTPS/DNS pinned.
+#[tauri::command]
+async fn lu_research_retrieve_document(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String
+)->Result<research_desktop::ResearchDocumentView,String>{
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+        ||source_id.chars().any(char::is_control){
+        return Err("Select an existing Crossref-corroborated source".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for document retrieval")?;
+    if !state.research.available(){
+        return Err("Reviewed Research HTTPS runtime not installed".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let id=source_id.clone();
+        move||app.dialog().message(format!(
+            "Retrieve the actual HTML/PDF document from the HTTPS URL already \
+             recorded for this Crossref-corroborated source?\n\n{}\n\n\
+             Each redirect is separately public-DNS and HTTPS verified \
+             (maximum three). A landing page or redirected PDF will remain \
+             UNVERIFIED as a complete publication without independent identity \
+             attestation. This does not grant general model network access.",id
+        )).title("Lu — Authorize bounded research document retrieval")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Retrieve document".into(),"Cancel".into()
+        )).blocking_show()
+    }).await.map_err(|_|"Native document approval unavailable")?;
+    if !approved{return Err("Research document retrieval cancelled".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-document-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research document task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research document task could not start")?;
+    let research=Arc::clone(&owner.research);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        research.retrieve_document(&chat_id,&source_id)
+    ).await.map_err(|_|"Research document worker unavailable").and_then(|x|x);
+    match result{
+        Ok(document)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Document retrieved but task receipt unavailable")?;
+            Ok(document)
+        },
+        Err(err)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(err)
+        },
+    }
+}
+/// Exact source quote verification reads the already locally stored,
+/// hash-checked document. This command never performs network retrieval.
+#[tauri::command]
+fn lu_research_verify_document_passage(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,quote:String
+)->Result<research_desktop::ResearchDocumentPassageView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation for passage verification")?;
+    state.research.verify_document_passage(&chat_id,&source_id,&quote)
+}
+
 /// Independently corroborate ONE already-discovered lead against Crossref.
 /// The trusted local evidence ledger supplies the DOI; the UI/model can
 /// only select its previously discovered OpenAlex source ID.
@@ -4197,6 +4263,8 @@ pub fn run() {
             lu_research_verify_quote,
             lu_research_openalex,
             lu_research_crossref,
+            lu_research_retrieve_document,
+            lu_research_verify_document_passage,
             lu_browser_start,
             lu_browser_set_visible,
             lu_browser_human_verified,
