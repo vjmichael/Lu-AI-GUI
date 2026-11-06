@@ -671,6 +671,10 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
             )
         })?;
         STARTUP_STAGE.store(50, Ordering::Relaxed);
+        // Refuse an SCM RUNNING state unless the actual kernel object has
+        // the exact protected DACL and excludes client pipe-instance rights.
+        security::verify_created_pipe_security(pipe.0, &config.approved_host_user_sid)?;
+        STARTUP_STAGE.store(55, Ordering::Relaxed);
         if first {
             // SCM RUNNING must not precede actual protected pipe creation.
             let running = SERVICE_STATUS {

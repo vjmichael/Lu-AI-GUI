@@ -31,7 +31,8 @@ use windows_sys::Win32::{
         AclSizeInformation,
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            ConvertStringSidToSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT,
+            ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT,
+            SE_KERNEL_OBJECT,
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
@@ -330,6 +331,96 @@ impl PipeSecurity {
         Ok(result)
     }
 }
+/// Independently verify the *kernel-created* pipe DACL matches the
+/// installer-pinned identity. Inspect actual Win32 security rather than
+/// relying on a successful ConvertStringSecurityDescriptorTo... call.
+/// Fail service startup if any inherited/unknown ACE or pipe-create right
+/// appears; no executable action can be admitted from a malformed endpoint.
+pub fn verify_created_pipe_security(
+    pipe: HANDLE,
+    approved_user_sid: &str,
+) -> Result<(), SupervisorError> {
+    validate_approved_host_user_sid(approved_user_sid)?;
+    let user = parse_sid(approved_user_sid)?;
+    let service = parse_sid(&sid_of_service()?)?;
+    let system = parse_sid("S-1-5-18")?;
+    let mut dacl = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    if unsafe {
+        GetSecurityInfo(
+            pipe,
+            SE_KERNEL_OBJECT as i32,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut dacl,
+            ptr::null_mut(),
+            &mut descriptor,
+        )
+    } != 0
+        || dacl.is_null()
+        || descriptor.is_null()
+    {
+        return Err(denied());
+    }
+    let _owner = OwnedSid(descriptor);
+    let mut control = 0u16;
+    let mut revision = 0u32;
+    if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0
+        || control & SE_DACL_PROTECTED == 0
+    {
+        return Err(denied());
+    }
+    let mut info = ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            dacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0
+        || info.AceCount != 3
+    {
+        return Err(denied());
+    }
+    let (mut system_found, mut service_found, mut user_found) = (false, false, false);
+    for index in 0..info.AceCount {
+        let mut entry = ptr::null_mut();
+        if unsafe { GetAce(dacl, index, &mut entry) } == 0 || entry.is_null() {
+            return Err(denied());
+        }
+        let ace = unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType != 0
+            || ace.Header.AceFlags != 0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+        {
+            return Err(denied());
+        }
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        if unsafe { EqualSid(sid, system.0) } != 0 {
+            if system_found { return Err(denied()); }
+            system_found = true;
+        } else if unsafe { EqualSid(sid, service.0) } != 0 {
+            if service_found { return Err(denied()); }
+            service_found = true;
+        } else if unsafe { EqualSid(sid, user.0) } != 0 {
+            // Read + write + synchronize, not FILE_CREATE_PIPE_INSTANCE (4).
+            const ALLOWED: u32 = 0x0010_0003;
+            if user_found || ace.Mask & ALLOWED != ALLOWED || ace.Mask & 0x4 != 0 {
+                return Err(denied());
+            }
+            user_found = true;
+        } else {
+            return Err(denied());
+        }
+    }
+    if !system_found || !service_found || !user_found {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 pub struct VerifiedClient {
     pub process: HANDLE, // borrowed native process handle until auth scope ends
     pub pid: u32,
