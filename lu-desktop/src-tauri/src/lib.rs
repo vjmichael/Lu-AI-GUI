@@ -19,6 +19,7 @@ use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod archive_desktop;
 mod document_create_desktop;
+mod office_revision_desktop;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -185,6 +186,7 @@ struct DesktopState {
     edit_proposals: edit_proposal::EditProposalQueue,
     archive_reviews: archive_desktop::ArchiveReviewQueue,
     document_create_reviews: document_create_desktop::DocumentCreateQueue,
+    office_revision_reviews: office_revision_desktop::OfficeRevisionQueue,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
@@ -566,6 +568,7 @@ impl DesktopState {
             edit_proposals: edit_proposal::EditProposalQueue::default(),
             archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
             document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
+            office_revision_reviews: office_revision_desktop::OfficeRevisionQueue::default(),
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
             rollback_approval_ledger: rollback_approvals,
@@ -1976,6 +1979,82 @@ fn lu_deny_document_create(
     state.document_create_reviews.deny(&chat_id,&review_id)
 }
 
+/// The user edits one safe OOXML text run or numeric/boolean cell. The actual
+/// source and revision folder are chosen ONLY through native OS pickers.
+/// This is a read-only inert preview until independent native confirmation.
+#[tauri::command]
+async fn lu_review_office_revision(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    proposal:office_revision_desktop::OfficePatchProposal,
+)->Result<Option<office_revision_desktop::OfficeRevisionView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let selection=tauri::async_runtime::spawn_blocking(move||{
+        let selected=app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        let Some(selected)=selected else{return Ok(None)};
+        let output=app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()?;
+        Ok::<_,String>(output.map(|folder|(selected,folder)))
+    }).await.map_err(|e|format!("Office native pickers failed: {e}"))??;
+    let Some((source,folder))=selection else{return Ok(None)};
+    let id=next_id("or-");
+    let view=tauri::async_runtime::spawn_blocking(move||{
+        state.office_revision_reviews.stage(&chat_id,&id,&source,&folder,&proposal)
+    }).await.map_err(|e|format!("Office revision preview worker failed: {e}"))??;
+    Ok(Some(view))
+}
+#[tauri::command]
+async fn lu_confirm_office_revision(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<office_revision_desktop::OfficeRevisionReceiptView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.office_revision_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.view();
+    let modal=format!(
+        "Create a NEW revision of an existing Office file?\n\nOriginal: {}\nNew version: {}\nTargeted XML part: {}\nChange from: {}\nChange to: {}\nOriginal SHA-256: {}\nNew package SHA-256: {}\nUnchanged package parts checked: {}\n\nThe original is preserved. Confirm only after inspecting the full change and unchanged-part list in Lu. This authorization is single-use and is NEVER automatically retried.",
+        view.source_display,view.destination_display,view.target_part,
+        view.original_value,view.new_value,view.original_sha256,
+        view.revised_sha256,view.unaffected_parts.len(),
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(modal)
+            .title("Lu — Approve versioned Office edit")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Create new revision".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Office native confirmation failed: {e}"))?;
+    if !confirmed{
+        state.office_revision_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let selected=state.office_revision_reviews.consume(&chat_id,&review_id)?;
+    if !selected.same_as(&initial){
+        return Err("Office review was modified during native confirmation".into())
+    }
+    let user_turn=next_id("g-");
+    let effect_id=next_id("g-");
+    Ok(Some(office_revision_desktop::execute_office_revision(
+        &state.chats,&state.effects,&chat_id,
+        &user_turn,&effect_id,&selected,
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_office_revision(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.office_revision_reviews.deny(&chat_id,&review_id)
+}
+
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
@@ -2786,6 +2865,9 @@ pub fn run() {
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
+            lu_review_office_revision,
+            lu_confirm_office_revision,
+            lu_deny_office_revision,
             lu_review_document_create,
             lu_confirm_document_create,
             lu_deny_document_create,
