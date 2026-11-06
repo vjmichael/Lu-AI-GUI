@@ -49,6 +49,7 @@ function App() {
   const [researchQuery,setResearchQuery]=useState('');
   const [researchBusy,setResearchBusy]=useState(false);
   const [researchResult,setResearchResult]=useState(null);
+  const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
   const [researchError,setResearchError]=useState('');
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
@@ -228,12 +229,26 @@ function App() {
   },[settingsOpen]);
   async function runResearchDiscovery(){
     if(!chatId||researchBusy||!researchAvailable)return;
+    const sourceChat=chatId;
     setResearchBusy(true);
     setResearchError('');
     setResearchResult(null);
     try{
-      const result=await invoke('lu_research_openalex',{chatId,query:researchQuery});
-      setResearchResult(result);
+      const result=await invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery});
+      // Preserve the requesting chat as part of the displayed evidence scope.
+      setResearchResult({...result,chatId:sourceChat});
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBusy(false);}
+  }
+  async function checkResearchMetadata(sourceId){
+    if(!chatId||!researchAvailable||researchBusy||!sourceId)return;
+    const sourceChat=chatId;
+    setResearchBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_crossref',{chatId:sourceChat,sourceId});
+      setResearchMetadataByChat(old=>({
+        ...old,[sourceChat+'|'+sourceId]:result
+      }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
   }
@@ -3052,12 +3067,20 @@ function App() {
           <small>{researchAvailable?'Pinned HTTPS research runtime available. Native consent required.'
             :'Research network runtime is not bundled in this build; discovery remains disabled.'}</small>
           {researchError&&<small role="alert">{researchError}</small>}
-          {researchResult&&<div className="researchResults" aria-label="Unverified research leads">
+          {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
             <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
             <small>{researchResult.message}</small>
             <ul>{researchResult.leads.slice(0,25).map(l=><li key={l.sourceId}>
               <strong>{l.title}</strong>
-              <small>{l.authors} · DOI {l.doi} · {l.verificationStatus}</small>
+              <small>{l.authors} · DOI {l.doi} · {
+                researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus || l.verificationStatus
+              }</small>
+              <button type="button" disabled={researchBusy||!researchAvailable}
+                onClick={()=>void checkResearchMetadata(l.sourceId)}>
+                Check independent Crossref metadata
+              </button>
+              {researchMetadataByChat[chatId+'|'+l.sourceId]&&
+                <small>{researchMetadataByChat[chatId+'|'+l.sourceId].message}</small>}
             </li>)}</ul>
           </div>}
         </section>
