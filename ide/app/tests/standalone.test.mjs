@@ -488,7 +488,8 @@ test('B3 project search is explicit saved-file read-only with exact revision nav
   assert.match(web, /aria-label="Find in project"/);
   assert.match(web, /invoke\('ide_find_in_project'/);
   assert.match(web, /opened\.revision !== match\.revision/);
-  assert.match(web, /existing\.dirty \|\| existing\.revision !== match\.revision/);
+  assert.match(web, /existing\.dirty \|\| existing\.revision !== opened\.revision/);
+  assert.match(web, /Recheck disk for both newly opened files AND existing tabs/);
   assert.match(web, /setFindRequest\(\{ tabKey: key, from, to/);
   assert.match(native, /async fn ide_find_in_project/);
   assert.match(host, /source_capability\(project_id\)/);
