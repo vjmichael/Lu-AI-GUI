@@ -7,6 +7,7 @@
 use std::{
     collections::{BTreeSet,BTreeMap},
     io::{Read,Write},
+    sync::{Arc,atomic::{AtomicBool,Ordering}},
 };
 use cap_std::fs::{Dir,OpenOptions};
 use sha2::{Digest,Sha256};
@@ -28,7 +29,7 @@ const MARKER:&str=".lu-extract-complete";
 pub enum TreeExtractError{
     InvalidName,InvalidArchive,UnsafeMember,DuplicateMember,UnsupportedMethod,
     TooLarge,TargetExists,ManifestChanged,MissingSource,
-    PublishedNeedsReconciliation,Io(String),
+    Cancelled,PublishedNeedsReconciliation,Io(String),
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct TreeManifestEntry{
@@ -46,6 +47,16 @@ pub struct TreeManifest {
 pub struct TreeReceipt{
     pub destination_folder:String,pub files_extracted:usize,
     pub bytes_extracted:u64,pub manifest_sha256:String,
+}
+/// Host-owned cooperative cancellation signal. It conveys no write authority.
+#[derive(Debug,Clone,Default)]
+pub struct ArchiveCancellation{cancelled:Arc<AtomicBool>}
+impl ArchiveCancellation{
+    pub fn cancel(&self){self.cancelled.store(true,Ordering::Release)}
+    pub fn is_cancelled(&self)->bool{self.cancelled.load(Ordering::Acquire)}
+    fn checkpoint(&self)->Result<(),TreeExtractError>{
+        if self.is_cancelled(){Err(TreeExtractError::Cancelled)}else{Ok(())}
+    }
 }
 struct Node{path:String,is_dir:bool,bytes:Vec<u8>}
 fn io(e:std::io::Error)->TreeExtractError{TreeExtractError::Io(e.to_string())}
@@ -67,7 +78,8 @@ fn safe_part(s:&str)->bool{
 fn valid_hash(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
 }
-fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
+fn package_zip(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<Vec<Node>,TreeExtractError>{
+    cancel.checkpoint()?;
     if !safe_base(name)||!name.to_ascii_lowercase().ends_with(".zip"){
         return Err(TreeExtractError::InvalidName)
     }
@@ -91,6 +103,7 @@ fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
     let mut result=Vec::with_capacity(zip.len());
     let mut total=0usize;
     for index in 0..zip.len(){
+        cancel.checkpoint()?;
         let mut entry=zip.by_index(index).map_err(|_|TreeExtractError::InvalidArchive)?;
         let raw=entry.name().map_err(|_|TreeExtractError::InvalidArchive)?
             .trim_end_matches('/').to_owned();
@@ -113,9 +126,17 @@ fn package_zip(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
         }
         let mut bytes=Vec::new();
         if !directory{
-            (&mut entry).take(MAX_FILE as u64+1).read_to_end(&mut bytes)
-                .map_err(|_|TreeExtractError::InvalidArchive)?;
-            if bytes.len()>MAX_FILE||bytes.len() as u64!=entry.size(){
+            let mut stream=(&mut entry).take(MAX_FILE as u64+1);
+            let mut chunk=[0u8;64*1024];
+            loop{
+                cancel.checkpoint()?;
+                let n=stream.read(&mut chunk)
+                    .map_err(|_|TreeExtractError::InvalidArchive)?;
+                if n==0{break}
+                bytes.extend_from_slice(&chunk[..n]);
+                if bytes.len()>MAX_FILE{return Err(TreeExtractError::TooLarge)}
+            }
+            if bytes.len() as u64!=entry.size(){
                 return Err(TreeExtractError::InvalidArchive)
             }
             let mut crc=crc32fast::Hasher::new();
@@ -173,12 +194,14 @@ fn package_linux(root:&Dir,name:&str)->Result<Vec<Node>,TreeExtractError>{
     }).map(|items|items.into_iter().map(|(path,is_dir,bytes)|
         Node{path,is_dir,bytes}).collect())
 }
-fn manifest_and_nodes(root:&Dir,name:&str)->Result<(TreeManifest,Vec<Node>),TreeExtractError>{
+fn manifest_and_nodes(root:&Dir,name:&str,cancel:&ArchiveCancellation)->Result<(TreeManifest,Vec<Node>),TreeExtractError>{
+    cancel.checkpoint()?;
     let items=if name.to_ascii_lowercase().ends_with(".zip"){
-        package_zip(root,name)?
+        package_zip(root,name,cancel)?
     }else{
         package_linux(root,name)?
     };
+    cancel.checkpoint()?;
     if items.is_empty()||items.len()>MAX_ENTRIES{return Err(TreeExtractError::InvalidArchive)}
     let mut names=BTreeSet::new();
     let mut types=BTreeMap::new();
@@ -186,6 +209,7 @@ fn manifest_and_nodes(root:&Dir,name:&str)->Result<(TreeManifest,Vec<Node>),Tree
     let mut total=0u64;
     let mut entries=Vec::new();
     for node in &items{
+        cancel.checkpoint()?;
         if !safe_part(&node.path)||!names.insert(node.path.to_lowercase()){
             return Err(TreeExtractError::DuplicateMember)
         }
@@ -237,7 +261,8 @@ fn manifest_and_nodes(root:&Dir,name:&str)->Result<(TreeManifest,Vec<Node>),Tree
 pub fn preview_archive_tree(
     root:&Dir,source_name:&str
 )->Result<TreeManifest,TreeExtractError>{
-    manifest_and_nodes(root,source_name).map(|(manifest,_)|manifest)
+    manifest_and_nodes(root,source_name,&ArchiveCancellation::default())
+        .map(|(manifest,_)|manifest)
 }
 fn open_or_create_child(current:&Dir,name:&str)->Result<Dir,TreeExtractError>{
     if !safe_base(name){return Err(TreeExtractError::UnsafeMember)}
@@ -257,7 +282,8 @@ fn open_or_create_child(current:&Dir,name:&str)->Result<Dir,TreeExtractError>{
     }
     current.open_dir(name).map_err(io)
 }
-fn publish_node(root:&Dir,entry:&Node)->Result<(),TreeExtractError>{
+fn publish_node(root:&Dir,entry:&Node,cancel:&ArchiveCancellation)->Result<(),TreeExtractError>{
+    cancel.checkpoint()?;
     let parts:Vec<&str>=entry.path.split('/').collect();
     let mut current=root.try_clone().map_err(io)?;
     for component in &parts[..parts.len()-1]{
@@ -270,7 +296,11 @@ fn publish_node(root:&Dir,entry:&Node)->Result<(),TreeExtractError>{
         let mut opts=OpenOptions::new();
         opts.create_new(true).write(true);
         let mut f=current.open_with(name,&opts).map_err(io)?;
-        f.write_all(&entry.bytes).map_err(io)?;
+        for chunk in entry.bytes.chunks(64*1024){
+            cancel.checkpoint()?;
+            f.write_all(chunk).map_err(io)?;
+        }
+        cancel.checkpoint()?;
         f.sync_all().map_err(io)?;
     }
     Ok(())
@@ -281,11 +311,25 @@ pub fn extract_archive_tree_new(
     source:&Dir,source_name:&str,destination_parent:&Dir,new_folder:&str,
     approved_sha256:&str,
 )->Result<TreeReceipt,TreeExtractError>{
+    extract_archive_tree_new_cancellable(
+        source,source_name,destination_parent,new_folder,approved_sha256,
+        &ArchiveCancellation::default()
+    )
+}
+/// A cancellation observed before destination creation is clean. Once the
+/// folder exists, ANY cancellation is WRITE_UNCERTAIN: never erase unknown
+/// partial contents or auto-retry the same journaled effect.
+pub fn extract_archive_tree_new_cancellable(
+    source:&Dir,source_name:&str,destination_parent:&Dir,new_folder:&str,
+    approved_sha256:&str,cancel:&ArchiveCancellation,
+)->Result<TreeReceipt,TreeExtractError>{
+    cancel.checkpoint()?;
     if !safe_base(new_folder)||!valid_hash(approved_sha256){
         return Err(TreeExtractError::InvalidName)
     }
-    let (manifest,mut nodes)=manifest_and_nodes(source,source_name)?;
+    let (manifest,mut nodes)=manifest_and_nodes(source,source_name,cancel)?;
     if manifest.sha256!=approved_sha256{return Err(TreeExtractError::ManifestChanged)}
+    cancel.checkpoint()?;
     let root=destination_parent.create_dir(new_folder).map_err(|e|
         if e.kind()==std::io::ErrorKind::AlreadyExists{
             TreeExtractError::TargetExists
@@ -296,7 +340,10 @@ pub fn extract_archive_tree_new(
         let folder=destination_parent.open_dir(new_folder).map_err(io)?;
         // Parent-first directories; files after full-tree preflight.
         nodes.sort_by_key(|n|(if n.is_dir{0}else{1},n.path.matches('/').count()));
-        for node in &nodes{publish_node(&folder,node)?}
+        for node in &nodes{publish_node(&folder,node,cancel)?}
+        // The completion marker is the final write. After it is synced,
+        // cancellation is too late to revoke an already-published result.
+        cancel.checkpoint()?;
         let mut opts=OpenOptions::new();
         opts.create_new(true).write(true);
         let mut marker=folder.open_with(MARKER,&opts).map_err(io)?;

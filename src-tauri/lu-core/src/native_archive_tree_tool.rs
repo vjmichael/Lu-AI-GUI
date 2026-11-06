@@ -11,7 +11,8 @@ use crate::{
         ToolAuthorizer,CORE_CONTRACT_VERSION},
     model::{expect_fields,ModelToolCatalog,ModelToolCodec,ModelToolDefinition,ModelToolError},
     native_archive_tree::{
-        preview_archive_tree,extract_archive_tree_new,TreeExtractError,
+        preview_archive_tree,extract_archive_tree_new_cancellable,
+        ArchiveCancellation,TreeExtractError,
     },
     native_linux_archive::detect_linux_archive,
     registry::NativeToolRegistry,wire::proto,
@@ -66,6 +67,7 @@ impl ToolAuthorizer for ExactArchiveTreePolicy<'_>{
 fn failure(e:TreeExtractError)->ToolFailure{
     let code=match e{
         TreeExtractError::TargetExists=>"TARGET_EXISTS",
+        TreeExtractError::Cancelled=>"OPERATION_CANCELLED",
         TreeExtractError::PublishedNeedsReconciliation=>"WRITE_UNCERTAIN",
         TreeExtractError::ManifestChanged=>"SOURCE_CHANGED",
         TreeExtractError::TooLarge=>"TOO_LARGE",
@@ -73,12 +75,13 @@ fn failure(e:TreeExtractError)->ToolFailure{
     };
     ToolFailure::new(code,"Archive extraction rejected or requires recovery review",false)
 }
-struct Tool{descriptor:ToolDescriptor,source:Arc<Dir>,destination:Arc<Dir>}
+struct Tool{descriptor:ToolDescriptor,source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation}
 impl NativeTool for Tool{
     fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
     fn invoke(&self,call:ToolInvocation)->ToolFuture<'_>{
         let source=Arc::clone(&self.source);
         let destination=Arc::clone(&self.destination);
+        let cancel=self.cancel.clone();
         Box::pin(async move{
             if call.input.type_url!=INPUT{
                 return Err(ToolFailure::new("BAD_PROTOBUF","Wrong tree extraction type",false))
@@ -90,9 +93,9 @@ impl NativeTool for Tool{
                 return Err(ToolFailure::new("BAD_ARGUMENTS","Invalid tree extraction scope",false))
             }
             tokio::task::spawn_blocking(move||{
-                let receipt=extract_archive_tree_new(
+                let receipt=extract_archive_tree_new_cancellable(
                     &source,&r.source_name,&destination,&r.target_folder,
-                    &r.approved_manifest_sha256
+                    &r.approved_manifest_sha256,&cancel
                 ).map_err(failure)?;
                 Ok(ToolOutput{payload:ProtoPayload{
                     type_url:OUTPUT.into(),
@@ -147,6 +150,16 @@ pub fn register_archive_tree_extractor(
     registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
     source:Arc<Dir>,destination:Arc<Dir>,
 )->Result<(),String>{
+    register_archive_tree_extractor_with_cancel(
+        registry,catalog,source,destination,ArchiveCancellation::default()
+    )
+}
+/// The host retains the cancellation handle. No caller-supplied model
+/// arguments can cancel unrelated conversations or grant new authority.
+pub fn register_archive_tree_extractor_with_cancel(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
+    source:Arc<Dir>,destination:Arc<Dir>,cancel:ArchiveCancellation,
+)->Result<(),String>{
     let desc=ToolDescriptor{
         id:TOOL_ID.into(),display_name:"Extract archive into new folder".into(),
         effect:ToolEffect::WriteWorkspace,input_type_url:INPUT.into(),
@@ -157,7 +170,7 @@ pub fn register_archive_tree_extractor(
         display_name:"Lu new-folder archive extraction".into(),
         contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
         tools:vec![desc.clone()],panels:vec![],workflows:vec![],
-    },vec![Arc::new(Tool{descriptor:desc,source,destination})])
+    },vec![Arc::new(Tool{descriptor:desc,source,destination,cancel})])
         .map_err(|e|format!("Archive tree registration rejected: {e:?}"))?;
     catalog.insert(registry,ModelToolDefinition{
         name:MODEL_NAME.into(),native_tool_id:TOOL_ID.into(),

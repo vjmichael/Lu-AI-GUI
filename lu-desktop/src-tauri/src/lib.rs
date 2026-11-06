@@ -189,6 +189,7 @@ struct DesktopState {
     write_approval_ledger: lu_core::write_approval_ledger::WriteApprovalLedger,
     edit_proposals: edit_proposal::EditProposalQueue,
     archive_reviews: archive_desktop::ArchiveReviewQueue,
+    archive_runs: archive_desktop::ArchiveRunRegistry,
     document_create_reviews: document_create_desktop::DocumentCreateQueue,
     office_revision_reviews: office_revision_desktop::OfficeRevisionQueue,
     office_batch_reviews: office_batch_desktop::OfficeBatchQueue,
@@ -582,6 +583,7 @@ impl DesktopState {
             write_approval_ledger: write_approvals,
             edit_proposals: edit_proposal::EditProposalQueue::default(),
             archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
+            archive_runs: archive_desktop::ArchiveRunRegistry::default(),
             document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
             office_revision_reviews: office_revision_desktop::OfficeRevisionQueue::default(),
             office_batch_reviews: office_batch_desktop::OfficeBatchQueue::default(),
@@ -1913,11 +1915,22 @@ async fn lu_confirm_archive_tree(
         &view.destination_display,&view.target_folder,&view.manifest_sha256,
         "Extract approved archive into a new folder",
     )?;
+    let run_guard=state.archive_runs.register(&chat_id,&review_id)?;
     let result=archive_desktop::execute_reviewed_archive_tree(
         &state.chats,&state.effects,&chat_id,
-        &user_turn_id,&effect_id,&pinned
+        &user_turn_id,&effect_id,&pinned,run_guard.cancellation()
     ).await?;
+    drop(run_guard);
     Ok(Some(result))
+}
+/// A UI cancellation request is advisory until the blocking native worker
+/// reaches a checkpoint. Journal evidence is never changed by this command.
+#[tauri::command]
+fn lu_cancel_archive_tree(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,review_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)?;
+    state.archive_runs.request_cancel(&chat_id,&review_id)
 }
 #[tauri::command]
 fn lu_deny_archive_tree(
@@ -3249,6 +3262,7 @@ pub fn run() {
             lu_deny_document_create,
             lu_review_archive_tree,
             lu_confirm_archive_tree,
+            lu_cancel_archive_tree,
             lu_deny_archive_tree,
             lu_review_write_destination,
             lu_confirm_write,

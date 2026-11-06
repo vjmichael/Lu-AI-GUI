@@ -197,3 +197,7 @@ Implementation sources committed in this pass:
 **Not accepted/remaining limitations:** encrypted/password-protected or multi-volume RAR/7z; arbitrary unsupported RPM payload modes; verification of RPM signatures; full rich-object, chart, macro, external-link, formula or template preservation/editing in Office files; native codec worker resource isolation and cancellation; exact-head Windows and Linux passing CI; real installed NSIS artifact with codec DLLs and human confirmation/cancellation/restart validation. Source only is not evidence of completed release acceptance.
 
 No Step 3 recovery hardening or Step 4 native final acceptance is claimed.
+
+
+## WAVE2-RECOVERY-03 — Native archive cancellation hardening
+The archive extraction tool now accepts only a host-owned, chat-scoped, per-review cancellation token. ZIP decode and member publication have cooperative checkpoints, and the desktop exposes an explicit cancel-running-extraction action. Cancellation before directory creation fails without a write; cancellation after creation returns WRITE_UNCERTAIN and preserves partial output for journal and full-manifest reconciliation. Non-ZIP synchronous decoders still require supervised-process termination for immediate cancellation. Exact-head Windows/Linux CI and installed desktop acceptance remain open.

@@ -16,9 +16,9 @@ use lu_core::{
     conversation_authority::{AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority},
     journal::EffectJournal,
     model::ModelToolCatalog,
-    native_archive_tree::{preview_archive_tree,observe_tree_completion,TreeManifest},
+    native_archive_tree::{preview_archive_tree,observe_tree_completion,ArchiveCancellation,TreeManifest},
     native_archive_tree_tool::{
-        register_archive_tree_extractor,ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
+        register_archive_tree_extractor_with_cancel,ExactArchiveTreePolicy,TOOL_ID,INPUT,OUTPUT,
     },
     policy::{CapabilityGrant,PolicyEngine},
     registry::NativeToolRegistry,
@@ -29,6 +29,51 @@ use serde::Serialize;
 use crate::chat_store::ChatStore;
 
 const MAX_PENDING:usize=8;
+/// Only an active, chat-matched, host-generated review can be cancelled.
+/// Dropping a command future also requests cancellation on its worker.
+#[derive(Default)]
+pub struct ArchiveRunRegistry{
+    active:Mutex<HashMap<String,(String,ArchiveCancellation)>>,
+}
+pub struct ArchiveRunGuard<'a>{
+    registry:&'a ArchiveRunRegistry,
+    review_id:String,
+    cancel:ArchiveCancellation,
+}
+impl ArchiveRunRegistry{
+    pub fn register<'a>(&'a self,chat:&str,review:&str)
+        ->Result<ArchiveRunGuard<'a>,String>{
+        if chat.is_empty()||review.len()<8||review.len()>128
+            ||!review.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'||b==b'_'){
+            return Err("Invalid archive cancellation identity".into())
+        }
+        let mut active=self.active.lock().map_err(|_|"Archive cancellation unavailable")?;
+        if active.len()>=MAX_PENDING||active.contains_key(review){
+            return Err("Archive extraction already active or capacity reached".into())
+        }
+        let cancel=ArchiveCancellation::default();
+        active.insert(review.into(),(chat.into(),cancel.clone()));
+        Ok(ArchiveRunGuard{registry:self,review_id:review.into(),cancel})
+    }
+    pub fn request_cancel(&self,chat:&str,review:&str)->Result<bool,String>{
+        let active=self.active.lock().map_err(|_|"Archive cancellation unavailable")?;
+        let Some((owner,token))=active.get(review) else{return Ok(false)};
+        if owner!=chat{return Err("Archive operation belongs to another conversation".into())}
+        token.cancel();
+        Ok(true)
+    }
+}
+impl ArchiveRunGuard<'_>{
+    pub fn cancellation(&self)->ArchiveCancellation{self.cancel.clone()}
+}
+impl Drop for ArchiveRunGuard<'_>{
+    fn drop(&mut self){
+        self.cancel.cancel();
+        if let Ok(mut active)=self.registry.active.lock(){
+            active.remove(&self.review_id);
+        }
+    }
+}
 fn portable_name(s:&str)->bool{
     !s.is_empty()&&s.len()<=200&&s!="."&&s!=".."
         &&!s.starts_with(".lu-stage-")
@@ -222,7 +267,8 @@ impl ArchiveReviewQueue{
 /// list review; the directory handles and manifest are the pinned originals.
 pub async fn execute_reviewed_archive_tree(
     chats:&ChatStore,effects:&EffectJournal,chat_id:&str,
-    user_turn_id:&str,effect_call_id:&str,review:&PinnedArchiveReview
+    user_turn_id:&str,effect_call_id:&str,review:&PinnedArchiveReview,
+    cancel:ArchiveCancellation,
 )->Result<ArchiveCreatedView,String>{
     chats.append_user_with_turn_id(chat_id,user_turn_id,
         &format!("Approved extracting {} into a NEW folder {}. {} files, {} bytes; full tree manifest SHA-256 {}.",
@@ -230,8 +276,8 @@ pub async fn execute_reviewed_archive_tree(
             review.manifest.total_bytes,review.manifest.sha256))?;
     let registry=NativeToolRegistry::new();
     let mut catalog=ModelToolCatalog::new();
-    register_archive_tree_extractor(&registry,&mut catalog,
-        Arc::clone(&review.source_root),Arc::clone(&review.destination_root))
+    register_archive_tree_extractor_with_cancel(&registry,&mut catalog,
+        Arc::clone(&review.source_root),Arc::clone(&review.destination_root),cancel)
         .map_err(|_|"Cannot register native archive extraction")?;
     let authority=ConversationAuthority::new();
     let policy=PolicyEngine::new();
@@ -299,6 +345,26 @@ pub async fn execute_reviewed_archive_tree(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn cancellation_is_scoped_to_live_review_and_does_not_grant_authority(){
+        let registry=ArchiveRunRegistry::default();
+        let handle=registry.register("chat-one","archive-review-123456789").unwrap();
+        let token=handle.cancellation();
+        assert!(registry.request_cancel("chat-two","archive-review-123456789").is_err());
+        assert!(!token.is_cancelled());
+        assert!(registry.request_cancel("chat-one","archive-review-123456789").unwrap());
+        assert!(token.is_cancelled());
+        drop(handle);
+        assert!(!registry.request_cancel("chat-one","archive-review-123456789").unwrap());
+    }
+    #[test]
+    fn dropped_archive_run_requests_worker_cancellation(){
+        let registry=ArchiveRunRegistry::default();
+        let handle=registry.register("chat","archive-review-abcdef1234").unwrap();
+        let token=handle.cancellation();
+        drop(handle);
+        assert!(token.is_cancelled());
+    }
     #[test]
     fn user_selected_destination_is_always_new_child(){
         assert_eq!(base_for_folder("archive.tar.gz"),"archive");

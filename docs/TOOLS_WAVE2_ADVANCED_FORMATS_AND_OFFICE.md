@@ -59,3 +59,10 @@ Upstream API and licensing references:
 - RPM file/header background: https://rpm.org/docs/latest/manual/format.html
 
 **Do not advance the release or merge the draft PR solely from source commits.**
+
+## Step 3 — Cooperative archive cancellation and fail-closed publication (2026-11-05)
+
+- Host-created per-review cancellation token, scoped to the active chat, passes through the native tool registry to the bounded archive extraction worker. WebView requests cannot supply a token, path, or extra write grant.
+- ZIP preflight and on-disk member publication check cancellation at bounded chunks. Cancellation **before** destination folder creation is a clean no-effect refusal; cancellation **after** folder creation is reported as WRITE_UNCERTAIN and the folder is retained for read-only reconciliation.
+- No automatic replay or silent partial-folder deletion. The completion marker remains a last-write witness; native full-tree rehash remains required.
+- Backend decoders for TAR/7z/RAR/RPM currently have synchronous bounded in-memory preflight. Cancellation while those native decoders are executing is **not** preemptive; it is honored on return, before publication. Hard worker-process termination requires follow-up native containment acceptance.

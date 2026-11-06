@@ -33,6 +33,12 @@ const tests = [
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
+  ['archive worker has a host-owned scoped cancellation control and no auto-replay',
+    ui.includes("invoke('lu_cancel_archive_tree'") &&
+    ui.includes('Cancel running extraction') &&
+    host.includes('fn lu_cancel_archive_tree(') &&
+    host.includes('archive_runs: archive_desktop::ArchiveRunRegistry') &&
+    host.includes('run_guard.cancellation()')],
   ['archive desktop review is pinned to native pickers and full-manifest user acknowledgement',
     ui.includes("invoke('lu_review_archive_tree'") &&
     ui.includes("invoke('lu_confirm_archive_tree'") &&

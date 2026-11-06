@@ -61,6 +61,7 @@ function App() {
   const [archiveReview, setArchiveReview] = useState(null);
   const [archiveReviewed, setArchiveReviewed] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveCancelRequested, setArchiveCancelRequested] = useState(false);
   const [latestArchiveExtract, setLatestArchiveExtract] = useState(null);
   const [documentComposerOpen, setDocumentComposerOpen] = useState(false);
   const [documentDraft, setDocumentDraft] = useState({format:'docx',title:'',content:''});
@@ -716,6 +717,7 @@ function App() {
     if (!archiveReview || !archiveReviewed || archiveBusy ||
         archiveReview.chatId !== chatId) return;
     setArchiveBusy(true);
+    setArchiveCancelRequested(false);
     setError('');
     const review = archiveReview;
     try {
@@ -740,6 +742,20 @@ function App() {
       setArchiveReviewed(false);
       setArchiveBusy(false);
     }
+  }
+  async function requestArchiveCancellation() {
+    if (!archiveReview || !archiveBusy || archiveCancelRequested) return;
+    try {
+      const signalled = await invoke('lu_cancel_archive_tree', {
+        chatId: archiveReview.chatId, reviewId: archiveReview.reviewId
+      });
+      if (signalled) {
+        setArchiveCancelRequested(true);
+        setActivity('Cancellation requested. The native worker will stop at a safe checkpoint; inspect File operations for recovery.');
+      } else {
+        setActivity('The extraction worker has not started or has already finished. Use Cancel in the native confirmation dialog if it is open.');
+      }
+    } catch (error) { setError(String(error)); }
   }
   async function denyArchiveTree() {
     if (!archiveReview || archiveBusy) return;
@@ -2048,6 +2064,11 @@ function App() {
             </button>
             <button type="button" className="subtleButton" disabled={archiveBusy}
               onClick={() => void denyArchiveTree()}>Deny extraction</button>
+            {archiveBusy && <button type="button" className="subtleButton"
+              disabled={archiveCancelRequested}
+              onClick={() => void requestArchiveCancellation()}>
+              {archiveCancelRequested ? 'Cancellation requested' : 'Cancel running extraction'}
+            </button>}
           </div>
         </section>}
         {latestArchiveExtract?.chatId === chatId && <section className="readProposalCard" role="status">

@@ -5,6 +5,7 @@ use lu_core::{
     native_archive_tree::{
         preview_archive_tree,extract_archive_tree_new,
         observe_tree_completion,TreeExtractError,
+        ArchiveCancellation,extract_archive_tree_new_cancellable,
     },
     native_linux_archive::create_linux_archive_new,
 };
@@ -103,5 +104,36 @@ fn interrupted_tree_reconciliation_is_read_only_and_never_replays(){
     fs::write(root.join("partially-written/.lu-extract-complete"),
         b"truncated").unwrap();
     assert!(!observe_tree_completion(&dir,"partially-written",&approved).unwrap());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cancelled_archive_before_publication_creates_nothing_and_preserves_source(){
+    let (root,dir)=fixture();
+    archive(&root,"source.zip",false);
+    let manifest=preview_archive_tree(&dir,"source.zip").unwrap();
+    let token=ArchiveCancellation::default();
+    token.cancel();
+    assert_eq!(extract_archive_tree_new_cancellable(
+        &dir,"source.zip",&dir,"cancelled",&manifest.sha256,&token
+    ).unwrap_err(),TreeExtractError::Cancelled);
+    assert!(!root.join("cancelled").exists());
+    assert!(root.join("source.zip").is_file());
+    assert!(!observe_tree_completion(&dir,"cancelled",&manifest).unwrap());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn cancelled_archive_does_not_destroy_existing_target(){
+    let (root,dir)=fixture();
+    archive(&root,"source.zip",false);
+    let manifest=preview_archive_tree(&dir,"source.zip").unwrap();
+    fs::create_dir(root.join("existing")).unwrap();
+    fs::write(root.join("existing/owned.txt"),b"keep me").unwrap();
+    let token=ArchiveCancellation::default();
+    token.cancel();
+    assert_eq!(extract_archive_tree_new_cancellable(
+        &dir,"source.zip",&dir,"existing",&manifest.sha256,&token
+    ).unwrap_err(),TreeExtractError::Cancelled);
+    assert_eq!(fs::read(root.join("existing/owned.txt")).unwrap(),b"keep me");
     drop(dir);fs::remove_dir_all(root).unwrap();
 }
