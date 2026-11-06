@@ -13,6 +13,10 @@ on:
       - 'lu-desktop/tests/browser-model-read.test.mjs'
       - 'lu-desktop/tests/browser-research-evidence.test.mjs'
       - 'lu-desktop/tests/research-citation-enforcement.test.mjs'
+      - 'lu-desktop/tests/research-roadmap-acceptance.test.mjs'
+      - 'src-tauri/lu-core/src/web_research_document.rs'
+      - 'src-tauri/lu-core/src/web_research_report.rs'
+      - 'src-tauri/lu-core/tests/web_research_roadmap_acceptance.rs'
       - 'src-tauri/lu-core/src/web_research_citation.rs'
       - 'src-tauri/lu-core/tests/web_research_citation_acceptance.rs'
       - 'src-tauri/lu-core/src/web_research_evidence.rs'
@@ -46,6 +50,7 @@ jobs:
       - run: node --test lu-desktop/tests/research-source-route.test.mjs
       - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
       - run: node --test lu-desktop/tests/research-citation-enforcement.test.mjs
+      - run: node --test lu-desktop/tests/research-roadmap-acceptance.test.mjs
       - run: node --test lu-desktop/tests/browser-model-read.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
       - run: node --test tests/lu-browser-worker.test.mjs
@@ -114,8 +119,11 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib multimodal_http::tests::browser_tool_stream_accepts_clean_stop_but_not_bare_done
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_citation_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_roadmap_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_citation
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_document
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_report
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
   research-runtime-windows:
     needs: source
