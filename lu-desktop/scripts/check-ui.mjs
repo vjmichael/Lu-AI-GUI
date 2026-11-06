@@ -23,7 +23,7 @@ const tests = [
   ['Research OpenAlex discovery is human-approved, per-chat, and never represented as verified citations',
     host.includes('async fn lu_research_openalex(') &&
     host.includes('fn lu_research_available(') &&
-    ui.includes("invoke('lu_research_openalex',{chatId,query:researchQuery})") &&
+    ui.includes("invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery,page:selectedPage})") &&
     ui.includes('discovered sources · UNVERIFIED') &&
     ui.includes('Research network runtime is not bundled')],
   ['Browser runtime is native-owned, permit-gated, and host-verified with no ambient model navigation',

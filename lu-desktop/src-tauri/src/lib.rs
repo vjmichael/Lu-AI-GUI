@@ -1121,7 +1121,7 @@ async fn start_browser_for_exact_turn(
         launch_owner.browser_runtime.launch_for_native_grant(
             allowed,&launch_owner.browser_preferences
         )
-    ).await.map_err(|_|"Browser launch worker unavailable")
+    ).await.map_err(|_|"Browser launch worker unavailable".to_owned())
         .and_then(|x|x);
     if let Err(err)=result{
         let _=owner.browser_runtime.stop();
@@ -1288,7 +1288,7 @@ async fn lu_research_openalex(
     let chat=chat_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         worker.search_page(&chat,&query,page)
-    ).await.map_err(|_|"Research worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research worker unavailable".to_owned()).and_then(|x|x);
     match result{
         Ok(page)=>{
             owner.background_tasks.complete(&task_id)
@@ -1343,7 +1343,7 @@ async fn lu_research_retrieve_document(
     let research=Arc::clone(&owner.research);
     let result=tauri::async_runtime::spawn_blocking(move||
         research.retrieve_document(&chat_id,&source_id)
-    ).await.map_err(|_|"Research document worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research document worker unavailable".to_owned()).and_then(|x|x);
     match result{
         Ok(document)=>{
             owner.background_tasks.complete(&task_id)
@@ -1413,7 +1413,7 @@ async fn lu_research_campaign_start(
     let lookup_id=id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         worker.run_campaign(&chat_id,&id)
-    ).await.map_err(|_|"Research campaign worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research campaign worker unavailable".to_owned()).and_then(|x|x);
     match result{
         Ok(value)=>{
             owner.background_tasks.complete(&task_id)
@@ -1425,7 +1425,7 @@ async fn lu_research_campaign_start(
             // Even failed steps leave durable status; a blocked campaign can
             // be inspected and explicitly resumed, not silently retried.
             owner.research.campaign_status(&lookup_chat,&lookup_id)
-                .or(Err(error))
+                .or(Err(error.to_owned()))
         }
     }
 }
@@ -1477,7 +1477,7 @@ async fn lu_research_campaign_resume(
     let _=worker.resume_campaign(&chat_id,&campaign_id)?;
     let result=tauri::async_runtime::spawn_blocking(move||
         worker.run_campaign(&chat_id,&campaign_id)
-    ).await.map_err(|_|"Research continuation worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research continuation worker unavailable".to_owned()).and_then(|x|x);
     result
 }
 
@@ -1617,7 +1617,7 @@ async fn lu_research_crossref(
     let worker=Arc::clone(&owner.research);
     let result=tauri::async_runtime::spawn_blocking(move||
         worker.corroborate_crossref(&chat_id,&source_id)
-    ).await.map_err(|_|"Research metadata worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research metadata worker unavailable".to_owned()).and_then(|x|x);
     match result{
         Ok(checked)=>{
             owner.background_tasks.complete(&task_id)

@@ -868,11 +868,11 @@ impl EvidenceLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn candidate() -> Candidate { Candidate {
+    pub(super) fn candidate() -> Candidate { Candidate {
         id:"source-1".into(),title:"A Verified Study".into(),
         author:"Jane Doe".into(),identifier:"doi:10.1000/example".into()
     } }
-    fn record() -> TrustedBibliography { TrustedBibliography {
+    pub(super) fn record() -> TrustedBibliography { TrustedBibliography {
         record_url:"https://publisher.example/study".into(),
         title:"A Verified Study".into(),author:"Jane Doe".into(),
         identifier:"doi:10.1000/example".into()
@@ -984,6 +984,7 @@ mod tests {
 #[cfg(test)]
 mod browser_evidence_tests {
     use super::*;
+    use super::tests::{candidate,record};
     #[test]
     fn browser_reads_are_immutable_observations_not_bibliographic_verification(){
         let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();

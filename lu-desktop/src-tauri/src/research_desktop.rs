@@ -804,7 +804,7 @@ impl ResearchDesktop{
         analysis.human_review(source_id,claim,quote)
             .map_err(|_|"User interpretation review could not be recorded")?;
         analysis.summarize_claims(&ledger)
-            .map_err(|_|"Research source validation failed")
+            .map_err(|_|"Research source validation failed".to_owned())
             .map(|v|v.into_iter().map(claim_view).collect())
     }
     /// Read-only view. Every claim is rechecked against the current document
@@ -826,7 +826,7 @@ impl ResearchDesktop{
         let analysis=AnalysisStore::open(&path)
             .map_err(|_|"Research analysis database unavailable")?;
         analysis.summarize_claims(&ledger)
-            .map_err(|_|"Research claim provenance invalid")
+            .map_err(|_|"Research claim provenance invalid".to_owned())
             .map(|v|v.into_iter().map(claim_view).collect())
     }
     /// No model-generated bibliography is accepted: this is an entirely
