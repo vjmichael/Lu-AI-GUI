@@ -69,6 +69,10 @@ mod tests{
         assert_eq!(data["parallel_tool_calls"],false);
         assert_eq!(data["messages"][0]["role"],"user");
         assert!(body.len()<20000);
+        assert_eq!(data["tools"][0]["function"]["parameters"]["properties"]["operation"]["enum"]
+            .as_array().unwrap().len(),4);
+        assert!(!body.contains("\\"screenshot\\""));
+
         let mut bad=tools.clone();
         bad.push(json!({"type":"function","function":{
             "name":"lu_browser_interact","parameters":{}
