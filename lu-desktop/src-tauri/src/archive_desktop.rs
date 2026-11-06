@@ -139,7 +139,7 @@ pub(crate) fn physical_folder(path:&Path)->Result<Arc<Dir>,String>{
     Ok(Arc::new(Dir::open_ambient_dir(path,ambient_authority())
         .map_err(|_|"Cannot open destination directory")?))
 }
-fn base_for_folder(archive_name:&str)->String{
+pub(crate) fn base_for_folder(archive_name:&str)->String{
     let lower=archive_name.to_ascii_lowercase();
     let suffix=[".cpio.gz",".cpio.xz",".cpio.bz2",".cpio.zst",
         ".tar.gz",".tar.xz",".tar.bz2",".tar.zst",".tgz",".tbz2",
