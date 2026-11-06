@@ -71,7 +71,7 @@ fn parse_csv(data:&[u8])->Result<Vec<Vec<String>>,CsvEditError>{
                     rows.push(std::mem::take(&mut row));
                     closed=false;beginning=true;
                 },
-                '"'|'\r' if closed=>return Err(CsvEditError::MalformedCsv),
+                '"'=>return Err(CsvEditError::MalformedCsv),
                 _ if closed=>return Err(CsvEditError::MalformedCsv),
                 _=>{field.push(ch);beginning=false},
             }
