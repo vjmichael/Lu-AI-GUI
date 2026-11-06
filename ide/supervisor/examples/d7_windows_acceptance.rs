@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         snapshot::publish_input,
         windows_broker::TrustedBroker,
         windows_worker::{
-            execute_windows_worker, trusted_offline_toolchain_digest, WindowsCancellation,
+            execute_windows_worker_after_staging_approval, trusted_offline_toolchain_digest, WindowsCancellation,
         },
         JobPhase, JobPlan, Supervisor,
     };
@@ -124,18 +124,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let prepared = supervisor.prepare(plan.clone())
         .map_err(|e| format!("DENIED: prepare: {}", e.code()))?;
-    // This is deliberately a dedicated test-only fixture, never an IDE
-    // end-user approval or a reusable model-controlled execution capability.
-    supervisor.record_human_approval(
-        &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true
-    ).map_err(|e| format!("DENIED: fixture approval: {}", e.code()))?;
+    // The source fixture cannot start a child until a fresh one-use grant
+    // exists. The large pinned offline MSVC/SDK bundle is staged first:
+    // creating a grant here previously let it expire during the copy.
     let cancellation = WindowsCancellation::new();
     if cancel_mode {
         cancellation.request_cancel();
     }
-    let result = execute_windows_worker(
+    let result = execute_windows_worker_after_staging_approval(
         &supervisor, &prepared.job_id, &plan, &plan.source_head, &input, &bundle,
-        &native_outputs, &native_broker, &cancellation
+        &native_outputs, &native_broker, &cancellation, || {
+            // Test-only simulated approval, after trusted stage + digest and
+            // before admission. No production desktop grant is inferred.
+            supervisor.record_human_approval(
+                &prepared.job_id, &prepared.plan_sha256,
+                &plan.source_head, true
+            ).map(|_| ())
+        }
     ).map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
     // D7C test mode can only audit its same-user journal as diagnostic data.
     // D7D protected mode cannot read the service's ACL-isolated journal:
