@@ -70,6 +70,56 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// Read file metadata and bounded SHA-256 under an active registered project.
+/// The result NEVER proves an executable is safe or operable.
+#[tauri::command]
+async fn ide_probe_project_resource(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::resource_probe::ProjectResourceProbe, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.probe_project_resource(&project_id, &relative_path)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "RESOURCE_PROBE_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Read local Git diff hunks only, in the exact registered project root.
+/// Scope is strictly "staged" or "worktree"; there are no mutation actions.
+#[tauri::command]
+async fn ide_read_git_diff(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    scope: String,
+) -> Result<lu_ide_workspace::git_evidence::GitDiffEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_diff(&project_id, &scope)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "GIT_DIFF_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Read recent local commits. No remote fetch, arbitrary rev expressions,
+/// hooks, shell commands or repository writes.
+#[tauri::command]
+async fn ide_read_git_history(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_evidence::GitHistoryEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_history(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "GIT_HISTORY_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read-only Git source control status of an already selected workspace.
 /// No subprocess, model bridge, network operation, or repository mutation.
 #[tauri::command]
@@ -100,6 +150,17 @@ async fn ide_compare_live_github(
     .await
     .map_err(|_| "GITHUB_COMPARE_TASK_UNAVAILABLE".to_owned())?;
     Ok(result)
+}
+
+/// Explicit read-only public GitHub Actions receipts for the exact local HEAD.
+#[tauri::command]
+async fn ide_read_exact_head_ci(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::github_ci::ExactHeadCiEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry.inspect_exact_head_ci(&project_id))
+        .await.map_err(|_| "GITHUB_CI_TASK_UNAVAILABLE".to_owned())
 }
 
 /// Bounded, source-revisioned continuity from the trusted local IDE profile.
@@ -152,6 +213,49 @@ async fn ide_compare_project_inventory(
     })
     .await
     .map_err(|_| "INVENTORY_COMPARE_UNAVAILABLE".to_owned())?
+}
+
+/// C6: user-authored task progress is an append-only note, not acceptance.
+#[tauri::command]
+async fn ide_record_task_update(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+    project_id: String,
+    task_id: String,
+    title: String,
+    status: String,
+    next_action: String,
+    required_gates: Vec<String>,
+) -> Result<lu_ide_workspace::task_evidence::TaskSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        ledger.record_task_update(&registry, &project_id, &task_id, &title,
+            &status, &next_action, required_gates)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "TASK_UPDATE_UNAVAILABLE".to_owned())?
+}
+
+/// C6: native host independently checks exact-head public GitHub Actions and
+/// appends the bounded observation to a specific task revision. The UI cannot
+/// submit a verdict, commit SHA, or supposed CI receipt.
+#[tauri::command]
+async fn ide_observe_task_ci(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+    project_id: String,
+    task_id: String,
+) -> Result<lu_ide_workspace::task_evidence::TaskSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        ledger.record_task_ci(&registry, &project_id, &task_id)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "TASK_CI_UNAVAILABLE".to_owned())?
 }
 
 /// List actual host-supported operations. Discovery is not authorization.
@@ -455,8 +559,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
             ide_read_project_context,
+            ide_record_task_update,
+            ide_observe_task_ci,
             ide_read_git_status,
+            ide_read_git_diff,
+            ide_probe_project_resource,
+            ide_read_git_history,
             ide_compare_live_github,
+            ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
             ide_list_projects,

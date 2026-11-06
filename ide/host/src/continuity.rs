@@ -11,7 +11,12 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{browser::{validate_relative, BrowserError}, inventory::EvidenceInventory, git_status::GitWorktreeInspection, IdeWorkspaceRegistry};
+use crate::{
+    browser::{validate_relative, BrowserError},
+    git_status::GitWorktreeInspection,
+    inventory::EvidenceInventory,
+    IdeWorkspaceRegistry,
+};
 
 const MAX_LEDGER_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 40;
@@ -39,6 +44,8 @@ pub enum ContinuityError {
     Corrupt,
     Full,
     ProjectUnavailable,
+    TaskNotFound,
+    TaskStale,
 }
 impl ContinuityError {
     pub fn code(&self) -> &'static str {
@@ -48,6 +55,8 @@ impl ContinuityError {
             Self::Corrupt => "CONTINUITY_RECORDS_CORRUPT",
             Self::Full => "CONTINUITY_LEDGER_FULL",
             Self::ProjectUnavailable => "PROJECT_NOT_OPEN",
+            Self::TaskNotFound => "TASK_NOT_FOUND",
+            Self::TaskStale => "TASK_SOURCE_REVISION_STALE",
         }
     }
 }
@@ -64,6 +73,8 @@ pub struct DevelopmentEvent {
     pub source_revision: Option<String>,
     pub source_path: Option<String>,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<crate::task_evidence::TaskEvent>,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +103,7 @@ pub struct ProjectContext {
     pub documents: Vec<ContextDocument>,
     pub inventory: EvidenceInventory,
     pub git_worktree: GitWorktreeInspection,
+    pub tasks: Vec<crate::task_evidence::TaskSummary>,
 }
 
 pub struct DevelopmentLedger {
@@ -108,11 +120,18 @@ impl DevelopmentLedger {
                 return Err(ContinuityError::Corrupt);
             }
         }
-        Ok(Self { path, lock: Mutex::new(()) })
+        Ok(Self {
+            path,
+            lock: Mutex::new(()),
+        })
     }
 
-    fn events(&self) -> Result<Vec<DevelopmentEvent>, ContinuityError> {
+    pub(crate) fn events(&self) -> Result<Vec<DevelopmentEvent>, ContinuityError> {
         let _guard = self.lock.lock().map_err(|_| ContinuityError::Unavailable)?;
+        self.events_locked()
+    }
+
+    fn events_locked(&self) -> Result<Vec<DevelopmentEvent>, ContinuityError> {
         let meta = match fs::symlink_metadata(&self.path) {
             Ok(meta) => meta,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -151,28 +170,38 @@ impl DevelopmentLedger {
     /// Trusted host call after an actual action; never offered as a Tauri
     /// command. A record of success is historical, not proof of present state.
     pub fn record(
-        &self, project_id: &str, operation: &str, summary: &str,
+        &self,
+        project_id: &str,
+        operation: &str,
+        summary: &str,
         source_revision: Option<&str>,
         source_path: Option<&str>,
     ) -> Result<(), ContinuityError> {
         const ALLOWED: [&str; 5] = [
-            "project.register", "project.open", "project.close",
-            "project.unregister", "source.save",
+            "project.register",
+            "project.open",
+            "project.close",
+            "project.unregister",
+            "source.save",
         ];
-        if project_id.len() > 128 || project_id.is_empty()
-            || !project_id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        if project_id.len() > 128
+            || project_id.is_empty()
+            || !project_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-')
             || !ALLOWED.contains(&operation)
             || summary.chars().count() > MAX_NOTE_CHARS
             || summary.chars().any(char::is_control)
             || source_path.is_some_and(|p| validate_relative(p, false).is_err())
-            || source_revision.is_some_and(|s| {
-                s.len() != 64 || !s.bytes().all(|c| c.is_ascii_hexdigit())
-            })
+            || source_revision
+                .is_some_and(|s| s.len() != 64 || !s.bytes().all(|c| c.is_ascii_hexdigit()))
         {
             return Err(ContinuityError::InvalidInput);
         }
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)
-            .map_err(|_| ContinuityError::Unavailable)?.as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| ContinuityError::Unavailable)?
+            .as_secs();
         let event = DevelopmentEvent {
             schema_version: 1,
             event_id: format!("evt-{:032x}", rand::random::<u128>()),
@@ -183,39 +212,77 @@ impl DevelopmentLedger {
             source_revision: source_revision.map(ToOwned::to_owned),
             source_path: source_path.map(ToOwned::to_owned),
             summary: summary.to_owned(),
+            task: None,
         };
+        self.append_transaction(|_| Ok((event, ())))
+    }
+
+    /// Lock covers read/validate/append, so concurrent task updates and
+    /// external observations cannot be interleaved inside one task revision.
+    pub(crate) fn append_transaction<T, F>(&self, make: F) -> Result<T, ContinuityError>
+    where
+        F: FnOnce(&[DevelopmentEvent]) -> Result<(DevelopmentEvent, T), ContinuityError>,
+    {
+        let _guard = self.lock.lock().map_err(|_| ContinuityError::Unavailable)?;
+        let prior = self.events_locked()?;
+        let (event, result) = make(&prior)?;
         let mut bytes = serde_json::to_vec(&event).map_err(|_| ContinuityError::Unavailable)?;
         bytes.push(b'\n');
-        let _guard = self.lock.lock().map_err(|_| ContinuityError::Unavailable)?;
-        if let Ok(meta) = fs::symlink_metadata(&self.path) {
-            if !meta.is_file() || meta.file_type().is_symlink() {
-                return Err(ContinuityError::Corrupt);
-            }
-            if meta.len().saturating_add(bytes.len() as u64) > MAX_LEDGER_BYTES {
-                return Err(ContinuityError::Full);
-            }
+        let old_len = fs::symlink_metadata(&self.path)
+            .map(|meta| {
+                if !meta.is_file() || meta.file_type().is_symlink() {
+                    Err(ContinuityError::Corrupt)
+                } else {
+                    Ok(meta.len())
+                }
+            })
+            .unwrap_or_else(|err| {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    Ok(0)
+                } else {
+                    Err(ContinuityError::Unavailable)
+                }
+            })?;
+        if old_len.saturating_add(bytes.len() as u64) > MAX_LEDGER_BYTES {
+            return Err(ContinuityError::Full);
         }
-        let mut file = OpenOptions::new().create(true).append(true)
-            .open(&self.path).map_err(|_| ContinuityError::Unavailable)?;
-        file.write_all(&bytes).map_err(|_| ContinuityError::Unavailable)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .map_err(|_| ContinuityError::Unavailable)?;
+        file.write_all(&bytes)
+            .map_err(|_| ContinuityError::Unavailable)?;
         file.sync_all().map_err(|_| ContinuityError::Unavailable)?;
-        Ok(())
+        Ok(result)
     }
 
     /// Return task orientation, not execution readiness. Project-authored
     /// documents are untrusted evidence with exact saved revisions.
     pub fn context(
-        &self, registry: &IdeWorkspaceRegistry, project_id: &str,
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
     ) -> Result<ProjectContext, ContinuityError> {
-        let project = registry.projects()
+        let project = registry
+            .projects()
             .map_err(|_| ContinuityError::Unavailable)?
             .into_iter()
             .find(|p| p.project_id == project_id && p.active)
             .ok_or(ContinuityError::ProjectUnavailable)?;
         let all = self.events()?;
-        let events = all.into_iter().rev()
+        let current_git = registry.inspect_git_worktree(project_id);
+        let tasks = crate::task_evidence::project_tasks(
+            &all,
+            project_id,
+            current_git.local_head.as_deref(),
+        )?;
+        let events = all
+            .into_iter()
+            .rev()
             .filter(|event| event.project_id == project_id)
-            .take(MAX_EVENTS).collect();
+            .take(MAX_EVENTS)
+            .collect();
         let mut documents = Vec::new();
         for name in CONTEXT_FILES {
             let read = registry.preview_source_file(project_id, name);
@@ -232,8 +299,8 @@ impl DevelopmentLedger {
                         excerpt: Some(excerpt),
                     }
                 }
-                Err(BrowserError::Io(err))
-                    if err.kind() == std::io::ErrorKind::NotFound => ContextDocument {
+                Err(BrowserError::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ContextDocument {
                         relative_path: name,
                         availability: "missing",
                         trust: "untrusted_project_text",
@@ -241,7 +308,8 @@ impl DevelopmentLedger {
                         byte_length: None,
                         excerpt: None,
                         excerpt_truncated: false,
-                    },
+                    }
+                }
                 Err(_) => ContextDocument {
                     relative_path: name,
                     availability: "unverifiable",
@@ -255,7 +323,8 @@ impl DevelopmentLedger {
             documents.push(doc);
         }
         let git_worktree = registry.inspect_git_worktree(project_id);
-        let inventory = registry.inspect_project_evidence(project_id)
+        let inventory = registry
+            .inspect_project_evidence(project_id)
             .map_err(|_| ContinuityError::Unavailable)?;
         Ok(ProjectContext {
             schema_version: 1,
@@ -265,7 +334,11 @@ impl DevelopmentLedger {
             remote_git_state: "not_queried",
             local_artifacts: "bounded_scan",
             current_toolchain_readiness: "not_verified",
-            events, documents, inventory, git_worktree,
+            events,
+            documents,
+            inventory,
+            git_worktree,
+            tasks,
         })
     }
 }
