@@ -189,6 +189,16 @@ impl EvidenceLedger {
              first_page INTEGER NOT NULL,
              PRIMARY KEY(campaign_id,doi)
            );
+           CREATE TABLE IF NOT EXISTS research_campaign_source_review(
+             campaign_id TEXT NOT NULL REFERENCES research_campaigns(id),
+             source_id TEXT NOT NULL REFERENCES research_sources(id),
+             stage TEXT NOT NULL CHECK(stage IN (
+                 'METADATA_CORROBORATED','DOCUMENT_ACCESSED',
+                 'METADATA_MISMATCH','DOCUMENT_UNAVAILABLE','ERROR'
+             )),
+             reason_code TEXT NOT NULL,
+             PRIMARY KEY(campaign_id,source_id)
+           );
            CREATE TABLE IF NOT EXISTS research_document_observations(
              source_id TEXT NOT NULL REFERENCES research_sources(id),
              chain_sha256 TEXT NOT NULL,
@@ -513,6 +523,75 @@ impl EvidenceLedger {
         let rows=stmt.query_map([limit as i64],|r|r.get::<_,String>(0))?
             .collect::<Result<Vec<_>,_>>()?;
         rows.iter().map(|id|self.campaign_status(id)).collect()
+    }
+    /// Deterministically choose the next unreviewed DOI leads for a
+    /// separately user-approved bounded pipeline step. No URL, DOI or
+    /// source identity can be provided by the model.
+    pub fn campaign_pending_sources(
+        &self,id:&str,limit:usize
+    )->Result<Vec<String>,EvidenceError>{
+        if !Self::campaign_safe_id(id)||!(1..=10).contains(&limit){
+            return Err(EvidenceError::Invalid);
+        }
+        let _=self.campaign_status(id)?;
+        let mut stmt=self.connection.prepare(
+            "SELECT l.source_id FROM research_campaign_leads l
+             LEFT JOIN research_campaign_source_review r
+               ON l.campaign_id=r.campaign_id AND l.source_id=r.source_id
+             WHERE l.campaign_id=?1 AND r.source_id IS NULL
+             ORDER BY l.first_page ASC,l.doi ASC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![id,limit as i64],|r|r.get(0))?;
+        Ok(rows.collect::<Result<Vec<_>,_>>()?)
+    }
+    pub fn campaign_review_progress(
+        &self,id:&str
+    )->Result<(u32,u32,u32),EvidenceError>{
+        let status=self.campaign_status(id)?;
+        let (reviewed,full_text):(i64,i64)=self.connection.query_row(
+            "SELECT COUNT(*),COALESCE(SUM(CASE WHEN stage='DOCUMENT_ACCESSED'
+                  THEN 1 ELSE 0 END),0)
+             FROM research_campaign_source_review WHERE campaign_id=?1",
+            [id],|r|Ok((r.get(0)?,r.get(1)?))
+        )?;
+        Ok((status.distinct_dois,reviewed as u32,full_text as u32))
+    }
+    /// One immutable per-source pipeline receipt. Retry of a failed
+    /// publisher is an explicit new operator action, not an auto-loop.
+    pub fn record_campaign_source_review(
+        &mut self,id:&str,source_id:&str,stage:&str,reason:&str
+    )->Result<(),EvidenceError>{
+        if !Self::campaign_safe_id(id)||!bounded(source_id,128)
+            ||!matches!(stage,
+                "METADATA_CORROBORATED"|"DOCUMENT_ACCESSED"
+                |"METADATA_MISMATCH"|"DOCUMENT_UNAVAILABLE"|"ERROR")
+            ||!matches!(reason,
+                "OK"|"CATALOG_MISMATCH"|"PDF_UNSUPPORTED"
+                |"PUBLISHER_UNAVAILABLE"|"RETRIEVAL_FAILED"
+                |"UNSUPPORTED_CONTENT"|"METADATA_FAILED"){
+            return Err(EvidenceError::Invalid);
+        }
+        let exists:Option<i64>=self.connection.query_row(
+            "SELECT 1 FROM research_campaign_leads
+             WHERE campaign_id=?1 AND source_id=?2 LIMIT 1",
+            params![id,source_id],|r|r.get(0)
+        ).optional()?;
+        if exists.is_none(){return Err(EvidenceError::Missing);}
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_campaign_source_review
+             (campaign_id,source_id,stage,reason_code)
+             VALUES (?1,?2,?3,?4)",
+            params![id,source_id,stage,reason]
+        )?;
+        let stored:(String,String)=self.connection.query_row(
+            "SELECT stage,reason_code FROM research_campaign_source_review
+             WHERE campaign_id=?1 AND source_id=?2",
+            params![id,source_id],|r|Ok((r.get(0)?,r.get(1)?))
+        )?;
+        if stored!=(stage.to_owned(),reason.to_owned()){
+            return Err(EvidenceError::Invalid);
+        }
+        Ok(())
     }
     fn campaign_safe_id(id:&str)->bool{
         id.starts_with("research-campaign-")&&id.len()<=128
