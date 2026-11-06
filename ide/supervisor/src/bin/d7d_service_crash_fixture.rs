@@ -90,7 +90,7 @@ mod native {
             println!("PASS: restarted host kernel proof + protected fsynced service recovery ACK");
             return Ok(());
         }
-        if args.len() != 4 || args[0] != "--owner" {
+        if args.len() != 4 || !matches!(args[0].as_str(), "--owner" | "--owner-watch") {
             return Err("DENIED: fixed --owner/--recover/--sleep modes only".into());
         }
         let cfg = config(&args[1], &args[2])?;
@@ -122,7 +122,7 @@ mod native {
         }
         // The independent SCM service opens the empty Job, writes and fsyncs
         // protected READY, then replies. Only afterward can child be created.
-        let _lease = ServiceLease::begin(job.0, &id, &plan, &cfg)
+        let mut lease = ServiceLease::begin(job.0, &id, &plan, &cfg)
             .map_err(|e| format!("service admit denied: {}", e.code()))?;
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let executable = wide(exe.as_os_str());
@@ -150,6 +150,27 @@ mod native {
         fs::write(&marker, format!("{}\n{}\n{}\n{}\n",
             std::process::id(), process.dwProcessId, id, plan,
         )).map_err(|e| e.to_string())?;
+        if args[0] == "--owner-watch" {
+            // Exercise the same fail-closed service-liveness rule that the
+            // production native worker checks between AppContainer waits.
+            // Losing the sole trusted service never grants a completion
+            // receipt: the owner kills the Job and refuses further work.
+            for _ in 0..250 {
+                if !lease.alive() {
+                    if unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(
+                        job.0, 77,
+                    ) } == 0 ||
+                        unsafe { WaitForSingleObject(child.0, 8000) } != 0 {
+                        return Err("DENIED: service-loss Job tree not reaped".into());
+                    }
+                    fs::write(marker.with_extension("watchdog"), b"service_lost_job_reaped")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(());
+                }
+                thread::sleep(Duration::from_millis(40));
+            }
+            return Err("DENIED: service-loss watchdog never observed failure".into());
+        }
         // External PowerShell observer MUST kill this process. A spontaneous
         // exit means the crash test failed, not that cleanup was proven.
         thread::sleep(Duration::from_secs(120));
