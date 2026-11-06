@@ -32,8 +32,16 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github', 'ide_read_exact_head_ci', 'ide_record_task_update', 'ide_observe_task_ci', 'ide_prepare_execution_intent', 'ide_decide_execution_intent', 'ide_list_execution_intents', 'ide_read_git_diff', 'ide_read_git_history', 'ide_probe_project_resource'
+    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github', 'ide_read_exact_head_ci', 'ide_record_task_update', 'ide_observe_task_ci', 'ide_prepare_execution_intent', 'ide_decide_execution_intent', 'ide_list_execution_intents', 'ide_read_git_diff', 'ide_read_git_history', 'ide_probe_project_resource',
+    'ide_list_language_servers', 'ide_lsp_worker_status',
+    'ide_lsp_start_session', 'ide_lsp_change_document',
+    'ide_lsp_read_diagnostics', 'ide_lsp_stop_session'
   ].sort());
+  // E2's dynamic method string is restricted to the two inspected options.
+  assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
+  const desktop = read('../src-tauri/src/lib.rs');
+  assert.match(desktop, /LSP_PROTECTED_WORKER_UNVERIFIED/);
+  assert.match(desktop, /cfg\(not\(all\(windows, feature = "native-lsp"\)\)\)/);
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
   }
@@ -265,7 +273,9 @@ test('Wave A1 copy source reference validates saved revision and selected line',
   assert.match(web, /navigator\.clipboard\.writeText\(reference\)/);
   assert.match(web, /if \(tab\.dirty\)/);
   assert.match(cm, /aria-label="Source code editor"/);
-  assert.match(cm, /lineAt\(view\.state\.selection\.main\.head\)\.number/);
+  assert.match(cm, /const head = view\.state\.selection\.main\.head/);
+  assert.match(cm, /const line = view\.state\.doc\.lineAt\(head\)/);
+  assert.match(cm, /cursorCallback\.current\?\.\(line\.number\)/);
   assert.match(tauri, /fn ide_read_source_span/);
 });
 
@@ -277,10 +287,19 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 30, 'capability macro declarations must be found');
+  assert.equal(commands.length, 31, 'capabilities must include the E1 read-only LSP catalog');
   assert.equal(new Set(commands).size, commands.length);
-  const declared = registered.filter(value => value !== 'ide_list_capabilities');
+  const nativeLspCommands = [
+    'ide_lsp_worker_status', 'ide_lsp_start_session',
+    'ide_lsp_change_document', 'ide_lsp_feature',
+    'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
+  ];
+  assert.deepEqual(registered.filter(value => value.startsWith('ide_lsp_')).sort(),
+    nativeLspCommands.slice().sort());
+  const declared = registered.filter(value =>
+    value !== 'ide_list_capabilities' && !nativeLspCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
+  assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);
   assert.match(registry, /connected_to_lu: false/);
   assert.match(registry, /"source.save"/);
@@ -297,7 +316,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 30);
+  assert.equal(Object.keys(schemas.operations).length, 31);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
