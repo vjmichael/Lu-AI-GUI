@@ -1,6 +1,7 @@
 # Lu IDE — Development changelog
 
 ## 2026-11-06 — Wave E2 protected language-service integration (source, native pending)
+- Exercised actual local clangd 17 LSP protocol for initialization, diagnostics, hover, definition and completion; committed sanitized JSON-RPC transcript and fixed bounded completion-prefix textEdit handling with explicit human insertion. No native protected-worker execution claim.
 - Introduced real LSP session wire processor: initialize, safe document sync, bounded diagnostics/completions/hover/same-file definition, strict pending/revision checks and rejection of server-initiated execution or edits.
 - Added optional internal supervisor transport endpoint requiring trusted running D3 job, same plan SHA, OS containment proof and verified tree cleanup; **no unrestricted process spawn or active native LSP child**.
 - Wired CodeMirror marker effects, problems/suggestions/hover panels, same-file jump and human-selected completion insertion, native read-only worker status, language server catalog page and UTF-16/stale result guards.
