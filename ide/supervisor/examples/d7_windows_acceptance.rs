@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true
     ).map_err(|e| format!("DENIED: fixture approval: {}", e.code()))?;
     let result = execute_windows_worker(
-        &supervisor, &prepared.job_id, &plan, &input, &bundle,
+        &supervisor, &prepared.job_id, &plan, &plan.source_head, &input, &bundle,
         &native_outputs, &WindowsCancellation::new()
     ).map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
     if result.summary.phase != JobPhase::Completed
