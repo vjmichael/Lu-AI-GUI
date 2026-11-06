@@ -470,12 +470,18 @@
             "project.open",
             "project.close",
             "project.unregister",
-            "source.save"
+            "source.save",
+            "task.update",
+            "task.ci.observe"
           ]
         },
         "outcome": {
-          "type": "string",
-          "const": "observed_host_success"
+          "enum": [
+            "observed_host_success",
+            "human_task_note_recorded",
+            "host_ci_observation_recorded_not_acceptance"
+          ],
+          "type": "string"
         },
         "sourceRevision": {
           "anyOf": [
@@ -496,6 +502,16 @@
             {
               "type": "string",
               "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskEvidenceEvent"
             },
             {
               "type": "null"
@@ -628,6 +644,13 @@
         },
         "gitWorktree": {
           "$ref": "#/$defs/GitWorktreeInspection"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskSummary"
+          },
+          "maxItems": 64
         }
       },
       "required": [
@@ -641,7 +664,8 @@
         "events",
         "documents",
         "inventory",
-        "gitWorktree"
+        "gitWorktree",
+        "tasks"
       ]
     },
     "EvidenceFile": {
@@ -1686,6 +1710,316 @@
         "taskCompletionAcceptance",
         "credentialsUsed"
       ]
+    },
+    "TaskCiWorkflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workflow": {
+          "type": "string"
+        },
+        "runId": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "runId",
+        "verdict"
+      ]
+    },
+    "TaskCiObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "public_github_actions_explicit_read"
+        },
+        "observedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{40}$"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskCiWorkflow"
+          },
+          "maxItems": 2
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "taskAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        }
+      },
+      "required": [
+        "source",
+        "observedUnixSeconds",
+        "repository",
+        "commitSha",
+        "verdict",
+        "errorCode",
+        "workflows",
+        "installationAcceptance",
+        "taskAcceptance"
+      ]
+    },
+    "TaskEvidenceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "human_update",
+            "ci_observation"
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requiredGates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
+        },
+        "linkedCommit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkedWorktree": {
+          "type": "string"
+        },
+        "boundUpdateEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ci": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskCiObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "taskId",
+        "kind",
+        "title",
+        "status",
+        "nextAction",
+        "requiredGates",
+        "linkedCommit",
+        "linkedWorktree",
+        "boundUpdateEventId",
+        "ci"
+      ]
+    },
+    "TaskGateEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "gate",
+        "state",
+        "provenance"
+      ]
+    },
+    "TaskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "in_progress",
+            "blocked",
+            "ready_for_review"
+          ]
+        },
+        "nextAction": {
+          "type": "string"
+        },
+        "requiredGates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
+        },
+        "updateEventId": {
+          "type": "string"
+        },
+        "linkedCommit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkedWorktree": {
+          "type": "string"
+        },
+        "updatedUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observedCi": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskCiObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ciLinkState": {
+          "type": "string"
+        },
+        "acceptanceGates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskGateEvidence"
+          },
+          "maxItems": 4
+        },
+        "taskAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        }
+      },
+      "required": [
+        "taskId",
+        "title",
+        "status",
+        "nextAction",
+        "requiredGates",
+        "updateEventId",
+        "linkedCommit",
+        "linkedWorktree",
+        "updatedUnixSeconds",
+        "observedCi",
+        "ciLinkState",
+        "acceptanceGates",
+        "taskAcceptance"
+      ]
     }
   },
   "operations": {
@@ -2229,6 +2563,90 @@
       },
       "result": {
         "$ref": "#/$defs/ExactHeadCiEvidence"
+      }
+    },
+    "task.update": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "in_progress",
+              "blocked",
+              "ready_for_review"
+            ]
+          },
+          "nextAction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "requiredGates": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "source_review",
+                "exact_head_ci",
+                "installed_windows",
+                "human_approval"
+              ]
+            },
+            "maxItems": 4
+          }
+        },
+        "required": [
+          "projectId",
+          "taskId",
+          "title",
+          "status",
+          "nextAction",
+          "requiredGates"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/TaskSummary"
+      }
+    },
+    "task.ciObserve": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectId",
+          "taskId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/TaskSummary"
       }
     }
   }

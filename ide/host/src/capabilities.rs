@@ -99,6 +99,24 @@ fn metadata() -> Vec<CapabilityMeta> {
             "remote commit SHA and checked time; independently labeled local and dirty state"
         ),
         capability!(
+            "task.update",
+            "ide_record_task_update",
+            "Record a development task update",
+            "Append an explicit human task note and native observed source HEAD to the existing private ledger; not task acceptance.",
+            "catalog_write",
+            "active registered project and bounded task ID, title, status, next action and enumerated required gates",
+            "new ledger event and task revision; source commit captured by native host, no claim of passing tests"
+        ),
+        capability!(
+            "task.ciObserve",
+            "ide_observe_task_ci",
+            "Check and link exact-commit CI for a task",
+            "Explicit public GitHub Actions inspection from the host, linked to an unchanged task update and current HEAD, stored in the same ledger.",
+            "catalog_write",
+            "active registered project, existing task with same source HEAD, explicit user click; may make bounded GitHub read",
+            "append-only task CI observation bound to exact task event and commit SHA; not installation or task acceptance"
+        ),
+        capability!(
             "git.ciExactHead",
             "ide_read_exact_head_ci",
             "Inspect exact-head CI evidence",
@@ -363,7 +381,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 25);
+        assert_eq!(catalog.capabilities.len(), 27);
         assert!(catalog.capabilities.len() <= 32);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -399,7 +417,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 31);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 36);
     }
 
     #[test]

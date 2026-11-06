@@ -4,6 +4,7 @@ import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 // Intentionally excludes source text, local absolute paths, and effect authority.
 const MAX_FILES = 24;
 const MAX_EVENTS = 20;
+const MAX_TASKS = 24;
 const MAX_DOCS = 12;
 const MAX_CHANGES = 24;
 
@@ -103,6 +104,25 @@ export function buildDevelopmentCheckpoint(projectId, context, comparison, copie
         })),
       },
     },
+    // Portable task coordinates and evidence states; user-authored title and
+    // next-action text remain private to the local IDE profile.
+    developmentTasks: items(context.tasks, MAX_TASKS, task => ({
+      taskId: limitedText(task.taskId, 64),
+      status: limitedText(task.status, 40),
+      linkedCommit: limitedText(task.linkedCommit, 40),
+      linkedWorktree: limitedText(task.linkedWorktree, 80),
+      ciLinkState: limitedText(task.ciLinkState, 80),
+      ciVerdict: limitedText(task.observedCi?.verdict, 80),
+      taskAcceptance: 'not_verified',
+      requiredGates: (Array.isArray(task.requiredGates) ? task.requiredGates : [])
+        .slice(0, 4).map(gate => limitedText(gate, 40)),
+      gateEvidence: (Array.isArray(task.acceptanceGates) ? task.acceptanceGates : [])
+        .slice(0, 4).map(gate => ({
+          gate: limitedText(gate.gate, 40),
+          state: limitedText(gate.state, 80),
+        })),
+      titleExcluded: true, nextActionExcluded: true,
+    })),
     hostEvents: items(context.events, MAX_EVENTS, event => ({
       eventId: limitedText(event.eventId, 80),
       observedUnixSeconds: event.observedUnixSeconds,
@@ -121,6 +141,7 @@ export function buildDevelopmentCheckpoint(projectId, context, comparison, copie
       'Host reads are bounded and non-atomic. Git and local files may change immediately after inspection.',
       'Saved Git tracking refs do not establish current remote state or ancestry.',
       'A file digest verifies observed bytes only; toolchain and installer usability are not tested.',
+      'Task records are human-authored progress and locally observed CI references, never automatic task acceptance.',
     ],
   };
 }

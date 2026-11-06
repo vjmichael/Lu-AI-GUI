@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave C6 — Task evidence and development ledger integration (2026-11-05)
+
+- **Source branch:** `ide/wave-c6-task-ledger-20261105`, stacked on exact C5 source `1dd4a58d84d6bc5f383f75e463b15f82baea6de8` (C5 PR #49). Earlier C3/C4 are passing native/frontend/continuity GitHub CI on their own heads, but no physical installed Windows acceptance. The standalone IDE and Lu Core remain independent.
+- **One private ledger:** C6 extends existing `development-ledger.jsonl` events with an optional, strictly typed task payload and host-owned task materialization. Legacy events remain readable; a task change appends a new event and never rewrites old history. Snapshot of local Git HEAD and dirty state is captured by the host at task update time.
+- **Human task claims:** native `task.update`/`ide_record_task_update` supports bounded task IDs/titles/next actions, status `planned | in_progress | blocked | ready_for_review`, and user-selected gates `source_review | exact_head_ci | installed_windows | human_approval`. No `completed` input is allowed. Maximum 64 tasks per registered project.
+- **CI-linked evidence:** `task.ciObserve`/`ide_observe_task_ci` independently invokes the trusted exact-HEAD public GitHub inspector, binds its bounded summary to the *latest* human task event ID and current source commit, and appends a separate observation. The frontend never supplies the CI verdict, workflow IDs, credentials, Git SHA or any acceptance claim. An intervening task edit or changed HEAD invalidates the old CI link.
+- **Evidence gates:** host projects per-task gate statuses. Successful commit CI can produce `commit_ci_passed_not_task_accepted`; it never proves unsaved buffers, installed Windows UI, a human source review, or final task acceptance. The Continuity UI supports task updates and explicit CI observation, while the portable checkpoint exports only task IDs, statuses, commit/evidence coordinates and explicit unknowns (no task title or private next-action text).
+- **Security:** app-profile-only append under one mutex, no project file mutation, no arbitrary process execution, no Lu runtime bridge. Native test fixtures and Node frontend contract/privacy tests added. **Verification:** exact-head C6 Linux, Windows, frontend and continuity CI not yet accepted; physical installed Windows UI and actual live public CI lookup in an installed app remain open.
+
+
 ## Wave C5 — Exact-head CI receipts (2026-11-05)
 
 - **Implementation branch:** `ide/wave-c5-exact-ci-evidence-20261105`, stacked on C4 commit `ca606dfb378ce31945a768a23e9ab6a31cbe60e8`. C3 PR #47 and C4 PR #48 remain independent/open pending acceptance; do not merge C5 before dependencies.

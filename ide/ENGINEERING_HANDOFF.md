@@ -7,6 +7,9 @@
 
 This entrypoint is intended to spare the next development conversation from rediscovering the original scope, CI, app paths, and acceptance history.
 
+## C6 continuation pointer — task/evidence ledger (source only)
+The latest Wave 3 task bridge is `ide/host/src/task_evidence.rs` and the optional `DevelopmentEvent.task` in `ide/host/src/continuity.rs`. The native app now supports typed human progress updates and explicit host-probed task CI observations, which are materialized into `ProjectContext.tasks`. The journal remains the single private source; project Markdown is untrusted orientation, not proof of completion. Task status never accepts completed/accepted. Check `ide/docs/IDE_WAVE_C6_TASK_EVIDENCE.md` for exact evidence and acceptance limits, and always verify exact GitHub HEAD before citing CI.
+ 
 ## Required first read (PCP-01)
 
 Before changing code, read [current project state](PROJECT_STATE.md), [chronological changelog](CHANGELOG.md), and [continuity protocol](CONTINUITY_PROTOCOL.md). Confirm real local workspace and `Delivered` contents before assuming GitHub is the most advanced source. Log unknown local or installer locations as unverified, not absent.

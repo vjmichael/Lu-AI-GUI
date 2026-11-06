@@ -1,5 +1,12 @@
 # Lu IDE — Development changelog
 
+## 2026-11-05 — Wave C6 task evidence and development ledger (source implementation)
+- Extended the existing private append-only `DevelopmentLedger` with typed `TaskEvent` payloads and host-backed project task summaries. Human progress edits do not rewrite or claim verified acceptance; they keep source HEAD/dirty state and required gate IDs.
+- Added `ide_record_task_update` and `ide_observe_task_ci`, both typed in the semantic capability catalog (27 native commands, 36 definitions). CI is independently fetched by the native host, matched to the current human task event and source SHA, then logged. Stale updates and duplicate/unscoped task IDs fail closed.
+- Added Continuity task editor, required gate toggles, task evidence list, link/test action and privacy-sanitized task checkpoint coordinates. No standalone worker, Git mutation, installer claim or Lu bridge.
+- New `host/src/task_evidence.rs` Rust tests and `app/tests/task_ledger.test.mjs` Node tests cover task/non-acceptance separation, malformed states, cross-project reads and stale CI links. Exact-head CI acceptance and installed Windows interaction pending.
+- **Dependency repair:** C5 source failed only Linux rustfmt after its native tests passed; GitHub formatter diff applied to C5 at `1dd4a58d84d6bc5f383f75e463b15f82baea6de8`. C6 branch starts from that repaired C5 commit. Its own formatting gate remains to be validated.
+
 ## 2026-11-05 — Wave C5 exact-source GitHub Actions receipts
 - Added native read-only `git.ciExactHead` behind a human-triggered Source control action. It derives only validated public github.com origin, queries bounded fixed api.github.com endpoints for the **exact local HEAD SHA**, checks workflow file paths and required job metadata, rejects partial results and duplicate/missing/other-head jobs, and distinguishes success/failure/running/no evidence.
 - Added typed JSON Schema v2 descriptor (25 genuine host operations, 31 nested types) and Tauri command. No credentials, arbitrary HTTP targets, background network access, project mutation, subprocess execution or Lu bridge.

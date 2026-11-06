@@ -215,6 +215,49 @@ async fn ide_compare_project_inventory(
     .map_err(|_| "INVENTORY_COMPARE_UNAVAILABLE".to_owned())?
 }
 
+/// C6: user-authored task progress is an append-only note, not acceptance.
+#[tauri::command]
+async fn ide_record_task_update(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+    project_id: String,
+    task_id: String,
+    title: String,
+    status: String,
+    next_action: String,
+    required_gates: Vec<String>,
+) -> Result<lu_ide_workspace::task_evidence::TaskSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        ledger.record_task_update(&registry, &project_id, &task_id, &title,
+            &status, &next_action, required_gates)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "TASK_UPDATE_UNAVAILABLE".to_owned())?
+}
+
+/// C6: native host independently checks exact-head public GitHub Actions and
+/// appends the bounded observation to a specific task revision. The UI cannot
+/// submit a verdict, commit SHA, or supposed CI receipt.
+#[tauri::command]
+async fn ide_observe_task_ci(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+    project_id: String,
+    task_id: String,
+) -> Result<lu_ide_workspace::task_evidence::TaskSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        ledger.record_task_ci(&registry, &project_id, &task_id)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| "TASK_CI_UNAVAILABLE".to_owned())?
+}
+
 /// List actual host-supported operations. Discovery is not authorization.
 #[tauri::command]
 async fn ide_list_capabilities() -> lu_ide_workspace::capabilities::CapabilityCatalog {
@@ -516,6 +559,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
             ide_read_project_context,
+            ide_record_task_update,
+            ide_observe_task_ci,
             ide_read_git_status,
             ide_read_git_diff,
             ide_probe_project_resource,

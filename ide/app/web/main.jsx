@@ -19,6 +19,12 @@ const sections = [
 
 const keyFor = (projectId, path) => projectId + ':' + path;
 const leafFor = path => path.split('/').pop() || path;
+const taskGateChoices = [
+  { id: 'source_review', title: 'Source review' },
+  { id: 'exact_head_ci', title: 'Exact-commit CI' },
+  { id: 'installed_windows', title: 'Installed Windows acceptance' },
+  { id: 'human_approval', title: 'Human approval' },
+];
 
 function App() {
   const [section, setSection] = useState('projects');
@@ -54,6 +60,15 @@ function App() {
   const [projectContext, setProjectContext] = useState(null);
   const [contextBusy, setContextBusy] = useState(false);
   const [checkpointBusy, setCheckpointBusy] = useState(false);
+  const [taskIdInput, setTaskIdInput] = useState('');
+  const [taskTitleInput, setTaskTitleInput] = useState('');
+  const [taskStateInput, setTaskStateInput] = useState('in_progress');
+  const [taskNextActionInput, setTaskNextActionInput] = useState('');
+  const [taskRequiredGates, setTaskRequiredGates] = useState([
+    'source_review', 'exact_head_ci',
+  ]);
+  const [taskBusy, setTaskBusy] = useState(false);
+  const taskRequest = useRef(0);
   const contextRequest = useRef(0);
   const checkpointRequest = useRef(0);
   const [gitStatus, setGitStatus] = useState(null);
@@ -95,6 +110,13 @@ function App() {
     exactCiRequest.current += 1;
     setExactCi(null);
     setExactCiBusy(false);
+    taskRequest.current += 1;
+    setTaskBusy(false);
+    setTaskIdInput('');
+    setTaskTitleInput('');
+    setTaskStateInput('in_progress');
+    setTaskNextActionInput('');
+    setTaskRequiredGates(['source_review', 'exact_head_ci']);
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
@@ -299,6 +321,71 @@ function App() {
       }
     } finally {
       if (request === contextRequest.current) setContextBusy(false);
+    }
+  }
+
+  function editTask(task) {
+    if (taskBusy) return;
+    setTaskIdInput(task.taskId);
+    setTaskTitleInput(task.title);
+    setTaskStateInput(task.status);
+    setTaskNextActionInput(task.nextAction);
+    setTaskRequiredGates(task.requiredGates);
+    setHint('Task loaded for revision. Saving appends a new historical event; it never rewrites old evidence.');
+  }
+
+  async function recordTaskUpdate() {
+    const projectId = activeProject?.projectId;
+    const taskId = taskIdInput.trim();
+    const title = taskTitleInput.trim();
+    const nextAction = taskNextActionInput.trim();
+    if (!projectId || taskBusy || contextBusy) return;
+    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(taskId) ||
+        !title || title.length > 120 || !nextAction || nextAction.length > 240 ||
+        !taskRequiredGates.length) {
+      setProblem('Enter a task ID, short title, next action, and at least one acceptance gate.');
+      return;
+    }
+    const request = ++taskRequest.current;
+    setTaskBusy(true);
+    setProblem('');
+    try {
+      const recorded = await invoke('ide_record_task_update', {
+        projectId, taskId, title, status: taskStateInput, nextAction,
+        requiredGates: taskRequiredGates,
+      });
+      if (request !== taskRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (recorded.taskId !== taskId) throw Error('TASK_REVISION_MISMATCH');
+      setHint('Task progress recorded in the private development ledger. Acceptance is not verified.');
+      await refreshContext();
+    } catch (error) {
+      if (request === taskRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not record task progress: ' + String(error));
+    } finally {
+      if (request === taskRequest.current) setTaskBusy(false);
+    }
+  }
+
+  async function observeTaskCi(task) {
+    const projectId = activeProject?.projectId;
+    if (!projectId || taskBusy || contextBusy || !task.linkedCommit) return;
+    const request = ++taskRequest.current;
+    setTaskBusy(true);
+    setProblem('');
+    try {
+      // Native host fetches CI itself; no status or GitHub receipt comes from the UI.
+      const updated = await invoke('ide_observe_task_ci', {
+        projectId, taskId: task.taskId,
+      });
+      if (request !== taskRequest.current || activeProjectIdRef.current !== projectId) return;
+      if (updated.taskId !== task.taskId) throw Error('TASK_EVIDENCE_MISMATCH');
+      setHint('Exact-commit CI observation linked to task revision; installed app and task acceptance remain open.');
+      await refreshContext();
+    } catch (error) {
+      if (request === taskRequest.current && activeProjectIdRef.current === projectId)
+        setProblem('Could not attach task CI observation: ' + String(error));
+    } finally {
+      if (request === taskRequest.current) setTaskBusy(false);
     }
   }
 
@@ -1101,6 +1188,80 @@ function App() {
                     </article>)}
                 </div>
               </section>}
+            <section className="continuityDocument" aria-label="Development task ledger">
+              <h3>Development tasks and acceptance gates</h3>
+              <p>Task updates are human-authored history, not proof of completion.
+                The IDE records the current local commit and keeps CI, installed
+                Windows acceptance and human approval separate.</p>
+              {activeProject && <div className="taskEditor">
+                <label htmlFor="ideTaskId">Task ID</label>
+                <input id="ideTaskId" type="text" maxLength={64}
+                  value={taskIdInput} onChange={event => setTaskIdInput(event.target.value)}
+                  placeholder="IDE-C6" disabled={taskBusy} />
+                <label htmlFor="ideTaskTitle">Short title</label>
+                <input id="ideTaskTitle" type="text" maxLength={120}
+                  value={taskTitleInput} onChange={event => setTaskTitleInput(event.target.value)}
+                  placeholder="Verify task evidence" disabled={taskBusy} />
+                <label htmlFor="ideTaskStatus">Human progress</label>
+                <select id="ideTaskStatus" value={taskStateInput}
+                  disabled={taskBusy} onChange={event => setTaskStateInput(event.target.value)}>
+                  <option value="planned">Planned</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="ready_for_review">Ready for review</option>
+                </select>
+                <label htmlFor="ideTaskNext">Next action</label>
+                <input id="ideTaskNext" type="text" maxLength={240}
+                  value={taskNextActionInput} onChange={event => setTaskNextActionInput(event.target.value)}
+                  placeholder="Review latest CI and installed acceptance" disabled={taskBusy} />
+                <fieldset className="taskGateChoices">
+                  <legend>Required acceptance gates</legend>
+                  {taskGateChoices.map(gate => <label key={gate.id}>
+                    <input type="checkbox" disabled={taskBusy}
+                      checked={taskRequiredGates.includes(gate.id)}
+                      onChange={event => setTaskRequiredGates(previous =>
+                        event.target.checked
+                          ? [...previous, gate.id]
+                          : previous.filter(value => value !== gate.id))} />
+                    {gate.title}
+                  </label>)}
+                </fieldset>
+                <button className="ghostBtn" type="button"
+                  disabled={taskBusy || contextBusy || !activeProject}
+                  onClick={() => recordTaskUpdate()}>
+                  {taskBusy ? 'Recording…' : 'Record task update'}
+                </button>
+              </div>}
+              {!contextBusy && projectContext?.tasks.length === 0 &&
+                <p>No task records yet. Recording one does not change your source files.</p>}
+              {!contextBusy && projectContext?.tasks.map(task =>
+                <article className="continuityEvent" key={task.taskId}>
+                  <div className="capabilityHeading">
+                    <strong>{task.taskId}: {task.title}</strong>
+                    <span>{task.status.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>Next: {task.nextAction}</p>
+                  <p>Linked source commit: <code>{task.linkedCommit || 'not observed'}</code>
+                    {' · '}Worktree: {task.linkedWorktree.replaceAll('_', ' ')}</p>
+                  <p>Last progress: {new Date(task.updatedUnixSeconds * 1000).toLocaleString()}
+                    {' · '}Task acceptance: <strong>Not verified</strong></p>
+                  <p>CI observation: {task.ciLinkState.replaceAll('_', ' ')}
+                    {task.observedCi && <> · {task.observedCi.verdict.replaceAll('_', ' ')}</>}</p>
+                  {task.acceptanceGates.map(gate =>
+                    <p key={gate.gate}>{gate.gate.replaceAll('_', ' ')}:
+                      <strong> {gate.state.replaceAll('_', ' ')}</strong></p>)}
+                  <div className="continuityCapture">
+                    <button className="ghostBtn" type="button" disabled={taskBusy || contextBusy}
+                      onClick={() => editTask(task)}>Edit progress</button>
+                    <button className="ghostBtn" type="button"
+                      disabled={taskBusy || contextBusy || !task.linkedCommit ||
+                        task.linkedCommit !== projectContext?.gitWorktree.localHead}
+                      onClick={() => observeTaskCi(task)}>
+                      {taskBusy ? 'Working…' : 'Check & record task CI'}
+                    </button>
+                  </div>
+                </article>)}
+            </section>
             {!activeProject && <p>Open a project to inspect its development context.</p>}
             {contextBusy && <p role="status">Reading project history…</p>}
             {!contextBusy && projectContext && <div className="continuityBody">

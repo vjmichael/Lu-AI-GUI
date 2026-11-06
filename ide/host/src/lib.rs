@@ -21,6 +21,7 @@ pub mod proposal;
 pub mod resource_probe;
 pub mod review;
 pub mod source_span;
+pub mod task_evidence;
 pub mod wire;
 
 use std::{
