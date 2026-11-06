@@ -4,7 +4,7 @@
 //! arbitrary curl, browser session or research agent runtime is created.
 use std::{
     fs::{self,File},io::Read,path::{Path,PathBuf},
-    sync::Mutex,collections::HashSet,
+    sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}},collections::HashMap,
 };
 use serde::Serialize;
 use sha2::{Digest,Sha256};
@@ -15,7 +15,7 @@ use lu_core::{
     web_research_analysis::{AnalysisStore,Interpretation,Stance},
     web_research_report::{render_verified_report,VerifiedResearchReport},
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
-    web_search_openalex::search_openalex,
+    web_search_openalex::{search_openalex,search_openalex_cancellable},
 };
 
 #[derive(Serialize,Clone)]
@@ -269,7 +269,7 @@ pub(crate) struct ResearchCampaignReviewView{
     pub message:&'static str,
 }
 pub(crate) struct ResearchDesktop{
-    active_campaigns:Mutex<HashSet<String>>,
+    active_campaigns:Mutex<HashMap<String,Arc<AtomicBool>>>,
     root:PathBuf,
     curl:PathBuf,
     expected_sha256:Option<&'static str>,
@@ -309,7 +309,7 @@ impl ResearchDesktop{
         #[cfg(not(windows))]
         let filename="curl";
         Self{
-            active_campaigns:Mutex::new(HashSet::new()),
+            active_campaigns:Mutex::new(HashMap::new()),
             root:app_data.join("lu-research-evidence"),
             curl:resources.join("lu-research").join(filename),
             expected_sha256:option_env!("LU_RESEARCH_CURL_SHA256"),
@@ -671,7 +671,7 @@ impl ResearchDesktop{
     /// with the discovered DOIs in the same chat-scoped SQLite transaction.
     /// A failed page remains resumable and cannot claim fake progress.
     pub(crate) fn advance_campaign(
-        &self,chat_id:&str,campaign_id:&str
+        &self,chat_id:&str,campaign_id:&str,cancel:&AtomicBool
     )->Result<ResearchCampaignView,String>{
         if !self.available(){return Err("Pinned Research HTTPS client unavailable".into());}
         let db=self.root.join(format!("{chat_id}.sqlite"));
@@ -689,7 +689,7 @@ impl ResearchDesktop{
         };
         if remaining==0{return self.campaign_status(chat_id,campaign_id);}
         let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
-        let result=search_openalex(&fetcher,&query,page);
+        let result=search_openalex_cancellable(&fetcher,&query,page,cancel);
         let mut ledger=EvidenceLedger::open(&db)
             .map_err(|_|"Research evidence ledger unavailable")?;
         let found=match result{
@@ -724,18 +724,21 @@ impl ResearchDesktop{
         // because the new process has no active workers. A same-process
         // concurrent Resume cannot duplicate or race the active curl task.
         let key=format!("{chat_id}:{campaign_id}");
+        let cancel=Arc::new(AtomicBool::new(false));
         {
             let mut leases=self.active_campaigns.lock()
                 .map_err(|_|"Research campaign worker lock unavailable")?;
-            if !leases.insert(key.clone()){
+            if leases.contains_key(&key){
                 return Err("Research campaign is already running".into());
             }
+            leases.insert(key.clone(),Arc::clone(&cancel));
         }
         let result=(||{
             let mut latest=self.campaign_status(chat_id,campaign_id)?;
             for _ in 0..5{
                 if matches!(latest.state.as_str(),"DONE"|"CANCELLED"){break;}
-                latest=self.advance_campaign(chat_id,campaign_id)?;
+                if cancel.load(Ordering::Acquire){break;}
+                latest=self.advance_campaign(chat_id,campaign_id,&cancel)?;
             }
             Ok(latest)
         })();
@@ -775,6 +778,14 @@ impl ResearchDesktop{
             .map_err(|_|"Research evidence ledger unavailable")?;
         ledger.cancel_campaign(campaign_id)
             .map_err(|_|"Research campaign cancel refused")?;
+        // DB revocation is durable; atomically stop the owned HTTPS child,
+        // rather than just marking the campaign cancelled after curl exits.
+        let key=format!("{chat_id}:{campaign_id}");
+        if let Ok(active)=self.active_campaigns.lock(){
+            if let Some(flag)=active.get(&key){
+                flag.store(true,Ordering::Release);
+            }
+        }
         ledger.campaign_status(campaign_id).map(Into::into)
             .map_err(|_|"Research campaign unavailable".into())
     }
@@ -794,12 +805,14 @@ impl ResearchDesktop{
             return Err("Cancelled Research campaign cannot review more sources".into());
         }
         let key=format!("{chat_id}:{campaign_id}");
+        let cancel=Arc::new(AtomicBool::new(false));
         {
             let mut active=self.active_campaigns.lock()
                 .map_err(|_|"Research worker lock unavailable")?;
-            if !active.insert(key.clone()){
+            if active.contains_key(&key){
                 return Err("This Research campaign has an active network worker".into());
             }
+            active.insert(key.clone(),Arc::clone(&cancel));
         }
         let outcome=(||{
             let db=self.root.join(format!("{chat_id}.sqlite"));
@@ -812,7 +825,7 @@ impl ResearchDesktop{
             let mut reviewed=0u32;
             for source_id in pending {
                 let snapshot=self.campaign_status(chat_id,campaign_id)?;
-                if snapshot.state=="CANCELLED"{break;}
+                if snapshot.state=="CANCELLED"||cancel.load(Ordering::Acquire){break;}
                 // Stage is derived entirely from host-verified metadata and
                 // persisted doc status, not model confidence or source prose.
                 let (stage,reason)=match self.corroborate_crossref(chat_id,&source_id){
