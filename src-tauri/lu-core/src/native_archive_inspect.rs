@@ -186,6 +186,43 @@ fn inspect(root:&Dir,request:proto::ArchiveListRequest)
     if request.path.to_ascii_lowercase().ends_with(".zip"){
         return inspect_zip(root,request)
     }
+    if crate::native_seven_rar::detect_7z_rar(&request.path).is_some(){
+        let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
+        if !(1..=MAX_RETURNED_ENTRIES).contains(&max){
+            return Err(refuse("ARCHIVE_LIMIT","Invalid 7z/RAR listing entry budget"))
+        }
+        let path=safe_relative_name(&request.path,false)?;
+        if path.components().count()!=1{
+            return Err(refuse("INVALID_ARCHIVE_PATH","Archive must be a flat approved filename"))
+        }
+        let stat=root.symlink_metadata(&path)
+            .map_err(|_|refuse("ARCHIVE_UNAVAILABLE","Archive file unavailable"))?;
+        if !stat.is_file()||stat.file_type().is_symlink()||stat.len()>128*1024*1024{
+            return Err(refuse("ARCHIVE_INVALID","Archive source is unsafe or oversized"))
+        }
+        let members=crate::native_seven_rar::seven_rar_tree_members(root,&request.path)
+            .map_err(|_|refuse("ARCHIVE_INVALID","Native 7z/RAR decoder refused archive"))?;
+        let total_entries=members.len();
+        let mut total=0u64;
+        for (_,_,bytes) in &members{
+            total=total.checked_add(bytes.len() as u64)
+                .ok_or_else(||refuse("ARCHIVE_TOO_LARGE","Archive expanded total invalid"))?;
+        }
+        let entries=members.into_iter().take(max as usize).map(|(path,dir,bytes)|
+            proto::ArchiveEntry{
+                path,kind:if dir{"directory".into()}else{"file".into()},
+                compressed_bytes:0,declared_uncompressed_bytes:bytes.len() as u64,
+                crc32:0,
+            }).collect();
+        return Ok(ToolOutput{payload:ProtoPayload{
+            type_url:OUTPUT.into(),
+            bytes:proto::ArchiveListResult{
+                entries,truncated:total_entries>max as usize,
+                total_entries:total_entries as u64,
+                total_declared_uncompressed_bytes:total,archive_bytes:stat.len(),
+            }.encode_to_vec(),
+        }});
+    }
     if crate::native_cpio::is_cpio_name(&request.path)||
         crate::native_ar_deb::is_ar_name(&request.path){
         let max=request.max_entries.unwrap_or(DEFAULT_ENTRIES);
@@ -328,7 +365,7 @@ impl ModelToolCodec for ArchiveCodec {
             .ok_or_else(|| ModelToolError::InvalidArguments("path must be text".into()))?;
         safe_relative_name(path, false)
             .map_err(|_| ModelToolError::InvalidArguments("unsafe archive path".into()))?;
-        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") && crate::native_linux_archive::detect_linux_archive(path).is_none() && !crate::native_cpio::is_cpio_name(path) && !crate::native_ar_deb::is_ar_name(path) {
+        if !path.to_ascii_lowercase().ends_with(".zip") && !path.to_ascii_lowercase().ends_with(".iso") && crate::native_linux_archive::detect_linux_archive(path).is_none() && !crate::native_cpio::is_cpio_name(path) && !crate::native_ar_deb::is_ar_name(path) && crate::native_seven_rar::detect_7z_rar(path).is_none() {
             return Err(ModelToolError::InvalidArguments("Unsupported archive format".into()));
         }
         let max_entries = optional_uint(args, "max_entries", DEFAULT_ENTRIES, MAX_RETURNED_ENTRIES)?;
@@ -395,7 +432,7 @@ pub fn register_archive_inspection_tool(
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_archive_list".into(),
         native_tool_id: LIST.into(),
-        description: "Read-only inspect ZIP, ISO9660, TAR and compressed streams, CPIO newc/crc, Unix ar and Debian DEB packages; no execution or extraction.".into(),
+        description: "Read-only inspect ZIP, ISO9660, TAR, CPIO, ar, Debian DEB, 7z and RAR/RAR5; fail closed on encrypted or unsafe entries; no execution or extraction.".into(),
         parameters: json!({
             "type": "object",
             "properties": {
