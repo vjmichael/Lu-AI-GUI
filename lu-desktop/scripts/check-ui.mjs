@@ -118,6 +118,12 @@ const tests = [
     (ui.match(/aria-label="Review reversible file trash"/g) || []).length === 1 &&
     !ui.includes("invoke('lu_review_trash_file'") &&
     !host.includes('fn lu_review_trash_file(')],
+  ['file operation UI reports active native work without fabricating completion or percent',
+    ui.includes('const wave2FileBusy = archiveBusy') &&
+    ui.includes('aria-label="Native file operation in progress"') &&
+    ui.includes('Byte-level progress is not available') &&
+    ui.includes('No automatic retry occurs') &&
+    ui.includes('File recovery before taking another action')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
