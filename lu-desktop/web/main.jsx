@@ -197,7 +197,12 @@ function App() {
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
   useEffect(()=>{
-    if(!chatId){setObserveView({mode:'off'});return;}
+    if(!chatId){
+      // Telling the native host that there is no active chat revokes any
+      // Lu-UI observation lease rather than letting it run unseen.
+      invoke('lu_observe_status',{chatId:''}).catch(()=>{});
+      setObserveView({mode:'off'});return;
+    }
     let active=true;
     invoke('lu_observe_status',{chatId})
       .then(v=>{if(active)setObserveView(v);})

@@ -49,3 +49,6 @@ The dedicated observer shares the existing Arc<TaskStore> and its durable status
 The native_observe_ansf bridge accepts only bounded, provenance-checked host-test results with separate human approval and writes them into the existing ANSF store. It rejects cross-chat records and duplicates. This bridge is not exposed to the WebView until there is a trusted native GUI test oracle and review UI.
 
 The current Lu application pilot will observe only explicitly approved semantic UI event indicators, not Windows desktop pixels or other applications. A renderer hint can never mark a GUI test PASS or FAIL. Brief/deep reasoning suggestions remain inert until integrated with the existing model queue. Actual Windows UI Automation and user-authorized Graphics Capture are still required before full desktop observation.
+
+
+**Chat-switch privacy fence:** The existing Tauri status endpoint immediately revokes a live observation if the user switches to another conversation or no conversation. The native task becomes CANCELLED; it never silently observes under a hidden prior grant. A new host after restart has no consent even if the previous task was INTERRUPTED. This is verified by focused native host tests, not yet physical desktop acceptance.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "677f1cd653d10723de5fe3335f5f259446f3a0c8",
+  "sourceCommitBeforeLock": "759b492b591c5b9b0b7d7d1d96df9d54bc105e21",
   "trackedFileCount": 415,
   "files": [
     {
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/LU_OBSERVE_LEARN_V1.md",
-      "blob": "2ebd76c9b78df3e6bbc6c2e60b10c89b2d2836d4"
+      "blob": "de63ca396b63899a40ca0672f52953b459ba43a0"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -393,7 +393,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "8e78e7f5431f1fe8115ee62a81b01daad91a91d5"
+      "blob": "b75ac3a8aa11987d4b849487eba1ea0c4d108f7f"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -585,7 +585,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "fb31f31682ceb742950e08bcbda54c5d2feabefc"
+      "blob": "af59eb926f5084c0f8a65d61e4fb9eedeabb11d6"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

@@ -124,6 +124,11 @@ impl ObserveHost {
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut session)?;
         if session.chat_id.as_deref()!=Some(chat_id){
+            // Observation must not remain silently active when the user
+            // leaves the consenting conversation (including a new chat).
+            if session.controller.mode()!=Mode::Off{
+                self.revoke(&mut session)?;
+            }
             return Ok(Self::view(&Session{
                 controller:Controller::default(),session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
@@ -240,13 +245,18 @@ mod tests{
         host.start("c-owner","obs-scoped".into()).unwrap();
         assert!(host.pause("c-intruder").is_err());
         assert!(host.stop("c-intruder").is_err());
+        // Switching chat immediately revokes observation rather than
+        // disguising a still-running session as "off" in the new chat.
         assert_eq!(host.status("c-intruder").unwrap().mode,"off");
+        assert_eq!(store.get("obs-scoped").unwrap().unwrap().state,TaskState::Cancelled);
+        host.start("c-owner","obs-restart".into()).unwrap();
         drop(host);
         // The existing TaskStore startup recovery marks running records as
         // interrupted; a newly constructed host has no observation grant.
         assert_eq!(store.reconcile_interrupted().unwrap(),1);
         let after=ObserveHost::new(Arc::clone(&store));
         assert_eq!(after.status("c-owner").unwrap().mode,"off");
-        assert_eq!(store.get("obs-scoped").unwrap().unwrap().state,TaskState::Interrupted);
+        assert_eq!(store.get("obs-scoped").unwrap().unwrap().state,TaskState::Cancelled);
+        assert_eq!(store.get("obs-restart").unwrap().unwrap().state,TaskState::Interrupted);
     }
 }
