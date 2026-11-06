@@ -9,7 +9,7 @@ use serde::Serialize;
 use sha2::{Digest,Sha256};
 use lu_core::{
     web_http_fetch::SecureHttpFetcher,
-    web_research_evidence::{Candidate,EvidenceLedger,EvidenceError,SourceStatus,TrustedBibliography},
+    web_research_evidence::{Candidate,EvidenceLedger,EvidenceError,SourceStatus,TrustedBibliography,ResearchCampaignStatus},
     web_research_planner::canonical_doi,
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::search_openalex,
@@ -171,6 +171,32 @@ pub(crate) struct ResearchDocumentPassageView{
     pub verification_status:&'static str,
     pub bibliographic_passage_verified:bool,
     pub interpretation_verified:bool,
+}
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCampaignView{
+    pub campaign_id:String,
+    pub query:String,
+    pub state:String,
+    pub next_page:u32,
+    pub candidate_ceiling:u32,
+    pub distinct_dois:u32,
+    pub completed_pages:u32,
+    pub blocked_reason:Option<String>,
+    pub message:&'static str,
+}
+impl From<ResearchCampaignStatus> for ResearchCampaignView{
+    fn from(status:ResearchCampaignStatus)->Self{
+        Self{
+            campaign_id:status.id,query:status.query,
+            state:status.state,next_page:status.next_page,
+            candidate_ceiling:status.candidate_ceiling,
+            distinct_dois:status.distinct_dois,
+            completed_pages:status.completed_pages,
+            blocked_reason:status.blocked_reason,
+            message:"Catalog leads are discovered only; search count is not independently verified full-text evidence.",
+        }
+    }
 }
 pub(crate) struct ResearchDesktop{
     root:PathBuf,
@@ -496,6 +522,139 @@ impl ResearchDesktop{
             bibliographic_passage_verified:true,
             interpretation_verified:false,
         })
+    }
+
+    /// Bounded campaign with one fixed OpenAlex query. The caller must obtain
+    /// a native grant for the campaign, not accept a model-created task ID.
+    pub(crate) fn create_campaign(
+        &self,chat_id:&str,campaign_id:&str,query:&str,ceiling:u32
+    )->Result<ResearchCampaignView,String>{
+        if !safe_id(chat_id){return Err("Invalid Research conversation".into());}
+        fs::create_dir_all(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        if let Ok(meta)=fs::symlink_metadata(&db){
+            if !meta.file_type().is_file()||meta.file_type().is_symlink(){
+                return Err("Research evidence file untrusted".into());
+            }
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.create_campaign(campaign_id,query,ceiling)
+            .map(Into::into)
+            .map_err(|_|"Research campaign rejected".into())
+    }
+    pub(crate) fn campaign_status(
+        &self,chat_id:&str,campaign_id:&str
+    )->Result<ResearchCampaignView,String>{
+        if !safe_id(chat_id){return Err("Invalid Research conversation".into());}
+        let dir=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research directory unavailable")?;
+        if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+            return Err("Research directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.campaign_status(campaign_id).map(Into::into)
+            .map_err(|_|"Research campaign not found".into())
+    }
+    /// Each page is a separate public HTTPS read, atomically checkpointed
+    /// with the discovered DOIs in the same chat-scoped SQLite transaction.
+    /// A failed page remains resumable and cannot claim fake progress.
+    pub(crate) fn advance_campaign(
+        &self,chat_id:&str,campaign_id:&str
+    )->Result<ResearchCampaignView,String>{
+        if !self.available(){return Err("Pinned Research HTTPS client unavailable".into());}
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        // campaign_status verifies chat identity and trusted file before use.
+        let _=self.campaign_status(chat_id,campaign_id)?;
+        let (query,page,remaining)={
+            let mut ledger=EvidenceLedger::open(&db)
+                .map_err(|_|"Research evidence ledger unavailable")?;
+            match ledger.claim_campaign_page(campaign_id)
+                .map_err(|_|"Campaign cannot claim this page")?{
+                Some(task)=>task,
+                None=>return ledger.campaign_status(campaign_id)
+                    .map(Into::into).map_err(|_|"Campaign unavailable".into()),
+            }
+        };
+        if remaining==0{return self.campaign_status(chat_id,campaign_id);}
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let result=search_openalex(&fetcher,&query,page);
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let found=match result{
+            Ok(page_data)=>page_data,
+            Err(_)=>{
+                let _=ledger.block_campaign(campaign_id,"FETCH_FAILED");
+                return Err("Research page failed; progress is saved. Review and resume explicitly.".into());
+            }
+        };
+        if found.page!=page{
+            let _=ledger.block_campaign(campaign_id,"POLICY_DENIED");
+            return Err("Research provider page mismatch".into());
+        }
+        let leads=found.leads.into_iter().map(|l|Candidate{
+            id:l.provider_id,title:l.title,author:l.authors,
+            identifier:l.doi
+        }).collect::<Vec<_>>();
+        ledger.finish_campaign_page(
+            campaign_id,page,&found.observed_sha256,&leads,
+            found.next_page.is_some()&&remaining>0
+        ).map(Into::into)
+        .map_err(|_|"Research page did not produce a durable checkpoint".into())
+    }
+    /// User-approved run of up to five explicitly bounded OpenAlex pages.
+    /// A restart never auto-resumes network access; the user must approve
+    /// a fresh request. Each completed page survives application failure.
+    pub(crate) fn run_campaign(
+        &self,chat_id:&str,campaign_id:&str
+    )->Result<ResearchCampaignView,String>{
+        let mut latest=self.campaign_status(chat_id,campaign_id)?;
+        for _ in 0..5{
+            if matches!(latest.state.as_str(),"DONE"|"CANCELLED"){break;}
+            latest=self.advance_campaign(chat_id,campaign_id)?;
+        }
+        Ok(latest)
+    }
+    pub(crate) fn resume_campaign(
+        &self,chat_id:&str,campaign_id:&str
+    )->Result<ResearchCampaignView,String>{
+        let _=self.campaign_status(chat_id,campaign_id)?;
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let state=ledger.campaign_status(campaign_id)
+            .map_err(|_|"Research campaign unknown")?;
+        if state.state=="BLOCKED" {
+            ledger.resume_campaign(campaign_id)
+                .map_err(|_|"Research campaign resume refused")?;
+        }
+        ledger.campaign_status(campaign_id).map(Into::into)
+            .map_err(|_|"Research campaign unavailable".into())
+    }
+    pub(crate) fn cancel_campaign(
+        &self,chat_id:&str,campaign_id:&str
+    )->Result<ResearchCampaignView,String>{
+        let _=self.campaign_status(chat_id,campaign_id)?;
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.cancel_campaign(campaign_id)
+            .map_err(|_|"Research campaign cancel refused")?;
+        ledger.campaign_status(campaign_id).map(Into::into)
+            .map_err(|_|"Research campaign unavailable".into())
     }
 
     /// User-approved metadata corroboration of one already-persisted
