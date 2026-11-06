@@ -125,7 +125,7 @@ pub(crate) fn physical_file(path:&Path)->Result<(String,PathBuf,Arc<Dir>),String
         .map_err(|_|"Cannot open archive parent directory")?);
     Ok((name,parent.to_path_buf(),capability))
 }
-fn physical_folder(path:&Path)->Result<Arc<Dir>,String>{
+pub(crate) fn physical_folder(path:&Path)->Result<Arc<Dir>,String>{
     let meta=fs::symlink_metadata(path).map_err(|_|"Chosen folder unavailable")?;
     if !meta.is_dir()||meta.file_type().is_symlink(){
         return Err("Choose an actual directory, not a link".into())
