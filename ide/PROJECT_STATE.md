@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Wave D7B — Pinned Windows SDK and hostile acceptance (2026-11-06)
+
+- **Source / PR:** `ide/wave-d7b-windows-acceptance-20261106`, draft [PR #60](https://github.com/vjmichael/Lu-AI-GUI/pull/60), stacked on D7 #58; preserve D6 → D7 → D7B merge order.
+- **Build fixture:** `ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1` packages Rust 1.99.1, native MSVC 14.44.*, VS 17.14.*, Windows SDK 10.0.26100.0 and the actual UCRT/UM headers/libs and compiler tools into an offline bundle with bounds, no reparse points and full canonical per-file SHA-256 lock outside the runnable payload. **Release pin remains unapproved until an independently reviewed expected bundle digest is supplied.**
+- **Worker integration:** D7 native Windows worker environment now uses sealed Cargo/rustc, linker, SDK binaries, `LIB`, `INCLUDE`, fixed offline Cargo target; Windows GetFileInformationByHandle rejects hardlinked files and tracks directory identity across path walks. The latter does NOT prove full handle-relative race immunity.
+- **Hostile native acceptance:** Windows tests for hardlinks, directory symlinks/junctions, source parent swap, post-seal tampering, output aliasing, bundle digest drift, and missing-named-Job restart quarantine; `d7_windows_acceptance --cancel-native-worker` requires genuine OS Job cancellation, no published outputs, durable CancelRequested → Cancelled replay.
+- **Independent crash observer:** opt-in D2 fixed native Job parent-crash mode plus `Test-IndependentJobCrash.ps1` separately witnesses two live descendant process handles before forcibly killing owner and confirms both OS handles signaled. This is **fixture-only**, not an authenticated D7 crash-recovery receipt.
+- **CI:** `.github/workflows/ide-d7b-native-acceptance.yml` targets Windows 2025 for separate hostile, crash and full offline Cargo checks. Latest-head CI and real SDK AppContainer execution **pending**; D7B remains draft, worker remains off by default, no desktop Run or Lu Core execution bridge.
+- **Remaining risk:** same-user concurrent swap race and independent durable witness for a missing Job after host crash/reboot are unresolved. See `ide/supervisor/WINDOWS_WORKER_ACCEPTANCE.md`.
+
 ## Wave D7 — Integrated Windows native worker (2026-11-06)
 
 - **Draft PR #58:** `ide/wave-d7-windows-native-worker-20261106`, stacked on Wave D6 PR #56 source `62986780b752f7add62f93c818a8cbac796660c8`. Do not merge in reverse order. No installed app or Lu Core worker permission added.
