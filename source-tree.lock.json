@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "492d70f9616ee352e6e74d582522fe862269de65",
+  "sourceCommitBeforeLock": "0fb577fb4491b75ea5f18e7dd3cc9013f2ffa2db",
   "trackedFileCount": 459,
   "files": [
     {
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "7f5b94ddf9a7ca9b8fcd7af6f559ab2a2c11675c"
+      "blob": "86acff1c1e5952814f79f5268d63aa0ea526c7b3"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -101,7 +101,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "14840ef4d8f4c36258e3267d193fa5a395df0b9d"
+      "blob": "2f4585f8b6abc02962aa4973511b1141bb717990"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -157,7 +157,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "840a04e435d8b17e6b69b24a772ec2d71203a5db"
+      "blob": "ed95afd77471d45a0420f20cedbbff7c1cbf5b2b"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -1805,7 +1805,7 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "c1f6ddecb877d9e3daa51502ee9f9bc5c9645279"
+      "blob": "8a73baac406f1b8a4da85a049f073eca7ed954ac"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",

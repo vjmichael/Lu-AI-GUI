@@ -10,6 +10,40 @@
 //! Task stdout follows the existing bounded P / D host receipt protocol.
 #![deny(unsafe_code)]
 
+const MAX_FRAME_WIDTH:u32=7680;
+const MAX_FRAME_HEIGHT:u32=4320;
+const MAX_FRAME_BYTES:usize=(MAX_FRAME_WIDTH as usize)*(MAX_FRAME_HEIGHT as usize)*4;
+/// Validates the actual mapped D3D11 row layout. Accepts ordinary pitch
+/// padding only within a fixed bounded allocation; rejects truncated frames.
+fn frame_geometry_valid(width:u32,height:u32,row_pitch:u32,buffer_len:usize)->bool {
+    if width==0||height==0||width>MAX_FRAME_WIDTH||height>MAX_FRAME_HEIGHT{return false;}
+    let Some(row_bytes)=(width as usize).checked_mul(4) else{return false;};
+    let Some(pitch)=usize::try_from(row_pitch).ok() else{return false;};
+    if pitch<row_bytes||pitch>row_bytes.saturating_add(4096){return false;}
+    let Some(mapped_len)=pitch.checked_mul(height as usize) else{return false;};
+    let Some(useful_end)=pitch.checked_mul(height as usize-1)
+        .and_then(|n|n.checked_add(row_bytes)) else{return false;};
+    let max_padded=MAX_FRAME_BYTES+(MAX_FRAME_HEIGHT as usize)*4096;
+    mapped_len<=max_padded&&buffer_len>=useful_end&&buffer_len<=max_padded
+}
+#[cfg(test)]
+mod frame_geometry_tests {
+    use super::*;
+    #[test]
+    fn accepts_mapped_bgra_frame_with_bounded_pitch_padding(){
+        assert!(frame_geometry_valid(1920,1080,7680,7680*1080));
+        assert!(frame_geometry_valid(1919,1080,7680,7680*1080));
+    }
+    #[test]
+    fn rejects_invalid_dimensions_truncation_and_unbounded_pitch(){
+        assert!(!frame_geometry_valid(0,1080,7680,7680*1080));
+        assert!(!frame_geometry_valid(7681,1080,7681*4,7681*4*1080));
+        assert!(!frame_geometry_valid(1920,1080,300,300*1080));
+        assert!(!frame_geometry_valid(1920,1080,7680,100));
+        assert!(!frame_geometry_valid(1,1,u32::MAX,usize::MAX));
+    }
+}
+
 #[cfg(not(windows))]
 fn main() {
     eprintln!("Lu Graphics Capture worker requires interactive Windows.");
@@ -32,9 +66,6 @@ mod windows_capture_worker {
         },
     };
 
-    const MAX_WIDTH:i32=7680;
-    const MAX_HEIGHT:i32=4320;
-    const MAX_FRAME_BYTES:usize=7680*4320*4;
     const MAX_CAPTURE_SECS:u64=20;
 
     struct OneFrame {
@@ -58,21 +89,17 @@ mod windows_capture_worker {
             }
             let width=frame.width();
             let height=frame.height();
-            let bytes=usize::try_from(width)
-                .ok().and_then(|w|usize::try_from(height).ok()
-                    .and_then(|h|w.checked_mul(h)?.checked_mul(4)))
-                .ok_or("Invalid capture dimensions")?;
-            if width==0||height==0||
-                width>MAX_WIDTH as u32||height>MAX_HEIGHT as u32||
-                bytes>MAX_FRAME_BYTES{
+            if width==0||height==0
+                ||width>MAX_FRAME_WIDTH||height>MAX_FRAME_HEIGHT{
                 control.stop();
                 return Err("Capture dimensions exceed Lu's bounded frame limit".into());
             }
             let mut gpu_frame=frame.buffer()?;
+            let row_pitch=gpu_frame.row_pitch();
             let buffer=gpu_frame.as_raw_buffer();
-            if buffer.len()<bytes||buffer.len()>MAX_FRAME_BYTES+(MAX_HEIGHT as usize*1024){
+            if !frame_geometry_valid(width,height,row_pitch,buffer.len()){
                 control.stop();
-                return Err("Invalid capture row pitch or frame size".into());
+                return Err("Invalid mapped D3D11 frame stride or frame size".into());
             }
             // Read actual WGC/D3D11-mapped bytes. No screenshot file, video
             // recording, user text, clipboard, window title or pixel IPC.
@@ -114,7 +141,8 @@ mod windows_capture_worker {
             return Err("Windows capture picker canceled by user".into());
         };
         let (width,height)=picked.size()?;
-        if width<=0||height<=0||width>MAX_WIDTH||height>MAX_HEIGHT{
+        if width<=0||height<=0
+            ||width>MAX_FRAME_WIDTH as i32||height>MAX_FRAME_HEIGHT as i32{
             return Err("Selected source exceeds Lu's capture size limit".into());
         }
         let settings=Settings::new(

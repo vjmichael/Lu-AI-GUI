@@ -319,3 +319,6 @@ Branch `lu/wave3-conversation-tools-20261105` is stacked on the source-implement
 **WAVE4-ENV-02 SOURCE IMPLEMENTED (2026-11-06):** Native runtime diagnostics return supervised engine phase/session, admitted model/MMProj and desktop version without shell/env dumps. Actual GPU/backend and live image reasoning remain explicitly UNVERIFIED. Tests added to existing Environment suite; native acceptance pending.
 
 **WAVE4-IMAGE-WS-02 SOURCE IMPLEMENTED (2026-11-06):** New Lu Core deterministic PNG crop/resize of already admitted image bytes with image dimension/pixel/size/digest bounds; native Tauri explicit approval and OS Save dialog select a NEW file; immutable create_new write, sync/readback SHA-256 receipt and React numeric UI. No source overwrite, arbitrary paths, model image-edit tools or unrestricted filesystem authority. Full revision journal/undo, annotation, semantic editing, crash recovery and installed acceptance OPEN.
+
+
+**OBSERVE-WIN-07 FRAME BOUNDS SOURCE (2026-11-06):** Added strict width/height/row-pitch and mapped-buffer-length checks and Windows worker unit tests before hashing any mapped D3D11 frame. Source-only; native Windows compilation and installed capture evidence remain pending. AWARENESS-07–11 remains DEFERRED.
