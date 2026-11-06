@@ -13,13 +13,13 @@
 //! journal, or modify the AppContainer profile's ACLs.
 use crate::SupervisorError;
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
-use cap_std::{ambient_authority, fs::{Dir, OpenOptions}};
+use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
     fs::{self, File},
     io::{Read, Write},
-    os::windows::{fs::MetadataExt, io::AsRawHandle},
+    os::windows::{fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle},
     path::{Path, PathBuf},
 };
 use windows_sys::Win32::{
@@ -42,17 +42,25 @@ fn clean_name(name: &OsStr) -> Result<(), SupervisorError> {
     Ok(())
 }
 fn safe_root(path: &Path) -> Result<Dir, SupervisorError> {
-    let meta = fs::symlink_metadata(path).map_err(|_| denied())?;
+    // Open the trusted root with FILE_FLAG_OPEN_REPARSE_POINT so an attacker
+    // cannot swap a junction between path-metadata and handle acquisition.
+    // Share READ/WRITE but not DELETE: the opened directory itself cannot
+    // be renamed during the entire rooted traversal.
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const FILE_SHARE_READ_WRITE: u32 = 0x0000_0003;
+    let mut options = fs::OpenOptions::new();
+    options.read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .share_mode(FILE_SHARE_READ_WRITE);
+    let root_file = options.open(path).map_err(|_| denied())?;
+    let meta = root_file.metadata().map_err(|_| denied())?;
     if !meta.is_dir() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(denied());
     }
-    let root = Dir::open_ambient_dir(path, ambient_authority()).map_err(|_| denied())?;
-    if !root.dir_metadata().map_err(|_| denied())?.is_dir() {
-        return Err(denied());
-    }
-    // Root identity/ACL authorization is the trusted host broker's job.
-    // cap_std keeps *all subsequent* child operations rooted to this handle.
-    Ok(root)
+    // The host validates root provenance/ACL. From this point every child
+    // uses this pinned kernel directory handle, never an ambient path.
+    Ok(Dir::from_std_file(root_file))
 }
 fn valid_leaf(file: &File) -> Result<(u64, std::time::SystemTime), SupervisorError> {
     let meta = file.metadata().map_err(|_| denied())?;
