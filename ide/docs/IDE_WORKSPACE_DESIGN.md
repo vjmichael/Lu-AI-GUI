@@ -159,6 +159,30 @@ This **eight-stage sequence is the official Lu IDE task list**. Existing IDE-01B
 ### Implementation discipline
 For each task: (a) design/API and threat analysis; (b) implement on dedicated IDE branch, preserving core boundary; (c) unit/integration tests; (d) native Linux acceptance; (e) Windows parity where effects are OS-specific; (f) Git commit and evidence; (g) user-facing status and remaining defects. “Designed”, “compiled”, “tested under mocks”, “native tested” and “accepted” are distinct statuses.
 
+### Lu coding versus language-server responsibilities (Wave E2 decision)
+
+Language servers are first-class **routine analysis services**, not models:
+rust-analyzer/clangd/Pyright/Ruff/TypeScript provide diagnostics, language-aware
+completion, symbols, hover and navigation. Lu focuses on understanding the
+user's intent, planning and applying reviewable source changes, debugging
+complex behavior, evaluating test evidence and deciding what to build next.
+Lu may inspect the same native source revisions and LSP evidence visible in
+the human editor; neither Lu nor a language server can independently grant
+execution, edit files, install dependencies, follow server-supplied URIs or
+silently alter the stable Lu installation.
+
+Prefer bundled, reviewed open-source **native** language-server binaries for
+the first installer (rust-analyzer, clangd and Ruff); Node-based Pyright and
+TypeScript may be offered after Node and transitive license auditing. Shipping
+a binary requires a pinned version/platform digest, signed/provenanced
+artifact, all license/notice texts, dependency audit, verified sandbox and
+installed UI acceptance. Installation and startup are distinct from project
+open; do not auto-run or download an untrusted project's preferred server.
+
+**Actual Wave E2 status:** editor/protocol/optional supervisor gateway code
+exists, but OS-restricted server launch/IPC and native acceptance remain open
+until Wave D7D is verified. No direct desktop process spawn is permitted.
+
 ## 7. Decisions, dependencies and open questions
 
 **Decided:** one repository; dedicated IDE branch; **independent IDE executable with optional Lu bridge**, not a Lu-embedded DLC; advanced Git in IDE, basic Git in Core; one manager-of-managers; offline-capable local-first workflow; no automatic execution of new projects; host authorization and OS-backed isolation before executable automation; local Linux development and Windows acceptance; human approval for high-impact changes.
