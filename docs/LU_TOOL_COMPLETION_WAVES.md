@@ -11,6 +11,12 @@
 | E — Observe & Learn | Minimized event-driven observation, safe redaction and independently reviewable handoff to larger model | OFF by default; explicit chat/session/target scope; no silent surveillance or fabricated GUI pass |
 | F — Unified host lifecycle | Process and cancellation receipt hardening, consistent return/timeout bounds and Development Ledger integration | Native and installed test gates remain OPEN pending real GH CI and physical Windows |
 
+## Reader/OCR and Image Workspace bounded continuation (2026-11-06)
+
+Branch: `lu/reader-ocr-image-closeout-20261106` stacked on the previous preview source branch. Implemented real bounded **ODS range**, **ODT text**, **PPTX/ODP notes** Reader adapters; extended existing digest-pinned offline OCR to current admitted attachments with native consent and image decode preflight; added native ellipse/line deterministic annotations; corrected staged-edit coordinate validation and inferred same-chat revision parent links from exact SHA-256 history. No new model-facing filesystem or browser authority. Original files remain unchanged.
+
+Release exclusions: scanned PDF rasterization, PDF CMap/object-stream completeness, rich visual Office rendering, autonomous semantic image editing, true filesystem undo, long-running hostile parser isolation, native Windows/Linux CI, installed OCR/NSIS/GGUF acceptance are NOT declared complete.
+
 ## Continuation after C/E/F — IMAGE-WS-PREVIEW-01
 
 Branch `lu/tool-completion-preview-20261106` (descendant of C/E/F source checkpoint). A read-only Tauri command now previews 1–12 staged image edit steps using the exact native deterministic transform. The transient local PNG is capped at 4 MiB, never saved or supplied to the model, and is displayed only while chat, original image reference and staged operations still match. Human-reviewed native no-clobber export and the original image remain unchanged. Preview unit/structural tests are committed as source; they have not executed. Version graph/advanced semantic edits and native/installed acceptance remain open.

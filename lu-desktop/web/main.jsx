@@ -7,6 +7,7 @@ import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
+import {stagedImageDimensions,REGION_IMAGE_OPERATIONS} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 
@@ -655,46 +656,52 @@ function App() {
   useEffect(()=>{setImageAssemblyPreview(null);},[currentImagePreviewKey]);
   function queueImageStep(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
-    const region=['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
-    const width=['rotate90','flip_h'].includes(imageEdit.mode)?
-      imageViewer.width:Number(imageEdit.width);
-    const height=['rotate90','flip_h'].includes(imageEdit.mode)?
-      imageViewer.height:Number(imageEdit.height);
-    const x=region?Number(imageEdit.x):null,y=region?Number(imageEdit.y):null;
-    const blockSize=imageEdit.mode==='pixelate'?Number(imageEdit.blockSize):null;
-    const stroke=imageEdit.mode==='rectangle'?Number(imageEdit.stroke):null;
-    const color=imageEdit.mode==='rectangle'&&/^#[0-9a-fA-F]{6}$/.test(imageEdit.color)?
-      parseInt(imageEdit.color.slice(1),16):null;
-    if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)
-      ||width<1||height<1||width>8192||height>8192
-      ||width*height>32000000
-      ||(region&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0))
-      ||(blockSize!==null&&(!Number.isSafeInteger(blockSize)||blockSize<2||blockSize>128))
-      ||(stroke!==null&&(!Number.isSafeInteger(stroke)||stroke<1||stroke>64))
-      ||(imageEdit.mode==='rectangle'&&color===null)){
-      setError('Image assembly step has invalid parameters.');return;
+    const previous=imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer.imageRef
+      ?imagePlan.steps:[];
+    if(previous.length>=12){
+      setError('A single image assembly permits at most 12 steps.');return;
     }
+    const frame=stagedImageDimensions(imageViewer.width,imageViewer.height,previous);
+    if(!frame){setError('Staged image geometry is invalid.');return;}
+    const region=REGION_IMAGE_OPERATIONS.includes(imageEdit.mode);
+    const width=['rotate90','flip_h'].includes(imageEdit.mode)
+      ?frame.width:Number(imageEdit.width);
+    const height=['rotate90','flip_h'].includes(imageEdit.mode)
+      ?frame.height:Number(imageEdit.height);
+    const x=region?Number(imageEdit.x):null;
+    const y=region?Number(imageEdit.y):null;
+    const isDrawing=['rectangle','line','ellipse'].includes(imageEdit.mode);
+    const blockSize=imageEdit.mode==='pixelate'?Number(imageEdit.blockSize):null;
+    const stroke=isDrawing?Number(imageEdit.stroke):null;
+    const color=isDrawing&&/^#[0-9a-fA-F]{6}$/.test(imageEdit.color)
+      ?parseInt(imageEdit.color.slice(1),16):null;
     const step={operation:imageEdit.mode,x,y,width,height,blockSize,stroke,color};
-    setImagePlan(p=>{
-      const old=p.chatId===chatId&&p.imageRef===imageViewer.imageRef?
-        p.steps:[];
-      if(old.length>=12){setError('A single image assembly permits at most 12 steps.');return p;}
-      return {chatId,imageRef:imageViewer.imageRef,steps:[...old,step],redo:[]};
-    });
+    const next=[...previous,step];
+    const after=stagedImageDimensions(imageViewer.width,imageViewer.height,next);
+    if(!after){
+      setError('Image operation exceeds current staged dimensions or limits.');return;
+    }
+    setImagePlan({chatId,imageRef:imageViewer.imageRef,steps:next,redo:[]});
+    setImageEdit(v=>({...v,x:'0',y:'0',
+      width:String(after.width),height:String(after.height)}));
   }
   function undoImageStep(){
-    if(!chatId||!imageViewer?.imageRef)return;
-    setImagePlan(p=>{
-      if(p.chatId!==chatId||p.imageRef!==imageViewer.imageRef||!p.steps.length)return p;
-      return {...p,steps:p.steps.slice(0,-1),redo:[p.steps.at(-1),...p.redo]};
-    });
+    if(!chatId||imagePlan.chatId!==chatId||
+      imagePlan.imageRef!==imageViewer?.imageRef||!imagePlan.steps.length)return;
+    const steps=imagePlan.steps.slice(0,-1);
+    const dims=stagedImageDimensions(imageViewer.width,imageViewer.height,steps);
+    if(!dims)return;
+    setImagePlan({...imagePlan,steps,redo:[imagePlan.steps.at(-1),...imagePlan.redo]});
+    setImageEdit(v=>({...v,width:String(dims.width),height:String(dims.height)}));
   }
   function redoImageStep(){
-    if(!chatId||!imageViewer?.imageRef)return;
-    setImagePlan(p=>{
-      if(p.chatId!==chatId||p.imageRef!==imageViewer.imageRef||!p.redo.length)return p;
-      return {...p,steps:[...p.steps,p.redo[0]],redo:p.redo.slice(1)};
-    });
+    if(!chatId||imagePlan.chatId!==chatId||
+      imagePlan.imageRef!==imageViewer?.imageRef||!imagePlan.redo.length)return;
+    const steps=[...imagePlan.steps,imagePlan.redo[0]];
+    const dims=stagedImageDimensions(imageViewer.width,imageViewer.height,steps);
+    if(!dims){setError('Redo would exceed image geometry limits.');return;}
+    setImagePlan({...imagePlan,steps,redo:imagePlan.redo.slice(1)});
+    setImageEdit(v=>({...v,width:String(dims.width),height:String(dims.height)}));
   }
   async function previewImageAssembly(){
     const sourceChat=chatId,sourceRef=imageViewer?.imageRef;
@@ -723,7 +730,7 @@ function App() {
     const queuedPlan=imagePlan.chatId===chatId&&
       imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length?
       imagePlan.steps:null;
-    const region=!queuedPlan&&['crop','redact','pixelate','rectangle'].includes(imageEdit.mode);
+    const region=!queuedPlan&&REGION_IMAGE_OPERATIONS.includes(imageEdit.mode);
     const geometry=region||(!queuedPlan&&imageEdit.mode==='resize');
     const width=queuedPlan?1:(geometry?Number(imageEdit.width):imageViewer.width);
     const height=queuedPlan?1:(geometry?Number(imageEdit.height):imageViewer.height);
@@ -738,7 +745,8 @@ function App() {
          x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))||
        (imageEdit.mode==='pixelate'&&(!Number.isSafeInteger(blockSize)||
          blockSize<2||blockSize>128))||
-       (imageEdit.mode==='rectangle'&&(hex===null||!Number.isSafeInteger(stroke)||
+       (['rectangle','line','ellipse'].includes(imageEdit.mode)&&
+        (hex===null||!Number.isSafeInteger(stroke)||
          stroke<1||stroke>64)))){
       setError('Choose valid dimensions, mask/annotation region and color.');return;
     }
@@ -751,8 +759,8 @@ function App() {
         operation:queuedPlan?'resize':imageEdit.mode,
         x:region?x:null,y:region?y:null,width,height,
         blockSize:!queuedPlan&&imageEdit.mode==='pixelate'?blockSize:null,
-        stroke:!queuedPlan&&imageEdit.mode==='rectangle'?stroke:null,
-        color:!queuedPlan&&imageEdit.mode==='rectangle'?hex:null,
+        stroke:!queuedPlan&&['rectangle','line','ellipse'].includes(imageEdit.mode)?stroke:null,
+        color:!queuedPlan&&['rectangle','line','ellipse'].includes(imageEdit.mode)?hex:null,
         steps:queuedPlan
       });
       if(saved){
@@ -3533,10 +3541,12 @@ function App() {
               <option value="flip_h">Flip horizontally</option>
               <option value="redact">Solid privacy mask</option>
               <option value="pixelate">Pixelate selected region</option>
-              <option value="rectangle">Outline annotation</option>
+              <option value="rectangle">Rectangle outline</option>
+              <option value="line">Diagonal line annotation</option>
+              <option value="ellipse">Ellipse outline annotation</option>
             </select>
           </label>
-          {['crop','redact','pixelate','rectangle'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
+          {REGION_IMAGE_OPERATIONS.includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
             <label>X <input type="number" min="0" value={imageEdit.x}
               onChange={e=>setImageEdit(v=>({...v,x:e.target.value}))}/></label>
             <label>Y <input type="number" min="0" value={imageEdit.y}
@@ -3552,10 +3562,11 @@ function App() {
             <input type="number" min="2" max="128" value={imageEdit.blockSize}
               onChange={e=>setImageEdit(v=>({...v,blockSize:e.target.value}))}/>
           </label>}
-          {imageEdit.mode==='rectangle'&&<div className="imageRevisionDimensions">
+          {['rectangle','line','ellipse'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
             <label>Annotation color <input type="color" value={imageEdit.color}
               onChange={e=>setImageEdit(v=>({...v,color:e.target.value}))}/></label>
-            <label>Stroke width <input type="number" min="1" max="64" value={imageEdit.stroke}
+            <label>Stroke width <input type="number" min="1"
+              max={imageEdit.mode==='line'?32:64} value={imageEdit.stroke}
               onChange={e=>setImageEdit(v=>({...v,stroke:e.target.value}))}/></label>
           </div>}
           <div className="imageRevisionDimensions">
@@ -3575,9 +3586,13 @@ function App() {
           {imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer.imageRef&&
             imagePlan.steps.length>0&&<div aria-label="Staged immutable image edits">
               <small>{imagePlan.steps.length} ordered operations ·
-                undo/redo changes the assembly, never the source.</small>
+                staged dimensions {stagedImageDimensions(
+                  imageViewer.width,imageViewer.height,imagePlan.steps)?.width} ×
+                {stagedImageDimensions(
+                  imageViewer.width,imageViewer.height,imagePlan.steps)?.height}.
+                Undo/redo changes only the assembly, never the source.</small>
               <ol>{imagePlan.steps.map((step,i)=><li key={i}>
-                {step.operation}{['crop','redact','pixelate','rectangle','resize'].includes(step.operation)?
+                {step.operation}{['crop','redact','pixelate','rectangle','line','ellipse','resize'].includes(step.operation)?
                   ' · '+step.width+' × '+step.height:''}
               </li>)}</ol>
             </div>}
@@ -3617,6 +3632,8 @@ function App() {
               <ul>{imageHistoryView.rows.map(record=><li key={record.id}>
                 {record.fileName} · {record.width} × {record.height} ·
                 {record.state} · SHA-256 {record.revisionSha256}
+                {record.parentRevisionId&&<small> · Derived from earlier export
+                  {' '}{record.parentRevisionId}</small>}
               </li>)}</ul>
             </div>}
         </div>

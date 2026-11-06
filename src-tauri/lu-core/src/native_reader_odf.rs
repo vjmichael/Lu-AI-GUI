@@ -220,10 +220,11 @@ fn extract_ods(xml:&[u8],max_chars:usize,selected:Option<&str>,range:Option<OdsR
     if !found{return Err(ReaderFailure::SelectorNotFound)}
     bounded(out,ReaderFormat::Ods,max_chars)
 }
-fn extract_odp(xml:&[u8],max_chars:usize,selected:Option<usize>)
+fn extract_odp(xml:&[u8],max_chars:usize,selected:Option<usize>,notes_only:bool)
     ->Result<ReaderText,ReaderFailure>{
     let mut reader=Reader::from_reader(xml);
     let mut slide=0usize;let mut inside=false;let mut found=false;
+    let mut notes_found=false;
     let mut paragraph_depth=0usize;let mut in_notes=0usize;
     let mut out=String::new();let mut events=0usize;
     loop{
@@ -236,18 +237,24 @@ fn extract_odp(xml:&[u8],max_chars:usize,selected:Option<usize>)
                 found|=inside;in_notes=0;
                 if inside{
                     let title=attr(e,b"draw:name").unwrap_or_default();
-                    out.push_str(&format!("\n[Slide {}: {}]\n",slide,title));
+                    if notes_only{
+                        out.push_str(&format!("\n[Slide {} notes: {}]\n",slide,title));
+                    }else{
+                        out.push_str(&format!("\n[Slide {}: {}]\n",slide,title));
+                    }
                 }
             },
             Event::End(e) if e.name().as_ref()==b"draw:page"=>inside=false,
             Event::Start(e) if e.name().as_ref()==b"presentation:notes"&&inside=>{
-                in_notes+=1;
+                in_notes+=1;notes_found=true;
             },
             Event::End(e) if e.name().as_ref()==b"presentation:notes"=>in_notes=0,
-            Event::Start(e) if e.name().as_ref()==b"text:p"&&inside&&in_notes==0=>{
+            Event::Start(e) if e.name().as_ref()==b"text:p"&&inside&&
+                (notes_only==(in_notes>0))=>{
                 paragraph_depth+=1;
             },
-            Event::End(e) if e.name().as_ref()==b"text:p"&&inside&&in_notes==0=>{
+            Event::End(e) if e.name().as_ref()==b"text:p"&&inside&&
+                (notes_only==(in_notes>0))=>{
                 paragraph_depth=paragraph_depth.saturating_sub(1);
                 out.push('\n');
             },
@@ -255,18 +262,49 @@ fn extract_odp(xml:&[u8],max_chars:usize,selected:Option<usize>)
             Event::Eof=>break,
             _=>{},
         }
-        if inside&&in_notes==0&&paragraph_depth>0{
+        if inside&&(notes_only==(in_notes>0))&&paragraph_depth>0{
             if let Some(value)=text_event(&event)?{out.push_str(&value)}
         }
         if out.len()>MAX_READER_OUTPUT_CHARS*4{return Err(ReaderFailure::TooLarge)}
     }
-    if !found{return Err(ReaderFailure::SelectorNotFound)}
+    if !found||(notes_only&&!notes_found){return Err(ReaderFailure::SelectorNotFound)}
     bounded(out,ReaderFormat::Odp,max_chars)
 }
 fn package(bytes:&[u8],mime:&[u8])->Result<OpenXmlPackage,ReaderFailure>{
     let pkg=OpenXmlPackage::new_odf(bytes)?;
     if pkg.part("mimetype")?!=mime{return Err(bad())}
     Ok(pkg)
+}
+/// ODT is text-layer only: paragraphs/headings are preserved in reading
+/// order. Inline formatting/media/scripts are never executed or fetched.
+pub fn read_odt(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
+    let pkg=package(bytes,b"application/vnd.oasis.opendocument.text")?;
+    let xml=pkg.part("content.xml")?;
+    let mut reader=Reader::from_reader(xml);
+    let mut out=String::new();
+    let mut depth=0usize;let mut count=0usize;
+    loop{
+        count+=1;if count>MAX_EVENTS{return Err(ReaderFailure::TooLarge)}
+        let event=reader.read_event().map_err(|_|bad())?;
+        match &event{
+            Event::Start(e) if matches!(e.name().as_ref(),b"text:p"|b"text:h")=>{
+                depth+=1;
+            },
+            Event::End(e) if matches!(e.name().as_ref(),b"text:p"|b"text:h")=>{
+                if depth==0{return Err(bad())}
+                depth-=1;if depth==0{out.push('\n')}
+            },
+            Event::DocType(_)=>return Err(bad()),
+            Event::Eof=>break,
+            _=>{}
+        }
+        if depth>0{
+            if let Some(value)=text_event(&event)?{out.push_str(&value)}
+        }
+        if out.len()>MAX_READER_OUTPUT_CHARS*4{return Err(ReaderFailure::TooLarge)}
+    }
+    if depth!=0{return Err(bad())}
+    bounded(out,ReaderFormat::Odt,max_chars)
 }
 pub fn read_ods(bytes:&[u8],max_chars:usize,selected:Option<&str>)
     ->Result<ReaderText,ReaderFailure>{
@@ -283,7 +321,13 @@ pub fn read_ods_range(bytes:&[u8],max_chars:usize,sheet:&str,range:&str)
 pub fn read_odp(bytes:&[u8],max_chars:usize,selected:Option<usize>)
     ->Result<ReaderText,ReaderFailure>{
     let pkg=package(bytes,b"application/vnd.oasis.opendocument.presentation")?;
-    extract_odp(pkg.part("content.xml")?,max_chars,selected)
+    extract_odp(pkg.part("content.xml")?,max_chars,selected,false)
+}
+pub fn read_odp_notes(bytes:&[u8],max_chars:usize,slide:usize)
+    ->Result<ReaderText,ReaderFailure>{
+    if slide==0||slide>512{return Err(ReaderFailure::SelectorNotFound)}
+    let pkg=package(bytes,b"application/vnd.oasis.opendocument.presentation")?;
+    extract_odp(pkg.part("content.xml")?,max_chars,Some(slide),true)
 }
 #[cfg(test)]
 mod tests{
@@ -354,6 +398,21 @@ mod tests{
         assert!(result.text.contains("B1=2026-11-04"));
     }
     #[test]
+    fn odt_paragraphs_and_headings_are_read_only_and_bounded(){
+      let file=zip(&[
+       ("mimetype","application/vnd.oasis.opendocument.text"),
+       ("content.xml",r#"<office:document-content><office:body><office:text>
+       <text:h>Agenda</text:h><text:p>One &amp; two <text:span>three</text:span></text:p>
+       </office:text></office:body></office:document-content>"#)
+      ]);
+      let result=read_odt(&file,200).unwrap();
+      assert_eq!(result.format,ReaderFormat::Odt);
+      assert!(result.text.contains("Agenda"));
+      assert!(result.text.contains("One & two three"));
+      assert!(read_odt(&file,8).unwrap().truncated);
+      assert_eq!(read_ods(&file,200,None),Err(ReaderFailure::InvalidDocument));
+    }
+    #[test]
     fn ods_range_is_scoped_and_uses_true_coordinates(){
       let file=zip(&[
        ("mimetype","application/vnd.oasis.opendocument.spreadsheet"),
@@ -381,6 +440,22 @@ mod tests{
         let extracted=read_odp(&file,500,Some(2)).unwrap();
         assert!(extracted.text.contains("[Slide 2: Next]"));
         assert!(!extracted.text.contains("Slide & one"));
+    }
+    #[test]
+    fn odp_slide_notes_are_separate_from_main_slide_text(){
+        let file=zip(&[
+          ("mimetype","application/vnd.oasis.opendocument.presentation"),
+          ("content.xml",r#"<office:document-content><draw:page draw:name="Brief">
+          <text:p>Main slide</text:p><presentation:notes><text:p>Private speaker notes</text:p></presentation:notes>
+          </draw:page></office:document-content>"#),
+        ]);
+        let body=read_odp(&file,500,Some(1)).unwrap();
+        assert!(body.text.contains("Main slide"));
+        assert!(!body.text.contains("Private speaker"));
+        let notes=read_odp_notes(&file,500,1).unwrap();
+        assert!(notes.text.contains("Private speaker notes"));
+        assert!(!notes.text.contains("Main slide"));
+        assert_eq!(read_odp_notes(&file,500,2),Err(ReaderFailure::SelectorNotFound));
     }
     #[test]
     fn incompatible_mimetype_and_malformed_package_refused(){

@@ -2323,14 +2323,17 @@ async fn lu_image_workspace_export(
             x:x.ok_or("Mosaic requires X")?,y:y.ok_or("Mosaic requires Y")?,
             width,height,block_size:block_size.unwrap_or(12),
         },
-        "rectangle"=>{
+        "rectangle"|"line"|"ellipse"=>{
             let rgb=color.unwrap_or(0xff5500);
             if rgb>0xffffff {return Err("Invalid annotation color".into());}
-            Operation::Rectangle{
-                x:x.ok_or("Rectangle requires X")?,
-                y:y.ok_or("Rectangle requires Y")?,
-                width,height,rgb:[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8],
-                stroke:stroke.unwrap_or(3),
+            let x=x.ok_or("Annotation requires X")?;
+            let y=y.ok_or("Annotation requires Y")?;
+            let rgb=[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8];
+            let stroke=stroke.unwrap_or(3);
+            match operation.as_str(){
+                "line"=>Operation::Line{x,y,width,height,rgb,stroke},
+                "ellipse"=>Operation::Ellipse{x,y,width,height,rgb,stroke},
+                _=>Operation::Rectangle{x,y,width,height,rgb,stroke},
             }
         },
         _=>return Err("Unknown deterministic image revision operation".into()),
@@ -2385,6 +2388,7 @@ async fn lu_image_workspace_export(
         revision_sha256:image.revision_sha256.clone(),
         file_name:name,width:image.width,height:image.height,
         recorded_bytes:0,state:"PREPARED".into(),
+        parent_revision_id:None,
     };
     tauri::async_runtime::spawn_blocking(move||{
         use lu_core::native_image_revision_history::ImageRevisionLedger;

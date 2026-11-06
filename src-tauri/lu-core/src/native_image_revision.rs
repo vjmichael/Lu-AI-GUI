@@ -24,6 +24,10 @@ pub enum ImageRevisionOperation{
     Pixelate{x:u32,y:u32,width:u32,height:u32,block_size:u32},
     /// Draw a visible annotation border over an immutable source snapshot.
     Rectangle{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// A visible diagonal annotation bounded to the selected rectangle.
+    Line{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// Ellipse outline. Never advertised as a privacy mask.
+    Ellipse{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct ImageRevision{
@@ -42,6 +46,18 @@ pub enum ImageRevisionError{
 fn dimensions_allowed(w:u32,h:u32)->bool{
     w>0&&h>0&&w<=MAX_IMAGE_EDGE&&h<=MAX_IMAGE_EDGE
         &&u64::from(w)*u64::from(h)<=MAX_IMAGE_PIXELS
+}
+fn paint_brush(
+    image:&mut image::RgbaImage,x:u32,y:u32,rgb:[u8;3],stroke:u32,
+){
+    let radius=stroke.saturating_sub(1)/2;
+    let max_x=image.width().saturating_sub(1);
+    let max_y=image.height().saturating_sub(1);
+    for yy in y.saturating_sub(radius)..=y.saturating_add(radius).min(max_y){
+        for xx in x.saturating_sub(radius)..=x.saturating_add(radius).min(max_x){
+            image.put_pixel(xx,yy,image::Rgba([rgb[0],rgb[1],rgb[2],255]));
+        }
+    }
 }
 fn validate_region(
     x:u32,y:u32,width:u32,height:u32,base_w:u32,base_h:u32
@@ -153,6 +169,42 @@ pub fn transform_admitted_image(
                 }
             }
             DynamicImage::ImageRgba8(image)
+        },
+        ImageRevisionOperation::Line{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=32).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
+            let mut canvas=decoded.to_rgba8();
+            let count=width.max(height);
+            for step in 0..count{
+                let divisor=u64::from(count.saturating_sub(1).max(1));
+                let xx=x+((u64::from(step)*u64::from(width-1))/divisor) as u32;
+                let yy=y+((u64::from(step)*u64::from(height-1))/divisor) as u32;
+                paint_brush(&mut canvas,xx,yy,rgb,stroke);
+            }
+            DynamicImage::ImageRgba8(canvas)
+        },
+        ImageRevisionOperation::Ellipse{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=64).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
+            let mut canvas=decoded.to_rgba8();
+            let w=f64::from(width);let h=f64::from(height);
+            let inner_x=(w/2.0-f64::from(stroke)).max(0.0);
+            let inner_y=(h/2.0-f64::from(stroke)).max(0.0);
+            for cy in 0..height{
+                for cx in 0..width{
+                    let dx=f64::from(cx)+0.5-w/2.0;
+                    let dy=f64::from(cy)+0.5-h/2.0;
+                    let outer=(dx/(w/2.0)).powi(2)+(dy/(h/2.0)).powi(2);
+                    if outer>1.0{continue}
+                    let inside=inner_x>0.0&&inner_y>0.0
+                        &&(dx/inner_x).powi(2)+(dy/inner_y).powi(2)<1.0;
+                    if !inside{
+                        canvas.put_pixel(x+cx,y+cy,
+                            image::Rgba([rgb[0],rgb[1],rgb[2],255]));
+                    }
+                }
+            }
+            DynamicImage::ImageRgba8(canvas)
         }
     };
     let (width,height)=transformed.dimensions();
@@ -227,6 +279,30 @@ mod tests{
             ImageRevisionOperation::Resize{width:10,height:8}).unwrap();
         assert_eq!((scaled.width,scaled.height),(10,8));
         assert_ne!(crop.revision_sha256,scaled.revision_sha256);
+    }
+    #[test]
+    fn elliptical_and_line_annotations_are_deterministic_and_keep_original(){
+        let source=original();let original=source.bytes.clone();
+        for operation in [
+            ImageRevisionOperation::Ellipse{
+                x:1,y:1,width:12,height:9,rgb:[200,30,90],stroke:2,
+            },
+            ImageRevisionOperation::Line{
+                x:1,y:1,width:12,height:9,rgb:[20,230,90],stroke:2,
+            },
+        ]{
+            let a=transform_admitted_image(&source,operation).unwrap();
+            let b=transform_admitted_image(&source,operation).unwrap();
+            assert_eq!(a.revision_sha256,b.revision_sha256);
+            assert_ne!(a.revision_sha256,format!("{:x}",Sha256::digest(&source.bytes)));
+            assert_eq!(source.bytes,original);
+        }
+        assert_eq!(
+            transform_admitted_image(&source,ImageRevisionOperation::Ellipse{
+                x:15,y:0,width:2,height:4,rgb:[255,0,0],stroke:1
+            }),
+            Err(ImageRevisionError::InvalidOperation)
+        );
     }
     #[test]
     fn invalid_crop_oversized_output_and_changed_source_fail_closed(){

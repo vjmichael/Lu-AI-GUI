@@ -5,10 +5,11 @@
 //! This adapter deliberately does not render PDFs. Scanned and complex PDFs
 //! require a separately reviewed pinned PDF rasterizer, not hidden FFMPEG or
 //! a magic OCR label. OCR is a fallible transcription, not source verification.
+use image::{GenericImageView,ImageFormat,ImageReader,Limits};
 use sha2::{Digest,Sha256};
 use std::{
     fs::{self,File},
-    io::{Read,Write},
+    io::{Cursor,Read,Write},
     path::Path,
     process::{Command,Stdio},
     thread,
@@ -43,9 +44,25 @@ fn hex_digest(s:&str)->bool{
 fn image_format(bytes:&[u8])->Result<&'static str,OcrFailure>{
     if bytes.len()>MAX_IMAGE_BYTES{return Err(OcrFailure::TooLarge);}
     if bytes.len()<64{return Err(OcrFailure::InvalidImage);}
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n"){Ok("png")}
-    else if bytes.starts_with(&[0xff,0xd8,0xff]){Ok("jpeg")}
-    else{return Err(OcrFailure::InvalidImage);}
+    let (label,fmt)=if bytes.starts_with(b"\x89PNG\r\n\x1a\n"){
+        ("png",ImageFormat::Png)
+    }else if bytes.starts_with(&[0xff,0xd8,0xff]){
+        ("jpeg",ImageFormat::Jpeg)
+    }else{return Err(OcrFailure::InvalidImage)};
+    // Do not feed a decompression bomb or corrupt header to the separately
+    // pinned OCR worker. Lu's native decoder validates the full source first.
+    let mut reader=ImageReader::with_format(Cursor::new(bytes),fmt);
+    let mut limits=Limits::default();
+    limits.max_image_width=Some(8192);
+    limits.max_image_height=Some(8192);
+    limits.max_alloc=Some(128*1024*1024);
+    reader.limits(limits);
+    let image=reader.decode().map_err(|_|OcrFailure::InvalidImage)?;
+    let (w,h)=image.dimensions();
+    if w==0||h==0||u64::from(w)*u64::from(h)>32_000_000{
+        return Err(OcrFailure::TooLarge);
+    }
+    Ok(label)
 }
 fn verified_engine(binary:&Path,expected_sha:&str)->Result<String,OcrFailure>{
     if !hex_digest(expected_sha)||!binary.is_absolute(){
@@ -153,5 +170,23 @@ pub fn recognize_pinned_image(
                 return Err(OcrFailure::Timeout);
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use image::DynamicImage;
+    #[test]
+    fn ocr_admission_rejects_corrupt_magic_and_decompression_bombs(){
+        let mut image=Vec::new();
+        DynamicImage::new_rgb8(40,20)
+            .write_to(&mut Cursor::new(&mut image),ImageFormat::Png).unwrap();
+        assert_eq!(image_format(&image),Ok("png"));
+        let mut corrupt=image.clone();
+        corrupt.truncate(80);
+        assert_eq!(image_format(&corrupt),Err(OcrFailure::InvalidImage));
+        assert_eq!(image_format(b"not a real png"),
+            Err(OcrFailure::InvalidImage));
     }
 }

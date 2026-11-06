@@ -24,6 +24,7 @@ pub enum ReaderFormat{
     Pptx,
     Ods,
     Odp,
+    Odt,
     Image,
     Unknown,
 }
@@ -55,6 +56,7 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
             "pptx"=>ReaderFormat::Pptx,
             "ods"=>ReaderFormat::Ods,
             "odp"=>ReaderFormat::Odp,
+            "odt"=>ReaderFormat::Odt,
             _=>ReaderFormat::Unknown,
         };
     }
@@ -80,6 +82,7 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
         "pptx"=>ReaderFormat::Pptx,
         "ods"=>ReaderFormat::Ods,
         "odp"=>ReaderFormat::Odp,
+        "odt"=>ReaderFormat::Odt,
         "png"|"jpg"|"jpeg"|"webp"|"tif"|"tiff"|"bmp"=>ReaderFormat::Image,
         _=>ReaderFormat::Unknown
     }
@@ -167,6 +170,9 @@ pub fn read_text_bytes(
     if format==ReaderFormat::Odp{
         return crate::native_reader_odf::read_odp(bytes,max_chars,None);
     }
+    if format==ReaderFormat::Odt{
+        return crate::native_reader_odf::read_odt(bytes,max_chars);
+    }
     if matches!(format,ReaderFormat::Image
         |ReaderFormat::Unknown){
         return Err(ReaderFailure::UnsupportedAdapter(format));
@@ -207,11 +213,16 @@ pub fn read_selected_bytes(
             }
         },
         ReaderFormat::Pptx=>{
-            let slide=selector.strip_prefix("slide:")
+            let notes=selector.starts_with("notes:");
+            let slide=selector.strip_prefix(if notes{"notes:"}else{"slide:"})
                 .and_then(|s|s.parse::<usize>().ok())
                 .filter(|n|*n>0&&*n<=512)
                 .ok_or(ReaderFailure::SelectorNotFound)?;
-            crate::native_reader_office::read_pptx_slide(bytes,max_chars,Some(slide))
+            if notes{
+                crate::native_reader_office::read_pptx_notes(bytes,max_chars,slide)
+            }else{
+                crate::native_reader_office::read_pptx_slide(bytes,max_chars,Some(slide))
+            }
         },
         ReaderFormat::Ods=>{
             if let Some(spec)=selector.strip_prefix("range:"){
@@ -225,11 +236,16 @@ pub fn read_selected_bytes(
             }
         },
         ReaderFormat::Odp=>{
-            let slide=selector.strip_prefix("slide:")
+            let notes=selector.starts_with("notes:");
+            let slide=selector.strip_prefix(if notes{"notes:"}else{"slide:"})
                 .and_then(|s|s.parse::<usize>().ok())
                 .filter(|n|*n>0&&*n<=512)
                 .ok_or(ReaderFailure::SelectorNotFound)?;
-            crate::native_reader_odf::read_odp(bytes,max_chars,Some(slide))
+            if notes{
+                crate::native_reader_odf::read_odp_notes(bytes,max_chars,slide)
+            }else{
+                crate::native_reader_odf::read_odp(bytes,max_chars,Some(slide))
+            }
         },
         ReaderFormat::Pdf=>{
             let page=selector.strip_prefix("page:")
