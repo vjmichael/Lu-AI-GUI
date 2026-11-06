@@ -609,3 +609,41 @@ message FileRestoreResult {
   uint64 bytes = 2;
   string sha256 = 3;
 }
+
+// Existing OOXML document revisions are published to a NEW version, not an
+// in-place overwrite. Host compares baseline/package digest and full diff.
+message OfficeTextPatch {
+  uint32 text_index = 1;
+  uint32 slide_number = 2;
+  string expected_old = 3;
+  string new_text = 4;
+}
+message OfficeNumberPatch {
+  uint32 sheet_number = 1;
+  string address = 2;
+  double expected_old = 3;
+  double new_number = 4;
+}
+message OfficeBooleanPatch {
+  uint32 sheet_number = 1;
+  string address = 2;
+  bool expected_old = 3;
+  bool new_boolean = 4;
+}
+message OfficeRevisionRequest {
+  string source_name = 1;
+  string target_new_name = 2;
+  string original_sha256 = 3;
+  string approved_revised_sha256 = 4;
+  oneof change {
+    OfficeTextPatch word_text = 5;
+    OfficeTextPatch slide_text = 6;
+    OfficeNumberPatch cell_number = 7;
+    OfficeBooleanPatch cell_boolean = 8;
+  }
+}
+message OfficeRevisionResult {
+  string target_new_name = 1;
+  uint64 bytes_written = 2;
+  string revised_sha256 = 3;
+}
