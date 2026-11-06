@@ -60,6 +60,11 @@ pub struct Diagnostic {
 pub struct Completion {
     pub label: String, pub detail: String, pub kind: Option<u32>,
     pub insert_text: String,
+    // A server-supplied textEdit is included only after native validation
+    // that it replaces exactly the current identifier prefix. Never forward
+    // arbitrary workspace edits or cross-document references.
+    pub replace_from_utf16: Option<usize>,
+    pub replace_to_utf16: Option<usize>,
 }
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +85,7 @@ struct Pending {
     kind: PendingKind,
     source: DiagnosticSource,
     uri: String,
+    position: Position,
 }
 struct OpenDocument {
     source: DiagnosticSource,
@@ -227,7 +233,7 @@ impl LspSession {
             "params":{"textDocument":{"uri":uri},"position":pos}});
         let frame = encode_frame(&value)?;
         self.pending.insert(id, Pending {
-            kind: request_kind, source: expected.clone(), uri,
+            kind: request_kind, source: expected.clone(), uri, position: pos,
         });
         Ok(frame)
     }
@@ -314,8 +320,9 @@ impl LspSession {
                 continue;
             }
             let event = match pending.kind {
-                PendingKind::Completion => parse_completions(&message["result"])
-                    .map(LspEvent::Completions),
+                PendingKind::Completion => parse_completions(
+                    &message["result"], &pending.position, &doc.text,
+                ).map(LspEvent::Completions),
                 PendingKind::Hover => parse_hover(&message["result"]).map(LspEvent::Hover),
                 PendingKind::Definition => parse_definition(
                     &message["result"], &doc.uri, &doc.text,
@@ -404,28 +411,72 @@ fn parse_hover(value: &Value) -> Option<String> {
     }
     None
 }
-fn parse_completions(value: &Value) -> Option<Vec<Completion>> {
+fn parse_completions(value: &Value, pos: &Position, text: &str)
+    -> Option<Vec<Completion>> {
     if value.is_null() { return Some(Vec::new()); }
     let items = value.as_array().or_else(|| value.get("items")?.as_array())?;
+    let caret = position_to_utf16(text, pos)?;
     let mut result = Vec::new();
     for item in items.iter().take(MAX_SUGGESTIONS) {
         let Some(label) = item["label"].as_str() else { continue; };
         if label.is_empty() || label.len() > 256 || label.chars().any(char::is_control) {
             continue;
         }
-        let insert = item.get("insertText").and_then(Value::as_str).unwrap_or(label);
-        // LSP snippets require a separate interpreted expansion engine; never
-        // insert raw "$1" placeholders or honor arbitrary textEdits/commands.
+        // This pure completion list never applies the server's action.
+        // Snippet expansion and arbitrary workspace/text edits need a
+        // separate host-reviewed operation, not a hidden autocomplete side
+        // effect.
         if item["insertTextFormat"].as_u64() == Some(2)
-            || item.get("textEdit").is_some() || item.get("command").is_some()
-            || insert.len() > 512 || insert.chars().any(char::is_control) {
+            || item.get("command").is_some()
+            || item.get("additionalTextEdits").is_some() {
             continue;
+        }
+        let edit = item.get("textEdit");
+        let insert = edit.and_then(|v| v.get("newText"))
+            .and_then(Value::as_str)
+            .or_else(|| item.get("insertText").and_then(Value::as_str))
+            .unwrap_or(label);
+        if insert.len() > 512 || insert.chars().any(char::is_control) {
+            continue;
+        }
+        let mut replace_range = None;
+        if let Some(edit) = edit {
+            let Some(text_insert) = edit.get("newText").and_then(Value::as_str) else {
+                continue;
+            };
+            if text_insert != insert || edit.get("insert").is_some()
+                || edit.get("replace").is_some() {
+                continue;
+            }
+            let Ok(range) = serde_json::from_value::<Span>(edit["range"].clone()) else {
+                continue;
+            };
+            if range.start.line != pos.line || range.end.line != pos.line
+                || range.end.character != pos.character
+                || range.start.character > range.end.character
+                || range.end.character - range.start.character > 128 {
+                continue;
+            }
+            let Some((from, to)) = span_utf16(text, &range) else { continue; };
+            if to != caret { continue; }
+            // Safe character-prefix replacement only. A language server may
+            // not rewrite punctuation, another line or a different symbol
+            // through the completion UI.
+            let prefix: String = text.encode_utf16().skip(from).take(to-from)
+                .map(|v| char::from_u32(v as u32).unwrap_or('\u{fffd}')).collect();
+            if !prefix.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'
+                || b == b'$') {
+                continue;
+            }
+            replace_range = Some((from, to));
         }
         let detail = item["detail"].as_str().unwrap_or("");
         result.push(Completion {
             label: label.to_owned(), detail: detail.chars().take(256).collect(),
             kind: item["kind"].as_u64().and_then(|n| u32::try_from(n).ok()),
             insert_text: insert.to_owned(),
+            replace_from_utf16: replace_range.map(|(a, _)| a),
+            replace_to_utf16: replace_range.map(|(_, b)| b),
         });
     }
     Some(result)
