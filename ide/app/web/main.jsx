@@ -1686,6 +1686,39 @@ function App() {
                 </article>)}
             </div>}
           </section>
+        : isLanguages
+        ? <section className="workspaceContent capabilityWorkspace" aria-label="Language services">
+            <div className="sectionHeading">
+              <h2>Language server providers</h2>
+              <span>{languageServers.length} catalogued · {lspWorker?.ready ? 'Protected worker ready' : 'Execution gated'}</span>
+            </div>
+            <p className="capabilityNotice" role="status">
+              <strong>{lspWorker?.ready ? 'Protected worker available.' : 'Language servers are not running.'}</strong>
+              {' '}{lspWorker?.detail || 'Worker state unavailable.'}
+              {' '}Server discovery does not grant execution or install packages.
+            </p>
+            <div className="capabilityGrid">
+              {languageServers.map(server => <article className="capabilityCard" key={server.id}>
+                <div className="capabilityHeading">
+                  <h3>{server.label}</h3><span className="capabilityEffect">{server.transport}</span>
+                </div>
+                <p>{server.languageIds?.join(', ') || 'Unknown language'}</p>
+                <dl>
+                  <dt>License</dt><dd>{server.license}</dd>
+                  <dt>Launcher hint</dt><dd><code>{server.executableBasename}</code></dd>
+                  <dt>Availability</dt><dd>{server.lifecycle === 'catalog_only'
+                    ? 'Catalogued only · Installed binary not verified' : server.lifecycle}</dd>
+                  <dt>Source</dt><dd><a href={server.upstream} target="_blank"
+                    rel="noreferrer">Publisher documentation</a></dd>
+                </dl>
+              </article>)}
+            </div>
+            <p className="capabilityNotice">
+              Planned installer bundles: native rust-analyzer, clangd and Ruff first;
+              Node-dependent Pyright and TypeScript are separate license and dependency
+              reviews. No binary is packaged or downloaded by the current alpha.
+            </p>
+          </section>
         : !isExplorer
         ? <section aria-label="Projects" className="workspaceContent">
           <div className="sectionHeading"><h2>Registered projects</h2>
@@ -1784,6 +1817,20 @@ function App() {
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
                   </button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    title={lspWorker?.ready ? 'Ask protected language server for completions' :
+                      'Language server unavailable until protected-worker acceptance'}
+                    onClick={() => void requestLspFeature('completion')}>Complete</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    onClick={() => void requestLspFeature('hover')}>Hover</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    onClick={() => void requestLspFeature('definition')}>Definition</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspWorker?.ready || !languageForPath(activeTab.relativePath)}
+                    onClick={() => void requestLspFeature('diagnostics')}>Problems</button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
@@ -1841,6 +1888,18 @@ function App() {
                 </div>}
               </div>}
               <CodeEditor
+                diagnostics={activeLspDiagnostics}
+                jumpRequest={lspJumpRequest}
+                completionApplyRequest={lspCompletionApplyRequest}
+                onCompletionApplied={(nonce, applied) => {
+                  setLspCompletionApplyRequest(previous => previous?.nonce === nonce ? null : previous);
+                  if (!applied) setProblem('Source changed before completion could be inserted.');
+                }}
+                onCursorPosition={position => setCursorPositions(previous => {
+                  const prior = previous[activeTab.key];
+                  if (prior?.line === position.line && prior?.character === position.character) return previous;
+                  return {...previous, [activeTab.key]:position};
+                })}
                 findRequest={findRequest?.tabKey === activeTab.key ? findRequest : null}
                 replaceRequest={replaceRequest?.tabKey === activeTab.key ? replaceRequest : null}
                 onReplaceApplied={(nonce, applied) => {
@@ -1854,6 +1913,35 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
+              {activeLspDiagnostics.length > 0 && <section className="lspResultPanel"
+                aria-label="Language server problems">
+                <strong>Problems · {activeLspDiagnostics.length}</strong>
+                {activeLspDiagnostics.map((diagnostic, index) =>
+                  <button key={index} className="lspDiagnostic" type="button"
+                    onClick={() => setLspJumpRequest({
+                      from:diagnostic.from, to:diagnostic.to,
+                      tabIdentity:activeTab.key + ':' + activeTab.generation,
+                      nonce:Date.now()
+                    })}>
+                    <span>{diagnostic.severity === 1 ? 'Error' :
+                      diagnostic.severity === 2 ? 'Warning' : 'Info'} · {diagnostic.line}</span>
+                    <span>{diagnostic.message}</span>
+                  </button>)}
+              </section>}
+              {activeLspCompletions.length > 0 && <section className="lspResultPanel"
+                aria-label="Language server completions">
+                <strong>Suggestions</strong>
+                {activeLspCompletions.slice(0, 20).map((item, index) =>
+                  <button type="button" key={index} className="lspSuggestion"
+                    onClick={() => applyLspCompletion(item)}>
+                    <code>{item.label}</code> <span>{item.detail}</span>
+                  </button>)}
+              </section>}
+              {activeLspHover && <section className="lspResultPanel"
+                aria-label="Language server hover information">
+                <strong>Symbol information</strong>
+                <pre>{activeLspHover}</pre>
+              </section>}
               <div className="editorInfoBar">Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
               </div>
