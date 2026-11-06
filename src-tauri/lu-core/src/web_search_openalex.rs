@@ -3,6 +3,7 @@
 use crate::web_http_fetch::{SecureHttpFetcher,FetchError};
 use crate::web_research_planner::canonical_doi;
 use serde_json::Value;
+use std::sync::atomic::AtomicBool;
 
 #[derive(Debug,PartialEq,Eq)]
 pub enum DiscoveryError { InvalidQuery, Transport, Unavailable, InvalidResponse }
@@ -65,6 +66,21 @@ pub fn parse_openalex_page(bytes:&[u8],query:&str,page:u32,checksum:&str)
     Ok(DiscoveryPage{
         leads,page,next_page,observed_sha256:checksum.into(),query:query.into()
     })
+}
+pub fn search_openalex_cancellable(
+    fetcher:&SecureHttpFetcher<'_>,query:&str,page:u32,cancel:&AtomicBool
+)->Result<DiscoveryPage,DiscoveryError>{
+    if query.trim().is_empty()||query.len()>512
+        ||query.chars().any(char::is_control)||page==0||page>100{
+        return Err(DiscoveryError::InvalidQuery);
+    }
+    let address=format!(
+        "https://api.openalex.org/works?search={}&per-page=25&page={}",
+        percent_encode(query),page
+    );
+    let result=fetcher.fetch_cancellable(&address,cancel)?;
+    if result.http_status!=200{return Err(DiscoveryError::Unavailable);}
+    parse_openalex_page(&result.bytes,query,page,&result.sha256)
 }
 pub fn search_openalex(fetcher:&SecureHttpFetcher<'_>,query:&str,page:u32)
     ->Result<DiscoveryPage,DiscoveryError>{
