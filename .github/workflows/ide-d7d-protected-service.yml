@@ -110,6 +110,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: production native worker compile failed' }
       - name: Execute real pinned offline Cargo job and native cancellation
         shell: pwsh
+        env:
+          LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
         run: |
           $ErrorActionPreference='Stop'
           $service=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
