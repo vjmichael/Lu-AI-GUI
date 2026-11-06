@@ -259,6 +259,14 @@ pub(crate) struct ResearchReportExportView{
 }
 #[derive(Serialize,Clone)]
 #[serde(rename_all="camelCase")]
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCampaignReviewItem{
+    pub source_id:String,
+    pub stage:String,
+    pub reason_code:String,
+    pub can_retry:bool,
+}
 pub(crate) struct ResearchCampaignReviewView{
     pub campaign_id:String,
     pub discovered_dois:u32,
@@ -836,23 +844,39 @@ impl ResearchDesktop{
             for source_id in pending {
                 let snapshot=self.campaign_status(chat_id,campaign_id)?;
                 if snapshot.state=="CANCELLED"||cancel.load(Ordering::Acquire){break;}
-                // Stage is derived entirely from host-verified metadata and
-                // persisted doc status, not model confidence or source prose.
-                let (stage,reason)=match self.corroborate_crossref_admitted(
-                    chat_id,&source_id,Some(&cancel)
-                ){
-                    Ok(meta) if meta.verification_status=="metadata_corroborated"=>{
-                        if cancel.load(Ordering::Acquire){break;}
-                        match self.retrieve_document_admitted(
-                            chat_id,&source_id,Some(&cancel)
-                        ){
-                            Ok(doc) if doc.document_accessed=>("DOCUMENT_ACCESSED","OK"),
-                            Ok(_)=>("METADATA_CORROBORATED","UNSUPPORTED_CONTENT"),
-                            Err(_)=>("DOCUMENT_UNAVAILABLE","RETRIEVAL_FAILED"),
-                        }
+                // Metadata corroboration is retained even after a failed
+                // PDF fetch: explicit retries can go straight to the
+                // independently pinned publisher URL instead of attempting
+                // to re-corroborate an already checked DOI.
+                let source_status=EvidenceLedger::open(&db)
+                    .map_err(|_|"Research evidence ledger unavailable")?
+                    .status(&source_id)
+                    .map_err(|_|"Research candidate status unavailable")?;
+                let ready=match source_status{
+                    SourceStatus::Discovered=>match self.corroborate_crossref_admitted(
+                        chat_id,&source_id,Some(&cancel)
+                    ){
+                        Ok(meta) if meta.verification_status=="metadata_corroborated"=>true,
+                        Ok(_)=>false,
+                        Err(_)=>false,
                     },
-                    Ok(_)=>("METADATA_MISMATCH","CATALOG_MISMATCH"),
-                    Err(_)=>("ERROR","METADATA_FAILED"),
+                    SourceStatus::MetadataCorroborated=>true,
+                    SourceStatus::DocumentAccessed|SourceStatus::PassageVerified=>false,
+                    SourceStatus::Mismatch=>false,
+                };
+                if cancel.load(Ordering::Acquire){break;}
+                let (stage,reason)=match source_status{
+                    SourceStatus::DocumentAccessed|SourceStatus::PassageVerified=>
+                        ("DOCUMENT_ACCESSED","OK"),
+                    SourceStatus::Mismatch=>("METADATA_MISMATCH","CATALOG_MISMATCH"),
+                    _ if ready=>match self.retrieve_document_admitted(
+                        chat_id,&source_id,Some(&cancel)
+                    ){
+                        Ok(doc) if doc.document_accessed=>("DOCUMENT_ACCESSED","OK"),
+                        Ok(_)=>("METADATA_CORROBORATED","UNSUPPORTED_CONTENT"),
+                        Err(_)=>("DOCUMENT_UNAVAILABLE","RETRIEVAL_FAILED"),
+                    },
+                    _=>("ERROR","METADATA_FAILED"),
                 };
                 let mut ledger=EvidenceLedger::open(&db)
                     .map_err(|_|"Research evidence ledger unavailable")?;
@@ -880,6 +904,43 @@ impl ResearchDesktop{
             active.remove(&key);
         }
         outcome
+    }
+
+    pub(crate) fn campaign_review_rows(
+        &self,chat_id:&str,campaign_id:&str
+    )->Result<Vec<ResearchCampaignReviewItem>,String>{
+        let _=self.campaign_status(chat_id,campaign_id)?;
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.campaign_review_rows(campaign_id,120)
+            .map_err(|_|"Research source review inventory unavailable")
+            .map(|rows|rows.into_iter().map(|(source_id,stage,reason_code)|{
+                ResearchCampaignReviewItem{
+                    can_retry:matches!(
+                        stage.as_str(),"ERROR"|"DOCUMENT_UNAVAILABLE"
+                        |"METADATA_CORROBORATED"
+                    ),
+                    source_id,stage,reason_code,
+                }
+            }).collect())
+    }
+    pub(crate) fn retry_campaign_review(
+        &self,chat_id:&str,campaign_id:&str,source_id:&str
+    )->Result<(),String>{
+        if self.campaign_status(chat_id,campaign_id)?.state=="CANCELLED"{
+            return Err("Cancelled Research campaign cannot retry".into());
+        }
+        let key=format!("{chat_id}:{campaign_id}");
+        if self.active_campaigns.lock()
+            .map_err(|_|"Research lease unavailable")?.contains_key(&key){
+            return Err("Cannot reset a Research source during active retrieval".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        ledger.retry_campaign_source(campaign_id,source_id)
+            .map_err(|_|"Research source is not eligible for retry".into())
     }
 
     /// User-submitted interpretation. The native host must ensure this comes
