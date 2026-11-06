@@ -93,6 +93,27 @@ const tests = [
     host.includes('fn lu_confirm_restore_file(') &&
     host.includes('trash_custody: trash_desktop::TrashCustodyStore') &&
     host.includes('state.trash_custody.restore_candidate(')],
+  ['reversible file trash and restore are native-picked, separately reviewed, and verified against custody history',
+    ui.includes("invoke('lu_review_file_trash'") &&
+    ui.includes("invoke('lu_confirm_file_trash'") &&
+    ui.includes("invoke('lu_deny_file_trash'") &&
+    ui.includes("invoke('lu_file_trash_history'") &&
+    ui.includes("invoke('lu_review_file_restore'") &&
+    ui.includes("invoke('lu_confirm_file_restore'") &&
+    ui.includes("invoke('lu_deny_file_restore'") &&
+    ui.includes('trashReview.sha256') &&
+    ui.includes('restoreReview.sha256') &&
+    ui.includes('disabled={!trashReviewed || trashBusy}') &&
+    ui.includes('disabled={!restoreReviewed || trashBusy}') &&
+    ui.includes('item.restorable ?') &&
+    ui.includes('MANUAL_RECONCILIATION_REQUIRED') &&
+    host.includes('fn lu_review_file_trash(') &&
+    host.includes('fn lu_confirm_file_trash(') &&
+    host.includes('fn lu_file_trash_history(') &&
+    host.includes('fn lu_review_file_restore(') &&
+    host.includes('fn lu_confirm_file_restore(') &&
+    host.includes('trash_custody.reconcile_interrupted()') &&
+    host.includes('file_trash_desktop::TrashQueue')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
 for (const [name, pass] of tests) {
