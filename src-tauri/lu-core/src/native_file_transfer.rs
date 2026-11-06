@@ -72,6 +72,14 @@ fn source_hash(mut file: cap_std::fs::File) -> Result<(u64, String), TransferErr
     }
     Ok((size, format!("{:x}", hash.finalize())))
 }
+fn valid_sha(s:&str)->bool{
+    s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
+}
+/// Read-only source identity witness, never a permission.
+pub fn source_digest(root:&Dir,name:&str)->Result<(u64,String),TransferError>{
+    if !plain_filename(name){return Err(TransferError::InvalidName)}
+    source_hash(verify(root,name)?)
+}
 fn preflight(root: &Dir, from: &str, to: &str) -> Result<(), TransferError> {
     if !plain_filename(from) || !plain_filename(to) { return Err(TransferError::InvalidName); }
     if from.eq_ignore_ascii_case(to) { return Err(TransferError::SameTarget); }
@@ -88,6 +96,21 @@ fn preflight(root: &Dir, from: &str, to: &str) -> Result<(), TransferError> {
 /// Hard-link publication is atomic with no-clobber semantics.
 pub fn copy_new_in_dir(
     root: &Dir, source: &str, target: &str, host_stage_id: &str
+) -> Result<TransferReceipt, TransferError> {
+    copy_new_internal(root,source,target,host_stage_id,None)
+}
+/// Host-pinned digest prevents a source-content substitution from being
+/// committed as an approved copy even when the file changes during streaming.
+pub fn copy_new_checked_in_dir(
+    root: &Dir, source: &str, target: &str,
+    host_stage_id: &str, expected_sha256: &str
+) -> Result<TransferReceipt, TransferError> {
+    if !valid_sha(expected_sha256){return Err(TransferError::SourceChanged)}
+    copy_new_internal(root,source,target,host_stage_id,Some(expected_sha256))
+}
+fn copy_new_internal(
+    root: &Dir, source: &str, target: &str,
+    host_stage_id: &str, expected_sha256: Option<&str>
 ) -> Result<TransferReceipt, TransferError> {
     preflight(root, source, target)?;
     if !stage_id_ok(host_stage_id) { return Err(TransferError::InvalidStage); }
@@ -116,8 +139,12 @@ pub fn copy_new_in_dir(
         if input.metadata().map_err(|e| TransferError::Io(e.to_string()))?.len() != count {
             return Err(TransferError::Io("source size changed during copy".into()));
         }
+        let observed=format!("{:x}", hasher.finalize());
+        if expected_sha256.is_some_and(|approved|approved!=observed) {
+            return Err(TransferError::SourceChanged);
+        }
         output.sync_all().map_err(|e| TransferError::Io(e.to_string()))?;
-        Ok((count, format!("{:x}", hasher.finalize())))
+        Ok((count, observed))
     })();
     drop(output);
     let (bytes, sha256) = match result {
@@ -143,9 +170,25 @@ pub fn copy_new_in_dir(
 pub fn move_new_in_dir(root: &Dir, source: &str, target: &str)
     -> Result<TransferReceipt, TransferError>
 {
+    move_new_internal(root,source,target,None)
+}
+/// An exact approved digest is required for model-initiated moves. Host
+/// dispatch must additionally lock source identity across the rename window.
+pub fn move_new_checked_in_dir(
+    root:&Dir,source:&str,target:&str,expected_sha256:&str
+)->Result<TransferReceipt,TransferError>{
+    if !valid_sha(expected_sha256){return Err(TransferError::SourceChanged)}
+    move_new_internal(root,source,target,Some(expected_sha256))
+}
+fn move_new_internal(root:&Dir,source:&str,target:&str,expected_sha256:Option<&str>)
+    ->Result<TransferReceipt,TransferError>
+{
     preflight(root, source, target)?;
     let file = verify(root, source)?;
     let (bytes, sha256) = source_hash(file)?;
+    if expected_sha256.is_some_and(|approved|approved!=sha256) {
+        return Err(TransferError::SourceChanged);
+    }
     root.hard_link(source, root, target).map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists { TransferError::TargetExists }
         else { TransferError::Io(e.to_string()) }
