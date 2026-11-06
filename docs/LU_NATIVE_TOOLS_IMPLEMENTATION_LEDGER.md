@@ -83,3 +83,9 @@ Do not promote Wave 2 to complete from source-level implementation or queued Git
 - `native_docx_tool.rs` exposes a typed Protobuf Create operation whose `ExactDocxCreatePolicy` re-renders and verifies the approved content SHA256 and destination before the persisted-human-turn / effect-journal admission.
 - Native tests exercise package structure, Word paragraph styling, DOCX Reader round-trip, no-clobber, invalid XML characters and durable authorized dispatch/revocation.
 - This remains a first structured Word creator. It does NOT claim existing DOCX editing, tables, images, sections, headers, footers, revision tracking, styles from templates, or installed desktop approval UX. All require dedicated tests and recovery boundaries.
+
+### Host-approved filesystem copy and move
+- `native_file_transfer.rs` now accepts an expected approved source SHA-256 for copy and move. The copy path checks the digest of the bytes actually written before publishing a new target. Moves recheck before same-directory hardlink/unlink but still need stronger OS identity locking against hostile cross-process mutations.
+- `native_file_transfer_tool.rs` registers separate model-visible `lu_file_copy` and `lu_file_move` typed Protobuf operations, both `WriteWorkspace` effects, with exact source/target/digest `ExactFileTransferPolicy`; no model-originated path, parameter or hash grants permission.
+- Added native tests for an authenticated user turn, exact grant, durable write receipts, replay denial after revocation, copy no-clobber, move source removal and changed-source refusal.
+- Not yet completed: trusted desktop approval UI, cross-directory moves, safe nested folders, trash/restore model adapters, stronger Windows native file identity and installed Windows acceptance.
