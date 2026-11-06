@@ -20,6 +20,7 @@ mod workspace_desktop;
 mod archive_desktop;
 mod document_create_desktop;
 mod office_revision_desktop;
+mod file_transfer_desktop;
 use workspace_desktop::lu_workspace_ask_directory;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
@@ -187,6 +188,7 @@ struct DesktopState {
     archive_reviews: archive_desktop::ArchiveReviewQueue,
     document_create_reviews: document_create_desktop::DocumentCreateQueue,
     office_revision_reviews: office_revision_desktop::OfficeRevisionQueue,
+    file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue,
     edit_approval_ledger: lu_core::edit_approval_ledger::EditApprovalLedger,
     rollback_reviews: rollback_review::RollbackReviewQueue,
     rollback_approval_ledger: lu_core::rollback_approval_ledger::RollbackApprovalLedger,
@@ -569,6 +571,7 @@ impl DesktopState {
             archive_reviews: archive_desktop::ArchiveReviewQueue::default(),
             document_create_reviews: document_create_desktop::DocumentCreateQueue::default(),
             office_revision_reviews: office_revision_desktop::OfficeRevisionQueue::default(),
+            file_transfer_reviews: file_transfer_desktop::FileTransferReviewQueue::default(),
             edit_approval_ledger: edit_approvals,
             rollback_reviews: rollback_review::RollbackReviewQueue::default(),
             rollback_approval_ledger: rollback_approvals,
@@ -2055,6 +2058,82 @@ fn lu_deny_office_revision(
     state.office_revision_reviews.deny(&chat_id,&review_id)
 }
 
+/// Host-selected single-file copy/move. Model or WebView chooses only the
+/// operation type; the existing source and new target basename are host-owned.
+#[tauri::command]
+async fn lu_review_file_transfer(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    operation:String,
+)->Result<Option<file_transfer_desktop::FileTransferReviewView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let picked=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().file().blocking_pick_file()
+            .map(|p|p.into_path().map_err(|e|e.to_string())).transpose()
+    }).await.map_err(|e|format!("File source picker failed: {e}"))??;
+    let Some(picked)=picked else{return Ok(None)};
+    let review_id=next_id("ft-");
+    let view=tauri::async_runtime::spawn_blocking(move||{
+        state.file_transfer_reviews.stage(&chat_id,&review_id,&picked,&operation)
+    }).await.map_err(|e|format!("File transfer preview failed: {e}"))??;
+    Ok(Some(view))
+}
+/// Consequential move/unlink requires a separate native modal after exact
+/// source hash, action and generated new target have been displayed in Lu.
+#[tauri::command]
+async fn lu_confirm_file_transfer(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<Option<file_transfer_desktop::FileTransferReceiptView>,String>{
+    let state=Arc::clone(state.inner());
+    state.chats.history(&chat_id)?;
+    let initial=state.file_transfer_reviews.inspect(&chat_id,&review_id)?;
+    let view=initial.view();
+    let warning=if view.removes_original{
+        "MOVE removes the original filename after publication. If the unlink fails, BOTH names may remain and recovery must be reviewed manually."
+    }else{
+        "COPY preserves the original. The new name is created only if it does not exist."
+    };
+    let message=format!(
+        "Approve {} of this EXACT existing file?\n\nOriginal: {}\nNew output: {}\nSize: {} bytes\nOriginal SHA-256: {}\n\n{}\n\nApproval is single-use and never automatically replayed.",
+        view.operation.to_uppercase(),view.source_display,
+        view.destination_display,view.bytes,view.source_sha256,warning,
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(message)
+            .title("Lu — Approve exact file operation")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve exact action".into(),"Cancel".into(),
+            )).blocking_show()
+    }).await.map_err(|e|format!("Native file action confirmation failed: {e}"))?;
+    if !confirmed{
+        state.file_transfer_reviews.deny(&chat_id,&review_id)?;
+        return Ok(None)
+    }
+    let selected=state.file_transfer_reviews.consume(&chat_id,&review_id)?;
+    if !selected.same_as(&initial){
+        return Err("File transfer preview changed during native confirmation".into())
+    }
+    let user_turn=next_id("g-");
+    let effect_id=next_id("g-");
+    Ok(Some(file_transfer_desktop::execute_approved_transfer(
+        &state.chats,&state.effects,&chat_id,&user_turn,&effect_id,&selected
+    ).await?))
+}
+#[tauri::command]
+fn lu_deny_file_transfer(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    review_id:String,
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    state.file_transfer_reviews.deny(&chat_id,&review_id)
+}
+
 /// User's first review action: the destination is selected by the host,
 /// NOT the model or a path supplied by the WebView.
 #[tauri::command]
@@ -2865,6 +2944,9 @@ pub fn run() {
             lu_choose_default_document_folder,
             lu_reset_default_document_folder,
             lu_open_created_folder,
+            lu_review_file_transfer,
+            lu_confirm_file_transfer,
+            lu_deny_file_transfer,
             lu_review_office_revision,
             lu_confirm_office_revision,
             lu_deny_office_revision,
