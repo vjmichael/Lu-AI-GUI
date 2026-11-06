@@ -316,3 +316,98 @@ pub fn publish_office_revision_new(
     create_new_atomic_in_dir(output_dir,new_name,stage_id,&revised.revised_bytes)
         .map_err(OfficeRevisionError::Publish)
 }
+
+/// Deterministic ordered, bounded multi-change revision. All changes are
+/// applied in memory, with exact source preconditions checked before ANY
+/// publication. Each stage is a complete validated OOXML repack; a failure
+/// discards the pending in-memory bytes and leaves the original untouched.
+/// The final exact SHA-256 binds the entire resulting file to human approval.
+pub fn render_office_revision_batch(
+    original:&[u8],original_sha256:&str,edits:&[OfficeRevisionEdit],
+)->Result<OfficeRevisionPreview,OfficeRevisionError>{
+    if edits.is_empty()||edits.len()>32{
+        return Err(OfficeRevisionError::InvalidTarget)
+    }
+    if hash(original)!=original_sha256{
+        return Err(OfficeRevisionError::SourceChanged)
+    }
+    let mut targets=BTreeSet::new();
+    let mut part_paths=BTreeSet::new();
+    for edit in edits{
+        let part=target_path(edit)?;
+        let unique=match edit{
+            OfficeRevisionEdit::WordRun{text_index,..}|
+            OfficeRevisionEdit::SlideRun{text_index,..}=>format!("{part}:text:{text_index}"),
+            OfficeRevisionEdit::CellNumber{address,..}|
+            OfficeRevisionEdit::CellBoolean{address,..}=>format!("{part}:cell:{address}"),
+        };
+        if !targets.insert(unique){return Err(OfficeRevisionError::AmbiguousTarget)}
+        part_paths.insert(part);
+    }
+    let mut bytes=original.to_vec();
+    let mut prior_hash=original_sha256.to_owned();
+    for edit in edits{
+        let step=render_office_revision(&bytes,&prior_hash,edit)?;
+        bytes=step.revised_bytes;
+        prior_hash=step.revised_sha256;
+    }
+    // Unaffected parts are defined relative to original input, not last edit.
+    // They retain identical uncompressed content across the complete batch.
+    let mut archive=ZipArchive::new(Cursor::new(original))
+        .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+    let mut unaffected=Vec::new();
+    for idx in 0..archive.len(){
+        let mut part=archive.by_index(idx)
+            .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+        let name=part.name().map_err(|_|OfficeRevisionError::InvalidPackage)?.into_owned();
+        if part_paths.contains(&name){continue}
+        let mut data=Vec::new();
+        (&mut part).take(MAX_PART as u64+1).read_to_end(&mut data)
+            .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+        if data.len()>MAX_PART{return Err(OfficeRevisionError::TooLarge)}
+        unaffected.push((name,hash(&data)));
+    }
+    Ok(OfficeRevisionPreview{
+        original_sha256:original_sha256.into(),revised_sha256:prior_hash,
+        revised_bytes:bytes,
+        target_part:format!("{} targeted parts; {} changes",part_paths.len(),edits.len()),
+        unaffected_parts:unaffected,
+    })
+}
+/// Save a batch only as a host-named NEW file. Exact source and final package
+/// SHA are checked again under pinned source/destination Dir capabilities.
+pub fn publish_office_revision_batch_new(
+    source_dir:&Dir,source_name:&str,output_dir:&Dir,new_name:&str,
+    stage_id:&str,original_sha256:&str,approved_revised_sha256:&str,
+    edits:&[OfficeRevisionEdit],
+)->Result<WriteReceipt,OfficeRevisionError>{
+    if !basename(source_name)||!basename(new_name)||source_name==new_name
+        ||![".docx",".pptx",".xlsx"].iter().any(|ext|
+            source_name.to_ascii_lowercase().ends_with(ext) &&
+            new_name.to_ascii_lowercase().ends_with(ext)){
+        return Err(OfficeRevisionError::InvalidName)
+    }
+    let meta=source_dir.symlink_metadata(source_name)
+        .map_err(|_|OfficeRevisionError::NotFound)?;
+    if !meta.is_file()||meta.file_type().is_symlink()
+        ||meta.len()>MAX_PACKAGE as u64{
+        return Err(OfficeRevisionError::UnsafePackage)
+    }
+    #[cfg(windows)]{
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes()&0x400!=0{
+            return Err(OfficeRevisionError::UnsafePackage)
+        }
+    }
+    let mut file=source_dir.open(source_name)
+        .map_err(|_|OfficeRevisionError::NotFound)?;
+    let mut original=Vec::new();
+    (&mut file).take(MAX_PACKAGE as u64+1).read_to_end(&mut original)
+        .map_err(|_|OfficeRevisionError::InvalidPackage)?;
+    let revised=render_office_revision_batch(&original,original_sha256,edits)?;
+    if revised.revised_sha256!=approved_revised_sha256{
+        return Err(OfficeRevisionError::SourceChanged)
+    }
+    create_new_atomic_in_dir(output_dir,new_name,stage_id,&revised.revised_bytes)
+        .map_err(OfficeRevisionError::Publish)
+}
