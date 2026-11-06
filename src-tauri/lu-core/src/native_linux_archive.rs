@@ -1,8 +1,9 @@
 //! TOOLS-LINUX-ARCHIVE: bounded TAR and conventional Linux compression
 //! primitives. Source and destination are host-opened Dir capabilities, not
 //! model supplied root paths. No shell, mount, symlink, device or ownership
-//! restoration. Linux xz/bzip2/zstd use fixed absolute trusted system binaries;
-//! gzip uses in-process flate2. These are not independently authorized tools.
+//! restoration. XZ/bzip2/Zstandard use a vetted native libarchive DLL on
+//! Windows, OS-owned libarchive on Linux, with only an explicit fixed-path
+//! Linux command fallback if the library is missing. Gzip uses flate2.
 use std::{
     collections::{BTreeMap,BTreeSet},
     io::{Read,Write},
@@ -141,8 +142,50 @@ fn fixed_backend(format:LinuxArchiveFormat)->Result<(&'static str,&'static [&'st
     }
     Err(LinuxArchiveError::BackendUnavailable)
 }
+fn native_backend(
+    format:LinuxArchiveFormat,compress:bool,input:&[u8]
+)->Result<Vec<u8>,LinuxArchiveError>{
+    let native=match format{
+        LinuxArchiveFormat::Xz=>crate::native_libarchive::NativeFormat::RawXz,
+        LinuxArchiveFormat::Bzip2=>crate::native_libarchive::NativeFormat::RawBzip2,
+        LinuxArchiveFormat::Zstd=>crate::native_libarchive::NativeFormat::RawZstd,
+        _=>return Err(LinuxArchiveError::UnsupportedFormat),
+    };
+    let result=if compress{
+        crate::native_libarchive::compress_raw(native,input)
+    }else{
+        crate::native_libarchive::expand_raw(native,input)
+    };
+    result.map_err(|e|match e{
+        crate::native_libarchive::NativeArchiveError::BackendMissing=>
+            LinuxArchiveError::BackendUnavailable,
+        crate::native_libarchive::NativeArchiveError::TooLarge=>
+            LinuxArchiveError::TooLarge,
+        _=>LinuxArchiveError::BackendFailed,
+    })
+}
+#[cfg(windows)]
+fn run_backend(format:LinuxArchiveFormat,compress:bool,input:&[u8])
+    ->Result<Vec<u8>,LinuxArchiveError>{
+    // All xz/bzip2/zstd operations are native library calls in the app.
+    // Windows never runs an external compression program, .bat or shell.
+    native_backend(format,compress,input)
+}
+#[cfg(not(windows))]
+fn run_backend(format:LinuxArchiveFormat,compress:bool,input:&[u8])
+    ->Result<Vec<u8>,LinuxArchiveError>{
+    // Prefer the native library across supported POSIX platforms.
+    // Existing Linux fallback is used ONLY if the libarchive shared library
+    // is absent; corrupt input never triggers an alternative decoder.
+    match native_backend(format,compress,input){
+        Ok(bytes)=>return Ok(bytes),
+        Err(LinuxArchiveError::BackendUnavailable)=>{},
+        Err(e)=>return Err(e),
+    }
+    run_fixed_system_backend(format,compress,input)
+}
 #[cfg(unix)]
-fn run_backend(
+fn run_fixed_system_backend(
     format:LinuxArchiveFormat,compress:bool,input:&[u8],
 )->Result<Vec<u8>,LinuxArchiveError>{
     let (program,_) = fixed_backend(format)?;
@@ -151,14 +194,14 @@ fn run_backend(
             LinuxArchiveFormat::Xz=>&["-zc","-T1"],
             LinuxArchiveFormat::Bzip2=>&["-zc"],
             LinuxArchiveFormat::Zstd=>&["-zcq","-T1"],
-            _=>return Err(LinuxArchiveError::UnsupportedFormat)
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
         }
     }else{
         match format{
             LinuxArchiveFormat::Xz=>&["-dc"],
             LinuxArchiveFormat::Bzip2=>&["-dc"],
             LinuxArchiveFormat::Zstd=>&["-dcq"],
-            _=>return Err(LinuxArchiveError::UnsupportedFormat)
+            _=>return Err(LinuxArchiveError::UnsupportedFormat),
         }
     };
     let mut child=Command::new(program)
@@ -169,8 +212,6 @@ fn run_backend(
     let mut stdout=child.stdout.take().ok_or(LinuxArchiveError::BackendFailed)?;
     let payload=input.to_vec();
     let writer=thread::spawn(move||stdin.write_all(&payload).is_ok());
-    // A watchdog owns the child through a mutex while the main thread reads.
-    // On any over-limit/deadline the process is killed and reaped.
     let child=Arc::new(std::sync::Mutex::new(child));
     let (cancel_tx,cancel_rx)=mpsc::channel::<()>();
     let watchdog_child=Arc::clone(&child);
@@ -195,9 +236,9 @@ fn run_backend(
     Ok(output)
 }
 #[cfg(not(unix))]
-fn run_backend(_:LinuxArchiveFormat,_:bool,_:&[u8])
+fn run_fixed_system_backend(_:LinuxArchiveFormat,_:bool,_:&[u8])
     ->Result<Vec<u8>,LinuxArchiveError>{
-    Err(LinuxArchiveError::UnsupportedPlatform)
+    Err(LinuxArchiveError::BackendUnavailable)
 }
 fn expand(format:LinuxArchiveFormat,data:&[u8])->Result<Vec<u8>,LinuxArchiveError>{
     match format.compressor(){
