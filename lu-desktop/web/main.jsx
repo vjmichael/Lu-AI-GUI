@@ -89,12 +89,6 @@ function App() {
   const [trashHistoryOpen, setTrashHistoryOpen] = useState(false);
   const [trashHistory, setTrashHistory] = useState([]);
   const [latestCustodyOutcome, setLatestCustodyOutcome] = useState(null);
-  const [trashReview, setTrashReview] = useState(null);
-  const [trashReviewed, setTrashReviewed] = useState(false);
-  const [trashBusy, setTrashBusy] = useState(false);
-  const [trashCustodyByChat, setTrashCustodyByChat] = useState({});
-  const [latestTrashedFile, setLatestTrashedFile] = useState(null);
-  const [latestRestoredCustody, setLatestRestoredCustody] = useState(null);
   const [wave2RecoveryByChat,setWave2RecoveryByChat] = useState({});
   const [wave2RecoveryBusy,setWave2RecoveryBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -926,93 +920,6 @@ function App() {
     finally { setFileTransferBusy(false); }
   }
 
-  async function refreshTrashCustody(targetChat = chatId) {
-    if (!targetChat) return;
-    try {
-      const rows=await invoke('lu_trash_custody', {chatId:targetChat});
-      setTrashCustodyByChat(prev=>({...prev,[targetChat]:rows}));
-    } catch (error) {setError('Cannot inspect durable trash custody: ' + String(error));}
-  }
-  async function reviewReversibleTrash() {
-    if (!chatId || trashBusy || trashReview || working || chatBusy) return;
-    setTrashBusy(true);
-    setError('');
-    try {
-      const review=await invoke('lu_review_trash_file', {chatId});
-      if (review) {
-        setTrashReview(review);
-        setTrashReviewed(false);
-        setActivity('Trash review ready — verify the exact file before native consent');
-      }
-    } catch (error) {setError(String(error));}
-    finally {setTrashBusy(false);}
-  }
-  async function approveReversibleTrash() {
-    if (!trashReview || !trashReviewed || trashBusy || trashReview.chatId!==chatId) return;
-    const review=trashReview;
-    setTrashBusy(true);
-    setError('');
-    try {
-      const receipt=await invoke('lu_confirm_trash_file', {
-        chatId:review.chatId,reviewId:review.reviewId
-      });
-      if (receipt) {
-        setLatestTrashedFile({...receipt,chatId:review.chatId});
-        setActivity('File moved to Lu reversible trash: ' + receipt.originalName);
-        await refreshTrashCustody(review.chatId);
-        await refreshChats();
-        if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history', {chatId:review.chatId}));
-      } else {
-        setActivity('Reversible trash denied in native confirmation');
-      }
-    } catch (error) {
-      setError('Trash outcome may require manual recovery. Do not automatically retry: ' + String(error));
-      await refreshTrashCustody(review.chatId);
-    } finally {
-      setTrashReview(null);
-      setTrashReviewed(false);
-      setTrashBusy(false);
-    }
-  }
-  async function denyReversibleTrash() {
-    if (!trashReview || trashBusy) return;
-    setTrashBusy(true);
-    try {
-      await invoke('lu_deny_trash_file', {
-        chatId:trashReview.chatId,reviewId:trashReview.reviewId
-      });
-      setTrashReview(null);
-      setTrashReviewed(false);
-      setActivity('Reversible trash denied; no source file moved');
-    } catch (error) {setError(String(error));}
-    finally {setTrashBusy(false);}
-  }
-  async function restoreFromLuCustody(record) {
-    if (!chatId || trashBusy || record.status!=='AVAILABLE') return;
-    setTrashBusy(true);
-    setError('');
-    try {
-      const result=await invoke('lu_confirm_restore_file', {
-        chatId,sourceEffectId:record.effectCallId
-      });
-      if (result) {
-        setLatestRestoredCustody({...result,chatId});
-        setActivity('Verified file restored: ' + result.fileName);
-        await refreshChats();
-        if (currentChat.current===chatId)
-          setHistory(await invoke('lu_history', {chatId}));
-      } else {
-        setActivity('Restore denied in native confirmation');
-      }
-    } catch (error) {
-      setError('Restore was not verified. Inspect custody before any retry: ' + String(error));
-    } finally {
-      await refreshTrashCustody(chatId);
-      setTrashBusy(false);
-    }
-  }
-
   async function refreshTrashHistory(targetChat = chatId) {
     if (!targetChat) return;
     try {
@@ -1634,62 +1541,6 @@ function App() {
           )}
         </section>}
         {trashReview?.chatId===chatId && <section
-          className="readProposalCard editProposalCard" role="group"
-          aria-label="Review reversible trash of selected file">
-          <strong>Move this exact file into Lu's reversible trash</strong>
-          <code className="writeTarget">{trashReview.exactSource}</code>
-          <small>{trashReview.size} bytes · SHA-256: {trashReview.sha256}</small>
-          <small>Lu maintains a separate durable custody receipt. Cross-volume transfers are
-            refused; an interrupted operation may need manual reconciliation. This does not
-            permanently delete the file or use the OS recycle bin.</small>
-          <label className="editReviewAck">
-            <input type="checkbox" checked={trashReviewed}
-              onChange={e=>setTrashReviewed(e.target.checked)}/>
-            I reviewed the exact source, SHA-256, reversible custody and original-name removal.
-          </label>
-          <div className="settingsActions">
-            <button type="button" className="primaryButton"
-              disabled={!trashReviewed || trashBusy}
-              onClick={()=>void approveReversibleTrash()}>Approve in native confirmation</button>
-            <button type="button" className="subtleButton" disabled={trashBusy}
-              onClick={()=>void denyReversibleTrash()}>Deny trash operation</button>
-          </div>
-        </section>}
-        {latestTrashedFile?.chatId===chatId && <section className="readProposalCard" role="status">
-          <strong>Reversible trash: {latestTrashedFile.originalName}</strong>
-          <code className="writeTarget">{latestTrashedFile.originalDisplay}</code>
-          <small>SHA-256: {latestTrashedFile.sha256} · Effect: {latestTrashedFile.effectCallId}</small>
-          <small>Use the verified custody list to restore. A missing or uncertain receipt is never
-            automatically replayed.</small>
-        </section>}
-        {((trashCustodyByChat[chatId] || []).length > 0) && <section className="readProposalCard"
-          role="region" aria-label="Durable reversible file custody">
-          <strong>Lu reversible trash and recovery records</strong>
-          <small>Recovered from host-owned custody intents and the effect journal; only verified
-            APPLIED receipts are eligible for restore. No automatic retry on interrupted writes.</small>
-          {(trashCustodyByChat[chatId] || []).map(custody=>
-            <div key={custody.effectCallId} className="readProposalCard">
-              <strong>{custody.fileName} — {custody.status.replaceAll('_',' ')}</strong>
-              <code className="writeTarget">{custody.exactOriginal}</code>
-              <small>{custody.bytes} bytes · SHA-256: {custody.sha256}</small>
-              <small>Original effect: {custody.effectCallId}</small>
-              {custody.status==='AVAILABLE' ?
-                <button type="button" className="primaryButton"
-                  disabled={trashBusy || working || chatBusy}
-                  onClick={()=>void restoreFromLuCustody(custody)}>Restore with native confirmation</button> :
-                <small>{custody.status.includes('NEEDS_REVIEW')
-                  ? 'Manual review required. Lu will not automatically repeat this operation.'
-                  : 'This custody record is no longer eligible for another restore.'}</small>}
-            </div>
-          )}
-        </section>}
-        {latestRestoredCustody?.chatId===chatId && <section className="readProposalCard" role="status">
-          <strong>Restored verified file: {latestRestoredCustody.fileName}</strong>
-          <code className="writeTarget">{latestRestoredCustody.exactTarget}</code>
-          <small>{latestRestoredCustody.bytes} bytes · SHA-256: {latestRestoredCustody.sha256}</small>
-          <small>New durable restore effect: {latestRestoredCustody.effectCallId}</small>
-        </section>}
-        {trashReview?.chatId===chatId && <section
           className="readProposalCard editProposalCard" role="group" aria-label="Review reversible file trash">
           <strong>Move the EXACT selected file into Lu's reversible custody</strong>
           <small>Native-selected original file:</small>
@@ -2259,19 +2110,11 @@ function App() {
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || trashBusy || Boolean(trashReview)}
-              title="Native-pick a file and review an exact reversible trash operation"
-              onClick={()=>void reviewReversibleTrash()}>Trash file</button>
-            <button type="button" className="subtleButton"
               disabled={!chatId || wave2RecoveryBusy}
               title="Read-only durable history of approved archives, documents and file operations"
               onClick={()=>void refreshWave2Recovery(chatId)}>
               {wave2RecoveryBusy ? 'Checking operations…' : 'File operations'}
             </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || trashBusy}
-              title="Inspect durable Lu trash receipts and restore only verified records"
-              onClick={()=>void refreshTrashCustody(chatId)}>Trash & Restore</button>
             <button type="button" className="subtleButton"
               disabled={!chatId || working || chatBusy || trashBusy || Boolean(trashReview) || Boolean(restoreReview)}
               title="Native-pick one file and review a reversible same-directory custody operation"
