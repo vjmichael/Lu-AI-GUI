@@ -8,7 +8,7 @@
 use crate::{JobPhase, NativeTreeTerminator, OsContainmentProof, Supervisor, SupervisorError};
 use lu_ide_workspace::lsp::{DiagnosticSource, MAX_MESSAGE};
 use lu_ide_workspace::lsp_session::{LspError, LspEvent, LspPhase, LspSession, Position};
-use std::{io, time::{Duration, Instant}};
+use std::{io, sync::Arc, time::{Duration, Instant}};
 
 const MAX_CHUNK: usize = 16 * 1024;
 const MAX_PENDING_OUTPUT: usize = MAX_MESSAGE + 256;
@@ -29,8 +29,8 @@ pub(crate) trait RestrictedLspProcess: Send {
     fn release_after_verified_terminal(&mut self) -> Result<(), SupervisorError>;
 }
 
-pub(crate) struct LspGateway<'a> {
-    supervisor: &'a Supervisor,
+pub(crate) struct LspGateway {
+    supervisor: Arc<Supervisor>,
     job_id: String,
     session: LspSession,
     process: Option<Box<dyn RestrictedLspProcess>>,
@@ -39,12 +39,12 @@ pub(crate) struct LspGateway<'a> {
     io_bytes: usize,
     plan_sha256: String,
 }
-impl<'a> LspGateway<'a> {
+impl LspGateway {
     /// Only an already-authorized OS worker implementation can call this
     /// internal factory. A struct of bools is not OS proof on its own;
     /// the kernel Job/cgroup handle remains a separate requirement.
     pub(crate) fn attach_native(
-        supervisor: &'a Supervisor,
+        supervisor: Arc<Supervisor>,
         job_id: &str,
         expected_plan_sha256: &str,
         native_proof: &OsContainmentProof,
@@ -173,7 +173,7 @@ impl NativeTreeTerminator for GatewayTerminator<'_> {
         self.process.terminate_tree_and_verify()
     }
 }
-impl Drop for LspGateway<'_> {
+impl Drop for LspGateway {
     fn drop(&mut self) {
         if self.finished { return; }
         self.session.stop_uncertain();
@@ -203,7 +203,7 @@ mod tests {
     fn non_native_approval_cannot_satisfy_the_supervisor_worker_boundary() {
         let root = std::env::temp_dir().join(format!(
             "lu-ide-e2-{}", std::process::id()));
-        let sup = Supervisor::open(root.clone()).unwrap();
+        let sup = Arc::new(Supervisor::open(root.clone()).unwrap());
         struct Fake;
         impl RestrictedLspProcess for Fake {
             fn write_bounded(&mut self, _: &[u8]) -> io::Result<()> { Ok(()) }
@@ -221,7 +221,7 @@ mod tests {
             protected_journal_broker: true,
         };
         assert!(LspGateway::attach_native(
-            &sup, &format!("job-{}", "a".repeat(32)),
+            Arc::clone(&sup), &format!("job-{}", "a".repeat(32)),
             &"b".repeat(64), &p, Box::new(Fake), "rust-analyzer",
         ).is_err());
         let _ = std::fs::remove_file(root);
