@@ -36,6 +36,26 @@ function Copy-Tree([string]$Source,[string]$Destination) {
 function Feed([System.Security.Cryptography.HashAlgorithm]$Hash,[byte[]]$Bytes) {
   if ($Bytes.Length -gt 0) { $null=$Hash.TransformBlock($Bytes,0,$Bytes.Length,$Bytes,0) }
 }
+function Ordered-Files([string]$Directory, [string]$Root) {
+  # Match the native Rust tree_transfer exactly: ordinal sibling ordering,
+  # recursive depth-first visitation, then relative POSIX separators.
+  # A globally sorted list is *not* equivalent when a directory name is
+  # also a prefix of a sibling filename.
+  [string[]]$names=[IO.Directory]::GetFileSystemEntries($Directory)
+  [Array]::Sort($names,[StringComparer]::Ordinal)
+  foreach ($name in $names) {
+    $item=Get-Item -LiteralPath $name -Force
+    if ($item.PSIsContainer) {
+      Ordered-Files $item.FullName $Root
+    } else {
+      [pscustomobject]@{
+        path=$item.FullName.Substring($Root.TrimEnd('\').Length+1).Replace('\','/')
+        full=$item.FullName
+        bytes=$item.Length
+      }
+    }
+  }
+}
 if ($env:OS -ne 'Windows_NT') { throw 'DENIED: native Windows required' }
 $OutputRoot=[IO.Path]::GetFullPath($OutputRoot)
 if (!$LockPath) { $LockPath="$OutputRoot.lock.json" }
@@ -93,13 +113,7 @@ try {
     Require (Join-Path $OutputRoot $need)
   }
   No-Reparse $OutputRoot
-  $files=@(Get-ChildItem -LiteralPath $OutputRoot -File -Recurse | ForEach-Object {
-    [pscustomobject]@{
-      path=$_.FullName.Substring($OutputRoot.TrimEnd('\').Length+1).Replace('\','/')
-      full=$_.FullName
-      bytes=$_.Length
-    }
-  } | Sort-Object path -CaseSensitive)
+  $files=@(Ordered-Files $OutputRoot $OutputRoot)
   if ($files.Count -gt 60000) { throw 'DENIED: >60,000 bundle files' }
   $total=($files|Measure-Object -Property bytes -Sum).Sum
   if ($total -gt 8GB) { throw 'DENIED: >8GiB bundle' }
