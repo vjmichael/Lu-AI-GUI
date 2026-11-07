@@ -15,6 +15,9 @@ mod chat_store;
 // Real M2 ANSF goal events and chat journal compile together without Tauri.
 #[path = "../../../../src-tauri/lu-core/src/ansf_goals.rs"]
 pub mod ansf_goals;
+// ANSF core schema initializes the production artifact-reference table.
+#[path = "../../../../src-tauri/lu-core/src/ansf_artifact_links.rs"]
+pub mod ansf_artifact_links;
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
