@@ -76,6 +76,34 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// WO9-A/B: inspect several explicitly registered projects in one native,
+/// bounded, non-executing release workflow. No paths or commands from WebView.
+#[tauri::command]
+async fn ide_workflow_preview(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowInspection, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_multi_project_workflow(&project_ids).map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_NATIVE_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// WO9-B: reject stale Git HEAD, dirty worktree or changed staged artifacts.
+/// Verifying a plan does not approve packaging or request OS-worker admission.
+#[tauri::command]
+async fn ide_workflow_verify(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowInspection, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.verify_multi_project_workflow(&project_ids, &expected_fingerprint)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_REVALIDATE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read file metadata and bounded SHA-256 under an active registered project.
 /// The result NEVER proves an executable is safe or operable.
 #[tauri::command]
@@ -1002,6 +1030,8 @@ pub fn run() {
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
+            ide_workflow_preview,
+            ide_workflow_verify,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
