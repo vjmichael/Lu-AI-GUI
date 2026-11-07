@@ -10,6 +10,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 **New installed-build defect repaired:** the legacy WGC packaging PowerShell was duplicated and syntactically corrupted. Replaced with one coherent fail-closed Windows build/preflight script with exact Lu/worker hashes and optional reviewed Research overlay. Two independent installed-app harness scripts now distinguish binary/OS-window checks from WGC/NSIS physical acceptance; both undergo PowerShell parse checks in focused Windows CI.
 
+**P06 continued implementation:** Repaired stale full-desktop source assertions that were blocking native WGC worker compilation despite up-to-date P06 UI and Guardian code; added a real rejected-capture/Guardian-release host test. Extended installed-app UIA script with optional operator-triggered consent/pause/resume/stop visual lifecycle; no unattended native dialog approval or false WGC/NSIS/semantic PASS. Re-run exact-head native CI for Windows WGC compile and desktop host/React checks; physical acceptance still OPEN.
+
 **Still outstanding:** current-head Windows WGC/desktop CI and failure repair; physical installed NSIS and native WGC/interactive UIA acceptance; generic picker source attribution, independent sensitive-area detection/redaction for meaningful image previews, real low-resource resident model lane and verified installed GUI test receipts. No P07 work. Detailed [P06 gap notes](LU_P06_OBSERVE_PRIVACY.md).
 
 ## P06 OBSERVE-PRIVACY-01 — owner-authorized privacy closeout source (2026-11-06)
