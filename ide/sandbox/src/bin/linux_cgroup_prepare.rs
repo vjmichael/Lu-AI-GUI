@@ -29,10 +29,14 @@ mod prepare {
     fn kernel_location() -> io::Result<PathBuf> {
         let data = fs::read_to_string("/proc/self/cgroup")?;
         let mut lines = data.lines().filter_map(|line| line.strip_prefix("0::"));
-        let rel = lines.next().ok_or_else(|| denied("no unified cgroup-v2 identity"))?;
+        let rel = lines
+            .next()
+            .ok_or_else(|| denied("no unified cgroup-v2 identity"))?;
         if lines.next().is_some()
             || !rel.starts_with('/')
-            || rel.split('/').any(|component| component == "." || component == "..")
+            || rel
+                .split('/')
+                .any(|component| component == "." || component == "..")
         {
             return Err(denied("untrusted cgroup location"));
         }
@@ -47,9 +51,9 @@ mod prepare {
         let name = current.file_name().and_then(|s| s.to_str());
         let root = match name {
             Some("lu-ide-delegated.service") => current,
-            Some(".control" | "lu-ide-host") => {
-                current.parent().ok_or_else(|| denied("no service cgroup parent"))?
-            }
+            Some(".control" | "lu-ide-host") => current
+                .parent()
+                .ok_or_else(|| denied("no service cgroup parent"))?,
             _ => return Err(denied("not an exact delegated systemd service process")),
         };
         if root.file_name().and_then(|s| s.to_str()) != Some("lu-ide-delegated.service") {
@@ -61,11 +65,16 @@ mod prepare {
         let pids = fs::read_to_string(root.join("cgroup.procs"))?;
         let self_pid = std::process::id();
         let mut observed = pids.lines().filter(|line| !line.trim().is_empty());
-        Ok(observed.next().and_then(|pid| pid.parse::<u32>().ok()) == Some(self_pid)
-            && observed.next().is_none())
+        Ok(
+            observed.next().and_then(|pid| pid.parse::<u32>().ok()) == Some(self_pid)
+                && observed.next().is_none(),
+        )
     }
     fn require_empty_internal_processes(root: &Path) -> io::Result<()> {
-        if fs::read_to_string(root.join("cgroup.procs"))?.trim().is_empty() {
+        if fs::read_to_string(root.join("cgroup.procs"))?
+            .trim()
+            .is_empty()
+        {
             Ok(())
         } else {
             Err(denied("service root still contains internal processes"))
@@ -81,7 +90,9 @@ mod prepare {
             return Err(denied("delegation must be a domain cgroup"));
         }
         if !valid_controllers(&fs::read_to_string(unit.join("cgroup.controllers"))?) {
-            return Err(denied("systemd did not delegate CPU/memory/PID controllers"));
+            return Err(denied(
+                "systemd did not delegate CPU/memory/PID controllers",
+            ));
         }
         let host = unit.join("lu-ide-host");
         match fs::create_dir(&host) {
@@ -99,7 +110,9 @@ mod prepare {
             // process, from the exact service unit root to its fixed child.
             // Never move an arbitrary PID, pre-existing task or other user.
             if !exactly_self_at_root(&unit)?
-                || !fs::read_to_string(host.join("cgroup.procs"))?.trim().is_empty()
+                || !fs::read_to_string(host.join("cgroup.procs"))?
+                    .trim()
+                    .is_empty()
             {
                 return Err(denied("cannot migrate extra service processes"));
             }
@@ -128,14 +141,18 @@ mod prepare {
         }
         let observed = fs::read_to_string(unit.join("cgroup.subtree_control"))?;
         if !valid_controllers(&observed) {
-            return Err(denied("kernel refused required subtree controller activation"));
+            return Err(denied(
+                "kernel refused required subtree controller activation",
+            ));
         }
         require_empty_internal_processes(&unit)?;
         if !host.join("cgroup.procs").is_file() {
             return Err(denied("missing fixed host leaf kernel procs file"));
         }
         println!("PASS: trusted systemd Lu IDE service delegated CPU/memory/PID controllers to empty parent");
-        println!("SCOPE: trusted cgroup preparation only, not a worker or crash-recovery acceptance");
+        println!(
+            "SCOPE: trusted cgroup preparation only, not a worker or crash-recovery acceptance"
+        );
         Ok(())
     }
 
@@ -149,9 +166,15 @@ mod prepare {
         #[test]
         fn exact_service_identity_only() {
             let service = Path::new("/sys/fs/cgroup/system.slice/lu-ide-delegated.service");
-            assert_eq!(root_and_mode(service).unwrap(), (service.to_path_buf(), true));
+            assert_eq!(
+                root_and_mode(service).unwrap(),
+                (service.to_path_buf(), true)
+            );
             let host = service.join("lu-ide-host");
-            assert_eq!(root_and_mode(&host).unwrap(), (service.to_path_buf(), false));
+            assert_eq!(
+                root_and_mode(&host).unwrap(),
+                (service.to_path_buf(), false)
+            );
             assert!(root_and_mode(Path::new("/tmp/lu-ide-host")).is_err());
             assert!(root_and_mode(Path::new("/sys/fs/cgroup/user.slice/foreign.service")).is_err());
         }
