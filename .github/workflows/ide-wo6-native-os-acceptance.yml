@@ -185,13 +185,14 @@ jobs:
           set -euo pipefail
           cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_dap_host
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --example wo6_native_dap_acceptance
-      - name: Verify real delegated cgroup normal and cancellation
+      - name: Verify independent crash replay, real delegated normal and cancellation
         shell: bash
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_dap_host)"
-          for mode in normal cancel; do
+          for mode in crash normal cancel; do
             args=()
+            if [[ "$mode" == crash ]]; then args+=(--crash-verify); fi
             if [[ "$mode" == cancel ]]; then args+=(--cancel); fi
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
