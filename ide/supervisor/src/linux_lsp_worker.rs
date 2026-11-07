@@ -17,7 +17,7 @@ use std::{
     fs::File,
     io,
     os::fd::{AsRawFd, RawFd},
-    process::{Child, ChildStdin, ChildStdout},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout},
     sync::Arc,
 };
 // Fixed CI/debug-only source-stage identifiers; never record paths, PIDs,
@@ -182,12 +182,78 @@ fn poll_fd(fd: RawFd, flags: i16, timeout_ms: i32) -> io::Result<bool> {
     }
     Ok((item.revents & flags) != 0)
 }
+// Only fixed error categories may be logged, and only for test-only native
+// debugger diagnostics with an explicit debug build+trace environment toggle.
+// No stderr payload, project path, user text, SID, or process ID is emitted.
+fn classify_dap_child_failure(bytes: &[u8]) -> &'static str {
+    let lower = String::from_utf8_lossy(bytes).to_ascii_lowercase();
+    if lower.contains("error while loading shared libraries")
+        || lower.contains("cannot open shared object file")
+        || lower.contains("library not loaded")
+    {
+        "dynamic_library_missing"
+    } else if lower.contains("permission denied") || lower.contains("operation not permitted") {
+        "os_permission_denied"
+    } else if lower.contains("no such file or directory") {
+        "required_file_missing"
+    } else if lower.contains("failed to create") || lower.contains("read-only file system") {
+        "runtime_write_denied"
+    } else if lower.contains("ptrace") || lower.contains("debugger") {
+        "ptrace_or_debugger_reported"
+    } else if lower.contains("cannot find") || lower.contains("not found") {
+        "dependency_missing"
+    } else if lower.contains("error") || lower.contains("fatal") {
+        "other_reported_error"
+    } else if bytes.is_empty() {
+        "empty"
+    } else {
+        "other_nonempty"
+    }
+}
 struct LinuxLspProcess {
     child: Child,
     stdin: ChildStdin,
     stdout: ChildStdout,
+    debug_stderr: Option<ChildStderr>,
     group: Cgroup,
     released: bool,
+}
+impl LinuxLspProcess {
+    fn trace_dap_native_failure(&mut self, stage: &'static str) {
+        if !cfg!(debug_assertions)
+            || std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                != Some(std::ffi::OsStr::new("1"))
+            || self.debug_stderr.is_none()
+        {
+            return;
+        }
+        eprintln!("PROTECTED_LINUX_DAP_CHILD_FAILURE_STAGE={stage}");
+        let state = match self.child.try_wait() {
+            Ok(Some(status)) if status.success() => "exited_zero",
+            Ok(Some(_)) => "exited_nonzero",
+            Ok(None) => "running",
+            Err(_) => "status_unavailable",
+        };
+        eprintln!("PROTECTED_LINUX_DAP_CHILD_STATE={state}");
+        if let Some(stderr) = &mut self.debug_stderr {
+            let fd = stderr.as_raw_fd();
+            let readable = poll_fd(fd, libc::POLLIN | libc::POLLHUP, 0).unwrap_or(false);
+            if readable {
+                let mut bytes = [0u8; 2048];
+                let amount = unsafe { libc::read(fd, bytes.as_mut_ptr().cast(), bytes.len()) };
+                if amount > 0 {
+                    eprintln!(
+                        "PROTECTED_LINUX_DAP_STDERR_CLASS={}",
+                        classify_dap_child_failure(&bytes[..amount as usize])
+                    );
+                } else {
+                    eprintln!("PROTECTED_LINUX_DAP_STDERR_CLASS=empty_or_unavailable");
+                }
+            } else {
+                eprintln!("PROTECTED_LINUX_DAP_STDERR_CLASS=pipe_not_ready");
+            }
+        }
+    }
 }
 // Owns nonblocking stdio and the only native child owner, with cgroup as
 // kernel authority. No data path to the WebView and no ambient project mount.
@@ -197,6 +263,7 @@ impl RestrictedLspProcess for LinuxLspProcess {
             return Err(io::ErrorKind::InvalidInput.into());
         }
         if self.child.try_wait()?.is_some() {
+            self.trace_dap_native_failure("write_after_child_exit");
             return Err(io::ErrorKind::BrokenPipe.into());
         }
         let fd = self.stdin.as_raw_fd();
@@ -235,6 +302,7 @@ impl RestrictedLspProcess for LinuxLspProcess {
         let fd = self.stdout.as_raw_fd();
         if !poll_fd(fd, libc::POLLIN | libc::POLLHUP, timeout)? {
             if self.child.try_wait()?.is_some() {
+                self.trace_dap_native_failure("stdout_timeout_child_exited");
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
             return Ok(Vec::new());
@@ -249,6 +317,7 @@ impl RestrictedLspProcess for LinuxLspProcess {
             return Err(error);
         }
         if n == 0 {
+            self.trace_dap_native_failure("stdout_eof");
             return Err(io::ErrorKind::BrokenPipe.into());
         }
         data.truncate(n as usize);
@@ -414,6 +483,7 @@ pub fn start_linux_lsp(
         child,
         stdin,
         stdout,
+        debug_stderr: None,
         group,
         released: false,
     };
@@ -527,7 +597,14 @@ pub fn start_linux_dap(
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(if cfg!(debug_assertions)
+            && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                == Some(std::ffi::OsStr::new("1"))
+        {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     unsafe {
         command.pre_exec(move || attach_pid_in_pre_exec(descriptor));
     }
@@ -574,10 +651,12 @@ pub fn start_linux_dap(
         return Err(e);
     }
     native_linux_lsp_trace("running_receipt_fsynced");
+    let debug_stderr = child.stderr.take();
     let process = LinuxLspProcess {
         child,
         stdin,
         stdout,
+        debug_stderr,
         group,
         released: false,
     };
