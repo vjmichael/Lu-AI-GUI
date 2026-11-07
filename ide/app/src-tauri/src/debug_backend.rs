@@ -141,6 +141,7 @@ pub struct DebugStatus {
     code: String,
     current: Option<DebugActive>,
     last: Option<DebugWitness>,
+    journal: Vec<DebugInterrupted>,
     quarantined: Vec<DebugInterrupted>,
     description: &'static str,
 }
@@ -190,16 +191,21 @@ impl NativeDebugRuntime {
             });
         let last = self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
             .as_ref().filter(|v| v.project_id == project_id).cloned();
-        let quarantined: Vec<DebugInterrupted> = self.supervisor.inspect()
+        let journal: Vec<DebugInterrupted> = self.supervisor.inspect()
             .map_err(|e| e.code().to_owned())?.into_iter()
-            .filter(|job| job.project_id == project_id && job.requires_reconciliation)
+            .filter(|job| job.project_id == project_id)
+            .take(32)
             .map(|job| DebugInterrupted {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
                 phase: format!("{:?}", job.phase).to_lowercase(),
-                requires_reconciliation: true,
+                requires_reconciliation: job.requires_reconciliation,
             }).collect();
+        // A new GUI process retains the exact durable DAP job identities.
+        // Last result is session-only; never synthesize a successful witness.
+        let quarantined: Vec<DebugInterrupted> = journal.iter()
+            .filter(|job| job.requires_reconciliation).cloned().collect();
         Ok(DebugStatus {
             ready: available.is_ok() && quarantined.is_empty(),
             code: match available {
@@ -208,6 +214,7 @@ impl NativeDebugRuntime {
             },
             current,
             last,
+            journal,
             quarantined,
             description: "Only fixed LLDB-DAP self-test debuggee. Project debug launches remain disabled.",
         })
