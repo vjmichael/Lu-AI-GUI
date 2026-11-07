@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5646bd8eac5b326083a60d5d12ce986862bcae84",
+  "sourceCommitBeforeLock": "3b669a4edec32ff90eac2cc45f5c727408ad5269",
   "trackedFileCount": 568,
   "files": [
     {
@@ -749,7 +749,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-semantic-contract.test.mjs",
-      "blob": "716426144113729dc0e6a6b3007e61de94654d29"
+      "blob": "f8104bce61c20421429eb960a47bc46dda2ba578"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",

@@ -22,7 +22,7 @@ test('M3 vector and hybrid index are bounded and original-source-only',()=>{
   assert.match(core,/self\.read_entry\(session_id,entry_id\)/);
   assert.match(host,/pub fn hybrid_recall_with_embedding/);
   assert.match(host,/self\.known_source_for_turn\(active_chat,&source.source_id\)/);
-  assert.match(host,/host-only|host-only/i);
+  assert.match(host,/trusted LOCAL embedding engine/i);
   assert.match(harness,/pub mod ansf_semantic/);
 });
 test('S1 model version and no fake embedding provider',()=>{
