@@ -328,6 +328,55 @@ impl ResearchDesktop{
     pub(crate) fn available(&self)->bool{
         self.expected_sha256.is_some_and(|sha|verified_file(&self.curl,sha))
     }
+    /// P03 explicit operator-selected public model discovery. The same
+    /// hash-pinned HTTPS reader used by Research is reused rather than
+    /// introducing a model-provided binary, URL, credential or network tool.
+    /// Neither method downloads weights or issues a model execution grant.
+    pub(crate) fn model_provider_search(
+        &self,query:&str
+    )->Result<Vec<lu_core::model_provider_catalog::ModelLead>,String>{
+        use lu_core::model_provider_catalog::{search_url,parse_search};
+        let url=search_url(query).map_err(|_|"Invalid model search query")?;
+        if !self.available(){
+            return Err("The hash-pinned Lu HTTPS runtime is unavailable".into())
+        }
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let page=fetcher.fetch_bounded(&url,512*1024)
+            .map_err(|_|"Public model catalog search unavailable")?;
+        if page.http_status!=200||page.redirect_target.is_some(){
+            return Err("Model catalog returned an unverified status or redirect".into())
+        }
+        parse_search(&page.bytes).map_err(|_|"Invalid model catalog search response".into())
+    }
+    pub(crate) fn model_provider_review(
+        &self,repo_id:&str,revision:&str
+    )->Result<lu_core::model_provider_catalog::ModelRepoReview,String>{
+        use lu_core::model_provider_catalog::{
+            model_info_url,tree_url,parse_repo_license,parse_tree
+        };
+        let info_url=model_info_url(repo_id,revision)
+            .map_err(|_|"Invalid pinned model reference")?;
+        let files_url=tree_url(repo_id,revision)
+            .map_err(|_|"Invalid pinned model revision")?;
+        if !self.available(){
+            return Err("The hash-pinned Lu HTTPS runtime is unavailable".into())
+        }
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let info=fetcher.fetch_bounded(&info_url,512*1024)
+            .map_err(|_|"Cannot independently inspect pinned model metadata")?;
+        if info.http_status!=200||info.redirect_target.is_some(){
+            return Err("Pinned model identity could not be verified".into())
+        }
+        let license=parse_repo_license(&info.bytes,repo_id,revision)
+            .map_err(|_|"Model license/access could not be verified")?;
+        let tree=fetcher.fetch_bounded(&files_url,768*1024)
+            .map_err(|_|"Pinned model file inventory unavailable")?;
+        if tree.http_status!=200||tree.redirect_target.is_some(){
+            return Err("Pinned model files cannot be independently inspected".into())
+        }
+        parse_tree(&tree.bytes,repo_id,revision,&license)
+            .map_err(|_|"No safely identified immutable GGUF assets found".into())
+    }
     pub(crate) fn search(
         &self,chat_id:&str,query:&str
     )->Result<ResearchSearchView,String>{
