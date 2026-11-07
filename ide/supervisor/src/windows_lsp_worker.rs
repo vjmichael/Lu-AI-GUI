@@ -143,7 +143,10 @@ mod native_stderr_classification_tests {
     #[test]
     fn native_exit_statuses_are_classified_without_paths_or_rights_changes() {
         assert_eq!(classify_native_exit(0xc0000135), "dependency_dll_missing");
-        assert_eq!(classify_native_exit(0xc0000142), "dll_initialization_failed");
+        assert_eq!(
+            classify_native_exit(0xc0000142),
+            "dll_initialization_failed"
+        );
         assert_eq!(classify_native_exit(0xc0000022), "kernel_access_denied");
         assert_eq!(classify_native_exit(0xc000007b), "invalid_binary_format");
         assert_eq!(classify_native_exit(1), "other_nonzero");
@@ -249,7 +252,10 @@ fn native_lsp_exit_code(process: HANDLE) {
         let mut code = 0u32;
         if unsafe { GetExitCodeProcess(process, &mut code) } != 0 {
             eprintln!("PROTECTED_LSP_NATIVE_EXIT_CODE={code}");
-            eprintln!("PROTECTED_LSP_NATIVE_EXIT_CLASS={}", classify_native_exit(code));
+            eprintln!(
+                "PROTECTED_LSP_NATIVE_EXIT_CLASS={}",
+                classify_native_exit(code)
+            );
         }
     }
 }
