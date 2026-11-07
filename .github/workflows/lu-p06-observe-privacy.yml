@@ -33,6 +33,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Verify exact tracked source snapshot
         run: node scripts/verify-source-tree.mjs
       - name: Test native Lu Observe consent and revocation
@@ -51,7 +54,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
           npm run build
           npm run check
       - name: Compile and test actual Windows WGC worker identity and full-frame redaction
