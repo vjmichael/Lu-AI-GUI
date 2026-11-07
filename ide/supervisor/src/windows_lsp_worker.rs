@@ -562,6 +562,16 @@ pub fn start_windows_lsp(
     native_lsp_trace("scm_lease_start");
     let mut lease = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_service)?;
     native_lsp_trace("scm_lease_fsynced");
+    // Clangd and the Windows runtime can open the NUL device by name after
+    // AppContainer launch, just as pinned Cargo/rustc does. Obtain an exact
+    // package-SID NUL lease from the independently restricted SCM service
+    // while the Job is empty. The service journals and verifies the grant,
+    // then revokes it before the final durable release ACK. This is NOT an
+    // interactive/user ACL edit, blanket AppContainer grant or launch bypass.
+    // The LSP adapter is compiled only with protected-recovery-service.
+    native_lsp_trace("scm_exact_nul_lease_requested");
+    lease.grant_null()?;
+    native_lsp_trace("scm_exact_nul_lease_fsynced");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read) =
