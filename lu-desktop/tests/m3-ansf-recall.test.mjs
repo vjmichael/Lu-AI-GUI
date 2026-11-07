@@ -25,12 +25,15 @@ test('M3 wired as human-origin local model task data, not authority',()=>{
   assert.match(host,/GenerationOrigin::Human && images\.is_empty\(\)/);
   assert.match(native,/mod m3_cross_chat_acceptance/);
 });
-test('M3 human recall and direct source navigation render',()=>{
-  assert.match(ui,/aria-label="ANSF memory recall"/);
-  assert.match(ui,/invoke\('lu_m3_recall'/);
-  assert.match(ui,/invoke\('lu_m3_read_source'/);
-  assert.match(ui,/hit\.sourceId/);
-  assert.match(ui,/Read original source/);
-  assert.match(ui,/needle\.startsWith\(\x27ansf:v1:\x27\)/);
+test('M3 human recall and original-source navigation stay in independent pane',()=>{
+  const pane=ui.slice(ui.indexOf('function AnsfHistoryPane('),ui.indexOf('function App() {'));
+  assert.ok(pane.length>500,'independent pane component');
+  assert.match(pane,/aria-label="Independent ANSF history browser"/);
+  assert.match(pane,/invoke\\('lu_m3_recall'/);
+  assert.match(pane,/invoke\\('lu_m3_history_page'/);
+  assert.match(pane,/invoke\\('lu_m3_source_text_page'/);
+  assert.match(pane,/Read full original/);
+  assert.match(pane,/ansf:v1:/);
+  assert.doesNotMatch(pane,/\\b(setChatId|setHistory|setPrompt|switchChat)\\s*\\(/);
+  assert.match(ui,/historyPaneOpen&&chatId&&<AnsfHistoryPane/);
 });
-
