@@ -15,7 +15,7 @@ fn main() {
 mod native {
     use std::{
         env, fs,
-        fs::{File, OpenOptions},
+        fs::OpenOptions,
         io::{self, BufRead, BufReader, Write},
         os::{fd::AsRawFd, raw::c_void, unix::process::CommandExt},
         path::{Path, PathBuf},
@@ -63,7 +63,10 @@ mod native {
         let host = fs::canonicalize(root.join(relative.trim_start_matches('/')))?;
         let parent = host.parent().ok_or_else(|| denied("no delegated parent"))?;
         if host.file_name().and_then(|v| v.to_str()) != Some("lu-ide-host")
-            || parent.file_name().and_then(|v| v.to_str()) != Some("lu-ide-delegated")
+            || !matches!(
+                parent.file_name().and_then(|v| v.to_str()),
+                Some("lu-ide-delegated" | "lu-ide-delegated.service")
+            )
             || parent == root
             || !parent.starts_with(&root)
         {
