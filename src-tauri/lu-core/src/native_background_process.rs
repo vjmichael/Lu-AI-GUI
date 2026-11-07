@@ -207,7 +207,8 @@ impl BackgroundProcessSupervisor {
         #[cfg(windows)]
         if plan.args.first().and_then(|s|s.to_str()).is_some_and(|mode|
             matches!(mode,
-                "--lu-observe-one-shot"|"--lu-observe-foreground-one-shot"))
+                "--lu-observe-one-shot"|"--lu-observe-foreground-one-shot"
+                |"--lu-observe-primary-monitor-one-shot"))
             &&job.set_memory_limit(512*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)

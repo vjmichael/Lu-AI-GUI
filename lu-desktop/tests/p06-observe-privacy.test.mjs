@@ -324,3 +324,20 @@ test('P06 durable SQLite awareness rows enforce local-only origin and prevent me
   assert.match(tasks,/migrated\[0\]\.data_origin/);
   assert.match(host,/data_origin:n\.data_origin,network_egress_allowed:n\.network_egress_allowed/);
 });
+
+test('P06 native primary-monitor route is OS-identified and never inferred from the generic picker',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const supervisor=read('../../src-tauri/lu-core/src/native_background_process.rs');
+  assert.match(worker,/monitor::Monitor/);
+  assert.match(worker,/Monitor::primary\(\)/);
+  assert.match(worker,/as_raw_hmonitor/);
+  assert.match(worker,/primary_monitor_matches/);
+  assert.match(worker,/native-primary-monitor-v1/);
+  assert.match(worker,/native_monitor_source_receipt_is_domain_separated_from_unknown_picker/);
+  assert.match(worker,/native_primary_monitor_identity_is_real_os_handle_or_refused/);
+  assert.match(worker,/--lu-observe-primary-monitor-one-shot/);
+  assert.match(supervisor,/--lu-observe-primary-monitor-one-shot/);
+  assert.match(host,/--lu-observe-primary-monitor-one-shot/);
+  assert.match(desktop,/primary_display:Option<bool>/);
+  assert.match(ui,/observeCaptureOneShot\(false,true\)/);
+});

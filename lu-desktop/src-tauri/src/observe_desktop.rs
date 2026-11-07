@@ -397,7 +397,8 @@ impl ObserveHost {
           ||plan.workspace_id!=chat_id
           ||plan.args.len()!=2
           ||!(plan.args[0]=="--lu-observe-one-shot"
-            ||plan.args[0]=="--lu-observe-foreground-one-shot")
+            ||plan.args[0]=="--lu-observe-foreground-one-shot"
+            ||plan.args[0]=="--lu-observe-primary-monitor-one-shot")
           ||plan.args[1].to_string_lossy().len()!=32
           ||!plan.args[1].to_string_lossy().bytes().all(|b|b.is_ascii_hexdigit())
           ||!plan.progress_protocol
@@ -415,7 +416,8 @@ impl ObserveHost {
             return Err("An approved capture picker is already running".into());
         }
         let id=plan.task_id.clone();
-        let foreground=plan.args[0]=="--lu-observe-foreground-one-shot";
+        let foreground=plan.args[0]=="--lu-observe-foreground-one-shot"
+            ||plan.args[0]=="--lu-observe-primary-monitor-one-shot";
         self.capture_processes.start_host_approved(plan)
             .map_err(|e|format!("Trusted capture worker could not start: {e:?}"))?;
         s.capture_task_id=Some(id.clone());
@@ -474,7 +476,7 @@ impl ObserveHost {
             // its receipt before emitting any stdout; NOT a visual preview.
             fully_redacted_receipt:receipt_ready,
             visual_interpretation_verified:false,
-            message:"Native one-shot receipt: foreground OS window identity is checked by the pinned worker; generic picker source identity remains unverified. No raw pixels are returned, and no GUI or model-vision verdict is inferred.",
+            message:"Native one-shot receipt: OS-confirmed foreground HWND or primary monitor identity is checked; generic picker remains unverified. No raw pixels, screenshot or GUI/model-vision verdict is returned.",
             data_origin:"observe_learn",network_egress_allowed:false,
         }))
     }

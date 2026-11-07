@@ -972,11 +972,11 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setImageExportBusy(false);}
   }
-  async function observeCaptureOneShot(foregroundOnly=false){
+  async function observeCaptureOneShot(foregroundOnly=false,primaryDisplay=false){
     if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
     setCaptureStarting(true);
     try{
-      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly});
+      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay});
       if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
@@ -2757,6 +2757,10 @@ function App() {
                   {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
                 </button>
                 <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false,true)}>
+                  Capture primary display (OS-identified, full screen)
+                </button>
+                <button type="button" disabled={captureStarting}
                   onClick={()=>observeCaptureOneShot(false)}>
                   Select window/display · capture one frame
                 </button>
@@ -2784,7 +2788,7 @@ function App() {
                   ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
                   :' No completed frame digest.'}
                 {captureReceipt.sourceIdentityAttested
-                  ?' Foreground HWND, PID and process creation time checked.'
+                  ?' Native foreground HWND or primary display identity checked.'
                   :' Selected source identity is not attested.'}
                 {captureReceipt.fullyRedactedReceipt
                   ?' Entire captured frame was blanked before receipt output.'

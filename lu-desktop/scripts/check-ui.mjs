@@ -47,9 +47,10 @@ const tests = [
     host.includes('observer.launch_one_shot(&chat_id,plan,lease)') &&
     host.includes('guardian.admit_host_worker(') &&
     host.includes('lu_observe_capture_available,') &&
-    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly})") &&
+    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay})") &&
     ui.includes('Select window/display · capture one frame') &&
     ui.includes('Capture selected foreground app (4s)') &&
+    ui.includes('Capture primary display (OS-identified, full screen)') &&
     host.includes('--lu-observe-foreground-one-shot') &&
     ui.includes("if(action==='pause'||action==='stop'){") &&
     ui.includes('setCaptureTaskId(null);setCaptureReceipt(null)') &&

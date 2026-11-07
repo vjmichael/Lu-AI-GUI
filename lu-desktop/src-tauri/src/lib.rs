@@ -6076,15 +6076,17 @@ fn lu_observe_self_signal(
 #[tauri::command]
 async fn lu_observe_capture_one_shot(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,
-    foreground_only:bool
+    foreground_only:bool,primary_display:Option<bool>
 )->Result<Option<String>,String>{
     #[cfg(not(windows))]
     {
-        let _=app;let _=state;let _=chat_id;let _=foreground_only;
+        let _=app;let _=state;let _=chat_id;let _=foreground_only;let _=primary_display;
         return Err("Windows Graphics Capture requires interactive Windows".into());
     }
     #[cfg(windows)]
     {
+        let primary_display=primary_display.unwrap_or(false);
+        if primary_display&&foreground_only{return Err("Choose exactly one capture source mode".into());}
         state.chats.history(&chat_id)
             .map_err(|_|"Choose an existing conversation")?;
         let running=state.observe.status(&chat_id)?;
@@ -6101,7 +6103,14 @@ async fn lu_observe_capture_one_shot(
             return Err("Installed capture worker signature is invalid".into());
         }
         let approved=tauri::async_runtime::spawn_blocking(move||{
-            let warning=if foreground_only{
+            let warning=if primary_display{
+                "Capture the ENTIRE PRIMARY Windows display for ONE frame?\n\n\
+                 This can expose sensitive unrelated windows. You decide \
+                 what your screen shows. Lu independently checks the real \
+                 OS primary HMONITOR and display dimensions around readback. \
+                 The frame is fully blanked and not shared with the model. \
+                 Cancel if you do not approve the entire primary display."
+            }else if foreground_only{
                 "Capture ONE foreground application window after a four-second \
                  countdown?\n\n\
                  Confirm, then click or focus the desired window within \
@@ -6120,7 +6129,9 @@ async fn lu_observe_capture_one_shot(
             app.dialog().message(warning)
               .title("Lu — approve one-shot Windows capture")
               .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                  if foreground_only{"Capture foreground window"}else{"Open Windows picker"}.into(),
+                  (if primary_display{"Capture primary display"}
+                    else if foreground_only{"Capture foreground window"}
+                    else{"Open Windows picker"}).into(),
                   "Cancel".into()
               )).blocking_show()
         }).await.map_err(|_|"Windows capture confirmation unavailable")?;
@@ -6141,7 +6152,9 @@ async fn lu_observe_capture_one_shot(
                 workspace_id:chat_id.clone(),
                 executable,
                 expected_sha256:expected,
-                args:vec![if foreground_only{
+                args:vec![if primary_display{
+                    "--lu-observe-primary-monitor-one-shot"
+                }else if foreground_only{
                     "--lu-observe-foreground-one-shot"
                 }else{"--lu-observe-one-shot"}.into(),nonce.into()],
                 progress_protocol:true,

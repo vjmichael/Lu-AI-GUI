@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 Windows primary-monitor identity (2026-11-06):** Added separately approved whole-primary-display WGC one-shot backed by actual OS HMONITOR and dimension rechecks before/after native readback, with a distinct nonce-hashed `native-primary-monitor-v1` provenance. Generic system picker remains Unknown/unverified. The new mode is host/Job Object pinned, full-frame-blanked, and unit/source tested, not physically installed or visually interpreted. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 durable SQLite local-only metadata (2026-11-06):** Native awareness rows now have `data_origin=observe_learn` and `network_egress_allowed=0` constrained columns; old notes are upgraded with these defaults, and view reads actual DB provenance. The independent per-chat task latch remains after note removal, preventing scoped network reuse. [Details](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 Linux admin packaging & CI reliability (2026-11-06):** Added Tauri Linux DEB/RPM platform override installing polkit `auth_admin` action as part of the package, instead of manual user instructions. Ubuntu P06 tests real native process subject rustc test plus policy XML/package manifest; physical Linux auth and app install remain open. Fixed unrelated Wave4/Browser desktop npm workflows that assumed missing package-lock with unconditional `npm ci`, preserving tests and using a safe no-lock npm install fallback. [P06](LU_P06_OBSERVE_PRIVACY.md).

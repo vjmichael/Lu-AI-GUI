@@ -119,7 +119,8 @@ fn approved_regions_only_bgra(
 /// Not suitable for visual comparison or as a screenshot fingerprint.
 fn frame_receipt(
     nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8],
-    foreground:Option<(usize,u32,u64)>
+    foreground:Option<(usize,u32,u64)>,
+    primary_monitor:Option<(usize,u32,u32)>
 )->Option<String> {
     use sha2::{Digest,Sha256};
     if nonce.len()!=32||!nonce.bytes().all(|b|b.is_ascii_hexdigit())
@@ -132,15 +133,21 @@ fn frame_receipt(
     // A verified foreground window is NOT interchangeable with an
     // unidentifiable generic picker item. Bind native source lifetime to
     // the digest without sending any OS identifiers or content pixels.
-    match foreground {
-        Some((hwnd,pid,born)) if hwnd!=0&&pid!=0&&born!=0=>{
+    match (foreground,primary_monitor) {
+        (Some((hwnd,pid,born)),None) if hwnd!=0&&pid!=0&&born!=0=>{
             hash.update(b"native-foreground-window-v1");
             hash.update((hwnd as u64).to_le_bytes());
             hash.update(pid.to_le_bytes());
             hash.update(born.to_le_bytes());
         },
-        Some(_)=>return None,
-        None=>hash.update(b"unverified-generic-picker-v1"),
+        (None,Some((hmonitor,mw,mh))) if hmonitor!=0&&mw!=0&&mh!=0=>{
+            hash.update(b"native-primary-monitor-v1");
+            hash.update((hmonitor as u64).to_le_bytes());
+            hash.update(mw.to_le_bytes());
+            hash.update(mh.to_le_bytes());
+        },
+        (None,None)=>hash.update(b"unverified-generic-picker-v1"),
+        _=>return None,
     }
     hash.update(width.to_le_bytes());
     hash.update(height.to_le_bytes());
@@ -173,19 +180,19 @@ mod frame_geometry_tests {
         // A 2x2 BGRA image: 8 active bytes per row, 4 pitch-padding bytes.
         for index in 0..8 {padded[index]=index as u8;}
         for index in 12..20 {padded[index]=(index+2) as u8;}
-        let receipt=frame_receipt(nonce,2,2,12,&padded,None).unwrap();
+        let receipt=frame_receipt(nonce,2,2,12,&padded,None,None).unwrap();
         padded[8..12].fill(255);
         padded[20..24].fill(255);
-        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None).unwrap(),receipt);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None,None).unwrap(),receipt);
         padded[12]^=1;
-        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None).unwrap(),receipt);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None,None).unwrap(),receipt);
         // All-sensitive screen content is fully suppressed in the receipt.
         padded.fill(255);
-        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None).unwrap(),receipt);
-        assert_ne!(frame_receipt("ffeeddccbbaa99887766554433221100",2,2,12,&padded,None).unwrap(),receipt);
-        assert!(frame_receipt(nonce,2,2,12,&padded[..19],None).is_none());
-        assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded,None).is_none());
-        assert!(frame_receipt(nonce,0,2,12,&padded,None).is_none());
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None,None).unwrap(),receipt);
+        assert_ne!(frame_receipt("ffeeddccbbaa99887766554433221100",2,2,12,&padded,None,None).unwrap(),receipt);
+        assert!(frame_receipt(nonce,2,2,12,&padded[..19],None,None).is_none());
+        assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded,None,None).is_none());
+        assert!(frame_receipt(nonce,0,2,12,&padded,None,None).is_none());
     }
     #[test]
     fn future_sensitive_region_mask_is_stride_correct_without_touching_padding(){
@@ -202,17 +209,33 @@ mod frame_geometry_tests {
     fn nonce_bound_foreground_provenance_is_distinct_and_privacy_preserving(){
         let nonce="00112233445566778899aabbccddeeff";
         let orig=vec![7u8;24];
-        let generic=frame_receipt(nonce,2,2,12,&orig,None).unwrap();
+        let generic=frame_receipt(nonce,2,2,12,&orig,None,None).unwrap();
         let id=(0x1234usize,9123u32,123456789u64);
-        let fg=frame_receipt(nonce,2,2,12,&orig,Some(id)).unwrap();
+        let fg=frame_receipt(nonce,2,2,12,&orig,Some(id),None).unwrap();
         assert_ne!(generic,fg);
-        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0+1,id.1,id.2))).unwrap());
-        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0,id.1+1,id.2))).unwrap());
-        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0,id.1,id.2+1))).unwrap());
-        assert!(frame_receipt(nonce,2,2,12,&orig,Some((0,id.1,id.2))).is_none());
+        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0+1,id.1,id.2)),None).unwrap());
+        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0,id.1+1,id.2)),None).unwrap());
+        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0,id.1,id.2+1)),None).unwrap());
+        assert!(frame_receipt(nonce,2,2,12,&orig,Some((0,id.1,id.2)),None).is_none());
         let changed=vec![99u8;24];
-        assert_eq!(fg,frame_receipt(nonce,2,2,12,&changed,Some(id)).unwrap());
-        assert_eq!(generic,frame_receipt(nonce,2,2,12,&changed,None).unwrap());
+        assert_eq!(fg,frame_receipt(nonce,2,2,12,&changed,Some(id),None).unwrap());
+        assert_eq!(generic,frame_receipt(nonce,2,2,12,&changed,None,None).unwrap());
+    }
+    #[test]
+    fn native_monitor_source_receipt_is_domain_separated_from_unknown_picker(){
+        let nonce="00112233445566778899aabbccddeeff";
+        let raw=vec![7u8;24];
+        let monitor=(0x1234usize,2u32,2u32);
+        let actual=frame_receipt(nonce,2,2,12,&raw,None,Some(monitor)).unwrap();
+        assert_ne!(actual,frame_receipt(nonce,2,2,12,&raw,None,None).unwrap());
+        assert_ne!(actual,frame_receipt(nonce,2,2,12,&raw,None,
+            Some((monitor.0+1,monitor.1,monitor.2))).unwrap());
+        assert_ne!(actual,frame_receipt(nonce,2,2,12,&raw,None,
+            Some((monitor.0,monitor.1+1,monitor.2))).unwrap());
+        assert!(frame_receipt(nonce,2,2,12,&raw,None,Some((0,2,2))).is_none());
+        assert!(frame_receipt(nonce,2,2,12,&raw,Some((1,2,3)),Some(monitor)).is_none());
+        let new_content=vec![255u8;24];
+        assert_eq!(actual,frame_receipt(nonce,2,2,12,&new_content,None,Some(monitor)).unwrap());
     }
     #[test]
     fn reviewed_region_export_defaults_to_black_and_never_copies_pitch_padding(){
@@ -263,6 +286,19 @@ mod frame_geometry_tests {
     }
     #[cfg(windows)]
     #[test]
+    fn native_primary_monitor_identity_is_real_os_handle_or_refused(){
+        use windows_capture::monitor::Monitor;
+        if let Ok(primary)=Monitor::primary(){
+            let size=(primary.width().unwrap(),primary.height().unwrap());
+            assert!(windows_capture_worker::primary_monitor_for_test(
+                (primary.as_raw_hmonitor() as usize,size.0,size.1)));
+            assert!(!windows_capture_worker::primary_monitor_for_test((0,size.0,size.1)));
+        }else{
+            assert!(!windows_capture_worker::primary_monitor_for_test((0,1,1)));
+        }
+    }
+    #[cfg(windows)]
+    #[test]
     fn native_foreground_source_must_share_interactive_session(){
         assert!(windows_capture_worker::process_session_for_test(std::process::id()).is_ok());
         assert!(windows_capture_worker::process_session_for_test(0).is_err());
@@ -309,6 +345,7 @@ mod windows_capture_worker {
         frame::Frame,
         graphics_capture_api::InternalCaptureControl,
         graphics_capture_picker::GraphicsCapturePicker,
+        monitor::Monitor,
         window::Window,
         settings::{
             ColorFormat,CursorCaptureSettings,DirtyRegionSettings,
@@ -437,18 +474,34 @@ mod windows_capture_worker {
         process_instance::same_session(pid)
     }
 
+    /// The OS-specific primary path never infers monitor identity from
+    /// the opaque generic GraphicsCapturePicker or a frame's dimensions.
+    fn primary_monitor_matches(identity:(usize,u32,u32))->bool{
+        let (h,w,hgt)=identity;
+        if h==0||w==0||hgt==0{return false;}
+        Monitor::primary().is_ok_and(|current|
+            current.as_raw_hmonitor() as usize==h
+            &&current.width().ok()==Some(w)
+            &&current.height().ok()==Some(hgt))
+    }
+    #[cfg(test)]
+    pub(super) fn primary_monitor_for_test(identity:(usize,u32,u32))->bool{
+        primary_monitor_matches(identity)
+    }
     struct OneFrame {
         started:Instant,
         captured:bool,
         nonce:String,
         foreground_identity:Option<(usize,u32,u64)>,
+        primary_monitor_identity:Option<(usize,u32,u32)>,
     }
     impl GraphicsCaptureApiHandler for OneFrame {
-        type Flags=(String,Option<(usize,u32,u64)>);
+        type Flags=(String,Option<(usize,u32,u64)>,Option<(usize,u32,u32)>);
         type Error=Box<dyn Error+Send+Sync>;
         fn new(ctx:Context<Self::Flags>)->Result<Self,Self::Error>{
             Ok(Self{started:Instant::now(),captured:false,
-                nonce:ctx.flags.0,foreground_identity:ctx.flags.1})
+                nonce:ctx.flags.0,foreground_identity:ctx.flags.1,
+                primary_monitor_identity:ctx.flags.2})
         }
         fn on_frame_arrived(
             &mut self,frame:&mut Frame,
@@ -472,6 +525,11 @@ mod windows_capture_worker {
                     return Err("Foreground window instance changed".into());
                 }
             }
+            if self.primary_monitor_identity.is_some_and(|id|
+                !primary_monitor_matches(id)){
+                control.stop();
+                return Err("Primary monitor changed before frame readback".into());
+            }
             let width=frame.width();
             let height=frame.height();
             if width==0||height==0
@@ -492,7 +550,7 @@ mod windows_capture_worker {
             // until separate trusted sensitive-region classification.
             let digest=super::frame_receipt(
                 &self.nonce,width,height,row_pitch,buffer,
-                self.foreground_identity
+                self.foreground_identity,self.primary_monitor_identity
             )
                 .ok_or("Invalid frame receipt geometry or host nonce")?;
             // FrameBuffer release unmaps staging surface when dropped.
@@ -513,6 +571,11 @@ mod windows_capture_worker {
                     return Err("Foreground window instance changed during readback".into());
                 }
             }
+            if self.primary_monitor_identity.is_some_and(|id|
+                !primary_monitor_matches(id)){
+                control.stop();
+                return Err("Primary monitor changed after frame readback".into());
+            }
             self.captured=true;
             let mut output=io::stdout().lock();
             writeln!(output,"P\t1\t1")?;
@@ -530,7 +593,8 @@ mod windows_capture_worker {
         let args:Vec<_>=env::args_os().skip(1).collect();
         if args.len()!=2||
             !(args[0]=="--lu-observe-one-shot"
-                ||args[0]=="--lu-observe-foreground-one-shot"){
+                ||args[0]=="--lu-observe-foreground-one-shot"
+                ||args[0]=="--lu-observe-primary-monitor-one-shot"){
             return Err("Invalid Lu capture worker operation".into());
         }
         let nonce=args[1].to_string_lossy();
@@ -565,10 +629,37 @@ mod windows_capture_worker {
                 MinimumUpdateIntervalSettings::Default,
                 DirtyRegionSettings::Default,
                 ColorFormat::Bgra8,
-                (nonce.into_owned(),Some(identity)),
+                (nonce.into_owned(),Some(identity),None),
             );
             return OneFrame::start(settings)
                 .map_err(|e|format!("Foreground WGC capture failed: {e:?}").into());
+        }
+        if args[0]=="--lu-observe-primary-monitor-one-shot"{
+            // The operator explicitly approved capturing the whole primary
+            // display in the separate native Lu permission dialog.
+            // This OS handle is NOT inferred from the generic picker.
+            let primary=Monitor::primary()?;
+            let size=(primary.width()?,primary.height()?);
+            if size.0==0||size.1==0
+                ||size.0>MAX_FRAME_WIDTH||size.1>MAX_FRAME_HEIGHT{
+                return Err("Primary OS monitor dimensions exceed bounded capture".into());
+            }
+            let monitor_id=(primary.as_raw_hmonitor() as usize,size.0,size.1);
+            if !primary_monitor_matches(monitor_id){
+                return Err("Primary Windows monitor identity changed before capture".into());
+            }
+            let settings=Settings::new(
+                primary,
+                CursorCaptureSettings::WithoutCursor,
+                DrawBorderSettings::WithBorder,
+                SecondaryWindowSettings::Exclude,
+                MinimumUpdateIntervalSettings::Default,
+                DirtyRegionSettings::Default,
+                ColorFormat::Bgra8,
+                (nonce.into_owned(),None,Some(monitor_id)),
+            );
+            return OneFrame::start(settings)
+                .map_err(|e|format!("Primary monitor WGC capture failed: {e:?}").into());
         }
         let Some(picked)=GraphicsCapturePicker::pick_item()? else{
             return Err("Windows capture picker canceled by user".into());
@@ -586,7 +677,7 @@ mod windows_capture_worker {
             MinimumUpdateIntervalSettings::Default,
             DirtyRegionSettings::Default,
             ColorFormat::Bgra8,
-            (nonce.into_owned(),None),
+            (nonce.into_owned(),None,None),
         );
         OneFrame::start(settings).map_err(|e|format!("WGC capture failed: {e:?}").into())
     }
