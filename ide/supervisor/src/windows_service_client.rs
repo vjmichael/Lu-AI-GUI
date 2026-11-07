@@ -19,7 +19,10 @@ use windows_sys::Win32::{
         INVALID_HANDLE_VALUE,
     },
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
-    Security::{GetTokenInformation, IsTokenRestricted, TokenIsAppContainer, TOKEN_QUERY},
+    Security::{
+        GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, IsTokenRestricted,
+        IsValidSid, TokenIntegrityLevel, TokenIsAppContainer, TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
+    },
     System::{
         JobObjects::{
             JobObjectBasicAccountingInformation, QueryInformationJobObject, TerminateJobObject,
@@ -107,6 +110,44 @@ fn ci_probe_denied_pipe_access() {
                 }
             } else {
                 acceptance_trace("pipe_diag_host_token_appcontainer_unknown");
+            }
+            // Read-only, CI-only MIC classification. An exact TokenUser
+            // ACE cannot overcome Windows mandatory integrity policy or
+            // other restrictions; never use this result for admission.
+            // No SID, token payload or path is printed.
+            let mut aligned = [0usize; 32];
+            let mut size = 0u32;
+            let read = unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenIntegrityLevel,
+                    aligned.as_mut_ptr().cast(),
+                    std::mem::size_of_val(&aligned) as u32,
+                    &mut size,
+                )
+            };
+            if read != 0 && size >= size_of::<TOKEN_MANDATORY_LABEL>() as u32 {
+                let label = unsafe { &*(aligned.as_ptr() as *const TOKEN_MANDATORY_LABEL) };
+                let sid = label.Label.Sid;
+                if !sid.is_null() && unsafe { IsValidSid(sid) } != 0 {
+                    let count = unsafe { GetSidSubAuthorityCount(sid) };
+                    if !count.is_null() && unsafe { *count } > 0 {
+                        let index = unsafe { *count } as u32 - 1;
+                        let rid = unsafe { GetSidSubAuthority(sid, index) };
+                        if !rid.is_null() {
+                            match unsafe { *rid } {
+                                0x0000..=0x0fff => acceptance_trace("pipe_diag_host_integrity_untrusted"),
+                                0x1000..=0x1fff => acceptance_trace("pipe_diag_host_integrity_low"),
+                                0x2000..=0x2fff => acceptance_trace("pipe_diag_host_integrity_medium"),
+                                0x3000..=0x3fff => acceptance_trace("pipe_diag_host_integrity_high"),
+                                0x4000..=0x4fff => acceptance_trace("pipe_diag_host_integrity_system"),
+                                _ => acceptance_trace("pipe_diag_host_integrity_other"),
+                            }
+                        }
+                    }
+                }
+            } else {
+                acceptance_trace("pipe_diag_host_integrity_unreadable");
             }
         }
     } else {
