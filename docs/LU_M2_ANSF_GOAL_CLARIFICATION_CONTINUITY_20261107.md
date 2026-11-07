@@ -1,3 +1,5 @@
+> **Canonical ANSF correction — November 7, 2026:** [M2 SQLite-native conversation and goal cutover](LU_M2_ANSF_CONVERSATION_CUTOVER_20261107.md) replaces the prior temporary JSONL-authoritative, JSON-serialized goal projection. Protobuf remains internal communication; new conversation history, chat metadata and goal decisions persist directly in ANSF/SQLite relational tables. Old JSONL remains non-destructive import data only. This supersedes the temporary source implementation described below; exact-head CI and installed acceptance are required before treating the replacement as verified.
+
 > **Follow-on source-only refinement — Nov 7, 2026:** [ANSF stable direct source IDs and external artifact links](LU_ANSF_DIRECT_IDS_EXTERNAL_ARTIFACTS_20261107.md) are implemented in a stacked draft branch. This **does not** alter M2's release status or settle the still-open canonical JSONL→ANSF conversation migration. Known IDs should require one authorized read operation, while human book/chapter/page navigation remains intact; artifact bytes remain outside SQLite.
 
 # Lu M2 — ANSF/SQLite goal and clarification continuity
