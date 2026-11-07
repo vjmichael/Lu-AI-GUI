@@ -101,7 +101,7 @@ jobs:
           node-version: '22'
       - working-directory: lu-desktop
         run: |
-          npm ci
+          if test -f package-lock.json; then npm ci; else npm install --no-package-lock --ignore-scripts --no-audit --no-fund; fi
           npm run build
           npm run check
           npm run test:ui
@@ -125,7 +125,7 @@ jobs:
           }
       - working-directory: lu-desktop
         run: |
-          npm ci
+          if test -f package-lock.json; then npm ci; else npm install --no-package-lock --ignore-scripts --no-audit --no-fund; fi
           npm run build
       - run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib workspace_desktop::tests

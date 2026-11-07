@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1e6fbe7710eb005d464cbda4c09f84eb454c7e1c",
-  "trackedFileCount": 512,
+  "sourceCommitBeforeLock": "2f9b85806725112bbfb30bedb425af3ef62219fb",
+  "trackedFileCount": 513,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
-      "blob": "f19474e7ba1ef642e91b6609ee07cf59a7651931"
+      "blob": "8cf2f01994d9627124989b69e9a8998dc231fd3b"
     },
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "e921ae778933a760a9978f39e86040cb57f68b81"
+      "blob": "e339b1836390130d238009a0dc9bd7d20ce52f01"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -61,7 +61,7 @@
     },
     {
       "path": ".github/workflows/lu-wave4-contextual-tools.yml",
-      "blob": "2886166cf03224651fb9010cac84b7e007b68784"
+      "blob": "3b37329dc34f8861cd86d886b5e77881f10f3a9b"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "bc9cdb9c415fd0c48e7f408c6e77ad4f35ec0400"
+      "blob": "c66bc93155e75baf2a5d19f636585d69e40441e9"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "5330be51df43a225014518ac655bf5778b960cee"
+      "blob": "66d67273212d656ed9036848b36568d2e9525ac1"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -528,6 +528,10 @@
       "blob": "6ced7911032b2e745f0ad32d976afe85556067f4"
     },
     {
+      "path": "lu-desktop/src-tauri/tauri.linux.conf.json",
+      "blob": "b22d36738216ae729e25b02801f76b850c3c158d"
+    },
+    {
       "path": "lu-desktop/src-tauri/tauri.observe.capture.conf.json",
       "blob": "985203f8ecc564c77215643fccd545563994d63a"
     },
@@ -637,7 +641,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "032d926cbec0f69f87b72d02aaf0707d02d9ca53"
+      "blob": "295e3c642c39bf75092f9a88b2295577d815f2e1"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",

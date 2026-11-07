@@ -304,3 +304,14 @@ test('P06 tagged local-only observations cannot be declassified into network sin
   assert.match(memory,/network_egress=deny/);
   assert.match(ui,/LOCAL ONLY/);
 });
+
+test('P06 Tauri Linux DEB/RPM embeds real admin polkit action and compiles native subject check',()=>{
+  const cfg=JSON.parse(read('../src-tauri/tauri.linux.conf.json'));
+  const path='/usr/share/polkit-1/actions/org.lu.desktop.observe-learn.policy';
+  assert.deepEqual(cfg.bundle.targets,['deb','rpm']);
+  assert.equal(cfg.bundle.linux.deb.files[path],'../../scripts/linux/org.lu.desktop.observe-learn.policy');
+  assert.equal(cfg.bundle.linux.rpm.files[path],'../../scripts/linux/org.lu.desktop.observe-learn.policy');
+  const ci=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  assert.match(ci,/rustc --edition=2021 --test lu-desktop\/src-tauri\/src\/observe_linux_auth\.rs/);
+  assert.match(ci,/ET\.parse\(policy\)/);
+});

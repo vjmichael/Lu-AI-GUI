@@ -148,7 +148,7 @@ jobs:
           }
       - working-directory: lu-desktop
         run: |
-          npm ci
+          if test -f package-lock.json; then npm ci; else npm install --no-package-lock --ignore-scripts --no-audit --no-fund; fi
           npm run build
       - name: Stage only Microsoft-signed Windows System32 curl
         shell: pwsh

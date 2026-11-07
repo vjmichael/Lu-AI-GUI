@@ -27,6 +27,26 @@ jobs:
           node-version: '22'
       - name: Verify exact tracked source snapshot
         run: node scripts/verify-source-tree.mjs
+      - name: Compile real Linux polkit process identity subject and validate package policy
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          rustc --edition=2021 --test lu-desktop/src-tauri/src/observe_linux_auth.rs -o "$RUNNER_TEMP/lu-observe-linux-auth"
+          "$RUNNER_TEMP/lu-observe-linux-auth" --nocapture
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET, json
+          policy='scripts/linux/org.lu.desktop.observe-learn.policy'
+          action=ET.parse(policy).getroot().find('action')
+          assert action.attrib['id']=='org.lu.desktop.observe-learn'
+          assert action.findtext('./defaults/allow_any')=='no'
+          assert action.findtext('./defaults/allow_inactive')=='no'
+          assert action.findtext('./defaults/allow_active')=='auth_admin'
+          cfg=json.load(open('lu-desktop/src-tauri/tauri.linux.conf.json'))
+          for packaging in ('deb','rpm'):
+            files=cfg['bundle']['linux'][packaging]['files']
+            assert files['/usr/share/polkit-1/actions/org.lu.desktop.observe-learn.policy']=='../../scripts/linux/org.lu.desktop.observe-learn.policy'
+          print('Linux polkit policy and package manifest accepted')
+          PY
       - name: Test native Lu Observe consent and revocation
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
       - name: Test independent evidence and awareness replay protections
