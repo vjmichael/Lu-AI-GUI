@@ -45,8 +45,8 @@
 
 - [x] Repair WO9 asset-generation ordering; add exact-head Windows/Linux matrix for default, `native-build`, `native-lsp`, `native-debug` and combination. **CI verification pending.**
 - [x] Repair two strict frontend contract assertions for existing privileged native receipt verifier without expanding any capability or permission grant. **Node test verification pending.**
-- [x] Correct Linux WO9 AT-SPI `activate(timeout=...)` caller signatures. [ ] Run installed GTK/WebKit real interaction/AT-SPI verification.
-- [ ] Inspect Windows UI Automation tree for accessible `Job requests` / `Execution requests`, fix controls/harness, prove real interaction.
+- [x] Correct Linux WO8 folder picker plus WO9 AT-SPI `activate(timeout=...)` call signatures, with an AST regression test. [ ] Run installed GTK/WebKit real interaction and record the result.
+- [x] Expose explicit accessible `Execution requests` heading; on a missing native Windows UIA control, record a bounded actual accessibility-tree snapshot while continuing to fail closed. [ ] Prove the installed UI interactions really work and repair any OS-verified selector/control failure.
 - [ ] Freeze P02 exact SHA, run all Windows/Linux native/installed checks, inspect real failures and repair them; do not extrapolate from prior heads.
 
 ## P03 — Native security checklist (not started)
