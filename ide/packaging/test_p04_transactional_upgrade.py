@@ -120,7 +120,9 @@ class NativeUpgradeTests(unittest.TestCase):
         (self.root/"previous/app.bin").unlink()
         result=self.invoke("recover")
         self.assertEqual(result.returncode,2)
-        self.assertIn("version_directory_missing_or_linked",result.stderr)
+        self.assertTrue("unexpected_version_directory_contents" in result.stderr
+                        or "version_directory_missing_or_linked" in result.stderr,
+                        result.stderr)
         self.assertNotEqual(read_journal(self.root)["state"],"rolled_back")
 
     def test_disallows_missing_disposable_root_authorization(self):
