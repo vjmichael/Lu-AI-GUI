@@ -120,7 +120,7 @@ mod prepare {
         let enabled = fs::read_to_string(unit.join("cgroup.subtree_control"))?;
         let need: Vec<String> = ["cpu", "memory", "pids"]
             .iter()
-            .filter(|c| !enabled.split_whitespace().any(|e| e == **c))
+            .filter(|c| !enabled.split_whitespace().any(|e| e == *c))
             .map(|c| format!("+{c}"))
             .collect();
         if !need.is_empty() {
