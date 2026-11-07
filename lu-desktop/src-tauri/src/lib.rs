@@ -5940,6 +5940,34 @@ fn lu_observe_stop(
 )->Result<observe_desktop::ObserveView,String>{
     state.observe.stop(&chat_id)
 }
+/// P06 explicit native confirmation to forget enum-only awareness notes for
+/// this chat, including prior observation sessions. This does not delete
+/// chat messages or the independent TaskStore operation receipts. It cannot
+/// delete another chat through a model tool or clear a running capture grant.
+#[tauri::command]
+async fn lu_observe_forget_notes(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<usize,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation before forgetting notes")?;
+    let confirmed=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(
+            "Delete all Observe & Learn diagnostic notes for the selected chat, \
+             including notes from earlier observation sessions?\n\n\
+             These are only small diagnostic codes, not pixels or recordings. \
+             This revokes the current observation review draft; it will NOT \
+             delete ordinary chat messages, exported text, or separate native \
+             task audit receipts. The notes cannot be restored from Lu's UI."
+        ).title("Lu — Forget observation notes")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Forget diagnostic notes".into(),"Keep notes".into()
+        )).blocking_show()
+    ).await.map_err(|_|"Observation note deletion approval unavailable")?;
+    if !confirmed{return Ok(0)}
+    state.chats.history(&chat_id)
+        .map_err(|_|"The selected conversation is no longer available")?;
+    state.observe.forget_notes(&chat_id)
+}
 /// Renderer event hints are NOT trusted test outcomes. Only two enumerated
 /// low-information signals are admitted, and no screenshot/text is accepted.
 /// Read-only diagnostic notations from the exact currently consented chat.
@@ -6119,6 +6147,7 @@ pub fn run() {
             lu_observe_stop,
             lu_observe_self_signal,
             lu_observe_notes,
+            lu_observe_forget_notes,
             lu_observe_handoff,
             lu_observe_capture_receipt,
             lu_observe_capture_one_shot,
