@@ -161,7 +161,7 @@
     },
     {
       "path": "docs/LU_P08_ARCHIVE_SPLIT.md",
-      "blob": "7d6e2f273e634d2dce734c9883b1fdb62cd9a2aa"
+      "blob": "7b35d40369962742513f4bc105bc40e8009a41b4"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -665,7 +665,7 @@
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
-      "blob": "385c646a0d30e7c29372641f4aa4933c8d00b4c6"
+      "blob": "1dcffc7522f090881aa853effa2082a040972161"
     },
     {
       "path": "lu-desktop/tests/p08-archive-split.test.mjs",
@@ -1465,7 +1465,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
-      "blob": "b220fccb7a10c37ca959e9bc6601d656620b0abd"
+      "blob": "4262b6a70f12ca7f2c4c7449cb8ecff8c2fc05b5"
     },
     {
       "path": "src-tauri/lu-core/src/native_zip_extract.rs",
@@ -1849,7 +1849,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_tree_authority.rs",
-      "blob": "0b688695d756855c4800ca65de3edeff307f8a0d"
+      "blob": "890b4160f631aa324ca8d21e8b052d90316579e4"
     },
     {
       "path": "src-tauri/lu-core/tests/native_atomic_write.rs",
