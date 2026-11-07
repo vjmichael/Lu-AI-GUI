@@ -39,7 +39,10 @@ pub enum ArtifactPresence {
     /// Declared size or complete content hash disagrees.
     Changed,
 }
-fn valid_id(s:&str)->bool{
+fn valid_session(s:&str)->bool{
+    !s.trim().is_empty()&&s.len()<=MAX_ID&&!s.contains('\0')
+}
+fn valid_artifact_id(s:&str)->bool{
     !s.is_empty()&&s.len()<=MAX_ID&&
     s.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'||b==b'_')
 }
@@ -47,8 +50,8 @@ fn valid_hash(s:&str)->bool{
     s.len()==64&&s.bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase())
 }
 fn validate(link:&ArtifactLink)->bool{
-    valid_id(&link.session_id) &&
-    valid_id(&link.artifact_id) &&
+    valid_session(&link.session_id) &&
+    valid_artifact_id(&link.artifact_id) &&
     link.entry_id>0 &&
     !link.display_name.trim().is_empty() &&
     link.display_name.len()<=MAX_NAME &&
@@ -126,7 +129,7 @@ impl AnsfStore {
     pub fn artifact_links_for_entry(
         &self,session_id:&str,entry_id:i64
     )->Result<Vec<ArtifactLink>,AnsfError>{
-        if !valid_id(session_id)||entry_id<=0{return Err(AnsfError::InvalidInput)}
+        if !valid_session(session_id)||entry_id<=0{return Err(AnsfError::InvalidInput)}
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let mut stmt=conn.prepare(
             "SELECT session_id,entry_id,artifact_id,display_name,media_type,
