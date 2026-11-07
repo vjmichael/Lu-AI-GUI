@@ -7,8 +7,6 @@
 #![forbid(unsafe_code)]
 
 pub mod advanced_workflows;
-pub mod reviewed_git;
-pub mod workflow_orchestrator;
 pub mod browser;
 pub mod capabilities;
 pub mod continuity;
@@ -27,9 +25,11 @@ pub mod lsp_session;
 pub mod proposal;
 pub mod resource_probe;
 pub mod review;
+pub mod reviewed_git;
 pub mod source_span;
 pub mod task_evidence;
 pub mod wire;
+pub mod workflow_orchestrator;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
