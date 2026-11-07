@@ -358,6 +358,21 @@ impl ObserveHost {
             message:"Native WGC frame receipt only: no raw pixels or window title retained. This does not prove app identity, GUI correctness, or model visual understanding.",
         }))
     }
+    /// P06 operator-approved privacy erase for a locally authenticated
+    /// conversation. This is not a model tool or new observation grant.
+    pub(crate) fn forget_notes(&self,chat_id:&str)->Result<usize,String>{
+        let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut s)?;
+        let removed=self.task_store.delete_awareness_notes_for_workspace(chat_id)
+            .map_err(|_|"Could not erase scoped observation notes")?;
+        if s.chat_id.as_deref()==Some(chat_id){
+            if let Some(awareness)=s.awareness.as_mut(){
+                awareness.discard_observations();
+            }
+            s.notes_logged=0;
+        }
+        Ok(removed)
+    }
     /// Only the trusted task session's enum-only annotations can be seen;
     /// no cross-conversation note retrieval or unapproved ANSF write.
     pub(crate) fn notes(
@@ -367,6 +382,8 @@ impl ObserveHost {
         self.refresh_expiry(&mut s)?;
         let owner=Self::owned(&mut s,chat_id)?;
         let task=owner.session_id.as_deref().ok_or("Missing observe session")?;
+        self.task_store.prune_expired_awareness_notes()
+            .map_err(|_|"Observation note retention sweep failed")?;
         self.task_store.awareness_notes(task,chat_id,24)
             .map_err(|_|"Observation notations unavailable")?
             .into_iter().map(|n|Ok(ObserveNoteView{
@@ -390,6 +407,8 @@ impl ObserveHost {
         // Retrieve only this consented chat's enum-only native notes. Raw
         // screenshots, user text, paths, window titles and keystrokes are
         // never collected into this handoff.
+        self.task_store.prune_expired_awareness_notes()
+            .map_err(|_|"Observation note retention sweep failed")?;
         let notes=self.task_store.awareness_notes(task,chat_id,24)
             .map_err(|_|"Observation provenance notes unavailable")?;
         let count=notes.len();
@@ -575,6 +594,25 @@ mod tests{
         assert_eq!(store.get("obs-one").unwrap().unwrap().state,TaskState::Cancelled);
         assert_eq!(host.status("c-main").unwrap().mode,"off");
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
+    }
+    #[test]
+    fn p06_forget_notes_erases_current_chat_and_invalidates_handoff(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-privacy".into()).unwrap();
+        host.self_signal("c-main","error_indicator",false).unwrap();
+        assert!(host.handoff("c-main").unwrap().is_some());
+        assert_eq!(host.forget_notes("c-other").unwrap(),0);
+        assert_eq!(host.notes("c-main").unwrap().len(),1);
+        assert_eq!(host.forget_notes("c-main").unwrap(),1);
+        assert_eq!(host.notes("c-main").unwrap().len(),0);
+        assert!(host.handoff("c-main").unwrap().is_none());
+        assert_eq!(host.status("c-main").unwrap().notes_logged,0);
+        assert_eq!(host.status("c-main").unwrap().mode,"active");
+        assert!(!host.status("c-main").unwrap().can_see_desktop);
+        host.stop("c-main").unwrap();
+        assert_eq!(host.forget_notes("c-main").unwrap(),0);
     }
     #[test]
     fn another_conversation_cannot_steal_session_and_no_restart_grant(){
