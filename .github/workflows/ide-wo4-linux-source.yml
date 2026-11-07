@@ -32,6 +32,23 @@ jobs:
         run: cargo check --manifest-path ide/sandbox/Cargo.toml --all-targets
       - name: Test independent sandbox fixture source
         run: cargo test --manifest-path ide/sandbox/Cargo.toml --all-targets
+      - name: Compile fixed trusted systemd preparation and native kernel witness
+        run: |
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_native_witness
+      - name: Verify runner without delegation fails closed, not via simulated approval
+        run: |
+          if test ! -w /sys/fs/cgroup; then
+            set +e
+            ide/sandbox/target/debug/linux_cgroup_native_witness > "$RUNNER_TEMP/wo4-cgroup-witness.log" 2>&1
+            status=$?
+            set -e
+            test "$status" -eq 2 || { echo "DENIED: missing delegation unexpectedly admitted fixed worker"; exit 1; }
+            grep -q '^DENIED: native WO4 cgroup witness:' "$RUNNER_TEMP/wo4-cgroup-witness.log" ||
+              { echo "DENIED: missing fail-closed kernel witness"; exit 1; }
+            echo 'PASS: missing cgroup delegation explicitly denies native execution; THIS IS NOT native delegation acceptance'
+          else
+            echo 'NOT VERIFIED: runner may have delegation; independent native OS acceptance still required'
+          fi
       - name: Check exact Rust formatting
         run: |
           cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
