@@ -40,3 +40,11 @@
 - [ ] Resolve fresh P03 exact SHA native CI failures. Current source changes are **not yet accepted or signed**.
 
 **Exit rule:** P03 remains **IN PROGRESS** until independent exact-commit Win/Linux positive and hostile negative OS results pass. Do not start P04, close P02 as accepted without separate evidence, retire old security PRs, ship unverified LSP/DAP or reopen deferred WO10.
+
+## Additional P03 source closure work
+
+- Connected the new DAP `ConfigurationRequested` event to **both** the dedicated native test fixture and the real Tauri `debug_backend.rs` worker loop. The installed application will not hang solely because the adapter emits `initialized` after its fixed `launch` request. Native tests and installed verification remain pending.
+- Hardened the test-only Windows copied adapter probe to use two independently bounded (65,537-byte maximum) diagnostic pipe buffers; replaced unrestricted `communicate()` collection. It reports only fixed exit/handshake categories.
+- Tightened Linux `ide-e2-native-lsp.yml` trusted bundle provisioning so the **root and bin directory** are explicitly installed as owner 0/group 0, mode 0755, and independently checked before native systemd execution. The worker's existing immutable-root, cgroup, syscall and Bwrap gates are unchanged.
+- In the available Debian 13 container a fixed `clangd --log=error --background-index=false` responded to a direct LSP initialize request (`DEBIAN_CLANGD_DIRECT_PROTOCOL=INITIALIZE_RESPONSE_OK`). The same container's cgroup-v2 mount is read-only and Bubblewrap is not installed; **this demonstrates the protocol only, not native Linux containment**. Swift-provided LLDB-DAP is also missing `libpython3.11.so.1.0` there and is not the reviewed native CI bundle.
+- Current P03 draft is [PR #80](https://github.com/vjmichael/Lu-AI-GUI/pull/80). The latest exact-head native CI was queued when checked, so P03 remains open. Do not infer success from earlier PR heads or from the unconstrained Debian tool probe.
