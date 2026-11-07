@@ -91,7 +91,7 @@ def cargo_packages(root):
             text=True,encoding="utf-8",errors="strict",
             capture_output=True,timeout=90,check=False,
         )
-        if out.returncode or len(out.stdout)>25*1024*1024:
+        if out.returncode or not isinstance(out.stdout,str) or len(out.stdout)>25*1024*1024:
             return [], ["cargo_offline_metadata_unavailable"]
         data=json.loads(out.stdout)
     except (OSError,ValueError,subprocess.TimeoutExpired):
