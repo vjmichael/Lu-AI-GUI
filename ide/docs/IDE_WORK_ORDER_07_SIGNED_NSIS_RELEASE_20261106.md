@@ -1,0 +1,42 @@
+# IDE WO7 — Signed NSIS release packaging and protected worker distribution
+
+**Started:** 2026-11-06 (America/Phoenix). **State:** implementation IN PROGRESS; real signed release and installed application NOT ACCEPTED. Branch `ide/wo7-signed-nsis-release-20261106` stacks on WO6 draft PR #70.
+
+## Development checkpoint — WO7-B/C/D/E source implementation (2026-11-07 UTC)
+
+**Implementation:** The reviewed payload-stage, Tauri resource handoff, Windows PE static import scanner, protected LocalService lifecycle, release-only NSIS hook/config, explicit native signing helper, reviewed NSIS assembly script, signed candidate preflight, actual installed signed NSIS/SCM smoke harness, manual run-from-signed-artifact workflow and exact-head evidence consistency gate are all **committed as source** on draft PR #73. Unit/mock/source testing never substitutes for a real installed runtime.
+
+| Work | Implemented | Still requires real acceptance |
+| --- | --- | --- |
+| **WO7-B payload** | `packaging/stage_wo7_windows_release.py` pins the desktop, debugger, service, debuggee, runtime, license notices and approved lifecycle helper. Creates exact-input per-file SHA receipts, protects against symlinks/escapes and duplicate Windows destinations. `verify_wo7_pe_imports.py` parses actual PE normal/delay imports and refuses unmatched private DLLs. `prepare_wo7_tauri_bundle.py` rejects unknown staged bytes, source/head mismatch, changed signed desktop and existing Tauri resources before copying. | Real reviewed signed app, debug DLLs/runtime dependencies, full *dynamic* dependency audit, actual redistributed license texts and installer package byte inspection |
+| **WO7-C signing/SCM** | `app/src-tauri/tauri.wo7.nsis.conf.json`, `windows/wo7-release-hooks.nsh`, `windows/wo7-service-lifecycle.ps1` supply a distinct per-machine NSIS path with fixed, digest+signer-checked restricted LocalService install/inspect/stop/delete and deny on unexpected service / wrong path. `packaging/Sign-Wo7ReviewedArtifact.ps1` requires existing genuine certificate and SHA-pinned sign tool; `Build-Wo7ReviewedNsis.ps1` stages, audits, assembles, signs final installer and emits a **non-approved** candidate. | Actual eligible certificate, approved signing tool binary, signed app/service/installer, compiled NSIS hook and privileged install/reinstall/rollback behavior on real Windows |
+| **WO7-D installed** | `verify_wo7_candidate.py` verifies *candidate* signatures without requiring circular earlier installed approval. `app/fixtures/Test-Wo7SignedInstalledNsis.ps1` checks signed NSIS, real installed service identity, two live desktop launches, service uninstall and absence after removal. Workflow `ide-wo7-installed-acceptance.yml` is manual, pins source SHA and retrieves a specific signed candidate artifact. | Signed candidate artifact plus native runner; **actual installed protected Run, Test, Debug, cancellation, host/service crash, stale source denial and durable recovery remain NOT TESTED by the smoke harness** |
+| **WO7-E evidence** | `verify_wo7_release_evidence.py` requires individually identified exact-head jobs/OS, non-skipped terminal status and durable witness digests for a full release gate list. It labels any complete local metadata result as **not independently fetched or release accepted**. Checked-in evidence inventory is empty/denied. | Independently fetch authenticated GH CI and native OS receipts, release human/security approval, exact signed installer release manifest and public acceptance; no simulated receipts or approval flags |
+
+**Security defaults:** Both `wo7-release.manifest.json` and `wo7-bundle.inputs.json` have approval OFF; `wo7-evidence.inputs.json` has no accepted native evidence. The ordinary unsigned development NSIS configuration and default-disabled worker remain unchanged. There is no real signed NSIS artifact in the repository. An unsigned app smoke must not count as a signed protected-feature install.
+
+**Native blockers:** WO6 Linux protected LLDB-DAP initialization through the supervised worker, WO6 Windows native debugger, WO4/WO5 dependent native acceptance and WO7 signing material/installed-app verification are independently open. Continue coding without pretending these were accepted.
+
+**Verification scope:** `.github/workflows/ide-wo7-signed-release-preflight.yml` runs the hostile A/B/C/D/E Python tests and parses PowerShell on native Windows; a passing workflow certifies source checks/negative gates only. Current exact-head CI status must be checked against the actual PR head SHA, not carried forward from an older run. Manual signed candidate acceptance does not run until explicitly provided a trusted artifact run.
+
+## Goal
+
+Produce a one-click native Windows NSIS distribution of **standalone Lu IDE**, installing only independently reviewed, pinned and licensed runtime components and its separately protected LocalService recovery worker. The build must retain the existing **unsigned default-disabled alpha** for development without confusing it with the signed protected-feature release.
+
+## Work items
+
+1. **WO7-A — Trusted release admission (first source increment):** `packaging/wo7-release.manifest.json` starts `releaseApproved=false`; `verify_wo7_nsis_release.py` checks clean exact source SHA, explicit native and installed acceptance, real Windows Authenticode validation of selected installer/service binaries, signer thumbprints, actual SHA-256 bytes, file path/symlink protections, reviewed dependency licenses and WO6 debugger manifest status. Test-only signature injection exercises logic but cannot approve runtime. No auto-download, signing, installer execution or authority escalation.
+2. **WO7-B — Reproducible, separately audited package tree:** stage exactly the pinned app, protected SCM executable, manifest, approved LLDB and LSP bundles, full third-party notices and immutable package content. Independently hash the complete tree and inspect actual runtime DLL imports, without treating fixture hashes as release pins or passing metadata as cryptographic evidence.
+3. **WO7-C — Real reviewed Windows signing:** sign the final NSIS installer **and** separately protected service; verify Authenticode chain and exactly approved signer. Package service with installer-owned restricted ACLs, SCM install/reinstall/uninstall and failure-safe rollback. No wildcard AppContainer ACE or silent elevation.
+4. **WO7-D — Exact installed security acceptance:** from real signed NSIS, install, launch, consent to fixed protected Run/Test/Debug, verify native AppContainer+restricted SCM, cancellation, service crash/desktop restart recovery, source tamper denial, uninstall/reinstall and no leftover Job/service/device lease. Native acceptance from WO4–WO6 is a prerequisite, not assumed from CI fixture success.
+5. **WO7-E — Provenance and release declaration:** require CI exact SHA, source cleanliness, artifact checksums, target OS signatures, license inventory and actual installed tests; explicitly promote `releaseApproved` only after those independent records are available. Keep WO8 broader installed E2E and WO10 optional Lu bridge separate.
+
+## Release restrictions and evidence
+
+The first script's successful return (possible only with genuinely approved metadata and valid Windows signatures) is **binary preflight**, not a complete release certificate. Signatures do not prove a binary's safety or OS containment. Merely including a debugger license is necessary but does not close the dependency inventory. Do not turn on native build/debug features by default or infer OS acceptance from LSP/DAP protocol unit tests. Existing unsigned NSIS smoke does not certify a signed SCM installer.
+
+**As of start:** WO6 Linux protected Cargo check/test/cancel passed in native CI; Linux protected LLDB-DAP initialize under the cgroup supervisor and Windows native debugger/install feature acceptance remain open. Real Windows release signer and licenses/hashes are not selected. No release binaries staged or signed and no installer certificate available. All such gaps remain open.
+
+## Verification
+
+`.github/workflows/ide-wo7-signed-release-preflight.yml` runs self-contained hostile manifest tests on Windows and Linux and proves the unapproved source manifest is rejected. Actual signer/native installed acceptance is reserved for later independent Windows release workflow and physical installed app.

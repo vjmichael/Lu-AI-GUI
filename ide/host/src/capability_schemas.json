@@ -1,0 +1,4145 @@
+{
+  "schemaVersion": 2,
+  "definitions": {
+    "ProjectSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectId",
+        "displayName",
+        "active",
+        "available"
+      ]
+    },
+    "ProjectEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "other"
+          ]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "relativePath",
+        "kind",
+        "size"
+      ]
+    },
+    "DirectoryListing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "relativeDir": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectEntry"
+          },
+          "maxItems": 400
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectId",
+        "relativeDir",
+        "entries",
+        "truncated"
+      ]
+    },
+    "TextPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "projectId",
+        "relativePath",
+        "text",
+        "byteLength",
+        "revision"
+      ]
+    },
+    "SourceLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lineNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "startByte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endByte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "newline": {
+          "type": "string",
+          "enum": [
+            "lf",
+            "crlf",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "lineNumber",
+        "text",
+        "startByte",
+        "endByte",
+        "newline"
+      ]
+    },
+    "SourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "firstLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lastLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "totalLines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceLine"
+          },
+          "maxItems": 120
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "relativePath",
+        "revision",
+        "firstLine",
+        "lastLine",
+        "totalLines",
+        "lines"
+      ]
+    },
+    "ReviewLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "context",
+            "added",
+            "removed"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "oldLine": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "newLine": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "oldLine",
+        "newLine"
+      ]
+    },
+    "ReviewHunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "type": "string"
+        },
+        "oldStart": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oldLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "newStart": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "newLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewLine"
+          }
+        }
+      },
+      "required": [
+        "header",
+        "oldStart",
+        "oldLines",
+        "newStart",
+        "newLines",
+        "lines"
+      ]
+    },
+    "ChangeReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "proposedRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "unchanged": {
+          "type": "boolean"
+        },
+        "removedLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "addedLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "countsExact": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewHunk"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "projectId",
+        "relativePath",
+        "expectedRevision",
+        "proposedRevision",
+        "unchanged",
+        "removedLines",
+        "addedLines",
+        "countsExact",
+        "truncated",
+        "hunks"
+      ]
+    },
+    "ProposalSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inboxId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "claimedProducer": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "editCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "digest": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved_for_staging",
+            "rejected"
+          ]
+        }
+      },
+      "required": [
+        "inboxId",
+        "taskId",
+        "projectId",
+        "claimedProducer",
+        "rationale",
+        "editCount",
+        "digest",
+        "status"
+      ]
+    },
+    "ProposalDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/ProposalSummary"
+        },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeReview"
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "reviews"
+      ]
+    },
+    "StagingEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "proposedText": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "expectedRevision",
+        "proposedText"
+      ]
+    },
+    "ApprovedStaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/ProposalSummary"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StagingEdit"
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "edits"
+      ]
+    },
+    "DevelopmentEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "observedUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "project.register",
+            "project.open",
+            "project.close",
+            "project.unregister",
+            "source.save",
+            "task.update",
+            "task.ci.observe"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "observed_host_success",
+            "human_task_note_recorded",
+            "host_ci_observation_recorded_not_acceptance"
+          ],
+          "type": "string"
+        },
+        "sourceRevision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "sourcePath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskEvidenceEvent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "observedUnixSeconds",
+        "projectId",
+        "operation",
+        "outcome",
+        "sourceRevision",
+        "summary",
+        "sourcePath"
+      ]
+    },
+    "ContextDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "present_unverified",
+            "missing",
+            "unverifiable"
+          ]
+        },
+        "trust": {
+          "type": "string",
+          "const": "untrusted_project_text"
+        },
+        "sourceRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "byteLength": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excerptTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "relativePath",
+        "availability",
+        "trust",
+        "sourceRevision",
+        "byteLength",
+        "excerpt",
+        "excerptTruncated"
+      ]
+    },
+    "ProjectContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "local_standalone_host"
+        },
+        "remoteGitState": {
+          "type": "string",
+          "const": "not_queried"
+        },
+        "localArtifacts": {
+          "type": "string",
+          "const": "bounded_scan"
+        },
+        "currentToolchainReadiness": {
+          "type": "string",
+          "const": "not_verified"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DevelopmentEvent"
+          },
+          "maxItems": 40
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextDocument"
+          },
+          "maxItems": 12
+        },
+        "inventory": {
+          "$ref": "#/$defs/EvidenceInventory"
+        },
+        "gitWorktree": {
+          "$ref": "#/$defs/GitWorktreeInspection"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskSummary"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "projectName",
+        "source",
+        "remoteGitState",
+        "localArtifacts",
+        "currentToolchainReadiness",
+        "events",
+        "documents",
+        "inventory",
+        "gitWorktree",
+        "tasks"
+      ]
+    },
+    "EvidenceFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "const": "present_unverified"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        },
+        "trust": {
+          "type": "string",
+          "const": "untrusted_project_file"
+        }
+      },
+      "required": [
+        "relativePath",
+        "category",
+        "state",
+        "sizeBytes",
+        "sha256",
+        "digestStatus",
+        "trust"
+      ]
+    },
+    "GitObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localTrackingHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trackingComparison": {
+          "type": "string"
+        },
+        "workingTree": {
+          "type": "string"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "state",
+        "branch",
+        "localHead",
+        "localTrackingHead",
+        "trackingComparison",
+        "workingTree",
+        "liveRemote"
+      ]
+    },
+    "EvidenceInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "discoveryComplete": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceFile"
+          },
+          "maxItems": 80
+        },
+        "git": {
+          "$ref": "#/$defs/GitObservation"
+        },
+        "toolchainReadiness": {
+          "type": "string",
+          "enum": [
+            "not_verified",
+            "present_unverified"
+          ]
+        },
+        "executionPerformed": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "scope",
+        "discoveryComplete",
+        "files",
+        "git",
+        "toolchainReadiness",
+        "executionPerformed"
+      ]
+    },
+    "StoredArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "digestStatus"
+      ]
+    },
+    "InventoryBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "observedUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StoredArtifact"
+          },
+          "maxItems": 80
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localTrackingHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gitWorktreeState": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "clean",
+                "dirty"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "projectId",
+        "observedUnixSeconds",
+        "scope",
+        "artifacts",
+        "localHead",
+        "localTrackingHead",
+        "gitWorktreeState"
+      ]
+    },
+    "ArtifactComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "baselineSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "matched_bytes",
+            "changed_bytes",
+            "changed_size_only",
+            "missing_in_scanned_scope",
+            "unverifiable",
+            "present_unverifiable",
+            "new_in_scanned_scope"
+          ]
+        }
+      },
+      "required": [
+        "relativePath",
+        "baselineSha256",
+        "currentSha256",
+        "status"
+      ]
+    },
+    "InventoryComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "baselinePresent": {
+          "type": "boolean"
+        },
+        "baselineUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discoveryComplete": {
+          "type": "boolean"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArtifactComparison"
+          },
+          "maxItems": 160
+        },
+        "localGitHeadChange": {
+          "type": "string"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        },
+        "baselineCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gitWorktreeChange": {
+          "type": "string",
+          "enum": [
+            "baseline_missing",
+            "remained_clean",
+            "became_dirty",
+            "became_clean",
+            "both_dirty_not_equivalent",
+            "unverifiable"
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "baselinePresent",
+        "baselineUnixSeconds",
+        "discoveryComplete",
+        "entries",
+        "localGitHeadChange",
+        "liveRemote",
+        "baselineCount",
+        "gitWorktreeChange"
+      ]
+    },
+    "GitFileChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "kind",
+        "stage"
+      ]
+    },
+    "GitWorktreeInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "upstreamHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "upstreamComparison": {
+          "type": "string"
+        },
+        "commitsAhead": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commitsBehind": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "modifiedOrStagedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "untrackedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "displayedChanges": {
+          "type": "array",
+          "maxItems": 120,
+          "items": {
+            "$ref": "#/$defs/GitFileChange"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "state",
+        "branch",
+        "localHead",
+        "upstreamHead",
+        "upstreamComparison",
+        "commitsAhead",
+        "commitsBehind",
+        "worktree",
+        "modifiedOrStagedCount",
+        "untrackedCount",
+        "displayedChanges",
+        "truncated",
+        "liveRemote"
+      ]
+    },
+    "LiveGitHubComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "state": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "github_public_rest_explicit_check"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storedTrackingHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "githubHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localVsGithub": {
+          "type": "string"
+        },
+        "trackingVsGithub": {
+          "type": "string"
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "dirtyFileCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responseAuthenticated": {
+          "type": "boolean",
+          "const": false
+        },
+        "githubDataVerifiedAsCurrent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "state",
+        "source",
+        "repository",
+        "branch",
+        "checkedUnixSeconds",
+        "localHead",
+        "storedTrackingHead",
+        "githubHead",
+        "localVsGithub",
+        "trackingVsGithub",
+        "worktree",
+        "dirtyFileCount",
+        "errorCode",
+        "responseAuthenticated",
+        "githubDataVerifiedAsCurrent"
+      ]
+    },
+    "GitDiffEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "staged",
+            "worktree"
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "filesChanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "patch": {
+          "type": "string"
+        },
+        "patchBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "untrackedExcluded": {
+          "type": "boolean",
+          "const": true
+        },
+        "sourceTrust": {
+          "type": "string",
+          "const": "untrusted_local_git_text"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "scope",
+        "localHead",
+        "filesChanged",
+        "patch",
+        "patchBytes",
+        "truncated",
+        "untrackedExcluded",
+        "sourceTrust",
+        "liveRemote"
+      ]
+    },
+    "GitHistoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commitSha": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "parentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "committedUnixSeconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "commitSha",
+        "summary",
+        "parentCount",
+        "committedUnixSeconds"
+      ]
+    },
+    "GitHistoryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commits": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "#/$defs/GitHistoryEntry"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "liveRemote": {
+          "type": "string",
+          "const": "not_queried"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "localHead",
+        "commits",
+        "truncated",
+        "liveRemote"
+      ]
+    },
+    "ProjectResourceProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "missing_in_registered_project",
+            "not_regular_file",
+            "present_unhashed_over_limit",
+            "changed_during_probe",
+            "bytes_observed"
+          ]
+        },
+        "byteLength": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modifiedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digestStatus": {
+          "type": "string"
+        },
+        "executableUsable": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "lastTrustedExecution": {
+          "type": "string",
+          "const": "not_inspected"
+        },
+        "inspectionScope": {
+          "type": "string",
+          "const": "registered_project_only"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "relativePath",
+        "state",
+        "byteLength",
+        "sha256",
+        "modifiedUnixSeconds",
+        "digestStatus",
+        "executableUsable",
+        "lastTrustedExecution",
+        "inspectionScope"
+      ]
+    },
+    "ExactHeadCiEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "public_github_actions_explicit_read"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localHead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "checkedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflows": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "workflow": {
+                "type": "string"
+              },
+              "runId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "headSha": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runStatus": {
+                "type": "string"
+              },
+              "conclusion": {
+                "type": "string"
+              },
+              "jobs": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "conclusion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "status",
+                    "conclusion"
+                  ]
+                }
+              },
+              "verdict": {
+                "type": "string"
+              },
+              "jobsTruncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "workflow",
+              "runId",
+              "runUrl",
+              "headSha",
+              "runStatus",
+              "conclusion",
+              "jobs",
+              "verdict",
+              "jobsTruncated"
+            ]
+          }
+        },
+        "runsListingPartial": {
+          "type": "boolean"
+        },
+        "localHeadChangedDuringCheck": {
+          "type": "boolean"
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "taskCompletionAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        },
+        "credentialsUsed": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "source",
+        "repository",
+        "localHead",
+        "worktree",
+        "checkedUnixSeconds",
+        "verdict",
+        "errorCode",
+        "workflows",
+        "runsListingPartial",
+        "localHeadChangedDuringCheck",
+        "installationAcceptance",
+        "taskCompletionAcceptance",
+        "credentialsUsed"
+      ]
+    },
+    "TaskCiWorkflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workflow": {
+          "type": "string"
+        },
+        "runId": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "runId",
+        "verdict"
+      ]
+    },
+    "TaskCiObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "public_github_actions_explicit_read"
+        },
+        "observedUnixSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{40}$"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskCiWorkflow"
+          },
+          "maxItems": 2
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        },
+        "taskAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        }
+      },
+      "required": [
+        "source",
+        "observedUnixSeconds",
+        "repository",
+        "commitSha",
+        "verdict",
+        "errorCode",
+        "workflows",
+        "installationAcceptance",
+        "taskAcceptance"
+      ]
+    },
+    "TaskEvidenceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "human_update",
+            "ci_observation"
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requiredGates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
+        },
+        "linkedCommit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkedWorktree": {
+          "type": "string"
+        },
+        "boundUpdateEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ci": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskCiObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "taskId",
+        "kind",
+        "title",
+        "status",
+        "nextAction",
+        "requiredGates",
+        "linkedCommit",
+        "linkedWorktree",
+        "boundUpdateEventId",
+        "ci"
+      ]
+    },
+    "TaskGateEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "gate",
+        "state",
+        "provenance"
+      ]
+    },
+    "TaskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "in_progress",
+            "blocked",
+            "ready_for_review"
+          ]
+        },
+        "nextAction": {
+          "type": "string"
+        },
+        "requiredGates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4
+        },
+        "updateEventId": {
+          "type": "string"
+        },
+        "linkedCommit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkedWorktree": {
+          "type": "string"
+        },
+        "updatedUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observedCi": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskCiObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ciLinkState": {
+          "type": "string"
+        },
+        "acceptanceGates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskGateEvidence"
+          },
+          "maxItems": 4
+        },
+        "taskAcceptance": {
+          "type": "string",
+          "const": "not_verified"
+        }
+      },
+      "required": [
+        "taskId",
+        "title",
+        "status",
+        "nextAction",
+        "requiredGates",
+        "updateEventId",
+        "linkedCommit",
+        "linkedWorktree",
+        "updatedUnixSeconds",
+        "observedCi",
+        "ciLinkState",
+        "acceptanceGates",
+        "taskAcceptance"
+      ]
+    },
+    "IntentSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intentId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "recipeId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "proposedAction": {
+          "type": "string"
+        },
+        "manifestRelativePath": {
+          "type": "string"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceHead": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "worktree": {
+          "type": "string",
+          "const": "clean"
+        },
+        "createdUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expiresUnixSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": "string"
+        },
+        "canRecordReview": {
+          "type": "boolean"
+        },
+        "execution": {
+          "type": "string",
+          "const": "never_started"
+        },
+        "executionAuthority": {
+          "type": "string",
+          "const": "not_issued"
+        },
+        "workerContainment": {
+          "type": "string",
+          "const": "not_implemented"
+        },
+        "grantTokenIssued": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "intentId",
+        "projectId",
+        "recipeId",
+        "displayName",
+        "proposedAction",
+        "manifestRelativePath",
+        "manifestSha256",
+        "sourceHead",
+        "worktree",
+        "createdUnixSeconds",
+        "expiresUnixSeconds",
+        "state",
+        "canRecordReview",
+        "execution",
+        "executionAuthority",
+        "workerContainment",
+        "grantTokenIssued"
+      ]
+    },
+    "IntentList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "private_host_execution_intent_journal"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/IntentSummary"
+          }
+        },
+        "workerExecutionEnabled": {
+          "type": "boolean",
+          "const": false
+        },
+        "installationAcceptance": {
+          "type": "string",
+          "const": "not_tested"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "source",
+        "entries",
+        "workerExecutionEnabled",
+        "installationAcceptance"
+      ]
+    }
+  },
+  "operations": {
+    "project.list": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProjectSummary"
+        }
+      }
+    },
+    "project.select": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProjectSummary"
+        }
+      }
+    },
+    "project.open": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProjectSummary"
+        }
+      }
+    },
+    "project.close": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProjectSummary"
+        }
+      }
+    },
+    "project.unregister": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProjectSummary"
+        }
+      }
+    },
+    "source.list": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativeDir": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "projectId",
+          "relativeDir"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/DirectoryListing"
+      }
+    },
+    "source.preview": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/TextPreview"
+      }
+    },
+    "source.readSpan": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "expectedRevision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "firstLine": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "lastLine": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "expectedRevision",
+          "firstLine",
+          "lastLine"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/SourceSpan"
+      }
+    },
+    "source.review": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "expectedRevision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "proposedText": {
+            "type": "string",
+            "maxLength": 524288
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "expectedRevision",
+          "proposedText"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ChangeReview"
+      }
+    },
+    "source.save": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "expectedRevision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 524288
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "expectedRevision",
+          "text"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/TextPreview"
+      }
+    },
+    "proposal.import": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "proposalJson": {
+            "type": "string",
+            "maxLength": 650000
+          }
+        },
+        "required": [
+          "proposalJson"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProposalSummary"
+      }
+    },
+    "proposal.list": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProposalSummary"
+        }
+      }
+    },
+    "proposal.review": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "inboxId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProposalDetail"
+      }
+    },
+    "proposal.decide": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedDigest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approveForStaging": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "inboxId",
+          "expectedDigest",
+          "approveForStaging"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProposalSummary"
+      }
+    },
+    "proposal.stage": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedDigest": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "inboxId",
+          "expectedDigest"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ApprovedStaging"
+      }
+    },
+    "proposal.discard": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "inboxId"
+        ]
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProposalSummary"
+        }
+      }
+    },
+    "continuity.read": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectContext"
+      }
+    },
+    "inventory.capture": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/InventoryBaseline"
+      }
+    },
+    "inventory.compare": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/InventoryComparison"
+      }
+    },
+    "git.status": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitWorktreeInspection"
+      }
+    },
+    "git.compareLive": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/LiveGitHubComparison"
+      }
+    },
+    "git.diff": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "worktree"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "scope"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitDiffEvidence"
+      }
+    },
+    "git.history": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/GitHistoryEvidence"
+      }
+    },
+    "resource.probe": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectResourceProbe"
+      }
+    },
+    "git.ciExactHead": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ExactHeadCiEvidence"
+      }
+    },
+    "task.update": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "in_progress",
+              "blocked",
+              "ready_for_review"
+            ]
+          },
+          "nextAction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "requiredGates": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "source_review",
+                "exact_head_ci",
+                "installed_windows",
+                "human_approval"
+              ]
+            },
+            "maxItems": 4
+          }
+        },
+        "required": [
+          "projectId",
+          "taskId",
+          "title",
+          "status",
+          "nextAction",
+          "requiredGates"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/TaskSummary"
+      }
+    },
+    "task.ciObserve": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectId",
+          "taskId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/TaskSummary"
+      }
+    },
+    "job.prepare": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipeId": {
+            "type": "string",
+            "enum": [
+              "rust_check",
+              "rust_tests",
+              "lu_ide_host_tests"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "recipeId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/IntentSummary"
+      }
+    },
+    "job.review": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "intentId": {
+            "type": "string",
+            "minLength": 39,
+            "maxLength": 39
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "record_review",
+              "cancel"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "intentId",
+          "decision"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/IntentSummary"
+      }
+    },
+    "job.list": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/IntentList"
+      }
+    },
+    "lsp.catalog": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "languageIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "executableBasename": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "fixedArguments": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "maxItems": 8
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "upstream": {
+              "type": "string",
+              "format": "uri"
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "stdio"
+              ]
+            },
+            "lifecycle": {
+              "type": "string",
+              "enum": [
+                "catalog_only"
+              ]
+            },
+            "executableFromDesktop": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "languageIds",
+            "executableBasename",
+            "fixedArguments",
+            "license",
+            "upstream",
+            "transport",
+            "lifecycle",
+            "executableFromDesktop"
+          ]
+        }
+      }
+    },
+    "workflow.preview": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "projectIds"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "kind": {
+            "type": "string",
+            "const": "multi_project_release_review"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "pattern": "^ide-[0-9a-f]{32}$",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "head": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "worktree": {
+                  "type": "string"
+                },
+                "artifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "relativePath": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "byteLength": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "minLength": 64,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "relativePath",
+                      "category",
+                      "byteLength",
+                      "sha256"
+                    ]
+                  }
+                },
+                "blockers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "projectId",
+                "displayName",
+                "branch",
+                "head",
+                "worktree",
+                "artifacts",
+                "blockers"
+              ]
+            }
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "readyForReview": {
+            "type": "boolean"
+          },
+          "readyForRelease": {
+            "type": "boolean"
+          },
+          "liveRemoteVerified": {
+            "type": "boolean"
+          },
+          "executionPerformed": {
+            "type": "boolean"
+          },
+          "packageCreated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "kind",
+          "projects",
+          "fingerprint",
+          "readyForReview",
+          "readyForRelease",
+          "liveRemoteVerified",
+          "executionPerformed",
+          "packageCreated"
+        ]
+      }
+    },
+    "workflow.verify": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "kind": {
+            "type": "string",
+            "const": "multi_project_release_review"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "pattern": "^ide-[0-9a-f]{32}$",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "head": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "worktree": {
+                  "type": "string"
+                },
+                "artifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "relativePath": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "byteLength": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "minLength": 64,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "relativePath",
+                      "category",
+                      "byteLength",
+                      "sha256"
+                    ]
+                  }
+                },
+                "blockers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "projectId",
+                "displayName",
+                "branch",
+                "head",
+                "worktree",
+                "artifacts",
+                "blockers"
+              ]
+            }
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "readyForReview": {
+            "type": "boolean"
+          },
+          "readyForRelease": {
+            "type": "boolean"
+          },
+          "liveRemoteVerified": {
+            "type": "boolean"
+          },
+          "executionPerformed": {
+            "type": "boolean"
+          },
+          "packageCreated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "kind",
+          "projects",
+          "fingerprint",
+          "readyForReview",
+          "readyForRelease",
+          "liveRemoteVerified",
+          "executionPerformed",
+          "packageCreated"
+        ]
+      }
+    },
+    "workflow.manifest": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "byteLength": {
+            "type": "integer"
+          },
+          "projectCount": {
+            "type": "integer"
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "projectFilesExported": {
+            "type": "boolean"
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          },
+          "executionPerformed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "fileName",
+          "sha256",
+          "byteLength",
+          "projectCount",
+          "sourceFingerprint",
+          "projectFilesExported",
+          "releaseApproved",
+          "executionPerformed"
+        ]
+      }
+    },
+    "workflow.bundle": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "byteLength": {
+            "type": "integer"
+          },
+          "artifactCount": {
+            "type": "integer"
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "archiveFormat": {
+            "type": "string"
+          },
+          "executedProjectCode": {
+            "type": "boolean"
+          },
+          "gitMutated": {
+            "type": "boolean"
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "fileName",
+          "sha256",
+          "byteLength",
+          "artifactCount",
+          "sourceFingerprint",
+          "archiveFormat",
+          "executedProjectCode",
+          "gitMutated",
+          "releaseApproved"
+        ]
+      }
+    },
+    "git.reviewOne": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "localHead": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "worktreeSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "indexFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "fileSize": {
+            "type": "integer"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "codeExecuted": {
+            "type": "boolean"
+          },
+          "gitHooksExecuted": {
+            "type": "boolean"
+          },
+          "remoteUpdated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "localHead",
+          "worktreeSha256",
+          "indexFingerprint",
+          "fileSize",
+          "stage",
+          "codeExecuted",
+          "gitHooksExecuted",
+          "remoteUpdated"
+        ]
+      }
+    },
+    "git.stageOne": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "relativePath": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "localHead": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "worktreeSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "indexFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "fileSize": {
+                "type": "integer"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "codeExecuted": {
+                "type": "boolean"
+              },
+              "gitHooksExecuted": {
+                "type": "boolean"
+              },
+              "remoteUpdated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "projectId",
+              "relativePath",
+              "localHead",
+              "worktreeSha256",
+              "indexFingerprint",
+              "fileSize",
+              "stage",
+              "codeExecuted",
+              "gitHooksExecuted",
+              "remoteUpdated"
+            ]
+          }
+        },
+        "required": [
+          "expected"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "baseHead": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "sourceSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stagedIndexFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stagedBlobOid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "gitHooksExecuted": {
+            "type": "boolean"
+          },
+          "remoteUpdated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "baseHead",
+          "sourceSha256",
+          "stagedIndexFingerprint",
+          "stagedBlobOid",
+          "gitHooksExecuted",
+          "remoteUpdated"
+        ]
+      }
+    },
+    "git.commitOne": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "baseHead": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "sourceSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "stagedIndexFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "stagedBlobOid": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "gitHooksExecuted": {
+                "type": "boolean"
+              },
+              "remoteUpdated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "projectId",
+              "relativePath",
+              "baseHead",
+              "sourceSha256",
+              "stagedIndexFingerprint",
+              "stagedBlobOid",
+              "gitHooksExecuted",
+              "remoteUpdated"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "authorName": {
+            "type": "string",
+            "maxLength": 96
+          },
+          "authorEmail": {
+            "type": "string",
+            "maxLength": 96
+          }
+        },
+        "required": [
+          "stage",
+          "message",
+          "authorName",
+          "authorEmail"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "previousHead": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "sourceSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "gitHooksExecuted": {
+            "type": "boolean"
+          },
+          "remoteUpdated": {
+            "type": "boolean"
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "previousHead",
+          "commitSha",
+          "sourceSha256",
+          "gitHooksExecuted",
+          "remoteUpdated",
+          "releaseApproved"
+        ]
+      }
+    },
+    "workflow.create": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "recipeId": {
+                  "type": "string",
+                  "enum": [
+                    "rust_check",
+                    "rust_tests",
+                    "lu_ide_host_tests"
+                  ]
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxItems": 12
+                }
+              },
+              "required": [
+                "projectId",
+                "recipeId",
+                "dependsOn"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 12
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint",
+          "steps"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "maxItems": 8
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "spec": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "recipeId": {
+                      "type": "string",
+                      "enum": [
+                        "rust_check",
+                        "rust_tests",
+                        "lu_ide_host_tests"
+                      ]
+                    },
+                    "dependsOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "maxItems": 12
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "recipeId",
+                    "dependsOn"
+                  ]
+                },
+                "state": {
+                  "type": "string"
+                },
+                "nativeJobId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativePlanSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativeOutputSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "errorCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "spec",
+                "state",
+                "nativeJobId",
+                "nativePlanSha256",
+                "nativeOutputSha256",
+                "errorCode"
+              ]
+            },
+            "maxItems": 12
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          },
+          "automaticExecution": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workflowId",
+          "projectIds",
+          "sourceFingerprint",
+          "tasks",
+          "releaseApproved",
+          "automaticExecution"
+        ]
+      }
+    },
+    "workflow.listRuns": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "workflowId": {
+              "type": "string"
+            },
+            "projectIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "maxItems": 8
+            },
+            "sourceFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "spec": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "projectId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "recipeId": {
+                        "type": "string",
+                        "enum": [
+                          "rust_check",
+                          "rust_tests",
+                          "lu_ide_host_tests"
+                        ]
+                      },
+                      "dependsOn": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "maxItems": 12
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "recipeId",
+                      "dependsOn"
+                    ]
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "nativeJobId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "nativePlanSha256": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "nativeOutputSha256": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "errorCode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "spec",
+                  "state",
+                  "nativeJobId",
+                  "nativePlanSha256",
+                  "nativeOutputSha256",
+                  "errorCode"
+                ]
+              },
+              "maxItems": 12
+            },
+            "releaseApproved": {
+              "type": "boolean"
+            },
+            "automaticExecution": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "workflowId",
+            "projectIds",
+            "sourceFingerprint",
+            "tasks",
+            "releaseApproved",
+            "automaticExecution"
+          ]
+        }
+      }
+    },
+    "workflow.cancelPending": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "workflowId",
+          "step"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "maxItems": 8
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "spec": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "recipeId": {
+                      "type": "string",
+                      "enum": [
+                        "rust_check",
+                        "rust_tests",
+                        "lu_ide_host_tests"
+                      ]
+                    },
+                    "dependsOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "maxItems": 12
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "recipeId",
+                    "dependsOn"
+                  ]
+                },
+                "state": {
+                  "type": "string"
+                },
+                "nativeJobId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativePlanSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativeOutputSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "errorCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "spec",
+                "state",
+                "nativeJobId",
+                "nativePlanSha256",
+                "nativeOutputSha256",
+                "errorCode"
+              ]
+            },
+            "maxItems": 12
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          },
+          "automaticExecution": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workflowId",
+          "projectIds",
+          "sourceFingerprint",
+          "tasks",
+          "releaseApproved",
+          "automaticExecution"
+        ]
+      }
+    }
+  }
+}
