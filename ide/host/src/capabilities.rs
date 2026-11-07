@@ -180,6 +180,42 @@ fn metadata() -> Vec<CapabilityMeta> {
             "up to 30 local commit IDs, summaries and times; no remote assertion"
         ),
         capability!(
+            "workflow.preview",
+            "ide_workflow_preview",
+            "Inspect registered multi-project workflow",
+            "Read only native Git and bounded artifact hashes from up to eight OS-picker-registered projects.",
+            "read",
+            "explicit selected active project IDs; no paths, scripts, Git writes or release authority",
+            "deterministic source fingerprint, per-project Git HEAD and artifact digest blockers"
+        ),
+        capability!(
+            "workflow.verify",
+            "ide_workflow_verify",
+            "Revalidate exact workflow evidence",
+            "Independently re-inspect every selected Git HEAD, working tree and hashed candidate and deny stale fingerprints.",
+            "read",
+            "prior native preview, exact SHA-256, registered active projects",
+            "same native fingerprint or stable drift/blocked error; no execution"
+        ),
+        capability!(
+            "workflow.manifest",
+            "ide_workflow_export_manifest",
+            "Export reviewed workflow manifest",
+            "Use a native OS folder chooser to create a new fsynced review JSON manifest, never overwriting a file.",
+            "file_write",
+            "human click, native-picked destination outside project roots, verified unchanged workflow",
+            "new named bounded review JSON and SHA-256; no source writes, signatures or release"
+        ),
+        capability!(
+            "workflow.bundle",
+            "ide_workflow_export_bundle",
+            "Export bounded verified artifact ZIP",
+            "Use a native OS folder picker to write a new portable stored ZIP of rehashed verified project artifacts only.",
+            "file_write",
+            "human click, registered sources, exact revalidated fingerprint, bounded files and trusted native destination",
+            "ZIP file name, bytes, count and digest; project code never executed or signed"
+        ),
+        capability!(
             "git.status",
             "ide_read_git_status",
             "Inspect source control",
@@ -417,8 +453,8 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 31);
-        assert!(catalog.capabilities.len() <= 32);
+        assert_eq!(catalog.capabilities.len(), 35);
+        assert!(catalog.capabilities.len() <= 40);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
         for item in &catalog.capabilities {
