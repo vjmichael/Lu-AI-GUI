@@ -1,3 +1,9 @@
+## P07 next source milestone — bounded bibliography preview (2026-11-07)
+
+Added a host-only render_bibliography API which accepts 1–120 candidate book/journal metadata records, requires every record to pass its own existing EvidenceLedger corroboration and same-source author check, rejects duplicate source identifiers and any invalid or unsupported record as an **all-or-nothing** failure, then sorts the accepted citations deterministically by rendered bibliography text and source ID. No model-authored references are minted and no citation is partially published if a later entry fails. Every RenderedCitation continues to mark publication details, quotations/pages and factual claims as **not independently verified**. Native Rust and Node source-contract regressions cover sorted results, duplicate refusal, size caps and substituted author denial.
+
+This is a structured host preview primitive, **not** a wired native Research GUI, CSL citeproc implementation, reviewed metadata adapter, installed desktop acceptance or evidence that an arbitrary citation is accurate. Those remain P07 work. The latest P06 source-mode pixel binding was merged into this stacked P07 branch with two parents; P06 physical acceptance remains open independently.
+
 # Lu P07 — RESEARCH-STYLE-01: Evidence-Bound Scholarly Citation Profiles
 
 **Status, 2026-11-06:** P07 first native implementation, stacked on P06 at commit `730600a9e88628c4794564009fb58020e0c80c2c`. P06 privacy source implemented, exact-head/physical acceptance separately tracked; P04/P05 remain deferred.
