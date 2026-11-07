@@ -72,6 +72,11 @@ jobs:
           shopt -s nullglob
           packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
           [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: unexpected Linux .deb count'; exit 2; }
+          if ! dpkg-deb --contents "${packages[0]}" | grep -Fq '/THIRD_PARTY_LICENSES/inventory.json'; then
+            echo 'DENIED: actual Debian package omitted third-party license inventory' >&2
+            exit 2
+          fi
+          echo 'P04_NATIVE_DEBIAN_BUNDLED_LICENSE_INVENTORY=PASS'
           bash ide/app/fixtures/Test-Wo8InstalledDeb.sh "${packages[0]}" "$(git rev-parse HEAD)"
       - name: Evidence meaning
         run: |

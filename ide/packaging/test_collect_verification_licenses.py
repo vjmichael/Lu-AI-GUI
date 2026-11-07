@@ -69,7 +69,10 @@ class LicenseBundleTests(unittest.TestCase):
         file.unlink()
         external=self.root/"secret"
         external.write_text("confidential contents",encoding="utf-8")
-        file.symlink_to(external)
+        try:
+            file.symlink_to(external)
+        except (OSError,NotImplementedError):
+            self.skipTest("runner prohibits symlink fixture")
         d=self.collect()
         self.assertFalse(d["completeForReleaseReview"])
         self.assertNotIn("confidential contents",

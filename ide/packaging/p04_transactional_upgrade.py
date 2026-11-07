@@ -109,6 +109,8 @@ def read_journal(root):
         rec=json.loads(file.read_text(encoding="utf-8"))
     except (ValueError,OSError) as exc:
         raise Denied("invalid_transaction_journal") from exc
+    if not isinstance(rec,dict):
+        raise Denied("journal_must_be_an_object")
     if (rec.get("schema")!=SCHEMA or rec.get("state") not in
             {"prepared","backed_up","activated","validated","committed","rolled_back"}):
         raise Denied("malformed_transaction_phase")
@@ -122,7 +124,11 @@ def worker_gate(root):
     path=root/"workers.json"
     if path.is_symlink() or not path.is_file():
         raise Denied("worker_reconciliation_absent")
+    if path.stat().st_size>4096:
+        raise Denied("oversized_worker_reconciliation_record")
     data=json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data,dict):
+        raise Denied("worker_reconciliation_must_be_object")
     # Fixture proof only; real production broker MUST provide kernel receipts.
     if (data.get("activeWorkers")!=0 or data.get("allReconciled") is not True
             or data.get("osTreeEmpty") is not True):

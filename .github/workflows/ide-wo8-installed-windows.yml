@@ -102,6 +102,16 @@ jobs:
             if ($setupProcess.ExitCode -ne 0) { throw 'DENIED: native unsigned NSIS install failed' }
             $installed=$true
             if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'DENIED: installed desktop missing' }
+            $noticeFile=Join-Path $root 'THIRD_PARTY_LICENSES\inventory.json'
+            if (!(Test-Path -LiteralPath $noticeFile -PathType Leaf)) {
+              throw 'DENIED: installed NSIS verification package omitted third-party license evidence'
+            }
+            $notice=Get-Content -LiteralPath $noticeFile -Raw | ConvertFrom-Json
+            if ($notice.sourceSha -ine '${{ github.event.pull_request.head.sha || github.sha }}' -or
+                $notice.releaseApproved -ne $false) {
+              throw 'DENIED: installed license source or release status mismatch'
+            }
+            Write-Host 'P04_NATIVE_WINDOWS_BUNDLED_LICENSE_INVENTORY=PASS'
             $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
             & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Shell
             if (!$?) { throw 'DENIED: OS UI Automation native shell failed' }
