@@ -9,6 +9,7 @@ description = "Standalone Lu IDE workspace project registry"
 
 [dependencies]
 prost = "0.14"
+lu-ide-bridge-contract = { path = "../bridge-contract" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand = "0.8"
