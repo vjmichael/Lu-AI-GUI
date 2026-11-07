@@ -111,24 +111,47 @@ fn stage_bundle(
 }
 fn min_environment(local: &Path, tools: &Path) -> Result<Vec<u16>, SupervisorError> {
     let system = std::env::var_os("SystemRoot").ok_or_else(denied)?;
-    let appdata = std::env::var_os("LOCALAPPDATA").ok_or_else(denied)?;
-    if !Path::new(&system).is_absolute() || !Path::new(&appdata).is_absolute() {
+    if !Path::new(&system).is_absolute() || !local.is_absolute() || !tools.is_absolute() {
         return Err(denied());
     }
+    // Never forward the interactive host's LOCALAPPDATA or profile directory
+    // to an AppContainer child. The sealed profile's LocalState is the only
+    // writable user-data/cache/temp root intentionally exposed to this LSP.
     let env = format!(
-        "LOCALAPPDATA={}\0PATH={};{}\0SystemRoot={}\0TEMP={}\0TMP={}\0\0",
-        appdata.to_string_lossy(),
+        "APPDATA={0}\0HOME={0}\0LOCALAPPDATA={0}\0PATH={1};{2}\0SystemRoot={3}\0TEMP={0}\0TMP={0}\0USERPROFILE={0}\0\0",
+        local.display(),
         tools.join("bin").display(),
         Path::new(&system).join("System32").display(),
-        system.to_string_lossy(),
-        local.display(),
-        local.display()
+        system.to_string_lossy()
     );
     if env.encode_utf16().count() > 32767 {
         return Err(denied());
     }
     Ok(env.encode_utf16().collect())
 }
+#[cfg(test)]
+mod native_environment_tests {
+    use super::*;
+    #[test]
+    fn native_lsp_profile_does_not_inherit_host_localappdata() {
+        let local = Path::new(r"C:\LuIdeSandbox\LocalState");
+        let tools = Path::new(r"C:\LuIdeSandbox\LanguageServer");
+        let env = min_environment(local, tools).unwrap();
+        let decoded = String::from_utf16(&env).unwrap();
+        for key in ["APPDATA", "HOME", "LOCALAPPDATA", "TEMP", "TMP", "USERPROFILE"] {
+            assert!(
+                decoded.contains(&format!("{key}={}\0", local.display())),
+                "LSP profile environment did not use private sandbox"
+            );
+        }
+        assert!(decoded.contains(&format!(
+            "PATH={};",
+            tools.join("bin").display()
+        )));
+        assert!(decoded.ends_with("\0\0"));
+    }
+}
+
 fn inheritable_pipe() -> Result<(Handle, Handle), SupervisorError> {
     let mut security = SECURITY_ATTRIBUTES {
         nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
