@@ -63,15 +63,15 @@ jobs:
             $files=@(Get-ChildItem -LiteralPath $bin -File | Where-Object { $_.Extension -in @('.dll','.exe') })
             if ($files.Count -gt 512) { throw 'DENIED: transitive LLVM import audit exceeds fixed entry limit' }
             $fileCount=0
-            $missing=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+            $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
             foreach ($file in $files) {
               $fileCount++
               $raw=@(& $reader --coff-imports $file.FullName 2>&1)
               if ($LASTEXITCODE -ne 0) { throw 'DENIED: LLVM PE import analysis rejected a staged binary' }
               foreach ($item in $raw) {
-                $line=([string]$item).Trim()
-                if (!$line.StartsWith('Name: ') -or !$line.EndsWith('.dll')) { continue }
-                $dll=$line.Substring(6).ToLowerInvariant()
+                $line=([string]$item).Trim().ToLowerInvariant()
+                if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
+                $dll=$line.Substring(6)
                 if ($dll -notmatch '^[a-z0-9_.-]+\.dll$') { throw 'DENIED: invalid native import module name' }
                 if ($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')) { continue }
                 $inBundle=Test-Path -LiteralPath (Join-Path $bin $dll)
