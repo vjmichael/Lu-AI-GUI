@@ -38,7 +38,7 @@ class StagingTests(unittest.TestCase):
             license_file.write_text("Example notice only", encoding="utf-8")
             self.data["files"].append({"role": role, "source": src.name,
                 "destination": dst, "sha256": hashlib.sha256(content).hexdigest(),
-                "license": "Apache-2.0", "signerThumbprint": "b" * 40 if role == "service" else None,
+                "license": "Apache-2.0", "signerThumbprint": "b" * 40 if role in ("service","desktop") else None,
                 "dependenciesReviewed": True,
                 "importClosureReviewed": True, "notices": [{"source": license_file.name,
                     "sha256": hashlib.sha256(license_file.read_bytes()).hexdigest()}]})
