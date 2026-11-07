@@ -1,3 +1,5 @@
+> **Source-of-truth supersession — 2026-11-07.** This earlier AI-first policy remains compatible supporting guidance. The latest owner-established canonical model is **Practical AI Capability = f(K, I, A, F)** with **Foundational / Utility / Specialist** as the exactly three meta-classifications. The [Canonical AI Execution Layer philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md) and [P01–P12 tool review](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md) govern terminology, responsibility boundaries and tool-change decisions; do not reinterpret this older policy as authority to implement an unrestricted runner or delete existing utilities. **Documentation only.**
+
 # Lu Core — AI-first tool design and external application execution policy
 
 **Decision:** 2026-11-07. **Owner approved.** This is the current general rule for designing Lu's tools, including ongoing and future Pxx work. It supplements, and where necessary supersedes, earlier proposals to expand domain-specific Lu applications. Existing tools remain in place until evaluated; this decision is **not** authorization to delete a tool, weaken security or expand OS permissions.
