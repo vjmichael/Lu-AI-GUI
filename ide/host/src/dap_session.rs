@@ -291,6 +291,18 @@ impl DapSession {
                     .remove(&request_seq)
                     .ok_or(DapError::UnexpectedResponse)?;
                 if command != Some(expected) || obj.get("success") != Some(&Value::Bool(true)) {
+                    // Debug-only, fixed categories of real adapter launch
+                    // failure; never print the untrusted adapter message,
+                    // target path or debugger-provided source text.
+                    if cfg!(debug_assertions)
+                        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                            == Some(std::ffi::OsStr::new("1"))
+                    {
+                        eprintln!(
+                            "PROTECTED_DAP_ADAPTER_FAILURE_CLASS={}",
+                            classify_native_adapter_error(obj)
+                        );
+                    }
                     return Err(DapError::AdapterFailed);
                 }
                 match expected {
@@ -413,6 +425,48 @@ impl DapSession {
             }
             _ => Err(DapError::InvalidMessage),
         }
+    }
+}
+// A native DAP error may embed project paths and user data. Its diagnostic
+// witness is intentionally a fixed vocabulary and never part of authorization.
+fn classify_native_adapter_error(
+    response: &serde_json::Map<String, Value>,
+) -> &'static str {
+    let info = response
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            response
+                .get("body")
+                .and_then(|v| v.get("error"))
+                .and_then(|v| v.get("format"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or("");
+    let text = info.to_ascii_lowercase();
+    if text.contains("ptrace") || text.contains("trace me") {
+        "ptrace_or_trace_denied"
+    } else if text.contains("permission denied")
+        || text.contains("operation not permitted")
+        || text.contains("access denied")
+    {
+        "kernel_or_file_access_denied"
+    } else if text.contains("no such file") || text.contains("not found") {
+        "dependency_or_fixed_target_missing"
+    } else if text.contains("process launch") || text.contains("failed to launch")
+        || text.contains("launch failed")
+    {
+        "target_launch_failed"
+    } else if text.contains("python") || text.contains("resource")
+        || text.contains("platform")
+    {
+        "debugger_resource_not_ready"
+    } else if text.contains("invalid argument") || text.contains("unsupported") {
+        "unsupported_debug_adapter_operation"
+    } else if text.is_empty() {
+        "no_adapter_error_detail"
+    } else {
+        "other_adapter_error"
     }
 }
 fn frame_length(header: &[u8]) -> Result<usize, DapError> {
@@ -701,6 +755,32 @@ mod tests {
             DapError::InvalidMessage
         );
         assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
+
+    #[test]
+    fn native_adapter_error_classes_never_include_untrusted_paths() {
+        let mut response = serde_json::Map::new();
+        response.insert(
+            "message".into(),
+            Value::String("error: ptrace operation not permitted /private/source.c".into()),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "ptrace_or_trace_denied"
+        );
+        response.insert(
+            "message".into(),
+            Value::String("error: failed to launch /private/source.c".into()),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "target_launch_failed"
+        );
+        response.clear();
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "no_adapter_error_detail"
+        );
     }
 
     #[test]
