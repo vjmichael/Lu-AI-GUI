@@ -456,6 +456,44 @@ try {
         }
         if (!$accepted) { Start-Sleep -Milliseconds 350 }
       }
+      if (!$accepted) {
+        # Real Windows 2022 UIA logs showed the native Select Folder pane
+        # INSIDE the installed desktop window's fragment, not as a separate
+        # RootElement child window. Search only that exact installed HWND.
+        $installedRoot=WindowRoot
+        if (!$installedRoot) { Deny 'installed_window_missing_during_picker' }
+        $all=$installedRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        foreach ($entry in $all) {
+          try {
+            if ([string]$entry.Current.Name -ne 'Select Folder' -or
+                [string]$entry.Current.ControlType.ProgrammaticName -notin
+                  @('ControlType.Pane','ControlType.Button')) { continue }
+            $sawChooser=$true
+            $rect=$entry.Current.BoundingRectangle
+            $bounds=$installedRoot.Current.BoundingRectangle
+            if ($rect.Width -lt 8 -or $rect.Height -lt 8) {
+              Write-Host 'WO8_NATIVE_WINDOWS_PICKER=pane_without_clickable_bounds'
+              continue
+            }
+            $px=[int][Math]::Round($rect.Left+$rect.Width/2)
+            $py=[int][Math]::Round($rect.Top+$rect.Height/2)
+            if ($px -le $bounds.Left -or $px -ge $bounds.Right -or
+                $py -le $bounds.Top -or $py -ge $bounds.Bottom) {
+              Write-Host 'WO8_NATIVE_WINDOWS_PICKER=pane_outside_installed_window'
+              continue
+            }
+            # Only physical native OS pointer events; zero web scripting.
+            [void][P04NativeWebViewWindows]::SetForegroundWindow($proc.MainWindowHandle)
+            [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($px,$py)
+            [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+            [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+            $accepted=$true
+            Write-Host 'WO8_NATIVE_WINDOWS_PICKER=installed_hwnd_native_pane_click'
+            break
+          } catch {}
+        }
+      }
       if (!$accepted -and $sawChooser) { Deny 'native_picker_owned_dialog_could_not_be_confirmed' }
       if ($accepted) {
         Write-Host 'WO8_NATIVE_WINDOWS_PICKER=owned_native_dialog_confirmed'
@@ -481,6 +519,24 @@ try {
             if ([string]$item.Current.Name -eq 'Select Folder') {
               Deny 'native_folder_picker_still_open_after_confirmation'
             }
+          }
+        } catch {
+          if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
+        }
+      }
+      # Recheck the installed main window provider as well. A still-open
+      # Windows IFileDialog may be nested inside this fragment instead of
+      # having its own desktop RootElement child HWND.
+      $installedRoot=WindowRoot
+      if (!$installedRoot) { Deny 'installed_window_disappeared_after_picker' }
+      $remaining=$installedRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+      foreach ($item in $remaining) {
+        try {
+          if ([string]$item.Current.Name -eq 'Select Folder' -and
+              [string]$item.Current.ControlType.ProgrammaticName -in
+                @('ControlType.Pane','ControlType.Button')) {
+            Deny 'native_picker_still_open_in_installed_hwnd'
           }
         } catch {
           if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
