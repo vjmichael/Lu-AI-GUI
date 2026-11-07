@@ -147,8 +147,10 @@ fn select_delegated_parent(root: &Path, current: &Path) -> Result<PathBuf, Super
         return Err(denied());
     }
     let parent = current.parent().ok_or_else(denied)?;
-    if parent.file_name().and_then(|v| v.to_str()) != Some("lu-ide-delegated")
-        || !parent.starts_with(root)
+    if !matches!(
+        parent.file_name().and_then(|v| v.to_str()),
+        Some("lu-ide-delegated" | "lu-ide-delegated.service")
+    ) || !parent.starts_with(root)
         || parent == root
     {
         return Err(denied());
@@ -163,6 +165,9 @@ fn has_controllers(data: &str) -> bool {
 fn require_delegated_limits(parent: &Path) -> Result<(), SupervisorError> {
     // "controllers" is availability, not activation: the kernel creates
     // writable child quota files only when subtree_control enables them.
+    if fs::read_to_string(parent.join("cgroup.type")).map_err(|_| denied())?.trim() != "domain" {
+        return Err(denied());
+    }
     let available = fs::read_to_string(parent.join("cgroup.controllers")).map_err(|_| denied())?;
     let enabled =
         fs::read_to_string(parent.join("cgroup.subtree_control")).map_err(|_| denied())?;
@@ -746,6 +751,11 @@ mod tests {
         let base = root.join("user.slice").join("lu-ide-delegated");
         let good = base.join("lu-ide-host");
         assert_eq!(select_delegated_parent(root, &good).unwrap(), base);
+        let service = root.join("system.slice/lu-ide-delegated.service");
+        assert_eq!(
+            select_delegated_parent(root, &service.join("lu-ide-host")).unwrap(),
+            service
+        );
         assert!(select_delegated_parent(root, &root.join("user.slice")).is_err());
         assert!(select_delegated_parent(root, &base.join("other-host")).is_err());
         assert!(select_delegated_parent(root, &root.join("lu-ide-host")).is_err());
