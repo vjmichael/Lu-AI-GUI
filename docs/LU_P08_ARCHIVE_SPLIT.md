@@ -51,3 +51,9 @@ Separate regression failures were confirmed: Windows `native_archive_tree_author
 - Added `native_archive_split::reconcile_publication`, which refuses unexpected output members, checks existing part hashes and completion-marker integrity, rechecks the entire original-byte digest for a complete publication, and reports partial completion without writes.
 - Added native regression for absent, incomplete, forged manifest-last and unexpected output cases; all uncertain effects remain untouched. **CI results for these new tests are pending.**
 - A user-facing installed-application recovery review, explicit cleanup approval, actual OS picker/NSIS launch, and system restart testing remain **open**. This API is not itself a working desktop recovery button.
+
+### Shared frontend CI fixture repairs
+- Browser-candidate artifact tests explicitly skip in the generic UI suite when the separate, large Chromium candidate has not been provisioned. The dedicated browser-candidate job must still assemble its bundle and will run both tests; this is not browser runtime acceptance in P08.
+- Browser visibility assertions now check current native persisted values (`automatic_hidden` / `always_visible`) and host-owned stop, rather than removed early UI spelling.
+- P06 capture assertions now require the explicit OS-owned `expected_image_source` instead of the retired `allow_local_image` boolean. The real native transport restrictions are unchanged.
+- All amended JavaScript tests require a fresh exact-head CI run before asserting PASS.
