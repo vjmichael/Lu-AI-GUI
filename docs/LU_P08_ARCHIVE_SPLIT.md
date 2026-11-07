@@ -57,3 +57,10 @@ Separate regression failures were confirmed: Windows `native_archive_tree_author
 - Browser visibility assertions now check current native persisted values (`automatic_hidden` / `always_visible`) and host-owned stop, rather than removed early UI spelling.
 - P06 capture assertions now require the explicit OS-owned `expected_image_source` instead of the retired `allow_local_image` boolean. The real native transport restrictions are unchanged.
 - All amended JavaScript tests require a fresh exact-head CI run before asserting PASS.
+
+### November 7 follow-up: usable read-only desktop recovery review
+- Added `lu_p08_review_publication` Tauri command: OS-picked original P08 staging folder, verifies canonical stage manifest and re-inspects the published group. A chat-owned UI button displays absent/incomplete/complete and verified part count. It never authorizes writes, deletion, or resumed execution.
+- Registered command in the native host and added a Node source-contract regression in `p08-archive-split.test.mjs`.
+- Windows P03 GGUF fixture on exact previous head failed with `UnexpectedEof` while the Linux job passed. Committed uniquely named, synced fixture writes for a fresh Windows retest; cause and outcome remain unconfirmed.
+- Verified `REPO-01`, `WIN-LOAD-01`, and `P02` workflows passed on earlier `cc2df564` head; P03 Windows failed; the remainder were not completed at the inspection point.
+- **Not release accepted** until exact-head Windows/Linux P08 CI, actual installed Windows NSIS picker/confirmation/restart workflows, Linux desktop, and manual cleanup approval are independently verified. CI builds and source checks are not installed application evidence.
