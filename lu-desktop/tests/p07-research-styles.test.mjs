@@ -175,3 +175,20 @@ test('P07 reviewed SBL2 secondary abbreviation map and Chicago 18 six-plus autho
   assert.match(src,/Style::Chicago18 if xs\.len\(\)>6/);
   assert.match(src,/journal_abbreviation=journal\.as_deref\(\)/);
 });
+
+test('P07 native Research report optionally includes only sealed bibliography evidence',()=>{
+  const desktop=read('../src-tauri/src/lib.rs');
+  const host=read('../src-tauri/src/research_desktop.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(desktop,/include_bibliography:Option<bool>,citation_style:Option<String>/);
+  assert.match(desktop,/if include_bibliography\.unwrap_or\(false\)/);
+  assert.match(desktop,/Some\(state\.research\.bibliography_preview\(&chat_id,profile\)\?\)/);
+  assert.match(desktop,/lu_reviewed_bibliography/);
+  assert.match(desktop,/bibliography_sources:bibliography\.as_ref\(\)/);
+  assert.match(host,/pub bibliography_sources:usize/);
+  assert.match(host,/p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart/);
+  assert.match(ui,/Include reviewed P07 bibliography/);
+  assert.match(ui,/includeBibliography:researchReportIncludeBibliography/);
+  assert.match(ui,/citationStyle:researchCitationStyle/);
+  assert.match(wf,/p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart/);
+});
