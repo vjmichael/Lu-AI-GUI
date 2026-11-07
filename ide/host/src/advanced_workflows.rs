@@ -489,6 +489,41 @@ mod tests {
     }
 
     #[test]
+    fn genuine_cross_project_zip_contains_only_pinned_artifacts_and_manifest() {
+        use std::io::Read;
+        let (temp, registry, project_id) = native_fixture();
+        let selected = vec![project_id.clone()];
+        let plan = registry.inspect_multi_project_workflow(&selected).unwrap();
+        let folder = temp.0.join("native-export-zip");
+        std::fs::create_dir_all(&folder).unwrap();
+        let result = registry.export_workflow_bundle(&selected, &plan.fingerprint, &folder).unwrap();
+        assert_eq!(result.artifact_count, 1);
+        assert!(!result.release_approved);
+        assert!(!result.executed_project_code);
+        assert!(!result.git_mutated);
+        assert_eq!(result.archive_format, "zip_stored_verified_artifacts_only");
+        let path = folder.join(&result.file_name);
+        let file = File::open(&path).unwrap();
+        let mut zip = zip::ZipArchive::new(file).unwrap();
+        assert_eq!(zip.len(), 2);
+        let mut manifest = String::new();
+        zip.by_name("workflow-manifest.json").unwrap().read_to_string(&mut manifest).unwrap();
+        assert!(manifest.contains(&plan.fingerprint));
+        let mut artifact = Vec::new();
+        zip.by_name(&format!("projects/{project_id}/dist/verified.tar"))
+            .unwrap().read_to_end(&mut artifact).unwrap();
+        assert_eq!(artifact, b"frozen archive data");
+        assert!(registry.export_workflow_bundle(&selected, &plan.fingerprint, &folder).is_err());
+        let source = registry.trusted_native_worker_root(&project_id).unwrap();
+        assert!(registry.export_workflow_bundle(&selected, &plan.fingerprint, &source).is_err());
+        std::fs::write(source.join("dist/verified.tar"), b"swapped").unwrap();
+        assert_eq!(
+            registry.export_workflow_bundle(&selected, &plan.fingerprint, &folder).unwrap_err(),
+            "WORKFLOW_SOURCE_OR_ARTIFACT_DRIFT"
+        );
+    }
+
+    #[test]
     fn native_export_is_new_only_and_source_drift_denied() {
         let (temp, registry, project_id) = native_fixture();
         let selected = vec![project_id.clone()];
