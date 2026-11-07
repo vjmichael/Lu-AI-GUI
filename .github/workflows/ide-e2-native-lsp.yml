@@ -80,7 +80,10 @@ jobs:
           try {
             & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' -ServiceExecutable $service -ExpectedServiceSha256 $serviceSha -ApprovedHostExecutable $hostExe -ExpectedHostSha256 $hostSha -CiAcceptanceUnsigned -Start
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'DENIED: protected service install failed' }
-            $env:LU_IDE_E2_TRUSTED_SERVICE=$service
+            # Fixed stage IDs only; never log process tokens, source, paths or credentials.
+          $env:LU_IDE_E2_NATIVE_TRACE='1'
+          $env:LU_IDE_NATIVE_ACCEPTANCE_TRACE='1'
+          $env:LU_IDE_E2_TRUSTED_SERVICE=$service
             & $hostExe
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: native clangd normal acceptance failed' }
             & $hostExe --cancel
