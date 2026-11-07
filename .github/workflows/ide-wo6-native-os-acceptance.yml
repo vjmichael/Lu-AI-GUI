@@ -110,7 +110,7 @@ jobs:
           sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
-          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --proc /proc --dev /dev -- /usr/bin/true ||
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev -- /usr/bin/true ||
             { echo 'DENIED: unprivileged Bubblewrap namespace still forbidden under scoped AppArmor profile'; exit 1; }
           test -x /usr/bin/systemd-run
           test -f /sys/fs/cgroup/cgroup.controllers
@@ -182,7 +182,7 @@ jobs:
           sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
-          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --proc /proc --dev /dev -- /usr/bin/true ||
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev -- /usr/bin/true ||
             { echo 'DENIED: real unprivileged bwrap namespace creation denied; global restrictions unchanged'; exit 1; }
           for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do
             test -f "$file"
