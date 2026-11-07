@@ -15,7 +15,10 @@ test('P07 formatting uses native corroborated evidence identity and no model-con
   assert.match(src,/factual_claim_verified:false/);
   assert.match(src,/quotation_or_page_verified:false/);
   assert.match(src,/BASIC_BOOK_JOURNAL_ONLY_REVIEW_REQUIRED/);
-  assert.doesNotMatch(src,/https?:\/\/api\.|reqwest::|curl|std::process::Command/);
+  // Source comments may document the fixed Crossref endpoint. Network access
+  // must remain in the separately authorized native Research host.
+  assert.doesNotMatch(src,/reqwest::|std::process::Command|curl_binary|fetcher\\.fetch/);
+  assert.match(src,/catalog_work_from_crossref\\(/);
 });
 test('P07 names five explicitly versioned citation styles while refusing unsupported SBL data',()=>{
   for(const label of ['APA 7','MLA 9','Chicago 18 Notes-Bibliography',
