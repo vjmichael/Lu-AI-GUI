@@ -1287,8 +1287,8 @@ impl ResearchDesktop{
         }
         let rendered=render_bibliography(&ledger,&works,style)
             .map_err(|e|format!("Citation bibliography refused an unsupported entry: {e:?}"))?;
-        let by_id=works.iter().map(|work|(&work.source_id,work))
-            .collect::<HashMap<_,_>>();
+        let by_id=works.iter().map(|work|(work.source_id.clone(),work))
+            .collect::<HashMap<String,_>>();
         let mut csl=Vec::with_capacity(rendered.len());
         let mut body=format!(
             "# Research bibliography — {}\n\n**Human review required.**              Corroborated source identity only; publication details, direct              quotations, pages and factual claims are not independently              verified. No ancient texts or guessed SBL abbreviations.\n\n",
@@ -1300,7 +1300,7 @@ impl ResearchDesktop{
                 .ok_or("Reviewed source identity lost during bibliography assembly")?;
             let sha=provenance.get(&item.source_id)
                 .ok_or("Citation source response hash unavailable")?;
-            let mut record=export_csl_json(&ledger,work)
+            let mut record=export_csl_json(&ledger,*work)
                 .map_err(|_|"Citation structured export rejected corroborated source")?;
             record["_lu_evidence"]["crossref_response_sha256"]=
                 serde_json::json!(sha);
