@@ -14,6 +14,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn trace_dap(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+            == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!("PROTECTED_DAP_GATEWAY_STAGE={stage}");
+    }
+}
+
 const MAX_READ: usize = 16 * 1024;
 const MAX_WRITE: usize = 64 * 1024 + 512;
 const MAX_TOTAL_IO: usize = 16 * 1024 * 1024;
@@ -90,6 +99,7 @@ impl DapGateway {
     }
     pub(crate) fn initialize(&mut self) -> Result<(), SupervisorError> {
         let message = self.session.initialize().map_err(protocol_denied)?;
+        trace_dap("initialize_request_built");
         self.send(&message)
     }
     /// The native OS worker provides a single immutable bundled self-test
@@ -116,6 +126,7 @@ impl DapGateway {
         if self.started.elapsed() > MAX_LIFETIME {
             return self.quarantine();
         }
+        trace_dap("poll_started");
         let bytes = match self
             .process
             .as_mut()
@@ -123,18 +134,36 @@ impl DapGateway {
             .read_bounded(MAX_READ, READ_WAIT)
         {
             Ok(bytes) => bytes,
-            Err(_) => return self.quarantine(),
+            Err(_) => {
+                trace_dap("native_stdio_read_failed");
+                return self.quarantine();
+            },
         };
         if bytes.len() > MAX_READ || self.transferred.saturating_add(bytes.len()) > MAX_TOTAL_IO {
             return self.quarantine();
         }
         self.transferred += bytes.len();
         if bytes.is_empty() {
+            trace_dap("no_stdout_yet");
             return Ok(Vec::new());
         }
+        trace_dap("stdout_bytes_observed");
         match self.session.receive(&bytes) {
-            Ok(events) => Ok(events),
-            Err(_) => self.quarantine(),
+            Ok(events) => {
+                trace_dap("dap_frame_accepted");
+                Ok(events)
+            }
+            Err(error) => {
+                match error {
+                    lu_ide_workspace::dap_session::DapError::InvalidFrame => trace_dap("invalid_frame"),
+                    lu_ide_workspace::dap_session::DapError::InvalidMessage => trace_dap("invalid_message"),
+                    lu_ide_workspace::dap_session::DapError::UnexpectedResponse => trace_dap("unmatched_response"),
+                    lu_ide_workspace::dap_session::DapError::AdapterRequestDenied => trace_dap("reverse_request_denied"),
+                    lu_ide_workspace::dap_session::DapError::AdapterFailed => trace_dap("adapter_error_response"),
+                    _ => trace_dap("dap_phase_or_limit_denied"),
+                }
+                self.quarantine()
+            }
         }
     }
     fn quarantine<T>(&mut self) -> Result<T, SupervisorError> {
