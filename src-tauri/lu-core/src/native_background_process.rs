@@ -200,6 +200,18 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
         }
+        // P06: admission alone is not an OS memory ceiling. Both approved
+        // one-shot Windows.Graphics.Capture modes now run under the existing
+        // Windows Job Object 512 MiB private-memory limit. GPU/driver VRAM
+        // is separately unmeasured and never claimed as OS-enforced.
+        #[cfg(windows)]
+        if plan.args.first().and_then(|s|s.to_str()).is_some_and(|mode|
+            matches!(mode,
+                "--lu-observe-one-shot"|"--lu-observe-foreground-one-shot"))
+            &&job.set_memory_limit(512*1024*1024).is_err(){
+            let _=self.store.fail_pending(&plan.task_id);
+            return Err(BackgroundProcessError::SpawnFailed)
+        }
         let mut child=command.spawn().map_err(|_|{
             let _=self.store.fail_pending(&plan.task_id);
             BackgroundProcessError::SpawnFailed
