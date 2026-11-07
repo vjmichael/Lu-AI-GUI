@@ -2801,10 +2801,31 @@ async fn lu_research_citation_preview(
     }).await.map_err(|_|"Citation metadata review dialog unavailable")?;
     if !approved{return Err("Citation review declined".into());}
     state.observe.deny_observation_network_egress(&chat_id)?;
-    let worker=Arc::clone(&state.research);
-    tauri::async_runtime::spawn_blocking(move||
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-citation-");
+    // Keep the network read visible to the same durable task check which
+    // prevents Observe activation while Research network jobs are alive.
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Citation network task admission unavailable")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Citation network task could not start")?;
+    let worker=Arc::clone(&owner.research);
+    let request_owner=Arc::clone(&owner);
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        request_owner.observe.deny_observation_network_egress(&chat_id)?;
         worker.citation_preview(&chat_id,&source_id,profile)
-    ).await.map_err(|_|"Native citation preview worker unavailable".to_owned())?
+    }).await.map_err(|_|"Native citation preview worker unavailable".to_owned()).and_then(|x|x);
+    match result{
+        Ok(preview)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Citation completed without a durable completion receipt")?;
+            Ok(preview)
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(error)
+        },
+    }
 }
 
 /// Independently corroborate ONE already-discovered lead against Crossref.
