@@ -532,5 +532,87 @@ mod tests{
             assert!(chat.history("../../bad").is_err());
         }
         fs::remove_dir_all(root).unwrap();
+    #[test]
+    fn imports_old_chat_and_preserves_favorites_but_drops_old_grants(){
+        let root=tmp();
+        fs::create_dir_all(root.join("conversations")).unwrap();
+        let chat=format!("c-{:032x}",4);
+        let folder=format!("f-{:032x}",5);
+        let old_turn=format!("g-{:032x}",6);
+        let index=format!(
+            r#"{{"version":1,"sequence":5,"folders":[{{"folderId":"{folder}","name":"Original projects"}}],"chats":[{{"chatId":"{chat}","title":"Original title","folderId":"{folder}","favorite":true,"updatedSeq":5}}]}}"#
+        );
+        let journal=format!(
+            "{{\"kind\":\"user\",\"text\":\"Ancient instruction\",\"user_turn_id\":\"{old_turn}\"}}\n\
+             {{\"kind\":\"assistant_final\",\"text\":\"Ancient response\"}}\n"
+        );
+        let journal_path=root.join("conversations").join(format!("{chat}.jsonl"));
+        fs::write(root.join("conversation-index.json"),&index).unwrap();
+        fs::write(&journal_path,&journal).unwrap();
+        {
+            let store=ChatStore::open(&root).unwrap();
+            assert_eq!(store.history(&chat).unwrap().len(),2);
+            let (chats,folders)=store.list().unwrap();
+            assert_eq!(chats[0].title,"Original title");
+            assert!(chats[0].favorite);
+            assert_eq!(chats[0].folder_id.as_deref(),Some(folder.as_str()));
+            assert_eq!(folders[0].name,"Original projects");
+            assert!(store.trusted_user_turn_text(&chat,&old_turn).is_none());
+            let new_turn=format!("g-{:032x}",7);
+            store.append_user_with_turn_id(&chat,&new_turn,"New permission-scoped turn").unwrap();
+            assert_eq!(store.trusted_user_turn_text(&chat,&new_turn).as_deref(),
+                Some("New permission-scoped turn"));
+        }
+        // The historical JSONL remains a backup but is no longer a writer
+        // or canonical source after the committed SQLite cutover marker.
+        fs::write(&journal_path,"invalid legacy JSONL after cutover\n").unwrap();
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.history(&chat).unwrap().len(),3);
+        assert!(reopened.trusted_user_turn_text(&chat,&old_turn).is_none());
+        assert_eq!(fs::read_to_string(root.join("conversation-index.json")).unwrap(),index);
+        drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn recovers_catalog_activity_after_book_commit_without_replaying_effects(){
+        let root=tmp();
+        let chat_id;
+        {
+            let s=ChatStore::open(&root).unwrap();
+            chat_id=s.create_chat().unwrap().chat_id;
+            s.append_user(&chat_id,"Durable original").unwrap();
+        }
+        // Emulate power loss between SQLite book commit and a separate
+        // Library activity commit. The immutable book is source of truth.
+        let index=root.join("ansf/library.db");
+        let conn=Connection::open(&index).unwrap();
+        conn.execute("UPDATE ansf_desktop_chats SET last_event_seq=0
+                      WHERE chat_id=?1",[&chat_id]).unwrap();
+        drop(conn);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.history(&chat_id).unwrap().len(),1);
+        let conn=Connection::open(index).unwrap();
+        let last:i64=conn.query_row(
+            "SELECT last_event_seq FROM ansf_desktop_chats WHERE chat_id=?1",
+            [&chat_id],|r|r.get(0)).unwrap();
+        assert!(last>=1);
+        drop(conn);drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn flat_r14_no_index_is_visible_without_new_permission(){
+        let root=tmp();
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("chats.jsonl"),
+            "{\"role\":\"user\",\"text\":\"Old R14 message\"}\n").unwrap();
+        let store=ChatStore::open(&root).unwrap();
+        let (chats,_)=store.list().unwrap();
+        assert_eq!(chats.len(),1);
+        assert_eq!(store.history(&chats[0].chat_id).unwrap()[0].text,
+            "Old R14 message");
+        assert!(store.latest_authenticated_user_turn_id(&chats[0].chat_id).is_none());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
     }
 }
