@@ -152,6 +152,20 @@ fn uninheritable(raw: HANDLE) -> Result<(), SupervisorError> {
         Ok(())
     }
 }
+// Safe fixed-purpose native fault evidence. The numeric process exit status
+// is never used to grant access or declare containment; debug acceptance only.
+fn native_lsp_exit_code(process: HANDLE) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        let mut code = 0u32;
+        if unsafe { GetExitCodeProcess(process, &mut code) } != 0 {
+            eprintln!("PROTECTED_LSP_NATIVE_EXIT_CODE={code}");
+        }
+    }
+}
+
 fn nul_stderr() -> Result<Handle, SupervisorError> {
     let mut attrs = SECURITY_ATTRIBUTES {
         nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -327,6 +341,7 @@ fn start_writer(
                     } == 0
                         || written as usize != part.len()
                     {
+                        native_lsp_trace("writer_native_write_denied");
                         result = Err(io::Error::last_os_error());
                         break;
                     }
@@ -359,15 +374,25 @@ struct WindowsLspProcess {
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()> {
-        if bytes.is_empty()
-            || bytes.len() > MAX_LSP_STDIO_WRITE
-            || !self.lease.alive()
-            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "untrusted LSP stopped",
-            ));
+        if bytes.is_empty() || bytes.len() > MAX_LSP_STDIO_WRITE {
+            native_lsp_trace("outbound_frame_denied");
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        if !self.lease.alive() {
+            native_lsp_trace("scm_lease_lost_before_write");
+            return Err(io::ErrorKind::BrokenPipe.into());
+        }
+        match unsafe { WaitForSingleObject(self.process.0, 0) } {
+            WAIT_TIMEOUT => {}
+            WAIT_OBJECT_0 => {
+                native_lsp_trace("child_exited_before_write");
+                native_lsp_exit_code(self.process.0);
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            _ => {
+                native_lsp_trace("process_wait_denied_before_write");
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
         }
         let (tx, rx) = mpsc::channel();
         self.write_queue
@@ -386,6 +411,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
         let began = Instant::now();
         while began.elapsed() < timeout {
             if !self.lease.alive() {
+                native_lsp_trace("scm_lease_lost_before_read");
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
             let mut available = 0u32;
@@ -400,6 +426,8 @@ impl RestrictedLspProcess for WindowsLspProcess {
                 )
             } == 0
             {
+                native_lsp_trace("stdout_peek_failed");
+                native_lsp_exit_code(self.process.0);
                 return Err(io::Error::last_os_error());
             }
             if available > 0 {
@@ -415,12 +443,16 @@ impl RestrictedLspProcess for WindowsLspProcess {
                     )
                 } == 0
                 {
+                    native_lsp_trace("stdout_read_failed");
+                    native_lsp_exit_code(self.process.0);
                     return Err(io::Error::last_os_error());
                 }
                 data.truncate(read as usize);
                 return Ok(data);
             }
             if unsafe { WaitForSingleObject(self.process.0, 0) } == WAIT_OBJECT_0 {
+                native_lsp_trace("child_exited_before_read");
+                native_lsp_exit_code(self.process.0);
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
             thread::sleep(Duration::from_millis(20));
