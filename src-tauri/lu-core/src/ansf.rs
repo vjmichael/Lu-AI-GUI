@@ -472,6 +472,29 @@ impl AnsfStore {
         Ok((rows,has_more))
     }
 
+    /// Forward cursor for the independently navigable history pane. Nothing
+    /// newer is inferred from a summary; each page reads original ANSF rows.
+    pub fn page_after(
+        &self,session_id:&str,after_id:i64,limit:usize
+    )->Result<(Vec<Entry>,bool),AnsfError>{
+        if !valid_id(session_id)||after_id<0||limit==0||limit>64{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT id,session_id,chapter_id,message_id,role,summary,content
+             FROM ansf_entries
+             WHERE session_id=?1 AND id>?2 AND role IN ('user','assistant')
+             ORDER BY id ASC LIMIT ?3"
+        )?;
+        let mut rows=stmt.query_map(
+            params![session_id,after_id,(limit+1) as i64],Self::map_entry
+        )?.collect::<Result<Vec<_>,_>>()?;
+        let has_more=rows.len()>limit;
+        rows.truncate(limit);
+        Ok((rows,has_more))
+    }
+
     /// Local book search. A separate, future Library index will locate books;
     /// this search narrows to exact archived entries within this SQLite file.
     pub fn search(

@@ -3519,6 +3519,14 @@ fn lu_m3_history_page(
     state.chats.original_history_page(&chat_id,&source_chat_id,before_entry_id,limit)
 }
 #[tauri::command]
+fn lu_m3_history_page_after(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_chat_id:String,
+    after_entry_id:i64,limit:usize
+)->Result<chat_store::OriginalHistoryForwardPage,String>{
+    state.chats.original_history_after(&chat_id,&source_chat_id,after_entry_id,limit)
+}
+#[tauri::command]
 fn lu_m3_source_text_page(
     state:State<'_,Arc<DesktopState>>,
     chat_id:String,source_id:String,
@@ -6958,6 +6966,7 @@ pub fn run() {
             lu_m3_recall,
             lu_m3_read_source,
             lu_m3_history_page,
+            lu_m3_history_page_after,
             lu_m3_source_text_page,
             lu_m3_operational_inventory,
             lu_m3_remember_asset,

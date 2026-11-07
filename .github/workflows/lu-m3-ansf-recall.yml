@@ -12,7 +12,8 @@ on:
       - 'lu-desktop/tests/m3-ansf-recall.test.mjs'
       - '.github/workflows/lu-m3-ansf-recall.yml'
       - 'src-tauri/lu-core/src/ansf*.rs'
-      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs lu-desktop/tests/m3-operational-assets.test.mjs lu-desktop/tests/m3-windowed-chat.test.mjs lu-desktop/tests/m3-continuity-bridge.test.mjs'
+      - 'lu-desktop/tests/m3-*.test.mjs'
+      - 'lu-desktop/web/history_window_geometry.mjs'
       - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
@@ -51,8 +52,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_source_ids::tests -- --nocapture
       - name: Test M3-S1 native SQLite vector index and S2 rank fusion
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_semantic::tests -- --nocapture
-      - name: Verify M3 and M3-S semantic source/UI contracts
-        run: node --test lu-desktop/tests/m3-ansf-recall.test.mjs lu-desktop/tests/m3-semantic-contract.test.mjs
+      - name: Verify M3 history geometry, semantic, assets and continuity contracts
+        run: node --test lu-desktop/tests/m3-*.test.mjs
   desktop-windows-compile:
     runs-on: windows-2022
     timeout-minutes: 55

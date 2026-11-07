@@ -1,3 +1,7 @@
+## M3 P0 hot scroll improvement — 2026-11-07 (SOURCE COMMITTED; NATIVE/INSTALLED PENDING)
+
+Stable-sequence viewport anchoring across page eviction, resume exact source cursor after chat switch, bounded independent History Library forward/back pagination, 192 displayed row cap, synthetic height/10k-row tests plus 520 original-entry native restart tests. CI and real installed Windows scroll acceptance pending. See [M3](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
 ## M3 prior Continuity Plane desktop bridge — 2026-11-07 (SOURCE/CI PENDING)
 
 Reused existing immutable Lu Core ContinuityStore, wired host-owned SQLite storage; native-approved source-linked save and owner-scoped cross-chat latest-task recall in independent History Library pane; completed work, blockers and next action persist after restart; no recalled source/effect grant. Production portable native source tests and CI contract submitted. Automatic resume, verified procedural action receipts and CCM still open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).

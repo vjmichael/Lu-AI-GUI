@@ -342,6 +342,51 @@ mod m3_independent_history_acceptance{
         drop(store);fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn history_hot_scroll_both_directions_across_many_original_pages(){
+        let root=fixture();
+        let store=ChatStore::open(&root).unwrap();
+        let active=store.create_chat().unwrap().chat_id;
+        let other=store.create_chat().unwrap().chat_id;
+        for n in 0..520{
+            let size=if n%17==0{3000}else{47};
+            store.append_user(&other,&format!("{:04}:{}",n,"x".repeat(size))).unwrap();
+        }
+        let mut backwards=Vec::new();
+        let mut cursor=None;
+        loop{
+            let page=store.original_history_page(&active,&other,cursor,40).unwrap();
+            assert!(page.entries.len()<=40);
+            for row in page.entries.iter().rev(){
+                assert!(!backwards.contains(&row.source_id));
+                backwards.push(row.source_id.clone());
+            }
+            cursor=page.next_before_id;
+            if !page.has_more{break}
+        }
+        assert_eq!(backwards.len(),520);
+        let mut forwards=Vec::new();
+        let mut after=0i64;
+        loop{
+            let page=store.original_history_after(&active,&other,after,40).unwrap();
+            assert!(page.entries.len()<=40);
+            for row in &page.entries{
+                assert!(!forwards.contains(&row.source_id));
+                forwards.push(row.source_id.clone());
+            }
+            if !page.has_more{break}
+            after=page.next_after_id.unwrap();
+        }
+        assert_eq!(forwards.len(),520);
+        assert_eq!(forwards,backwards.into_iter().rev().collect::<Vec<_>>());
+        assert_eq!(store.history(&active).unwrap().len(),0);
+        assert!(store.original_history_after("not_a_chat",&other,0,20).is_err());
+        assert!(store.original_history_after(&active,&other,-1,20).is_err());
+        drop(store);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.original_history_after(&active,&other,0,40).unwrap().entries.len(),40);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn original_source_reader_chunks_long_text_without_minting_authority(){
         let root=fixture();let store=ChatStore::open(&root).unwrap();
         let source=store.create_chat().unwrap().chat_id;

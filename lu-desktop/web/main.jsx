@@ -11,6 +11,7 @@ import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
+import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -32,6 +33,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [entries,setEntries]=useState([]);
   const [before,setBefore]=useState(null);
   const [hasMore,setHasMore]=useState(false);
+  const [hasNewer,setHasNewer]=useState(false);
   const [query,setQuery]=useState('');
   const [matches,setMatches]=useState([]);
   const [reading,setReading]=useState(null);
@@ -54,11 +56,11 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
 
   const requests=useRef(0);
   const scrollRef=useRef(null);
-  const prependHeight=useRef(null);
+  const pendingPaneAnchor=useRef(null);
   useEffect(()=>{
     if(!activeChatId||!browseChatId)return;
     const request=++requests.current;
-    setEntries([]);setBefore(null);setHasMore(false);
+    setEntries([]);setBefore(null);setHasMore(false);setHasNewer(false);
     setReading(null);setError('');setBusy(true);
     invoke('lu_m3_history_page',{
       chatId:activeChatId,sourceChatId:browseChatId,
@@ -72,28 +74,76 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     }).finally(()=>{if(request===requests.current)setBusy(false)});
     return ()=>{requests.current+=1;};
   },[activeChatId,browseChatId]);
+  const PANE_VISIBLE_ROWS=192;
+  function originalEntryNumber(hit){
+    const id=Number(hit?.sourceId?.slice(hit.sourceId.lastIndexOf(':')+1));
+    if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid canonical ANSF source sequence');
+    return id;
+  }
+  function mergeOriginalPages(existing,incoming,direction){
+    const byId=new Map();
+    for(const entry of [...existing,...incoming]){
+      originalEntryNumber(entry);
+      byId.set(entry.sourceId,entry);
+    }
+    const sorted=[...byId.values()].sort((x,y)=>originalEntryNumber(x)-originalEntryNumber(y));
+    const evicted=sorted.length>PANE_VISIBLE_ROWS;
+    return {rows:direction==='older'
+      ?sorted.slice(0,PANE_VISIBLE_ROWS):sorted.slice(-PANE_VISIBLE_ROWS),evicted};
+  }
   async function older(){
     if(!hasMore||!before||busy||!activeChatId)return;
     const request=++requests.current;setBusy(true);setError('');
-    prependHeight.current=scrollRef.current?.scrollHeight??null;
+    pendingPaneAnchor.current=captureHistoryAnchor(scrollRef.current);
     try{
       const page=await invoke('lu_m3_history_page',{
         chatId:activeChatId,sourceChatId:browseChatId,
         beforeEntryId:before,limit:24
       });
       if(request!==requests.current)return;
-      setEntries(items=>[...page.entries,...items]);
+      const merged=mergeOriginalPages(entries,page.entries,'older');
+      setEntries(merged.rows);
       setBefore(page.nextBeforeId);setHasMore(page.hasMore);
+      if(merged.evicted)setHasNewer(true);
     }catch(e){
-      prependHeight.current=null;
+      pendingPaneAnchor.current=null;
       if(request===requests.current)setError('Older page unavailable: '+String(e));
     }finally{if(request===requests.current)setBusy(false)}
   }
+  async function newer(){
+    if(!hasNewer||busy||!activeChatId||!entries.length)return;
+    const request=++requests.current;setBusy(true);setError('');
+    pendingPaneAnchor.current=captureHistoryAnchor(scrollRef.current);
+    const sourceId=originalEntryNumber(entries.at(-1));
+    try{
+      const page=await invoke('lu_m3_history_page_after',{
+        chatId:activeChatId,sourceChatId:browseChatId,
+        afterEntryId:sourceId,limit:24
+      });
+      if(request!==requests.current)return;
+      const merged=mergeOriginalPages(entries,page.entries,'newer');
+      setEntries(merged.rows);
+      setHasNewer(page.hasMore);
+      if(merged.evicted){
+        setBefore(originalEntryNumber(merged.rows[0]));
+        setHasMore(true);
+      }
+    }catch(e){
+      pendingPaneAnchor.current=null;
+      if(request===requests.current)setError('Newer page unavailable: '+String(e));
+    }finally{if(request===requests.current)setBusy(false)}
+  }
+  function onHistoryScroll(){
+    const el=scrollRef.current;
+    if(!el||busy)return;
+    if(el.scrollTop<140&&hasMore)void older();
+    else if(el.scrollHeight-el.scrollTop-el.clientHeight<140&&hasNewer)void newer();
+  }
   useLayoutEffect(()=>{
     const el=scrollRef.current;
-    if(el&&prependHeight.current!==null){
-      el.scrollTop+=el.scrollHeight-prependHeight.current;
-      prependHeight.current=null;
+    if(el&&pendingPaneAnchor.current!==null){
+      restoreHistoryAnchor(el,pendingPaneAnchor.current);
+      pendingPaneAnchor.current=null;
     }
   },[entries]);
   async function search(e){
@@ -303,16 +353,19 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
         </article>)}
       </div>
     </details>
-    <div className="ansfHistoryScroll" ref={scrollRef}>
+    <div className="ansfHistoryScroll" ref={scrollRef} onScroll={onHistoryScroll}>
       {hasMore&&<button type="button" onClick={()=>void older()} disabled={busy}>
         {busy?'Loading…':'Load older page'}</button>}
-      {entries.map(entry=><article className="ansfHistoryEntry" key={entry.sourceId}>
+      {entries.map(entry=><article className="ansfHistoryEntry" key={entry.sourceId}
+        data-ansf-seq={originalEntryNumber(entry)}>
         <small>{entry.role==='user'?'You':'Lu'} · {entry.chatTitle}</small>
         <p>{entry.excerpt}{entry.truncated?' …':''}</p>
         <button type="button" className="subtleButton" disabled={busy}
           onClick={()=>void openChecked(entry.sourceId)}>Read full original</button>
         <code>{entry.sourceId}</code>
       </article>)}
+      {hasNewer&&<button type="button" onClick={()=>void newer()} disabled={busy}>
+        {busy?"Loading…":"Load newer original page"}</button>}
       {!entries.length&&!busy&&<small>No completed original entries on this page.</small>}
       {matches.length>0&&<section aria-label="Historical search results">
         <h3>Matching originals</h3>
@@ -1682,7 +1735,7 @@ function App() {
     setFolders(list.folders);
     return list.chats;
   }
-  const MAX_VISIBLE_CHAT_ROWS=192;
+  const MAX_VISIBLE_CHAT_ROWS=MAX_HISTORY_ROWS;
   async function loadLatestUiHistory(id){
     const page=await invoke('lu_history_window',{
       chatId:id,cursor:null,direction:'older',limit:64
@@ -1694,26 +1747,48 @@ function App() {
     }
     return page.entries;
   }
+  // Reopen the original source near its remembered stable-ID cursor rather
+  // than applying stale absolute pixel offsets to a different loaded window.
+  async function loadRememberedUiHistory(id){
+    const remembered=scrollByChat.current.get(id);
+    const anchor=remembered?.anchor;
+    if(!remembered?.follow&&Number.isSafeInteger(anchor?.seq)&&anchor.seq>0){
+      const [page,newer]=await Promise.all([
+        invoke('lu_history_window',{
+          chatId:id,cursor:anchor.seq+1,direction:'older',limit:64
+        }),
+        invoke('lu_history_window',{
+          chatId:id,cursor:anchor.seq,direction:'newer',limit:1
+        })
+      ]);
+      if(requestedChat.current===id){
+        setHistoryWindow({
+          older:page.nextCursor,hasOlder:page.hasMore,
+          hasNewer:newer.entries.length>0
+        });
+      }
+      return page.entries;
+    }
+    return loadLatestUiHistory(id);
+  }
   async function loadOlderUiHistory(){
     const id=currentChat.current;
     if(!id||loadingWindow.current||!historyWindow.hasOlder||
        historyWindow.older===null)return;
     loadingWindow.current=true;
-    const el=transcriptRef.current;
-    const oldHeight=el?.scrollHeight??0;
-    const oldTop=el?.scrollTop??0;
+    const anchor=captureHistoryAnchor(transcriptRef.current);
     try{
       const page=await invoke('lu_history_window',{
         chatId:id,cursor:historyWindow.older,direction:'older',limit:48
       });
       if(currentChat.current!==id)return;
-      const combined=[...page.entries,...history];
-      const removed=combined.length>MAX_VISIBLE_CHAT_ROWS;
-      pendingPrepend.current={oldHeight,oldTop};
-      setHistory(combined.slice(0,MAX_VISIBLE_CHAT_ROWS));
+      const merged=mergeHistoryWindow(history,page.entries,'older',MAX_VISIBLE_CHAT_ROWS);
+      pendingPrepend.current={chatId:id,anchor};
+      followOutput.current=false;
+      setHistory(merged.rows);
       setHistoryWindow(prev=>({
         older:page.nextCursor,hasOlder:page.hasMore,
-        hasNewer:prev.hasNewer||removed
+        hasNewer:prev.hasNewer||merged.evictedNewer
       }));
     }catch(e){setError('Previous history page unavailable: '+String(e))}
     finally{loadingWindow.current=false}
@@ -1723,18 +1798,20 @@ function App() {
     const last=history.at(-1)?.seq;
     if(!id||!last||loadingWindow.current||!historyWindow.hasNewer)return;
     loadingWindow.current=true;
+    const anchor=captureHistoryAnchor(transcriptRef.current);
     try{
       const page=await invoke('lu_history_window',{
         chatId:id,cursor:last,direction:'newer',limit:48
       });
       if(currentChat.current!==id)return;
-      const combined=[...history,...page.entries];
-      const trimmed=combined.length>MAX_VISIBLE_CHAT_ROWS;
-      const windowRows=combined.slice(-MAX_VISIBLE_CHAT_ROWS);
-      setHistory(windowRows);
+      const merged=mergeHistoryWindow(history,page.entries,'newer',MAX_VISIBLE_CHAT_ROWS);
+      pendingPrepend.current={chatId:id,anchor};
+      followOutput.current=false;
+      setHistory(merged.rows);
       setHistoryWindow(prev=>({
-        older:trimmed?windowRows[0]?.seq:prev.older,
-        hasOlder:prev.hasOlder||trimmed,hasNewer:page.hasMore
+        older:merged.evictedOlder?merged.rows[0]?.seq:prev.older,
+        hasOlder:prev.hasOlder||merged.evictedOlder,
+        hasNewer:page.hasMore
       }));
     }catch(e){setError('Next history page unavailable: '+String(e))}
     finally{loadingWindow.current=false}
@@ -1744,14 +1821,15 @@ function App() {
       // Capture the outgoing reading position before the asynchronous read.
       const el = transcriptRef.current;
       if (el) scrollByChat.current.set(currentChat.current || 'new', {
-        top: el.scrollTop, follow: followOutput.current
+        top: el.scrollTop, follow: followOutput.current,
+        anchor: captureHistoryAnchor(el)
       });
       pendingDrafts.current.set(currentChat.current || 'new', {
         prompt: draftText.current, images: draftImages.current, files: draftFiles.current
       });
     }
     requestedChat.current = id;
-    const entries = await loadLatestUiHistory(id);
+    const entries = await loadRememberedUiHistory(id);
     if (requestedChat.current !== id) return;
     currentChat.current = id;
     const draft = pendingDrafts.current.get(id) || {prompt:'',images:[],files:[]};
@@ -1890,19 +1968,20 @@ function App() {
     if (!el) return;
     const stored = scrollByChat.current.get(chatId || 'new');
     followOutput.current = stored?.follow ?? true;
-    el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
+    if(stored?.anchor&&!stored.follow)restoreHistoryAnchor(el,stored.anchor);
+    else el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
     setAtBottom(followOutput.current);
   }, [chatId]);
   useLayoutEffect(() => {
     const el = transcriptRef.current;
-    if (!el || !followOutput.current) return;
+    if (!el || !followOutput.current || pendingPrepend.current) return;
     el.scrollTop = el.scrollHeight;
   }, [history, visibleStream, chatId]);
   useLayoutEffect(()=>{
     const el=transcriptRef.current;
     const pending=pendingPrepend.current;
     if(!el||!pending)return;
-    el.scrollTop=pending.oldTop+(el.scrollHeight-pending.oldHeight);
+    if(pending.chatId===currentChat.current)restoreHistoryAnchor(el,pending.anchor);
     followOutput.current=false;
     pendingPrepend.current=null;
   },[history]);
@@ -3396,7 +3475,7 @@ function App() {
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {displayedHistory.map((entry,i) => <div key={entry.seq??i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
+        {displayedHistory.map((entry,i) => <div key={entry.seq??i} data-ansf-seq={entry.seq??undefined} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
           <MessageText text={entry.text} role={entry.role}/></div>)}
         {historyWindow.hasNewer&&<button type="button" className="subtleButton"

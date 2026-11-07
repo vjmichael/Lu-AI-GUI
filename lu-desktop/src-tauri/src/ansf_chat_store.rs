@@ -65,6 +65,14 @@ pub struct OriginalHistoryPage{
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct OriginalHistoryForwardPage{
+    pub source_chat_id:String,
+    pub entries:Vec<RecallHit>,
+    pub next_after_id:Option<i64>,
+    pub has_more:bool,
+}
 pub struct OriginalTextPage{
     pub source_id:String,
     pub source_chat_id:String,
@@ -769,6 +777,30 @@ impl ChatStore {
         Ok(OriginalHistoryPage{
             source_chat_id:source_chat.to_owned(),entries,
             next_before_id,has_more,
+        })
+    }
+
+    /// Cursor-forward original entry reader, bounded and independently
+    /// authenticated; does not navigate or modify the active conversation.
+    pub fn original_history_after(
+        &self,active_chat:&str,source_chat:&str,after_id:i64,limit:usize
+    )->Result<OriginalHistoryForwardPage,String>{
+        self.require(active_chat)?;
+        if limit==0||limit>40{return Err("History page size must be 1..40".into())}
+        let book=self.require(source_chat)?;
+        let (entries,has_more)=book.page_after(source_chat,after_id,limit)
+            .map_err(to_err)?;
+        let title:String={
+            let conn=self.catalog.lock().map_err(to_err)?;
+            conn.query_row("SELECT title FROM ansf_desktop_chats WHERE chat_id=?1",
+                [source_chat],|r|r.get(0)).map_err(to_err)?
+        };
+        let next_after_id=if has_more{entries.last().map(|e|e.id)}else{None};
+        let entries=entries.into_iter()
+            .map(|entry|as_recall_hit(&entry,&title,720))
+            .collect::<Result<Vec<_>,_>>()?;
+        Ok(OriginalHistoryForwardPage{
+            source_chat_id:source_chat.to_owned(),entries,next_after_id,has_more
         })
     }
 
