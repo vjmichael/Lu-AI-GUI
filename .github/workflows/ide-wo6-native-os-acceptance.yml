@@ -151,3 +151,54 @@ jobs:
           done
       - name: Label evidence
         run: echo "Native test-only kernel acceptance, not release signed debugger/installed app."
+
+  native-linux-protected-cargo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install root-owned fixed offline Cargo and Bubblewrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo
+          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do
+            test -f "$file"
+            test "$(stat -c %u "$file")" = 0
+          done
+          test -x /usr/bin/systemd-run
+      - name: Compile actual delegated cgroup helper and Cargo acceptance fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_build_host
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance
+      - name: Real isolated Cargo check, test and cancellation with kernel receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_build_host)"
+          for mode in --check --test --cancel; do
+            rc=0
+            sudo /usr/bin/systemd-run --wait --collect --pipe \
+              --unit=lu-ide-delegated \
+              --property=Type=exec \
+              --property=User=runner \
+              --property=Group=runner \
+              --property='Delegate=cpu memory pids' \
+              --property=DelegateSubgroup=lu-ide-host \
+              "$host" "$mode" || rc=$?
+            if [[ "$rc" -ne 0 ]]; then
+              echo 'DENIED: actual delegated Linux Cargo OS evidence failed'
+              sudo systemctl show lu-ide-delegated.service --no-pager --property=Result,ExecMainStatus,Delegate,DelegateSubgroup || true
+              sudo journalctl -u lu-ide-delegated.service --no-pager -n 40 --output=cat || true
+              exit "$rc"
+            fi
+            echo "PASS: genuine delegated Linux Cargo $mode, journal restart"
+          done
+      - name: Scope
+        run: echo "Native OS check/test/cancel fixture only; installed desktop and release toolchain acceptance remain independent."
