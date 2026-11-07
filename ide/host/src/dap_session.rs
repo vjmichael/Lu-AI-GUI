@@ -156,6 +156,10 @@ impl DapSession {
             "launch",
             json!({
                 "program": program, "stopOnEntry": true, "noDebug": false,
+                // LLVM LLDB-DAP defaults disableASLR=true. In a restricted
+                // Bwrap/AppArmor namespace that tries forbidden personality(2)
+                // ASLR disabling. Leave kernel ASLR ON; do not widen privileges.
+                "disableASLR": false,
                 "args": [], "env": {}, "runInTerminal": false
             }),
         )?;
@@ -589,6 +593,12 @@ mod tests {
             .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
             .unwrap();
         assert!(std::str::from_utf8(&wire).unwrap().contains("stopOnEntry"));
+        // Preserve ASLR rather than asking the confined debugger to invoke
+        // prohibited personality(ADDR_NO_RANDOMIZE), as LLVM itself recommends
+        // for isolated native test environments.
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains("\\"disableASLR\\":false"));
         assert_eq!(session.phase(), DapPhase::Launching);
         let observed = session
             .receive(&framed(json!({
