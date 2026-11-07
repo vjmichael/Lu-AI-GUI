@@ -98,6 +98,22 @@ fn read_bounded(root:&Dir,path:&str)->Result<Vec<u8>,ToolFailure>{
       after.modified().ok()!=before.modified().ok(){
         return Err(invalid("ARTIFACT_CHANGED_OR_EMPTY"))
     }
+    // A source may be replaced between opening and publication of an evidence
+    // receipt. Reopen under the SAME capability root and compare exact bytes;
+    // metadata/timestamps alone are insufficient for stable source identity.
+    let mut second=root.open(path).map_err(|_|invalid("ARTIFACT_CHANGED_OR_EMPTY"))?;
+    let second_before=second.metadata().map_err(|_|invalid("ARTIFACT_CHANGED_OR_EMPTY"))?;
+    if !second_before.is_file()||second_before.len()!=before.len(){
+        return Err(invalid("ARTIFACT_CHANGED_OR_EMPTY"))
+    }
+    let mut confirmation=Vec::with_capacity(data.len());
+    (&mut second).take(MAX_ARTIFACT_BYTES as u64+1).read_to_end(&mut confirmation)
+        .map_err(|_|invalid("ARTIFACT_CHANGED_OR_EMPTY"))?;
+    let second_after=second.metadata().map_err(|_|invalid("ARTIFACT_CHANGED_OR_EMPTY"))?;
+    if confirmation!=data||second_after.len()!=before.len()||
+      second_before.modified().ok()!=second_after.modified().ok(){
+        return Err(invalid("ARTIFACT_CHANGED_OR_EMPTY"))
+    }
     Ok(data)
 }
 fn inspect_zip(bytes:&[u8],kind:&str)->Result<(u32,&'static str),ToolFailure>{
