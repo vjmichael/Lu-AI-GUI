@@ -109,7 +109,7 @@ pub fn project_goal_events(events:&[GoalEvent])->Result<GoalSnapshot,AnsfError>{
                 context.revision_event_id=Some(event.event_id.clone());
             },
             GoalEventKind::AskQuestion=>{
-                if context.goal_id.as_deref()!=Some(&event.goal_id)||
+                if context.goal_id.as_deref()!=Some(event.goal_id.as_str())||
                    context.questions.len()>=MAX_QUESTIONS||
                    context.questions.iter().any(|q|Some(q.question_id.as_str())==
                        event.question_id.as_deref()){
@@ -124,7 +124,7 @@ pub fn project_goal_events(events:&[GoalEvent])->Result<GoalSnapshot,AnsfError>{
                 });
             },
             GoalEventKind::RespondQuestion=>{
-                if context.goal_id.as_deref()!=Some(&event.goal_id){
+                if context.goal_id.as_deref()!=Some(event.goal_id.as_str()){
                     return Err(AnsfError::InvalidInput)
                 }
                 let q=context.questions.iter_mut().find(|q|
