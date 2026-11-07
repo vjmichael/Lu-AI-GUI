@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ProtectedBuildDebug')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -197,6 +197,34 @@ try {
       Require 'Stack: observed'
       Require 'Kernel tree cleanup: reported by protected supervisor'
       Write-Host 'WO8_INSTALLED_NATIVE_PROTECTED_BUILD_AND_DEBUG_INSPECTION=PASS'
+    }
+    if ($Scenario -eq 'ExternalConflict') {
+      # A real external editor replaces the file after the CodeMirror draft is
+      # modified, but before the human presses Save in the installed WebView.
+      $source=Join-Path $fixed 'main.rs'
+      $saved=[IO.File]::ReadAllText($source)
+      if ($saved.Contains('WO8_CONFLICT')) { Deny 'fixture_already_has_conflict_marker' }
+      $editor=Find-Control 'Source editor text' ''
+      if (!$editor.Current.IsKeyboardFocusable) { Deny 'native_editor_not_focusable' }
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// WO8_UNSAVED_LOCAL_DRAFT')
+      Start-Sleep -Milliseconds 650
+      if ([IO.File]::ReadAllText($source) -ne $saved) { Deny 'unsaved_code_mutated_source' }
+      $outside=$saved+"\`n// WO8_CONFLICT_EXTERNAL_UPDATE\`n"
+      [IO.File]::WriteAllText($source,$outside)
+      $externalHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      Click 'Save · Ctrl+S'
+      # The native save must detect the revision mismatch instead of replacing
+      # an external writer, and it must keep the local unsaved editor draft.
+      [void](Find-Control 'File changed on disk' '' 15)
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $externalHash) {
+        Deny 'external_changes_were_overwritten'
+      }
+      Require 'Unsaved'
+      $stillOpen=Find-Control 'Source editor text' ''
+      if (!$stillOpen.Current.IsKeyboardFocusable) { Deny 'conflicted_draft_was_discarded' }
+      Write-Host 'WO8_NATIVE_EXTERNAL_SOURCE_CONFLICT_DENIED_AND_UNSAVED_DRAFT_PRESERVED=PASS'
     }
     if ($Scenario -eq 'EditorPersistence') {
       $source=Join-Path $fixed 'main.rs'
