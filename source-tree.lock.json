@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ed01694f55d15435a163ef0f8b726e14610d8ed2",
+  "sourceCommitBeforeLock": "c87c061014db1dfdaae3abeddeb678a358b4f648",
   "trackedFileCount": 514,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "301a5e185da078a056947d406d160b6a460d944d"
+      "blob": "0db59be7cd89a79524b952603dd40adcfa601428"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "4a6e045e0ad38ad620899f76f2b6f19215ea14f0"
+      "blob": "c9f814866739d7687ad9b57bdd6595e7d3d48cc1"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -1317,7 +1317,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_observe_egress.rs",
-      "blob": "1a346999f89ca02f79c010fa5ef74ba6ef5b14d2"
+      "blob": "f7e2b1bbe00482e5d5416a2510d413e1115d7382"
     },
     {
       "path": "src-tauri/lu-core/src/native_observe_image_admission.rs",
