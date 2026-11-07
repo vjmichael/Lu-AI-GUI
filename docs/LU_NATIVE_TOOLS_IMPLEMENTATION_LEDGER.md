@@ -1,3 +1,5 @@
+**P07 evidence identity newline test correction (2026-11-06):** Real two-OS native P07 CI found an older EvidenceLedger test used a literal `\\n` source ID while expecting control-character rejection. Corrected fixture to actual Rust `\n` newline escape; leaves hardened native bounded ID validation intact. New P07 citation formatter tests themselves passed on both Windows/Linux prior to this patch. [P07](LU_P07_RESEARCH_STYLES.md).
+
 **P07 RESEARCH-STYLE-01 started (2026-11-06):** Native host-only, edition-versioned scholarly citation formatting stacked on P06 PR #72 in draft P07 PR #77. Basic books/journals with typed APA7, MLA9, Chicago18, Turabian9 and SBL2 profiles; actual EvidenceLedger source/author identity corroboration, bounded CSL-JSON export and explicit no-fabricated-pages/ancient abbreviations. Source/metadata detail completeness is disclosed, no automatic verified passage claim. Native Linux/Windows CI pending; complete CSL processor, specialized ancient texts and Research GUI/exports remain OPEN. [P07 details](LU_P07_RESEARCH_STYLES.md).
 
 # Lu Core native tools — implementation and acceptance ledger

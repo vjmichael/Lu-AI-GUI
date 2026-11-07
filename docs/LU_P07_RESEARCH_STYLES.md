@@ -30,3 +30,7 @@ All edition and example claims require verification against official manuals bef
 ## P07 source-bound authors and CSL-JSON-compatible export
 
 Further native source now cross-checks the exact ordered author list against the original discovered author identity that `EvidenceLedger::corroborate` previously matched to the trusted catalog. A model-substituted author cannot be rendered under the verified source ID. `export_csl_json` produces a structured, bounded CSL-JSON-compatible book/journal reference with authored title/URL, author name fields, explicit year and only supplied publisher/journal/volume/issue. It does **not** invent a page, ancient-text locator or SBL abbreviation. The `_lu_evidence` extension explicitly marks bibliographic/author identity corroborated while publication details, passages, pages and factual claims are **NOT independently verified** pending an enriched host catalog adapter. This structured export is a native function, not yet a Research GUI command or complete citeproc rendering.
+
+## P07 existing evidence-ledger regression repaired
+
+The original Research evidence unit test claimed a source ID containing a newline must be rejected, but passed the *literal* backslash and letter `n` instead. The metadata validator correctly rejects real control characters; the test had the wrong escape. Corrected it to a real Rust newline escape so the existing `EvidenceLedger::discovered_candidate` test verifies the intended fail-closed behavior. No broader identity syntax permissions were introduced.

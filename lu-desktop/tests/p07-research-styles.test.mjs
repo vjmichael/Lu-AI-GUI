@@ -45,3 +45,9 @@ test('P07 CSL JSON has ledger-verified author identity but discloses incomplete 
   assert.match(src,/csl_json_preserves_attested_identity_and_never_invents_locator/);
   assert.doesNotMatch(src,/"page":|page_locator:\s*Some/);
 });
+
+test('P07 existing evidence ledger rejects real newlines, not a literal backslash-n fixture',()=>{
+  const src=read('../../src-tauri/lu-core/src/web_research_evidence.rs');
+  assert.ok(src.includes('discovered_candidate("source-1\\nOTHER")'));
+  assert.doesNotMatch(src,/discovered_candidate\("source-1\\\\nOTHER"\)/);
+});

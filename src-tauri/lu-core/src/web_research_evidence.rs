@@ -1011,7 +1011,7 @@ mod tests {
         assert_eq!(stored.identifier,"doi:10.1000/example");
         assert_eq!(stored.title,"A Verified Study");
         assert_eq!(stored.author,"Jane Doe");
-        assert!(matches!(ledger.discovered_candidate("source-1\\nOTHER"),Err(EvidenceError::Invalid)));
+        assert!(matches!(ledger.discovered_candidate("source-1\nOTHER"),Err(EvidenceError::Invalid)));
         assert!(matches!(ledger.discovered_candidate("source-2"),Err(EvidenceError::Missing)));
         assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
     }

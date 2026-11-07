@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c37924b6e32b2eff0edc87c5e0262f8fe0229e82",
+  "sourceCommitBeforeLock": "10ec1c66bbcc4e7b6e0b75688ffd4afbc9ef8434",
   "trackedFileCount": 518,
   "files": [
     {
@@ -133,7 +133,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "647d915d75a5b9d91846b4dba0a0aaeb3a7b8e51"
+      "blob": "6af747b0a5a817eb715d1495c71c98165492c8f4"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/LU_P07_RESEARCH_STYLES.md",
-      "blob": "9c21ccfd51a5f854ff3c441b361d70e2146c3a8c"
+      "blob": "1b5f6976c55d523a144d6bd75bd8cd24ec190e83"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -653,7 +653,7 @@
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
-      "blob": "dd438a29b35b2901ab123c3fb9827da50003a628"
+      "blob": "e9d57ba1bd1ba58e3fb20fac8f75a42678869267"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -1545,7 +1545,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_research_evidence.rs",
-      "blob": "b4229891b1dfc54ac44d1133bc758a16b1e33aa1"
+      "blob": "2bfabb794b89cbd02fccee047dc55f85a82e8405"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_maturity.rs",
