@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ca0a5c15a31f055d867af492ecb36038688da13a",
+  "sourceCommitBeforeLock": "854ab9fb4bb06a9ae67949b18840504add80749b",
   "trackedFileCount": 506,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "c7755b580c6c616a44a8b6708b96b2439c058217"
+      "blob": "a255a9e1dd237fa65a14e9a17e31faf76333ada8"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "519f40f2ee727b30b4b9336dade67e047cae4664"
+      "blob": "d619fafc01b3c35fc4a6469c48be84edac99052e"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "3cba175b0957647569c33964588a0035154aedc6"
+      "blob": "f1013132e2fbad65f93428e91a3eedceba533f14"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "17715986dbdd1e51eae46e54d24c4ec49161c12f"
+      "blob": "6a44ad9306b4b1648c76f1005e95b33836bc0b15"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -1177,7 +1177,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "38fe0dc95604299554de217611e52309dc88e36a"
+      "blob": "4729aabe395341605ff60e028865033cbfb49c1d"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
