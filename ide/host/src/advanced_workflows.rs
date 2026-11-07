@@ -4,7 +4,7 @@
 use crate::IdeWorkspaceRegistry;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeSet, fs::{self, File, OpenOptions}, io::Write, path::Path};
+use std::{collections::BTreeSet, fs::{self, File, OpenOptions}, io::{Read, Write}, path::Path};
 
 const MAX_WORKFLOW_PROJECTS: usize = 8;
 const MAX_ARTIFACTS_PER_PROJECT: usize = 20;
@@ -58,6 +58,24 @@ pub struct WorkflowManifestExport {
     pub project_files_exported: bool,
     pub release_approved: bool,
     pub execution_performed: bool,
+}
+
+/// A ZIP produced only from independently hashed, fixed-discovery project
+/// artifacts. Archive creation does not certify executability, provenance or
+/// signed installed release acceptance.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowBundleExport {
+    pub schema_version: u32,
+    pub file_name: String,
+    pub sha256: String,
+    pub byte_length: u64,
+    pub artifact_count: usize,
+    pub source_fingerprint: String,
+    pub archive_format: &'static str,
+    pub executed_project_code: bool,
+    pub git_mutated: bool,
+    pub release_approved: bool,
 }
 
 fn fingerprint(projects: &[WorkflowProject]) -> Result<String, &'static str> {
@@ -226,6 +244,152 @@ impl IdeWorkspaceRegistry {
             project_files_exported: false,
             release_approved: false,
             execution_performed: false,
+        })
+    }
+
+    /// Export an actual portable, stored ZIP artifact bundle after explicit
+    /// native-folder selection. The host never loads source-defined scripts,
+    /// runs git CLI, or consults a package manifest for executable commands.
+    /// Every included file is re-read through its project directory capability
+    /// and independently rehashed before emission.
+    pub fn export_workflow_bundle(
+        &self,
+        project_ids: &[String],
+        expected_fingerprint: &str,
+        selected_folder: &Path,
+    ) -> Result<WorkflowBundleExport, &'static str> {
+        use crate::browser::{descend, validate_relative};
+        use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+
+        const MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
+        const MAX_SINGLE_BYTES: u64 = 64 * 1024 * 1024;
+        let current = self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
+        let meta = fs::symlink_metadata(selected_folder)
+            .map_err(|_| "WORKFLOW_BUNDLE_DEST_UNAVAILABLE")?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("WORKFLOW_BUNDLE_DEST_UNTRUSTED");
+        }
+        let folder = fs::canonicalize(selected_folder)
+            .map_err(|_| "WORKFLOW_BUNDLE_DEST_UNAVAILABLE")?;
+        for id in project_ids {
+            let root = self.registered_git_root(id)
+                .map_err(|_| "WORKFLOW_PROJECT_NOT_OPEN")?;
+            if folder.starts_with(root) {
+                return Err("WORKFLOW_BUNDLE_MUST_NOT_DIRTY_SOURCE");
+            }
+        }
+        let mut total = 0_u64;
+        let mut count = 0_usize;
+        // Stage and verify input bytes before creating any external output.
+        // At most 128 MiB of independently hashed project files is retained.
+        let mut staged = Vec::new();
+        for project in &current.projects {
+            let root = self.source_capability(&project.project_id)
+                .map_err(|_| "WORKFLOW_SOURCE_CAPABILITY_UNAVAILABLE")?;
+            for item in &project.artifacts {
+                if item.byte_length > MAX_SINGLE_BYTES
+                    || total.saturating_add(item.byte_length) > MAX_TOTAL_BYTES
+                {
+                    return Err("WORKFLOW_BUNDLE_BYTES_EXCEED_LIMIT");
+                }
+                let mut parts = validate_relative(&item.relative_path, false)
+                    .map_err(|_| "WORKFLOW_ARTIFACT_PATH_DENIED")?;
+                if item.relative_path.contains('\\') || item.relative_path.len() > 160 {
+                    return Err("WORKFLOW_ARTIFACT_NAME_UNSAFE");
+                }
+                let leaf = parts.pop().ok_or("WORKFLOW_ARTIFACT_PATH_DENIED")?;
+                let parent = descend(root.try_clone().map_err(|_| "WORKFLOW_SOURCE_UNAVAILABLE")?, &parts)
+                    .map_err(|_| "WORKFLOW_ARTIFACT_PARENT_UNAVAILABLE")?;
+                let before = parent.symlink_metadata(&leaf)
+                    .map_err(|_| "WORKFLOW_ARTIFACT_DISAPPEARED")?;
+                if !before.is_file() || before.file_type().is_symlink()
+                    || before.len() != item.byte_length
+                {
+                    return Err("WORKFLOW_ARTIFACT_CHANGED");
+                }
+                let mut input = parent.open(&leaf)
+                    .map_err(|_| "WORKFLOW_ARTIFACT_OPEN_DENIED")?;
+                let opened = input.metadata().map_err(|_| "WORKFLOW_ARTIFACT_OPEN_DENIED")?;
+                if !opened.is_file() || opened.len() != before.len() {
+                    return Err("WORKFLOW_ARTIFACT_CHANGED");
+                }
+                let mut bytes = Vec::new();
+                input.take(MAX_SINGLE_BYTES + 1).read_to_end(&mut bytes)
+                    .map_err(|_| "WORKFLOW_ARTIFACT_READ_FAILED")?;
+                let after = parent.symlink_metadata(&leaf)
+                    .map_err(|_| "WORKFLOW_ARTIFACT_CHANGED")?;
+                if after.file_type().is_symlink() || after.len() != before.len()
+                    || bytes.len() as u64 != item.byte_length
+                    || format!("{:x}", Sha256::digest(&bytes)) != item.sha256
+                {
+                    return Err("WORKFLOW_ARTIFACT_DIGEST_DRIFT");
+                }
+                total = total.saturating_add(bytes.len() as u64);
+                let entry = format!("projects/{}/{}", project.project_id, item.relative_path);
+                if entry.len() > 240 {
+                    return Err("WORKFLOW_ZIP_ENTRY_NAME_TOO_LONG");
+                }
+                count += 1;
+                staged.push((entry, bytes));
+            }
+        }
+        if count == 0 {
+            return Err("WORKFLOW_NO_VERIFIED_ARTIFACTS");
+        }
+        // Double-check the full native input snapshot just before publication.
+        self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
+        let name = format!("lu-ide-workflow-{}.zip", &current.fingerprint[..20]);
+        let path = folder.join(&name);
+        let output = OpenOptions::new().write(true).create_new(true).open(&path)
+            .map_err(|_| "WORKFLOW_BUNDLE_ALREADY_EXISTS_OR_DENIED")?;
+        let packaged = (|| -> Result<(), &'static str> {
+            let mut zip = ZipWriter::new(output);
+            let opts = || SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Stored)
+                .unix_permissions(0o644);
+            zip.start_file("workflow-manifest.json", opts())
+                .map_err(|_| "WORKFLOW_ZIP_HEADER_FAILED")?;
+            let manifest = serde_json::to_vec_pretty(&current)
+                .map_err(|_| "WORKFLOW_ZIP_MANIFEST_FAILED")?;
+            zip.write_all(&manifest).map_err(|_| "WORKFLOW_ZIP_WRITE_FAILED")?;
+            for (name, bytes) in &staged {
+                zip.start_file(name, opts())
+                    .map_err(|_| "WORKFLOW_ZIP_HEADER_FAILED")?;
+                zip.write_all(bytes).map_err(|_| "WORKFLOW_ZIP_WRITE_FAILED")?;
+            }
+            let output = zip.finish().map_err(|_| "WORKFLOW_ZIP_FINALIZE_FAILED")?;
+            output.sync_all().map_err(|_| "WORKFLOW_ZIP_SYNC_FAILED")?;
+            // Late Git/artifact change during ZIP assembly invalidates output.
+            self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
+            #[cfg(unix)]
+            File::open(&folder).and_then(|dir| dir.sync_all())
+                .map_err(|_| "WORKFLOW_ZIP_DIRECTORY_SYNC_FAILED")?;
+            Ok(())
+        })();
+        if let Err(code) = packaged {
+            let _ = fs::remove_file(&path);
+            return Err(code);
+        }
+        let mut reader = File::open(&path).map_err(|_| "WORKFLOW_ZIP_REOPEN_FAILED")?;
+        let size = reader.metadata().map_err(|_| "WORKFLOW_ZIP_STAT_FAILED")?.len();
+        let mut hasher = Sha256::new();
+        let mut chunk = [0u8; 64 * 1024];
+        loop {
+            let n = reader.read(&mut chunk).map_err(|_| "WORKFLOW_ZIP_DIGEST_FAILED")?;
+            if n == 0 { break; }
+            hasher.update(&chunk[..n]);
+        }
+        Ok(WorkflowBundleExport {
+            schema_version: 1,
+            file_name: name,
+            sha256: format!("{:x}", hasher.finalize()),
+            byte_length: size,
+            artifact_count: count,
+            source_fingerprint: current.fingerprint,
+            archive_format: "zip_stored_verified_artifacts_only",
+            executed_project_code: false,
+            git_mutated: false,
+            release_approved: false,
         })
     }
 
