@@ -92,7 +92,7 @@ class StagingTests(unittest.TestCase):
     def test_deny_casefold_destination_collision(self):
         self.data["files"].append(dict(self.data["files"][2]))
         self.data["files"][-1]["role"] = "runtime"
-        self.data["files"][-1]["destination"] = "RESOURCES/DEBUGGER/BIN/LLDB-DAP.EXE"
+        self.data["files"][-1]["destination"] = "resources/debugger/bin/lldb-dap.exe"
         self.deny("duplicate_casefold_destination")
 
     def test_deny_unlisted_binary_role(self):
