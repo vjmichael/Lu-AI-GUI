@@ -1712,7 +1712,7 @@ async fn lu_vision_run_probe(
     }).await.map_err(|_|"Vision native approval unavailable")?;
     if !approved{return Err("Vision probe cancelled by user".into());}
     let owner=Arc::clone(state.inner());
-    let result=tauri::async_runtime::spawn_blocking(move||{
+    let result=tauri::async_runtime::spawn_blocking(move|| -> Result<VisionCapabilityView,String> {
         use rand::seq::SliceRandom;
         use vision_context::{VisionProbeReceipt,PROBE_PROMPT,PROBE_COLORS};
         // A fresh random challenge order is important: an always-guessing
