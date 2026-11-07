@@ -105,7 +105,7 @@ impl LiveEvent{
                 self.call_id.is_none()&&self.tool_id.is_none()&&
                 (origin==LiveOrigin::LegacyObserved && self.user_turn_id.is_none() ||
                  origin==LiveOrigin::HostAuthenticated &&
-                 self.user_turn_id.as_deref().is_some_and(|s|opaque(s,"g-"))),
+                 self.user_turn_id.as_deref().is_none_or(|s|opaque(s,"g-"))),
             LiveKind::ReaderUser=>
                 !self.text.is_empty()&&
                 self.generation_id.is_some()&&self.user_turn_id.is_none()&&
@@ -318,6 +318,20 @@ impl AnsfStore{
                AND user_turn_id=?2 AND source_entry_id IS NOT NULL",
             params![session_id,turn_id],
             |r|Ok((r.get(0)?,r.get(1)?))
+        ).optional().map_err(Into::into)
+    }
+    /// Indexed latest human-origin authenticated user turn. No imported,
+    /// unauthenticated or Reader event ever appears in this result.
+    pub fn latest_authenticated_chat_turn(&self,session_id:&str)
+        ->Result<Option<(String,String)>,AnsfError>{
+        if !valid_session(session_id){return Err(AnsfError::InvalidInput)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        conn.query_row(
+            "SELECT user_turn_id,text FROM ansf_live_chat_events
+             WHERE session_id=?1 AND kind='user' AND origin='host'
+               AND user_turn_id IS NOT NULL AND source_entry_id IS NOT NULL
+             ORDER BY seq DESC LIMIT 1",
+            [session_id],|r|Ok((r.get(0)?,r.get(1)?))
         ).optional().map_err(Into::into)
     }
     pub fn authenticated_reader_turn(&self,session_id:&str,generation_id:&str,
