@@ -306,6 +306,45 @@ impl Drop for Cgroup {
     }
 }
 
+/// An independently readable kernel witness for the actual spawned PID.
+/// `pre_exec` moving the child is necessary but not sufficient evidence:
+/// refuse a forged/absent /proc identity or missing cgroup.procs membership
+/// before the supervisor can record a job as Running.
+fn require_kernel_child_membership(group: &Cgroup, pid: u32) -> Result<(), SupervisorError> {
+    if pid == 0 {
+        return Err(denied());
+    }
+    let proc_identity =
+        fs::read_to_string(format!("/proc/{pid}/cgroup")).map_err(|_| denied())?;
+    let mut v2 = proc_identity
+        .lines()
+        .filter_map(|line| line.strip_prefix("0::"));
+    let relative = v2.next().ok_or_else(denied)?;
+    if v2.next().is_some()
+        || !relative.starts_with('/')
+        || relative
+            .split('/')
+            .any(|component| component == "." || component == "..")
+    {
+        return Err(denied());
+    }
+    let kernel_root = fs::canonicalize(CGROUP_ROOT).map_err(|_| denied())?;
+    let observed = fs::canonicalize(kernel_root.join(relative.trim_start_matches('/')))
+        .map_err(|_| denied())?;
+    let expected = fs::canonicalize(&group.dir).map_err(|_| denied())?;
+    if observed != expected {
+        return Err(denied());
+    }
+    let procs = fs::read_to_string(group.dir.join("cgroup.procs")).map_err(|_| denied())?;
+    if !procs
+        .lines()
+        .any(|entry| entry.parse::<u32>().ok() == Some(pid))
+    {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 struct CgroupTerminator<'a> {
     group: &'a Cgroup,
     expected_job: &'a str,
@@ -607,8 +646,14 @@ pub fn execute_linux_worker(
         }
     };
     drop(proc_file);
-    // The child is already in cgroup before Bubblewrap starts, and cannot
-    // inherit host credentials from environment or file descriptors.
+    // The actual kernel must confirm the just-spawned child still belongs to
+    // this exact newly created cgroup before publishing Running. Unexpected
+    // early exit, migration, stale PID or missing /proc accounting all deny.
+    if require_kernel_child_membership(&group, child.id()).is_err() {
+        let _ = group.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(denied());
+    }
     supervisor.native_mark_running(job_id)?;
     let stdout = child.stdout.take().ok_or_else(denied)?;
     let stderr = child.stderr.take().ok_or_else(denied)?;
