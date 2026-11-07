@@ -351,7 +351,10 @@ mod tests{
         assert_eq!(a,b);
         assert_eq!(a[0].imported_chat_events,3);
         let db=AnsfStore::open(&root.join("ansf/books").join(format!("{chat}.sqlite"))).unwrap();
-        assert_eq!(db.live_chat_events_after(&chat,0,100).unwrap().len(),3);
+        let replayed=db.live_chat_events_after(&chat,0,100).unwrap();
+        assert_eq!(replayed.len(),3);
+        assert_eq!(replayed[0].event.legacy_turn_id.as_deref(),Some(turn.as_str()));
+        assert!(replayed[0].event.user_turn_id.is_none());
         assert_eq!(db.authenticated_chat_turn(&chat,&turn).unwrap(),None);
         assert_eq!(db.authenticated_reader_turn(&chat,&turn,"Remember my decision").unwrap(),false);
         assert_eq!(db.live_chat_events_after(&chat,0,100).unwrap()[0].event.text,
