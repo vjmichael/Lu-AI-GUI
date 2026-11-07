@@ -111,6 +111,42 @@ fn approved_regions_only_bgra(
     Some(sanitized)
 }
 
+
+/// Sensitive, bounded, independently OS-attested WGC BGRA transfer only.
+/// This type zeroes its heap on success, cancellation or write failure.
+struct PrivateLocalBgra{width:u32,height:u32,bytes:Vec<u8>}
+impl Drop for PrivateLocalBgra{
+    fn drop(&mut self){self.bytes.fill(0);}
+}
+/// Reduce the actual D3D11 frame to <=720p BEFORE piping to the trusted host.
+/// This never includes row-pitch padding and never writes an image file.
+/// Not accessible from the opaque system picker or renderer/model.
+fn downsample_native_bgra(
+    src:&[u8],width:u32,height:u32,pitch:u32
+)->Option<PrivateLocalBgra>{
+    if !frame_geometry_valid(width,height,pitch,src.len()){return None;}
+    let (out_w,out_h)=if width<=1280&&height<=720{
+        (width,height)
+    }else if u64::from(width)*720>u64::from(height)*1280{
+        (1280,(u64::from(height)*1280/u64::from(width)).max(1) as u32)
+    }else{
+        ((u64::from(width)*720/u64::from(height)).max(1) as u32,720)
+    };
+    let len=(out_w as usize).checked_mul(out_h as usize)?.checked_mul(4)?;
+    if len==0||len>1280*720*4{return None;}
+    let mut bytes=vec![0u8;len];
+    for y in 0..out_h{
+        let sy=(u64::from(y)*u64::from(height)/u64::from(out_h)) as usize;
+        for x in 0..out_w{
+            let sx=(u64::from(x)*u64::from(width)/u64::from(out_w)) as usize;
+            let input=sy*pitch as usize+sx*4;
+            let output=(y as usize*out_w as usize+x as usize)*4;
+            bytes[output..output+4].copy_from_slice(&src[input..input+4]);
+        }
+    }
+    Some(PrivateLocalBgra{width:out_w,height:out_h,bytes})
+}
+
 /// Fail-closed FULL-FRAME redaction: no raw or selectively visible pixels
 /// contribute to the host receipt. The OS readback only establishes a
 /// geometrically valid WGC callback. No trusted sensitive-region classifier
@@ -284,6 +320,21 @@ mod frame_geometry_tests {
         assert!(!mask_sensitive_bgra_regions(3,2,16,&mut frame,&many));
         assert_eq!(frame,initial);
     }
+    #[test]
+    fn local_pixel_pipe_resamples_only_active_bgra_never_row_padding(){
+        let first=vec![1,2,3,255,4,5,6,255,201,202,203,204];
+        let local=downsample_native_bgra(&first,2,1,12).unwrap();
+        assert_eq!((local.width,local.height),(2,1));
+        assert_eq!(local.bytes,first[..8]);
+        assert!(downsample_native_bgra(&first,2,1,7).is_none());
+    }
+    #[test]
+    fn native_1080p_frame_is_bounded_to_1280_by_720_for_private_transport(){
+        let buf=vec![255u8;1920*1080*4];
+        let local=downsample_native_bgra(&buf,1920,1080,1920*4).unwrap();
+        assert_eq!((local.width,local.height),(1280,720));
+        assert_eq!(local.bytes.len(),1280*720*4);
+    }
     #[cfg(windows)]
     #[test]
     fn native_primary_monitor_identity_is_real_os_handle_or_refused(){
@@ -340,6 +391,7 @@ mod windows_capture_worker {
     // same validated limits used by the host-independent unit tests.
     use super::{frame_geometry_valid, MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT};
     use std::{env,error::Error,io::{self,Write},time::{Instant,Duration}};
+    use sha2::Digest as _;
     use windows_capture::{
         capture::{Context,GraphicsCaptureApiHandler},
         frame::Frame,
@@ -494,14 +546,15 @@ mod windows_capture_worker {
         nonce:String,
         foreground_identity:Option<(usize,u32,u64)>,
         primary_monitor_identity:Option<(usize,u32,u32)>,
+        local_image:bool,
     }
     impl GraphicsCaptureApiHandler for OneFrame {
-        type Flags=(String,Option<(usize,u32,u64)>,Option<(usize,u32,u32)>);
+        type Flags=(String,Option<(usize,u32,u64)>,Option<(usize,u32,u32)>,bool);
         type Error=Box<dyn Error+Send+Sync>;
         fn new(ctx:Context<Self::Flags>)->Result<Self,Self::Error>{
             Ok(Self{started:Instant::now(),captured:false,
                 nonce:ctx.flags.0,foreground_identity:ctx.flags.1,
-                primary_monitor_identity:ctx.flags.2})
+                primary_monitor_identity:ctx.flags.2,local_image:ctx.flags.3})
         }
         fn on_frame_arrived(
             &mut self,frame:&mut Frame,
@@ -553,6 +606,17 @@ mod windows_capture_worker {
                 self.foreground_identity,self.primary_monitor_identity
             )
                 .ok_or("Invalid frame receipt geometry or host nonce")?;
+            let local_image=if self.local_image {
+                // Directly identified foreground window / primary OS
+                // monitor ONLY. Generic picker cannot export any pixels.
+                if self.foreground_identity.is_none()
+                    &&self.primary_monitor_identity.is_none(){
+                    control.stop();
+                    return Err("Unverified picker cannot emit local image".into());
+                }
+                Some(super::downsample_native_bgra(buffer,width,height,row_pitch)
+                    .ok_or("Local WGC BGRA downsample admission refused")?)
+            }else{None};
             // FrameBuffer release unmaps staging surface when dropped.
             // The operating system owns the GPU/driver buffers; Lu does not
             // retain or copy the pixel data into a persistent heap or file.
@@ -580,6 +644,13 @@ mod windows_capture_worker {
             let mut output=io::stdout().lock();
             writeln!(output,"P\t1\t1")?;
             writeln!(output,"D\t{digest}")?;
+            if let Some(frame)=local_image{
+                // Separate binary section, accepted ONLY by the host-owned
+                // image-mode parser. Never a TaskStore receipt or WebView.
+                let sha=format!("{:x}",sha2::Sha256::digest(&frame.bytes));
+                writeln!(output,"B\t{}\t{}\t{}",frame.width,frame.height,sha)?;
+                output.write_all(&frame.bytes)?;
+            }
             output.flush()?;
             control.stop();
             Ok(())
@@ -594,14 +665,19 @@ mod windows_capture_worker {
         if args.len()!=2||
             !(args[0]=="--lu-observe-one-shot"
                 ||args[0]=="--lu-observe-foreground-one-shot"
-                ||args[0]=="--lu-observe-primary-monitor-one-shot"){
+                ||args[0]=="--lu-observe-primary-monitor-one-shot"
+                ||args[0]=="--lu-observe-foreground-local-image-one-shot"
+                ||args[0]=="--lu-observe-primary-monitor-local-image-one-shot"){
             return Err("Invalid Lu capture worker operation".into());
         }
         let nonce=args[1].to_string_lossy();
         if nonce.len()!=32 ||!nonce.bytes().all(|b|b.is_ascii_hexdigit()){
             return Err("Invalid host-generated capture nonce".into());
         }
-        if args[0]=="--lu-observe-foreground-one-shot"{
+        let local_image=args[0]=="--lu-observe-foreground-local-image-one-shot"
+            ||args[0]=="--lu-observe-primary-monitor-local-image-one-shot";
+        if args[0]=="--lu-observe-foreground-one-shot"
+            ||args[0]=="--lu-observe-foreground-local-image-one-shot"{
             // User explicitly approved this delay through the Lu-native
             // confirmation dialog and should focus the target window.
             // This is NOT an automatic window enumeration/capture loop.
@@ -629,12 +705,13 @@ mod windows_capture_worker {
                 MinimumUpdateIntervalSettings::Default,
                 DirtyRegionSettings::Default,
                 ColorFormat::Bgra8,
-                (nonce.into_owned(),Some(identity),None),
+                (nonce.into_owned(),Some(identity),None,local_image),
             );
             return OneFrame::start(settings)
                 .map_err(|e|format!("Foreground WGC capture failed: {e:?}").into());
         }
-        if args[0]=="--lu-observe-primary-monitor-one-shot"{
+        if args[0]=="--lu-observe-primary-monitor-one-shot"
+            ||args[0]=="--lu-observe-primary-monitor-local-image-one-shot"{
             // The operator explicitly approved capturing the whole primary
             // display in the separate native Lu permission dialog.
             // This OS handle is NOT inferred from the generic picker.
@@ -656,7 +733,7 @@ mod windows_capture_worker {
                 MinimumUpdateIntervalSettings::Default,
                 DirtyRegionSettings::Default,
                 ColorFormat::Bgra8,
-                (nonce.into_owned(),None,Some(monitor_id)),
+                (nonce.into_owned(),None,Some(monitor_id),local_image),
             );
             return OneFrame::start(settings)
                 .map_err(|e|format!("Primary monitor WGC capture failed: {e:?}").into());
@@ -677,7 +754,7 @@ mod windows_capture_worker {
             MinimumUpdateIntervalSettings::Default,
             DirtyRegionSettings::Default,
             ColorFormat::Bgra8,
-            (nonce.into_owned(),None,None),
+            (nonce.into_owned(),None,None,false),
         );
         OneFrame::start(settings).map_err(|e|format!("WGC capture failed: {e:?}").into())
     }

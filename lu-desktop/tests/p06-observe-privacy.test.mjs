@@ -375,3 +375,18 @@ test('P06 host-owned WGC stdout BGRA one-use pipe does not persist image bytes o
   assert.match(src,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
   assert.match(workflow,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
 });
+
+test('P06 WGC worker only streams one bounded hashed BGRA image for attested OS sources',()=>{
+  const w=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const host=read('../../src-tauri/lu-core/src/native_background_process.rs');
+  assert.match(w,/fn downsample_native_bgra/);
+  assert.match(w,/struct PrivateLocalBgra/);
+  assert.match(w,/impl Drop for PrivateLocalBgra/);
+  assert.match(w,/--lu-observe-foreground-local-image-one-shot/);
+  assert.match(w,/--lu-observe-primary-monitor-local-image-one-shot/);
+  assert.match(w,/Unverified picker cannot emit local image/);
+  assert.match(w,/output\.write_all\(&frame\.bytes\)/);
+  assert.match(w,/native_1080p_frame_is_bounded_to_1280_by_720_for_private_transport/);
+  assert.match(host,/allow_local_image:bool/);
+  assert.match(host,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
+});
