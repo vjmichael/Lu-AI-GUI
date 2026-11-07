@@ -13,6 +13,7 @@ on:
       - 'lu-desktop/tests/p06-observe-privacy.test.mjs'
       - 'src-tauri/lu-observe-capture-worker/**'
       - 'scripts/verify-observe-installed-windows.ps1'
+      - 'scripts/package-observe-capture-windows.ps1'
       - '.github/workflows/lu-p06-observe-privacy.yml'
   workflow_dispatch:
 permissions:
@@ -76,11 +77,17 @@ jobs:
         run: |
           $tokens=$null
           $parseErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
+          foreach($script in @(
             'scripts/verify-observe-installed-windows.ps1',
-            [ref]$tokens,[ref]$parseErrors) | Out-Null
-          if($parseErrors.Count -ne 0){
-            throw "P06 installed-app smoke script has PowerShell syntax errors"
+            'scripts/package-observe-capture-windows.ps1'
+          )){
+            $tokens=$null
+            $parseErrors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $script,[ref]$tokens,[ref]$parseErrors) | Out-Null
+            if($parseErrors.Count -ne 0){
+              throw "P06 Windows native installer/smoke script has syntax errors: $script"
+            }
           }
           if(!(Select-String -LiteralPath 'scripts/verify-observe-installed-windows.ps1' -Pattern "wgcPickerAndCancellation='NOT_TESTED'" -Quiet)){
             throw "Installed smoke must not claim WGC acceptance"
