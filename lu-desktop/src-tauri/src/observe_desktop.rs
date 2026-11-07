@@ -13,6 +13,7 @@ use lu_core::{
         Signal as AwarenessKind,Source as AwarenessSource,HostReadiness},
     tasks::TaskStore,
     native_background_process::{BackgroundProcessSupervisor,TrustedWorkerPlan},
+    native_background_scheduler::GuardianLease,
 };
 
 const LEASE_MS:u64=30*60*1000;
@@ -75,6 +76,8 @@ struct Session {
     notes_logged:u64,
     scope:Option<ScopedObservationGrant>,
     capture_task_id:Option<String>,
+    capture_foreground:bool,
+    capture_guardian:Option<GuardianLease>,
     session_id:Option<String>,
     chat_id:Option<String>,
     sequence:u64,
@@ -96,6 +99,7 @@ impl ObserveHost {
             inner:Mutex::new(Session{
                 controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
+                capture_foreground:false,capture_guardian:None,
                 session_id:None,chat_id:None,sequence:0,
                 event_count:0,recommendations:0,
             }),
@@ -128,6 +132,9 @@ impl ObserveHost {
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         if session.controller.mode()!=Mode::Off{
             return Err("Stop the existing observation first".into());
+        }
+        if session.capture_guardian.is_some(){
+            return Err("Prior supervised capture has not finished cleanup".into());
         }
         let now=self.now();
         // The pilot has exactly one *host-selected* target, Lu itself.
@@ -163,6 +170,7 @@ impl ObserveHost {
         session.notes_logged=0;
         session.scope=Some(bound_scope);
         session.capture_task_id=None;
+        session.capture_foreground=false;
         session.session_id=Some(session_id);
         session.chat_id=Some(chat_id.to_owned());
         session.sequence=0;session.event_count=0;session.recommendations=0;
@@ -187,6 +195,8 @@ impl ObserveHost {
         self.reap_capture(session.capture_task_id.as_deref(),
             session.chat_id.as_deref())?;
         session.capture_task_id=None;
+        session.capture_foreground=false;
+        session.capture_guardian.take();
         Ok(())
     }
     /// Revoke the entire permission before calling potentially blocking
@@ -203,12 +213,27 @@ impl ObserveHost {
         // Never write a CANCELLED receipt when a child is not confirmed
         // reaped. The existing process supervisor still owns its timeout.
         // Consent is already OFF no matter which result follows.
-        self.reap_capture(capture_id.as_deref(),chat_id.as_deref())?;
+        if let Err(error)=self.reap_capture(capture_id.as_deref(),chat_id.as_deref()){
+            // Scope is OFF; keep only native cleanup/Guardian custody.
+            session.capture_task_id=capture_id;
+            session.chat_id=chat_id;
+            return Err(error)
+        }
+        session.capture_guardian.take();
+        session.capture_foreground=false;
         if let Some(task_id)=task_id{
             self.task_store.cancelled(&task_id)
                 .map_err(|e|format!("Observation revoked; task receipt pending: {e:?}"))?;
         }
         Ok(())
+    }
+    fn release_guardian_when_reaped(&self,s:&mut Session){
+        if s.capture_guardian.is_none(){return;}
+        if self.capture_processes.poll().is_ok()
+            &&s.capture_task_id.as_deref().is_some_and(|id|
+                !self.capture_processes.can_cancel(id)){
+            s.capture_guardian.take();
+        }
     }
     fn refresh_expiry(&self,s:&mut Session)->Result<(),String>{
         if s.controller.mode()!=Mode::Off
@@ -220,6 +245,7 @@ impl ObserveHost {
     pub(crate) fn status(&self,chat_id:&str)->Result<ObserveView,String>{
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut session)?;
+        self.release_guardian_when_reaped(&mut session);
         if session.chat_id.as_deref()!=Some(chat_id){
             // Observation must not remain silently active when the user
             // leaves the consenting conversation (including a new chat).
@@ -229,6 +255,7 @@ impl ObserveHost {
             return Ok(Self::view(&Session{
                 controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
+                capture_foreground:false,capture_guardian:None,
                 session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
             }));
@@ -238,6 +265,13 @@ impl ObserveHost {
     pub(crate) fn tick(&self){
         if let Ok(mut session)=self.inner.lock(){
             let _=self.refresh_expiry(&mut session);
+            // Reclaim after terminal receipt even when no UI is polling.
+            self.release_guardian_when_reaped(&mut session);
+            if session.controller.mode()==Mode::Off && session.capture_guardian.is_some(){
+                let _=self.reap_capture(session.capture_task_id.as_deref(),
+                    session.chat_id.as_deref());
+                self.release_guardian_when_reaped(&mut session);
+            }
         }
     }
     fn owned<'a>(s:&'a mut Session,chat_id:&str)->Result<&'a mut Session,String>{
@@ -292,7 +326,7 @@ impl ObserveHost {
     /// automatically within the Lu-only semantic observation app scope.
     /// No image bytes are returned to the model or WebView.
     pub(crate) fn launch_one_shot(
-        &self,chat_id:&str,plan:TrustedWorkerPlan
+        &self,chat_id:&str,plan:TrustedWorkerPlan,guardian:GuardianLease
     )->Result<String,String>{
         if !plan.task_id.starts_with("obs-frame-")
           ||plan.workspace_id!=chat_id
@@ -316,9 +350,12 @@ impl ObserveHost {
             return Err("An approved capture picker is already running".into());
         }
         let id=plan.task_id.clone();
+        let foreground=plan.args[0]=="--lu-observe-foreground-one-shot";
         self.capture_processes.start_host_approved(plan)
             .map_err(|e|format!("Trusted capture worker could not start: {e:?}"))?;
         s.capture_task_id=Some(id.clone());
+        s.capture_foreground=foreground;
+        s.capture_guardian=Some(guardian);
         Ok(id)
     }
 
@@ -332,11 +369,11 @@ impl ObserveHost {
         let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut s)?;
         let current=Self::owned(&mut s,chat_id)?;
-        let Some(task_id)=current.capture_task_id.as_deref() else{
+        let Some(task_id)=current.capture_task_id.clone() else{
             return Ok(None);
         };
         let _=self.capture_processes.poll();
-        let row=self.task_store.get(task_id)
+        let row=self.task_store.get(&task_id)
             .map_err(|_|"Native capture task receipt unavailable")?
             .ok_or("Capture task receipt no longer exists")?;
         if row.workspace_id.as_deref()!=Some(chat_id){
@@ -347,15 +384,19 @@ impl ObserveHost {
             .filter(|value|value.len()==64
                 &&value.bytes().all(|b|b.is_ascii_hexdigit()))
             .map(str::to_owned);
+        let source_attested=terminal&&sha.is_some()&&current.capture_foreground;
+        if !self.capture_processes.can_cancel(&task_id){
+            current.capture_guardian.take();
+        }
         Ok(Some(ObserveCaptureReceiptView{
             capture_task_id:task_id.into(),
             state:row.state.as_str().into(),
             image_received:terminal&&sha.is_some(),
             frame_sha256:if terminal{sha}else{None},
-            source_identity_attested:false,
+            source_identity_attested:source_attested,
             pixels_retained:false,
             visual_interpretation_verified:false,
-            message:"Native WGC frame receipt only: no raw pixels or window title retained. This does not prove app identity, GUI correctness, or model visual understanding.",
+            message:"Native one-shot receipt: foreground OS window identity is checked by the pinned worker; generic picker source identity remains unverified. No raw pixels are returned, and no GUI or model-vision verdict is inferred.",
         }))
     }
     /// P06 operator-approved privacy erase for a locally authenticated
