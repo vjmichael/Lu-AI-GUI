@@ -1,8 +1,12 @@
 # Lu Core tools — owner-approved scope, integration architecture, and priority order
 
 **Decision date:** 2026-11-06  
-**Status:** Owner-approved PRODUCT DIRECTION and sequential DEVELOPMENT QUEUE. The owner's subsequent instruction authorized P01 source development; **P01 and subsequently authorized P02 now have bounded source implementations; P03 subsequently received explicit owner authorization and is in source development.**  
+**Status:** Owner-approved product direction. P01, P02 and P03 have bounded development source; P03 exact-head native checks completed independently. The owner has now directed **P06 OBSERVE-PRIVACY-01** without starting the skipped P04/P05 development queues. P07 remains unstarted.  
 **Project:** Independent Lu Core desktop AI, distinct from Lu IDE and optional DLCs.
+
+## Latest owner transition — P06 Observe & Learn authorized (2026-11-06)
+
+Following P03, the owner directed work on **P06**, without requesting P04 or P05 implementation. Use the existing Lu ObserveHost and TaskStore, and focus on OFF-by-default, explicit consent, retention, source provenance, review-only learning handoffs and verified worker revocation. The [P06 privacy source and acceptance ledger](LU_P06_OBSERVE_PRIVACY.md) is authoritative for this package. The pre-existing Observe & Learn draft PR #61 must not be silently overwritten. Physical NSIS/AMD GPU/MMProj and WGC picker/redaction tests remain OPEN. P07 requires a new instruction.
 
 ## Latest owner transition — P02 release gates deferred; P03 authorized (2026-11-06)
 
