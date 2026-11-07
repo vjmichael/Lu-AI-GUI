@@ -8,7 +8,7 @@
 #[cfg(all(feature = "ci-native-null-lease", not(debug_assertions)))]
 compile_error!("DENIED: disposable kernel NUL DACL lease must never ship in release builds");
 use crate::SupervisorError;
-use std::{ffi::c_void, mem::size_of, ptr};
+use std::{ffi::c_void, mem::size_of, ptr, sync::{Mutex, MutexGuard}};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, LocalFree, HANDLE, INVALID_HANDLE_VALUE},
     Security::{
@@ -30,6 +30,16 @@ const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
+}
+
+// The NUL DACL is one machine-global object shared by all concurrently
+// admitted protected-service sessions. Serializing each read/modify/verify
+// transaction prevents a second Job's grant or revocation from clobbering
+// another in-flight ACL update. The privileged bootstrap is an offline
+// installer/boot-only operation and may not run while worker Jobs are active.
+static NUL_ACL_TRANSACTION: Mutex<()> = Mutex::new(());
+fn lock_nul_acl() -> Result<MutexGuard<'static, ()>, SupervisorError> {
+    NUL_ACL_TRANSACTION.lock().map_err(|_| denied())
 }
 struct Handle(HANDLE);
 impl Drop for Handle {
@@ -164,12 +174,25 @@ pub(crate) struct CiNullLease {
 impl CiNullLease {
     fn revoke(&mut self) -> Result<(), SupervisorError> {
         if self.applied {
+            let _transaction = lock_nul_acl()?;
+            // Never delete a third party's overwritten or duplicated ACE.
+            // The installed service may revoke only the exact narrow grant
+            // it originally installed. Unknown ACL state remains quarantined.
+            with_dacl(self.handle.0, |acl| {
+                if exact_service_sid_ace(acl, self.sid)?
+                    == Some(GENERIC_READ | GENERIC_WRITE)
+                {
+                    Ok(())
+                } else {
+                    Err(denied())
+                }
+            })?;
             change(self.handle.0, self.sid, REVOKE_ACCESS)?;
             with_dacl(self.handle.0, |acl| {
-                if contains_sid(acl, self.sid)? {
-                    Err(denied())
-                } else {
+                if exact_service_sid_ace(acl, self.sid)?.is_none() {
                     Ok(())
+                } else {
+                    Err(denied())
                 }
             })?;
             self.applied = false;
@@ -228,28 +251,37 @@ fn grant_exact_sid(sid: PSID) -> Result<CiNullLease, SupervisorError> {
         return Err(denied());
     }
     let handle = Handle(raw);
-    // A new profile's SID must not already be present on the device ACL.
-    with_dacl(handle.0, |acl| {
-        if contains_sid(acl, sid)? {
-            Err(denied())
-        } else {
-            Ok(())
-        }
-    })?;
     let mut lease = CiNullLease {
         handle,
         sid,
-        applied: true,
+        applied: false,
     };
-    // Mark applied before the write, so even ambiguous failures try cleanup.
-    change(lease.handle.0, lease.sid, GRANT_ACCESS)?;
-    with_dacl(lease.handle.0, |acl| {
-        if contains_sid(acl, sid)? {
-            Ok(())
-        } else {
-            Err(denied())
-        }
-    })?;
+    // The absence check, exact ACE write and kernel readback must be one
+    // serialized transaction. An ambiguous write failure keeps applied=true
+    // so Drop tries best-effort cleanup AFTER releasing the mutex.
+    let result = (|| {
+        let _transaction = lock_nul_acl()?;
+        with_dacl(lease.handle.0, |acl| {
+            // A collision or an unreadable ACL is never ours to change.
+            if contains_sid(acl, sid)? {
+                Err(denied())
+            } else {
+                Ok(())
+            }
+        })?;
+        lease.applied = true;
+        change(lease.handle.0, lease.sid, GRANT_ACCESS)?;
+        with_dacl(lease.handle.0, |acl| {
+            if exact_service_sid_ace(acl, sid)?
+                == Some(GENERIC_READ | GENERIC_WRITE)
+            {
+                Ok(())
+            } else {
+                Err(denied())
+            }
+        })
+    })();
+    result?;
     Ok(lease)
 }
 
@@ -341,6 +373,7 @@ pub(crate) fn reconcile_service_null_intent(job_id: &str) -> Result<(), Supervis
     // This is the only ACE inserted by ServiceNullLease. A different mask,
     // duplicate allow or deny ACE must be investigated, never silently
     // deleted by the service or interpreted as its own lease.
+    let _transaction = lock_nul_acl()?;
     let present = with_dacl(handle.0, |acl| exact_service_sid_ace(acl, sid.0))?;
     match present {
         None => Ok(()), // Grant intent persisted but grant had not happened.
@@ -357,7 +390,6 @@ pub(crate) fn reconcile_service_null_intent(job_id: &str) -> Result<(), Supervis
         _ => Err(denied()),
     }
 }
-#[cfg(feature = "protected-recovery-service")]
 fn exact_service_sid_ace(acl: *mut ACL, sid: PSID) -> Result<Option<u32>, SupervisorError> {
     if acl.is_null() || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
         return Err(denied());
