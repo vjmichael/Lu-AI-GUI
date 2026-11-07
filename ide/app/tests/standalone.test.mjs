@@ -38,7 +38,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
     // WO6 native-only build/test controls are never a Lu capability grant.
     'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
-    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel'
+    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -304,7 +304,9 @@ test('Wave A2 registry advertises actual host operations without granting execut
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_build_')).sort(),
     nativeBuildCommands.slice().sort());
-  const nativeDebugCommands = ['ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel'];
+  const nativeDebugCommands = [
+    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile'
+  ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_debug_')).sort(),
     nativeDebugCommands.slice().sort());
   // Build/test/debug execution is privileged and intentionally NOT a general
@@ -319,6 +321,9 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.match(debugBackend, /start_linux_dap/);
   assert.match(debugBackend, /fixed_installer_selftest_only_not_project_debugger/);
   assert.match(debugBackend, /MessageDialogButtons::OkCancelCustom/);
+  assert.match(debugBackend, /reconcile_windows_interrupted_via_service/);
+  assert.match(debugBackend, /reconcile_linux_interrupted/);
+  assert.match(debugBackend, /DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN/);
   const declared = registered.filter(value =>
     value !== 'ide_list_capabilities' &&
     !nativeLspCommands.includes(value) &&
