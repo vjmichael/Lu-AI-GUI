@@ -97,3 +97,10 @@ No implementation or PR merge permitted. Evaluate shared host/CE/Workspace contr
 - Keep the standalone IDE independent of Lu Core until post-v1.0 review. No Docker dependency, no automatic code execution on project open.
 - Source hash and negative-test status are recorded separately from real installed acceptance. Lack of evidence is `PENDING`, not `PASS`.
 - The candidate branch is a *staging/integration source of truth*, not an approved signed release.
+
+## Nov 7 continuation: actual transitive Tauri native failure and upstream notice recovery
+
+- Exact-head OS builds at `9d28f22` reached the Rust native compiler and failed due **Tauri 2.11.5 ↔ 2.12.x runtime family skew**, beyond the original JavaScript version check. Aligned exact Rust `tauri = "=2.12.5"`, JS API `2.12.4`, CLI `2.12.4`; added resolved Cargo.lock runtime-family guard and adversarial tests. Only a genuine installed OS run can prove the repair.
+- User requested upstream licenses in **every verification submission**. Both E2 Windows NSIS workflows now retrieve complete original license texts for LLVM, CPython, Tauri (both MIT and Apache-2.0 at tauri-v2.12.5), CodeMirror, and esbuild directly from their upstream pinned GitHub tags. They compare exact text with the reviewed repo copies (Windows CRLF normalized); unexpected changes, missing bytes, network failure, symlink or oversized responses are denied.
+- A source-SHA-bound `upstream-fetch.json` with six URLs, revisions and SHA-256s is copied **into actual `verification-notices/` installer resources** and included in CI artifacts alongside full texts, resolved npm/Cargo notice files and the exact native package SHA receipt. `verify_p04_license_bundle.py --require-upstream` now rejects a missing/mismatched receipt. Additional package legal gaps remain explicitly unresolved and no release/legal approval has been asserted.
+- Both prior E2 workflow SHA pins and review history were preserved and updated, the new E2 source blob IDs and 38-workflow retention decisions remain audited. No prior GitHub PR or safety CI retired. Exact-head CI and installed artifact acceptance now pending.

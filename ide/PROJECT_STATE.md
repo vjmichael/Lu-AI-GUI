@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## P05 continuation — exact upstream license retrieval and Tauri graph repair (November 7)
+
+Native package runs revealed incompatible old/new transitive Tauri APIs after the initial patch pin. Candidate now uses exact Tauri 2.12 core/API/CLI, validates resolved runtime versions, and runs real upstream text retrieval for all six canonical notices on each E2 verification submission. The source SHA, upstream URLs/revisions/text SHA-256 and npm/Cargo notice artifacts accompany each unsigned test package and the verified hash receipt. Actual OS/installed tests remain needed. All 38 original native/signed CI workflows and original PR branches are retained; P06 not started and P07/WO10 deferred.
+
 ## P05 final native-gated operations decision — November 7, 2026
 
 P05 has accounted for every earlier IDE PR (30 original-snapshot heads) and every original IDE CI workflow (38 source-pinned checks), reviewed the seven late divergent patches and preserved unique parallel work. The result is an explicit **retain all** decision, not arbitrary inactivity: no old PR may be closed or retargeted and no security/installed/release CI trigger may be removed before verified P02–P04 native-equivalent coverage. New machine-readable CI owner/disposition matrix and hostile source tests prevent such premature operations. P05 audit/source development is complete; exact-head P05 Windows/Linux CI still required, and physical GitHub cleanup is a **native-acceptance dependency**. P06 not started.
