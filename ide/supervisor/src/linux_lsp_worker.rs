@@ -20,6 +20,17 @@ use std::{
     process::{Child, ChildStdin, ChildStdout},
     sync::Arc,
 };
+// Fixed CI/debug-only source-stage identifiers; never record paths, PIDs,
+// source text, cgroup names, credentials or untrusted LSP protocol contents.
+fn native_linux_lsp_trace(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+            == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!("PROTECTED_LINUX_LSP_STAGE={stage}");
+    }
+}
+
 const MAX_LSP_BUNDLE_FILES: usize = 1000;
 const MAX_LSP_BUNDLE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_LSP_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -261,6 +272,7 @@ pub fn start_linux_lsp(
     input: &PublishedInput,
     release_root: &Path,
 ) -> Result<LinuxLspSession, SupervisorError> {
+    native_linux_lsp_trace("begin_recipe_check");
     let (server_id, executable, args) = fixed_server(plan)?;
     if plan.source_head != current_native_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -269,21 +281,27 @@ pub fn start_linux_lsp(
         return Err(SupervisorError::WrongProjectOrSource);
     }
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    native_linux_lsp_trace("source_snapshot_verified");
     let relative = Path::new(&input.seal.manifest_relative_path);
     if !input.root.join(relative).is_file() {
         return Err(SupervisorError::WrongProjectOrSource);
     }
     let native_uri =
         crate::lsp_transport::trusted_staged_file_uri(&Path::new("/workspace").join(relative))?;
+    native_linux_lsp_trace("bundle_digest_start");
     if native_lsp_bundle_digest(release_root, &plan.recipe_id)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
+    native_linux_lsp_trace("bundle_digest_verified");
     ensure_root_owned_tool(Path::new(BWRAP))?;
+    native_linux_lsp_trace("root_owned_bwrap_verified");
     let group = make_cgroup(job_id, plan)?;
+    native_linux_lsp_trace("kernel_worker_cgroup_created");
     let proc_file = OpenOptions::new()
         .write(true)
         .open(group.dir.join("cgroup.procs"))
         .map_err(|_| denied())?;
+    native_linux_lsp_trace("kernel_cgroup_procs_handle_open");
     let descriptor = proc_file.as_raw_fd();
     let native_executable = format!("/ls/bin/{executable}");
     let mut command = Command::new(BWRAP);
@@ -342,6 +360,7 @@ pub fn start_linux_lsp(
         return Err(denied());
     }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof)?;
+    native_linux_lsp_trace("grant_consumed");
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(_) => {
@@ -354,6 +373,7 @@ pub fn start_linux_lsp(
         }
     };
     drop(proc_file);
+    native_linux_lsp_trace("bwrap_child_spawned");
     // Identical OS kernel membership gate to fixed native Cargo: the LSP
     // cannot advance to Running on cgroup configuration alone.
     if require_kernel_child_membership(&group, child.id()).is_err() {
@@ -361,6 +381,7 @@ pub fn start_linux_lsp(
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(denied());
     }
+    native_linux_lsp_trace("exact_kernel_pid_membership_verified");
     let stdin = child.stdin.take().ok_or_else(denied)?;
     let stdout = child.stdout.take().ok_or_else(denied)?;
     if let Err(e) =
@@ -370,11 +391,13 @@ pub fn start_linux_lsp(
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(e);
     }
+    native_linux_lsp_trace("bounded_stdio_ready");
     if let Err(e) = supervisor.native_mark_running(job_id) {
         let _ = group.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(e);
     }
+    native_linux_lsp_trace("running_receipt_fsynced");
     let process = LinuxLspProcess {
         child,
         stdin,
@@ -396,6 +419,7 @@ pub fn start_linux_lsp(
         Box::new(process),
         server_id,
     )?;
+    native_linux_lsp_trace("gateway_attached");
     Ok(LinuxLspSession {
         gateway,
         native_uri,
