@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE 07 / WO2 native security hardening (2026-11-06): serialized service-process NUL DACL transactions across concurrent protected Job leases; exact-mask attestation before revocation and fail-closed collision behavior; Windows lock contention regression test. Existing LocalService-owned per-job intent/grant/revoke and restart reconciliation are source-implemented, NOT exact-head accepted. Historical disposable-CI contained Cargo/cancellation run `1090800` passed; protected-service pipe admission and owner/service crash proofs still open. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
 - WO2 native Windows preparation: fixed-service, elevated-only NUL device DACL bootstrap (service SID only, exact rights, no AppContainer wildcard ACE), compiled but not invoked or release accepted; durable per-job service grant/revoke still pending (2026-11-06).
 
 - WO2/WO3 closeout: D7B native pinned Windows Cargo actual AppContainer build/output and cancellation tests PASS on 1090800 (CI-only NUL); production NUL broker remains open. WO3 protected service pipe denies all access even for matching approved user; added token-restriction diagnostic, bypass-resistant exact ACE verification and optional diagnostic fixture that does not suppress real SCM failure (2026-11-06).
