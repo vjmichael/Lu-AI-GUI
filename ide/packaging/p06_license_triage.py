@@ -206,7 +206,7 @@ def enforce_external_native_review(report,policy):
     return True
 
 def enforce_webview_runtime_review(report,policy):
-    expected=set(WEBVIEW_EXACT_CRATES)
+    expected={tuple(pair) for pair in WEBVIEW_EXACT_CRATES}
     configured=policy.get("expectedWebviewBindingPackages")
     if not isinstance(configured,list) or len(configured)!=len(expected):
         raise TriageDenied("missing_webview_runtime_policy")
