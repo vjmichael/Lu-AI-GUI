@@ -1537,6 +1537,67 @@ impl ResearchDesktop{
 #[cfg(test)]
 mod tests{
     #[test]
+    fn p07_catalog_revision_reopens_offline_and_rejects_stale_human_consent(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-p07-revision-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let dir=root.join("lu-research-evidence");
+        fs::create_dir_all(&dir).unwrap();
+        let source="https://openalex.org/W012345";
+        let db=dir.join("c-research.sqlite");
+        let mut ledger=EvidenceLedger::open(&db).unwrap();
+        ledger.discover(&Candidate{
+            id:source.into(),title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into(),
+        }).unwrap();
+        ledger.corroborate(source,&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let make=|year:u16|serde_json::json!({"message":{
+            "DOI":"10.1000/example","type":"book","title":["Study"],
+            "author":[{"given":"Jane","family":"Doe"}],
+            "issued":{"date-parts":[[year]]},"publisher":"Academic Press"
+        }}).to_string();
+        let prior=make(2024);
+        let proposed=make(2025);
+        let old=ledger.pin_citation_catalog(source,prior.as_bytes()).unwrap();
+        drop(ledger);
+        let host=ResearchDesktop::new(root.join("not-installed"),root.clone());
+        let candidate=ResearchCitationRevisionCandidate{
+            source_id:source.into(),expected_previous_sha256:old.response_sha256.clone(),
+            new_response_sha256:format!("{:x}",Sha256::digest(proposed.as_bytes())),
+            previous_bibliography:"Prior reviewed year: 2024".into(),
+            proposed_bibliography:"New reviewed year: 2025".into(),
+            proposed_response:proposed.into_bytes()
+        };
+        let receipt=host.apply_citation_revision("c-research",candidate).unwrap();
+        assert_eq!(receipt.revision_count,1);
+        assert_eq!(receipt.previous_sha256,old.response_sha256);
+        assert!(!receipt.publication_details_verified);
+        let updated=ResearchDesktop::new(root.join("still-not-installed"),root.clone());
+        let bibliography=updated.bibliography_preview("c-research",Style::Apa7).unwrap();
+        assert!(bibliography.markdown.contains("2025"));
+        assert!(!bibliography.markdown.contains("(2024)"));
+        let again=ResearchCitationRevisionCandidate{
+            source_id:source.into(),expected_previous_sha256:old.response_sha256,
+            new_response_sha256:format!("{:x}",Sha256::digest(prior.as_bytes())),
+            previous_bibliography:"2024".into(),
+            proposed_bibliography:"2024".into(),
+            proposed_response:prior.into_bytes()
+        };
+        assert!(updated.apply_citation_revision("c-research",again).is_err());
+        let ledger=EvidenceLedger::open(&db).unwrap();
+        assert_eq!(ledger.citation_catalog_revision_receipts(source).unwrap().len(),1);
+        drop(ledger);
+        drop(updated);
+        drop(host);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart(){
         let root=std::env::temp_dir().join(format!(
             "lu-p07-offline-{}-{}",std::process::id(),
