@@ -320,7 +320,7 @@ impl NativeDebugRuntime {
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: install.digest.clone(),
             runtime_limit_ms: 3 * 60_000, memory_limit_bytes: 512 * 1024 * 1024,
-            process_limit: 4, log_limit_bytes: 64 * 1024,
+            process_limit: 16, log_limit_bytes: 64 * 1024,
             effect_class: "debug_inspection_isolated".into(),
         };
         let prepared = self.supervisor.prepare(plan.clone()).map_err(|e| e.code().to_owned())?;
