@@ -221,3 +221,15 @@ test('P06 independent UIA runner verifies reviewed native process and plan but c
   assert.match(script,/modelImageReceived=\$false/);
   assert.doesNotMatch(script,/ValuePattern|TextPattern|Current\.Name|InvokePattern/);
 });
+
+test('P06 reviewed native UIA checks require a pinned source commit and explicit button-only fallback',()=>{
+  const script=read('../../scripts/verify-observe-ui-contract-windows.ps1');
+  assert.match(script,/plan\.sourceCommit -cnotmatch/);
+  assert.match(script,/plan\.artifactSha256 -ine \$ArtifactSha256/);
+  assert.match(script,/PSObject\.Properties\['buttonName'\]/);
+  assert.match(script,/AutomationElement\]::NameProperty/);
+  assert.match(script,/AutomationElement\]::AutomationIdProperty/);
+  assert.match(script,/INCONCLUSIVE_NOT_NATIVE_BUTTON/);
+  assert.match(script,/sourceCommit=\(\[string\]\$plan\.sourceCommit\)/);
+  assert.doesNotMatch(script,/Current\.Name|ValuePattern|TextPattern|InvokePattern/);
+});

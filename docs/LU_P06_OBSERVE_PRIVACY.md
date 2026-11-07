@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 practical independent UIA button check and source-commit binding
+
+The native UIA test plan now **must** identify a 40-character source commit and an installed-artifact SHA-256 matching the reviewed Lu.exe. Each check selects exactly one bounded *AutomationId* or one literal, pre-reviewed *buttonName*; the latter is restricted to unique native UIA Button controls and never reads arbitrary field values or dynamic text. Missing/duplicate/wrong-type controls remain INCONCLUSIVE. A plan that changes source or binary is rejected before OS access. This provides a usable path to check Lu's existing accessible React buttons independently, while remaining no-click, no-pixel, and without native-effect or model-verdict authority. Actual installed execution is still OPEN.
+
 ## P06 independent installed GUI accessibility evidence (source only)
 
 Added `scripts/verify-observe-ui-contract-windows.ps1`: a read-only, externally run Windows UI Automation checker for one *already-running* Lu.exe. An independently hash-reviewed JSON plan (schema 1, appId `lu-desktop`, at most 32 unique checks with exact Automation IDs and expected enabled/offscreen booleans) and the hash-pinned Lu.exe must match before any OS observation. The checker binds OS PID, executable path and process creation time, uses UIA to inspect only bounded control attributes (no title, text, value, password, click or screenshot), rechecks process identity and emits **PASS_ACCESSIBILITY_ONLY**, **FAIL_ACCESSIBILITY_CONTRACT** or **INCONCLUSIVE**. It never claims pixel-visual proof, native side-effect proof, or model image receipt. This is an implemented independent OS accessibility testing procedure; the actual installed human-run evidence remains OPEN, and inaccessible/non-unique controls are INCONCLUSIVE.

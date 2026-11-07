@@ -1,6 +1,7 @@
 # P06 independent native UIA contract checker. The app/renderer and AI
 # cannot supply evidence, select UI actions or mark their own tests passed.
-# Read-only: does not inspect control Name/Value/Text, click or screenshot.
+# Read-only: compares only reviewer-pinned button names or Automation IDs;
+# never enumerates arbitrary text/values, clicks or captures screenshots.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][int]$ProcessId,
@@ -28,14 +29,22 @@ $app=Checked-File $InstalledExe $ArtifactSha256
 $planFile=Checked-File $PlanPath $PlanSha256
 if([IO.Path]::GetFileName($app) -cne 'Lu.exe'){throw 'Expected installed native Lu.exe'}
 $plan=Get-Content -LiteralPath $planFile -Raw|ConvertFrom-Json
+if($plan.sourceCommit -cnotmatch '^[A-Fa-f0-9]{40}$' -or
+   $plan.artifactSha256 -ine $ArtifactSha256){
+  throw 'Reviewed source commit and installed binary must match plan'
+}
 if($plan.schema -ne 1 -or $plan.appId -cne 'lu-desktop' -or
    @($plan.checks).Count -lt 1 -or @($plan.checks).Count -gt 32){
   throw 'Invalid or unbounded independent GUI plan'
 }
 $ids=@()
 foreach($check in @($plan.checks)){
-  if($check.id -cnotmatch '^[A-Za-z0-9_-]{1,64}$' -or
-     $check.automationId -cnotmatch '^[A-Za-z0-9_-]{1,128}$' -or
+  $hasAutomationId=$null -ne $check.PSObject.Properties['automationId']
+  $hasButtonName=$null -ne $check.PSObject.Properties['buttonName']
+  if($hasAutomationId -eq $hasButtonName -or
+     ($hasAutomationId -and $check.automationId -cnotmatch '^[A-Za-z0-9_-]{1,128}$') -or
+     ($hasButtonName -and $check.buttonName -cnotmatch '^[A-Za-z0-9 _-]{1,128}$') -or
+     $check.id -cnotmatch '^[A-Za-z0-9_-]{1,64}$' -or
      $check.expectedEnabled -isnot [bool] -or
      $check.expectedOffscreen -isnot [bool]){
     throw 'Invalid reviewed Automation ID or expected UIA properties'
@@ -48,6 +57,7 @@ $receipt=[ordered]@{
   observedAtUtc=[DateTime]::UtcNow.ToString('o')
   artifactSha256=$ArtifactSha256.ToLowerInvariant()
   planSha256=$PlanSha256.ToLowerInvariant()
+  sourceCommit=([string]$plan.sourceCommit).ToLowerInvariant()
   verdict='INCONCLUSIVE'
   checks=@()
   visualPixelProof=$false
@@ -70,9 +80,14 @@ try {
   $missing=0
   $mismatched=0
   foreach($check in @($plan.checks)){
-    $condition=[System.Windows.Automation.PropertyCondition]::new(
-      [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
-      [string]$check.automationId)
+    $byName=$null -ne $check.PSObject.Properties['buttonName']
+    $property=if($byName){
+      [System.Windows.Automation.AutomationElement]::NameProperty
+    }else{
+      [System.Windows.Automation.AutomationElement]::AutomationIdProperty
+    }
+    $expected=if($byName){[string]$check.buttonName}else{[string]$check.automationId}
+    $condition=[System.Windows.Automation.PropertyCondition]::new($property,$expected)
     $found=$root.FindAll(
       [System.Windows.Automation.TreeScope]::Descendants,$condition)
     if($found.Count -ne 1){
@@ -83,6 +98,12 @@ try {
     $element=$found.Item(0)
     if([int]$element.Current.ProcessId -ne $ProcessId){
       throw 'Cross-process UIA descendant cannot be verified'
+    }
+    if($byName -and $element.Current.ControlType.Id -ne
+       [System.Windows.Automation.ControlType]::Button.Id){
+      $missing++
+      $receipt.checks+=@{id=$check.id;status='INCONCLUSIVE_NOT_NATIVE_BUTTON'}
+      continue
     }
     if([bool]$element.Current.IsOffscreen -ne [bool]$check.expectedOffscreen -or
        [bool]$element.Current.IsEnabled -ne [bool]$check.expectedEnabled){
