@@ -1,8 +1,12 @@
 # Lu Core tools — owner-approved scope, integration architecture, and priority order
 
 **Decision date:** 2026-11-06  
-**Status:** Owner-approved PRODUCT DIRECTION and sequential DEVELOPMENT QUEUE. The owner's subsequent instruction authorized P01 source development; **P01 and subsequently authorized P02 now have bounded source implementations; P03 must NOT start without another instruction.**  
+**Status:** Owner-approved PRODUCT DIRECTION and sequential DEVELOPMENT QUEUE. The owner's subsequent instruction authorized P01 source development; **P01 and subsequently authorized P02 now have bounded source implementations; P03 subsequently received explicit owner authorization and is in source development.**  
 **Project:** Independent Lu Core desktop AI, distinct from Lu IDE and optional DLCs.
+
+## Latest owner transition — P02 release gates deferred; P03 authorized (2026-11-06)
+
+The owner explicitly **deferred** physical Windows NSIS installed-app acceptance and physical AMD GPU/VRAM/GGUF+MMProj offload acceptance. These gates remain OPEN/DEFERRED, not PASS. The owner authorized **P03 AI-OPS-01** development immediately afterward. This supersedes earlier "STOP before P03" and "P03 QUEUED" notices in historical entries below. P04 remains unstarted. See [P03 implementation and outstanding work](LU_AI_OPERATIONS_P03.md).
 
 ## 1. Why this change is being made
 
