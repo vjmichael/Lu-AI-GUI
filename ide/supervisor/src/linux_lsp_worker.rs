@@ -54,6 +54,7 @@ fn fixed_server(
 }
 fn audit_bundle(root: &Path) -> Result<String, SupervisorError> {
     let meta = fs::symlink_metadata(root).map_err(|_| denied())?;
+    native_linux_lsp_trace("bundle_root_metadata_read");
     if !meta.is_dir()
         || meta.file_type().is_symlink()
         || meta.uid() != 0
@@ -61,6 +62,7 @@ fn audit_bundle(root: &Path) -> Result<String, SupervisorError> {
     {
         return Err(denied());
     }
+    native_linux_lsp_trace("bundle_root_owner_mode_verified");
     let canonical = fs::canonicalize(root).map_err(|_| denied())?;
     if canonical != root {
         return Err(denied());
@@ -112,6 +114,7 @@ fn audit_bundle(root: &Path) -> Result<String, SupervisorError> {
     }
     let mut total = 0u64;
     walk(root, Path::new(""), &mut entries, &mut total)?;
+    native_linux_lsp_trace("bundle_recursive_audit_verified");
     let mut overall = Sha256::new();
     for (relative, path) in entries {
         let mut reader = File::open(path).map_err(|_| denied())?;
@@ -134,6 +137,7 @@ fn audit_bundle(root: &Path) -> Result<String, SupervisorError> {
 /// Only a root-owned, non-writable, release-verified tree is usable.
 /// The reviewed expected digest is supplied by trusted installer metadata.
 pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, SupervisorError> {
+    native_linux_lsp_trace("bundle_recipe_probe_begin");
     let filename = match recipe {
         "lsp_rust_analyzer" => "rust-analyzer",
         "lsp_clangd" => "clangd",
@@ -142,7 +146,10 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
     };
     let bin = root.join("bin").join(filename);
     ensure_root_owned_tool(&bin)?;
-    audit_bundle(root)
+    native_linux_lsp_trace("root_owned_clangd_binary_verified");
+    let result = audit_bundle(root)?;
+    native_linux_lsp_trace("root_owned_bundle_tree_verified");
+    Ok(result)
 }
 fn set_nonblocking(fd: RawFd) -> Result<(), SupervisorError> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
