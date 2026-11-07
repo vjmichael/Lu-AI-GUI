@@ -95,7 +95,7 @@ pub fn project_goal_events(events:&[GoalEvent])->Result<GoalSnapshot,AnsfError>{
         if !seen.insert(event.event_id.as_str()){return Err(AnsfError::InvalidInput);}
         match event.kind{
             GoalEventKind::SetGoal=>{
-                if context.goal_id.as_deref()!=Some(&event.goal_id) {
+                if context.goal_id.as_deref()!=Some(event.goal_id.as_str()) {
                     context.questions.clear();
                 }else{
                     for q in &mut context.questions{
