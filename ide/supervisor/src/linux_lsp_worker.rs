@@ -257,7 +257,7 @@ impl LinuxLspProcess {
         {
             return;
         }
-        eprintln!("PROTECTED_LINUX_DAP_CHILD_FAILURE_STAGE={stage}");
+        eprintln!("PROTECTED_LINUX_DAP_OR_LSP_CHILD_FAILURE_STAGE={stage}");
         let state = match self.child.try_wait() {
             Ok(Some(status)) if status.success() => "exited_zero",
             Ok(Some(_)) => "exited_nonzero",
@@ -470,7 +470,19 @@ pub fn start_linux_lsp(
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        // The ordinary released worker discards stderr. The independent
+        // debug-only native acceptance fixture may collect up to 2048 bytes
+        // into an OS pipe, then emit ONLY fixed categories after failure.
+        .stderr(
+            if cfg!(debug_assertions)
+                && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+            {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            },
+        );
     unsafe {
         command.pre_exec(move || attach_pid_in_pre_exec(descriptor));
     }
@@ -517,11 +529,12 @@ pub fn start_linux_lsp(
         return Err(e);
     }
     native_linux_lsp_trace("running_receipt_fsynced");
+    let debug_stderr = child.stderr.take();
     let process = LinuxLspProcess {
         child,
         stdin,
         stdout,
-        debug_stderr: None,
+        debug_stderr,
         group,
         released: false,
     };
