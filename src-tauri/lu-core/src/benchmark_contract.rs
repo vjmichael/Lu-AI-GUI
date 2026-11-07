@@ -29,6 +29,28 @@ pub enum FailureLayer {
     Model,
     NativeTool,
     CognitumBackend,
+    /// I: the installed, permitted interface needed by the model is missing.
+    ExecutionInterface,
+    /// A: a valid host grant or OS permission is absent or revoked.
+    AuthorizationPolicy,
+    /// F: output cannot be independently established as correct.
+    ResultVerification,
+    /// F: a failed/interrupted effect cannot be safely reconciled.
+    Recovery,
+}
+impl FailureLayer {
+    /// K/I/A/F attribution for this explicit class. A generic NativeTool
+    /// failure is intentionally 'undetermined': it might be an interface
+    /// failure, a tool bug or incorrect feedback, and needs a specific receipt.
+    pub fn capability_factor(self)->&'static str{
+        match self{
+            Self::Model=>"K",
+            Self::LuToolRouting|Self::ExecutionInterface|Self::CognitumBackend=>"I",
+            Self::AuthorizationPolicy=>"A",
+            Self::ResultVerification|Self::Recovery=>"F",
+            Self::NativeTool=>"undetermined",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,4 +176,22 @@ pub fn validate_matched_pair(
         return Err(BenchmarkError::UnmatchedControls);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod kiaf_failure_attribution_tests {
+    use super::*;
+    #[test]
+    fn exact_kiaf_factors_preserve_legacy_benchmark_schema(){
+        assert_eq!(FailureLayer::Model.capability_factor(),"K");
+        assert_eq!(FailureLayer::ExecutionInterface.capability_factor(),"I");
+        assert_eq!(FailureLayer::AuthorizationPolicy.capability_factor(),"A");
+        assert_eq!(FailureLayer::ResultVerification.capability_factor(),"F");
+        assert_eq!(FailureLayer::Recovery.capability_factor(),"F");
+        assert_eq!(FailureLayer::NativeTool.capability_factor(),"undetermined");
+        assert_eq!(serde_json::to_string(&FailureLayer::AuthorizationPolicy).unwrap(),
+                   "\"authorization_policy\"");
+        assert_eq!(serde_json::from_str::<FailureLayer>("\"native_tool\"").unwrap(),
+                   FailureLayer::NativeTool);
+    }
 }
