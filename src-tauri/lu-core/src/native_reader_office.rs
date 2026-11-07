@@ -7,7 +7,7 @@ use quick_xml::{events::{BytesStart,Event},Reader};
 use std::collections::BTreeMap;
 
 fn bad()->ReaderFailure{ReaderFailure::InvalidDocument}
-fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
+pub(crate) fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
     tag.attributes().with_checks(true).filter_map(Result::ok)
         .find(|a|a.key.as_ref()==name)
         .and_then(|a|{
@@ -15,7 +15,7 @@ fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
             quick_xml::escape::unescape(value).ok().map(|s|s.into_owned())
         })
 }
-fn xml_value(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
+pub(crate) fn xml_value(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
     match e{
         Event::Text(t)=>Ok(Some(t.decode().map_err(|_|bad())?.into_owned())),
         Event::CData(t)=>Ok(Some(t.decode().map_err(|_|bad())?.into_owned())),
@@ -288,12 +288,8 @@ fn slide_text(xml:&[u8],out:&mut String)->Result<(),ReaderFailure>{
     }
     Ok(())
 }
-pub fn read_pptx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
-    read_pptx_slide(bytes,max_chars,None)
-}
-pub fn read_pptx_slide(bytes:&[u8],max_chars:usize,selected:Option<usize>)
-    ->Result<ReaderText,ReaderFailure>{
-    let pkg=OpenXmlPackage::new(bytes)?;
+/// Presentation order is read once from authenticated package relationships.
+fn pptx_slide_paths(pkg:&OpenXmlPackage)->Result<Vec<String>,ReaderFailure>{
     if !pkg.has("ppt/presentation.xml"){return Err(bad())}
     let rels=relationships(pkg.part("ppt/_rels/presentation.xml.rels")?)?;
     let mut reader=Reader::from_reader(pkg.part("ppt/presentation.xml")?);
@@ -319,6 +315,15 @@ pub fn read_pptx_slide(bytes:&[u8],max_chars:usize,selected:Option<usize>)
         }
     }
     if slides.is_empty(){return Err(bad())}
+    Ok(slides)
+}
+pub fn read_pptx(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
+    read_pptx_slide(bytes,max_chars,None)
+}
+pub fn read_pptx_slide(bytes:&[u8],max_chars:usize,selected:Option<usize>)
+    ->Result<ReaderText,ReaderFailure>{
+    let pkg=OpenXmlPackage::new(bytes)?;
+    let slides=pptx_slide_paths(&pkg)?;
     let mut out=String::new();let mut found=false;
     for (i,slide) in slides.iter().enumerate(){
         if selected.is_none_or(|n|n==i+1){
@@ -328,6 +333,31 @@ pub fn read_pptx_slide(bytes:&[u8],max_chars:usize,selected:Option<usize>)
         }
     }
     if !found{return Err(ReaderFailure::SelectorNotFound)}
+    bounded(out,ReaderFormat::Pptx,max_chars)
+}
+/// Explicit, read-only presenter-note selector for ONE slide. A relationship
+/// must resolve to one internal notesSlide; absence/ambiguity fails closed.
+pub fn read_pptx_notes(
+    bytes:&[u8],max_chars:usize,selected:usize
+)->Result<ReaderText,ReaderFailure>{
+    if selected==0||selected>512{return Err(ReaderFailure::SelectorNotFound)}
+    let pkg=OpenXmlPackage::new(bytes)?;
+    let slides=pptx_slide_paths(&pkg)?;
+    let slide=slides.get(selected-1).ok_or(ReaderFailure::SelectorNotFound)?;
+    let (folder,file)=slide.rsplit_once('/').ok_or_else(bad)?;
+    let relationship=format!("{folder}/_rels/{file}.rels");
+    if !pkg.has(&relationship){return Err(ReaderFailure::SelectorNotFound)}
+    let rels=relationships(pkg.part(&relationship)?)?;
+    let mut notes=Vec::new();
+    for target in rels.values(){
+        let path=resolve(slide,target)?;
+        if path.starts_with("ppt/notesSlides/")&&path.ends_with(".xml"){
+            notes.push(path);
+        }
+    }
+    if notes.len()!=1{return Err(ReaderFailure::SelectorNotFound)}
+    let mut out=format!("[Slide {} notes]\n",selected);
+    slide_text(pkg.part(&notes[0])?,&mut out)?;
     bounded(out,ReaderFormat::Pptx,max_chars)
 }
 #[cfg(test)]
@@ -426,6 +456,22 @@ mod tests{
         assert!(result.text.contains("[Slide 1]\nFirst & most important"));
         assert!(result.text.contains("[Slide 2]\nSecond"));
         assert!(result.text.find("First").unwrap()<result.text.find("Second").unwrap());
+    }
+    #[test]
+    fn selected_pptx_notes_do_not_expose_slide_text_or_other_slides(){
+        let data=make_zip(&[
+            ("[Content_Types].xml",CT),
+            ("ppt/presentation.xml",r#"<p:presentation><p:sldIdLst><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>"#),
+            ("ppt/_rels/presentation.xml.rels",r#"<Relationships><Relationship Id="rId1" Target="slides/slide1.xml"/></Relationships>"#),
+            ("ppt/slides/slide1.xml",r#"<p:sld><a:t>Main slide</a:t></p:sld>"#),
+            ("ppt/slides/_rels/slide1.xml.rels",r#"<Relationships><Relationship Id="rId2" Target="../notesSlides/notesSlide1.xml"/></Relationships>"#),
+            ("ppt/notesSlides/notesSlide1.xml",r#"<p:notes><a:t>Presenter-only sentence</a:t></p:notes>"#),
+        ]);
+        let notes=read_pptx_notes(&data,200,1).unwrap();
+        assert!(notes.text.contains("Presenter-only sentence"));
+        assert!(!notes.text.contains("Main slide"));
+        assert_eq!(read_pptx_notes(&data,200,2),Err(ReaderFailure::SelectorNotFound));
+        assert!(read_pptx_slide(&data,200,Some(1)).unwrap().text.contains("Main slide"));
     }
     #[test]
     fn mismatched_office_package_and_external_links_rejected(){

@@ -49,7 +49,7 @@ pub(crate) fn pick_reader_bytes(
             "properties","env","py","rs","js","jsx","ts","tsx","sql",
             "yaml","yml","toml","go","c","h","cpp","hpp","cs","java",
             "sh","ps1","css","rb","php","swift","kt","lua",
-            "docx","xlsx","pptx","ods","odp","pdf",
+            "docx","xlsx","pptx","ods","odp","odt","rtf","epub","pdf",
         ]).blocking_pick_file();
     let Some(selection)=selection else{return Ok(None)};
     let path=selection.into_path().map_err(|_|"Invalid file picker result")?;
@@ -67,7 +67,9 @@ pub(crate) fn pick_reader_bytes(
     let filename=path.file_name().and_then(|s|s.to_str())
         .ok_or("Unsupported Reader filename")?.to_owned();
     if filename.is_empty()||filename.len()>200||
-        filename.contains(['\\','/',':','\0']){
+        filename.contains(['\\','/',':','\0'])||
+        filename.chars().any(|c|c.is_control()||
+            matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')){
         return Err("Unsafe Reader filename".into())
     }
     let mut input=File::open(&path).map_err(|_|"Cannot open Reader document")?;

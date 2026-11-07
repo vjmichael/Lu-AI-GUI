@@ -25,6 +25,9 @@ pub struct ImageRevisionHistoryRow {
     pub height:u32,
     pub recorded_bytes:u64,
     pub state:String,
+    /// Read-only inferred parent from an earlier APPLIED export in this chat
+    /// whose verified output digest is this revision's original digest.
+    pub parent_revision_id:Option<String>,
 }
 #[derive(Debug)]
 pub enum RevisionHistoryError {
@@ -133,16 +136,23 @@ impl ImageRevisionLedger {
         if !scoped_chat(chat)||!(1..=100).contains(&limit){
             return Err(RevisionHistoryError::Invalid);
         }
-        let mut query=self.db.prepare("SELECT id,base_ref,base_sha256,
-            revision_sha256,file_name,width,height,recorded_bytes,state
-            FROM lu_image_revision_history WHERE chat_id=?1
-            ORDER BY created_at DESC,id DESC LIMIT ?2")
+        let mut query=self.db.prepare("SELECT cur.id,cur.base_ref,cur.base_sha256,
+            cur.revision_sha256,cur.file_name,cur.width,cur.height,
+            cur.recorded_bytes,cur.state,
+            (SELECT prev.id FROM lu_image_revision_history prev
+             WHERE prev.chat_id=cur.chat_id AND prev.state='APPLIED'
+               AND prev.revision_sha256=cur.base_sha256
+               AND prev.rowid<cur.rowid
+             ORDER BY prev.rowid DESC LIMIT 1)
+            FROM lu_image_revision_history cur WHERE cur.chat_id=?1
+            ORDER BY cur.created_at DESC,cur.id DESC LIMIT ?2")
             .map_err(|_|RevisionHistoryError::Database)?;
         let rows=query.query_map(params![chat,limit as i64],|r|Ok(ImageRevisionHistoryRow{
             id:r.get(0)?,base_ref:r.get(1)?,
             base_sha256:r.get(2)?,revision_sha256:r.get(3)?,
             file_name:r.get(4)?,width:r.get(5)?,height:r.get(6)?,
             recorded_bytes:r.get(7)?,state:r.get(8)?,
+            parent_revision_id:r.get(9)?,
         })).map_err(|_|RevisionHistoryError::Database)?;
         rows.collect::<Result<Vec<_>,_>>()
             .map_err(|_|RevisionHistoryError::Database)
@@ -159,6 +169,7 @@ mod tests{
             revision_sha256:"d".repeat(64),
             file_name:"revision.png".into(),width:64,height:32,
             recorded_bytes:0,state:"PREPARED".into(),
+            parent_revision_id:None,
         }
     }
     #[test]
@@ -181,6 +192,23 @@ mod tests{
         assert!(states.contains(&"APPLIED".into()));
         assert!(db.applied("c-first",&second.id,&second.revision_sha256,100).is_err());
         assert!(db.history("c-second",10).unwrap().is_empty());
+    }
+    #[test]
+    fn previous_export_digest_links_read_only_chat_local_lineage(){
+        let mut db=ImageRevisionLedger::open(Path::new(":memory:")).unwrap();
+        let root=sample();db.prepare("c-a",&root).unwrap();
+        db.applied("c-a",&root.id,&root.revision_sha256,101).unwrap();
+        let mut child=sample();
+        child.id=format!("image-rev-{}","f".repeat(32));
+        child.base_sha256=root.revision_sha256.clone();
+        child.revision_sha256="1".repeat(64);
+        db.prepare("c-a",&child).unwrap();
+        db.applied("c-a",&child.id,&child.revision_sha256,102).unwrap();
+        let rows=db.history("c-a",10).unwrap();
+        assert_eq!(rows.iter().find(|r|r.id==child.id).unwrap().parent_revision_id,
+            Some(root.id.clone()));
+        assert_eq!(rows.iter().find(|r|r.id==root.id).unwrap().parent_revision_id,None);
+        assert!(db.history("c-b",10).unwrap().is_empty());
     }
     #[test]
     fn unsafe_filename_or_wrong_digest_does_not_become_applied(){

@@ -76,9 +76,20 @@ $exeDigest = $files['tesseract.exe']
 $env:LU_OCR_TESSERACT_SHA256 = $exeDigest
 $engDigest = $files['tessdata/eng.traineddata']
 $env:LU_OCR_ENG_SHA256 = $engDigest
+# Optional, independently reviewed Poppler rasterizer. No PDF OCR claim
+# exists when its binary is not present in the strict release manifest.
+if ($files.ContainsKey('pdftocairo.exe')) {
+  $renderDigest = $files['pdftocairo.exe']
+  $env:LU_OCR_PDF_RENDER_SHA256 = $renderDigest
+} else {
+  Remove-Item Env:LU_OCR_PDF_RENDER_SHA256 -ErrorAction SilentlyContinue
+}
 if ($env:GITHUB_ENV) {
   Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_OCR_TESSERACT_SHA256=$exeDigest"
   Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_OCR_ENG_SHA256=$engDigest"
+  if ($files.ContainsKey('pdftocairo.exe')) {
+    Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_OCR_PDF_RENDER_SHA256=$renderDigest"
+  }
 }
 Write-Output 'Offline OCR resources staged and SHA-256 checked. Build with the Tauri OCR overlay.'
 Write-Output 'Bundling still requires a reviewed license manifest and independent native acceptance.'

@@ -24,6 +24,19 @@ pub enum ImageRevisionOperation{
     Pixelate{x:u32,y:u32,width:u32,height:u32,block_size:u32},
     /// Draw a visible annotation border over an immutable source snapshot.
     Rectangle{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// A visible diagonal annotation bounded to the selected rectangle.
+    Line{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// Ellipse outline. Never advertised as a privacy mask.
+    Ellipse{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// Diagonal line with a bounded, visible arrowhead.
+    Arrow{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// Bounded pixel filters preserve the input alpha channel.
+    Grayscale,
+    InvertRgb,
+    Blur{sigma:u8},
+    Brightness{delta:i16},
+    Contrast{percent:i16},
+    Sharpen{sigma:u8,threshold:u8},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct ImageRevision{
@@ -42,6 +55,43 @@ pub enum ImageRevisionError{
 fn dimensions_allowed(w:u32,h:u32)->bool{
     w>0&&h>0&&w<=MAX_IMAGE_EDGE&&h<=MAX_IMAGE_EDGE
         &&u64::from(w)*u64::from(h)<=MAX_IMAGE_PIXELS
+}
+fn paint_brush(
+    image:&mut image::RgbaImage,x:u32,y:u32,rgb:[u8;3],stroke:u32,
+){
+    let before=stroke.saturating_sub(1)/2;
+    let after=stroke/2;
+    let max_x=image.width().saturating_sub(1);
+    let max_y=image.height().saturating_sub(1);
+    for yy in y.saturating_sub(before)..=y.saturating_add(after).min(max_y){
+        for xx in x.saturating_sub(before)..=x.saturating_add(after).min(max_x){
+            image.put_pixel(xx,yy,image::Rgba([rgb[0],rgb[1],rgb[2],255]));
+        }
+    }
+}
+/// Keep the original alpha channel for all color/spatial filters. Blur is a
+/// visual treatment, NEVER a privacy redaction and never silently removes
+/// transparency from source pixels.
+fn original_alpha(source:&DynamicImage,filtered:DynamicImage)->DynamicImage{
+    let raw=source.to_rgba8();
+    let mut edited=filtered.to_rgba8();
+    for (pixel,from) in edited.pixels_mut().zip(raw.pixels()){
+        pixel[3]=from[3];
+    }
+    DynamicImage::ImageRgba8(edited)
+}
+fn paint_segment(
+    canvas:&mut image::RgbaImage,
+    a:(u32,u32),b:(u32,u32),rgb:[u8;3],stroke:u32
+){
+    let dx=i64::from(b.0)-i64::from(a.0);
+    let dy=i64::from(b.1)-i64::from(a.1);
+    let steps=dx.unsigned_abs().max(dy.unsigned_abs()).max(1);
+    for step in 0..=steps{
+        let xx=i64::from(a.0)+dx*step as i64/steps as i64;
+        let yy=i64::from(a.1)+dy*step as i64/steps as i64;
+        paint_brush(canvas,xx.max(0) as u32,yy.max(0) as u32,rgb,stroke);
+    }
 }
 fn validate_region(
     x:u32,y:u32,width:u32,height:u32,base_w:u32,base_h:u32
@@ -153,6 +203,98 @@ pub fn transform_admitted_image(
                 }
             }
             DynamicImage::ImageRgba8(image)
+        },
+        ImageRevisionOperation::Line{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=32).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
+            let mut canvas=decoded.to_rgba8();
+            paint_segment(&mut canvas,(x,y),(x+width-1,y+height-1),rgb,stroke);
+            DynamicImage::ImageRgba8(canvas)
+        },
+        ImageRevisionOperation::Arrow{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=32).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
+            if width<3||height<3{return Err(ImageRevisionError::InvalidOperation)}
+            let mut canvas=decoded.to_rgba8();
+            let start=(x,y);let end=(x+width-1,y+height-1);
+            paint_segment(&mut canvas,start,end,rgb,stroke);
+            let dx=f64::from(width-1);
+            let dy=f64::from(height-1);
+            let length=(dx*dx+dy*dy).sqrt();
+            let ux=dx/length;let uy=dy/length;
+            let head=f64::from((stroke*4+6).min(48)).min(length*0.5);
+            for side in [-1.0f64,1.0]{
+                let wing_x=f64::from(end.0)-ux*head-side*uy*head*0.55;
+                let wing_y=f64::from(end.1)-uy*head+side*ux*head*0.55;
+                let wx=wing_x.round().clamp(0.0,f64::from(base_w-1)) as u32;
+                let wy=wing_y.round().clamp(0.0,f64::from(base_h-1)) as u32;
+                paint_segment(&mut canvas,(wx,wy),end,rgb,stroke);
+            }
+            DynamicImage::ImageRgba8(canvas)
+        },
+        ImageRevisionOperation::Ellipse{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=64).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
+            let mut canvas=decoded.to_rgba8();
+            let w=f64::from(width);let h=f64::from(height);
+            let inner_x=(w/2.0-f64::from(stroke)).max(0.0);
+            let inner_y=(h/2.0-f64::from(stroke)).max(0.0);
+            for cy in 0..height{
+                for cx in 0..width{
+                    let dx=f64::from(cx)+0.5-w/2.0;
+                    let dy=f64::from(cy)+0.5-h/2.0;
+                    let outer=(dx/(w/2.0)).powi(2)+(dy/(h/2.0)).powi(2);
+                    if outer>1.0{continue}
+                    let inside=inner_x>0.0&&inner_y>0.0
+                        &&(dx/inner_x).powi(2)+(dy/inner_y).powi(2)<1.0;
+                    if !inside{
+                        canvas.put_pixel(x+cx,y+cy,
+                            image::Rgba([rgb[0],rgb[1],rgb[2],255]));
+                    }
+                }
+            }
+            DynamicImage::ImageRgba8(canvas)
+        },
+        ImageRevisionOperation::Grayscale=>{
+            let mut pixels=decoded.to_rgba8();
+            for pixel in pixels.pixels_mut(){
+                let gray=(77*u32::from(pixel[0])+150*u32::from(pixel[1])
+                    +29*u32::from(pixel[2])+128)/256;
+                pixel[0]=gray as u8;pixel[1]=gray as u8;pixel[2]=gray as u8;
+            }
+            DynamicImage::ImageRgba8(pixels)
+        },
+        ImageRevisionOperation::InvertRgb=>{
+            let mut pixels=decoded.to_rgba8();
+            for pixel in pixels.pixels_mut(){
+                pixel[0]=255-pixel[0];
+                pixel[1]=255-pixel[1];
+                pixel[2]=255-pixel[2];
+            }
+            DynamicImage::ImageRgba8(pixels)
+        },
+        ImageRevisionOperation::Blur{sigma}=>{
+            if !(1..=8).contains(&sigma){return Err(ImageRevisionError::InvalidOperation)}
+            original_alpha(&decoded,decoded.blur(f32::from(sigma)))
+        },
+        ImageRevisionOperation::Brightness{delta}=>{
+            if !(-128..=128).contains(&delta){
+                return Err(ImageRevisionError::InvalidOperation)
+            }
+            original_alpha(&decoded,decoded.brighten(i32::from(delta)))
+        },
+        ImageRevisionOperation::Contrast{percent}=>{
+            if !(-100..=100).contains(&percent){
+                return Err(ImageRevisionError::InvalidOperation)
+            }
+            original_alpha(&decoded,decoded.adjust_contrast(f32::from(percent)))
+        },
+        ImageRevisionOperation::Sharpen{sigma,threshold}=>{
+            if !(1..=8).contains(&sigma)||threshold>64{
+                return Err(ImageRevisionError::InvalidOperation)
+            }
+            original_alpha(&decoded,
+                decoded.unsharpen(f32::from(sigma),i32::from(threshold)))
         }
     };
     let (width,height)=transformed.dimensions();
@@ -227,6 +369,71 @@ mod tests{
             ImageRevisionOperation::Resize{width:10,height:8}).unwrap();
         assert_eq!((scaled.width,scaled.height),(10,8));
         assert_ne!(crop.revision_sha256,scaled.revision_sha256);
+    }
+    #[test]
+    fn immutable_filters_are_deterministic_and_bounds_checked(){
+        let source=original();
+        let original_bytes=source.bytes.clone();
+        for op in [
+            ImageRevisionOperation::Grayscale,
+            ImageRevisionOperation::InvertRgb,
+            ImageRevisionOperation::Blur{sigma:2},
+            ImageRevisionOperation::Brightness{delta:30},
+            ImageRevisionOperation::Contrast{percent:20},
+            ImageRevisionOperation::Sharpen{sigma:2,threshold:3}
+        ]{
+            let first=transform_admitted_image(&source,op).unwrap();
+            let second=transform_admitted_image(&source,op).unwrap();
+            assert_eq!(first.revision_sha256,second.revision_sha256);
+            assert_eq!(source.bytes,original_bytes);
+        }
+        assert_eq!(
+            transform_admitted_image(&source,ImageRevisionOperation::Blur{sigma:0}),
+            Err(ImageRevisionError::InvalidOperation)
+        );
+        assert_eq!(
+            transform_admitted_image(&source,ImageRevisionOperation::Contrast{percent:101}),
+            Err(ImageRevisionError::InvalidOperation)
+        );
+    }
+    #[test]
+    fn arrow_is_deterministic_bounded_and_immutable(){
+        let source=original();let original=source.bytes.clone();
+        let operation=ImageRevisionOperation::Arrow{
+            x:1,y:1,width:12,height:8,rgb:[255,80,0],stroke:2
+        };
+        let a=transform_admitted_image(&source,operation).unwrap();
+        let b=transform_admitted_image(&source,operation).unwrap();
+        assert_eq!(a.revision_sha256,b.revision_sha256);
+        assert_eq!(source.bytes,original);
+        assert_eq!(transform_admitted_image(&source,
+            ImageRevisionOperation::Arrow{
+                x:1,y:1,width:2,height:8,rgb:[255,80,0],stroke:2
+            }),Err(ImageRevisionError::InvalidOperation));
+    }
+    #[test]
+    fn elliptical_and_line_annotations_are_deterministic_and_keep_original(){
+        let source=original();let original=source.bytes.clone();
+        for operation in [
+            ImageRevisionOperation::Ellipse{
+                x:1,y:1,width:12,height:9,rgb:[200,30,90],stroke:2,
+            },
+            ImageRevisionOperation::Line{
+                x:1,y:1,width:12,height:9,rgb:[20,230,90],stroke:2,
+            },
+        ]{
+            let a=transform_admitted_image(&source,operation).unwrap();
+            let b=transform_admitted_image(&source,operation).unwrap();
+            assert_eq!(a.revision_sha256,b.revision_sha256);
+            assert_ne!(a.revision_sha256,format!("{:x}",Sha256::digest(&source.bytes)));
+            assert_eq!(source.bytes,original);
+        }
+        assert_eq!(
+            transform_admitted_image(&source,ImageRevisionOperation::Ellipse{
+                x:15,y:0,width:2,height:4,rgb:[255,0,0],stroke:1
+            }),
+            Err(ImageRevisionError::InvalidOperation)
+        );
     }
     #[test]
     fn invalid_crop_oversized_output_and_changed_source_fail_closed(){

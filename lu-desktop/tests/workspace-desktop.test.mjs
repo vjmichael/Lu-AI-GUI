@@ -33,5 +33,13 @@ test('workspace selection is opt-in and normal Send remains a separate path',()=
   assert.match(ui,/async function askReaderDocument\(\)/);
   assert.match(ui,/async function send\(e\)/);
   assert.match(ui,/onClick=\{\(\)=>void askWorkspaceDirectory\(\)\}/);
-  assert.match(ui,/Select one folder and let Lu read, search/);
+  assert.match(ui,/Choose a folder and let Lu discover files by name/);
+});
+
+test('P01 native filename/metadata discovery is advertised only in a scoped workspace turn',()=>{
+  assert.match(route,/indexed filename\/metadata/);
+  assert.match(route,/indexed discovery tool before repeatedly traversing folders/);
+  assert.match(route,/WorkspaceReadTurnSession::new\(/);
+  assert.doesNotMatch(route,/register_discovery_tool\(/);
+  assert.match(ui,/Choose a folder and let Lu discover files by name/);
 });

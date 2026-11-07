@@ -31,7 +31,7 @@ pub struct TrustedWorkerPlan {
 struct OwnedWorker {
     workspace_id:String,
     child:Child,
-    progress_reader:Option<std::thread::JoinHandle<bool>>,
+    progress_reader:Option<std::thread::JoinHandle<Option<ScanProof>>>,
     deadline:Option<Instant>,
     #[cfg(windows)]
     job:Option<lu_win_worker_job::Job>,
@@ -77,10 +77,12 @@ fn verified_executable(path:&Path,digest:&str)->Result<PathBuf,BackgroundProcess
 /// Worker progress stream is a deliberately tiny, bounded native protocol.
 /// The caller has already pinned the executable hash, so this is a receipt,
 /// never an authorization grant or a model-provided status claim.
-fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->bool{
+#[derive(Debug,Clone,PartialEq,Eq)]
+struct ScanProof{sha256:String,bytes:u64}
+fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->Option<ScanProof>{
     let mut input=BufReader::new(pipe);
     let mut line=Vec::with_capacity(96);
-    let mut final_result=false;
+    let mut final_result=None;
     let mut total_seen=None::<u64>;
     let mut last_bytes=0u64;
     loop{
@@ -90,39 +92,40 @@ fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->bool{
             let mut byte=[0u8;1];
             match input.read(&mut byte){
                 Ok(0)=>return final_result,
-                Err(_)=>return false,
+                Err(_)=>return None,
                 Ok(_)=>{
                     if byte[0]==b'\n'{break;}
                     line.push(byte[0]);
                 }
             }
         }
-        if line.len()>=128{return false;}
-        let Ok(text)=std::str::from_utf8(&line) else{return false};
+        if line.len()>=128{return None;}
+        let Ok(text)=std::str::from_utf8(&line) else{return None};
         if let Some(value)=text.strip_prefix("P\t"){
-            if final_result{return false;}
-            let Some((read,total))=value.split_once('\t') else{return false};
+            if final_result.is_some(){return None;}
+            let Some((read,total))=value.split_once('\t') else{return None};
             let (Ok(read),Ok(total))=(read.parse::<u64>(),total.parse::<u64>())
-                else{return false};
+                else{return None};
             if total==0||read>total||read<last_bytes
-                ||total_seen.is_some_and(|seen|seen!=total){return false;}
+                ||total_seen.is_some_and(|seen|seen!=total){return None;}
             last_bytes=read;
             total_seen=Some(total);
             let percent=((u128::from(read)*99)/u128::from(total)) as u8;
             if store.checkpoint(task_id,percent,
                 &format!("Verified {} of {} bytes",read,total),&[]).is_err(){
-                return false;
+                return None;
             }
         }else if let Some(digest)=text.strip_prefix("D\t"){
-            if final_result||total_seen!=Some(last_bytes)
-                ||digest.len()!=64
-                ||!digest.bytes().all(|b|b.is_ascii_hexdigit()){
-                return false;
+            if final_result.is_some()||total_seen!=Some(last_bytes)
+                ||last_bytes==0||digest.len()!=64
+                ||!digest.bytes().all(|b|b.is_ascii_hexdigit()
+                    &&!b.is_ascii_uppercase()){
+                return None;
             }
             if store.checkpoint(task_id,100,&format!("SHA-256: {digest}"),&[])
-                .is_err(){return false;}
-            final_result=true;
-        }else{return false;}
+                .is_err(){return None;}
+            final_result=Some(ScanProof{sha256:digest.into(),bytes:last_bytes});
+        }else{return None;}
     }
 }
 
@@ -164,6 +167,19 @@ impl BackgroundProcessSupervisor {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        #[cfg(target_os="linux")]
+        {
+            let quota=if plan.args.first().and_then(|s|s.to_str())==
+                Some("--lu-file-scan-worker"){
+                Some(1024*1024*1024u64)
+            }else{None};
+            lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
+                &mut command,std::process::id(),quota,
+            ).map_err(|_|{
+                let _=self.store.fail_pending(&plan.task_id);
+                BackgroundProcessError::SpawnFailed
+            })?;
+        }
         #[cfg(windows)]
         let job=lu_win_worker_job::Job::new().map_err(|_|{
             let _=self.store.fail_pending(&plan.task_id);
@@ -174,6 +190,13 @@ impl BackgroundProcessSupervisor {
             .is_some_and(|mode|matches!(mode,
                 "--lu-archive-extract-worker"|"--lu-archive-preview-worker"))
             &&job.set_memory_limit(1024*1024*1024).is_err(){
+            let _=self.store.fail_pending(&plan.task_id);
+            return Err(BackgroundProcessError::SpawnFailed)
+        }
+        #[cfg(windows)]
+        if plan.args.first().and_then(|s|s.to_str())==
+            Some("--lu-file-scan-worker")
+            &&job.set_memory_limit(512*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
         }
@@ -241,10 +264,15 @@ impl BackgroundProcessSupervisor {
             let mut owner=workers.remove(&id).expect("owned worker still registered");
             #[cfg(windows)]
             drop(owner.job.take()); // Close Job and any inherited stdout handles.
-            let proof=owner.progress_reader.take().map(|handle|handle.join().unwrap_or(false));
+            let had_reader=owner.progress_reader.is_some();
+            let proof=owner.progress_reader.take().and_then(|handle|handle.join().ok()).flatten();
             drop(owner); // Release Windows Job handle before terminal receipt.
             let result=match outcome{
-                Some(true) if proof.unwrap_or(true)=>self.store.complete(&id),
+                Some(true) if !had_reader=>self.store.complete(&id),
+                Some(true) if proof.is_some()=>{
+                    let p=proof.expect("checked verified scan proof");
+                    self.store.complete_scan_with_receipt(&id,&p.sha256,p.bytes)
+                },
                 Some(_)=>self.store.fail(&id),
                 None=>self.store.timed_out(&id),
             };
@@ -323,7 +351,7 @@ mod tests{
         store.start("media123").unwrap();
         let digest="a".repeat(64);
         let frames=format!("P\t0\t20\nP\t10\t20\nP\t20\t20\nD\t{digest}\n");
-        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123"));
+        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123").is_some());
         let record=store.get("media123").unwrap().unwrap();
         assert_eq!(record.progress,100);
         assert_eq!(record.detail,format!("SHA-256: {digest}"));
@@ -347,7 +375,7 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create("t",Some("w"),None).unwrap();
             store.start("t").unwrap();
-            assert!(!read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t"));
+            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t").is_none());
             assert!(store.get("t").unwrap().unwrap().progress<100);
         }
     }

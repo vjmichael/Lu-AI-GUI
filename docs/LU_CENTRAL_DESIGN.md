@@ -6,6 +6,20 @@
 > **Access is not permission. Permission is not authority.**
 > Lu can operate on the native host; authority to act comes from the authenticated user and remains bounded by the delegated task.
 
+## P02 background scheduler / Guardian source checkpoint — 2026-11-06
+
+Owner-authorized sequential work implemented P02's bounded native task schedule: per-chat durable queue metadata and resource reservations, priority/due/repeat options, restart fail-closed review, and host-first worker dispatch/reaping. UI provides queued pause/resume/cancel and guardian overview for the existing media-scan worker. [P02 implementation/limits](LU_BACKGROUND_SCHEDULER_P02.md). GPU/VRAM telemetry and adoption by every tool worker are NOT claimed. Exact-head CI/installed acceptance remains open. **Wait before starting P03.**
+
+## P01 native filesystem discovery source checkpoint — 2026-11-06
+
+P01/FS-DISCOVER-01 now has a bounded read-only native implementation and scoped AI tool wiring: [P01 implementation and remaining limits](LU_FILESYSTEM_DISCOVERY_P01.md). It reuses the existing per-turn folder picker and authority, adds cached metadata search with per-result freshness rechecks, and exposes optional bounded literal content lookup. Source only; not a full persistent/semantic whole-disk index and not native Windows acceptance. **The owner requested sequential work with an explicit stop after P01: P02 remains queued and may not start automatically.**
+
+## 2026-11-06 tool-priority decision — scope and stop point
+
+The owner has narrowed Lu Core to **AI-effective, integrated native capabilities rather than building replacement desktop applications**. Read the binding [Lu Core tool priority and boundary decision](LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md) and its ordered [implementation ledger](LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md) before planning further tool work. The explicit owner-ordered sequence is **filesystem discovery → Background Tasks + Resource Guardian → AI Operations Layer/model/provider manager → unified Reader/OCR → Browser/Transfer Manager → Observe & Learn → Research/styles → split archives/optional ISO-UDF → bounded Office/spreadsheets → basic image editor → Core Git → internal JSON/Protobuf**. Model-hub provider 'gf' is interpreted provisionally as Hugging Face and requires clarification before provider-specific code.
+
+Existing tool architecture, permission checks, source receipts and deferred native/Windows release gates stay in force. The owner authorized only design/ledger documentation in this turn, not implementation, testing, merging or automated execution. **WAIT for explicit next instruction.**
+
 ## 0. Authority of this document and evidence
 This is Lu's **single entrypoint design specification**, consolidating the recovered decisions from the `ChatGPT - Lu Convo xx` lineage (through Convo 21) and the current tracked engineering sources. It **does not claim** a verbatim reconstruction of every old message. Read this document before implementation; the task tracker, test evidence, and original design/decision records provide details.
 

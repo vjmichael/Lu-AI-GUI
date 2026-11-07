@@ -29,6 +29,9 @@ pub(crate) struct ImageRevisionStep{
     pub block_size:Option<u32>,
     pub stroke:Option<u32>,
     pub color:Option<u32>,
+    pub amount:Option<i16>,
+    pub sigma:Option<u8>,
+    pub threshold:Option<u8>,
 }
 impl ImageRevisionStep{
     pub(crate) fn operation(&self)->Result<ImageRevisionOperation,String>{
@@ -40,18 +43,40 @@ impl ImageRevisionStep{
             "resize"=>Op::Resize{width:self.width,height:self.height},
             "rotate90"=>Op::Rotate90,
             "flip_h"=>Op::FlipHorizontal,
+            "grayscale"=>Op::Grayscale,
+            "invert"=>Op::InvertRgb,
+            "blur"=>Op::Blur{sigma:self.sigma.unwrap_or(2)},
+            "brightness"=>Op::Brightness{delta:self.amount.unwrap_or(0)},
+            "contrast"=>Op::Contrast{percent:self.amount.unwrap_or(0)},
+            "sharpen"=>Op::Sharpen{
+                sigma:self.sigma.unwrap_or(2),
+                threshold:self.threshold.unwrap_or(3),
+            },
             "redact"=>Op::Redact{x:x()?,y:y()?,
                 width:self.width,height:self.height},
             "pixelate"=>Op::Pixelate{x:x()?,y:y()?,
                 width:self.width,height:self.height,
                 block_size:self.block_size.unwrap_or(12)},
-            "rectangle"=>{
+            "rectangle"|"line"|"ellipse"|"arrow"=>{
                 let rgb=self.color.unwrap_or(0xff5500);
                 if rgb>0xffffff{return Err("Invalid image annotation color".into());}
-                Op::Rectangle{x:x()?,y:y()?,
-                    width:self.width,height:self.height,
-                    rgb:[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8],
-                    stroke:self.stroke.unwrap_or(3)}
+                let color=[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8];
+                let x=x()?;let y=y()?;
+                let stroke=self.stroke.unwrap_or(3);
+                match self.operation.as_str(){
+                    "line"=>Op::Line{
+                        x,y,width:self.width,height:self.height,rgb:color,stroke
+                    },
+                    "ellipse"=>Op::Ellipse{
+                        x,y,width:self.width,height:self.height,rgb:color,stroke
+                    },
+                    "arrow"=>Op::Arrow{
+                        x,y,width:self.width,height:self.height,rgb:color,stroke
+                    },
+                    _=>Op::Rectangle{
+                        x,y,width:self.width,height:self.height,rgb:color,stroke
+                    },
+                }
             },
             _=>return Err("Image assembly includes an unknown operation".into()),
         })
@@ -202,7 +227,8 @@ mod tests{
         let plan=[ImageRevisionStep{
             operation:"rectangle".into(),x:Some(1),y:Some(1),
             width:8,height:6,block_size:None,
-            stroke:Some(2),color:Some(0x2255cc)
+            stroke:Some(2),color:Some(0x2255cc),
+            amount:None,sigma:None,threshold:None,
         }];
         let preview=preview_revision_plan(&input,&plan).unwrap();
         assert_eq!(preview.width,20);

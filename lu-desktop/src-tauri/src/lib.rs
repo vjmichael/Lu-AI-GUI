@@ -62,7 +62,7 @@ use std::{
     io::{Read, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{atomic::{AtomicBool,Ordering},Arc, Mutex},
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -244,9 +244,13 @@ struct DesktopState {
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
+    background_scheduler: Arc<lu_core::native_background_scheduler::BackgroundScheduler>,
+    background_pressure: Arc<lu_core::native_resource_pressure::PressureMonitor>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
     observe: Arc<observe_desktop::ObserveHost>,
     vision_probe:Mutex<Option<vision_context::VisionProbeReceipt>>,
+    /// Host-owned per-chat OCR workers, available for explicit cancellation.
+    ocr_cancellations:Mutex<HashMap<String,Arc<AtomicBool>>>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -616,13 +620,25 @@ impl DesktopState {
             )
         );
 
+        let background_scheduler=Arc::new(
+            lu_core::native_background_scheduler::BackgroundScheduler::open(
+                &root.join("lu-background-schedule.sqlite"),
+                Arc::clone(&background_tasks),
+                Arc::clone(&background_processes),
+                lu_core::native_background_scheduler::ResourceBudget::interactive_first(),
+            ).map_err(|e|format!("Background scheduler unavailable: {e:?}"))?
+        );
+        let background_pressure=Arc::new(lu_core::native_resource_pressure::PressureMonitor::new());
         let observe=Arc::new(observe_desktop::ObserveHost::new(
             Arc::clone(&background_tasks),Arc::clone(&background_processes)
         ));
         Ok(Self {
             observe,
             vision_probe:Mutex::new(None),
+            ocr_cancellations:Mutex::new(HashMap::new()),
             background_processes,
+            background_scheduler,
+            background_pressure,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
             models_dir,
@@ -687,7 +703,18 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             std::thread::sleep(Duration::from_millis(500));
             // The native task supervisor must not depend on a visible
             // WebView. The OS terminates this host thread when Lu exits.
-            let _=state.background_processes.poll();
+            // Host-only guardian admission. A loaded model reserves greater
+            // foreground capacity; background GPU jobs stay prohibited until
+            // a verified per-backend VRAM monitor establishes an allowance.
+            let mut budget=lu_core::native_background_scheduler::
+                ResourceBudget::interactive_first();
+            if state.supervisor.status().is_ok_and(|s|s.session_id.is_some()){
+                budget.workers=1;budget.cpu=1;budget.ram_mib=512;
+            }
+            let observed=state.background_pressure.sample();
+            let budget=budget.under_host_pressure(observed);
+            let _=state.background_scheduler.set_budget(budget);
+            let _=state.background_scheduler.tick();
             // The existing watchdog also expires Lu-only observation leases.
             state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
@@ -1251,6 +1278,66 @@ struct OcrImageView{
     source_verified:bool,
     human_review_required:bool,
     message:&'static str,
+    ocr_input_sha256:Option<String>,
+    region:Option<OcrRegionView>,
+    page:Option<u16>,
+    raster_engine_sha256:Option<String>,
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct OcrRegionView{x:u32,y:u32,width:u32,height:u32}
+fn claim_ocr(
+    state:&Arc<DesktopState>,chat_id:&str
+)->Result<Arc<AtomicBool>,String>{
+    let mut workers=state.ocr_cancellations.lock()
+        .map_err(|_|"OCR activity registry unavailable")?;
+    if workers.contains_key(chat_id){
+        return Err("This conversation already has an OCR worker".into())
+    }
+    let token=Arc::new(AtomicBool::new(false));
+    workers.insert(chat_id.to_owned(),Arc::clone(&token));
+    Ok(token)
+}
+fn finish_ocr(state:&Arc<DesktopState>,chat_id:&str,token:&Arc<AtomicBool>){
+    if let Ok(mut workers)=state.ocr_cancellations.lock(){
+        if workers.get(chat_id).is_some_and(|current|Arc::ptr_eq(current,token)){
+            workers.remove(chat_id);
+        }
+    }
+}
+/// Cancels one already-running OCR worker in the current conversation.
+#[tauri::command]
+fn lu_ocr_cancel(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing OCR conversation")?;
+    let workers=state.ocr_cancellations.lock()
+        .map_err(|_|"OCR activity registry unavailable")?;
+    if let Some(token)=workers.get(&chat_id){
+        token.store(true,Ordering::SeqCst);
+        Ok(true)
+    }else{Ok(false)}
+}
+/// Both operator OCR routes reuse the same hash-pinned offline worker.
+fn offline_ocr_view(
+    bytes:&[u8],executable:&Path,expected:&str,
+    tessdata:&Path,expected_data:&str,cancel:&AtomicBool
+)->Result<OcrImageView,String>{
+    let observed=lu_core::native_ocr::recognize_pinned_image_cancellable(
+        bytes,executable,expected,tessdata,expected_data,cancel
+    ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
+    Ok(OcrImageView{
+        source_sha256:observed.source_sha256,
+        text_sha256:observed.recognized_text_sha256,
+        engine_sha256:observed.engine_sha256,
+        text:observed.recognized_text,
+        format:observed.source_format.to_owned(),
+        source_verified:false,human_review_required:true,
+        message:"Offline OCR transcription only. Review its accuracy before using it as evidence.",
+        ocr_input_sha256:None,region:None,
+        page:None,raster_engine_sha256:None,
+    })
 }
 #[tauri::command]
 async fn lu_ocr_read_selected_image(
@@ -1281,45 +1368,312 @@ async fn lu_ocr_read_selected_image(
     let Some(selected)=selected else{return Ok(None)};
     let path=selected.into_path()
         .map_err(|_|"OCR source must be a local image file")?;
-    let meta=std::fs::symlink_metadata(&path)
-        .map_err(|_|"OCR source no longer available")?;
-    if !meta.file_type().is_file()||meta.file_type().is_symlink()
-        ||meta.len()>12*1024*1024{
-        return Err("OCR requires an ordinary image at most 12 MiB".into());
-    }
+    // Pin and hash the native-picked source BEFORE the consent dialog.
+    // An eventual OCR worker uses these bytes, never a re-opened pathname.
+    let bytes=tauri::async_runtime::spawn_blocking(move||{
+        let meta=std::fs::symlink_metadata(&path)
+            .map_err(|_|"OCR source no longer available")?;
+        if !meta.file_type().is_file()||meta.file_type().is_symlink()
+           ||meta.len()==0||meta.len()>12*1024*1024{
+            return Err("OCR requires an ordinary image at most 12 MiB".to_owned());
+        }
+        let mut file=std::fs::File::open(&path)
+            .map_err(|_|"OCR source cannot be opened")?;
+        let opened=file.metadata().map_err(|_|"OCR source cannot be checked")?;
+        if !opened.is_file()||opened.len()!=meta.len(){
+            return Err("OCR source changed while being pinned".into());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if opened.dev()!=meta.dev()||opened.ino()!=meta.ino(){
+                return Err("OCR source inode changed while being pinned".into());
+            }
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if opened.file_attributes()&0x400!=0{
+                return Err("OCR file handle is a reparse point".into());
+            }
+        }
+        let mut bytes=Vec::with_capacity(meta.len() as usize);
+        file.take(12*1024*1024+1).read_to_end(&mut bytes)
+            .map_err(|_|"OCR source could not be pinned")?;
+        if bytes.len()>12*1024*1024||bytes.len()!=meta.len() as usize{
+            return Err("OCR source size changed during admission".into());
+        }
+        let current=std::fs::symlink_metadata(&path)
+            .map_err(|_|"OCR source changed during admission")?;
+        if !current.file_type().is_file()||current.file_type().is_symlink()
+           ||current.len()!=meta.len(){
+            return Err("OCR source changed during admission".into());
+        }
+        Ok::<Vec<u8>,String>(bytes)
+    }).await.map_err(|_|"Native OCR source admission worker unavailable")??;
+    let source_sha=format!("{:x}",Sha256::digest(&bytes));
     let approved=tauri::async_runtime::spawn_blocking({
         let app=app.clone();
-        move||app.dialog().message(
-            "Run the separately hash-pinned offline OCR worker on this \
-             selected PNG/JPEG? Lu will display the transcribed text for \
-             review. OCR output is UNVERIFIED and will never be silently \
-             promoted to a source passage or model instruction."
-        ).title("Lu — Authorize offline OCR")
+        move||app.dialog().message(format!(
+            "Run hash-pinned offline OCR on the PINNED native-picked PNG/JPEG?\n\n\
+             Source SHA-256: {}\n\n\
+             The original will not be reopened after approval. The OCR\
+             text is UNVERIFIED and must be reviewed by you.",source_sha
+        )).title("Lu — Authorize offline OCR")
           .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
               "Read image text".into(),"Cancel".into()
           )).blocking_show()
     }).await.map_err(|_|"Native OCR consent unavailable")?;
     if !approved{return Ok(None);}
-    let output=tauri::async_runtime::spawn_blocking(move||{
-        let bytes=std::fs::read(&path)
-            .map_err(|_|"OCR image source changed or was unreadable")?;
-        if bytes.len()>12*1024*1024{
-            return Err("OCR source exceeded image budget".into());
-        }
-        let observed=lu_core::native_ocr::recognize_pinned_image(
-            &bytes,&executable,expected,&tessdata,expected_data
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        offline_ocr_view(&bytes,&executable,expected,&tessdata,expected_data,&worker_token)
+    }).await.map_err(|_|"Native OCR execution worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
+}
+
+/// Attached-image OCR operates on already host-admitted original pixels.
+/// It cannot choose a path, acquire a model grant, publish a file or start
+/// network activity. Native consent discloses exact attachment identity.
+#[tauri::command]
+async fn lu_ocr_read_attached_image(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String
+)->Result<Option<OcrImageView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for attached-image OCR")?;
+    let Some(expected)=option_env!("LU_OCR_TESSERACT_SHA256") else{
+        return Err("Approved offline OCR runtime is not bundled in this build".into());
+    };
+    let Some(expected_data)=option_env!("LU_OCR_ENG_SHA256") else{
+        return Err("Reviewed OCR language data is not bundled in this build".into());
+    };
+    let source=state.images.lock()
+        .map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned()
+        .ok_or("Original image is no longer admitted")?;
+    let source_sha=format!("{:x}",Sha256::digest(&source.bytes));
+    if source_sha!=source.sha256.iter()
+        .map(|byte|format!("{byte:02x}")).collect::<String>(){
+        return Err("Admitted image changed before OCR review".into());
+    }
+    let approval=format!(
+        "Run local, pinned OCR on the original attached image?\n\n\
+         Conversation: {}\nImage: {}\nSource SHA-256: {}\n\n\
+         Lu sends no pixels to a network service. The transcription is\
+         unverified; only you may insert it into a chat draft.",
+        chat_id,image_ref,source_sha
+    );
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(approval).title("Lu — Attached image OCR")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Recognize image text".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Native attached-image OCR consent unavailable")?;
+    if !approved{return Ok(None);}
+    let still_admitted=state.images.lock()
+        .map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).is_some_and(|current|
+            current.sha256==source.sha256&&current.bytes==source.bytes);
+    if !still_admitted{return Err("Image detached or changed during OCR approval".into());}
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let executable=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let executable=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    // This real offline native worker must obtain a host-only Guardian lease
+    // before spawning, without changing the user's OCR authorization.
+    let lease=state.background_scheduler.admit_host_worker(
+        &chat_id,&next_id("ocr-job-"),
+        lu_core::native_background_scheduler::ResourceClaim::ocr(),
+    ).map_err(|e|format!("OCR resource admission denied: {e:?}"))?;
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let _guardian_lease=lease;
+        offline_ocr_view(&source.bytes,&executable,expected,&tessdata,expected_data,&worker_token)
+    }).await.map_err(|_|"Native attached-image OCR worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
+}
+
+/// Native OCR for a rectangular region of the original admitted PNG/JPEG.
+/// Cropping runs inside Lu Core; Tesseract receives only the derived PNG,
+/// while the review receipt preserves the original image's source digest.
+#[tauri::command]
+async fn lu_ocr_read_attached_region(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String,x:u32,y:u32,width:u32,height:u32
+)->Result<Option<OcrImageView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for image OCR")?;
+    let Some(expected)=option_env!("LU_OCR_TESSERACT_SHA256") else{
+        return Err("Approved offline OCR runtime is not bundled".into())
+    };
+    let Some(expected_data)=option_env!("LU_OCR_ENG_SHA256") else{
+        return Err("Approved OCR English language data is not bundled".into())
+    };
+    let region=lu_core::native_ocr::ImageOcrRegion{x,y,width,height};
+    if width==0||height==0||u64::from(width)*u64::from(height)>32_000_000{
+        return Err("Select a bounded original-image OCR rectangle".into())
+    }
+    let source=state.images.lock().map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned().ok_or("Image no longer admitted")?;
+    let digest=format!("{:x}",Sha256::digest(&source.bytes));
+    if digest!=source.sha256.iter().map(|b|format!("{b:02x}")).collect::<String>(){
+        return Err("Original image digest changed".into())
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();let chat_id=chat_id.clone();
+        let image_ref=image_ref.clone();let digest=digest.clone();
+        move||app.dialog().message(format!(
+            "Read unverified text only from ORIGINAL image pixels?\n\n\
+            Chat: {chat_id}\nImage: {image_ref}\nSHA-256: {digest}\n\
+            Rectangle: x={x}, y={y}, width={width}, height={height}\n\n\
+            Processing stays offline; you must review and insert any text."
+        )).title("Lu — Authorize image region OCR")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Read selected region".into(),"Cancel".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Native image-region OCR consent unavailable")?;
+    if !approved{return Ok(None)}
+    let unchanged=state.images.lock().map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).is_some_and(|now|
+            now.sha256==source.sha256&&now.bytes==source.bytes);
+    if !unchanged{return Err("Original image detached or changed".into())}
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let exe=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let exe=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    // This real offline native worker must obtain a host-only Guardian lease
+    // before spawning, without changing the user's OCR authorization.
+    let lease=state.background_scheduler.admit_host_worker(
+        &chat_id,&next_id("ocr-job-"),
+        lu_core::native_background_scheduler::ResourceClaim::ocr(),
+    ).map_err(|e|format!("OCR resource admission denied: {e:?}"))?;
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let _guardian_lease=lease;
+        let result=lu_core::native_ocr::recognize_pinned_image_region(
+            &source.bytes,region,&exe,expected,&tessdata,expected_data,&worker_token
         ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
-        Ok(OcrImageView{
-            source_sha256:observed.source_sha256,
-            text_sha256:observed.recognized_text_sha256,
-            engine_sha256:observed.engine_sha256,
-            text:observed.recognized_text,
-            format:observed.source_format.to_owned(),
+        let info=result.observation;
+        Ok::<OcrImageView,String>(OcrImageView{
+            source_sha256:result.original_sha256,
+            ocr_input_sha256:Some(result.ocr_input_sha256),
+            region:Some(OcrRegionView{x,y,width,height}),
+            page:None,raster_engine_sha256:None,
+            text_sha256:info.recognized_text_sha256,engine_sha256:info.engine_sha256,
+            text:info.recognized_text,format:info.source_format.into(),
             source_verified:false,human_review_required:true,
-            message:"Offline OCR transcription only. Review its accuracy before using it as evidence.",
+            message:"Derived region OCR is unverified; verify against original pixels.",
         })
-    }).await.map_err(|_|"Native OCR execution worker unavailable")??;
-    Ok(Some(output))
+    }).await.map_err(|_|"Native region OCR worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
+}
+
+/// User-selected offline PDF OCR. The existing Reader native picker pins
+/// bytes before human consent; a second pinned, licensed PDF rasterizer
+/// outputs one bounded PNG directly into the existing Tesseract worker.
+/// No PDF-rendered file is written, executed, or made a model source.
+#[tauri::command]
+async fn lu_ocr_read_selected_pdf_page(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,page:u16,page_end:Option<u16>,
+)->Result<Option<Vec<OcrImageView>>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for PDF OCR")?;
+    let page_end=page_end.unwrap_or(page);
+    if page==0||page>32||page_end<page||page_end>32
+        ||page_end-page>=8{
+        return Err("Choose 1–8 consecutive PDF pages between 1 and 32".into())
+    }
+    let Some(tess_sha)=option_env!("LU_OCR_TESSERACT_SHA256") else{
+        return Err("Approved offline Tesseract is not bundled".into())
+    };
+    let Some(data_sha)=option_env!("LU_OCR_ENG_SHA256") else{
+        return Err("Approved OCR language data is not bundled".into())
+    };
+    let Some(render_sha)=option_env!("LU_OCR_PDF_RENDER_SHA256") else{
+        return Err("A licensed, pinned offline PDF rasterizer is not bundled".into())
+    };
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let rasterizer=resources.join("lu-ocr").join("pdftocairo.exe");
+    #[cfg(not(windows))]
+    let rasterizer=resources.join("lu-ocr").join("pdftocairo");
+    #[cfg(windows)]
+    let engine=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let engine=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    let chosen=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||reader_desktop::pick_reader_bytes(&app,8*1024*1024)
+    }).await.map_err(|_|"Native PDF picker unavailable")??;
+    let Some((name,bytes))=chosen else{return Ok(None)};
+    if !name.to_ascii_lowercase().ends_with(".pdf")
+        ||!bytes.starts_with(b"%PDF-"){
+        return Err("Choose an authentic PDF file for page OCR".into())
+    }
+    let source_sha=format!("{:x}",Sha256::digest(&bytes));
+    let confirmed=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();let sha=source_sha.clone();
+        move||app.dialog().message(format!(
+            "Run offline, UNVERIFIED OCR on PDF pages {page}–{page_end}?\n\n\
+            Name: {name}\nSHA-256: {sha}\n\n\
+            A separately pinned Poppler renderer produces a bounded temporary\
+            in-memory PNG, then the pinned Tesseract reads it. Neither engine\
+            uses the network; no PDF files or image files are saved."
+        )).title("Lu — Authorize PDF page OCR")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Read these pages".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Native PDF OCR consent unavailable")?;
+    if !confirmed{return Ok(None)}
+    // This real offline native worker must obtain a host-only Guardian lease
+    // before spawning, without changing the user's OCR authorization.
+    let lease=state.background_scheduler.admit_host_worker(
+        &chat_id,&next_id("ocr-job-"),
+        lu_core::native_background_scheduler::ResourceClaim::ocr(),
+    ).map_err(|e|format!("OCR resource admission denied: {e:?}"))?;
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let _guardian_lease=lease;
+        let results=lu_core::native_ocr::recognize_pinned_pdf_pages(
+            &bytes,page,page_end,&rasterizer,render_sha,&engine,tess_sha,
+            &tessdata,data_sha,&worker_token
+        ).map_err(|e|format!("Offline PDF OCR refused: {e:?}"))?;
+        Ok::<Vec<OcrImageView>,String>(results.into_iter().map(|result|{
+            let page=result.page;
+            let info=result.observation;
+            OcrImageView{
+                source_sha256:result.original_pdf_sha256,
+                text_sha256:info.recognized_text_sha256,
+                engine_sha256:info.engine_sha256,
+                ocr_input_sha256:Some(result.raster_png_sha256),
+                raster_engine_sha256:Some(result.raster_engine_sha256),
+                page:Some(page),region:None,
+                text:info.recognized_text,format:"pdf".into(),
+                source_verified:false,human_review_required:true,
+                message:"Scanned-PDF page OCR is unverified, manually review text.",
+            }
+        }).collect())
+    }).await.map_err(|_|"Native PDF OCR worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
 }
 
 /// A native GGUF+MMProj semantic pixel probe. Synthetic images and answers
@@ -1358,7 +1712,7 @@ async fn lu_vision_run_probe(
     }).await.map_err(|_|"Vision native approval unavailable")?;
     if !approved{return Err("Vision probe cancelled by user".into());}
     let owner=Arc::clone(state.inner());
-    let result=tauri::async_runtime::spawn_blocking(move||{
+    let result=tauri::async_runtime::spawn_blocking(move|| -> Result<VisionCapabilityView,String> {
         use rand::seq::SliceRandom;
         use vision_context::{VisionProbeReceipt,PROBE_PROMPT,PROBE_COLORS};
         // A fresh random challenge order is important: an always-guessing
@@ -1989,7 +2343,7 @@ async fn lu_research_campaign_review(
     let record_campaign=campaign_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         research.review_campaign_sources(&chat_id,&campaign_id,limit as usize)
-    ).await.map_err(|_|"Research source review worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research source review worker unavailable".to_string()).and_then(|x|x);
     match result{
         Ok(value)=>{
             if owner.research.campaign_status(&record_chat,&record_campaign)
@@ -2234,6 +2588,7 @@ async fn lu_image_workspace_export(
     chat_id:String,image_ref:String,operation:String,
     x:Option<u32>,y:Option<u32>,width:u32,height:u32,
     block_size:Option<u32>,stroke:Option<u32>,color:Option<u32>,
+    amount:Option<i16>,sigma:Option<u8>,threshold:Option<u8>,
     steps:Option<Vec<image_workspace_desktop::ImageRevisionStep>>
 )->Result<Option<image_workspace_desktop::ImageExportReceipt>,String>{
     use lu_core::native_image_revision::ImageRevisionOperation as Operation;
@@ -2250,6 +2605,14 @@ async fn lu_image_workspace_export(
         "resize"=>Operation::Resize{width,height},
         "rotate90"=>Operation::Rotate90,
         "flip_h"=>Operation::FlipHorizontal,
+        "grayscale"=>Operation::Grayscale,
+        "invert"=>Operation::InvertRgb,
+        "blur"=>Operation::Blur{sigma:sigma.unwrap_or(2)},
+        "brightness"=>Operation::Brightness{delta:amount.unwrap_or(0)},
+        "contrast"=>Operation::Contrast{percent:amount.unwrap_or(0)},
+        "sharpen"=>Operation::Sharpen{
+            sigma:sigma.unwrap_or(2),threshold:threshold.unwrap_or(3)
+        },
         "redact"=>Operation::Redact{
             x:x.ok_or("Mask requires X")?,y:y.ok_or("Mask requires Y")?,
             width,height,
@@ -2258,14 +2621,18 @@ async fn lu_image_workspace_export(
             x:x.ok_or("Mosaic requires X")?,y:y.ok_or("Mosaic requires Y")?,
             width,height,block_size:block_size.unwrap_or(12),
         },
-        "rectangle"=>{
+        "rectangle"|"line"|"ellipse"|"arrow"=>{
             let rgb=color.unwrap_or(0xff5500);
             if rgb>0xffffff {return Err("Invalid annotation color".into());}
-            Operation::Rectangle{
-                x:x.ok_or("Rectangle requires X")?,
-                y:y.ok_or("Rectangle requires Y")?,
-                width,height,rgb:[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8],
-                stroke:stroke.unwrap_or(3),
+            let x=x.ok_or("Annotation requires X")?;
+            let y=y.ok_or("Annotation requires Y")?;
+            let rgb=[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8];
+            let stroke=stroke.unwrap_or(3);
+            match operation.as_str(){
+                "line"=>Operation::Line{x,y,width,height,rgb,stroke},
+                "ellipse"=>Operation::Ellipse{x,y,width,height,rgb,stroke},
+                "arrow"=>Operation::Arrow{x,y,width,height,rgb,stroke},
+                _=>Operation::Rectangle{x,y,width,height,rgb,stroke},
             }
         },
         _=>return Err("Unknown deterministic image revision operation".into()),
@@ -2320,6 +2687,7 @@ async fn lu_image_workspace_export(
         revision_sha256:image.revision_sha256.clone(),
         file_name:name,width:image.width,height:image.height,
         recorded_bytes:0,state:"PREPARED".into(),
+        parent_revision_id:None,
     };
     tauri::async_runtime::spawn_blocking(move||{
         use lu_core::native_image_revision_history::ImageRevisionLedger;
@@ -2995,6 +3363,25 @@ struct BackgroundTaskView {
     last_heartbeat:Option<String>,
     updated_at:String,
     can_cancel:bool,
+    can_pause:bool,
+    can_resume:bool,
+    needs_review:bool,
+    priority:Option<String>,
+    due_unix:Option<u64>,
+    repeat_seconds:Option<u64>,
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct BackgroundGuardianView {
+    queued:u32,running:u32,paused:u32,
+    worker_capacity:u16,worker_used:u16,
+    cpu_capacity:u16,cpu_used:u16,
+    ram_capacity_mib:u32,ram_used_mib:u32,
+    gpu_capacity:u16,gpu_used:u16,
+    disk_capacity:u16,disk_used:u16,
+    network_capacity:u16,network_used:u16,
+    observed_available_ram_mib:Option<u64>,
+    observed_cpu_busy_percent:Option<u8>,
 }
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
@@ -3004,8 +3391,25 @@ async fn lu_background_scan_file(
     app:AppHandle,
     state:State<'_,Arc<DesktopState>>,
     chat_id:Option<String>,
+    delay_minutes:Option<u32>,
+    repeat_minutes:Option<u32>,
+    priority:Option<String>,
 )->Result<Option<String>,String>{
-    let processes=Arc::clone(&state.background_processes);
+    use lu_core::native_background_scheduler::{
+        Priority,ScheduleOptions,now_unix
+    };
+    let scheduler=Arc::clone(&state.background_scheduler);
+    let delay=delay_minutes.unwrap_or(0);
+    let recurring=repeat_minutes.filter(|n|*n!=0);
+    if delay>10080||recurring.is_some_and(|n|n<1||n>10080){
+        return Err("Background scheduling supports at most one week ahead or between repeats".into())
+    }
+    let priority=match priority.as_deref().unwrap_or("normal"){
+        "background"=>Priority::Background,
+        "normal"=>Priority::Normal,
+        "interactive"=>Priority::Interactive,
+        _=>return Err("Invalid background priority".into()),
+    };
     let workspace=if let Some(id)=chat_id{
         if !id.starts_with("c-")||id.len()>128{
             return Err("Invalid conversation for background task".into());
@@ -3019,6 +3423,16 @@ async fn lu_background_scan_file(
                 "mp3","wav","flac","m4a","ogg"])
             .blocking_pick_file();
         let Some(file)=file else{return Ok(None);};
+        if delay>0||recurring.is_some(){
+            let confirmation=app.dialog().message(format!(
+                "Schedule this selected media scan?\nDelay: {} minute(s).\nRepeat: {}.\n\nLu will queue it behind interactive work. A recurring plan is bound to this app session; after Lu restarts, a new approval is needed before another execution.",
+                delay,recurring.map_or("Off".into(),|n|format!("Every {n} minute(s)"))
+            )).title("Lu — Approve scheduled background scan")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve schedule".into(),"Cancel".into()
+            )).blocking_show();
+            if !confirmation{return Ok(None)}
+        }
         let requested=file.into_path().map_err(|_|"Invalid media file location")?;
         let meta=fs::symlink_metadata(&requested)
             .map_err(|_|"Selected media file is unavailable")?;
@@ -3055,10 +3469,84 @@ async fn lu_background_scan_file(
             max_runtime_seconds:None,
         };
         let task_id=plan.task_id.clone();
-        processes.start_host_approved(plan)
-            .map_err(|e|format!("Media scan could not start: {e:?}"))?;
+        let options=ScheduleOptions::file_scan(
+            now_unix().saturating_add(u64::from(delay)*60),
+            recurring.map(|n|u64::from(n)*60),
+            priority,
+        );
+        scheduler.enqueue_host_plan(plan,options)
+            .map_err(|e|format!("Media scan could not be queued: {e:?}"))?;
+        // The host watchdog owns resource admission and actual process start.
         Ok(Some(task_id))
     }).await.map_err(|_|"Native media picker unavailable")?
+}
+
+/// Recover an interrupted recurring task only after an explicit fresh
+/// user-picked source and confirmation. No original file path/executable or
+/// ability to run survives a restart in the persistent scheduler.
+#[tauri::command]
+async fn lu_background_reapprove(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_task_id:String,
+)->Result<Option<String>,String>{
+    state.chats.history(&chat_id)?;
+    let scheduler=Arc::clone(&state.background_scheduler);
+    if scheduler.state_for(&review_task_id,&chat_id)
+        .map_err(|e|format!("Recovery lookup failed: {e:?}"))?
+        .as_deref()!=Some("NEEDS_REVIEW"){
+        return Err("This scheduled task is not waiting for reapproval".into())
+    }
+    tauri::async_runtime::spawn_blocking(move||{
+        let file=app.dialog().file()
+            .add_filter("Media", &["mp4","mkv","mov","webm","avi",
+                "mp3","wav","flac","m4a","ogg"])
+            .blocking_pick_file();
+        let Some(file)=file else{return Ok(None)};
+        let selected=file.into_path().map_err(|_|"Invalid selected media file")?;
+        let meta=fs::symlink_metadata(&selected)
+            .map_err(|_|"Reapproved media source unavailable")?;
+        if !meta.file_type().is_file()||meta.len()==0{
+            return Err("Select a nonempty regular file".into())
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{
+                return Err("Reparse points cannot be background media sources".into())
+            }
+        }
+        let confirmed=app.dialog().message(
+            "Reauthorize this interrupted/restarted scan using the newly selected file? The previous saved schedule contains no file path or executable permission. A new task ID and native worker approval will be created. The source can be changed by this explicit selection."
+        ).title("Lu — Reapprove scheduled work")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Reapprove scan".into(),"Cancel".into()
+         )).blocking_show();
+        if !confirmed{return Ok(None)}
+        let source=selected.canonicalize()
+            .map_err(|_|"Cannot resolve selected media source")?;
+        let exe=std::env::current_exe()
+            .map_err(|_|"Installed Lu executable not available")?;
+        let mut image=File::open(&exe)
+            .map_err(|_|"Cannot verify installed executable")?;
+        let mut hasher=Sha256::new();
+        let mut bytes=[0u8;65536];
+        loop{
+            let n=image.read(&mut bytes)
+                .map_err(|_|"Cannot hash installed executable")?;
+            if n==0{break}
+            hasher.update(&bytes[..n]);
+        }
+        let id=next_id("scan-");
+        scheduler.reapprove_reviewed(&review_task_id,
+            lu_core::native_background_process::TrustedWorkerPlan{
+                task_id:id.clone(),workspace_id:chat_id,
+                executable:exe,expected_sha256:format!("{:x}",hasher.finalize()),
+                args:vec!["--lu-file-scan-worker".into(),source.into_os_string()],
+                progress_protocol:true,max_runtime_seconds:None,
+            }).map_err(|e|format!("Cannot reapprove background schedule: {e:?}"))?;
+        Ok(Some(id))
+    }).await.map_err(|_|"Native task reapproval picker unavailable")?
 }
 
 /// User-selected local document. This is a native operator file-picker
@@ -3071,18 +3559,80 @@ struct ReaderDocumentView{
     text:String,
     bytes_read:u64,
     truncated:bool,
+    selector:String,
+    source_sha256:String,
+    offset_chars:u32,
+    next_offset_chars:Option<u32>,
+    source_truncated:bool,
 }
+/// Native operator-only Reader picker. Reuses Lu Core's selective extraction
+/// and byte-window path. Any later continuation must reselect the source
+/// through the OS picker and supply the previous exact SHA-256.
 #[tauri::command]
-async fn lu_reader_pick_document(app:AppHandle)
-    ->Result<Option<ReaderDocumentView>,String>{
+async fn lu_reader_pick_document(
+    app:AppHandle,selector:Option<String>,
+    offset_chars:Option<u32>,expected_source_sha256:Option<String>,
+)->Result<Option<ReaderDocumentView>,String>{
+    let selector=selector.unwrap_or_default();
+    let offset=offset_chars.unwrap_or(0);
+    let expected=expected_source_sha256.unwrap_or_default();
+    if selector.len()>160||selector.chars().any(|c|c=='\0'||c=='\r'||c=='\n')
+       ||offset>8*1024*1024||(!expected.is_empty()&&
+           (expected.len()!=64||!expected.bytes().all(|c|c.is_ascii_hexdigit()
+               &&!c.is_ascii_uppercase()))){
+        return Err("Invalid bounded Reader selector, offset or source digest".into())
+    }
     tauri::async_runtime::spawn_blocking(move||{
         let Some((name,bytes))=reader_desktop::pick_reader_bytes(&app,8*1024*1024)?
             else{return Ok(None)};
-        let reader=lu_core::native_reader::read_text_bytes(&name,&bytes,6_000)
-            .map_err(|e|format!("Reader cannot extract this document: {e:?}"))?;
+        let digest=format!("{:x}",Sha256::digest(&bytes));
+        if !expected.is_empty()&&expected!=digest{
+            return Err("Reader source differs from previous excerpt; reset the source before continuing".into())
+        }
+        let max_chars=6_000usize;
+        let (format,total,truncated,chunk,source_truncated)=
+        if selector.is_empty(){
+            if let Some(plain)=lu_core::native_reader::read_plain_text_window(
+                &name,&bytes,usize::try_from(offset).unwrap_or(usize::MAX),
+                max_chars,false
+            ).map_err(|e|format!("Reader text window refused: {e:?}"))?{
+                if usize::try_from(offset).unwrap_or(usize::MAX)>plain.total_chars{
+                    return Err("Reader offset exceeds document length".into())
+                }
+                (plain.format,plain.total_chars,
+                    usize::try_from(offset).unwrap_or(usize::MAX)
+                        .saturating_add(max_chars)<plain.total_chars,
+                    plain.text,false)
+            }else{
+                let parsed=lu_core::native_reader::read_text_bytes(
+                    &name,&bytes,200_000
+                ).map_err(|e|format!("Reader cannot extract document: {e:?}"))?;
+                let total=parsed.text.chars().count();
+                if offset as usize>total{return Err("Reader offset exceeds extraction".into())}
+                let chunk=parsed.text.chars().skip(offset as usize)
+                    .take(max_chars).collect();
+                (parsed.format,total,offset as usize+max_chars<total,
+                    chunk,parsed.truncated)
+            }
+        }else{
+            let parsed=lu_core::native_reader::read_selected_bytes(
+                &name,&bytes,200_000,&selector
+            ).map_err(|e|format!("Reader section refused: {e:?}"))?;
+            let total=parsed.text.chars().count();
+            if offset as usize>total{return Err("Reader offset exceeds selection".into())}
+            let chunk=parsed.text.chars().skip(offset as usize)
+                .take(max_chars).collect();
+            (parsed.format,total,offset as usize+max_chars<total,
+                chunk,parsed.truncated)
+        };
+        let end=(offset as usize+max_chars).min(total);
+        let next=if truncated{Some(end as u32)}else{None};
         Ok(Some(ReaderDocumentView{
-            name,format:format!("{:?}",reader.format),text:reader.text,
-            bytes_read:bytes.len() as u64,truncated:reader.truncated,
+            name,format:format!("{format:?}"),text:chunk,
+            bytes_read:bytes.len() as u64,
+            truncated:truncated||source_truncated,
+            selector,source_sha256:digest,offset_chars:offset,
+            next_offset_chars:next,source_truncated,
         }))
     }).await.map_err(|_|"Native Reader worker unavailable")?
 }
@@ -3090,22 +3640,91 @@ async fn lu_reader_pick_document(app:AppHandle)
 fn lu_background_tasks(
     state:State<'_,Arc<DesktopState>>,chat_id:String
 )->Result<Vec<BackgroundTaskView>,String>{
-    // Normal desktop Tasks view stays limited to the selected conversation.
-    // The renderer cannot get another conversation's task detail by
-    // asking for an arbitrary workspace ID that does not exist in ChatStore.
     state.chats.history(&chat_id)
         .map_err(|_|"Choose a valid conversation for background tasks")?;
-    state.background_processes.poll()
-        .map_err(|_|"Background process status needs reconciliation")?;
+    // The host watchdog polls and launches independently of this UI.
+    let queued=state.background_scheduler.list_owned(&chat_id,100)
+        .map_err(|e|format!("Scoped schedule unavailable: {e:?}"))?;
     let tasks=state.background_tasks.dashboard_for_workspace(&chat_id,100)
         .map_err(|_|"Scoped background task overview unavailable")?;
-    Ok(tasks.into_iter().map(|task|BackgroundTaskView{
-        task_id:task.task_id.clone(),workspace_id:task.workspace_id,
-        state:task.state.as_str().to_owned(),
-        progress:task.progress,detail:task.detail,
-        last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
-        can_cancel:state.background_processes.can_cancel(&task.task_id),
-    }).collect())
+    let mut actual=tasks.into_iter()
+        .map(|v|(v.task_id.clone(),v))
+        .collect::<std::collections::BTreeMap<_,_>>();
+    let mut result=Vec::new();
+    for item in queued{
+        let record=actual.remove(&item.task_id);
+        let state_name=record.as_ref()
+            .map(|v|v.state.as_str().to_string())
+            .unwrap_or_else(||item.state.clone());
+        result.push(BackgroundTaskView{
+            task_id:item.task_id,
+            workspace_id:Some(chat_id.clone()),
+            state:if item.state=="NEEDS_REVIEW"{"NEEDS_REVIEW".into()}
+                else{state_name},
+            progress:record.as_ref().map_or(0,|v|v.progress),
+            detail:record.as_ref().map_or_else(||
+                format!("{} · {}",item.kind,item.last_result),
+                |v|v.detail.clone()),
+            last_heartbeat:record.as_ref().and_then(|v|v.last_heartbeat.clone()),
+            updated_at:record.as_ref().map_or_else(||
+                "Scheduled".into(),|v|v.updated_at.clone()),
+            can_cancel:item.can_cancel,
+            can_pause:item.can_pause,
+            can_resume:item.can_resume,
+            needs_review:item.requires_review,
+            priority:Some(item.priority),
+            due_unix:Some(item.due_unix),
+            repeat_seconds:item.repeat_seconds,
+        });
+    }
+    for (_,task) in actual{
+        if result.len()>=100{break}
+        result.push(BackgroundTaskView{
+            task_id:task.task_id.clone(),workspace_id:task.workspace_id,
+            state:task.state.as_str().to_owned(),
+            progress:task.progress,detail:task.detail,
+            last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
+            can_cancel:state.background_processes.can_cancel(&task.task_id),
+            can_pause:false,can_resume:false,needs_review:false,
+            priority:None,due_unix:None,repeat_seconds:None,
+        });
+    }
+    result.truncate(100);
+    Ok(result)
+}
+#[tauri::command]
+fn lu_background_guardian_status(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<BackgroundGuardianView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a valid conversation for guardian status")?;
+    let snapshot=state.background_scheduler.guardian_snapshot(&chat_id)
+        .map_err(|e|format!("Guardian status unavailable: {e:?}"))?;
+    let observed=state.background_pressure.sample();
+    Ok(BackgroundGuardianView{
+        queued:snapshot.queued,running:snapshot.running,paused:snapshot.paused,
+        worker_capacity:snapshot.capacity.workers,worker_used:snapshot.used.workers,
+        cpu_capacity:snapshot.capacity.cpu,cpu_used:snapshot.used.cpu,
+        ram_capacity_mib:snapshot.capacity.ram_mib,ram_used_mib:snapshot.used.ram_mib,
+        gpu_capacity:snapshot.capacity.gpu,gpu_used:snapshot.used.gpu,
+        disk_capacity:snapshot.capacity.disk,disk_used:snapshot.used.disk,
+        network_capacity:snapshot.capacity.network,network_used:snapshot.used.network,
+        observed_available_ram_mib:observed.available_ram_mib,
+        observed_cpu_busy_percent:observed.cpu_busy_percent,
+    })
+}
+#[tauri::command]
+fn lu_background_queue_control(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,task_id:String,action:String
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    let manager=&state.background_scheduler;
+    match action.as_str(){
+        "pause"=>manager.pause_queued(&task_id,&chat_id),
+        "resume"=>manager.resume_queued(&task_id,&chat_id),
+        _=>return Err("Only queued task pause/resume is supported".into()),
+    }.map_err(|e|format!("Cannot update scheduled task: {e:?}"))
 }
 /// Explicit user-initiated OS dialog. The WebView cannot supply a path,
 /// task grant, scope or model-generated approval.
@@ -4966,15 +5585,19 @@ fn lu_background_auto_continue(
 async fn lu_background_cancel(
     app:AppHandle,
     state:State<'_,Arc<DesktopState>>,
-    task_id:String,
+    task_id:String,chat_id:String,
 )->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    let scheduler=Arc::clone(&state.background_scheduler);
     let processes=Arc::clone(&state.background_processes);
-    if task_id.is_empty()||task_id.len()>128
-       ||!processes.can_cancel(&task_id){
-        return Err("No live Lu-owned worker with that task ID".into());
+    let status=scheduler.state_for(&task_id,&chat_id)
+        .map_err(|_|"Scheduled task ownership unavailable")?;
+    if !matches!(status.as_deref(),Some("QUEUED"|"PAUSED"|"RUNNING"))
+       &&!processes.can_cancel(&task_id){
+        return Err("No cancellable Lu-owned task in this conversation".into())
     }
     let message=format!(
-        "Cancel Lu's currently running background task?\n\n{}\n\n         This terminates its owned process and records CANCELLED.          Previous completed checkpoints are retained.",
+        "Cancel the authorized background task?\n\n{}\n\nQueued jobs will be removed. Live jobs are terminated and reaped before Lu records cancellation.",
         task_id
     );
     let confirmed=tauri::async_runtime::spawn_blocking(move||{
@@ -4985,10 +5608,15 @@ async fn lu_background_cancel(
             )).blocking_show()
     }).await.map_err(|_|"Native cancellation prompt unavailable")?;
     if !confirmed{return Err("Cancellation declined".into());}
-    tauri::async_runtime::spawn_blocking(move||
-        processes.cancel_operator_owned(&task_id)
-            .map_err(|e|format!("Cannot cancel owned worker: {e:?}"))
-    ).await.map_err(|_|"Task cancellation worker unavailable")?
+    tauri::async_runtime::spawn_blocking(move||{
+        if status.is_some(){
+            scheduler.cancel_owned(&task_id,&chat_id)
+                .map_err(|e|format!("Cannot cancel scheduled work: {e:?}"))
+        }else{
+            processes.cancel_owned(&task_id,&chat_id)
+                .map_err(|e|format!("Cannot cancel owned worker: {e:?}"))
+        }
+    }).await.map_err(|_|"Task cancellation worker unavailable")?
 }
 #[tauri::command]
 fn lu_new_chat(state: State<'_, Arc<DesktopState>>) -> Result<ChatSummary, String> {
@@ -5263,6 +5891,10 @@ pub fn run() {
             lu_vision_capability,
             lu_vision_run_probe,
             lu_ocr_read_selected_image,
+            lu_ocr_read_attached_image,
+            lu_ocr_read_attached_region,
+            lu_ocr_read_selected_pdf_page,
+            lu_ocr_cancel,
             lu_office_word_replace_all,
             lu_office_presentation_replace_all,
             lu_image_workspace_export,
@@ -5364,6 +5996,9 @@ pub fn run() {
             lu_history,
             lu_chats,
             lu_background_tasks,
+            lu_background_guardian_status,
+            lu_background_queue_control,
+            lu_background_reapprove,
             lu_reader_pick_document,
             lu_reader_ask_document,
             lu_workspace_ask_directory,
