@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **WO10 deferred until after Lu Core v1.0 (Nov 7, 2026):** User declined to choose the Lu↔workspaces/DLC CE interface while Lu Core is still evolving and Cognitum/NVP reveal new requirements. Evaluate logic pathways in core and a common DLC workshop/CE integration architecture after v1.0; compare AF_UNIX/native IPC, Protobuf transport-independent contracts and API options with Windows/Linux parity. Experimental WO10 PR #76 remains draft and unmerged; require fresh post-v1.0 evaluation and explicit resumption. Standalone IDE and WO9-F acceptance continue independently.
+
 - **DEFERRED by user (Nov 7, 2026):** All Lu Core ↔ Lu IDE interface/integration development paused, including bridge IPC, pairing, model-assisted chat, proposal delivery, and interface controls. WO10 draft PR #76 is not mergeable or release-accepted; recent experimental integration commits remain unverified. Lu IDE stays standalone. WO9-F installed/release acceptance remains open.
 
 - WO10-A/B optional Lu Core bridge development started (Nov 7 UTC): separate versioned Protobuf data-only inter-app contract, canonical strict wire codec, host-only handshake and replay/project/grant policy with intentionally absent production peer proof, offline truthful Tauri bridge status UI, typed read-only capability, Win/Linux native contract CI, exact branch/ledger docs. No socket/model session, shared Lu chat or tool authority; WO9-F and earlier installed native release gates remain OPEN. [WO10 ledger](docs/IDE_WORK_ORDER_10_OPTIONAL_LU_BRIDGE_20261107.md).
