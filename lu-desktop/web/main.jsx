@@ -31,6 +31,7 @@ function App() {
   const [providerBusy,setProviderBusy] = useState(false);
   const [providerFailure,setProviderFailure] = useState('');
   const [modelInspection, setModelInspection] = useState(null);
+  const [modelBackends,setModelBackends] = useState([]);
   const [runtime, setRuntime] = useState({ phase: 'Idle', modelRef: null, sessionId: null });
   const [chats, setChats] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -1018,6 +1019,9 @@ function App() {
     if (!settingsOpen || !selectedModel) { setModelInspection(null); return; }
     let alive=true;
     setModelInspection(null);
+    invoke('lu_model_backend_options').then(options=>{
+      if(alive)setModelBackends(options);
+    }).catch(()=>{if(alive)setModelBackends([]);});
     invoke('lu_model_preflight',{modelRef:selectedModel})
       .then(view=>{if(alive)setModelInspection(view);})
       .catch(()=>{if(alive)setModelInspection({
@@ -4666,6 +4670,15 @@ function App() {
             <small>Read-only preview. The license and model architecture require your review. In-app downloads are blocked until the P05 native Transfer Manager can validate HTTPS redirects, bytes, cancellation, resumable identity and separate approval.</small>
             <a href={providerReview.sourceUrl} rel="noopener noreferrer" target="_blank">View pinned repository externally</a>
           </div>}
+        </section>
+        <section aria-label="Model backend availability">
+          <h4>Inference backends</h4>
+          {modelBackends.map(item=><div className="modelInspection" key={item.backend}>
+            <strong>{item.engine} — {item.backend}</strong>
+            <small>{item.selectable?'Current pinned engine path':'Unavailable; not selectable'} ·
+              {item.gpuExecutionVerified?' GPU proven':' GPU not proven'} · {item.detail}</small>
+          </div>)}
+          <small>Only the currently packaged pinned engine is available. Lu will not silently switch to ROCm, CUDA, vLLM or CPU on a strict backend request.</small>
         </section>
         <p className="settingsNotice">A remote search result never installs, imports or loads a model. Use the existing native GGUF import picker for files you have downloaded and checked. The pinned engine requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
       </div>
