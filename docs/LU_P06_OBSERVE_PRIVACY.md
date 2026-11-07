@@ -14,6 +14,8 @@
 
 **Durable revoke/recovery closeout:** The ObserveHost no longer drops the observation task ID on uncertain process cancellation or a failed SQLite status write. Consent is switched OFF before attempting OS cleanup. A watchdog and subsequent status/start checks reconcile the exact old task only *after* host-supervisor worker reaping; the durable observation `CANCELLED` receipt is written before releasing ownership. No old grant or volatile awareness survives, and a fresh consent is required for another session. Native tests cover post-revocation reconciliation and invalid capture-plan Guardian lease release. This is native source/CI evidence, not physical installed crash-recovery proof.
 
+**Legacy Observe CI convergence:** The original `lu-v1-observe-learn.yml` workflow (which also runs against P06) was still using `npm ci` without a committed npm lock and creating inert llama-engine files. It now uses the pinned npm manifest install explicitly and clears the Tauri resource entries only for code-only host compilation. The real pinned WGC worker is still built and rejects malformed worker calls; compilation cannot be mistaken for installed model/NSIS acceptance.
+
 **Outstanding:** exact-head Windows/Linux compilation and repairs; real interactive physical WGC identity/picker/cancellation trials and installed NSIS acceptance; OS identity for generic picker/monitors; trusted sensitive-region selective redaction before *any* image reaches Lu's model; genuine pixel-to-model scope and verified GUI test receipt. User-deferred actual AMD Vulkan/MMProj installed acceptance remains unclaimed. No P07 implementation is authorized.
 
 
