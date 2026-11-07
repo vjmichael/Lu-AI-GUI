@@ -43,15 +43,30 @@ fn native_linux_cgroup_trace(stage: &'static str) {
 const BWRAP: &str = "/usr/bin/bwrap";
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";
- // Linker is an explicit, root-owned toolchain component. On Debian/Ubuntu,
- // `/usr/bin/cc` may point into /etc/alternatives which is not mounted in
- // our readonly Bubblewrap worker. Never mount all of /etc or use PATH cc.
- #[cfg(target_arch = "x86_64")]
- const GNU_LINKER: &str = "/usr/bin/x86_64-linux-gnu-gcc";
- #[cfg(target_arch = "aarch64")]
- const GNU_LINKER: &str = "/usr/bin/aarch64-linux-gnu-gcc";
- #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
- const GNU_LINKER: &str = "/usr/bin/lu-ide-unsupported-linux-linker";
+// The fixed compiler path must be a regular root-owned file, never the
+// /usr/bin/cc -> /etc/alternatives/cc symlink (which isn't mounted in bwrap).
+// Explicit allowlisted package versions retain reproducible toolchain SHA
+// provenance across Debian/Ubuntu, without PATH search or user input.
+#[cfg(target_arch = "x86_64")]
+const LINKER_CANDIDATES: &[&str] = &[
+    "/usr/bin/x86_64-linux-gnu-gcc-14",
+    "/usr/bin/x86_64-linux-gnu-gcc-13",
+    "/usr/bin/x86_64-linux-gnu-gcc-12",
+];
+#[cfg(target_arch = "aarch64")]
+const LINKER_CANDIDATES: &[&str] = &[
+    "/usr/bin/aarch64-linux-gnu-gcc-14",
+    "/usr/bin/aarch64-linux-gnu-gcc-13",
+    "/usr/bin/aarch64-linux-gnu-gcc-12",
+];
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+const LINKER_CANDIDATES: &[&str] = &[];
+#[cfg(target_arch = "x86_64")]
+const LINKER_ENV_KEY: &str = "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER";
+#[cfg(target_arch = "aarch64")]
+const LINKER_ENV_KEY: &str = "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER";
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+const LINKER_ENV_KEY: &str = "LU_IDE_UNSUPPORTED_LINKER";
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
@@ -141,13 +156,21 @@ fn hash_file(path: &Path) -> Result<String, SupervisorError> {
 
 /// The trusted native host can record this digest in JobPlan. It covers
 /// the two executable files, NOT their dynamic libraries or external crates.
+fn trusted_gnu_linker() -> Result<&'static str, SupervisorError> {
+    LINKER_CANDIDATES
+        .iter()
+        .copied()
+        .find(|candidate| ensure_root_owned_tool(Path::new(candidate)).is_ok())
+        .ok_or_else(denied)
+}
+
 pub fn installed_toolchain_digest() -> Result<String, SupervisorError> {
     ensure_root_owned_tool(Path::new(BWRAP))?;
     ensure_root_owned_tool(Path::new(CARGO))?;
     ensure_root_owned_tool(Path::new(RUSTC))?;
-    ensure_root_owned_tool(Path::new(GNU_LINKER))?;
+    let linker = trusted_gnu_linker()?;
     let mut digest = Sha256::new();
-    for path in [BWRAP, CARGO, RUSTC, GNU_LINKER] {
+    for path in [BWRAP, CARGO, RUSTC, linker] {
         let sha = hash_file(Path::new(path))?;
         digest.update(path.as_bytes());
         digest.update([0]);
@@ -456,6 +479,7 @@ fn command_for(
     {
         return Err(SupervisorError::WrongProjectOrSource);
     }
+    let linker = trusted_gnu_linker()?;
     let proc_file = OpenOptions::new()
         .write(true)
         .open(group.dir.join("cgroup.procs"))
@@ -504,8 +528,8 @@ fn command_for(
         .arg("CARGO_NET_OFFLINE")
         .arg("true")
         .arg("--setenv")
-        .arg("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER")
-        .arg(GNU_LINKER)
+        .arg(LINKER_ENV_KEY)
+        .arg(linker)
         .arg("--setenv")
         .arg("CARGO_BUILD_JOBS")
         .arg("1")
@@ -697,7 +721,7 @@ pub fn execute_linux_worker(
     }
     // Verify fixed launcher and binary paths BEFORE issuing an admission
     // receipt or creating any process. No caller-specified executable.
-    for tool in [BWRAP, CARGO, RUSTC, GNU_LINKER] {
+    for tool in [BWRAP, CARGO, RUSTC, trusted_gnu_linker()?] {
         ensure_root_owned_tool(Path::new(tool))?;
     }
     let group = make_cgroup(job_id, plan)?;
