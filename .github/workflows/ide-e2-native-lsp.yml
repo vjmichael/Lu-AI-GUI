@@ -73,8 +73,12 @@ jobs:
           # BEFORE the later real restricted-AppContainer acceptance. This
           # trusted fixed binary version check does NOT constitute containment.
           $binary=(Join-Path $bundle 'bin\clangd.exe')
-          & $binary --log=error --background-index=false --version | Select-Object -First 3
-          if ($LASTEXITCODE -ne 0) { throw 'DENIED: independently staged clangd startup arguments invalid' }
+          # Fully drain native stdout first. Select-Object -First can close
+          # a native pipeline early and manufacture an exit-code failure.
+          $versionLines=@(& $binary --log=error --background-index=false --version 2>&1)
+          $versionStatus=$LASTEXITCODE
+          $versionLines | Select-Object -First 3 | ForEach-Object { Write-Host ([string]$_) }
+          if ($versionStatus -ne 0) { throw 'DENIED: independently staged clangd startup arguments invalid' }
       - name: Independently install SCM service and verify real AppContainer clangd
         shell: pwsh
         run: |
