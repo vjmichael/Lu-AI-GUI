@@ -130,6 +130,7 @@ pub struct BuildRunView {
     pub toolchain_sha256: String,
     pub phase: String,
     pub native_exit_code: Option<i64>,
+    pub native_error_category: Option<String>,
     pub output_sha256: Option<String>,
     pub output_bytes: Option<u64>,
     pub artifact_manifest_sha256: Option<String>,
@@ -405,6 +406,10 @@ impl NativeBuildRuntime {
             &prepared.job_id, project_id, &prepared.plan_sha256, &head,
         ).map_err(|e| e.code().to_owned())?;
         #[cfg(windows)]
+        let native_error_category: Option<String> = None;
+        #[cfg(target_os = "linux")]
+        let native_error_category = Some(native.stderr_category.to_owned());
+        #[cfg(windows)]
         let (exit_code, output_sha256, output_bytes) = (
             native.exit_code.map(i64::from),
             if native.output_sha256.is_empty() { None } else { Some(native.output_sha256) },
@@ -460,6 +465,7 @@ impl NativeBuildRuntime {
             toolchain_sha256: plan.toolchain_sha256,
             phase: format!("{:?}", native.summary.phase).to_lowercase(),
             native_exit_code: exit_code,
+            native_error_category,
             output_sha256,
             output_bytes,
             artifact_manifest_sha256,
