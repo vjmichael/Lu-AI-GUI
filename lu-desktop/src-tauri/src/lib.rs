@@ -3007,6 +3007,73 @@ async fn lu_research_citation_preview(
     }
 }
 
+/// Explicit human-reviewed replacement of a changed independently fetched
+/// Crossref snapshot. The old and new SHA/title/author/year citation previews
+/// are displayed by native OS UI; no WebView, model, or network payload can
+/// silently amend an existing bibliography.
+#[tauri::command]
+async fn lu_research_citation_review_revision(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String
+)->Result<Option<research_desktop::ResearchCitationRevisionReceipt>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing Research conversation")?;
+    state.observe.deny_observation_network_egress(&chat_id)?;
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+        ||source_id.chars().any(char::is_control){
+        return Err("Select an existing corroborated Research source".into());
+    }
+    if !state.research.available(){
+        return Err("Pinned native Research client unavailable".into());
+    }
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-citation-revision-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Revision network task admission unavailable")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Revision network task start refused")?;
+    let request_owner=Arc::clone(&owner);
+    let research=Arc::clone(&owner.research);
+    let chat=chat_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        request_owner.observe.deny_observation_network_egress(&chat)?;
+        research.prepare_citation_revision(&chat,&source_id)
+    }).await.map_err(|_|"Native catalog revision worker unavailable".to_owned())
+      .and_then(|result|result);
+    let candidate=match result{
+        Ok(record)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Revision fetch completion could not be journaled")?;
+            record
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            return Err(error);
+        }
+    };
+    let old_sha=candidate.expected_previous_sha256.clone();
+    let new_sha=candidate.new_response_sha256.clone();
+    let label=candidate.source_id.clone();
+    let previous=candidate.previous_bibliography.chars().take(2000).collect::<String>();
+    let proposed=candidate.proposed_bibliography.chars().take(2000).collect::<String>();
+    let approved=tauri::async_runtime::spawn_blocking(move||app.dialog()
+        .message(format!(
+            "REVIEW A CHANGED CROSSREF CATALOG RECORD\n\n             Source: {label}\n\n             OLD response SHA-256: {old_sha}\n{previous}\n\n             NEW response SHA-256: {new_sha}\n{proposed}\n\n             The old exact response remains in an append-only audit.              Changing metadata does NOT independently verify publication              details, quotations, passages or a critical edition. Continue?"
+        ))
+        .title("Lu — Compare and approve citation revision")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Approve exact catalog revision".into(),"Reject and keep old".into()
+        )).blocking_show()
+    ).await.map_err(|_|"Native citation revision review unavailable")?;
+    if !approved{return Ok(None);}
+    owner.observe.deny_observation_network_egress(&chat_id)?;
+    let research=Arc::clone(&owner.research);
+    let receipt=tauri::async_runtime::spawn_blocking(move||
+        research.apply_citation_revision(&chat_id,candidate)
+    ).await.map_err(|_|"Catalog revision persistence unavailable".to_owned())??;
+    Ok(Some(receipt))
+}
+
 /// Independently corroborate ONE already-discovered lead against Crossref.
 /// The trusted local evidence ledger supplies the DOI; the UI/model can
 /// only select its previously discovered OpenAlex source ID.
@@ -6571,6 +6638,7 @@ pub fn run() {
             lu_research_openalex,
             lu_research_crossref,
             lu_research_citation_preview,
+            lu_research_citation_review_revision,
             lu_research_bibliography_preview,
             lu_research_bibliography_export,
             lu_research_sbl_scripture_locator,
