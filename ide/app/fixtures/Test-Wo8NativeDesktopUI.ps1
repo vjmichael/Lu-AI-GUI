@@ -41,23 +41,69 @@ function WindowRoot {
   try { return [System.Windows.Automation.AutomationElement]::FromHandle($proc.MainWindowHandle) }
   catch { return $null }
 }
+# Real WebView2/Chromium UIA can expose its content through a child renderer
+# HWND even when the Tauri top-level UIA fragment walk is orphaned.
+# Native operating-system UI Automation ONLY; no JS, IPC or test shortcut.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class P04NativeWebViewWindows {
+  public delegate bool Enumeration(IntPtr hwnd, IntPtr state);
+  [DllImport("user32.dll", SetLastError=true)]
+  private static extern bool EnumChildWindows(IntPtr parent, Enumeration callback, IntPtr data);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+  private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int capacity);
+  public static IntPtr[] RendererHandles(IntPtr top) {
+    var results = new List<IntPtr>();
+    Enumeration callback = (hwnd, data) => {
+      var name = new StringBuilder(96);
+      if (GetClassName(hwnd, name, name.Capacity) > 0 &&
+          name.ToString() == "Chrome_RenderWidgetHostHWND") {
+        results.Add(hwnd);
+      }
+      return true;
+    };
+    EnumChildWindows(top, callback, IntPtr.Zero);
+    return results.ToArray();
+  }
+}
+'@
+function NativeAccessibilityRoots {
+  $parent=WindowRoot
+  if (!$parent) { return }
+  Write-Output $parent
+  $handles=@([P04NativeWebViewWindows]::RendererHandles($proc.MainWindowHandle))
+  if ($handles.Count -gt 8) { Deny 'unexpected_webview_renderer_hierarchy' }
+  foreach ($handle in $handles) {
+    if ($handle -eq [IntPtr]::Zero) { continue }
+    try {
+      $web=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
+      if ($web) { Write-Output $web }
+    } catch {}
+  }
+}
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
   $end=(Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $end) {
-    $window=WindowRoot
-    if ($window) {
-      $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.Condition]::TrueCondition)
-      foreach($item in $all) {
-        try {
-          $name=$item.Current.Name
-          $type=$item.Current.ControlType.ProgrammaticName
-          if ($name -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-              (!$kind -or $type -eq ('ControlType.'+$kind))) {
-            return $item
-          }
-        } catch {}
-      }
+    # Do not fake a WebView response. Every candidate is a real native UIA
+    # provider reached from this exact installed desktop's child HWND chain.
+    foreach ($window in @(NativeAccessibilityRoots)) {
+      try {
+        $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        foreach($item in $all) {
+          try {
+            $name=$item.Current.Name
+            $type=$item.Current.ControlType.ProgrammaticName
+            if ($name -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                (!$kind -or $type -eq ('ControlType.'+$kind))) {
+              return $item
+            }
+          } catch {}
+        }
+      } catch {}
     }
     Start-Sleep -Milliseconds 450
   }
@@ -70,6 +116,7 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
       $nodes=$nativeRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.Condition]::TrueCondition)
       Write-Host ('P02_NATIVE_UIA_MISSING_CONTROL='+$query+'; tree_nodes='+$nodes.Count)
+      Write-Host ('P04_NATIVE_WEBVIEW_RENDERER_HWND_COUNT='+@([P04NativeWebViewWindows]::RendererHandles($proc.MainWindowHandle)).Count)
       $printed=0
       foreach($entry in $nodes) {
         if ($printed -ge 100) { break }
