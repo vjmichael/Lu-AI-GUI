@@ -313,7 +313,7 @@ pub mod unix_owned {
                     }
                 }
                 Ok(())
-            })
+            });
         }
         Ok(())
     }
