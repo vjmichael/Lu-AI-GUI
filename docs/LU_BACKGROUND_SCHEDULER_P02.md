@@ -3,6 +3,12 @@
 **Work order:** TASK-SCHED-01 · **Priority:** P02 (after FS-DISCOVER-01)  
 **Status:** Native source and desktop integration implemented; GitHub exact-head compilation/tests and physical Windows acceptance **OPEN**. Stop before P03 until new owner instruction.
 
+## P02 Windows desktop compiler repair — 2026-11-06 (latest verification boundary)
+
+- Exact prior P02 run [42330642106](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42330642106): Ubuntu focused Background Scheduler/Guardian job **PASS**; Windows P02 native steps reached full desktop host compilation, which failed with Rust **E0283** in `lu_vision_run_probe` (`lu-desktop/src-tauri/src/lib.rs`). This was an unrelated VisionProbe closure error, not evidence that the Guardian scheduler failed.
+- Narrow source repair at `5ec72386998475a6287cebbf7a8696a8c6417153`: explicitly typed the blocking vision-probe closure as `Result<VisionCapabilityView,String>` to resolve ambiguous `Err("…".into())` inference. Source-tree lock was regenerated on the branch. No scheduler/resource/permission/containment behavior was broadened.
+- **Current status:** fix committed, exact-post-repair native Windows/Linux CI result **pending**, not claimed successful. Physical Windows installed NSIS/GGUF/AMD GPU/resource-pressure acceptance remains open. P02 bounded source work complete; **do not begin P03** without the owner's next instruction.
+
 ## Owner goal
 
 Lu must coordinate long work while the user chats, without wasting LLM tokens polling workers or overrunning hardware. The shared native host—not the model—owns queue order, process launch, cancellation, result receipts, and budgets. Work is bound to operator-authorized tasks and a registered reviewed worker. Resource admission does not equal new permission to read files, run executables, or use the network.
