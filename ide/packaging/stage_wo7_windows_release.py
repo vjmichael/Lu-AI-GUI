@@ -172,7 +172,7 @@ def stage(manifest: Path, inputs: Path, output: Path, source_sha: str) -> dict:
                   "sourceSha": source_sha, "serviceSha256": service["sha256"].lower(),
                   "signerThumbprint": service["signerThumbprint"].lower()}
         policy_file = stage_root / "resources" / "wo7-service-policy.json"
-        policy_file.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+        policy_file.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         attestation["servicePolicySha256"] = sha256(policy_file)
         attestation["lifecycleScriptSha256"] = sha256(installer_path)
         (stage_root / "resources" / "wo7-staged-tree.json").write_text(
