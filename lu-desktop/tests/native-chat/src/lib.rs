@@ -12,7 +12,9 @@ pub mod conversation_authority {
 #[path = "../../../src-tauri/src/chat_store.rs"]
 mod chat_store;
 
+// Real M2 ANSF goal events and chat journal compile together without Tauri.
+#[path = "../../../../src-tauri/lu-core/src/ansf_goals.rs"]
+pub mod ansf_goals;
 // The production ANSF SQLite module is compiled directly without a mock.
-// The newer local ANSF bridge is not yet present in this published revision.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
