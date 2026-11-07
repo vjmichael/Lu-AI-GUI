@@ -37,7 +37,8 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_lsp_start_session', 'ide_lsp_change_document',
     'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
     // WO6 native-only build/test controls are never a Lu capability grant.
-    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile'
+    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
+    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -303,16 +304,25 @@ test('Wave A2 registry advertises actual host operations without granting execut
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_build_')).sort(),
     nativeBuildCommands.slice().sort());
-  // Build/test execution is privileged and intentionally NOT a generic Lu
-  // capability. These commands are gated by reviewed OS release features.
+  const nativeDebugCommands = ['ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel'];
+  assert.deepEqual(registered.filter(value => value.startsWith('ide_debug_')).sort(),
+    nativeDebugCommands.slice().sort());
+  // Build/test/debug execution is privileged and intentionally NOT a general
+  // Lu capability. Each requires a signed/pinned OS-restricted release feature.
   const buildBackend = read('../src-tauri/src/build_backend.rs');
   assert.match(buildBackend, /execute_windows_worker_after_staging_approval/);
   assert.match(buildBackend, /execute_linux_worker/);
   assert.match(buildBackend, /MessageDialogButtons::OkCancelCustom/);
   assert.match(buildBackend, /BUILD_RELEASE_PINS_ABSENT/);
+  const debugBackend = read('../src-tauri/src/debug_backend.rs');
+  assert.match(debugBackend, /start_windows_dap/);
+  assert.match(debugBackend, /start_linux_dap/);
+  assert.match(debugBackend, /fixed_installer_selftest_only_not_project_debugger/);
+  assert.match(debugBackend, /MessageDialogButtons::OkCancelCustom/);
   const declared = registered.filter(value =>
     value !== 'ide_list_capabilities' &&
-    !nativeLspCommands.includes(value) && !nativeBuildCommands.includes(value));
+    !nativeLspCommands.includes(value) &&
+    !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);
