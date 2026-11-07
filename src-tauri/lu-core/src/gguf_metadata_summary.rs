@@ -128,7 +128,8 @@ pub fn inspect_metadata(path:&Path)->Result<GgufMetadataSummary,MetadataReadErro
 #[cfg(test)]
 mod tests{
     use super::*;
-    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    use std::{fs,io::Write,sync::atomic::{AtomicU64,Ordering},time::{SystemTime,UNIX_EPOCH}};
+    static NEXT_FIXTURE:AtomicU64=AtomicU64::new(0);
     fn bytes()->Vec<u8>{
         let mut s=b"GGUF".to_vec();
         s.extend(3u32.to_le_bytes());
@@ -151,8 +152,18 @@ mod tests{
     }
     fn temp(bytes:&[u8])->std::path::PathBuf{
         let time=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path=std::env::temp_dir().join(format!("lu-p03-meta-{}-{time}.gguf",std::process::id()));
-        fs::write(&path,bytes).unwrap();path
+        // Distinct Windows test threads must never share fixture names.
+        let seq=NEXT_FIXTURE.fetch_add(1,Ordering::Relaxed);
+        let path=std::env::temp_dir().join(format!(
+            "lu-p03-meta-{}-{time}-{seq}.gguf",std::process::id()
+        ));
+        let mut out=fs::OpenOptions::new().write(true).create_new(true)
+            .open(&path).unwrap();
+        out.write_all(bytes).unwrap();
+        out.sync_all().unwrap();
+        drop(out);
+        assert_eq!(fs::metadata(&path).unwrap().len(),bytes.len() as u64);
+        path
     }
     #[test] fn actual_gguf_kv_values_are_read_without_loading_tensors(){
         let mut data=bytes();
