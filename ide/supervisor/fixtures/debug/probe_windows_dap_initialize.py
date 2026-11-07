@@ -58,12 +58,15 @@ def parse_initialize_response(stream):
             message = json.loads(remaining[end + 4:end + 4 + length])
         except (ValueError, UnicodeDecodeError):
             return False
-        if (isinstance(message, dict)
-            and message.get("type") == "response"
-            and message.get("request_seq") == 1
-            and message.get("command") == "initialize"):
-            return message.get("success") is True
-        remaining = remaining[end + 4 + length:]
+        # Before initialize RESPONSE, DAP forbids unsolicited events and
+        # reverse adapter requests. A copied binary that emits either must
+        # not be counted as a healthy initialize preflight.
+        if not isinstance(message, dict):
+            return False
+        return (message.get("type") == "response"
+                and message.get("request_seq") == 1
+                and message.get("command") == "initialize"
+                and message.get("success") is True)
     return False
 
 
