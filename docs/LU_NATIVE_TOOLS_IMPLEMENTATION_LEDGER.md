@@ -1,4 +1,6 @@
 # Lu Core native tools — implementation and acceptance ledger
+**P06 egress boundary repair (2026-11-07):** The native `network_egress_allowed=false` flag now rejects all four network destination classes regardless of whether the origin tag is `ObserveLearn` or `OrdinaryUser`; prior code only applied the deny flag to `ObserveLearn`. The immutable Observe-origin declassification rejection remains. Added Rust regression for ordinary-origin denied egress, local inference and taint-preserving joins. Commit `cbdccd4`; exact-head CI and installed verification remain OPEN.
+
 Updated: 2026-11-06
 Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #67, stacked above the earlier integrated tools branch; older notes remain historical, and their CI status does not grant native/installed acceptance)
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
