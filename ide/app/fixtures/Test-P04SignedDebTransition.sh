@@ -40,7 +40,7 @@ pkg="$(dpkg-deb --field "$old_deb" Package)"
 old_version="$(dpkg-deb --field "$old_deb" Version)"
 new_version="$(dpkg-deb --field "$new_deb" Version)"
 dpkg --compare-versions "$old_version" lt "$new_version" || deny not_a_real_version_upgrade
-if dpkg-query -W -f=${Status} "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+if dpkg-query -W '-f=${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
   deny existing_installed_ide
 fi
 fixture="$RUNNER_TEMP/lu-ide-p04-native-$GITHUB_RUN_ID"
@@ -69,12 +69,12 @@ env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" \
 catalog_before="$(sha256sum "$catalog" | cut -d' ' -f1)"
 source_before="$(sha256sum "$fixture/main.rs" | cut -d' ' -f1)"
 sudo dpkg --install "$new_deb" || deny new_signed_install_failed
-[[ "$(dpkg-query -W -f=${Version} "$pkg")" == "$new_version" ]] || deny new_real_version_not_installed
+[[ "$(dpkg-query -W '-f=${Version}' "$pkg")" == "$new_version" ]] || deny new_real_version_not_installed
 if [[ "$mode" == injected_recovery ]]; then
   # Recovery after a deliberate, bounded post-install fault. This does NOT
   # satisfy the real broken-install rollback gate.
   sudo dpkg --install "$old_deb" || deny previous_signed_package_not_restored
-  [[ "$(dpkg-query -W -f=${Version} "$pkg")" == "$old_version" ]] || deny old_version_not_restored
+  [[ "$(dpkg-query -W '-f=${Version}' "$pkg")" == "$old_version" ]] || deny old_version_not_restored
   echo 'P04_INJECTED_SIGNED_DEBIAN_POSTINSTALL_RECOVERY=PASS'
   echo 'P04_REAL_FAILED_INSTALLER_ROLLBACK=NOT_PROVEN'
 fi

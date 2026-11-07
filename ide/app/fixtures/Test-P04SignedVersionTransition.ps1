@@ -33,7 +33,13 @@ if ((Test-Path -LiteralPath $root) -or (Test-Path -LiteralPath $catalog) -or
 }
 function Candidate([string]$path,[string]$source) {
   $dir=[IO.Path]::GetFullPath($path).TrimEnd('\')
-  if (!$dir.StartsWith(($runner+'\'),[StringComparison]::OrdinalIgnoreCase)) { Deny 'candidate_outside_ci' }
+  $workspace=[IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\')
+  $oldRoot=Join-Path $workspace 'signed-old'
+  $newRoot=Join-Path $workspace 'signed-new'
+  # Downloaded signed artifacts land in precisely these reviewed directories,
+  # not in RUNNER_TEMP. Never accept any other repository or user directory.
+  if (!$dir.StartsWith(($runner+'\'),[StringComparison]::OrdinalIgnoreCase) -and
+      $dir -ine $oldRoot -and $dir -ine $newRoot) { Deny 'candidate_outside_ci' }
   $manifestPath=Join-Path $dir 'wo7-release.manifest.json'
   if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) { Deny 'candidate_manifest_missing' }
   $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
