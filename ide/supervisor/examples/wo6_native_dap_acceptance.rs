@@ -213,15 +213,13 @@ mod protected {
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
         let crash = args.as_slice() == ["--crash-after-initialize"];
+        #[cfg(not(target_os = "linux"))]
+        let crash = false;
         #[cfg(target_os = "linux")]
         if args.as_slice() == ["--verify-crash-replay"] {
             return verify_crash_replay();
         }
-        if !args.is_empty() && !cancel
-            && !cfg!(target_os = "linux")
-                .then_some(false)
-                .unwrap_or_else(|| args.as_slice() == ["--crash-after-initialize"])
-        {
+        if !args.is_empty() && !cancel && !crash {
             return Err("DENIED: only fixed native test modes accepted".into());
         }
         let bundle =
