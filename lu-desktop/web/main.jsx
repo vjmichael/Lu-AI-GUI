@@ -4595,7 +4595,12 @@ function App() {
             {modelInspection.tensorCount} header tensors ·
             MMProj {modelInspection.projectorAttached?(modelInspection.projectorChecked?'header checked':'unavailable'):'not paired'}
           </small>}
-          <small>Backend: {modelInspection.backendRequested}. Actual architecture, license and GPU/VRAM compatibility are not certified by a header.</small>
+          {modelInspection.architecture&&<small>GGUF-reported architecture: {modelInspection.architecture}
+            {modelInspection.tokenizerModel?' · tokenizer: '+modelInspection.tokenizerModel:''}
+            {modelInspection.reportedContextLength?' · reported context: '+modelInspection.reportedContextLength.toLocaleString()+' tokens':''}
+            {modelInspection.ggufFileType!=null?' · GGUF file-type code: '+modelInspection.ggufFileType:''}
+          </small>}
+          <small>Backend: {modelInspection.backendRequested}. Metadata is untrusted and does not certify architecture support, license or GPU/VRAM compatibility.</small>
         </section>}
         <button className="subtleButton full" disabled={busy || loaded || !selected || selected.projectorAttached} onClick={attachProjector}>Attach MMProj to selected model</button>
         <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available || !modelInspection?.loadAllowed || modelInspection.modelRef!==selectedModel} onClick={loadModel}>Load inspected model</button>
