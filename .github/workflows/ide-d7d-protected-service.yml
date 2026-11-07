@@ -94,6 +94,8 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw 'DENIED: service NUL bootstrap revocation failed' }
             }
             & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: explicit protected SCM uninstall failed' }
+            $global:LASTEXITCODE=0
           }
       - name: Ensure production desktop integration remains disabled
         shell: pwsh
@@ -132,6 +134,8 @@ jobs:
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "crash fixture failed: $LASTEXITCODE" }
           } finally {
             & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: explicit protected SCM uninstall failed' }
+            $global:LASTEXITCODE=0
           }
 
   pinned-offline-protected-cargo:
@@ -192,6 +196,8 @@ jobs:
               if ($LASTEXITCODE -ne 0) { Write-Error 'DENIED: exact service NUL bootstrap revocation failed' }
             }
             & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: explicit protected SCM uninstall failed' }
+            $global:LASTEXITCODE=0
           }
       - name: Retain observed, unapproved offline toolchain digest
         if: always()
@@ -232,4 +238,6 @@ jobs:
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'DENIED: service-loss acceptance failed' }
           } finally {
             & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: explicit protected SCM uninstall failed' }
+            $global:LASTEXITCODE=0
           }
