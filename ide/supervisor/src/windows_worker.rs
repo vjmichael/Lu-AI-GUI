@@ -971,6 +971,7 @@ where
     // crash-safe privileged NUL provisioning protocol is accepted, only the
     // explicit disposable CI feature can run this native build executor.
     // Reject before creating an OS profile, protected service lease or grant.
+    #[cfg(not(feature = "protected-recovery-service"))]
     if !crate::windows_null_device::native_cargo_nul_compatibility_enabled() {
         acceptance_trace("native_cargo_nul_capability_unverified");
         return Err(SupervisorError::NoContainment);
@@ -982,6 +983,7 @@ where
     // Remain disabled throughout sealing, costly toolchain staging and
     // approval. The sole CI-only NUL lease may be granted later, after the
     // protected broker has fsynced its independent OS Job witness.
+    #[cfg(not(feature = "protected-recovery-service"))]
     let mut nul_lease: Option<crate::windows_null_device::CiNullLease> = None;
     let local = profile.local_state()?;
     let workspace = local.join("workspace");
@@ -1060,7 +1062,12 @@ where
     // Debug/CI-only: grant precisely this new package SID the minimum NUL
     // read/write rights for Cargo's nested rustc spawn. This device ACE is
     // never set by a production worker and is revoked before terminal receipt.
-    nul_lease = crate::windows_null_device::ci_scoped_nul_access(profile.sid)?;
+    #[cfg(feature = "protected-recovery-service")]
+    broker.grant_null()?;
+    #[cfg(not(feature = "protected-recovery-service"))]
+    {
+        nul_lease = crate::windows_null_device::ci_scoped_nul_access(profile.sid)?;
+    }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     acceptance_trace("one_use_grant_consumed");
     let (process, thread) = match launch_appcontainer(
@@ -1210,12 +1217,16 @@ where
     }
     // Revoke the exact temporary NUL device ACE while every descendant is
     // confirmed dead and BEFORE the host writes a successful terminal receipt.
+    #[cfg(not(feature = "protected-recovery-service"))]
     if let Some(lease) = nul_lease.as_mut() {
         if lease.finish().is_err() {
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
         }
     }
+    // Protected SCM service keeps its lease until release_empty() AFTER
+    // the Job and durable terminal receipt; the ACK is withheld until
+    // service-side revocation has been verified and fsynced.
     // Never publish incomplete or cancelled outputs. An unbounded or
     // unpublishable output tree yields a quarantined recovery receipt,
     // not a 'successful build' based only on Cargo's exit status.

@@ -395,6 +395,7 @@ pub struct ServiceLease {
     nonce: String,
     job: HANDLE, // borrowed, owner is the worker's Job
     released: bool,
+    null_granted: bool,
 }
 impl ServiceLease {
     pub fn begin(
@@ -453,7 +454,34 @@ impl ServiceLease {
             nonce,
             job,
             released: false,
+            null_granted: false,
         })
+    }
+    /// Request an exact OS-derived package SID NUL lease through this
+    /// already-authenticated service IPC session. The desktop supplies no
+    /// target SID, device handle, discretionary ACL or access mask.
+    /// Service fsyncs its protected intent and verifies the OS DACL before
+    /// answering with the original, connection-bound nonce.
+    pub fn grant_null(&mut self) -> Result<(), SupervisorError> {
+        if self.released || self.null_granted || !empty(self.job) || !self.alive() {
+            return Err(denied());
+        }
+        let request = Release {
+            schema: "lu.ide.d7d.nul-grant.v1",
+            operation: "nul_grant",
+            nonce: &self.nonce,
+        };
+        write(
+            self.pipe.0,
+            &serde_json::to_vec(&request).map_err(|_| denied())?,
+        )?;
+        read(self.pipe.0, &self.nonce, "nul_granted")?;
+        if !empty(self.job) {
+            return Err(denied());
+        }
+        self.null_granted = true;
+        acceptance_trace("service_exact_nul_lease_fsynced");
+        Ok(())
     }
     pub fn alive(&mut self) -> bool {
         let mut available = 0u32;
