@@ -529,7 +529,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_desktop.rs",
-      "blob": "8ad37afa993eca8458996db59f3621bec85044f0"
+      "blob": "9aab1fe58b6695491d4d04cbc2554d95cc4e33cc"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -865,7 +865,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "0913968e355fa5e5e22c4a64fca5c163f5db4c47"
+      "blob": "d60a14ec02341d887b51601c73134b25bab11ecc"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
