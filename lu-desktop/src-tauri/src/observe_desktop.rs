@@ -408,20 +408,23 @@ impl ObserveHost {
             .filter(|value|value.len()==64
                 &&value.bytes().all(|b|b.is_ascii_hexdigit()))
             .map(str::to_owned);
-        let source_attested=terminal&&sha.is_some()&&current.capture_foreground;
+        // Evaluate receipt flags before moving sha into the returned view.
+        // Completed capture + validated receipt, not visible image evidence.
+        let receipt_ready=terminal&&sha.is_some();
+        let source_attested=receipt_ready&&current.capture_foreground;
         if !self.capture_processes.can_cancel(&task_id){
             current.capture_guardian.take();
         }
         Ok(Some(ObserveCaptureReceiptView{
             capture_task_id:task_id.into(),
             state:row.state.as_str().into(),
-            image_received:terminal&&sha.is_some(),
+            image_received:receipt_ready,
             frame_sha256:if terminal{sha}else{None},
             source_identity_attested:source_attested,
             pixels_retained:false,
             // The pinned P06 worker suppresses the entire BGRA frame in
             // its receipt before emitting any stdout; NOT a visual preview.
-            fully_redacted_receipt:terminal&&sha.is_some(),
+            fully_redacted_receipt:receipt_ready,
             visual_interpretation_verified:false,
             message:"Native one-shot receipt: foreground OS window identity is checked by the pinned worker; generic picker source identity remains unverified. No raw pixels are returned, and no GUI or model-vision verdict is inferred.",
         }))

@@ -54,7 +54,8 @@ test('P06 capture receipts never imply verified visual interpretation or retaine
   assert.match(host,/p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker/);  assert.match(host,/release_guardian_when_reaped/);
   assert.match(host,/capture_processes\.poll\(\)\s*\.map_err\(/);
   assert.doesNotMatch(host,/let _=self\.capture_processes\.poll\(\)/);
-  assert.match(host,/fully_redacted_receipt:terminal&&sha\.is_some\(\)/);
+  assert.match(host,/let receipt_ready=terminal&&sha\.is_some\(\)/);
+  assert.match(host,/fully_redacted_receipt:receipt_ready/);
   assert.match(host,/pixels_retained:false/);
   assert.match(host,/visual_interpretation_verified:false/);
   assert.match(desktop,/lu_observe_capture_one_shot/);
@@ -81,4 +82,11 @@ test('P06 native WGC process instance is verified, generic picker stays unverifi
   assert.match(desktop,/observer\.launch_one_shot\(&chat_id,plan,lease\)/);
   assert.match(ui,/fullyRedactedReceipt/);
   assert.match(ui,/sourceIdentityAttested/);
+});
+
+test('P06 denied Windows WGC child is never misreported as workflow failure',()=>{
+  const focused=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  const legacy=read('../../.github/workflows/lu-v1-observe-learn.yml');
+  assert.match(focused,/if\(\$LASTEXITCODE -ne 1\)\{throw 'Native WGC worker failed closedness check'\}[\s\S]*?exit 0/);
+  assert.match(legacy,/throw 'Capture worker did not reject unauthorized invocation without pixel output'[\s\S]*?exit 0/);
 });

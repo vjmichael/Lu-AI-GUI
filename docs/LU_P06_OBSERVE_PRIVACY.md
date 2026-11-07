@@ -1,5 +1,11 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 exact-head native failure repair — 2026-11-06
+
+Previous P06 head `ce113fa81f345ed80d3235bda3d7a179b5eb7e5a` successfully built the real Windows WGC worker and ran redaction/geometry unit tests, and passed the Linux P06 suite. The **focused Windows P06 job was red** because a deliberately rejected malformed worker returned exit 1 and PowerShell propagated it as the workflow's failure (job 128306052537). Both focused and older Observe pipelines now explicitly complete exit 0 only *after* checking that rejection produced no pixel output. Separate Windows desktop CI (job 128306053043) found Rust E0382 in `ObserveHost::capture_receipt`: the SHA string moved into the view before another field borrowed it. The receipt-ready Boolean is now computed before the move without changing privacy semantics.
+
+**Acceptance:** New exact-head Windows/Linux CI must still run and pass. Physical WGC picker/NSIS/restart/cancellation, general OS-picker identity, selective secret-region redaction, GPU/VRAM and meaningful model image understanding remain OPEN. This repair does not expose pixels to Lu or change OFF-by-default consent.
+
 ## P06 remaining-gaps implementation batch (latest)
 
 **Source changes:** OS foreground capture is now bound to HWND, PID and Windows process creation FILETIME, with independent recheck in the D3D11 callback; an OS picker result without source identity remains explicitly unverified. The trusted worker emits only a full-frame-blanked salted receipt—no original BGRA pixel crosses to host/LLM, and no claim of selective secret-region redaction. One 512 MiB CPU worker Guardian lease is admitted before spawn and held through process cancellation/reaping; GPU accounting is still zero/unverified. The installed-Windows evidence harness can verify reviewed EXE and WGC-worker hashes plus native process/window launch and (optionally) independent UIA initial Off state, **not an actual physical WGC picker/NSIS cycle**. Focused P06 CI now builds React before the Tauri macro and compiles the actual Windows WGC binary.

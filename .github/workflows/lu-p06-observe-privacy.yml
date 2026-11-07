@@ -71,6 +71,9 @@ jobs:
           if(!(Test-Path -LiteralPath $worker)){throw 'WGC worker was not built'}
           & $worker '--bad-operation' '00112233445566778899aabbccddeeff' 2>$null
           if($LASTEXITCODE -ne 1){throw 'Native WGC worker failed closedness check'}
+          # Child denial is an expected exit 1; only after asserting it is
+          # safe to clear pwsh's inherited negative-test exit status.
+          exit 0
       - name: Syntax-check independent installed-Windows GUI smoke harness
         if: matrix.os == 'windows-latest'
         shell: pwsh

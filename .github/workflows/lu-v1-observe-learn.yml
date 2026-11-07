@@ -148,6 +148,8 @@ jobs:
               throw 'Capture worker did not reject unauthorized invocation without pixel output'
             }
           }
+          # Do not mistake intentionally rejected child exit 1 for a CI failure.
+          exit 0
       - name: Preserve exact resolved Windows worker dependency graph as CI evidence
         uses: actions/upload-artifact@v4
         with:
