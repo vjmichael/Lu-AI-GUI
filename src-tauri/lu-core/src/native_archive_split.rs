@@ -108,7 +108,7 @@ fn checked(m:&Plan)->Result<(),SplitError>{
     Ok(())
 }
 pub fn read_plan(dir:&Dir)->Result<Plan,SplitError>{
-    if regular(dir,MANIFEST).map_err(|_|SplitError::Invalid)?>64*1024{
+    if regular(dir,MANIFEST).map_err(|_|SplitError::Invalid)? >64*1024{
         return Err(SplitError::Invalid);
     }
     let mut bytes=Vec::new();
@@ -177,6 +177,11 @@ pub fn split(root:&Dir,m:&Plan,token:&str)->Result<Receipt,SplitError>{
         Ok(())=>{},
         Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>{},
         Err(e)=>return Err(io(e)),
+    }
+    let stage_meta=root.symlink_metadata(&stage_name)
+        .map_err(|_|SplitError::StageConflict)?;
+    if !stage_meta.is_dir()||stage_meta.file_type().is_symlink(){
+        return Err(SplitError::StageConflict);
     }
     let staging=root.open_dir(&stage_name).map_err(|_|SplitError::StageConflict)?;
     let bytes=json(m)?;
@@ -269,13 +274,13 @@ pub fn inspect(root:&Dir,folder_name:&str)->Result<Plan,SplitError>{
 /// No-clobber reassembly: create-new staging file, verify every part and
 /// whole archive digest, sync, hard-link destination, then remove staging.
 /// An interrupted stage is retained for manual reconciliation.
-pub fn reassemble(root:&Dir,folder_name:&str,token:&str)->Result<Receipt,SplitError>{
-    let m=inspect(root,folder_name)?;
+pub fn reassemble(source_root:&Dir,destination_root:&Dir,folder_name:&str,token:&str)->Result<Receipt,SplitError>{
+    let m=inspect(source_root,folder_name)?;
     let stage_name=stage(token,"join")?;
-    if root.symlink_metadata(&m.source).is_ok(){return Err(SplitError::Exists);}
-    let dir=root.open_dir(folder_name).map_err(io)?;
+    if destination_root.symlink_metadata(&m.source).is_ok(){return Err(SplitError::Exists);}
+    let dir=source_root.open_dir(folder_name).map_err(io)?;
     let mut opts=OpenOptions::new();opts.create_new(true).write(true);
-    let mut out=root.open_with(&stage_name,&opts)
+    let mut out=destination_root.open_with(&stage_name,&opts)
         .map_err(|e|if e.kind()==std::io::ErrorKind::AlreadyExists{
             SplitError::StageConflict
         }else{io(e)})?;
@@ -296,11 +301,11 @@ pub fn reassemble(root:&Dir,folder_name:&str,token:&str)->Result<Receipt,SplitEr
     }
     if format!("{:x}",h.finalize())!=m.sha256{return Err(SplitError::PartCorrupt);}
     out.sync_all().map_err(io)?;drop(out);
-    root.hard_link(&stage_name,root,&m.source)
+    destination_root.hard_link(&stage_name,destination_root,&m.source)
         .map_err(|e|if e.kind()==std::io::ErrorKind::AlreadyExists{
             SplitError::Exists
         }else{SplitError::IncompletePublication})?;
-    root.remove_file(&stage_name).map_err(|_|SplitError::IncompletePublication)?;
+    destination_root.remove_file(&stage_name).map_err(|_|SplitError::IncompletePublication)?;
     Ok(Receipt{
         source:folder_name.into(),destination:m.source.clone(),bytes:m.bytes,
         sha256:m.sha256.clone(),parts:m.chunks.len(),
