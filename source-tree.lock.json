@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "df67c4cefee3d3ee0b45d19872b20ac8361b486e",
-  "trackedFileCount": 495,
+  "sourceCommitBeforeLock": "7c13f4c051dff4c759a16cc7beea0f5e1c3ce945",
+  "trackedFileCount": 496,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-11-background.yml",
-      "blob": "736da772f7f1fbb6a295c957d0c75563d80fdece"
+      "blob": "e074d565278ce9e20a30c4199f64374dc3af4c48"
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
@@ -97,7 +97,7 @@
     },
     {
       "path": "docs/LU_BACKGROUND_SCHEDULER_P02.md",
-      "blob": "e3cda2bef6b44f0858df9a2cde3b8f2f2a213a0f"
+      "blob": "67898a6ede93575020e22c1075dda9e3b04fb1ea"
     },
     {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
@@ -117,7 +117,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "7400210afd5b12159a4695ba26d10022cefc341c"
+      "blob": "fda55a70b0568d461035fa5d9b595c279f49eaf3"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -746,6 +746,10 @@
     {
       "path": "lu-desktop/web/styles.css",
       "blob": "3da1a1115154807ea7a484452640f4828097b702"
+    },
+    {
+      "path": "scripts/p02-native-windows-evidence.ps1",
+      "blob": "cfb76aef777522e8b26ea1889c78ee3eb8b9e4cd"
     },
     {
       "path": "scripts/package-observe-capture-windows.ps1",
