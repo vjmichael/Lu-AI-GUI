@@ -737,6 +737,9 @@ impl LinuxDapSession {
     ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
         self.gateway.poll()
     }
+    pub fn configuration_needed(&self) -> bool {
+        self.gateway.configuration_needed()
+    }
     pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         self.gateway.configuration_done()
     }
