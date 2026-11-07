@@ -1,3 +1,5 @@
+> **Latest explicit owner direction — 2026-11-07: AI Execution Layer philosophy.** Practical AI Capability = **f(K, I, A, F)** (model Knowledge, execution Interfaces, human/host Authorized access, and Feedback/verification/recovery). The **exactly three meta-classifications** are **Foundational**, **Utility**, and **Specialist**, assigned at capability level. The [Canonical AI Execution Layer philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md) and [P01–P12 tool review](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md) are the **source of truth for this philosophical model and its classification**, while this central design and the preserved original Jan-Mod design continue to govern product and native security requirements where not expressly superseded. Lu should operate existing specialist software through secure interfaces instead of reconstructing it as micro-apps. Documentation and audit only: **no runtime or permission changes, no P12 work authorized**.
+
 # Lu — Central Product and Technical Design
 **Canonical edition:** 2026-11-03  
 **Status:** Binding requirements and implementation map; NOT a statement that v1.0 is complete  
