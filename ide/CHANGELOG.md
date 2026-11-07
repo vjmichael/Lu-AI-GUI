@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE WO2/WO3 live CI continuation (2026-11-06): repaired Windows `E0433/E0425` by restricting SCM recovery module to `protected-recovery-service`; applied all 31 exact native Rustfmt hunks from Windows job 128235540208. Both latest observed D7D crash/service-loss native fixtures failed *before* owner admission, not inside cleanup; added secret-safe fixed-stage stderr collection so CI diagnoses the actual protected pipe denial. Native protected Cargo/service acceptance remains open.
+
+
 - IDE 07 / WO3 (2026-11-06): fail-closed retry on subsequent unverified named-pipe instances preserves already authenticated kernel Job-holder threads; initial instance ACL verification remains a hard startup gate. CI-only MIC classification added for access-denied triage, without changing service/host authority. Exact-head native acceptance is still pending.
 
 
