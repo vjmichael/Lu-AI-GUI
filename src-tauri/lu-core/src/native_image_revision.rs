@@ -436,6 +436,55 @@ mod tests{
         );
     }
     #[test]
+    fn solid_redaction_is_opaque_and_does_not_reveal_original_pixels(){
+        let mut data=Vec::new();
+        let mut pixels=image::RgbaImage::new(8,8);
+        for y in 0..8{
+            for x in 0..8{
+                pixels.put_pixel(x,y,image::Rgba([200,50,100,0]));
+            }
+        }
+        DynamicImage::ImageRgba8(pixels).write_to(
+            &mut Cursor::new(&mut data),ImageFormat::Png).unwrap();
+        let source=admit_data_url(&format!("data:image/png;base64,{}",
+            STANDARD.encode(data))).unwrap();
+        let original=source.bytes.clone();
+        let out=transform_admitted_image(&source,
+            ImageRevisionOperation::Redact{x:2,y:3,width:3,height:2}).unwrap();
+        let decoded=image::load_from_memory(&out.output_png).unwrap().to_rgba8();
+        for y in 0..8{
+            for x in 0..8{
+                let pixel=decoded.get_pixel(x,y);
+                if (2..5).contains(&x)&&(3..5).contains(&y){
+                    assert_eq!(pixel.0,[0,0,0,255]);
+                }else{
+                    assert_eq!(pixel.0,[200,50,100,0]);
+                }
+            }
+        }
+        assert_eq!(source.bytes,original);
+        assert_eq!(transform_admitted_image(&source,
+            ImageRevisionOperation::Redact{x:7,y:7,width:2,height:1}),
+            Err(ImageRevisionError::InvalidOperation));
+    }
+    #[test]
+    fn image_plan_rejects_empty_or_excessive_stages_without_mutation(){
+        let source=original();
+        let baseline=source.bytes.clone();
+        assert_eq!(transform_admitted_image_sequence(&source,&[]),
+            Err(ImageRevisionError::InvalidOperation));
+        let operations=vec![ImageRevisionOperation::FlipHorizontal;13];
+        assert_eq!(transform_admitted_image_sequence(&source,&operations),
+            Err(ImageRevisionError::InvalidOperation));
+        let two=[ImageRevisionOperation::Crop{x:1,y:1,width:10,height:8},
+            ImageRevisionOperation::Rotate90];
+        let result=transform_admitted_image_sequence(&source,&two).unwrap();
+        assert_eq!((result.width,result.height),(8,10));
+        assert_eq!(result.base_ref,source.image_ref);
+        assert_eq!(result.base_sha256,format!("{:x}",Sha256::digest(&source.bytes)));
+        assert_eq!(source.bytes,baseline);
+    }
+    #[test]
     fn invalid_crop_oversized_output_and_changed_source_fail_closed(){
         let source=original();
         assert_eq!(transform_admitted_image(&source,
