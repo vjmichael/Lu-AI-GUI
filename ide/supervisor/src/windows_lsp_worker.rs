@@ -134,10 +134,22 @@ mod native_stderr_classification_tests {
     use super::*;
     #[test]
     fn diagnostic_classification_never_exposes_untrusted_message_bytes() {
-        assert_eq!(classify_debug_stderr(b"error: unknown command line argument"), "invalid_option");
-        assert_eq!(classify_debug_stderr(b"Access is denied: C:\\secret.txt"), "permission_denied");
-        assert_eq!(classify_debug_stderr(b"error: custom user source path"), "reported_error");
-        assert_eq!(classify_debug_stderr(b"secret user document content"), "other_nonempty");
+        assert_eq!(
+            classify_debug_stderr(b"error: unknown command line argument"),
+            "invalid_option"
+        );
+        assert_eq!(
+            classify_debug_stderr(b"Access is denied: C:\\secret.txt"),
+            "permission_denied"
+        );
+        assert_eq!(
+            classify_debug_stderr(b"error: custom user source path"),
+            "reported_error"
+        );
+        assert_eq!(
+            classify_debug_stderr(b"secret user document content"),
+            "other_nonempty"
+        );
     }
 }
 
@@ -150,16 +162,20 @@ mod native_environment_tests {
         let tools = Path::new(r"C:\LuIdeSandbox\LanguageServer");
         let env = min_environment(local, tools).unwrap();
         let decoded = String::from_utf16(&env).unwrap();
-        for key in ["APPDATA", "HOME", "LOCALAPPDATA", "TEMP", "TMP", "USERPROFILE"] {
+        for key in [
+            "APPDATA",
+            "HOME",
+            "LOCALAPPDATA",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+        ] {
             assert!(
                 decoded.contains(&format!("{key}={}\0", local.display())),
                 "LSP profile environment did not use private sandbox"
             );
         }
-        assert!(decoded.contains(&format!(
-            "PATH={};",
-            tools.join("bin").display()
-        )));
+        assert!(decoded.contains(&format!("PATH={};", tools.join("bin").display())));
         assert!(decoded.ends_with("\0\0"));
     }
 }
@@ -276,7 +292,6 @@ fn inspect_debug_stderr(handle: Option<&Handle>) {
         classify_debug_stderr(&output[..read as usize])
     );
 }
-
 
 fn nul_stderr() -> Result<Handle, SupervisorError> {
     let mut attrs = SECURITY_ATTRIBUTES {
