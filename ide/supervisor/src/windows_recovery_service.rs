@@ -841,7 +841,20 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
         STARTUP_STAGE.store(50, Ordering::Relaxed);
         // Refuse an SCM RUNNING state unless the actual kernel object has
         // the exact protected DACL and excludes client pipe-instance rights.
-        security::verify_created_pipe_security(pipe.0, &config.approved_host_user_sid)?;
+        if let Err(reason) =
+            security::verify_created_pipe_security(pipe.0, &config.approved_host_user_sid)
+        {
+            if first {
+                // No SCM-ready endpoint ever existed: fail startup closed.
+                return Err(reason);
+            }
+            // A later malformed/uninspectable pipe instance is NEVER
+            // admitted, but a transient OS metadata failure must not kill
+            // the separately held Jobs in previously authenticated worker
+            // threads. The bad instance closes when pipe goes out of scope.
+            thread::sleep(TICK);
+            continue;
+        }
         STARTUP_STAGE.store(55, Ordering::Relaxed);
         if first {
             // SCM RUNNING must not precede actual protected pipe creation.
