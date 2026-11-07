@@ -20,6 +20,8 @@ pub mod ansf_goals;
 pub mod ansf_artifact_links;
 #[path = "../../../../src-tauri/lu-core/src/ansf_live_chat.rs"]
 pub mod ansf_live_chat;
+#[path = "../../../../src-tauri/lu-core/src/ansf_goal_records.rs"]
+pub mod ansf_goal_records;
 #[path = "../../../../src-tauri/lu-core/src/ansf_library.rs"]
 pub mod ansf_library;
 #[path = "../../../src-tauri/src/ansf_migration.rs"]
