@@ -1,5 +1,12 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 remaining-gaps implementation batch (latest)
+
+**Source changes:** OS foreground capture is now bound to HWND, PID and Windows process creation FILETIME, with independent recheck in the D3D11 callback; an OS picker result without source identity remains explicitly unverified. The trusted worker emits only a full-frame-blanked salted receipt—no original BGRA pixel crosses to host/LLM, and no claim of selective secret-region redaction. One 512 MiB CPU worker Guardian lease is admitted before spawn and held through process cancellation/reaping; GPU accounting is still zero/unverified. The installed-Windows evidence harness can verify reviewed EXE and WGC-worker hashes plus native process/window launch and (optionally) independent UIA initial Off state, **not an actual physical WGC picker/NSIS cycle**. Focused P06 CI now builds React before the Tauri macro and compiles the actual Windows WGC binary.
+
+**Outstanding:** exact-head Windows/Linux compilation and repairs; real interactive physical WGC identity/picker/cancellation trials and installed NSIS acceptance; OS identity for generic picker/monitors; trusted sensitive-region selective redaction before *any* image reaches Lu's model; genuine pixel-to-model scope and verified GUI test receipt. User-deferred actual AMD Vulkan/MMProj installed acceptance remains unclaimed. No P07 implementation is authorized.
+
+
 **Owner order:** explicitly start P06 after P03 on 2026-11-06. `lu/p06-observe-privacy-20261106` is stacked on P03 draft PR #71 exact source `f54fd82cccd5803b2912efe7d8be513b19b9b559`. This is a separate development branch: the ongoing Observe & Learn draft PR #61 is left unchanged; the current P06 branch retains Observe source already integrated into the newer P03 tree. No P04/P05/P07 work was authorized by this order.
 
 ## P06 scope: privacy before active vision
