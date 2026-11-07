@@ -109,6 +109,41 @@ async fn ide_workflow_cancel_pending(
     coordinator.cancel_pending(&workflow_id, step).map_err(str::to_owned)
 }
 
+/// WO9-E restart recovery: revalidate a previously completed DAG step
+/// against the protected WO6 journal. Read-only; never executes/replays code.
+#[tauri::command]
+async fn ide_workflow_verify_native_receipt(
+    app: AppHandle,
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    workflow_id: String,
+    step: usize,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("WO9_GRAPH_PROTECTED_JOURNAL_UNAVAILABLE")?;
+        let runtime = Arc::clone(runtime.inner());
+        let coordinator = Arc::clone(coordinator.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            let original = coordinator.pending_native_recheck(&workflow_id, step)
+                .map_err(str::to_owned)?;
+            let job_id = original.native_job_id
+                .ok_or("WO9_NATIVE_JOURNAL_JOB_UNAVAILABLE")?;
+            let plan_sha = original.native_plan_sha256
+                .ok_or("WO9_NATIVE_JOURNAL_PLAN_UNAVAILABLE")?;
+            runtime.verify_replayed_completed_job(
+                &original.spec.project_id, &job_id, &plan_sha)?;
+            coordinator.accept_rechecked_native_pass(
+                &workflow_id, step, &job_id, &plan_sha).map_err(str::to_owned)
+        }).await.map_err(|_| "WO9_GRAPH_REPLAY_INSPECTION_TASK_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, coordinator, workflow_id, step);
+        Err("WO9_GRAPH_PROTECTED_JOURNAL_UNAVAILABLE".into())
+    }
+}
+
 /// This method does NOT implement a second worker. It invokes exactly the
 /// existing WO6 native signed-resource supervisor (including its independent
 /// human OS approval), and records only the resulting native receipt.
@@ -1218,6 +1253,7 @@ pub fn run() {
             ide_workflow_create,
             ide_workflow_list_runs,
             ide_workflow_run_step,
+            ide_workflow_verify_native_receipt,
             ide_workflow_cancel_pending,
             ide_git_review_file,
             ide_git_stage_reviewed,
