@@ -106,7 +106,8 @@ impl ChatStore {
                chat_id TEXT PRIMARY KEY,title TEXT NOT NULL,
                folder_id TEXT REFERENCES ansf_desktop_folders(folder_id),
                favorite INTEGER NOT NULL DEFAULT 0 CHECK(favorite IN (0,1)),
-               updated_seq INTEGER NOT NULL);
+               updated_seq INTEGER NOT NULL,
+               last_event_seq INTEGER NOT NULL DEFAULT 0);
              CREATE INDEX IF NOT EXISTS ansf_desktop_chat_activity
                ON ansf_desktop_chats(updated_seq DESC);
              CREATE TABLE IF NOT EXISTS ansf_desktop_state(
@@ -116,6 +117,7 @@ impl ChatStore {
         ).map_err(to_err)?;
         let mut store=Self{root:root.to_owned(),library,catalog:Mutex::new(conn)};
         store.reconcile_legacy_cutover()?;
+        store.reconcile_activity()?;
         Ok(store)
     }
     fn ansf_book(&self,chat_id:&str)->Result<AnsfStore,String>{
@@ -228,6 +230,40 @@ impl ChatStore {
         ).map_err(to_err)?;
         tx.commit().map_err(to_err)
     }
+    /// Recover from a crash between an immutable book commit and the
+    /// derived Library/catalog activity update. Never replay an effect or
+    /// fabricate an omitted user-turn grant: this repairs UI metadata only.
+    fn reconcile_activity(&self)->Result<(),String>{
+        let mut conn=self.catalog.lock().map_err(to_err)?;
+        let mut stmt=conn.prepare(
+            "SELECT chat_id,last_event_seq FROM ansf_desktop_chats ORDER BY chat_id"
+        ).map_err(to_err)?;
+        let rows=stmt.query_map([],|r|
+            Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?)))
+            .map_err(to_err)?;
+        let mut stale=Vec::new();
+        for row in rows{
+            let(chat_id,last_seen)=row.map_err(to_err)?;
+            let original=self.ansf_book(&chat_id)?
+                .latest_live_chat_seq(&chat_id).map_err(to_err)?;
+            if original>last_seen{stale.push((chat_id,original))}
+            if original<last_seen{
+                return Err("ANSF original chat history is truncated or catalog forged".into())
+            }
+        }
+        drop(stmt);
+        for (chat_id,original) in stale{
+            let tx=conn.transaction().map_err(to_err)?;
+            let next=bump_seq(&tx)?;
+            tx.execute(
+                "UPDATE ansf_desktop_chats SET updated_seq=?2,last_event_seq=?3
+                 WHERE chat_id=?1",
+                params![chat_id,next as i64,original]
+            ).map_err(to_err)?;
+            tx.commit().map_err(to_err)?;
+        }
+        Ok(())
+    }
     pub fn list(&self)->Result<(Vec<ChatSummary>,Vec<ChatFolder>),String>{
         let conn=self.catalog.lock().map_err(to_err)?;
         let mut chats=Vec::new();
@@ -327,7 +363,7 @@ impl ChatStore {
             generation_id:generation_id.map(str::to_owned),
             call_id:call_id.map(str::to_owned),tool_id:tool_id.map(str::to_owned),
         };
-        book.append_host_chat_event(chat_id,&event).map_err(to_err)?;
+        let committed=book.append_host_chat_event(chat_id,&event).map_err(to_err)?;
         // The canonical event is durable before any derived UI catalog update.
         let tx=conn.transaction().map_err(to_err)?;
         if matches!(kind,LiveKind::User|LiveKind::ReaderUser){
@@ -340,8 +376,8 @@ impl ChatStore {
         }
         let seq=bump_seq(&tx)?;
         tx.execute(
-            "UPDATE ansf_desktop_chats SET updated_seq=?2 WHERE chat_id=?1",
-            params![chat_id,seq as i64]
+            "UPDATE ansf_desktop_chats SET updated_seq=?2,last_event_seq=?3 WHERE chat_id=?1",
+            params![chat_id,seq as i64,committed.seq]
         ).map_err(to_err)?;
         tx.commit().map_err(to_err)?;
         Ok(())
