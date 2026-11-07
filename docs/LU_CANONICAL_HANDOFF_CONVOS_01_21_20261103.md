@@ -61,7 +61,7 @@ This is the stable entrypoint for engineering continuation across `ChatGPT - Lu 
 5. Resource guardian, durable task manager/agent continuity, streaming and multimedia robustness, then near-v1.0 physical Windows upgrade/install/uninstall/AMD Vulkan acceptance.
 
 ## Handoff protocol for each new Lu conversation
-- Read this file first, then `docs/LU_V1_0_TASKS.md`, `docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md`, `src-tauri/lu-core/SECURITY_AUTHORITY_AND_OS_CEILING.md`, and the latest GitHub CI run on the active dev branch.
+- Read [Lu Decision Memory Register](LU_DECISION_MEMORY_REGISTER_20261107.md) first (recovered owner approvals, explicit supersessions, original ANSF UX, operational continuity and unresolved gates); it is navigation metadata, not original messages. Then read this file, then `docs/LU_V1_0_TASKS.md`, `docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md`, `src-tauri/lu-core/SECURITY_AUTHORITY_AND_OS_CEILING.md`, and the latest GitHub CI run on the active dev branch.
 - Check the exact source identity and repository branch/commit, live test status, unpublished local source caveat, user-decided priorities and current task gate.
 - Continue code and tests in that same branch unless a verified new branch is necessary. Keep alpha.2 immutable.
 - Record every change with task ID, commit SHA, exact test results and what is **not** proven.

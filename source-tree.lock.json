@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "785da23784f702e28a36a88186db56cd1c84998a",
-  "trackedFileCount": 568,
+  "sourceCommitBeforeLock": "9b2ae5d381c2e96f6d60e657fc757d5445323abb",
+  "trackedFileCount": 569,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -125,7 +125,7 @@
     },
     {
       "path": "README.md",
-      "blob": "73dcb3730ece8de0565ddef027a6d80fc9b116c4"
+      "blob": "9b7273500c9a16717e9ed6fb388cfa0377c31348"
     },
     {
       "path": "benchmarks/memory/test_three_arm_real_model.py",
@@ -185,7 +185,7 @@
     },
     {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
-      "blob": "5ac0cb9f1342e28a13e18b3384ea69b6fd502973"
+      "blob": "c38aead5f505ba2ec6d036c12320a3f7977308d5"
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
@@ -194,6 +194,10 @@
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
       "blob": "49edcf883abaa852b901de6ddfc0aa4da5122a4c"
+    },
+    {
+      "path": "docs/LU_DECISION_MEMORY_REGISTER_20261107.md",
+      "blob": "3f0677108c9cce3ece07a7511f046eb871c1a43b"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -1005,7 +1009,7 @@
     },
     {
       "path": "src-tauri/lu-core/MEMORY_AND_MEDIA_ROADMAP.md",
-      "blob": "a41193e65aea47a3b733d0459bed07e4ab1bab9d"
+      "blob": "68ae9eb4d4d181972cf84557e935177e00ebce37"
     },
     {
       "path": "src-tauri/lu-core/README.md",
