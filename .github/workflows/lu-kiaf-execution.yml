@@ -38,5 +38,6 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_artifact_inspect::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_external_app_action::tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_capability_inventory::classification_tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib kiaf_failure_attribution_tests -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_artifact_inspect -- --nocapture
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_workspace_read_turn -- --nocapture
