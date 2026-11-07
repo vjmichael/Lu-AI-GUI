@@ -6043,15 +6043,15 @@ async fn lu_observe_capture_one_shot(
                  countdown?\n\n\
                  Confirm, then click or focus the desired window within \
                  four seconds. The worker independently checks its Windows \
-                 HWND and owning process ID again before reading one frame. \
+                 HWND, owning PID and process creation time again before reading one frame. \
                  It will not capture a whole monitor in this mode. The \
-                 temporary pixels are discarded; only a non-reversible \
+                 temporary pixels are wholly redacted before a content-free \
                  capture digest is recorded. No model receives the pixels."
             }else{
                 "Use Windows' picker to select ONE window or ONE entire display \
                  for a single frame? A monitor may contain unrelated private \
                  windows. The selected source is not app-identity attested. \
-                 Pixels are discarded and a digest receipt is recorded only. \
+                 Pixels are wholly redacted; the digest describes no readable image. \
                  No AI model receives the pixels."
             };
             app.dialog().message(warning)
