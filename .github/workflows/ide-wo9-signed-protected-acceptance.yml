@@ -74,6 +74,8 @@ jobs:
             [IO.File]::WriteAllText((Join-Path $fixture 'src/main.rs'),"fn main() { println!(`"native`"); }`n")
             [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),"fn main() { println!(`"native`"); }`n")
             [IO.File]::WriteAllText((Join-Path $fixture 'dist/verified.tar'),"WO9 native package evidence")
+            New-Item -ItemType Directory -Path (Join-Path $fixture 'tests') -Force | Out-Null
+            [IO.File]::WriteAllText((Join-Path $fixture 'tests/slow.rs'),"#[test]`nfn slow_native_test() { std::thread::sleep(std::time::Duration::from_secs(90)); }`n")
             & cargo generate-lockfile --manifest-path (Join-Path $fixture 'Cargo.toml') --offline
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: no frozen offline Cargo lockfile' }
             & git -C $fixture init -q
@@ -82,6 +84,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: source fixture Git HEAD not frozen' }
             & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -FixtureRoot $fixture -Scenario Wo9ProtectedGraph
             if (!$?) { throw 'DENIED: genuine installed signed protected two-step OS DAG not accepted' }
+            & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -FixtureRoot $fixture -Scenario Wo9ProtectedGraphCancel
+            if (!$?) { throw 'DENIED: native graph cancellation did not kill actual OS worker and block dependents' }
+            & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -FixtureRoot $fixture -Scenario Wo9ProtectedGraphHostCrash
+            if (!$?) { throw 'DENIED: native graph crash/reboot reconciliation did not preserve blocked dependencies' }
             $uninstallers=@(Get-ChildItem $root -File -Filter '*uninstall*.exe')
             if ($uninstallers.Count -ne 1) { throw 'DENIED: signed installer missing native uninstaller' }
             $un=Start-Process $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
@@ -90,7 +96,7 @@ jobs:
               throw 'DENIED: protected SCM service/desktop not uninstalled'
             }
             $uninstalled=$true
-            Write-Host 'WO9_SIGNED_WINDOWS_INSTALLED_PROTECTED_DEPENDENCY_GRAPH=PASS'
+            Write-Host 'WO9_SIGNED_WINDOWS_DEPENDENCY_GRAPH_CANCEL_AND_HOST_CRASH_RECOVERY=PASS'
             Write-Host 'WO9_RELEASE_APPROVED=FALSE'
           } finally {
             if ($installed -and !$uninstalled) { Write-Warning 'Signed Windows native gate not accepted; runner quarantined' }
