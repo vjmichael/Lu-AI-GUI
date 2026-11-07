@@ -1,5 +1,8 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**IDE 07 / WO2–WO3 active (2026-11-06):** In draft [PR #65](https://github.com/vjmichael/Lu-AI-GUI/pull/65), protected LocalService now has source for per-job OS-derived NUL SID grants, fsynced intent, verified revocation and service-start reconciliation. **New:** concurrent NUL ACL transactions are serialized, and an unexpectedly changed exact-SID ACE cannot be silently revoked; a lock regression test is committed. This is unverified latest-source code, not installed worker acceptance. Real D7B contained Cargo + cancellation already passed at historical `1090800` with disposable CI-only NUL permissions. D7D exact-user SCM named-pipe open remains denied; authenticated crash/restart/service-loss proofs remain open. No release worker, LSP process or installed NSIS feature is enabled. [Detailed WO2/WO3 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
+
+
 **WO2 production NUL authority bootstrap added for native review:** fixed-service SID, elevated-only, per-boot READ_CONTROL/WRITE_DAC helper; per-job service-owned grant/revoke and boot reconciliation still open. See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md). No production worker launch.
 
 **WO2 pinned Windows native Cargo success (D7B exact commit 1090800):** real isolated Cargo Completed exit 0, output sealed and durable restart; real cancellation Job reaped and no output. CI-only exact-SID NUL permission does NOT finish production privilege lifecycle. **WO3 SCM service still denied at pipe open despite exact user SID match.** Native token diagnostic and nonblocking disposable pipe test added, protected service ACL preserved. See Batch 02 ledger.
