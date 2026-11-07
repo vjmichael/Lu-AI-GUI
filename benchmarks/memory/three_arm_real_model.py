@@ -103,7 +103,8 @@ def build_prompt(case,arm,recent,root,runner,ids,orig):
         source_id=locator(case["source_session"],999999)
     elif key is not None:
         source_id=ids[case["source_session"]+"/"+key]
-    question=case["question"]
+    # Qwen3 non-thinking mode keeps this CPU smoke focused on retrieval/use.
+    question="/no_think\n"+case["question"]
     if source_id:
         question+="\nOpaque historical source identifier (not its contents): "+source_id
     context="[RECENT CHAT]\n"+recent if arm!="none" else ""
