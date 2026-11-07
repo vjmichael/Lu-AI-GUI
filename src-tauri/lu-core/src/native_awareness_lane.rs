@@ -154,11 +154,17 @@ impl AwarenessLane {
             brief_times:VecDeque::new(),handoff_times:VecDeque::new(),
         })
     }
-    pub fn stop(&mut self){
-        self.active=false;
+    /// Operator-requested privacy purge. Does not reset the monotonic event
+    /// sequence: a replayed event cannot reacquire authority after forgetting.
+    /// The native host separately purges SQLite notes in the same chat.
+    pub fn discard_observations(&mut self){
         self.recent.clear();
         self.brief_times.clear();
         self.handoff_times.clear();
+    }
+    pub fn stop(&mut self){
+        self.active=false;
+        self.discard_observations();
     }
     fn trim(&mut self,now:u64){
         while self.recent.front().is_some_and(|(t,_)|
@@ -337,6 +343,24 @@ mod tests{
         assert_eq!(lane.ingest("obs-one","c-main",
             e(3,Signal::ErrorIndicator,Source::RendererHint),1002,
             HostReadiness::default()),Err(AwarenessError::Replay));
+    }
+    #[test]
+    fn p06_forget_clears_handoff_without_regrant_or_sequence_replay(){
+        let mut lane=AwarenessLane::new("obs-scope","c-current").unwrap();
+        let event=NativeSignal{sequence:1,source:Source::RendererHint,
+            signal:Signal::ErrorIndicator};
+        lane.ingest("obs-scope","c-current",event.clone(),2000,
+            HostReadiness::default()).unwrap();
+        assert!(lane.handoff("obs-scope","c-current").unwrap().is_some());
+        lane.discard_observations();
+        assert!(lane.handoff("obs-scope","c-current").unwrap().is_none());
+        assert_eq!(lane.ingest("obs-scope","c-current",event,4000,
+            HostReadiness::default()),Err(AwarenessError::Replay));
+        let next=NativeSignal{sequence:2,source:Source::RendererHint,
+            signal:Signal::ErrorIndicator};
+        lane.ingest("obs-scope","c-current",next,6000,
+            HostReadiness::default()).unwrap();
+        assert!(lane.handoff("obs-scope","c-current").unwrap().is_some());
     }
     #[test]
     fn session_and_chat_are_isolated_and_stop_erases_volatile_evidence(){
