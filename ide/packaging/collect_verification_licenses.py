@@ -69,7 +69,7 @@ R_EFI_AUTHOR_GIT_BLOBS = {
 R_EFI_LICENSE = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
 
 def git_blob_sha(content):
-    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\\0" + content).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(content)).encode() + bytes([0]) + content).hexdigest()
 
 def verified_r_efi_authors(manager, name, version, declared, folder, repo_root):
     if manager != "cargo" or name != "r-efi" or version not in R_EFI_AUTHOR_GIT_BLOBS:
