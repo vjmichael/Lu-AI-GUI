@@ -295,3 +295,18 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
  background:#1d3345;color:#e1edf8;font-size:12px}
 .backgroundGuardianStatus small{color:#adbed0;line-height:1.5}
 @media(max-width:650px){.backgroundScheduleOptions{grid-template-columns:1fr}}
+
+/* M2 ANSF memory controls: optional lightweight task context, never consent. */
+.m2MemoryPane{margin:5px 16px 0;border:1px solid var(--border,#3b4050);border-radius:9px;
+  background:var(--surface,#1d202a);max-height:36vh;overflow:auto;flex-shrink:0;}
+.m2MemoryHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;}
+.m2MemoryHeader strong{font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68ch;}
+.m2MemoryBody{padding:2px 12px 12px;display:grid;gap:10px;}
+.m2MemoryBody form,.m2QuestionCard{display:grid;gap:8px;border-top:1px solid var(--border,#3b4050);padding-top:9px;}
+.m2MemoryBody label{display:grid;gap:4px;font-size:.85rem;}
+.m2MemoryBody input,.m2MemoryBody textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:32px;}
+.m2MemoryBody small,.m2QuestionCard small{opacity:.82;line-height:1.4;}
+.m2MemoryBody form>button{justify-self:start;}
+.m2QuestionChoices{display:flex;gap:8px;flex-wrap:wrap;}
+@media(max-width:680px){.m2MemoryHeader{align-items:flex-start;flex-direction:column;}
+  .m2MemoryPane{max-height:40vh;}}
