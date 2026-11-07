@@ -5,6 +5,9 @@ on:
       - 'ide/host/**'
       - 'ide/app/web/**'
       - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/packaging/verify_wo9_release.py'
+      - 'ide/packaging/test_verify_wo9_release.py'
+      - 'ide/packaging/wo9-release-evidence.json'
       - 'ide/docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md'
       - '.github/workflows/ide-wo9-advanced-workflows.yml'
   workflow_dispatch:
@@ -60,6 +63,8 @@ jobs:
         run: |
           npm install --ignore-scripts --no-audit --no-fund
           npm run check
+      - name: Default-deny WO9 native release evidence and hostile signed claims
+        run: python3 -m unittest discover -s ide/packaging -p 'test_verify_wo9_release.py' -v
       - name: Guard against executable workflow promotions
         run: |
           grep -q 'ready_for_release: false' ide/host/src/advanced_workflows.rs
