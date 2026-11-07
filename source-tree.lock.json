@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "97bc74e7ca85a192ca3e217567243f6ad4f2fa40",
+  "sourceCommitBeforeLock": "b008c0982c13c8ec8b4f59fb1ff55c291b8cd076",
   "trackedFileCount": 518,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-p07-research-citation-styles.yml",
-      "blob": "cd24a35d4fa0be386551dcb0ad711271379f6f17"
+      "blob": "67bd662acc28234012e17fce025e12b33cfa5938"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -133,7 +133,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "0c1037ee1692710e33376de35281e25a7cbb8cce"
+      "blob": "884832841040a2a7e3af947b92a5775b5ea8d8db"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/LU_P07_RESEARCH_STYLES.md",
-      "blob": "9cfc43109d4766508e0e293a5c5bce8650696fe6"
+      "blob": "3c3b968d8816455fa40562b4519062cbd13b42b6"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -445,7 +445,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "523061c9f3acb3f782453d8b934d69ed20598b09"
+      "blob": "b8df5e34b999c12d64a746263f5cb7b1e9803d1a"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -505,7 +505,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
-      "blob": "d3df1f2def059bce63c3cd4f201ea9edd6bbec7b"
+      "blob": "87844a4c75384cc95d45d76535a0352664e03d55"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -653,7 +653,7 @@
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
-      "blob": "07b6aba9cc477171793aaa55235adbc41ead205f"
+      "blob": "7907d803ef36ec4520432852cd739c47a9a866c9"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -773,7 +773,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "0581559778338ed9252e03550c7f9db66881291b"
+      "blob": "f01c74771e547392d9ca5debdec0c18f4c28acf7"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1565,7 +1565,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/web_research_styles.rs",
-      "blob": "18bcb88d27e43b577d3968908c7a2a03d2205cf2"
+      "blob": "5ba8395a8aa4411f0e3d87e2d910b2c8bdcafa14"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_sufficiency.rs",
