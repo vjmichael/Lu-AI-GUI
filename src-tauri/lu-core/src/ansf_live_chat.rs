@@ -186,6 +186,18 @@ pub(crate) fn initialize_live_chat_schema(conn:&Connection)->Result<(),AnsfError
              SELECT RAISE(ABORT,'ANSF live original events are immutable');
            END;"
     )?;
+    // Development/pre-release books may already have the first native event
+    // table without its separate observed-legacy identity column.
+    // Add this nullable provenance field without rewriting any original row.
+    let mut cols=conn.prepare("PRAGMA table_info(ansf_live_chat_events)")?;
+    let names=cols.query_map([],|r|r.get::<_,String>(1))?
+        .collect::<Result<Vec<_>,_>>()?;
+    drop(cols);
+    if !names.iter().any(|s|s=="legacy_turn_id"){
+        conn.execute_batch(
+            "ALTER TABLE ansf_live_chat_events ADD COLUMN legacy_turn_id TEXT"
+        )?;
+    }
     Ok(())
 }
 impl AnsfStore{
