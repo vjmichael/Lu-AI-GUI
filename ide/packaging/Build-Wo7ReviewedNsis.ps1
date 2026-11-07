@@ -27,9 +27,22 @@ if ($LASTEXITCODE -ne 0 -or $dirty.Count -gt 0) { Deny 'source_tree_not_clean' }
 $tauri=Join-Path $repo 'ide/app/src-tauri'
 $app=Join-Path $tauri 'target/release/lu-ide-desktop.exe'
 if (!(Test-Path -LiteralPath $app -PathType Leaf)) { Deny 'reviewed_prebuilt_desktop_missing' }
+$review=Get-Content -LiteralPath $ApprovedInventory -Raw | ConvertFrom-Json
+$reviewedDesktop=@($review.files | Where-Object { $_.role -eq 'desktop' })
+$reviewedService=@($review.files | Where-Object { $_.role -eq 'service' })
+if ($reviewedDesktop.Count -ne 1 -or $reviewedService.Count -ne 1) { Deny 'signed_roles_not_uniquely_reviewed' }
 $desktopSigner=Get-AuthenticodeSignature -LiteralPath $app
 if ($desktopSigner.Status -ne 'Valid' -or !$desktopSigner.SignerCertificate) {
   Deny 'reviewed_desktop_authenticode_missing'
+}
+if ($desktopSigner.SignerCertificate.Thumbprint -ine $reviewedDesktop[0].signerThumbprint) {
+  Deny 'desktop_signer_differs_from_independent_review'
+}
+$serviceReviewPath=Join-Path $InputRoot $reviewedService[0].source
+$serviceReview=Get-AuthenticodeSignature -LiteralPath $serviceReviewPath
+if ($serviceReview.Status -ne 'Valid' -or !$serviceReview.SignerCertificate -or
+    $serviceReview.SignerCertificate.Thumbprint -ine $reviewedService[0].signerThumbprint) {
+  Deny 'service_signer_differs_from_independent_review'
 }
 $cliRoot=Join-Path $repo 'ide/app/node_modules/@tauri-apps/cli'
 $cliManifest=Join-Path $cliRoot 'package.json'
