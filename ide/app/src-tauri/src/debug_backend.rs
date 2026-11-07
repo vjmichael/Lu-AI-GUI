@@ -403,6 +403,11 @@ impl NativeDebugRuntime {
             return Err("DEBUG_INITIALIZE_TIMEOUT".into());
         }
         session.launch_fixed_fixture().map_err(|e| e.code().to_owned())?;
+        // Handle a valid initialized event already consumed during the
+        // initialize response read. Never issue configuration before launch.
+        if session.configuration_needed() {
+            session.configuration_done().map_err(|e| e.code().to_owned())?;
+        }
         let began = Instant::now();
         let mut stopped_thread = None;
         let mut threads_response = false;
