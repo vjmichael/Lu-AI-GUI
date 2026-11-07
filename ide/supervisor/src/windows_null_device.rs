@@ -284,24 +284,113 @@ impl ServiceNullLease {
             return Err(denied());
         }
         crate::windows_service_security::assert_restricted_local_service()?;
-        let name = format!("LuIdeD7{}", &job_id[4..]);
-        let mut sid = ptr::null_mut();
-        let result = unsafe {
-            windows_sys::Win32::Security::Isolation::DeriveAppContainerSidFromAppContainerName(
-                wide(&name).as_ptr(), &mut sid,
-            )
-        };
-        if result < 0 || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
-            if !sid.is_null() {
-                unsafe { windows_sys::Win32::Security::FreeSid(sid); }
-            }
-            return Err(denied());
-        }
-        let owned = DerivedPackageSid(sid);
+        let owned = derive_job_sid(job_id)?;
         let lease = grant_exact_sid(owned.0)?;
         Ok(Self { lease, _sid: owned })
     }
     pub(crate) fn finish(&mut self) -> Result<(), SupervisorError> {
         self.lease.finish()
     }
+}
+
+
+#[cfg(feature = "protected-recovery-service")]
+fn derive_job_sid(job_id: &str) -> Result<DerivedPackageSid, SupervisorError> {
+    if job_id.len() != 36
+        || !job_id.starts_with("job-")
+        || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(denied());
+    }
+    let name = format!("LuIdeD7{}", &job_id[4..]);
+    let mut sid = ptr::null_mut();
+    let status = unsafe {
+        windows_sys::Win32::Security::Isolation::DeriveAppContainerSidFromAppContainerName(
+            wide(&name).as_ptr(), &mut sid,
+        )
+    };
+    if status < 0 || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+        if !sid.is_null() {
+            unsafe { windows_sys::Win32::Security::FreeSid(sid); }
+        }
+        return Err(denied());
+    }
+    Ok(DerivedPackageSid(sid))
+}
+/// Crash/restart reconciliation: with a service-only protected, fsynced
+/// intent file, the trusted restricted service may revoke this exact OS
+/// package SID's known ACE. The pending job is NEVER allowed to restart;
+/// missing kernel Job evidence remains quarantined. No wildcard grants.
+#[cfg(feature = "protected-recovery-service")]
+pub(crate) fn reconcile_service_null_intent(job_id: &str) -> Result<(), SupervisorError> {
+    crate::windows_service_security::assert_restricted_local_service()?;
+    let sid = derive_job_sid(job_id)?;
+    let raw = unsafe {
+        CreateFileW(
+            wide(r"\\.\NUL").as_ptr(),
+            READ_CONTROL | WRITE_DAC,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        )
+    };
+    if raw.is_null() || raw == INVALID_HANDLE_VALUE { return Err(denied()); }
+    let handle = Handle(raw);
+    // This is the only ACE inserted by ServiceNullLease. A different mask,
+    // duplicate allow or deny ACE must be investigated, never silently
+    // deleted by the service or interpreted as its own lease.
+    let present = with_dacl(handle.0, |acl| exact_service_sid_ace(acl, sid.0))?;
+    match present {
+        None => Ok(()), // Grant intent persisted but grant had not happened.
+        Some(mask) if mask == (GENERIC_READ | GENERIC_WRITE) => {
+            change(handle.0, sid.0, REVOKE_ACCESS)?;
+            with_dacl(handle.0, |acl| {
+                if exact_service_sid_ace(acl, sid.0)?.is_some() {
+                    Err(denied())
+                } else {
+                    Ok(())
+                }
+            })
+        }
+        _ => Err(denied()),
+    }
+}
+#[cfg(feature = "protected-recovery-service")]
+fn exact_service_sid_ace(acl: *mut ACL, sid: PSID) -> Result<Option<u32>, SupervisorError> {
+    if acl.is_null() || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+        return Err(denied());
+    }
+    let mut info = ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            acl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0 {
+        return Err(denied());
+    }
+    let mut found: Option<u32> = None;
+    for index in 0..info.AceCount {
+        let mut entry = ptr::null_mut();
+        if unsafe { GetAce(acl, index, &mut entry) } == 0 || entry.is_null() {
+            return Err(denied());
+        }
+        let ace = unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
+        if (ace.Header.AceType == 0 || ace.Header.AceType == 1)
+            && ace.Header.AceSize >= size_of::<ACCESS_ALLOWED_ACE>() as u16
+        {
+            let candidate = (&ace.SidStart as *const u32).cast_mut().cast::<c_void>();
+            if unsafe { EqualSid(candidate, sid) } != 0 {
+                if found.is_some() || ace.Header.AceType != 0 {
+                    return Err(denied());
+                }
+                found = Some(ace.Mask);
+            }
+        }
+    }
+    Ok(found)
 }
