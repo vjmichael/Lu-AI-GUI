@@ -1,0 +1,36 @@
+name: IDE WO4 native Linux delegated kernel witness
+# Manual dispatch ONLY. Never route to a non-delegated hosted runner or use
+# sudo, Docker, fake cgroupfs, or soft-fail when the required kernel scope
+# does not exist. Requires an independently enrolled and provisioned Linux
+# machine whose Actions runner lives in the exact Lu IDE host leaf.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-delegation:
+    runs-on: [self-hosted, Linux, lu-ide-delegated]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Compile exact fixed native kernel witness
+        run: |
+          cargo build --manifest-path ide/sandbox/Cargo.toml --release --bin linux_cgroup_native_witness
+          cargo test --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_native_witness
+      - name: Independently prove live cgroup v2 pre-exec attach and descendant kill
+        run: |
+          set -eu
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test -f /proc/self/cgroup
+          ide/sandbox/target/release/linux_cgroup_native_witness
+          echo 'PASS: real native kernel witness; NOT proof of bwrap, Cargo or installed release'
+      - name: Label exact scope
+        run: |
+          echo 'Native cgroup-v2 PID/quota/kill witness only.'
+          echo 'WO4 full Linux Cargo, restricted namespaces, recovery and installed app remain separate gates.'
