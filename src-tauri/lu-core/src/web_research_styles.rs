@@ -374,6 +374,120 @@ pub fn export_csl_json(
     Ok(item)
 }
 
+/// SBL Handbook 2 narrowly scoped canonical Hebrew Bible/NT locator.
+/// This formats a user-chosen scripture reference, NOT a verified passage,
+/// translation, critical edition or bibliography entry. Primary-source
+/// editions, DSS, papyri, Apocrypha and original-language citations need
+/// separately reviewed witness/edition authority and are NOT inferred.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct SblScriptureReference{
+    pub reference:String,
+    pub book:String,
+    pub translation:String,
+    pub passage_verified:bool,
+    pub translation_verified:bool,
+    pub bibliographic_entry_required:bool,
+    pub coverage:&'static str,
+}
+fn sbl_canonical_book_abbreviation(name:&str)->Option<&'static str>{
+    match name{
+        "Genesis"|"Gen"=>Some("Gen"),
+        "Exodus"|"Exod"=>Some("Exod"),
+        "Leviticus"|"Lev"=>Some("Lev"),
+        "Numbers"|"Num"=>Some("Num"),
+        "Deuteronomy"|"Deut"=>Some("Deut"),
+        "Joshua"|"Josh"=>Some("Josh"),
+        "Judges"|"Judg"=>Some("Judg"),
+        "Ruth"|"Ruth"=>Some("Ruth"),
+        "1 Samuel"|"1 Sam"=>Some("1 Sam"),
+        "2 Samuel"|"2 Sam"=>Some("2 Sam"),
+        "1 Kings"|"1 Kgs"=>Some("1 Kgs"),
+        "2 Kings"|"2 Kgs"=>Some("2 Kgs"),
+        "1 Chronicles"|"1 Chr"=>Some("1 Chr"),
+        "2 Chronicles"|"2 Chr"=>Some("2 Chr"),
+        "Ezra"|"Ezra"=>Some("Ezra"),
+        "Nehemiah"|"Neh"=>Some("Neh"),
+        "Esther"|"Esth"=>Some("Esth"),
+        "Job"|"Job"=>Some("Job"),
+        "Psalms"|"Ps"=>Some("Ps"),
+        "Proverbs"|"Prov"=>Some("Prov"),
+        "Ecclesiastes"|"Eccl"=>Some("Eccl"),
+        "Song of Songs"|"Song"=>Some("Song"),
+        "Isaiah"|"Isa"=>Some("Isa"),
+        "Jeremiah"|"Jer"=>Some("Jer"),
+        "Lamentations"|"Lam"=>Some("Lam"),
+        "Ezekiel"|"Ezek"=>Some("Ezek"),
+        "Daniel"|"Dan"=>Some("Dan"),
+        "Hosea"|"Hos"=>Some("Hos"),
+        "Joel"|"Joel"=>Some("Joel"),
+        "Amos"|"Amos"=>Some("Amos"),
+        "Obadiah"|"Obad"=>Some("Obad"),
+        "Jonah"|"Jonah"=>Some("Jonah"),
+        "Micah"|"Mic"=>Some("Mic"),
+        "Nahum"|"Nah"=>Some("Nah"),
+        "Habakkuk"|"Hab"=>Some("Hab"),
+        "Zephaniah"|"Zeph"=>Some("Zeph"),
+        "Haggai"|"Hag"=>Some("Hag"),
+        "Zechariah"|"Zech"=>Some("Zech"),
+        "Malachi"|"Mal"=>Some("Mal"),
+        "Matthew"|"Matt"=>Some("Matt"),
+        "Mark"|"Mark"=>Some("Mark"),
+        "Luke"|"Luke"=>Some("Luke"),
+        "John"|"John"=>Some("John"),
+        "Acts"|"Acts"=>Some("Acts"),
+        "Romans"|"Rom"=>Some("Rom"),
+        "1 Corinthians"|"1 Cor"=>Some("1 Cor"),
+        "2 Corinthians"|"2 Cor"=>Some("2 Cor"),
+        "Galatians"|"Gal"=>Some("Gal"),
+        "Ephesians"|"Eph"=>Some("Eph"),
+        "Philippians"|"Phil"=>Some("Phil"),
+        "Colossians"|"Col"=>Some("Col"),
+        "1 Thessalonians"|"1 Thess"=>Some("1 Thess"),
+        "2 Thessalonians"|"2 Thess"=>Some("2 Thess"),
+        "1 Timothy"|"1 Tim"=>Some("1 Tim"),
+        "2 Timothy"|"2 Tim"=>Some("2 Tim"),
+        "Titus"|"Titus"=>Some("Titus"),
+        "Philemon"|"Phlm"=>Some("Phlm"),
+        "Hebrews"|"Heb"=>Some("Heb"),
+        "James"|"Jas"=>Some("Jas"),
+        "1 Peter"|"1 Pet"=>Some("1 Pet"),
+        "2 Peter"|"2 Pet"=>Some("2 Pet"),
+        "1 John"|"1 John"=>Some("1 John"),
+        "2 John"|"2 John"=>Some("2 John"),
+        "3 John"|"3 John"=>Some("3 John"),
+        "Jude"|"Jude"=>Some("Jude"),
+        "Revelation"|"Rev"=>Some("Rev"),
+        _=>None,
+    }
+}
+pub fn format_sbl_scripture_reference(
+    book:&str,chapter:u16,first_verse:u16,last_verse:Option<u16>,
+    translation:&str
+)->Result<SblScriptureReference,StyleError>{
+    let short=sbl_canonical_book_abbreviation(book)
+        .ok_or(StyleError::Unsupported)?;
+    if chapter==0||chapter>150||first_verse==0||first_verse>176
+       ||last_verse.is_some_and(|last|last<=first_verse||last>176){
+        return Err(StyleError::InvalidField);
+    }
+    // Abbreviations are sourced from the 2015 SBL Student Supplement and
+    // published reference guides; no invented versions or edition details.
+    if !matches!(translation,"NRSV"|"RSV"|"NIV"|"NASB"|"KJV"|"CEB"){
+        return Err(StyleError::Unsupported);
+    }
+    let verses=match last_verse{
+        Some(last)=>format!("{first_verse}–{last}"),
+        None=>first_verse.to_string(),
+    };
+    Ok(SblScriptureReference{
+        reference:format!("({short} {chapter}:{verses} {translation})"),
+        book:short.into(),translation:translation.into(),
+        passage_verified:false,translation_verified:false,
+        bibliographic_entry_required:false,
+        coverage:"SBL2_CANONICAL_BIBLE_LOCATOR_ONLY_UNVERIFIED",
+    })
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -398,6 +512,25 @@ mod tests{
             publication_place:Some("Chicago".into()),journal:None,
             journal_abbreviation:None,volume:None,issue:None,
         }
+    }
+    #[test]
+    fn sbl_scripture_locator_formats_only_user_supplied_book_verse_translation(){
+        let ref1=format_sbl_scripture_reference("Genesis",1,1,Some(3),"NRSV").unwrap();
+        assert_eq!(ref1.reference,"(Gen 1:1–3 NRSV)");
+        assert!(!ref1.passage_verified&&!ref1.translation_verified);
+        assert!(!ref1.bibliographic_entry_required);
+        let ref2=format_sbl_scripture_reference("2 Corinthians",11,1,None,"CEB").unwrap();
+        assert_eq!(ref2.reference,"(2 Cor 11:1 CEB)");
+        assert_eq!(format_sbl_scripture_reference("Unknown",1,1,None,"NRSV"),
+            Err(StyleError::Unsupported));
+        assert_eq!(format_sbl_scripture_reference("Genesis",1,0,None,"NRSV"),
+            Err(StyleError::InvalidField));
+        assert_eq!(format_sbl_scripture_reference("Genesis",1,1,Some(1),"NRSV"),
+            Err(StyleError::InvalidField));
+        assert_eq!(format_sbl_scripture_reference("Genesis",1,1,None,"invented"),
+            Err(StyleError::Unsupported));
+        assert_eq!(format_sbl_scripture_reference("Gen",1,1,None,"NA28"),
+            Err(StyleError::Unsupported));
     }
     #[test]
     fn five_styles_emit_correlated_book_not_a_factual_or_page_verdict(){
