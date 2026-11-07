@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO8 source repairs (Nov 7 UTC): persisted project-scoped Cargo and LLDB supervisor journal now visible on installed desktop after restart; full quarantine/reconciliation security state kept outside bounded display; actual signed-native Cargo and DAP cancellation/host crash/service crash/source swap acceptance scripts and fail-closed per-gate metadata are committed. Native CI/release still open; no signed candidate provided. [WO8 ledger](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md).
+
+
 - WO8 native failure repair and installed E2E expansion (Nov 7 UTC): repaired actual WO7 two-vs-three-binary signed-test fixture fault in both WO7/WO8 branches; added Windows real external file-save conflict harness, Linux native AT-SPI installed editor Save/restart/conflict, signed Windows real protected Cargo cancellation, desktop crash, LocalService crash/restart and source-tamper denial with observed worker PID/job/receipt; added manual exact-head native workflow, bounded Jobs view reconciliation receipts, expanded fail-closed evidence gates. **Actual signed installed OS acceptance OPEN**, CI status must be checked against current head. [WO8 work order](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md).
 
 
