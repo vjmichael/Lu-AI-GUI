@@ -144,7 +144,7 @@ mod tests {
         let frame = encode(&msg).unwrap();
         assert_eq!(decode(&frame).unwrap(), msg);
         let mut extra = frame.clone();
-        extra.extend_from_slice(&[0x78, 0x01]);
+        extra.extend_from_slice(&[0x08, 0x01]);
         assert_eq!(decode(&extra), Err(BridgeWireError::Noncanonical));
         assert!(decode(&vec![42; MAX_BRIDGE_BYTES + 1]).is_err());
         assert!(encode(&proto::BridgeEnvelope { protocol_version: 2, ..msg }).is_err());
