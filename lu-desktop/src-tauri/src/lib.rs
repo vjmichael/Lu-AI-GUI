@@ -1,7 +1,9 @@
 //! Independent Lu desktop host. No Jan commands, plugins or route handlers.
 //! WebView receives opaque model/image/session IDs only. All disk selection is
 //! from native OS dialogs; only host code can resolve the signed engine package.
+#[path = "ansf_chat_store.rs"]
 mod chat_store;
+mod ansf_migration;
 mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
