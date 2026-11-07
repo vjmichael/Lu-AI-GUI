@@ -598,7 +598,7 @@ mod tests {
         // for isolated native test environments.
         assert!(std::str::from_utf8(&wire)
             .unwrap()
-            .contains("\\"disableASLR\\":false"));
+            .contains(r#""disableASLR":false"#));
         assert_eq!(session.phase(), DapPhase::Launching);
         let observed = session
             .receive(&framed(json!({
