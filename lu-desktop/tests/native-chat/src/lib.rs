@@ -9,7 +9,7 @@ pub mod conversation_authority {
     }
 }
 
-#[path = "../../../src-tauri/src/chat_store.rs"]
+#[path = "../../../src-tauri/src/ansf_chat_store.rs"]
 mod chat_store;
 
 // Real M2 ANSF goal events and chat journal compile together without Tauri.
