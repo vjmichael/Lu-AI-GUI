@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 real Windows compiler repair (2026-11-06):** Windows native ObserveHost test on `f386a95` found one source E0001-parser-style closure error at `lib.rs:2090`: two Browser launch statements inside unbraced `move||`. Wrapped in a block retaining local-only egress check and Chromium launch, rerun exact-head Windows build required. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 Windows primary-monitor identity (2026-11-06):** Added separately approved whole-primary-display WGC one-shot backed by actual OS HMONITOR and dimension rechecks before/after native readback, with a distinct nonce-hashed `native-primary-monitor-v1` provenance. Generic system picker remains Unknown/unverified. The new mode is host/Job Object pinned, full-frame-blanked, and unit/source tested, not physically installed or visually interpreted. [P06](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 durable SQLite local-only metadata (2026-11-06):** Native awareness rows now have `data_origin=observe_learn` and `network_egress_allowed=0` constrained columns; old notes are upgraded with these defaults, and view reads actual DB provenance. The independent per-chat task latch remains after note removal, preventing scoped network reuse. [Details](LU_P06_OBSERVE_PRIVACY.md).

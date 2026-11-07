@@ -2087,12 +2087,12 @@ async fn start_browser_for_exact_turn(
         });
     }
     let launch_owner=Arc::clone(&owner);
-    let result=tauri::async_runtime::spawn_blocking(move||
+    let result=tauri::async_runtime::spawn_blocking(move||{
         launch_owner.observe.deny_observation_network_egress(&chat_id)?;
         launch_owner.browser_runtime.launch_for_native_grant(
             allowed,&launch_owner.browser_preferences
         )
-    ).await.map_err(|_|"Browser launch worker unavailable".to_owned())
+    }).await.map_err(|_|"Browser launch worker unavailable".to_owned())
         .and_then(|x|x);
     if let Err(err)=result{
         let _=owner.browser_runtime.stop();
