@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 native Windows compilation repair — 2026-11-06
+
+On `a535b2445d93d7983e963712d88aea91672ad4bc`, focused Windows P06 CI compiled Lu Core and React but rejected the new visible-HWND adapter with Rust E0308: `windows 0.62.2` projects `IsWindow` as `IsWindow(Option<HWND>)`. The native query now passes `Some(native)`; this retains fail-closed visibility checks and adds a source-contract test. A new exact-head Windows worker compile is required before claiming resolution. Linux P06 passed at the previous head.
+
 ## P06 exact-source OS/UIA sensitive-surface diagnostic (2026-11-06)
 
 Added `scripts/probe-observe-sensitive-window-windows.ps1`: a read-only, independently queryable Windows accessibility adapter for one explicitly supplied HWND/PID/process creation FILETIME. Native Win32 verifies the HWND is root, visible and uncloaked and belongs to that same process instance; OS UI Automation returns a bounded set of `IsPassword` control rectangles, without accessing their names or values. It rechecks process lifetime after the query and refuses invalid bounds. The rectangles are in **desktop coordinates, not attested WGC image coordinates**. The receipt always states `INCOMPLETE_UIA_ONLY`, `wgcFrameCoordinatesVerified=false`, and `pixelReleaseAllowed=false`; custom-rendered secrets, images and inaccessible/protected controls remain undetected. This creates a real OS privacy signal, **not a certified selective redaction engine**. Live captured frames remain fully blanked.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a535b2445d93d7983e963712d88aea91672ad4bc",
+  "sourceCommitBeforeLock": "ff78c556f58fdb475d657809361479527ed71b3a",
   "trackedFileCount": 507,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "057aa554a4bfb7e93e397e71751b9f14ee4ac0a2"
+      "blob": "5ee845719c28f04d38f474e015645e9634a6966d"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "f9a396c1735f437cba21ac31f1be2494e87a70c2"
+      "blob": "6c28faaa9391d50a21d1bf03d470fde93627f065"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "b70f79a3a3d7ff7e834553d3ef3ea73be014e3ee"
+      "blob": "a4588efee9dfde9fc3660e20764fae0e76ba452e"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -1993,7 +1993,7 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "b1cc9aaa40717e2f449a0d7b8fcb66f0ceb4486d"
+      "blob": "25a058e8cf7167275b28191cb6fd735d7f0fb793"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",

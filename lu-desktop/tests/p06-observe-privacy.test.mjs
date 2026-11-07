@@ -76,6 +76,7 @@ test('P06 native WGC process instance is verified, generic picker stays unverifi
   assert.match(worker,/visible_window::attested\(window\.as_raw_hwnd\(\) as usize\)/);
   assert.match(worker,/GetAncestor\(native,GA_ROOT\)/);
   assert.match(worker,/DwmGetWindowAttribute/);
+  assert.match(worker,/IsWindow\(Some\(native\)\)/);
   assert.match(worker,/DWMWA_CLOAKED/);
   assert.equal((worker.match(/process_instance::born_at\(pid\)\?!=born/g)||[]).length,2);
   assert.match(worker,/Foreground window instance changed during readback/);

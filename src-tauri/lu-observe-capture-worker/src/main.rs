@@ -268,7 +268,7 @@ mod windows_capture_worker {
             let native=HWND(hwnd as *mut std::ffi::c_void);
             // SAFETY: HWND comes from Windows Window::foreground or that same
             // previously selected OS HWND. Read-only OS handle queries.
-            if !unsafe{IsWindow(native)}.as_bool()
+            if !unsafe{IsWindow(Some(native))}.as_bool()
                 || !unsafe{IsWindowVisible(native)}.as_bool()
                 || unsafe{GetAncestor(native,GA_ROOT)}!=native {
                 return Err("Window is hidden, invalid or not top-level");
