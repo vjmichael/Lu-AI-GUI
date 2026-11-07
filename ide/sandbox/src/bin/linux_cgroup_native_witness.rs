@@ -52,10 +52,14 @@ mod native {
     fn delegated_parent() -> io::Result<PathBuf> {
         let data = fs::read_to_string("/proc/self/cgroup")?;
         let mut unified = data.lines().filter_map(|line| line.strip_prefix("0::"));
-        let relative = unified.next().ok_or_else(|| denied("no cgroup v2 identity"))?;
+        let relative = unified
+            .next()
+            .ok_or_else(|| denied("no cgroup v2 identity"))?;
         if unified.next().is_some()
             || !relative.starts_with('/')
-            || relative.split('/').any(|component| component == "." || component == "..")
+            || relative
+                .split('/')
+                .any(|component| component == "." || component == "..")
         {
             return Err(denied("invalid cgroup v2 identity"));
         }
@@ -74,10 +78,14 @@ mod native {
         }
         if !exact_controllers(&fs::read_to_string(parent.join("cgroup.controllers"))?)
             || !exact_controllers(&fs::read_to_string(parent.join("cgroup.subtree_control"))?)
-            || !fs::read_to_string(parent.join("cgroup.procs"))?.trim().is_empty()
+            || !fs::read_to_string(parent.join("cgroup.procs"))?
+                .trim()
+                .is_empty()
             || fs::read_to_string(parent.join("cgroup.type"))?.trim() != "domain"
         {
-            return Err(denied("cgroup controllers not delegated to empty domain parent"));
+            return Err(denied(
+                "cgroup controllers not delegated to empty domain parent",
+            ));
         }
         Ok(parent.to_path_buf())
     }
@@ -85,7 +93,9 @@ mod native {
     struct WitnessGroup(PathBuf);
     impl WitnessGroup {
         fn empty(&self) -> io::Result<bool> {
-            Ok(!populated(&fs::read_to_string(self.0.join("cgroup.events"))?)?)
+            Ok(!populated(&fs::read_to_string(
+                self.0.join("cgroup.events"),
+            )?)?)
         }
         fn kill(&self) -> io::Result<()> {
             fs::write(self.0.join("cgroup.kill"), "1")
@@ -120,10 +130,8 @@ mod native {
             .duration_since(UNIX_EPOCH)
             .map_err(|_| denied("invalid monotonic wall-clock epoch"))?
             .as_nanos();
-        let group = WitnessGroup(parent.join(format!(
-            "lu-ide-witness-{}-{id}",
-            std::process::id()
-        )));
+        let group =
+            WitnessGroup(parent.join(format!("lu-ide-witness-{}-{id}", std::process::id())));
         fs::create_dir(&group.0)?;
         if !group.empty()? {
             return Err(denied("new kernel cgroup is already populated"));
@@ -139,9 +147,7 @@ mod native {
                 return Err(denied("kernel did not retain exact worker quota"));
             }
         }
-        if !group.0.join("cgroup.kill").is_file()
-            || !group.0.join("cgroup.procs").is_file()
-        {
+        if !group.0.join("cgroup.kill").is_file() || !group.0.join("cgroup.procs").is_file() {
             return Err(denied("missing kernel cgroup cleanup control"));
         }
         Ok(group)
@@ -195,9 +201,8 @@ mod native {
             .lines()
             .find_map(|line| line.strip_prefix("0::"))
             .ok_or_else(|| denied("missing kernel process membership"))?;
-        let current = fs::canonicalize(
-            Path::new("/sys/fs/cgroup").join(relative.trim_start_matches('/')),
-        )?;
+        let current =
+            fs::canonicalize(Path::new("/sys/fs/cgroup").join(relative.trim_start_matches('/')))?;
         if current != group.0 {
             return Err(denied("child escaped exact kernel cgroup"));
         }
@@ -246,9 +251,7 @@ mod native {
         let (send, recv) = mpsc::channel();
         let _reader = thread::spawn(move || {
             let mut line = String::new();
-            let result = BufReader::new(stdout)
-                .read_line(&mut line)
-                .map(|_| line);
+            let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
             let _ = send.send(result);
         });
         let line = recv
