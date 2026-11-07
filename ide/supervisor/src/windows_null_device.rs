@@ -33,6 +33,13 @@ const FILE_SHARE_READ: u32 = 1;
 const FILE_SHARE_WRITE: u32 = 2;
 const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
+// Windows maps GENERIC_READ | GENERIC_WRITE for file/device objects to
+// FILE_GENERIC_READ | FILE_GENERIC_WRITE. Readback can therefore contain
+// this exact mapped mask rather than the two original generic bits.
+const FILE_GENERIC_READ_WRITE: u32 = 0x0012_019f;
+fn expected_null_grant(mask: u32) -> bool {
+    mask == (GENERIC_READ | GENERIC_WRITE) || mask == FILE_GENERIC_READ_WRITE
+}
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
 }
@@ -184,7 +191,7 @@ impl CiNullLease {
             // The installed service may revoke only the exact narrow grant
             // it originally installed. Unknown ACL state remains quarantined.
             with_dacl(self.handle.0, |acl| {
-                if exact_service_sid_ace(acl, self.sid)? == Some(GENERIC_READ | GENERIC_WRITE) {
+                if exact_service_sid_ace(acl, self.sid)?.is_some_and(expected_null_grant) {
                     Ok(())
                 } else {
                     Err(denied())
@@ -275,7 +282,7 @@ fn grant_exact_sid(sid: PSID) -> Result<CiNullLease, SupervisorError> {
         lease.applied = true;
         change(lease.handle.0, lease.sid, GRANT_ACCESS)?;
         with_dacl(lease.handle.0, |acl| {
-            if exact_service_sid_ace(acl, sid)? == Some(GENERIC_READ | GENERIC_WRITE) {
+            if exact_service_sid_ace(acl, sid)?.is_some_and(expected_null_grant) {
                 Ok(())
             } else {
                 Err(denied())
@@ -383,7 +390,7 @@ pub(crate) fn reconcile_service_null_intent(job_id: &str) -> Result<(), Supervis
     let present = with_dacl(handle.0, |acl| exact_service_sid_ace(acl, sid.0))?;
     match present {
         None => Ok(()), // Grant intent persisted but grant had not happened.
-        Some(mask) if mask == (GENERIC_READ | GENERIC_WRITE) => {
+        Some(mask) if expected_null_grant(mask) => {
             change(handle.0, sid.0, REVOKE_ACCESS)?;
             with_dacl(handle.0, |acl| {
                 if exact_service_sid_ace(acl, sid.0)?.is_some() {
@@ -437,6 +444,16 @@ fn exact_service_sid_ace(acl: *mut ACL, sid: PSID) -> Result<Option<u32>, Superv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mapped_kernel_file_grant_is_exact_and_no_broader() {
+        assert!(expected_null_grant(GENERIC_READ | GENERIC_WRITE));
+        assert!(expected_null_grant(FILE_GENERIC_READ_WRITE));
+        assert!(!expected_null_grant(FILE_GENERIC_READ_WRITE | WRITE_DAC));
+        assert!(!expected_null_grant(FILE_GENERIC_READ_WRITE | 0x0001_0000));
+        assert!(!expected_null_grant(GENERIC_READ));
+        assert!(!expected_null_grant(0xffff_ffff));
+    }
 
     #[test]
     fn concurrent_service_acl_operations_cannot_overlap() {
