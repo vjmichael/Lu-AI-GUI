@@ -1,0 +1,20 @@
+[package]
+name = "lu-ide-bridge-contract"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Shared unprivileged Lu Core ↔ Lu IDE Protobuf wire contract"
+
+[dependencies]
+prost = "0.14"
+sha2 = "0.10"
+hmac = "0.12"
+
+[build-dependencies]
+prost-build = "0.14"
+protoc-bin-vendored = "3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", features = ["socket", "user"] }

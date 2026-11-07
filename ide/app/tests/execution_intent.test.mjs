@@ -24,7 +24,7 @@ test('D1 native intent operations exist but no spawn, shell or execution grant',
 });
 test('D1 typed schemas offer only allowlisted recipes and decisions', () => {
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
-  assert.equal(Object.keys(schemas.operations).length,41);
+  assert.equal(Object.keys(schemas.operations).length,42);
   assert.equal(Object.keys(schemas.definitions).length,38);
   const prepare = schemas.operations['job.prepare'].request;
   assert.deepEqual(prepare.required,['projectId','recipeId']);

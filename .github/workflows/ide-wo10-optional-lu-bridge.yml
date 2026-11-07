@@ -1,0 +1,71 @@
+name: IDE WO10 optional Lu bridge contract and native fail-closed boundary
+on:
+  pull_request:
+    paths:
+      - 'ide/proto/lu/ide/v1/bridge.proto'
+      - 'ide/host/**'
+      - 'ide/app/web/**'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/docs/IDE_WORK_ORDER_10_OPTIONAL_LU_BRIDGE_20261107.md'
+      - '.github/workflows/ide-wo10-optional-lu-bridge.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-bridge-codec-and-peer-policy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify exact head
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Compile and test actual canonical Protobuf codec
+        run: cargo test --manifest-path ide/host/Cargo.toml bridge_wire -- --nocapture
+      - name: Test peer-human authorization, cross-project replay and proposal-only policy
+        run: cargo test --manifest-path ide/host/Cargo.toml bridge_policy -- --nocapture
+      - name: Verify existing host lifecycle remains compatible
+        run: cargo test --manifest-path ide/host/Cargo.toml wire -- --nocapture
+      - name: Evidence is a contract, not a live connection
+        shell: bash
+        run: |
+          grep -q 'LU_BRIDGE_NATIVE_PEER_AUTH_NOT_YET_ACCEPTED' ide/host/src/bridge_policy.rs
+          grep -q 'enabled: false' ide/host/src/bridge_policy.rs
+          echo 'WO10_PROTO_AND_POLICY_TEST=SOURCE_ONLY'
+          echo 'WO10_LIVE_OS_AUTHENTICATED_CONNECTION=NOT_ACCEPTED'
+  frontend-offline-status:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify app/bridge UI and native command restrictions
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Require app not dependent on Lu Core and no exposed bridge connect command
+        shell: bash
+        run: |
+          ! grep -Eq 'lu-core|lu-desktop' ide/app/src-tauri/Cargo.toml
+          grep -q 'fn ide_bridge_status' ide/app/src-tauri/src/lib.rs
+          ! grep -Eq 'async fn ide_bridge_connect|fn ide_bridge_listen|TcpListener::bind' ide/app/src-tauri/src/lib.rs
+          echo 'WO10_STANDALONE_AND_DEFAULT_OFF=PASS'

@@ -1,0 +1,94 @@
+syntax = "proto3";
+package lu.ide.bridge.v1;
+
+// WO10-A: an OPTIONAL future Lu Core <-> standalone Lu IDE data boundary.
+// No filesystem paths, shell commands, permission tokens, passwords,
+// process handles, model runtime secrets, or authorization grants.
+message BridgeEnvelope {
+  uint32 protocol_version = 1;       // Exactly 1 in this release.
+  string request_id = 2;             // Correlation only; not authority.
+  string session_id = 3;             // Host-minted after verified pairing.
+  uint64 sequence = 4;               // Nonzero only after pairing.
+  oneof body {
+    BridgeHello hello = 10;
+    BridgeHelloAck hello_ack = 11;
+    ProjectContextOffer context_offer = 12;
+    ProposedChangeOffer proposal_offer = 13;
+    BridgeFailure failure = 14;
+    BridgeGoodbye goodbye = 15;
+    CodingChatRequest chat_request = 16;
+    CodingChatReply chat_reply = 17;
+    CodingChatCancel chat_cancel = 18;
+  }
+}
+enum BridgeCapability {
+  BRIDGE_CAPABILITY_UNSPECIFIED = 0;
+  MODEL_INFERENCE = 1;
+  PROJECT_CONTEXT_OFFER = 2;
+  SOURCE_DIFF_PROPOSAL = 3;
+  DIAGNOSTICS_SUMMARY = 4;
+}
+// Advertised capabilities are NOT permissions. Peer identity and human-turn
+// grants MUST be checked outside this schema by native OS hosts.
+message BridgeHello {
+  string client_surface = 1;          // "lu.core" or "lu.ide" only.
+  uint32 minimum_version = 2;
+  uint32 maximum_version = 3;
+  bytes challenge_nonce = 4;          // Exactly 32 unpredictable bytes.
+  repeated BridgeCapability advertised_capabilities = 5;
+  bytes client_proof = 6;           // HMAC of challenge and role, never the secret.
+}
+message BridgeHelloAck {
+  uint32 selected_version = 1;
+  bytes echoed_challenge_nonce = 2;   // Must match exactly.
+  bytes responder_nonce = 3;          // Exactly 32 unpredictable bytes.
+  repeated BridgeCapability advertised_capabilities = 4;
+  bytes responder_proof = 5;        // HMAC of both nonces and session ID.
+}
+// A context offer never silently imports a native Lu chat history.
+message ProjectContextOffer {
+  string project_id = 1;              // Existing IDE opaque project ID.
+  string thread_id = 2;               // IDE-owned conversation identity.
+  string source_revision = 3;         // SHA256 of selected source snapshot.
+  string summary = 4;                 // Reviewable, bounded, untrusted data.
+}
+// A proposal may ONLY enter IDE's existing human-review inbox. It must NOT
+// turn into a filesystem write, Git mutation, or worker authorization.
+message ProposedChangeOffer {
+  string project_id = 1;
+  string thread_id = 2;
+  string task_id = 3;
+  bytes proposal_json = 4;            // Strict IDE proposal schema revalidated.
+}
+message BridgeFailure { string code = 1; }
+message BridgeGoodbye { string reason_code = 1; }
+
+// Requests use the existing Lu-owned GGUF supervisor only after independent
+// IDE turn consent + kernel peer inspection + session scope admission.
+// Never permit a caller to name a model path, shell command, tool grant,
+// native Lu conversation, or arbitrary project path.
+message CodingChatRequest {
+  string project_id = 1;
+  string thread_id = 2;              // IDE-owned thread, not Lu native chat.
+  string generation_id = 3;          // One active generation per connection.
+  string prompt = 4;                 // <= 8192 UTF-8 bytes.
+  repeated CodingChatTurn history = 5;
+  uint32 max_new_tokens = 6;         // 1..2048.
+}
+message CodingChatTurn {
+  string role = 1;                   // user or assistant only.
+  string text = 2;                   // <= 8192 UTF-8 bytes.
+}
+message CodingChatReply {
+  string project_id = 1;
+  string thread_id = 2;
+  string generation_id = 3;
+  string text = 4;                   // <= 16384 bytes.
+  string finish_code = 5;            // completed, cancelled, failed.
+  string model_session_id = 6;       // Opaque; no paths.
+}
+message CodingChatCancel {
+  string project_id = 1;
+  string thread_id = 2;
+  string generation_id = 3;
+}
