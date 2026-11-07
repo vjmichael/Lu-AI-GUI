@@ -14,6 +14,8 @@ use lu_core::{
     web_research_planner::canonical_doi,
     web_research_analysis::{AnalysisStore,Interpretation,Stance},
     web_research_report::{render_verified_report,VerifiedResearchReport},
+    web_research_styles::{catalog_work_from_crossref,render_correlated,Style},
+
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::{search_openalex,search_openalex_cancellable},
 };
@@ -73,6 +75,22 @@ pub(crate) struct ResearchCorroborationView{
     pub verification_status:&'static str,
     pub record_url:String,
     pub citation_verified:bool,
+    pub message:&'static str,
+}
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCitationPreviewView {
+    pub source_id:String,
+    pub style:String,
+    pub bibliography:String,
+    pub first_note:Option<String>,
+    pub catalog_response_sha256:String,
+    pub bibliography_identity_corroborated:bool,
+    pub author_identity_corroborated:bool,
+    pub publication_details_verified:bool,
+    pub quotation_or_page_verified:bool,
+    pub factual_claim_verified:bool,
+    pub coverage:String,
     pub message:&'static str,
 }
 /// Percent-encode a host-selected, ledger-stored DOI as a Crossref path
@@ -1130,6 +1148,72 @@ impl ResearchDesktop{
     /// User-approved metadata corroboration of one already-persisted
     /// OpenAlex lead. No arbitrary URL, DOI or model-selected authority.
     /// A successful result is ONLY bibliographic corroboration.
+    /// Human-approved citation preview against the *same* independently
+    /// Crossref-corroborated source. Re-fetches exact catalog DOI with the
+    /// native pinned HTTPS client; renderer/model cannot supply metadata,
+    /// a remote URL, author list, date, journal or publication place.
+    /// No new EvidenceLedger promotion or internet/AI tool grant is created.
+    pub(crate) fn citation_preview(
+        &self,chat_id:&str,source_id:&str,style:Style
+    )->Result<ResearchCitationPreviewView,String>{
+        if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
+            ||source_id.len()>128||source_id.chars().any(char::is_control){
+            return Err("Select a known OpenAlex source in this conversation".into());
+        }
+        if !self.available(){
+            return Err("Pinned native Crossref HTTPS client unavailable".into());
+        }
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !matches!(ledger.status(source_id).map_err(|_|"Unknown research source")?,
+            SourceStatus::MetadataCorroborated|
+            SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+            return Err("Independently corroborate this source before citing".into());
+        }
+        let original=ledger.discovered_candidate(source_id)
+            .map_err(|_|"Original source identity unavailable")?;
+        let doi=canonical_doi(&original.identifier)
+            .ok_or("Original source DOI unavailable")?;
+        let url=format!("https://api.crossref.org/works/{}",encode_doi_component(&doi));
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let page=fetcher.fetch_bounded(&url,1024*1024)
+            .map_err(|_|"Crossref citation metadata retrieval unavailable")?;
+        if page.http_status!=200||page.redirect_target.is_some()
+            ||page.canonical_url!=url{
+            return Err("Crossref DOI endpoint redirected or returned an unverified response".into());
+        }
+        let catalog_sha=format!("{:x}",Sha256::digest(&page.bytes));
+        let record=catalog_work_from_crossref(&ledger,source_id,&page.bytes)
+            .map_err(|e|format!("Citation metadata failed identity/quality check: {e:?}"))?;
+        let rendered=render_correlated(&ledger,&record,style)
+            .map_err(|e|format!("Citation style cannot safely render this record: {e:?}"))?;
+        Ok(ResearchCitationPreviewView{
+            source_id:rendered.source_id,
+            style:rendered.style.into(),
+            bibliography:rendered.bibliography,
+            first_note:rendered.first_note,
+            catalog_response_sha256:catalog_sha,
+            bibliography_identity_corroborated:rendered.bibliography_identity_corroborated,
+            author_identity_corroborated:rendered.author_identity_corroborated,
+            publication_details_verified:rendered.publication_details_verified,
+            quotation_or_page_verified:rendered.quotation_or_page_verified,
+            factual_claim_verified:rendered.factual_claim_verified,
+            coverage:rendered.coverage.into(),
+            message:"Crossref DOI/title/author metadata matched the existing corroborated Research source. Publication particulars, page locators, quotations and historical/factual interpretations still require manual review.",
+        })
+    }
+
     pub(crate) fn corroborate_crossref(
         &self,chat_id:&str,source_id:&str
     )->Result<ResearchCorroborationView,String>{
