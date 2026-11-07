@@ -38,7 +38,9 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
     // WO6 native-only build/test controls are never a Lu capability grant.
     'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
-    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile'
+    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile',
+    'ide_workflow_preview', 'ide_workflow_verify',
+    'ide_workflow_export_manifest', 'ide_workflow_export_bundle'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -290,7 +292,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 31, 'capabilities must include the E1 read-only LSP catalog');
+  assert.equal(commands.length, 35, 'native capability catalog must include WO9 bounded workflows');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -346,7 +348,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 31);
+  assert.equal(Object.keys(schemas.operations).length, 35);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
