@@ -758,3 +758,5 @@ Branch: \`lu/v1-observe-learn-20261106\` (draft PR #61). **SOURCE IMPLEMENTED; n
 7. **RESEARCH-10:** Added structural React/Tauri boundary regression and native synthetic PDF-to-report acceptance fixtures, registered in Browser/Research and Wave 4 workflows. No invented Windows-installed acceptance claim is made.
 
 **Still OPEN:** exact-head Windows/Linux Rust compiler and UI/build, headed Chromium/GGUF research turn with citation-format compliance, real DOI→publisher redirects, installation/uninstallation NSIS, process cancellation/restart/chat isolation, physical Windows GPU/CPU and full 120-source long-run proof. PDF parser deliberately refuses unsupported encrypted/object-stream/scanned/complex-layout documents rather than making up their contents.
+
+**Research-06/08 native acceptance assertion fix (2026-11-06):** Replace stale non-cancellable HTTP/OpenAlex structural names in test with actual cancellation-aware `fetch_admitted`/`search_openalex_cancellable` equivalents. No network authority granted; existing Observe local-only guard unaffected.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f386a95d326b7d8b9e0d2df805a3c1ccfa31d478",
+  "sourceCommitBeforeLock": "02c91bf71b1843b1dd6f4b3e05d9a20e6db14b0b",
   "trackedFileCount": 513,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "37889836bffc9ce9810c1a690bc83aea7b86cfe1"
+      "blob": "d016e23df3cd7b6fbfd163eb783d5e6ee6642d97"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "cc32eb2114e06b33c2b23931f3af4a0e3ee53e51"
+      "blob": "0250c8d847d8585a9d394cf116193b4118ca3a61"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -677,7 +677,7 @@
     },
     {
       "path": "lu-desktop/tests/research-roadmap-acceptance.test.mjs",
-      "blob": "45667b5e357661ed46bf3d49c4167252e64f24da"
+      "blob": "ca4ff1f152a5439db26dcd76f57c44146ccdce11"
     },
     {
       "path": "lu-desktop/tests/research-source-route.test.mjs",

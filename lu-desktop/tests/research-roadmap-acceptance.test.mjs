@@ -31,7 +31,7 @@ test('RESEARCH-05 bounded nonexecuting PDF/HTML parser is invoked after fixed ne
 
 test('RESEARCH-06 redirect chains require independently pinned HTTPS public DNS for every hop',()=>{
   assert.match(http,/pub fn fetch_document_chain\(/);
-  assert.match(http,/let page=self\.fetch_bounded\(&current,max_bytes\)/);
+  assert.match(http,/let page=self\.fetch_admitted\(&current,max_bytes,cancel\)/);
   assert.match(http,/let \(_,next\)=validated_host\(&target\)/);
   assert.match(http,/trusted_resolution\(/);
   assert.match(http,/--max-redirs","0"/);
@@ -62,7 +62,7 @@ test('RESEARCH-08 campaign is durable and bounded to 120 distinct DOI records',(
   assert.match(evidence,/count>=state\.candidate_ceiling/);
   assert.match(evidence,/candidate_ceiling BETWEEN 1 AND 120/);
   assert.match(desktop,/pub\(crate\) fn run_campaign\(/);
-  assert.match(desktop,/search_openalex\(&fetcher,&query,page\)/);
+  assert.match(desktop,/search_openalex_cancellable\(&fetcher,&query,page,cancel\)/);
   assert.match(host,/async fn lu_research_campaign_start\(/);
   assert.match(host,/async fn lu_research_campaign_resume\(/);
   assert.match(ui,/Restore saved research jobs/);

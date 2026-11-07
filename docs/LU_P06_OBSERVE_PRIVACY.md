@@ -159,3 +159,7 @@ P06's priority is *OFF by default; explicit human consent; event-driven, bounded
 **Source integrated** is not **native CI verified** until the final exact-head Windows/Linux jobs pass. It is also not **physical Windows WGC/installed NSIS/model acceptance**: these remain deferred by owner order. The capture worker's OS picker, source identity, sensitive-region redaction, live GUI behavior, and capture-to-model bridge require independent physical acceptance and more implementation. The optional resident small-model runtime, independent model scheduling, and automatic IDE diagnosis/ANSF publication remain deferred; do not silently turn on observation or train models. P04 Reader/OCR and P05 Browser/Transfer are separate postponed work areas.
 
 P06 can be considered *privacy foundation source implemented* after these changes. Full Observe & Learn release acceptance remains OPEN. Stop before P07 until instructed.
+
+## Research structural CI assertion repair
+
+The network entrypoints became cancellation-aware while older RESEARCH-06/08 tests still asserted removed non-cancellable names. Source tests now require `fetch_admitted(&current,max_bytes,cancel)` and `search_openalex_cancellable(&fetcher,&query,page,cancel)`; production policy and cancellation remain intact. Exact-head broader acceptance still required.
