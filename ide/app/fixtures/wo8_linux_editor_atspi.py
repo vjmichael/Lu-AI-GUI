@@ -175,6 +175,18 @@ def _native_picker_confirm():
     deny("native_dialog_confirmation_not_found")
 
 
+def _native_chooser_still_open():
+    # Only a *real* GTK file chooser under this disposable X11 session;
+    # missing OS acceptance never becomes a success.
+    for node in elements():
+        try:
+            if "file chooser" in (node.getRoleName() or "").casefold():
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def select_native_folder():
     activate("+ Open folder")
     time.sleep(1)
@@ -182,7 +194,20 @@ def select_native_folder():
     type_text(str(ROOT))
     key("Return")
     time.sleep(1)
-    _native_picker_confirm()
+    # GTK SELECT_FOLDER may interpret the first accept as "navigate into
+    # selected directory" instead of closing. Native CI proved the real
+    # dialog remained open afterward. Confirm only while the authentic OS
+    # chooser remains; never issue a blind keypress on the main WebView.
+    attempts = 0
+    while _native_chooser_still_open() and attempts < 3:
+        _native_picker_confirm()
+        attempts += 1
+        time.sleep(0.7)
+    if _native_chooser_still_open():
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_still_open_after_three_real_actions",flush=True)
+        deny("native_folder_chooser_not_accepted")
+    print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
+          "confirmations=" + str(attempts),flush=True)
     accessible("Registered projects", seconds=15)
     try:
         accessible(ROOT.name, seconds=15)
