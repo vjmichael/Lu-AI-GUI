@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 honest redacted-frame receipt schema
+
+The native Observe receipt now distinguishes `frame_observed` (the supervised WGC worker saw a frame, published only a blanked digest, and was reaped) from `image_received`, which is always **false** until a separately reviewed/authorized real pixel bridge exists. React reports the observed-and-blanked frame without claiming Lu or its model received a screenshot. Source-contract regression added. This prevents a future consumer from misinterpreting a redacted digest as actual multimodal input.
+
 ## P06 nonce-bound foreground OS identity receipt
 
 The native WGC SHA-256 receipt now uses different domains for the verified foreground HWND and the unidentifiable generic GraphicsCapturePicker item. In foreground mode, HWND, owning PID, process creation FILETIME, task nonce and fully blanked frame geometry are hashed together. The OS identifiers never appear in stdout, the GUI or model context. Invalid foreground identity refuses a receipt. Generic selection uses a separate **unverified** domain, never borrows foreground source identity. Rust tests verify that changing HWND/PID/birth changes the result but changing original pixel values does not. This is stronger provenance for foreground mode only, not general source attribution, independent GUI verification or working visual model access.

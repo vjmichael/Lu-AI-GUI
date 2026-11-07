@@ -48,6 +48,8 @@ pub(crate) struct ObserveCaptureReceiptView{
     pub capture_task_id:String,
     pub state:String,
     pub image_received:bool,
+    /// Native OS frame observed; no raw/model-usable image is received.
+    pub frame_observed:bool,
     pub frame_sha256:Option<String>,
     pub source_identity_attested:bool,
     pub pixels_retained:bool,
@@ -428,7 +430,8 @@ impl ObserveHost {
         Ok(Some(ObserveCaptureReceiptView{
             capture_task_id:task_id.into(),
             state:row.state.as_str().into(),
-            image_received:receipt_ready,
+            image_received:false,
+            frame_observed:receipt_ready,
             frame_sha256:if receipt_ready{sha}else{None},
             source_identity_attested:source_attested,
             pixels_retained:false,

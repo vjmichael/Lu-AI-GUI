@@ -2776,6 +2776,7 @@ function App() {
             </button>
             {captureReceipt?.chatId===chatId&&
               <small>Capture state: {captureReceipt.state}.
+                {captureReceipt.frameObserved?' WGC frame observed and blanked.':''}
                 {captureReceipt.frameSha256
                   ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
                   :' No completed frame digest.'}

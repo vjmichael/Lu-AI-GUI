@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 honest WGC receipt semantics (2026-11-06):** Native receipt now returns `image_received=false` unconditionally and separately `frame_observed=receipt_ready` to distinguish genuine OS readback from a delivered screenshot. React and source regressions updated. No model image transfer or visual PASS added. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 foreground OS provenance in redacted digest (2026-11-06):** SHA-256 now binds nonce + actual HWND/PID/process-birth for foreground-only capture under a domain distinct from generic picker. Original pixels and raw OS IDs do not leave the worker; invalid foreground identity fails closed; source-change/pixel-invariance Rust tests added. Generic GraphicsCapturePicker remains unverified. [P06](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 actual NSIS-cycle acceptance harness (2026-11-06):** Added opt-in disposable Windows actual installer/uninstaller script with reviewer-pinned SHA-256 for NSIS, Lu and WGC worker; rejects existing Lu installations/processes, uses fresh target, verifies real installed bytes, optionally invokes independent native UIA smoke, uninstalls and checks files/registry removed. Failures preserve evidence and do not automatically clean unexpected state. Source-authored only; physical Windows trial remains OPEN and does not certify WGC/redaction/GPU. [Details](LU_P06_OBSERVE_PRIVACY.md).

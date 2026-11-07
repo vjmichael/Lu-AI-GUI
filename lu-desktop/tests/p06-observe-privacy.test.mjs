@@ -197,3 +197,12 @@ test('P06 source-instance domain bound in redacted receipt; generic remains unve
   assert.match(worker,/hash\.update\(born\.to_le_bytes\(\)\)/);
   assert.match(worker,/self\.foreground_identity/);
 });
+
+test('P06 observed WGC frame is never presented as an image delivered to the model',()=>{
+  assert.match(host,/pub frame_observed:bool/);
+  assert.match(host,/image_received:false/);
+  assert.match(host,/frame_observed:receipt_ready/);
+  assert.match(host,/visual_interpretation_verified:false/);
+  assert.match(ui,/captureReceipt\.frameObserved/);
+  assert.doesNotMatch(host,/image_received:receipt_ready/);
+});
