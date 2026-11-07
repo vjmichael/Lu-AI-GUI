@@ -7,6 +7,17 @@
   StrCmp $0 "Admin" +3
     MessageBox MB_ICONSTOP "Lu IDE protected installation requires Administrator approval."
     Abort "WO7: per-machine elevation absent"
+  ; Do NOT overwrite an existing release or unsigned Lu IDE before a safe
+  ; transactional upgrade/migration path is separately proven.
+  IfFileExists "$INSTDIR\\lu-ide-desktop.exe" 0 +3
+    MessageBox MB_ICONSTOP "Uninstall the existing Lu IDE before installing this signed release."
+    Abort "WO7: in-place upgrade not yet independently accepted"
+  ClearErrors
+  ReadRegStr $1 HKLM "SYSTEM\\CurrentControlSet\\Services\\LuIdeRecoveryBroker" "ImagePath"
+  IfErrors +3
+    MessageBox MB_ICONSTOP "Existing Lu IDE protected service must be removed safely before installing."
+    Abort "WO7: existing protected SCM service"
+
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
