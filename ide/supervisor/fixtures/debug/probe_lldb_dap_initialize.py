@@ -79,7 +79,7 @@ def witness(stage: str, argv: list[str]) -> bool:
     sel = selectors.DefaultSelector()
     try:
         assert child.stdin and child.stdout and child.stderr
-        child.stdin.write(b"Content-Length: %d\\r\\n\\r\\n" % len(encoded) + encoded)
+        child.stdin.write(b"Content-Length: %d\r\n\r\n" % len(encoded) + encoded)
         child.stdin.flush()
         sel.register(child.stdout, selectors.EVENT_READ, "out")
         sel.register(child.stderr, selectors.EVENT_READ, "err")
@@ -96,11 +96,11 @@ def witness(stage: str, argv: list[str]) -> bool:
                 output.extend(chunk[:max(0, 65536 - len(output))])
                 if len(stdout) > 65536 or len(stderr) > 65536:
                     break
-            header_end = stdout.find(b"\\r\\n\\r\\n")
+            header_end = stdout.find(b"\r\n\r\n")
             if header_end >= 0 and header_end < 512:
                 header = bytes(stdout[:header_end])
                 try:
-                    size = int(header.split(b"Content-Length: ", 1)[1].split(b"\\r\\n")[0])
+                    size = int(header.split(b"Content-Length: ", 1)[1].split(b"\r\n")[0])
                     if size <= 0 or size > 65536:
                         break
                     if len(stdout) >= header_end + 4 + size:
