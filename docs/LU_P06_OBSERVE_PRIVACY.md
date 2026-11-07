@@ -10,6 +10,8 @@
 
 **Follow-up native/installed evidence repairs (same P06 work order):** The Windows frontend acceptance checker still asserted obsolete UI strings and the old `observer.launch_one_shot(&chat_id,plan)` signature; it is now aligned to the actual Guardian-admitted path, visible review-only handoff and current redaction notice, not weakened into a dummy PASS. A real `ObserveHost` test verifies that rejecting a malformed capture plan returns its Guardian CPU/RAM lease without starting a worker. The installed-Lu harness now provides an optional explicit `-ExerciseObservationLifecycle` check, using native Windows UI Automation for consent request, pause, resume and stop. The native consent modal remains a separate human decision; the script cannot approve it, capture a desktop frame, declare backend proof, or promote GUI appearance to a verified native effect.
 
+**Windows native handle correctness:** The foreground HWND→PID process-instance guard now uses a dedicated Win32 owned-handle RAII wrapper, calling CloseHandle on every result/error path. Query-only rights and a creation-time equality check remain the admission boundary; this is not UI source-content verification.
+
 **Outstanding:** exact-head Windows/Linux compilation and repairs; real interactive physical WGC identity/picker/cancellation trials and installed NSIS acceptance; OS identity for generic picker/monitors; trusted sensitive-region selective redaction before *any* image reaches Lu's model; genuine pixel-to-model scope and verified GUI test receipt. User-deferred actual AMD Vulkan/MMProj installed acceptance remains unclaimed. No P07 implementation is authorized.
 
 
