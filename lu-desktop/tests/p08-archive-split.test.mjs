@@ -57,3 +57,17 @@ test('P08 native user approval and OS path pickers guard writes and task journal
   assert.match(ui,/Resume Lu split stage/);
   assert.match(ui,/Reassemble Lu archive parts/);
 });
+
+test('P08 recovery review is native-picked, read-only and never silently retries',()=>{
+  assert.match(core,/pub fn reconcile_publication\(/);
+  assert.match(core,/pub enum PublicationReview/);
+  assert.match(core,/PublicationReview::Incomplete/);
+  assert.match(tests,/p08_recovery_inspects_partial_publication_without_replaying_or_deleting/);
+  assert.match(host,/pub\(crate\) async fn lu_p08_review_publication\(/);
+  assert.match(host,/blocking_pick_folder\(\)/);
+  assert.match(host,/native_archive_split::read_plan\(&staging\)/);
+  assert.match(host,/native_archive_split::reconcile_publication\(&root,&plan\)/);
+  assert.match(app,/archive_split_desktop::lu_p08_review_publication,/);
+  assert.match(ui,/review:'lu_p08_review_publication'/);
+  assert.match(ui,/Review interrupted Lu split \(read-only\)/);
+});
