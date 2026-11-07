@@ -35,8 +35,8 @@ function Service([string]$image) {
     Deny 'service_identity_or_image_drift'
   }
 }
-function RunNsis([string]$image,[string[]]$args,[string]$stage) {
-  $proc=Start-Process -FilePath $image -ArgumentList $args -PassThru
+function RunNsis([string]$image,[string[]]$arguments,[string]$stage) {
+  $proc=Start-Process -FilePath $image -ArgumentList $arguments -PassThru
   if (!$proc.WaitForExit(120000)) {
     try { Stop-Process -Id $proc.Id -Force } catch {}
     Deny ($stage+'_timeout')
