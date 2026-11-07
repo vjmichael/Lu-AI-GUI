@@ -39,6 +39,7 @@ jobs:
         run: |
           cargo test --manifest-path ide/host/Cargo.toml execution_intents::tests -- --nocapture
           cargo test --manifest-path ide/supervisor/Cargo.toml --lib -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib -- --nocapture
       - name: Scope gate
         shell: bash
         run: |
