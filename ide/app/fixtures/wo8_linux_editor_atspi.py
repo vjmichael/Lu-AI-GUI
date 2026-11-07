@@ -187,6 +187,37 @@ def select_native_folder():
     try:
         accessible(ROOT.name, seconds=15)
     except RuntimeError:
+        # Distinguish actual Tauri host catalog from stale UI/selection.
+        # Inspect only known OS app-data locations, never open arbitrary
+        # paths supplied by the WebView. Emit fixed categories, no filenames.
+        import json
+        candidates = (
+            Path.home() / ".local/share/org.lu.ide/projects.json",
+            Path.home() / ".config/org.lu.ide/projects.json",
+        )
+        catalog_state = "not_written"
+        for candidate in candidates:
+            if not candidate.is_file() or candidate.is_symlink():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                records = data.get("projects", [])
+                if not isinstance(records, list):
+                    catalog_state = "invalid_records"
+                elif any(isinstance(r, dict) and
+                         r.get("display_name") == ROOT.name for r in records):
+                    catalog_state = "expected_project_persisted"
+                elif any(isinstance(r, dict) and
+                         Path(str(r.get("root", "/"))).name == ROOT.parent.name
+                         for r in records):
+                    catalog_state = "wrong_parent_persisted"
+                elif records:
+                    catalog_state = "unexpected_project_persisted"
+                else:
+                    catalog_state = "catalog_without_projects"
+            except (ValueError, OSError, TypeError):
+                catalog_state = "unreadable_catalog"
+        print("P04_NATIVE_LINUX_PROJECT_CATALOG=" + catalog_state, flush=True)
         # Only fixed-vocabulary native AT-SPI diagnostics. Never log a user
         # project path, source text, arbitrary accessible names or credentials.
         categories = {"dialog": 0, "file chooser": 0, "button": 0, "text": 0}

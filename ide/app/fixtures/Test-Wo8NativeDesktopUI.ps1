@@ -55,6 +55,12 @@ public static class P04NativeWebViewWindows {
   private static extern bool EnumChildWindows(IntPtr parent, Enumeration callback, IntPtr data);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)]
   private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int capacity);
+  [DllImport("user32.dll")]
+  public static extern bool SetForegroundWindow(IntPtr hwnd);
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
   public static IntPtr[] RendererHandles(IntPtr top) {
     var results = new List<IntPtr>();
     Enumeration callback = (hwnd, data) => {
@@ -81,6 +87,36 @@ function NativeAccessibilityRoots {
     try {
       $web=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
       if ($web) { Write-Output $web }
+    } catch {}
+  }
+  # Chromium/wry may orphan the top-down UIA fragment on a background app.
+  # Inspect the real OS-focused element only when the foreground root is our
+  # exact installed Tauri desktop. No foreign windows, JS or backend bypass.
+  $top=$proc.MainWindowHandle
+  if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $top) {
+    [void][P04NativeWebViewWindows]::SetForegroundWindow($top)
+    Start-Sleep -Milliseconds 120
+  }
+  if ([P04NativeWebViewWindows]::GetForegroundWindow() -eq $top) {
+    try {
+      $node=[System.Windows.Automation.AutomationElement]::FocusedElement
+      $walker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+      $trace=@()
+      $owned=$false
+      for($count=0; $node -and $count -lt 14; $count++) {
+        $trace+=,$node
+        try {
+          $raw=$node.Current.NativeWindowHandle
+          if ($raw -ne 0) {
+            $ancestor=[P04NativeWebViewWindows]::GetAncestor([IntPtr]::new($raw),2)
+            if ($ancestor -eq $top) { $owned=$true }
+          }
+        } catch {}
+        $node=$walker.GetParent($node)
+      }
+      if ($owned) {
+        foreach ($candidate in $trace) { Write-Output $candidate }
+      }
     } catch {}
   }
 }
@@ -117,6 +153,8 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
         [System.Windows.Automation.Condition]::TrueCondition)
       Write-Host ('P02_NATIVE_UIA_MISSING_CONTROL='+$query+'; tree_nodes='+$nodes.Count)
       Write-Host ('P04_NATIVE_WEBVIEW_RENDERER_HWND_COUNT='+@([P04NativeWebViewWindows]::RendererHandles($proc.MainWindowHandle)).Count)
+      $front=[P04NativeWebViewWindows]::GetForegroundWindow()
+      Write-Host ('P04_NATIVE_INSTALLED_WINDOW_FOREGROUND='+[string]($front -eq $proc.MainWindowHandle))
       $printed=0
       foreach($entry in $nodes) {
         if ($printed -ge 100) { break }

@@ -53,3 +53,9 @@ The Linux installed AT-SPI fixture previously tried the first globally accessibl
 The earlier P04 source/negative matrix run 42396238371 passed on SHA a34812cf. WO7 signed source/negative preflight also passed on that SHA. Neither result is installed UI, signed artifact or new native handler acceptance.
 
 **Current P04 result:** implementation/review continued; native installed Windows/Linux retests and independently signed release evidence remain OPEN.
+
+### Further P04 installed OS fault isolation — November 7
+
+Native prior-head Windows test run [42396592041](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42396592041) observed exactly one WebView2 renderer HWND but a 20-element host UIA tree and no navigation heading after app interaction. This corroborates the orphaned top-down fragment problem; native OS foreground UIAutomation focus-chain traversal is now attempted **only after verifying the installed desktop owns foreground**, never against another app. This is a **native acceptance hypothesis**, not a pass.
+
+Native prior-head Linux test run [42396592113](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42396592113) confirmed a real GTK dialog confirmation succeeded, but the expected project still was not in the accessibility tree. Fixed-vocabulary native acceptance diagnostics now distinguish an absent persisted Tauri catalog, the intended project registered, the parent registered incorrectly, an unexpected project registered, or a corrupt catalog. This does not substitute for the required native GUI controls or weaken the trusted folder picker.
