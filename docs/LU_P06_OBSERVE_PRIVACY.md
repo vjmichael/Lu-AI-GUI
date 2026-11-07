@@ -16,6 +16,8 @@
 
 **Legacy Observe CI convergence:** The original `lu-v1-observe-learn.yml` workflow (which also runs against P06) was still using `npm ci` without a committed npm lock and creating inert llama-engine files. It now uses the pinned npm manifest install explicitly and clears the Tauri resource entries only for code-only host compilation. The real pinned WGC worker is still built and rejects malformed worker calls; compilation cannot be mistaken for installed model/NSIS acceptance.
 
+**OS-enforced resource containment:** WGC capture modes now reuse the existing native Windows worker Job Object's `set_memory_limit(512*1024*1024)`, alongside the P06 Guardian one-worker/CPU/RAM reservation. A missing/failed Job limit refuses spawn instead of silently running unbounded. The cap is **process memory**, not total system RAM, GPU/VRAM or a screen-driver allocation guarantee; physical device telemetry remains open.
+
 **Outstanding:** exact-head Windows/Linux compilation and repairs; real interactive physical WGC identity/picker/cancellation trials and installed NSIS acceptance; OS identity for generic picker/monitors; trusted sensitive-region selective redaction before *any* image reaches Lu's model; genuine pixel-to-model scope and verified GUI test receipt. User-deferred actual AMD Vulkan/MMProj installed acceptance remains unclaimed. No P07 implementation is authorized.
 
 
