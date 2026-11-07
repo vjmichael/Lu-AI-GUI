@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
-      "blob": "6599d544d5a242de387bd993a723440072008f39"
+      "blob": "30f85a998b6a860ce562adbedba572014c0b7df6"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -165,7 +165,7 @@
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
-      "blob": "ec54e3b677ba8061a3f136bf78e50209ac82855a"
+      "blob": "0bbad7e0b1da86dcc9467541b3496036e60e7522"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -989,7 +989,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
-      "blob": "fee5732d8233f7e995c874ec122cbebc34e85c7f"
+      "blob": "2ccfcdee65ca6eb306472c3aa80a207cff99b1a7"
     },
     {
       "path": "src-tauri/lu-core/src/browser_authorized_execution.rs",
