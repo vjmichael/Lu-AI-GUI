@@ -489,10 +489,10 @@ mod tests{
         let mut absent=baseline.clone();
         absent["message"].as_object_mut().unwrap().remove("issued");
         absent["message"].as_object_mut().unwrap().remove("published");
-        assert_eq!(catalog_work_from_crossref(&ledger,"source-1",
-            absent.to_string().as_bytes()).map(|_|()),Err(StyleError::MissingField));
-        assert_eq!(catalog_work_from_crossref(&ledger,"source-1",b"garbled"),
-            Err(StyleError::InvalidField));
+        assert!(matches!(catalog_work_from_crossref(&ledger,"source-1",
+            absent.to_string().as_bytes()),Err(StyleError::MissingField)));
+        assert!(matches!(catalog_work_from_crossref(&ledger,"source-1",b"garbled"),
+            Err(StyleError::InvalidField)));
     }
     #[test]
     fn crossref_journal_metadata_never_guesses_sbl_abbreviation(){
