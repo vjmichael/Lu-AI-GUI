@@ -382,6 +382,31 @@ mod tests {
             &["a".into(),"b".into()]).is_ok());
     }
     #[test]
+    fn terminal_os_cancel_stays_failed_after_restart_and_blocks_dependents() {
+        let (temp, registry, project_id, digest) = native_fixture();
+        let file = temp.0.join("cancelled-graph.json");
+        let coordinator = WorkflowCoordinator::new(file.clone()).unwrap();
+        let run = coordinator.create(&registry, &[project_id.clone()], &digest,
+            vec![spec(&project_id, &[]), spec(&project_id, &[0])]).unwrap();
+        coordinator.begin_step(&registry, &run.workflow_id, 0).unwrap();
+        let cancelled = coordinator.finish_step(&run.workflow_id, 0,
+            Some("job-cancelled-by-native-os".into()), Some("a".repeat(64)),
+            None, "cancelled", Some(130), false,
+            Some("WO9_KERNEL_TREE_REAPED".into())).unwrap();
+        assert_eq!(cancelled.tasks[0].state, "failed");
+        assert_eq!(coordinator.begin_step(&registry, &run.workflow_id, 1).unwrap_err(),
+            "WO9_GRAPH_DEPENDENCY_NOT_PASSED");
+        drop(coordinator);
+        let after_restart = WorkflowCoordinator::new(file).unwrap();
+        let stored = after_restart.list().unwrap();
+        assert_eq!(stored[0].tasks[0].state, "failed");
+        assert_eq!(stored[0].tasks[1].state, "pending");
+        assert!(!stored[0].automatic_execution);
+        assert_eq!(after_restart.begin_step(&registry, &run.workflow_id, 1).unwrap_err(),
+            "WO9_GRAPH_DEPENDENCY_NOT_PASSED");
+    }
+
+    #[test]
     fn host_crash_fsyncs_interrupted_and_blocks_silent_resume() {
         let path = std::env::temp_dir().join(format!("wo9-graph-{}.json",rand::random::<u64>()));
         let coordinator = WorkflowCoordinator::new(path.clone()).unwrap();
