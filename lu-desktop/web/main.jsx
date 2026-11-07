@@ -92,6 +92,10 @@ function App() {
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
   const [researchCitationStyle,setResearchCitationStyle]=useState('apa7');
   const [researchCitationBusy,setResearchCitationBusy]=useState(false);
+  const [researchBibliographyBusy,setResearchBibliographyBusy]=useState(false);
+  const [researchBibliographiesByChat,setResearchBibliographiesByChat]=useState({});
+  const [researchBibliographyExportsByChat,setResearchBibliographyExportsByChat]=useState({});
+
   const [researchCitationsByChat,setResearchCitationsByChat]=useState({});
 
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
@@ -325,6 +329,33 @@ function App() {
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
   }
+  async function previewResearchBibliography(){
+    if(!chatId||researchBibliographyBusy)return;
+    const sourceChat=chatId;
+    setResearchBibliographyBusy(true);setResearchError('');
+    setResearchBibliographiesByChat(old=>({...old,[sourceChat]:null}));
+    try{
+      const view=await invoke('lu_research_bibliography_preview',{
+        chatId:sourceChat,style:researchCitationStyle
+      });
+      setResearchBibliographiesByChat(old=>({...old,[sourceChat]:view}));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBibliographyBusy(false);}
+  }
+  async function exportResearchBibliography(format){
+    if(!chatId||researchBibliographyBusy)return;
+    const sourceChat=chatId;
+    setResearchBibliographyBusy(true);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_bibliography_export',{
+        chatId:sourceChat,style:researchCitationStyle,format
+      });
+      if(receipt)setResearchBibliographyExportsByChat(old=>({
+        ...old,[sourceChat]:receipt
+      }));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBibliographyBusy(false);}
+  }
   async function previewResearchCitation(sourceId){
     if(!chatId||!researchAvailable||researchBusy||researchCitationBusy||!sourceId)return;
     const sourceChat=chatId;
@@ -337,6 +368,7 @@ function App() {
         chatId:sourceChat,sourceId,style:researchCitationStyle
       });
       setResearchCitationsByChat(old=>({...old,[key]:receipt}));
+      setResearchBibliographiesByChat(old=>({...old,[sourceChat]:null}));
     }catch(e){setResearchError(String(e));}
     finally{setResearchCitationBusy(false);}
   }
@@ -4642,6 +4674,8 @@ function App() {
               onChange={e=>{
                 setResearchCitationStyle(e.target.value);
                 setResearchCitationsByChat({});
+                setResearchBibliographiesByChat({});
+                setResearchBibliographyExportsByChat({});
               }}>
               <option value="apa7">APA 7</option>
               <option value="mla9">MLA 9</option>
@@ -4653,6 +4687,35 @@ function App() {
           <small>Academic citations require separately corroborated DOI and author identity.
             Review Crossref publication metadata before using it; Lu never invents a
             journal abbreviation, page reference, quotation, or ancient text edition.</small>
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||researchBusy||researchBibliographyBusy}
+              onClick={()=>void previewResearchBibliography()}>
+              {researchBibliographyBusy?'Reviewing bibliography…':'Compile reviewed bibliography offline'}
+            </button>
+            <button type="button" disabled={!chatId||researchBibliographyBusy}
+              onClick={()=>void exportResearchBibliography('markdown')}>
+              Save new bibliography Markdown
+            </button>
+            <button type="button" disabled={!chatId||researchBibliographyBusy}
+              onClick={()=>void exportResearchBibliography('csl-json')}>
+              Save new bibliography CSL-JSON
+            </button>
+          </div>
+          {researchBibliographiesByChat[chatId]&&
+            <div className="researchResults" aria-label="Reviewed citation bibliography preview">
+              <strong>{researchBibliographiesByChat[chatId].style} · {
+                researchBibliographiesByChat[chatId].sourceCount} pinned sources · REVIEW REQUIRED</strong>
+              <small>{researchBibliographiesByChat[chatId].message}</small>
+              <pre>{researchBibliographiesByChat[chatId].markdown.slice(0,12000)}</pre>
+              {researchBibliographiesByChat[chatId].markdown.length>12000&&
+                <small>Preview limited to 12,000 characters. Export includes the full bounded bibliography.</small>}
+              <small>Catalog evidence manifest SHA-256: {
+                researchBibliographiesByChat[chatId].catalogManifestSha256}</small>
+            </div>}
+          {researchBibliographyExportsByChat[chatId]&&
+            <small role="status">New bibliography saved: {
+              researchBibliographyExportsByChat[chatId].savedPath} · SHA-256: {
+              researchBibliographyExportsByChat[chatId].savedSha256}. Publication details remain unverified.</small>}
           {researchError&&<small role="alert">{researchError}</small>}
           {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
             <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
