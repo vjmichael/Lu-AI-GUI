@@ -23,7 +23,7 @@ def audit_candidate(manifest, root, source_sha, signature=native_signature):
         raise Denied("candidate_licenses_unreviewed")
     root=root.resolve(strict=True)
     records=[]
-    for role in ("installer","service"):
+    for role in ("installer","service","desktop"):
         row=data.get(role)
         if not isinstance(row,dict):
             raise Denied("candidate_missing_" + role)
