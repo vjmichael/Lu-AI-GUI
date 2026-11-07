@@ -44,10 +44,11 @@ jobs:
           & $clang -g -O0 -o (Join-Path $bundle 'debuggee\wo6-selftest.exe') 'ide/supervisor/fixtures/debug/wo6_selftest.c'
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party debuggee build failed' }
           $adapter=Join-Path $bundle 'bin\lldb-dap.exe'
-          $preflight=@(& $adapter --help 2>&1)
-          $preflightStatus=$LASTEXITCODE
-          $preflight | Select-Object -First 2 | ForEach-Object { Write-Host ([string]$_) }
-          if ($preflightStatus -ne 0) { throw 'DENIED: LLDB-DAP matching dependency closure failed' }
+          if (!(Test-Path -LiteralPath $adapter)) { throw 'DENIED: fixed native adapter missing' }
+          # LLDB-DAP --help and --version flags are NOT standardized DAP
+          # operations and may return nonzero for a healthy adapter. Real
+          # protected initialize/launch and OS cleanup below are mandatory;
+          # never substitute this file-existence check for executable proof.
           Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
       - name: Verify actual AppContainer debuggee normal/cancel with independent SCM
         shell: pwsh
