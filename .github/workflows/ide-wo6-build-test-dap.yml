@@ -1,0 +1,46 @@
+name: IDE WO6 protected build-test and DAP source gates
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/supervisor/**'
+      - 'ide/docs/IDE_WORK_ORDER_06_PROTECTED_BUILD_TEST_DEBUG_20261106.md'
+      - '.github/workflows/ide-wo6-build-test-dap.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  dap-protocol-and-build-test-control:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Require exact DAP and host source formatting
+        shell: bash
+        run: cargo fmt --manifest-path ide/host/Cargo.toml --all -- --check
+      - name: Verify hostile DAP framing and read-only debug source transport
+        shell: bash
+        run: cargo test --manifest-path ide/host/Cargo.toml dap_session::tests -- --nocapture
+      - name: Verify existing explicit build/test intent and D3 supervisor contracts
+        shell: bash
+        run: |
+          cargo test --manifest-path ide/host/Cargo.toml execution_intents::tests -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib -- --nocapture
+      - name: Scope gate
+        shell: bash
+        run: |
+          echo 'WO6 SOURCE PROTOCOL ONLY: PASS when all actual test commands above pass'
+          echo 'Native protected build/test, debugger execution, and installed desktop acceptance are NOT implied.'
