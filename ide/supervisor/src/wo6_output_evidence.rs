@@ -2,14 +2,14 @@
 //! native worker's already-published output root. Never opens an arbitrary UI
 //! path, grants execution, loads artifact bytes into WebView, or represents a
 //! receipt/journal authentication boundary. Child must be terminated first.
+use crate::SupervisorError;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
     io::Read,
     path::{Component, Path},
 };
-use serde::Serialize;
-use sha2::{Digest, Sha256};
-use crate::SupervisorError;
 
 const MAX_ENTRIES: usize = 6_000;
 const MAX_VISIBLE: usize = 96;
@@ -54,16 +54,22 @@ fn checked_meta(path: &Path, directory: bool) -> Result<fs::Metadata, Supervisor
     let meta = fs::symlink_metadata(path).map_err(|_| denied())?;
     if meta.file_type().is_symlink()
         || is_reparse(&meta)
-        || if directory { !meta.is_dir() } else { !meta.is_file() }
+        || if directory {
+            !meta.is_dir()
+        } else {
+            !meta.is_file()
+        }
     {
         return Err(denied());
     }
     Ok(meta)
 }
 fn valid_component(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 200 &&
-        name.bytes().all(|b| b.is_ascii_alphanumeric()
-            || matches!(b, b'.' | b'-' | b'_' | b'+'))
+    !name.is_empty()
+        && name.len() <= 200
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+'))
 }
 fn hash_regular_file(path: &Path, expected_size: u64) -> Result<String, SupervisorError> {
     if expected_size > MAX_ONE_FILE {
@@ -83,16 +89,16 @@ fn hash_regular_file(path: &Path, expected_size: u64) -> Result<String, Supervis
     let mut buf = [0u8; READ_CHUNK];
     loop {
         let n = reader.read(&mut buf).map_err(|_| denied())?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         count = count.checked_add(n as u64).ok_or_else(denied)?;
         if count > expected_size || count > MAX_ONE_FILE {
             return Err(denied());
         }
         hasher.update(&buf[..n]);
     }
-    if count != expected_size ||
-        checked_meta(path, false)?.len() != expected_size
-    {
+    if count != expected_size || checked_meta(path, false)?.len() != expected_size {
         return Err(denied());
     }
     Ok(format!("{:x}", hasher.finalize()))
@@ -114,21 +120,30 @@ pub fn audit_published_output(root: &Path) -> Result<OutputWitness, SupervisorEr
         files: &mut Vec<ArtifactEntry>,
         total: &mut u64,
     ) -> Result<(), SupervisorError> {
-        if depth > MAX_TREE_DEPTH { return Err(denied()); }
+        if depth > MAX_TREE_DEPTH {
+            return Err(denied());
+        }
         let dir = base.join(relative);
         checked_meta(&dir, true)?;
         let mut entries = Vec::new();
         for item in fs::read_dir(&dir).map_err(|_| denied())? {
             let item = item.map_err(|_| denied())?;
             let name = item.file_name().into_string().map_err(|_| denied())?;
-            if !valid_component(&name) { return Err(denied()); }
+            if !valid_component(&name) {
+                return Err(denied());
+            }
             entries.push(name);
-            if entries.len() > MAX_ENTRIES { return Err(denied()); }
+            if entries.len() > MAX_ENTRIES {
+                return Err(denied());
+            }
         }
         entries.sort();
         for name in entries {
             let path = relative.join(name);
-            if !path.components().all(|part| matches!(part, Component::Normal(_))) {
+            if !path
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+            {
                 return Err(denied());
             }
             let abs = base.join(&path);
@@ -145,7 +160,9 @@ pub fn audit_published_output(root: &Path) -> Result<OutputWitness, SupervisorEr
                 let digest = hash_regular_file(&abs, file.len())?;
                 let relative_path = path.to_str().ok_or_else(denied)?.replace('\\', "/");
                 files.push(ArtifactEntry {
-                    relative_path, bytes: file.len(), sha256: digest,
+                    relative_path,
+                    bytes: file.len(),
+                    sha256: digest,
                 });
             }
         }
@@ -188,8 +205,10 @@ mod tests {
         assert_eq!(witness.file_count, 1);
         assert_eq!(witness.total_bytes, 10);
         assert_eq!(witness.files[0].relative_path, "target/debug/fixture.bin");
-        assert_eq!(witness.files[0].sha256,
-            format!("{:x}", Sha256::digest(b"hello test")));
+        assert_eq!(
+            witness.files[0].sha256,
+            format!("{:x}", Sha256::digest(b"hello test"))
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
