@@ -26,6 +26,8 @@ jobs:
           python-version: '3.11'
       - name: Run hostile signed release preflight fixture tests
         run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_nsis_release.py' -v
+      - name: Run reviewed payload staging security regression
+        run: python -m unittest discover -s ide/packaging -p 'test_stage_wo7_windows_release.py' -v
       - name: Assert current manifest cannot ship a debugger or service
         shell: pwsh
         run: |
