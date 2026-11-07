@@ -42,13 +42,13 @@ pub fn recommended_read_tools(
         preferred.push("lu_files_discover");
     }
     if git.iter().any(|w|lower.contains(w)){
-        preferred.extend(["lu_git_status","lu_git_recent_log","lu_git_tracked_diff"]);
+        preferred.extend(["lu_git_status","lu_git_log","lu_git_diff"]);
     }
     if content.iter().any(|w|lower.contains(w)){
         preferred.extend(["lu_files_read_text","lu_reader_read"]);
     }
     if archive.iter().any(|w|lower.contains(w)){
-        preferred.push("lu_archive_inspect");
+        preferred.push("lu_archive_list");
     }
     if directory.iter().any(|w|lower.contains(w)){
         preferred.push("lu_files_list_directory");
