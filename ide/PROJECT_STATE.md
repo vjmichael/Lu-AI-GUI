@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO9-D/E/F advanced Git, durable dependency and installed release acceptance implementation — 2026-11-07 UTC
+
+**Draft PR #75** (`ide/wo9-advanced-workflows-20261107`, stacked on WO8 PR #74) now includes all WO9-A–F **source areas**. WO9-D: one-file human-reviewed local Git stage/commit using libgit2 in-memory SHA-pinned bytes, conditional branch-ref update, separate native OS confirmations, no hooks, no push, no untracked/symlink/gitlink staging. WO9-E: fsynced bounded multi-project DAG, dependency-only manual native protected WO6 job dispatch, fail-closed recovery after host restart, terminal native receipt and quarantine; never automatically reruns or grants authority. WO9-F: native Windows unsigned NSIS installed portfolio/Git UIA and Linux .deb GTK/AT-SPI actual ZIP export/readback/uninstall workflow; separate manual genuine signed Windows Authenticode / Linux GPG package plus protected two-step OS job acceptance, and a default-deny independent source/OS receipt verifier. Exact native Windows/Linux compilation, installed GUI acceptance and signed independent release gates remain **OPEN** until evidence on the same commit. Inherited WO8 Windows mistaken executable-name glob and Linux Xvfb missing WM are repaired on WO8 and WO9 branches, not yet accepted until rerun.
+
+**WO9 evidence and work-order ledger:** [docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md). Do not confuse implementation completion with protected installed Windows/Linux release acceptance. The actual approved signing/certificates, Linux release public key, WO6/WO7 reviewed dependencies and verified signed candidate are absent. Existing native DAG execution uses only the already authorized WO6 supervisor; no second executor and no WO10 Lu bridge. Keep WO9 draft, source code test results separately from release approval.
+
+
 ### WO9 advanced Git/packaging/multi-project workflows started — 2026-11-07 UTC
 
 **Roadmap remains exactly ten work orders:** historical WO1–WO3 acceptance; WO4–WO8 still have native/release acceptance to close; **WO9** advanced packaging, Git, multi-project workflows in development; WO10 optional Lu Core self-development bridge later. WO9 begins in `ide/wo9-advanced-workflows-20261107` **stacked on WO8 PR #74**. WO8's signed installed native cancellation, Linux editor and WO7 release gates are not reclassified as passed or cancelled by this.
