@@ -17,3 +17,22 @@ test('image annotations use the same native immutable preview/export pipeline',(
   assert.match(bridge,/preview_revision_plan/);
   assert.match(host,/write_new_revision_plan/);
 });
+
+test('bounded native filters and original image selection share immutable assembly',()=>{
+  assert.match(ui,/stagedImageDimensions\(imageViewer\.width,imageViewer\.height,next\)/);
+  assert.match(ui,/onPointerDown=\{selectImagePointerStart\}/);
+  assert.match(ui,/onPointerUp=\{selectImagePointerEnd\}/);
+  assert.match(ui,/imageDragRectangle\(/);
+  assert.match(ui,/\<option value="brightness"\>/);
+  assert.match(ui,/\<option value="blur"\>/);
+  assert.match(ui,/\<option value="sharpen"\>/);
+  assert.match(ui,/operation:queuedPlan\?'resize':imageEdit.mode/);
+  assert.match(core,/ImageRevisionOperation::Grayscale/);
+  assert.match(core,/ImageRevisionOperation::InvertRgb/);
+  assert.match(core,/ImageRevisionOperation::Brightness/);
+  assert.match(core,/ImageRevisionOperation::Contrast/);
+  assert.match(core,/ImageRevisionOperation::Sharpen/);
+  assert.match(core,/original_alpha\(&decoded/);
+  assert.match(bridge,/"sharpen"=>Op::Sharpen/);
+  assert.match(host,/"contrast"=>Operation::Contrast/);
+});

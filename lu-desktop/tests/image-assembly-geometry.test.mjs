@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {stagedImageDimensions,REGION_IMAGE_OPERATIONS}
+import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
+  imagePointerPixel,imageDragRectangle}
   from '../web/image_assembly_geometry.mjs';
 
 test('staged geometry tracks crop, resize, rotate and annotation space',()=>{
@@ -28,4 +29,30 @@ test('new steps cannot use stale original coordinates after crop',()=>{
   ]).width,9);
   assert.equal(stagedImageDimensions(20,16,
     Array.from({length:13},()=>({operation:'flip_h'}))),null);
+});
+
+test('native filter parameters are bounded and never change dimensions',()=>{
+  const valid=[
+    {operation:'grayscale'},{operation:'invert'},
+    {operation:'blur',sigma:2},
+    {operation:'brightness',amount:-80},
+    {operation:'contrast',amount:60},
+    {operation:'sharpen',sigma:3,threshold:12}
+  ];
+  assert.deepEqual(stagedImageDimensions(64,48,valid),{width:64,height:48});
+  assert.equal(stagedImageDimensions(64,48,[{operation:'blur',sigma:9}]),null);
+  assert.equal(stagedImageDimensions(64,48,[{operation:'brightness',amount:129}]),null);
+  assert.equal(stagedImageDimensions(64,48,[{operation:'contrast',amount:-101}]),null);
+  assert.equal(stagedImageDimensions(64,48,[{operation:'sharpen',sigma:2,threshold:65}]),null);
+});
+test('pointer regions map rendered zoomed rectangles to real original pixels',()=>{
+  const box={left:50,top:100,width:400,height:200};
+  const first=imagePointerPixel(100,150,box,200,100);
+  const last=imagePointerPixel(399,250,box,200,100);
+  assert.deepEqual(first,{x:25,y:25});
+  assert.deepEqual(last,{x:174,y:75});
+  assert.deepEqual(imageDragRectangle(first,last,200,100),
+    {x:25,y:25,width:150,height:51});
+  assert.deepEqual(imagePointerPixel(-100,999,box,200,100),{x:0,y:99});
+  assert.equal(imageDragRectangle({x:220,y:0},{x:1,y:1},200,100),null);
 });

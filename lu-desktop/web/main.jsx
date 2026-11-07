@@ -7,7 +7,8 @@ import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
-import {stagedImageDimensions,REGION_IMAGE_OPERATIONS} from './image_assembly_geometry.mjs';
+import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
+  imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 
@@ -31,12 +32,14 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
   const [imageViewer,setImageViewer] = useState(null);
-  const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500'});
+  const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500',amount:'0',sigma:'2',threshold:'3'});
   const [imagePlan,setImagePlan]=useState({chatId:null,imageRef:null,steps:[],redo:[]});
   const [imagePreviewBusy,setImagePreviewBusy]=useState(false);
   const [imageAssemblyPreview,setImageAssemblyPreview]=useState(null);
   const imagePreviewKeyRef=useRef('');
   const [imageExportBusy,setImageExportBusy]=useState(false);
+  const [imageSelection,setImageSelection]=useState(null);
+  const imageDragRef=useRef(null);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
   const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
@@ -704,6 +707,53 @@ function App() {
     }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
     finally{setOcrBusy(false);}
   }
+  // User-only pointer selection; the trusted native host revalidates all
+  // image regions before cropping, OCR, preview or effect publication.
+  function selectImagePointerStart(event){
+    if(event.button!==0||!imageViewer?.width||!imageViewer?.height)return;
+    const origin=imagePointerPixel(
+      event.clientX,event.clientY,event.currentTarget.getBoundingClientRect(),
+      imageViewer.width,imageViewer.height
+    );
+    if(!origin)return;
+    imageDragRef.current={chatId,imageRef:imageViewer.imageRef,origin};
+    setImageSelection({chatId,imageRef:imageViewer.imageRef,
+      x:origin.x,y:origin.y,width:1,height:1});
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
+  function selectImagePointerMove(event){
+    const drag=imageDragRef.current;
+    if(!drag||drag.chatId!==chatId||drag.imageRef!==imageViewer?.imageRef)return;
+    const to=imagePointerPixel(
+      event.clientX,event.clientY,event.currentTarget.getBoundingClientRect(),
+      imageViewer.width,imageViewer.height
+    );
+    const rectangle=imageDragRectangle(drag.origin,to,
+      imageViewer.width,imageViewer.height);
+    if(rectangle)setImageSelection({chatId,imageRef:drag.imageRef,...rectangle});
+  }
+  function selectImagePointerEnd(event){
+    const drag=imageDragRef.current;
+    imageDragRef.current=null;
+    if(!drag||drag.chatId!==chatId||drag.imageRef!==imageViewer?.imageRef)return;
+    const to=imagePointerPixel(
+      event.clientX,event.clientY,event.currentTarget.getBoundingClientRect(),
+      imageViewer.width,imageViewer.height
+    );
+    const region=imageDragRectangle(drag.origin,to,
+      imageViewer.width,imageViewer.height);
+    if(!region)return;
+    setImageSelection({chatId,imageRef:drag.imageRef,...region});
+    setOcrRegion(Object.fromEntries(
+      Object.entries(region).map(([key,value])=>[key,String(value)])));
+    const hasStagedEdits=imagePlan.chatId===chatId&&
+      imagePlan.imageRef===imageViewer.imageRef&&imagePlan.steps.length>0;
+    if(!hasStagedEdits){
+      setImageEdit(v=>({...v,x:String(region.x),y:String(region.y),
+        width:String(region.width),height:String(region.height)}));
+    }
+  }
   const currentImagePreviewKey=JSON.stringify([
     chatId,imageViewer?.imageRef||null,
     imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer?.imageRef
@@ -721,10 +771,10 @@ function App() {
     const frame=stagedImageDimensions(imageViewer.width,imageViewer.height,previous);
     if(!frame){setError('Staged image geometry is invalid.');return;}
     const region=REGION_IMAGE_OPERATIONS.includes(imageEdit.mode);
-    const width=['rotate90','flip_h'].includes(imageEdit.mode)
-      ?frame.width:Number(imageEdit.width);
-    const height=['rotate90','flip_h'].includes(imageEdit.mode)
-      ?frame.height:Number(imageEdit.height);
+    const geometryNeutral=['rotate90','flip_h','grayscale','invert','blur',
+      'brightness','contrast','sharpen'].includes(imageEdit.mode);
+    const width=geometryNeutral?frame.width:Number(imageEdit.width);
+    const height=geometryNeutral?frame.height:Number(imageEdit.height);
     const x=region?Number(imageEdit.x):null;
     const y=region?Number(imageEdit.y):null;
     const isDrawing=['rectangle','line','ellipse'].includes(imageEdit.mode);
@@ -732,7 +782,13 @@ function App() {
     const stroke=isDrawing?Number(imageEdit.stroke):null;
     const color=isDrawing&&/^#[0-9a-fA-F]{6}$/.test(imageEdit.color)
       ?parseInt(imageEdit.color.slice(1),16):null;
-    const step={operation:imageEdit.mode,x,y,width,height,blockSize,stroke,color};
+    const amount=['brightness','contrast'].includes(imageEdit.mode)
+      ?Number(imageEdit.amount):null;
+    const sigma=['blur','sharpen'].includes(imageEdit.mode)
+      ?Number(imageEdit.sigma):null;
+    const threshold=imageEdit.mode==='sharpen'?Number(imageEdit.threshold):null;
+    const step={operation:imageEdit.mode,x,y,width,height,blockSize,stroke,color,
+      amount,sigma,threshold};
     const next=[...previous,step];
     const after=stagedImageDimensions(imageViewer.width,imageViewer.height,next);
     if(!after){
@@ -796,10 +852,24 @@ function App() {
     const stroke=Number(imageEdit.stroke);
     const hex=/^#[0-9a-fA-F]{6}$/.test(imageEdit.color||'')?
       parseInt(imageEdit.color.slice(1),16):null;
+    const amount=Number(imageEdit.amount);
+    const sigma=Number(imageEdit.sigma);
+    const threshold=Number(imageEdit.threshold);
+    const filterInvalid=(
+      (imageEdit.mode==='brightness'&&(!Number.isSafeInteger(amount)||
+        amount< -128||amount>128))||
+      (imageEdit.mode==='contrast'&&(!Number.isSafeInteger(amount)||
+        amount< -100||amount>100))||
+      (['blur','sharpen'].includes(imageEdit.mode)&&
+        (!Number.isSafeInteger(sigma)||sigma<1||sigma>8))||
+      (imageEdit.mode==='sharpen'&&
+        (!Number.isSafeInteger(threshold)||threshold<0||threshold>64))
+    );
     if(!queuedPlan&&(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
        width<1||height<1||width>8192||height>8192||width*height>32000000||
        (region&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
          x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))||
+       filterInvalid||
        (imageEdit.mode==='pixelate'&&(!Number.isSafeInteger(blockSize)||
          blockSize<2||blockSize>128))||
        (['rectangle','line','ellipse'].includes(imageEdit.mode)&&
@@ -818,6 +888,9 @@ function App() {
         blockSize:!queuedPlan&&imageEdit.mode==='pixelate'?blockSize:null,
         stroke:!queuedPlan&&['rectangle','line','ellipse'].includes(imageEdit.mode)?stroke:null,
         color:!queuedPlan&&['rectangle','line','ellipse'].includes(imageEdit.mode)?hex:null,
+        amount:!queuedPlan&&['brightness','contrast'].includes(imageEdit.mode)?amount:null,
+        sigma:!queuedPlan&&['blur','sharpen'].includes(imageEdit.mode)?sigma:null,
+        threshold:!queuedPlan&&imageEdit.mode==='sharpen'?threshold:null,
         steps:queuedPlan
       });
       if(saved){
@@ -3535,19 +3608,42 @@ function App() {
         </header>
         <small>{viewedDraftImage.name||'Attached image'} · {viewedDraftImage.detectedMimeType||viewedDraftImage.mimeType||'Verified image'}</small>
         <div className="imageViewerViewport" aria-label="Zoomable original draft image">
-          <img src={viewedDraftImage.previewUrl} alt="Original attached image, unmodified"
-            onLoad={e=>{
-              const width=e.currentTarget.naturalWidth,height=e.currentTarget.naturalHeight;
-              setImageViewer(v=>v&&v.imageRef===viewedDraftImage.imageRef
-                ?({...v,width,height}):v);
-              setImageEdit({
-                mode:'resize',x:'0',y:'0',width:String(width),height:String(height),
-                blockSize:'12',stroke:'3',color:'#ff5500'
-              });
-              setImageExportReceipt(null);
-            }}
-            style={{transform:'scale('+imageViewer.zoom+')'}}/>
+          <div style={{display:'inline-block',position:'relative',
+            transform:'scale('+imageViewer.zoom+')',transformOrigin:'top left'}}>
+            <img src={viewedDraftImage.previewUrl}
+              alt="Original attached image, drag to select pixels"
+              onPointerDown={selectImagePointerStart}
+              onPointerMove={selectImagePointerMove}
+              onPointerUp={selectImagePointerEnd}
+              onPointerCancel={()=>{imageDragRef.current=null;}}
+              onLoad={e=>{
+                const width=e.currentTarget.naturalWidth,height=e.currentTarget.naturalHeight;
+                setImageViewer(v=>v&&v.imageRef===viewedDraftImage.imageRef
+                  ?({...v,width,height}):v);
+                setImageEdit({
+                  mode:'resize',x:'0',y:'0',width:String(width),height:String(height),
+                  blockSize:'12',stroke:'3',color:'#ff5500',
+                  amount:'0',sigma:'2',threshold:'3'
+                });
+                setImageSelection(null);setImageExportReceipt(null);
+              }}
+              style={{touchAction:'none',userSelect:'none',cursor:'crosshair'}}/>
+            {imageSelection?.chatId===chatId&&
+              imageSelection.imageRef===imageViewer.imageRef&&
+              <div aria-hidden="true" style={{
+                position:'absolute',pointerEvents:'none',boxSizing:'border-box',
+                left:(100*imageSelection.x/imageViewer.width)+'%',
+                top:(100*imageSelection.y/imageViewer.height)+'%',
+                width:(100*imageSelection.width/imageViewer.width)+'%',
+                height:(100*imageSelection.height/imageViewer.height)+'%',
+                border:'2px solid #4b9cff',background:'rgba(75,156,255,0.09)'
+              }}/>}
+          </div>
         </div>
+        <small>Drag on the original image to select an OCR rectangle.
+          Before staging edits, the same rectangle fills crop/mask/annotation
+          dimensions. For later assembly steps, enter coordinates in the
+          current staged coordinate space.</small>
         <footer>
           <button type="button" disabled={imageViewer.zoom<=0.5}
             onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.max(0.5,+(v.zoom-0.25).toFixed(2))}))}>Zoom out</button>
@@ -3658,6 +3754,12 @@ function App() {
               <option value="rectangle">Rectangle outline</option>
               <option value="line">Diagonal line annotation</option>
               <option value="ellipse">Ellipse outline annotation</option>
+              <option value="grayscale">Grayscale (preserve alpha)</option>
+              <option value="invert">Invert RGB (preserve alpha)</option>
+              <option value="blur">Gaussian blur</option>
+              <option value="brightness">Brightness adjustment</option>
+              <option value="contrast">Contrast adjustment</option>
+              <option value="sharpen">Sharpen</option>
             </select>
           </label>
           {REGION_IMAGE_OPERATIONS.includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
@@ -3666,12 +3768,29 @@ function App() {
             <label>Y <input type="number" min="0" value={imageEdit.y}
               onChange={e=>setImageEdit(v=>({...v,y:e.target.value}))}/></label>
           </div>}
-          {!['rotate90','flip_h'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
+          {!['rotate90','flip_h','grayscale','invert','blur',
+             'brightness','contrast','sharpen'].includes(imageEdit.mode)&&
+             <div className="imageRevisionDimensions">
             <label>Width <input type="number" min="1" max="8192" value={imageEdit.width}
               onChange={e=>setImageEdit(v=>({...v,width:e.target.value}))}/></label>
             <label>Height <input type="number" min="1" max="8192" value={imageEdit.height}
               onChange={e=>setImageEdit(v=>({...v,height:e.target.value}))}/></label>
           </div>}
+          {['brightness','contrast'].includes(imageEdit.mode)&&<label>
+            {imageEdit.mode==='brightness'?'Brightness (-128 to 128)':'Contrast (-100 to 100)'}
+            <input type="number" min={imageEdit.mode==='brightness'?-128:-100}
+              max={imageEdit.mode==='brightness'?128:100}
+              value={imageEdit.amount}
+              onChange={e=>setImageEdit(v=>({...v,amount:e.target.value}))}/>
+          </label>}
+          {['blur','sharpen'].includes(imageEdit.mode)&&<label>Filter radius (1–8)
+            <input type="number" min="1" max="8" value={imageEdit.sigma}
+              onChange={e=>setImageEdit(v=>({...v,sigma:e.target.value}))}/>
+          </label>}
+          {imageEdit.mode==='sharpen'&&<label>Sharpen threshold (0–64)
+            <input type="number" min="0" max="64" value={imageEdit.threshold}
+              onChange={e=>setImageEdit(v=>({...v,threshold:e.target.value}))}/>
+          </label>}
           {imageEdit.mode==='pixelate'&&<label>Mosaic block size
             <input type="number" min="2" max="128" value={imageEdit.blockSize}
               onChange={e=>setImageEdit(v=>({...v,blockSize:e.target.value}))}/>

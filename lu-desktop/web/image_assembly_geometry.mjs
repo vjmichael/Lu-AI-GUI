@@ -18,8 +18,16 @@ export function stagedImageDimensions(width,height,steps=[]){
       w=step.width;h=step.height;
     }else if(kind==='rotate90'){
       [w,h]=[h,w];
-    }else if(kind==='flip_h'){
-      // No change to coordinate space.
+    }else if(kind==='flip_h'||kind==='grayscale'||kind==='invert'){
+      // Pixel filters keep the same dimensions.
+    }else if(kind==='blur'||kind==='sharpen'){
+      if(!Number.isSafeInteger(step.sigma)||step.sigma<1||step.sigma>8)return null;
+      if(kind==='sharpen'&&(!Number.isSafeInteger(step.threshold)||
+          step.threshold<0||step.threshold>64))return null;
+    }else if(kind==='brightness'||kind==='contrast'){
+      const allowed=kind==='brightness'?128:100;
+      if(!Number.isSafeInteger(step.amount)||
+         step.amount< -allowed||step.amount>allowed)return null;
     }else if(regions.has(kind)){
       const {x,y,width:rw,height:rh}=step;
       if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
@@ -37,4 +45,26 @@ export function stagedImageDimensions(width,height,steps=[]){
     }else{return null}
   }
   return {width:w,height:h};
+}
+
+/// Convert a user pointer gesture into pixels of the ACTUAL displayed image.
+/// The browser is not allowed to supply pixel dimensions or any file path.
+export function imagePointerPixel(clientX,clientY,rect,width,height){
+  if(!bounded(width,height)||!rect||
+    ![clientX,clientY,rect.left,rect.top,rect.width,rect.height]
+      .every(Number.isFinite)||rect.width<=0||rect.height<=0)return null;
+  return {
+    x:Math.min(width-1,Math.max(0,
+      Math.floor((clientX-rect.left)/rect.width*width))),
+    y:Math.min(height-1,Math.max(0,
+      Math.floor((clientY-rect.top)/rect.height*height)))
+  };
+}
+export function imageDragRectangle(a,b,width,height){
+  if(!a||!b||!bounded(width,height)||
+    ![a.x,a.y,b.x,b.y].every(Number.isSafeInteger)||
+    [a.x,b.x].some(x=>x<0||x>=width)||
+    [a.y,b.y].some(y=>y<0||y>=height))return null;
+  const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);
+  return {x,y,width:Math.abs(a.x-b.x)+1,height:Math.abs(a.y-b.y)+1};
 }

@@ -28,6 +28,13 @@ pub enum ImageRevisionOperation{
     Line{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
     /// Ellipse outline. Never advertised as a privacy mask.
     Ellipse{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// Bounded pixel filters preserve the input alpha channel.
+    Grayscale,
+    InvertRgb,
+    Blur{sigma:u8},
+    Brightness{delta:i16},
+    Contrast{percent:i16},
+    Sharpen{sigma:u8,threshold:u8},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct ImageRevision{
@@ -59,6 +66,17 @@ fn paint_brush(
             image.put_pixel(xx,yy,image::Rgba([rgb[0],rgb[1],rgb[2],255]));
         }
     }
+}
+/// Keep the original alpha channel for all color/spatial filters. Blur is a
+/// visual treatment, NEVER a privacy redaction and never silently removes
+/// transparency from source pixels.
+fn original_alpha(source:&DynamicImage,filtered:DynamicImage)->DynamicImage{
+    let raw=source.to_rgba8();
+    let mut edited=filtered.to_rgba8();
+    for (pixel,from) in edited.pixels_mut().zip(raw.pixels()){
+        pixel[3]=from[3];
+    }
+    DynamicImage::ImageRgba8(edited)
 }
 fn validate_region(
     x:u32,y:u32,width:u32,height:u32,base_w:u32,base_h:u32
@@ -206,6 +224,47 @@ pub fn transform_admitted_image(
                 }
             }
             DynamicImage::ImageRgba8(canvas)
+        },
+        ImageRevisionOperation::Grayscale=>{
+            let mut pixels=decoded.to_rgba8();
+            for pixel in pixels.pixels_mut(){
+                let gray=(77*u32::from(pixel[0])+150*u32::from(pixel[1])
+                    +29*u32::from(pixel[2])+128)/256;
+                pixel[0]=gray as u8;pixel[1]=gray as u8;pixel[2]=gray as u8;
+            }
+            DynamicImage::ImageRgba8(pixels)
+        },
+        ImageRevisionOperation::InvertRgb=>{
+            let mut pixels=decoded.to_rgba8();
+            for pixel in pixels.pixels_mut(){
+                pixel[0]=255-pixel[0];
+                pixel[1]=255-pixel[1];
+                pixel[2]=255-pixel[2];
+            }
+            DynamicImage::ImageRgba8(pixels)
+        },
+        ImageRevisionOperation::Blur{sigma}=>{
+            if !(1..=8).contains(&sigma){return Err(ImageRevisionError::InvalidOperation)}
+            original_alpha(&decoded,decoded.blur(f32::from(sigma)))
+        },
+        ImageRevisionOperation::Brightness{delta}=>{
+            if !(-128..=128).contains(&delta){
+                return Err(ImageRevisionError::InvalidOperation)
+            }
+            original_alpha(&decoded,decoded.brighten(i32::from(delta)))
+        },
+        ImageRevisionOperation::Contrast{percent}=>{
+            if !(-100..=100).contains(&percent){
+                return Err(ImageRevisionError::InvalidOperation)
+            }
+            original_alpha(&decoded,decoded.adjust_contrast(f32::from(percent)))
+        },
+        ImageRevisionOperation::Sharpen{sigma,threshold}=>{
+            if !(1..=8).contains(&sigma)||threshold>64{
+                return Err(ImageRevisionError::InvalidOperation)
+            }
+            original_alpha(&decoded,
+                decoded.unsharpen(f32::from(sigma),i32::from(threshold)))
         }
     };
     let (width,height)=transformed.dimensions();
@@ -280,6 +339,32 @@ mod tests{
             ImageRevisionOperation::Resize{width:10,height:8}).unwrap();
         assert_eq!((scaled.width,scaled.height),(10,8));
         assert_ne!(crop.revision_sha256,scaled.revision_sha256);
+    }
+    #[test]
+    fn immutable_filters_are_deterministic_and_bounds_checked(){
+        let source=original();
+        let original_bytes=source.bytes.clone();
+        for op in [
+            ImageRevisionOperation::Grayscale,
+            ImageRevisionOperation::InvertRgb,
+            ImageRevisionOperation::Blur{sigma:2},
+            ImageRevisionOperation::Brightness{delta:30},
+            ImageRevisionOperation::Contrast{percent:20},
+            ImageRevisionOperation::Sharpen{sigma:2,threshold:3}
+        ]{
+            let first=transform_admitted_image(&source,op).unwrap();
+            let second=transform_admitted_image(&source,op).unwrap();
+            assert_eq!(first.revision_sha256,second.revision_sha256);
+            assert_eq!(source.bytes,original_bytes);
+        }
+        assert_eq!(
+            transform_admitted_image(&source,ImageRevisionOperation::Blur{sigma:0}),
+            Err(ImageRevisionError::InvalidOperation)
+        );
+        assert_eq!(
+            transform_admitted_image(&source,ImageRevisionOperation::Contrast{percent:101}),
+            Err(ImageRevisionError::InvalidOperation)
+        );
     }
     #[test]
     fn elliptical_and_line_annotations_are_deterministic_and_keep_original(){

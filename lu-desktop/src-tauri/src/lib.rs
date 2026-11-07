@@ -2536,6 +2536,7 @@ async fn lu_image_workspace_export(
     chat_id:String,image_ref:String,operation:String,
     x:Option<u32>,y:Option<u32>,width:u32,height:u32,
     block_size:Option<u32>,stroke:Option<u32>,color:Option<u32>,
+    amount:Option<i16>,sigma:Option<u8>,threshold:Option<u8>,
     steps:Option<Vec<image_workspace_desktop::ImageRevisionStep>>
 )->Result<Option<image_workspace_desktop::ImageExportReceipt>,String>{
     use lu_core::native_image_revision::ImageRevisionOperation as Operation;
@@ -2552,6 +2553,14 @@ async fn lu_image_workspace_export(
         "resize"=>Operation::Resize{width,height},
         "rotate90"=>Operation::Rotate90,
         "flip_h"=>Operation::FlipHorizontal,
+        "grayscale"=>Operation::Grayscale,
+        "invert"=>Operation::InvertRgb,
+        "blur"=>Operation::Blur{sigma:sigma.unwrap_or(2)},
+        "brightness"=>Operation::Brightness{delta:amount.unwrap_or(0)},
+        "contrast"=>Operation::Contrast{percent:amount.unwrap_or(0)},
+        "sharpen"=>Operation::Sharpen{
+            sigma:sigma.unwrap_or(2),threshold:threshold.unwrap_or(3)
+        },
         "redact"=>Operation::Redact{
             x:x.ok_or("Mask requires X")?,y:y.ok_or("Mask requires Y")?,
             width,height,

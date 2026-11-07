@@ -29,6 +29,9 @@ pub(crate) struct ImageRevisionStep{
     pub block_size:Option<u32>,
     pub stroke:Option<u32>,
     pub color:Option<u32>,
+    pub amount:Option<i16>,
+    pub sigma:Option<u8>,
+    pub threshold:Option<u8>,
 }
 impl ImageRevisionStep{
     pub(crate) fn operation(&self)->Result<ImageRevisionOperation,String>{
@@ -40,6 +43,15 @@ impl ImageRevisionStep{
             "resize"=>Op::Resize{width:self.width,height:self.height},
             "rotate90"=>Op::Rotate90,
             "flip_h"=>Op::FlipHorizontal,
+            "grayscale"=>Op::Grayscale,
+            "invert"=>Op::InvertRgb,
+            "blur"=>Op::Blur{sigma:self.sigma.unwrap_or(2)},
+            "brightness"=>Op::Brightness{delta:self.amount.unwrap_or(0)},
+            "contrast"=>Op::Contrast{percent:self.amount.unwrap_or(0)},
+            "sharpen"=>Op::Sharpen{
+                sigma:self.sigma.unwrap_or(2),
+                threshold:self.threshold.unwrap_or(3),
+            },
             "redact"=>Op::Redact{x:x()?,y:y()?,
                 width:self.width,height:self.height},
             "pixelate"=>Op::Pixelate{x:x()?,y:y()?,
@@ -212,7 +224,8 @@ mod tests{
         let plan=[ImageRevisionStep{
             operation:"rectangle".into(),x:Some(1),y:Some(1),
             width:8,height:6,block_size:None,
-            stroke:Some(2),color:Some(0x2255cc)
+            stroke:Some(2),color:Some(0x2255cc),
+            amount:None,sigma:None,threshold:None,
         }];
         let preview=preview_revision_plan(&input,&plan).unwrap();
         assert_eq!(preview.width,20);
