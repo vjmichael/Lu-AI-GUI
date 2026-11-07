@@ -212,6 +212,11 @@ impl ObserveHost {
     /// Guardian worker slot.
     fn reconcile_revoked(&self,session:&mut Session)->Result<(),String>{
         if session.controller.mode()!=Mode::Off{return Ok(());}
+        // A restart/retry must also shred any remaining volatile awareness,
+        // even when the original revoke was interrupted mid-cleanup.
+        session.scope=None;
+        session.sequence=0;
+        if let Some(mut lane)=session.awareness.take(){lane.stop();}
         let Some(task_id)=session.session_id.clone() else{return Ok(())};
         self.reap_capture(session.capture_task_id.as_deref(),
             session.chat_id.as_deref())?;
