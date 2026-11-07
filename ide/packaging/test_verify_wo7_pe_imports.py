@@ -1,10 +1,12 @@
 """WO7 genuine import directory parsing, including delay-load library names."""
 import struct
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from verify_wo7_pe_imports import pe_imports, Denied
+from verify_wo7_pe_imports import pe_imports, audit_staged_pe, Denied
 
 
 def fake_pe(name=b"KERNEL32.dll", delay=None):
@@ -51,6 +53,68 @@ class PeImportTests(unittest.TestCase):
         self.path.write_bytes(fake_pe(b"..\\EVIL.dll"))
         with self.assertRaisesRegex(Denied,"unsafe_import_library_name"):
             pe_imports(self.path)
+
+    def _tree(self, imported: bytes, include_python: bool):
+        root = Path(self.tmp.name)
+        binpath = root / "resources" / "debugger" / "bin"
+        binpath.mkdir(parents=True)
+        debugger = binpath / "lldb-dap.exe"
+        debugger.write_bytes(fake_pe(imported))
+        notice = root / "resources" / "third-party-notices" / "000-000.txt"
+        notice.parent.mkdir(parents=True)
+        notice.write_text("Test notice fixture only", encoding="utf-8")
+        records = []
+        for i in range(4):
+            item = debugger if i == 0 else root / f"test-{i}.exe"
+            if i != 0:
+                item.write_bytes(fake_pe())
+            records.append({
+                "destination": item.relative_to(root).as_posix(),
+                "sha256": hashlib.sha256(item.read_bytes()).hexdigest(),
+                "license": "Apache-2.0",
+                "notices": [{"path": notice.relative_to(root).as_posix(),
+                              "sha256": hashlib.sha256(notice.read_bytes()).hexdigest()}],
+            })
+        if include_python:
+            py = binpath / "python310.dll"
+            py.write_bytes(fake_pe())
+            records.append({
+                "destination": py.relative_to(root).as_posix(),
+                "sha256": hashlib.sha256(py.read_bytes()).hexdigest(),
+                "license": "PSF-2.0",
+                "notices": [records[0]["notices"][0]],
+            })
+        receipt = root / "resources" / "wo7-staged-tree.json"
+        receipt.write_text(json.dumps({"schema": "lu.ide.wo7.staged-tree.v1", "files": records}), encoding="utf-8")
+        return root
+
+    def test_python310_present_but_unreviewed_is_denied(self):
+        root = self._tree(b"python310.dll", include_python=False)
+        py = root / "resources" / "debugger" / "bin" / "python310.dll"
+        py.write_bytes(fake_pe())
+        with self.assertRaisesRegex(Denied, "unreviewed_private_import"):
+            audit_staged_pe(root)
+
+    def test_python310_reviewed_and_pinned_private_import_closes(self):
+        root = self._tree(b"python310.dll", include_python=True)
+        observed = audit_staged_pe(root)
+        self.assertTrue(observed["fullReviewedPrivateDllChain"])
+        self.assertFalse(observed["releaseAccepted"])
+        self.assertTrue(observed["dynamicImportAuditStillRequired"])
+
+    def test_transitive_library_digest_drift_is_denied(self):
+        root = self._tree(b"python310.dll", include_python=True)
+        py = root / "resources" / "debugger" / "bin" / "python310.dll"
+        py.write_bytes(fake_pe(b"USER32.dll"))
+        with self.assertRaisesRegex(Denied, "staged_binary_digest_drift"):
+            audit_staged_pe(root)
+
+    def test_unreviewed_notice_changes_are_denied(self):
+        root = self._tree(b"KERNEL32.dll", include_python=False)
+        notice = root / "resources" / "third-party-notices" / "000-000.txt"
+        notice.write_text("Modified notice", encoding="utf-8")
+        with self.assertRaisesRegex(Denied, "license_notice_digest_drift"):
+            audit_staged_pe(root)
 
     def test_truncated_directory_rejected(self):
         blob=fake_pe()
