@@ -181,7 +181,7 @@
     },
     {
       "path": "docs/LU_M2_ANSF_GOAL_CLARIFICATION_CONTINUITY_20261107.md",
-      "blob": "516cb6f819244ed339c09874e7d5cc910485d895"
+      "blob": "3f5c05bcc6a9c99155fac249e26de358609a0faf"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -517,7 +517,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "219efb801eec456f4dd463480279927e9aa7d3b1"
+      "blob": "19f27b7070236826c137d1de22d8c52a6aec9a02"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -529,7 +529,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_desktop.rs",
-      "blob": "9aab1fe58b6695491d4d04cbc2554d95cc4e33cc"
+      "blob": "3146df1e998c2e1b60c93d1f78578024c2a1d690"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
