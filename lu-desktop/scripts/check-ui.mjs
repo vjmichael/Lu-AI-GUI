@@ -46,7 +46,7 @@ const tests = [
     host.includes('LU_OBSERVE_CAPTURE_WORKER_SHA256') &&
     host.includes('observer.launch_one_shot(&chat_id,plan)') &&
     host.includes('lu_observe_capture_available,') &&
-    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly})" &&
+    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly})") &&
     ui.includes('Select window/display · capture one frame') &&
     ui.includes('Capture selected foreground app (4s)') &&
     host.includes('--lu-observe-foreground-one-shot') &&
