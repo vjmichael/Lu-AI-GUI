@@ -104,6 +104,7 @@ impl Session {
                 selected_version: BRIDGE_VERSION,
                 echoed_challenge_nonce: info.challenge_nonce.clone(),
                 responder_nonce: challenge.to_vec(),
+                responder_proof: vec![0; 32], // test-only; never a live OS peer proof
                 advertised_capabilities: allowed_capabilities.iter().copied().collect(),
             })),
         };
@@ -181,7 +182,7 @@ mod tests {
             session_id: String::new(), sequence: 0,
             body: Some(Body::Hello(BridgeHello {
                 client_surface: "lu.core".into(), minimum_version: 1,
-                maximum_version: 1, challenge_nonce: vec![17; 32],
+                maximum_version: 1, challenge_nonce: vec![17; 32], client_proof: vec![0; 32], // test-only proof
                 advertised_capabilities: vec![2, 3],
             })),
         }
