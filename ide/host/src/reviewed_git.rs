@@ -166,6 +166,11 @@ impl IdeWorkspaceRegistry {
         if index.get_path(Path::new(relative_path), 0).is_none() {
             return Err("WO9_GIT_UNTRACKED_OR_UNAPPROVED_SOURCE");
         }
+        let tracked = index.get_path(Path::new(relative_path), 0)
+            .ok_or("WO9_GIT_UNTRACKED_OR_UNAPPROVED_SOURCE")?;
+        if tracked.mode != 0o100644 && tracked.mode != 0o100755 {
+            return Err("WO9_GIT_NON_REGULAR_INDEX_MODE_DENIED");
+        }
         let bytes = read_pinned_source(self, project_id, relative_path)?;
         let head = repo.head().ok().and_then(|h| h.target())
             .ok_or("WO9_GIT_HEAD_ABSENT")?;
@@ -200,6 +205,11 @@ impl IdeWorkspaceRegistry {
         }
         let previous = index.get_path(Path::new(&expected.relative_path), 0)
             .ok_or("WO9_GIT_UNTRACKED_SOURCE")?;
+        // Never reinterpret a tracked symlink, gitlink/submodule or unusual
+        // index mode as an ordinary user-approved file during add_frombuffer.
+        if previous.mode != 0o100644 && previous.mode != 0o100755 {
+            return Err("WO9_GIT_NON_REGULAR_INDEX_MODE_DENIED");
+        }
         let bytes = read_pinned_source(self, &expected.project_id, &expected.relative_path)?;
         if bytes.len() != expected.file_size || hex_digest(&bytes) != expected.worktree_sha256 {
             return Err("WO9_GIT_SOURCE_CHANGED_AFTER_REVIEW");
