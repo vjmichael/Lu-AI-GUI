@@ -27,7 +27,7 @@ class SignedReleaseGateTests(unittest.TestCase):
             "licensesReviewed": True,
             "acceptance": {k: "approved" for k in gate.GATES},
         }
-        for kind, filename in (("installer", "installer.exe"), ("service", "service.exe")):
+        for kind, filename in (("installer", "installer.exe"), ("service", "service.exe"), ("desktop", "desktop.exe")):
             self.data[kind] = {
                 "path": filename,
                 "sha256": hashlib.sha256((self.root / filename).read_bytes()).hexdigest(),
@@ -59,7 +59,7 @@ class SignedReleaseGateTests(unittest.TestCase):
         result = self.checked()
         self.assertEqual(result["result"], "binary_preflight_only")
         self.assertFalse(result["installedAcceptancePerformed"])
-        self.assertEqual(len(result["artifacts"]), 2)
+        self.assertEqual(len(result["artifacts"]), 3)
 
     def test_metadata_cannot_bypass_actual_debugger_gate(self):
         with self.assertRaisesRegex(gate.Denied, "wo6_debugger_not_release_approved"):
