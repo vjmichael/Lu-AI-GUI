@@ -63,11 +63,12 @@ jobs:
             $fixture=Join-Path $env:RUNNER_TEMP ('lu-ide-wo8-fixture-'+$env:GITHUB_RUN_ID)
             New-Item -ItemType Directory -Path $fixture | Out-Null
             [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),"fn main() { println!(`"wo8`"); }`n")
+            $sourcePath=Join-Path $fixture 'main.rs'
+            $originalSourceHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
             & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario ProjectReadOnly -FixtureRoot $fixture
             if (!$?) { throw 'DENIED: OS UI Automation project test failed' }
-            if ((Get-FileHash -Algorithm SHA256 (Join-Path $fixture 'main.rs')).Hash -ne
-                (Get-FileHash -Algorithm SHA256 (Join-Path $fixture 'main.rs')).Hash) {
-              throw 'DENIED: project source changed unexpectedly'
+            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $originalSourceHash) {
+              throw 'DENIED: opening source in installed IDE modified disk without approval'
             }
             $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
             if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
