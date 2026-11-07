@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "68c714956291c85bbbae2a430ba6d31daead9ae5",
+  "sourceCommitBeforeLock": "c4ed0c843c6355875f545edbd6021c482d61ee33",
   "trackedFileCount": 474,
   "files": [
     {
@@ -1525,7 +1525,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/continuity.rs",
-      "blob": "77f7c00fb9cd8ea4320526a92dbf0338bb6c9e7e"
+      "blob": "a497024d4dcc9a8266c273a8e55473db3cfffa1c"
     },
     {
       "path": "src-tauri/lu-core/tests/continuity_conversation_scope.rs",
@@ -1713,7 +1713,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_linux_packages.rs",
-      "blob": "e35c88fe1d290c5ca1628295179c51db92ea79a4"
+      "blob": "ac5f6be7b8d6f5fc50b340e88dc224a5cd9725a7"
     },
     {
       "path": "src-tauri/lu-core/tests/native_office_batch_tool_authority.rs",
