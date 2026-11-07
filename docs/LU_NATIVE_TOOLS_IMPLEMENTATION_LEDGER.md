@@ -12,6 +12,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 **P06 continued implementation:** Repaired stale full-desktop source assertions that were blocking native WGC worker compilation despite up-to-date P06 UI and Guardian code; added a real rejected-capture/Guardian-release host test. Extended installed-app UIA script with optional operator-triggered consent/pause/resume/stop visual lifecycle; no unattended native dialog approval or false WGC/NSIS/semantic PASS. Re-run exact-head native CI for Windows WGC compile and desktop host/React checks; physical acceptance still OPEN.
 
+**Revocation/recovery:** Fixed a real uncertainty case where ObserveHost revoked consent but discarded session/task identity before a cancelled observation receipt was safely persisted. Native `reconcile_revoked` holds old task/worker custody, purges volatile awareness immediately, retries OS reaping and SQL terminal receipt from the watchdog/status/start paths, and prevents unconsented session renewal while cleanup is pending. Added regression for source-only recovery; interactive installed crash/restart remains OPEN.
+
 **Still outstanding:** current-head Windows WGC/desktop CI and failure repair; physical installed NSIS and native WGC/interactive UIA acceptance; generic picker source attribution, independent sensitive-area detection/redaction for meaningful image previews, real low-resource resident model lane and verified installed GUI test receipts. No P07 work. Detailed [P06 gap notes](LU_P06_OBSERVE_PRIVACY.md).
 
 ## P06 OBSERVE-PRIVACY-01 — owner-authorized privacy closeout source (2026-11-06)
