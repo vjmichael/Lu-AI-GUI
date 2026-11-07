@@ -148,6 +148,10 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
     };
     let bin = root.join("bin").join(filename);
     ensure_root_owned_tool(&bin)?;
+    #[cfg(feature = "dap-transport")]
+    if recipe == "dap_lldb_fixed" {
+        ensure_root_owned_tool(&root.join("debuggee/wo6-selftest"))?;
+    }
     native_linux_lsp_trace("root_owned_clangd_binary_verified");
     let result = audit_bundle(root)?;
     native_linux_lsp_trace("root_owned_bundle_tree_verified");
@@ -601,6 +605,9 @@ pub struct LinuxDapSession {
 impl LinuxDapSession {
     pub fn initialize(&mut self) -> Result<(), SupervisorError> {
         self.gateway.initialize()
+    }
+    pub fn launch_fixed_fixture(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.launch_fixed_fixture("/ls/debuggee/wo6-selftest")
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()
