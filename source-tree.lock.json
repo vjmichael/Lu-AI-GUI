@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c9b1648ae388be42d744215556db38472e3395d8",
+  "sourceCommitBeforeLock": "c425acfc7c8db3d02d87cad70d0fb56eb83a590c",
   "trackedFileCount": 574,
   "files": [
     {
@@ -685,7 +685,7 @@
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
-      "blob": "6a228b64bdafc717212d840ec519bb3a52cd503a"
+      "blob": "0d188a7a72f7c4147ff662e1da864b7757a65315"
     },
     {
       "path": "lu-desktop/tests/background-scheduler.test.mjs",
@@ -749,7 +749,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
-      "blob": "48195bacdf7f504f2033c8eccf8871df427e0b66"
+      "blob": "9a7b78b795e319553e39606039c033aad368b78b"
     },
     {
       "path": "lu-desktop/tests/m3-continuity-bridge.test.mjs",
