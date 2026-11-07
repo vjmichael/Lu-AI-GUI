@@ -294,6 +294,53 @@ async fn lu_model_provider_review(
         host.research.model_provider_review(&repo_id,&revision)
     ).await.map_err(|_|"Model provider review worker stopped")?
 }
+/// Reviewed P03 transfer INTENT only. The host independently fetches and
+/// checks the exact public revision and digest again before showing a real
+/// native operator confirmation. No network write or model-load follows.
+#[tauri::command]
+async fn lu_model_prepare_transfer(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    repo_id:String,revision:String,filename:String,
+    sha256:String,bytes:u64,
+)->Result<Option<lu_core::ai_operations::ReviewedModelTransferIntent>,String>{
+    let host=Arc::clone(state.inner());
+    let review_repo=repo_id.clone();
+    let review_revision=revision.clone();
+    let review=tauri::async_runtime::spawn_blocking(move||
+        host.research.model_provider_review(&review_repo,&review_revision)
+    ).await.map_err(|_|"Pinned model metadata review interrupted")??;
+    let file=review.files.iter().find(|f|
+        f.name==filename&&f.bytes==bytes&&f.sha256==sha256.to_ascii_lowercase()
+    ).ok_or("Model file metadata changed; review must restart")?;
+    let summary=format!(
+        "Review a FUTURE model transfer plan (NO download now)?\\n\\n\\
+         Repository: {}\\nImmutable revision: {}\\nFile: {}\\nSize: {} bytes\\n\\
+         Expected SHA-256: {}\\nProvider-reported license: {}\\n\\n\\
+         You must independently review the model license and access conditions.\\n\\
+         Lu will NOT install, download or load anything. P05 must separately\\n\\
+         authorize the actual transfer and verify the complete bytes.",
+        review.repo_id,review.revision,file.name,file.bytes,
+        file.sha256,review.license_label,
+    );
+    let accepted=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(summary)
+            .title("Lu — Review immutable model transfer metadata")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Review metadata only".into(),"Cancel".into(),
+            )).blocking_show()
+    ).await.map_err(|_|"Native model review unavailable")?;
+    if !accepted{return Ok(None)}
+    let candidate=lu_core::ai_operations::ProviderCandidate{
+        provider:"hugging_face",repo_id:&repo_id,revision:&revision,
+        filename:&filename,sha256:&sha256,bytes,
+        license_accepted:true,access_approved:true,
+    };
+    let intent=lu_core::ai_operations::make_reviewed_transfer_intent(
+        &candidate,&review.license_label
+    ).map_err(|_|"Provider transfer metadata was refused")?;
+    Ok(Some(intent))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeView {
@@ -6037,6 +6084,7 @@ pub fn run() {
             lu_model_backend_options,
             lu_model_provider_search,
             lu_model_provider_review,
+            lu_model_prepare_transfer,
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,
