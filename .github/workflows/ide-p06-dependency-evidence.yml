@@ -13,9 +13,10 @@ on:
       - 'ide/host/LICENSE'
       - 'ide/app/src-tauri/LICENSE'
       - 'ide/packaging/p06-reviewed-lock-graphs.json'
+      - 'ide/app/package-lock.json'
+      - 'ide/app/src-tauri/Cargo.lock'
+      - '.gitattributes'
       - 'ide/packaging/verify_p06_candidate_lock.py'
-      - 'ide/packaging/p06_emit_pinned_lock_b64.py'
-      - 'ide/packaging/test_p06_lock_export.py'
       - 'ide/packaging/test_p06_candidate_lock.py'
       - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
       - '.github/workflows/ide-p06-dependency-evidence.yml'
@@ -52,24 +53,33 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Verify review-attested locks are immutable blobs at the exact source HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+          test "$(git hash-object ide/app/src-tauri/Cargo.lock)" = "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)"
+          test "$(git hash-object ide/app/package-lock.json)" = "$(git rev-parse HEAD:ide/app/package-lock.json)"
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ${{ matrix.os }}
       - name: Reject forged native approval
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s ide/packaging -p 'test_verify_p06_acceptance_matrix.py' -v
           python ide/packaging/verify_p06_acceptance_matrix.py --matrix ide/packaging/p06-native-acceptance-matrix.json
-      - name: Generate actual npm lock without untrusted project scripts
+      - name: Restore exact committed npm graph without untrusted project scripts
         working-directory: ide/app
         shell: bash
         run: |
           set -euo pipefail
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           test -f package-lock.json
-      - name: Generate actual resolved Cargo graph
+      - name: Fetch exact committed Cargo graph without resolution drift
         shell: bash
         run: |
           set -euo pipefail
-          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
           test -f ide/app/src-tauri/Cargo.lock
       - name: Reject resolved Tauri drift and run hostile graph tests
         shell: bash
@@ -99,16 +109,9 @@ jobs:
           python ide/packaging/p06_license_triage.py --inventory ide/app/src-tauri/p06-notices/inventory.json --output ide/app/src-tauri/p06-license-review-queue.json --known-risk-policy ide/packaging/p06-known-license-risk.json
           python -m unittest discover -s ide/packaging -p 'test_verify_p06_lock_parity.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_candidate_lock.py' -v
-          python -m unittest discover -s ide/packaging -p 'test_p06_lock_export.py' -v
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ${{ matrix.os }}
           python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-cross-os-parity-receipt.json
-          echo 'P06_REVIEWED_LOCK_HASHES_ONLY_NOT_COMMITTED_LOCKS_OR_SIGNED_RELEASE'
-      - name: One-time export of reviewed public lock text for a GitHub source commit
-        if: matrix.os == 'windows-2022'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python ide/packaging/p06_emit_pinned_lock_b64.py --repo-root . --platform windows-2022
+          echo 'P06_LOCKFILES_REVIEWED_AND_SOURCE_COMMITTED_NO_SIGNED_RELEASE_APPROVAL'
       - name: Exercise locked npm and Cargo resolution without source mutation
         shell: bash
         run: |
@@ -116,7 +119,7 @@ jobs:
           (cd ide/app && npm ci --ignore-scripts --no-audit --no-fund)
           cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
           python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-locked-rerun-receipt.json
-      - name: Retain exact generated locks, upstream notices and evidence
+      - name: Retain exact source-committed locks, upstream notices and evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:

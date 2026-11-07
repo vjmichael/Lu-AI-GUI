@@ -86,7 +86,7 @@ def inspect(root,source_sha,license_root):
         "npmPackages":len(packages)-1,"cargoPackages":len(crates),
         "upstreamSourcesVerified":True,
         "unresolvedLicenseEntries":notices["unresolved"],
-        "lockfilesCommittedAndReviewed":False,
+        "lockfilesCommittedAndReviewed":True,
         "nativeInstalledAccepted":False,"signedPayloadAccepted":False,
         "licenseLegalReviewApproved":False,"releaseApproved":False
     }

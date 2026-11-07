@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""P06 cross-OS hash-pinned npm/Cargo graph; not immutable source lockfiles."""
+"""P06 cross-OS hash-pinned committed npm/Cargo graph; not release approval."""
 import argparse
 import hashlib
 import json
@@ -15,8 +15,8 @@ def verify(review,evidence,npm_raw,cargo_raw,platform):
         not HEX40.fullmatch(str(review.get("originSourceSha",""))) or
         review.get("releaseApproved") is not False or
         review.get("licenseLegalReviewApproved") is not False or
-        review.get("sourceLockfilesCommitted") is not False or
-        review.get("rawByteParity")!={"cargo":True,"npm":False} or
+        review.get("sourceLockfilesCommitted") is not True or
+        review.get("rawByteParity")!={"cargo":True,"npm":True} or
         review.get("semanticParity")!={"npm":True}):
         raise Denied("untrusted_native_lock_review")
     if platform not in ("windows-2022","ubuntu-24.04"):
@@ -26,7 +26,7 @@ def verify(review,evidence,npm_raw,cargo_raw,platform):
     if evidence.get("rustTauri")!="=2.12.5" or evidence.get("javascriptTauri")!="2.12.4":
         raise Denied("unexpected_runtime_version")
     if (evidence.get("releaseApproved") is not False or
-        evidence.get("lockfilesCommittedAndReviewed") is not False or
+        evidence.get("lockfilesCommittedAndReviewed") is not True or
         evidence.get("unresolvedLicenseEntries",0)<0 or
         evidence.get("upstreamSourcesVerified") is not True):
         raise Denied("invalid_native_evidence_promotion")
@@ -49,7 +49,7 @@ def verify(review,evidence,npm_raw,cargo_raw,platform):
             "cargoReviewedSha256":review["cargoRawSha256"],
             "npmCanonicalSha256":review["npmCanonicalJsonSha256"],
             "crossOSSemanticReviewPassed":True,
-            "sourceLockfilesCommitted":False,
+            "sourceLockfilesCommitted":True,
             "releaseApproved":False}
 def main():
     p=argparse.ArgumentParser()

@@ -30,7 +30,7 @@ class CandidateLockTests(unittest.TestCase):
     def test_matching_native_hashes_only_unsigned(self):
         a=check(self.root,"windows-2022",self.r)
         self.assertTrue(a["resolvedGraphEqualsCrossOSReview"])
-        self.assertFalse(a["sourceLockfilesCommitted"])
+        self.assertTrue(a["sourceLockfilesCommitted"])
         self.assertFalse(a["releaseApproved"])
     def test_cargo_runtime_drift_denied(self):
         self.cargo.write_bytes(self.cargo_bytes.replace(b"2.12.5",b"2.13.0",1))

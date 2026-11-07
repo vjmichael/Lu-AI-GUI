@@ -5,19 +5,27 @@
   "cargoRawSha256": "d4312b60209f89181766b60c2982fb8b199e8ed9d6be1a9dcbdcb3dd07abf6b4",
   "npmCanonicalJsonSha256": "9a61ac00a82c8f8ca57ce6e56b2e9eb355fd66a0d9af6081b199ddf0573e97de",
   "npmPlatformRawSha256": {
-    "windows-2022": "17e0b32efe2bdafee4e85663fa9bde7dfe5bd839d8d1359d1be824f91075206b",
+    "windows-2022": "3c137aede8749007c062b80e53bef0c83241b73d21e4c692ae1718882e81a316",
     "ubuntu-24.04": "3c137aede8749007c062b80e53bef0c83241b73d21e4c692ae1718882e81a316"
   },
   "cargoPackages": 500,
   "npmPackages": 62,
   "rawByteParity": {
     "cargo": true,
-    "npm": false
+    "npm": true
   },
   "semanticParity": {
     "npm": true
   },
-  "sourceLockfilesCommitted": false,
+  "sourceLockfilesCommitted": true,
   "releaseApproved": false,
-  "licenseLegalReviewApproved": false
+  "licenseLegalReviewApproved": false,
+  "sourceLockBlobSha": {
+    "cargo": "87d0045a4be1c78651f080300aba71c14dbe1f30",
+    "npm": "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+  },
+  "gitSourceTrackedPaths": [
+    "ide/app/src-tauri/Cargo.lock",
+    "ide/app/package-lock.json"
+  ]
 }

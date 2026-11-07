@@ -2,7 +2,7 @@
 """For every unsigned verification package: pin the *resolved* OS lock bytes.
 
 Reviewed hashes permit reproducible TEST dependency resolution, but do not
-imply the lockfiles were committed or approve a signed commercial release.
+imply a signed commercial release or complete legal clearance.
 """
 import argparse
 import hashlib
@@ -23,12 +23,16 @@ def check(root,platform,review=None):
     if review is None:
         review=json.loads((root/"ide/packaging/p06-reviewed-lock-graphs.json").read_text(encoding="utf-8"))
     if (review.get("schema")!="lu.ide.p06.reviewed-lock-graph.v1"
-            or review.get("sourceLockfilesCommitted") is not False
+            or review.get("sourceLockfilesCommitted") is not True
             or review.get("releaseApproved") is not False
             or review.get("licenseLegalReviewApproved") is not False
-            or review.get("rawByteParity")!={"cargo":True,"npm":False}
+            or review.get("rawByteParity")!={"cargo":True,"npm":True}
             or review.get("semanticParity")!={"npm":True}):
         raise LockDenied("unreviewed_candidate_graph_manifest")
+    if review.get("sourceLockBlobSha") != {
+        "cargo":"87d0045a4be1c78651f080300aba71c14dbe1f30",
+        "npm":"dfe4412bfacfc22ad1149f5213f4a26aa49b4067"}:
+        raise LockDenied("unknown_committed_lockfile_source_blobs")
     names={"npm":root/"ide/app/package-lock.json","cargo":root/"ide/app/src-tauri/Cargo.lock"}
     raw={}
     for k,path in names.items():
@@ -59,7 +63,7 @@ def check(root,platform,review=None):
             "npmLockSha256":sha(raw["npm"]),
             "npmSemanticSha256":sha(canonical),
             "resolvedGraphEqualsCrossOSReview":True,
-            "sourceLockfilesCommitted":False,
+            "sourceLockfilesCommitted":True,
             "signedOrLegallyApproved":False,
             "releaseApproved":False}
 

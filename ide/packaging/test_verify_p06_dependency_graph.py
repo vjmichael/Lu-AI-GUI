@@ -36,6 +36,7 @@ class GraphTests(unittest.TestCase):
         result=self.check()
         self.assertEqual(len(result["cargoLockSha256"]),64)
         self.assertFalse(result["releaseApproved"])
+        self.assertTrue(result["lockfilesCommittedAndReviewed"])
         self.assertEqual(result["unresolvedLicenseEntries"],2)
     def test_wrong_runtime_minor_denied(self):
         self.cargo.write_text(self.cargo_data("2.13.0"),encoding="utf-8")

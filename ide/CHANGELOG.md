@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 source lockfiles committed (Nov 7):** Added exact real Windows/Linux reviewed Cargo.lock (500 crates) and package-lock.json (62 npm packages) to Git source, LF-pinned with .gitattributes; removed temporary read-only lockfile log exporter; enforced npm ci/Cargo --locked source graph and hash checks. No signed/installed release approval.
+
 - **P06 commercial-license obligations audit (Nov 7):** Recorded five actual MPL-2.0 crates and two multi-licensed `r-efi` versions, requiring explicit legal/notice review without incorrectly treating an LGPL `OR` choice as mandatory. Exact-name/version metadata frozen into hostile review gate; no license or release approval inferred.
 
 - **P05 native WO9 upstream receipt verification repair (Nov 7):** Inspected exact-head Win/Linux failure receipts: WO9 Windows repeated upstream source fetch; WO9 Linux omitted it. Corrected both actual packaging jobs, added complete CI wiring regressions across six E2/WO8/WO9 jobs; real installed UI acceptance remains open.

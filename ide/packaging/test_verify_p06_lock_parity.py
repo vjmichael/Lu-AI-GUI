@@ -17,7 +17,7 @@ class ParityTests(unittest.TestCase):
         self.review["npmPlatformRawSha256"]={"windows-2022":sha(self.npm),"ubuntu-24.04":sha(self.npm)}
         self.evidence={"schema":"lu.ide.p06.resolved-dependency-evidence.v1","rustTauri":"=2.12.5",
             "javascriptTauri":"2.12.4","upstreamSourcesVerified":True,
-            "releaseApproved":False,"lockfilesCommittedAndReviewed":False,
+            "releaseApproved":False,"lockfilesCommittedAndReviewed":True,
             "unresolvedLicenseEntries":4,
             "cargoLockSha256":sha(self.cargo),"npmLockSha256":sha(self.npm),
             "cargoPackages":500,"npmPackages":62,"sourceSha":"a"*40}

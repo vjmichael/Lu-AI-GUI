@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## P06 now has source-committed, OS-reviewed dependency lockfiles (November 7)
+
+Both original CI-approved immutable Cargo.lock and npm package-lock.json bytes have been committed directly as source blobs; reviewed SHA-256 and original Git blob identities are enforced on both OSs. The P06 temporary read-only lockfile exporter is removed; source CI now runs npm ci and Cargo --locked. Native builds/GUI, 48 historic missing license notices (new evidence pending), signed release, independent license review, and protected OS acceptance remain separate release gates.
+
 ## P06 governance and dependency reproducibility starts (November 7)
 
 A separate draft P06 branch stacked on P05 now adds dual-OS actual npm/Cargo lock resolution, hashing and saved CI receipts, mandatory original upstream license fetch and complete notice archive, security tests rejecting transitive Tauri drift and release approval substitution, and a default-deny native acceptance matrix. GitHub repository rulesets query yielded [], but main branch protection GET was forbidden to the connector (403); do not infer protection disabled. Exact-head P06 CI and actual lockfile review, native/Signed/upgrade rollback, and legal approval remain open. P07/WO10 still deferred.
