@@ -115,7 +115,7 @@ fn inspect_zip(bytes:&[u8],kind:&str)->Result<(u32,&'static str),ToolFailure>{
     }
     for n in 0..zip.len(){
         let mut entry=zip.by_index(n).map_err(|_|invalid("ARTIFACT_BAD_ZIP"))?;
-        let name=entry.name().to_owned();
+        let name=entry.name().map_err(|_|invalid("ARTIFACT_UNSAFE_PACKAGE"))?.into_owned();
         if name.is_empty()||name.len()>512||name.starts_with('/')||
           name.contains('\\')||name.split('/').any(|c|c=="."||c=="..")||
           !seen.insert(name.clone()){
