@@ -40,8 +40,10 @@ mod probe {
         let parent = current
             .parent()
             .ok_or_else(|| io::Error::other("missing delegated parent"))?;
-        if parent.file_name().and_then(|v| v.to_str()) != Some("lu-ide-delegated")
-            || !parent.starts_with(&mount)
+        if !matches!(
+            parent.file_name().and_then(|v| v.to_str()),
+            Some("lu-ide-delegated" | "lu-ide-delegated.service")
+        ) || !parent.starts_with(&mount)
             || parent == mount
         {
             return Err(io::Error::other("unexpected delegated parent identity"));
@@ -58,6 +60,9 @@ mod probe {
     }
 
     fn require_controllers(parent: &Path) -> io::Result<()> {
+        if fs::read_to_string(parent.join("cgroup.type"))?.trim() != "domain" {
+            return Err(io::Error::other("delegation must be a domain cgroup"));
+        }
         let available = fs::read_to_string(parent.join("cgroup.controllers"))?;
         let enabled = fs::read_to_string(parent.join("cgroup.subtree_control"))?;
         for required in ["cpu", "memory", "pids"] {
