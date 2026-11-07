@@ -9,12 +9,14 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const bundle=resolve(import.meta.dirname,'../../out/lu-browser-candidate');
-const manifest=JSON.parse(readFileSync(join(bundle,'manifest.json'),'utf8'));
+const manifestPath=join(bundle,'manifest.json');
+const candidateTest=existsSync(manifestPath)||process.env.LU_BROWSER_REQUIRE_CANDIDATE==='1' ? test : test.skip;
+const manifest=existsSync(manifestPath)?JSON.parse(readFileSync(manifestPath,'utf8')):null;
 const browserPath=join(bundle,process.platform==='win32'?'chrome.exe':'chrome');
 const nodePath=join(bundle,process.platform==='win32'?'node.exe':'node');
 const workerPath=join(bundle,'lu_browser_worker.mjs');
 const playwrightPath=join(bundle,'node_modules/playwright/index.mjs');
-test('headed Chromium candidate starts and completes verification handoff in the same session',async()=>{
+candidateTest('headed Chromium candidate starts and completes verification handoff in the same session',async()=>{
   assert.equal(manifest.status,'candidate');
   for(const p of [browserPath,nodePath,workerPath,playwrightPath])
     assert.ok(existsSync(p),p);
