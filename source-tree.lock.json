@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7c13f4c051dff4c759a16cc7beea0f5e1c3ce945",
+  "sourceCommitBeforeLock": "5ba0ce29b8c6e7e4876ce8e60ecb919133241156",
   "trackedFileCount": 496,
   "files": [
     {
@@ -749,7 +749,7 @@
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",
-      "blob": "cfb76aef777522e8b26ea1889c78ee3eb8b9e4cd"
+      "blob": "e7d9187de60160da55bf5a9d1c2bca5abd35127e"
     },
     {
       "path": "scripts/package-observe-capture-windows.ps1",
