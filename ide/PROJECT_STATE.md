@@ -1,5 +1,18 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO10 optional Lu Core bridge work started — November 7, 2026 UTC
+
+**Scope decision:** Proceed to WO10 development; do NOT treat WO9-F native installed testing or upstream WO6–WO8 release security as complete. WO10's scope is the optional authenticated out-of-process Lu Core ↔ standalone Lu IDE integration. The standalone IDE and its project, source, Git, protected-worker and human authorization remain independently owned. Branch `ide/wo10-optional-lu-bridge-20261107` stacked on WO9 draft PR #75.
+
+**WO10-A source implemented:** new `ide/proto/lu/ide/v1/bridge.proto` with independent versioned data-only Hello/HelloAck/context/proposal/goodbye envelope; strict canonical bounded Protobuf codec `ide/host/src/bridge_wire.rs` and two-schema vendored protoc build. Protobuf transport has no absolute project root, shell command, reusable permission grant or credentials. Host unit tests reject duplicate/unknown fields, wrong version, oversized messages and wrong IDs.
+
+**WO10-B early source implemented:** host-only `bridge_policy.rs` implements deterministic peer/challenge/project/turn/capability/sequence/revocation guards, and strict `ProposalEnvelope` inner project/task parsing prior to any proposed inbox admission. OS-attested peer and native trusted consent constructors intentionally **not available in production yet**: no unauthenticated endpoint or auto-pairing. Native Windows/Linux independent CI added.
+
+**UI and status:** `ide_bridge_status` is read-only, unconditionally unpaired/disabled, and is now visible in a dedicated optional Lu connection panel. `bridge.status` is one additional typed **read-only** capability; catalog stays `connected_to_lu=false`. No live socket/model call/inference, remote user transcript import or arbitrary file/worker action exists. Existing standalone IDE remains functional. Full stage-by-stage plan is [WO10 ledger](docs/IDE_WORK_ORDER_10_OPTIONAL_LU_BRIDGE_20261107.md).
+
+**Outstanding:** WO10-C authenticated native Windows/Linux OS transport and real Lu Core peer API, D separate coding chat and model handoff, E review-only peer delivery, F installed cross-app security and crash recovery evidence. WO9-F and WO6–WO8 independent OS release gates remain unaccepted.
+
+
 ### WO9 exact-head native repair and restart ledger — November 7, 2026 UTC
 
 **PR #75 draft / WO9-D–F:** Real Linux Tauri installed compile exposed `ReviewedStageReceipt: Deserialize` missing (Rust E0277); fixed with strict deserialize. Native frontend schema inspection incorrectly counted injected `coordinator` as a WebView key; repaired. WO9 Win/Linux host Rust and React tests previously passed on exact head `16fb0ad`; newer source changes require fresh runs. Added **opt-in native-build Tauri compilation** on Windows and Ubuntu to close the prior host-only test gap. WO9-E replay security now demotes persisted completed DAG steps to `native_receipt_unverified` after host restart and requires an explicit read-only exact project/job/plan match with the protected WO6 supervisor journal to unlock dependent work. A running/crashed step is quarantined and never auto-runs. Manual signed Windows installed workflow now exercises a slow native Cargo cancellation and installed-host crash/restart with no dependent auto-run; **not real accepted yet** without reviewed signing and independent OS receipts. WO9-F real installed Win/Linux GUI tests and all signed-release gates remain OPEN. [WO9 work ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
