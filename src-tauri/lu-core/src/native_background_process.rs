@@ -39,6 +39,9 @@ struct OwnedWorker {
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
     owned:Mutex<BTreeMap<String,OwnedWorker>>,
+    // In-memory, one-use private WGC pixel transport. Never TaskStore,
+    // WebView, disk, network or model tool output. Drop scrubs raw BGRA.
+    observe_frames:Mutex<BTreeMap<String,(String,CapturedBgra)>>,
 }
 fn valid_id(s:&str)->bool{
     !s.is_empty()&&s.len()<=128
@@ -77,9 +80,18 @@ fn verified_executable(path:&Path,digest:&str)->Result<PathBuf,BackgroundProcess
 /// Worker progress stream is a deliberately tiny, bounded native protocol.
 /// The caller has already pinned the executable hash, so this is a receipt,
 /// never an authorization grant or a model-provided status claim.
-#[derive(Debug,Clone,PartialEq,Eq)]
-struct ScanProof{sha256:String,bytes:u64}
-fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->Option<ScanProof>{
+/// A bounded BGRA frame admitted only through the OS-identified, separately
+/// user-consented local WGC image mode. No generic picker source is eligible.
+pub struct CapturedBgra{
+    pub width:u32,pub height:u32,pub row_pitch:u32,pub bytes:Vec<u8>
+}
+impl Drop for CapturedBgra{
+    fn drop(&mut self){self.bytes.fill(0);}
+}
+struct ScanProof{sha256:String,bytes:u64,frame:Option<CapturedBgra>}
+fn read_worker_progress(
+    pipe:impl Read,store:&TaskStore,task_id:&str,allow_local_image:bool
+)->Option<ScanProof>{
     let mut input=BufReader::new(pipe);
     let mut line=Vec::with_capacity(96);
     let mut final_result=None;
@@ -91,7 +103,10 @@ fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->Option<Sc
         for _ in 0..128{
             let mut byte=[0u8;1];
             match input.read(&mut byte){
-                Ok(0)=>return final_result,
+                Ok(0)=>return if allow_local_image
+                    &&final_result.as_ref().is_some_and(|p:&ScanProof|p.frame.is_none()){
+                    None
+                }else{final_result},
                 Err(_)=>return None,
                 Ok(_)=>{
                     if byte[0]==b'\n'{break;}
@@ -124,14 +139,52 @@ fn read_worker_progress(pipe:impl Read,store:&TaskStore,task_id:&str)->Option<Sc
             }
             if store.checkpoint(task_id,100,&format!("SHA-256: {digest}"),&[])
                 .is_err(){return None;}
-            final_result=Some(ScanProof{sha256:digest.into(),bytes:last_bytes});
+            final_result=Some(ScanProof{
+                sha256:digest.into(),bytes:last_bytes,frame:None,
+            });
+        }else if let Some(meta)=text.strip_prefix("B\t"){
+            // A separate WGC OS-reviewed image mode may append ONE bounded
+            // binary BGRA payload after the ordinary fully-blanked receipt.
+            // This never calls TaskStore.checkpoint with raw frame bytes.
+            if !allow_local_image ||final_result.as_ref().is_none_or(|v|v.frame.is_some()){
+                return None;
+            }
+            let fields:Vec<_>=meta.split('\t').collect();
+            if fields.len()!=3{return None;}
+            let width=fields[0].parse::<u32>().ok()?;
+            let height=fields[1].parse::<u32>().ok()?;
+            let raw_sha=fields[2];
+            if width==0||height==0||width>1280||height>720||
+                raw_sha.len()!=64||!raw_sha.bytes().all(|b|
+                    b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
+                return None;
+            }
+            let pitch=width.checked_mul(4)?;
+            let size=(pitch as usize).checked_mul(height as usize)?;
+            if size>1280*720*4{return None;}
+            let mut pixels=vec![0u8;size];
+            if input.read_exact(&mut pixels).is_err(){
+                pixels.fill(0);
+                return None;
+            }
+            let actual=format!("{:x}",Sha256::digest(&pixels));
+            if actual!=raw_sha{
+                pixels.fill(0);
+                return None;
+            }
+            final_result.as_mut()?.frame=Some(CapturedBgra{
+                width,height,row_pitch:pitch,bytes:pixels,
+            });
         }else{return None;}
     }
 }
 
 impl BackgroundProcessSupervisor {
     pub fn new(store:Arc<TaskStore>)->Self{
-        Self{store,owned:Mutex::new(BTreeMap::new())}
+        Self{
+            store,owned:Mutex::new(BTreeMap::new()),
+            observe_frames:Mutex::new(BTreeMap::new()),
+        }
     }
     /// Host-only admission. The caller must obtain the user's task grant
     /// independently and build this plan from a trusted executable catalog.
@@ -143,6 +196,14 @@ impl BackgroundProcessSupervisor {
           ||plan.args.len()>64||plan.args.iter().any(|arg|
                arg.to_string_lossy().len()>4096
                ||arg.to_string_lossy().contains('\0')){
+            return Err(BackgroundProcessError::InvalidPlan);
+        }
+        let allow_local_image=plan.args.first().and_then(|arg|arg.to_str())
+            .is_some_and(|mode|matches!(mode,
+                "--lu-observe-foreground-local-image-one-shot"
+                |"--lu-observe-primary-monitor-local-image-one-shot"));
+        if allow_local_image&&(!plan.progress_protocol||plan.args.len()!=2
+            ||plan.max_runtime_seconds!=Some(90)){
             return Err(BackgroundProcessError::InvalidPlan);
         }
         let executable=verified_executable(&plan.executable,&plan.expected_sha256)?;
@@ -208,7 +269,9 @@ impl BackgroundProcessSupervisor {
         if plan.args.first().and_then(|s|s.to_str()).is_some_and(|mode|
             matches!(mode,
                 "--lu-observe-one-shot"|"--lu-observe-foreground-one-shot"
-                |"--lu-observe-primary-monitor-one-shot"))
+                |"--lu-observe-primary-monitor-one-shot"
+                |"--lu-observe-foreground-local-image-one-shot"
+                |"--lu-observe-primary-monitor-local-image-one-shot"))
             &&job.set_memory_limit(512*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
@@ -246,7 +309,7 @@ impl BackgroundProcessSupervisor {
             let store=Arc::clone(&self.store);
             let task_id=plan.task_id.clone();
             let reader=std::thread::spawn(move||
-                read_worker_progress(pipe,&store,&task_id)
+                read_worker_progress(pipe,&store,&task_id,allow_local_image)
             );
             workers.get_mut(&plan.task_id)
                 .expect("just registered running worker")
@@ -278,20 +341,56 @@ impl BackgroundProcessSupervisor {
             #[cfg(windows)]
             drop(owner.job.take()); // Close Job and any inherited stdout handles.
             let had_reader=owner.progress_reader.is_some();
-            let proof=owner.progress_reader.take().and_then(|handle|handle.join().ok()).flatten();
-            drop(owner); // Release Windows Job handle before terminal receipt.
+            let mut proof=owner.progress_reader.take().and_then(|handle|handle.join().ok()).flatten();
+            let workspace=owner.workspace_id.clone();
+            drop(owner); // OS process and inherited stdout are now reaped.
             let result=match outcome{
                 Some(true) if !had_reader=>self.store.complete(&id),
                 Some(true) if proof.is_some()=>{
-                    let p=proof.expect("checked verified scan proof");
+                    let p=proof.as_ref().expect("checked verified proof");
                     self.store.complete_scan_with_receipt(&id,&p.sha256,p.bytes)
                 },
                 Some(_)=>self.store.fail(&id),
                 None=>self.store.timed_out(&id),
             };
             result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            if matches!(outcome,Some(true)){
+                if let Some(frame)=proof.as_mut().and_then(|p|p.frame.take()){
+                    let mut pending=self.observe_frames.lock()
+                        .map_err(|_|BackgroundProcessError::Poisoned)?;
+                    if pending.len()<4{
+                        pending.insert(id.clone(),(workspace,frame));
+                    }
+                    // If all four slots are occupied, drop/zero the frame.
+                }
+            }
         }
         Ok(count)
+    }
+    /// Host-only, one-use, chat-owned local WGC frame retrieval. The caller
+    /// MUST verify active Observe consent, keep the image tainted and admit
+    /// its bytes with native_observe_image_admission. No model/tool API has
+    /// access to this map.
+    pub fn take_local_observe_frame(
+        &self,task_id:&str,workspace_id:&str
+    )->Result<Option<CapturedBgra>,BackgroundProcessError>{
+        let mut frames=self.observe_frames.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        if let Some((owner,_))=frames.get(task_id){
+            if owner!=workspace_id{return Err(BackgroundProcessError::WrongWorkspace);}
+        }
+        Ok(frames.remove(task_id).map(|(_,frame)|frame))
+    }
+    pub fn discard_local_observe_frame(
+        &self,task_id:&str,workspace_id:&str
+    )->Result<(),BackgroundProcessError>{
+        let mut frames=self.observe_frames.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        if let Some((owner,_))=frames.get(task_id){
+            if owner!=workspace_id{return Err(BackgroundProcessError::WrongWorkspace);}
+        }
+        frames.remove(task_id);
+        Ok(())
     }
     /// A cancel never targets a model-selected PID. It only affects a worker
     /// which remains owned by this manager and matches the host workspace.
@@ -364,7 +463,7 @@ mod tests{
         store.start("media123").unwrap();
         let digest="a".repeat(64);
         let frames=format!("P\t0\t20\nP\t10\t20\nP\t20\t20\nD\t{digest}\n");
-        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123").is_some());
+        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",false).is_some());
         let record=store.get("media123").unwrap().unwrap();
         assert_eq!(record.progress,100);
         assert_eq!(record.detail,format!("SHA-256: {digest}"));
@@ -388,9 +487,31 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create("t",Some("w"),None).unwrap();
             store.start("t").unwrap();
-            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t").is_none());
+            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",false).is_none());
             assert!(store.get("t").unwrap().unwrap().progress<100);
         }
+    }
+    #[test]
+    fn native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite(){
+        use std::io::Cursor;
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("obs-frame-1",Some("c-main"),None).unwrap();
+        store.start("obs-frame-1").unwrap();
+        let digest="a".repeat(64);
+        let bgra=vec![42u8;8]; // two BGRA pixels, 2x1
+        let hash=format!("{:x}",Sha256::digest(&bgra));
+        let mut message=format!("P\t1\t1\nD\t{digest}\nB\t2\t1\t{hash}\n").into_bytes();
+        message.extend_from_slice(&bgra);
+        let frame=read_worker_progress(Cursor::new(message.clone()),&store,
+            "obs-frame-1",true).unwrap().frame.unwrap();
+        assert_eq!((frame.width,frame.height,frame.row_pitch),(2,1,8));
+        assert_eq!(frame.bytes,bgra);
+        let record=store.get("obs-frame-1").unwrap().unwrap();
+        assert_eq!(record.detail,format!("SHA-256: {digest}"));
+        // Without explicit host-owned image mode, even an otherwise valid
+        // binary payload MUST be rejected.
+        assert!(read_worker_progress(Cursor::new(message),&store,
+            "obs-frame-1",false).is_none());
     }
     #[test]
     fn unreviewed_executable_never_creates_a_job(){

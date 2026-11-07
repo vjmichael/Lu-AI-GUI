@@ -358,3 +358,20 @@ test('P06 native local WGC image adapter enforces consent, PNG bounds and tainte
   assert.match(bridge,/MAX_VISUAL_HEIGHT:u32=720/);
   assert.match(workflow,/native_observe_image_admission::tests/);
 });
+
+test('P06 host-owned WGC stdout BGRA one-use pipe does not persist image bytes or enable arbitrary workers',()=>{
+  const src=read('../../src-tauri/lu-core/src/native_background_process.rs');
+  const workflow=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  assert.match(src,/pub struct CapturedBgra/);
+  assert.match(src,/fn read_worker_progress\(/);
+  assert.match(src,/allow_local_image:bool/);
+  assert.match(src,/if !allow_local_image/);
+  assert.match(src,/input\.read_exact\(&mut pixels\)/);
+  assert.match(src,/Sha256::digest\(&pixels\)/);
+  assert.match(src,/pub fn take_local_observe_frame/);
+  assert.match(src,/pub fn discard_local_observe_frame/);
+  assert.match(src,/impl Drop for CapturedBgra/);
+  assert.match(src,/self\.bytes\.fill\(0\)/);
+  assert.match(src,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
+  assert.match(workflow,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
+});
