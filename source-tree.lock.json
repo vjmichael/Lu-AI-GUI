@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "89ec00f2de34f82fb4c62a217e988a257f5e22da",
+  "sourceCommitBeforeLock": "c2ebc43f8cfa05e0c72da9e553e37c1c705c2f0f",
   "trackedFileCount": 486,
   "files": [
     {
@@ -617,7 +617,7 @@
     },
     {
       "path": "lu-desktop/tests/reader-desktop.test.mjs",
-      "blob": "cf86bf9f0adab76100896610a8370945d040a5b1"
+      "blob": "137868a4e377486e3e90133f36ca861b2770d2b2"
     },
     {
       "path": "lu-desktop/tests/research-citation-enforcement.test.mjs",
