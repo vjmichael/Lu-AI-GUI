@@ -82,6 +82,9 @@ function App() {
   const [buildCancelBusy, setBuildCancelBusy] = useState(false);
   const [buildResult, setBuildResult] = useState(null);
   const buildStatusRequest = useRef(0);
+  const [debugStatus, setDebugStatus] = useState(null);
+  const [debugBusy, setDebugBusy] = useState(false);
+  const [debugResult, setDebugResult] = useState(null);
   const [reviewIntentId, setReviewIntentId] = useState(null);
   const intentRequest = useRef(0);
   const [contextBusy, setContextBusy] = useState(false);
@@ -156,6 +159,9 @@ function App() {
     setBuildResult(null);
     setBuildBusy(false);
     setBuildCancelBusy(false);
+    setDebugStatus(null);
+    setDebugBusy(false);
+    setDebugResult(null);
     setGitStatus(null);
     setGithubComparison(null);
     exactCiRequest.current += 1;
@@ -212,6 +218,16 @@ function App() {
     if (!isJobs || !projectId) return;
     let alive = true;
     async function update() {
+      try {
+        const debug = await invoke('ide_debug_status', { projectId });
+        if (alive && activeProjectIdRef.current === projectId &&
+            debug && typeof debug.ready === 'boolean')
+          setDebugStatus(debug);
+      } catch {
+        if (alive && activeProjectIdRef.current === projectId)
+          setDebugStatus({ ready:false, code:'DEBUG_HOST_UNAVAILABLE',
+            description:'Protected debugger status unavailable', current:null, last:null });
+      }
       try {
         const value = await invoke('ide_build_status', { projectId });
         if (!alive || activeProjectIdRef.current !== projectId) return;
@@ -570,6 +586,45 @@ function App() {
     } finally {
       setBuildBusy(false);
       await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function runProtectedDebuggerFixture() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || !debugStatus?.ready || !!debugStatus.current || debugBusy) return;
+    setDebugBusy(true);
+    setProblem('');
+    setDebugResult(null);
+    try {
+      const value = await invoke('ide_debug_run_fixture', { projectId });
+      if (activeProjectIdRef.current !== projectId) return;
+      if (!value || value.projectId !== projectId ||
+          value.target !== 'fixed_installer_selftest_only_not_project_debugger')
+        throw Error('DEBUG_RESULT_SCOPE_DENIED');
+      setDebugResult(value);
+      setHint('The fixed debugger self-test returned a native stop/stack and cleanup receipt.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Protected debugger self-test denied or failed: ' + String(error));
+    } finally {
+      setDebugBusy(false);
+      const current = activeProjectIdRef.current;
+      if (current === projectId) {
+        invoke('ide_debug_status', { projectId }).then(setDebugStatus).catch(() => {});
+      }
+    }
+  }
+
+  async function cancelProtectedDebugger() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || debugStatus?.current?.projectId !== projectId) return;
+    try {
+      await invoke('ide_debug_cancel', {
+        projectId, jobId: debugStatus.current.jobId || null
+      });
+      setHint('Debugger cancellation requested; OS process tree must be verified empty.');
+    } catch (error) {
+      setProblem('Debugger cancellation denied: ' + String(error));
     }
   }
 
@@ -1425,6 +1480,39 @@ function App() {
                 </div>)}
               {buildStatus?.recent?.length > 0 && <p>Recent native worker receipts:
                 {buildStatus.recent.length}. These results do not substitute for installed-app tests.</p>}
+            </div>
+            <div className="continuityDocument jobIntentComposer" aria-label="Protected native debugger self-test">
+              <h3>Protected debugger (LLDB-DAP)</h3>
+              <p>Only a reviewed, installer-pinned fixed debuggee can be launched for native
+                stopped-thread/stack acceptance. Arbitrary project executables, process attach,
+                terminal commands, expressions and debugger script execution are not available.</p>
+              <p>Debugger: <strong>{debugStatus?.ready
+                ? 'Signed fixture bundle verified; OS containment checked per run'
+                : (debugStatus?.code || 'Checking approved debugger assets…')}</strong></p>
+              <p>{debugStatus?.description || 'An unpinned adapter cannot execute.'}</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || !debugStatus?.ready || !!debugStatus.current || debugBusy}
+                onClick={() => runProtectedDebuggerFixture()}>
+                {debugBusy ? 'Inspecting fixed native debuggee…' : 'Run protected debugger self-test'}
+              </button>
+              {debugStatus?.current?.projectId === activeProject?.projectId && <>
+                <p role="status">Active debug session: {debugStatus.current.jobId || 'preflight'}
+                  {debugStatus.current.cancellationRequested ? ' · cancelling' : ''}</p>
+                <button type="button" className="ghostBtn"
+                  disabled={debugStatus.current.cancellationRequested}
+                  onClick={() => cancelProtectedDebugger()}>
+                  Request debugger cancellation
+                </button>
+              </>}
+              {debugResult?.projectId === activeProject?.projectId && <div role="status">
+                <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
+                <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
+                  {debugResult.threadsResponseObserved ? 'observed' : 'not proven'} · Stack:
+                  {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>
+                <p>Kernel tree cleanup: {debugResult.verifiedOsTreeReleaseByWorker
+                  ? 'reported by protected supervisor' : 'not verified'}.</p>
+                <p>Installed/debugger project release acceptance: <strong>Not established.</strong></p>
+              </div>}
             </div>
             <p className="capabilityNotice"><strong>Historical D1 intents below are non-executing.</strong>
               Reviewing or cancelling an intent never issues a worker grant. A protected job
