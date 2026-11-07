@@ -187,13 +187,48 @@ def _native_chooser_still_open():
     return False
 
 
+def _select_real_fixture_directory():
+    # SELECT_FOLDER accepts a *selected* directory, not necessarily the
+    # directory currently visible. Navigate to its parent via GTK's native
+    # location entry, then select the exact ephemeral fixture child.
+    exact=0
+    for node in elements():
+        try:
+            if (node.name or "").strip() != ROOT.name or not _native_dialog_ancestor(node):
+                continue
+            role=(node.getRoleName() or "").casefold()
+            if not any(kind in role for kind in ("row", "cell", "icon", "list item", "text", "label")):
+                continue
+            exact+=1
+            try:
+                if node.queryComponent().grabFocus():
+                    key("space")
+                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",flush=True)
+                    return
+            except Exception:
+                pass
+            try:
+                parent=node.parent
+                index=node.getIndexInParent()
+                if parent is not None and index>=0 and parent.querySelection().selectChild(index):
+                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",flush=True)
+                    return
+            except Exception:
+                pass
+        except Exception:
+            continue
+    print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES="+str(exact),flush=True)
+    deny("native_fixture_directory_not_selected")
+
+
 def select_native_folder():
     activate("+ Open folder")
     time.sleep(1)
     key("ctrl+l")
-    type_text(str(ROOT))
+    type_text(str(ROOT.parent))
     key("Return")
     time.sleep(1)
+    _select_real_fixture_directory()
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS
