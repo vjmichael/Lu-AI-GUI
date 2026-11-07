@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "74ad88d75299304c6621522babe700c912704dde",
+  "sourceCommitBeforeLock": "52a55e48997549ea9294e34b595faff857e5abc2",
   "trackedFileCount": 495,
   "files": [
     {
@@ -421,7 +421,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "54d8e4d862ed61e49a19c124688e412506c51a31"
+      "blob": "9b2b8dd6120cf163c667466b4c75a0cb3162638b"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -477,7 +477,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
-      "blob": "6f36e5e4fd02b2756bdbe3e6316d5a2835d353c3"
+      "blob": "84942714035ea7bf4ea0054b2e9a9d394de31caa"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
