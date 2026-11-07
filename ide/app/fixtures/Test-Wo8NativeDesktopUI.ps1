@@ -386,7 +386,7 @@ try {
   } else {
     if (!$FixtureRoot) { Deny 'missing_fixture_root' }
     $fixed=[IO.Path]::GetFullPath($FixtureRoot)
-    $temporary=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\\')+'\\'
+    $temporary=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')+'\'
     if (!$fixed.StartsWith($temporary,[StringComparison]::OrdinalIgnoreCase) -or
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
