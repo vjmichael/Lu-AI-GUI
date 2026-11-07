@@ -689,7 +689,7 @@
     },
     {
       "path": "lu-desktop/tests/m2-ansf-memory.test.mjs",
-      "blob": "33d716479bd2c3597d1f004422d48e78f6634e94"
+      "blob": "062cf3dc57c6e3a00a45e1e6cdb5bdd9d2b5b578"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
