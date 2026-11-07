@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e27057acf946e9c768a8e545c183b161c9292c35",
-  "trackedFileCount": 505,
+  "sourceCommitBeforeLock": "f104a6f63dee0160e8e5a5aa2f658a06066ec972",
+  "trackedFileCount": 506,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "05ea99d3ba92018cd729009895bd6fea85c2bdb0"
+      "blob": "8f7805fb93ab2d4a619264d65f65c8d0d5cbdc15"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "59121ff2ea90fa6c0a98ad0dbaff5f403b9c1cf6"
+      "blob": "1d5946ba97bfe743904fb1f443275261ff5de214"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "5e23683781dc77a481072d64b41b77072176c5e7"
+      "blob": "1c4e06b8605534d2427770acd3d3f1342c778b91"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -193,7 +193,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "dc4e21b762906e256a6383cc9438827376e3d917"
+      "blob": "ad9f58b64581af703e037d2eca9951b6dfd54881"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -437,7 +437,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "df620a4666ac7ad214aab4605b5f7fe3bf6ec858"
+      "blob": "8af0219a1f0670b54bc36fb19e455f93f0c5d1a4"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -469,7 +469,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "d05eeb4b26bd6d625bd7af5c3d7bfe6fc4d44f26"
+      "blob": "6b637fa8b91b4b5a10a00459c10cffa7e694e1fd"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "fc25ab0b6af174377398425cdd5a15fdecb9aac6"
+      "blob": "fdc0f738542ed6139945986b083eaec50d2a9bee"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -753,7 +753,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "c794bf747b39743045d7beb3959e27db69bca04c"
+      "blob": "db3a81e110c4a28957d2e18641c8112290af0c4b"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -794,6 +794,10 @@
     {
       "path": "scripts/stage-research-windows.ps1",
       "blob": "d207eba4ea560a02718753d91f20f1ffa805988c"
+    },
+    {
+      "path": "scripts/verify-observe-installed-windows.ps1",
+      "blob": "1efeb83f49703076430562a80892a832f7d2a7d8"
     },
     {
       "path": "scripts/verify-source-tree.mjs",
@@ -1181,7 +1185,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "1ba0c7bf0437ce9f4eb2a3cce81136c246d0abdd"
+      "blob": "99bdb9dbb159bb0f15a552a3701702ea9399ee60"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
@@ -1981,11 +1985,11 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/Cargo.toml",
-      "blob": "b714ecf8b1d57a9ee64a5e935424fb136463dae9"
+      "blob": "75de5ee855f425a657261ba7544b0e638c16d82d"
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "f2fac08306e5c123fd9d0a9ed02e2d1b362937e9"
+      "blob": "a2bef54d3dc3636d6e9d827d6745ed616f996a0c"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
