@@ -222,13 +222,21 @@ def _select_real_fixture_directory():
 
 
 def select_native_folder():
+    # The former parent-path chooser test saw zero AT-SPI rows for the child.
+    # GTK's native Ctrl+L location entry accepts an absolute path to the
+    # actual directory. Stay inside GTK and require a real OS dialog action.
+    try:
+        accessible(ROOT.name, seconds=1)
+    except RuntimeError:
+        pass
+    else:
+        deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
     key("ctrl+l")
-    type_text(str(ROOT.parent))
+    type_text(str(ROOT))
     key("Return")
-    time.sleep(1)
-    _select_real_fixture_directory()
+    time.sleep(1.4)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS

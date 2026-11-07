@@ -61,6 +61,8 @@ public static class P04NativeWebViewWindows {
   public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")]
   public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
   public static IntPtr[] RendererHandles(IntPtr top) {
     var results = new List<IntPtr>();
     Enumeration callback = (hwnd, data) => {
@@ -392,29 +394,69 @@ try {
       Deny 'non_disposable_or_missing_fixture'
     }
     if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
-      # Standard Windows folder dialog address navigation; real desktop input.
+      # Drive the actual Windows native folder chooser; never invoke Tauri IPC.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
       [System.Windows.Forms.SendKeys]::SendWait($fixed)
       [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-      Start-Sleep -Seconds 2
-      # The Windows directory chooser's confirmation label is OS-version dependent.
-      $button=$null
-      foreach ($name in @('Select Folder','Choose Folder','Open','Select')) {
-      try {
-        $desktop=[System.Windows.Automation.AutomationElement]::RootElement
-        $buttons=$desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-          ([System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            [System.Windows.Automation.ControlType]::Button)))
-        foreach($entry in $buttons) {
-          if ($entry.Current.Name -eq $name -and $entry.Current.IsEnabled) { $button=$entry; break }
+      Start-Sleep -Milliseconds 900
+      # Windows IFileDialog can itself accept a typed absolute directory.
+      # Only accept that path if the exact unique fixture is now visible
+      # through the installed WebView's REAL OS UI Automation provider.
+      $leaf=Split-Path $fixed -Leaf
+      $registered=$false
+      foreach ($nativeRoot in @(NativeAccessibilityRoots)) {
+        try {
+          $nodes=$nativeRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+              [System.Windows.Automation.Condition]::TrueCondition)
+          foreach ($node in $nodes) {
+            if ([string]$node.Current.Name -eq $leaf) { $registered=$true; break }
+          }
+          if ($registered) { break }
+        } catch {}
+      }
+      if ($registered) {
+        Write-Host 'WO8_NATIVE_WINDOWS_PICKER=path_accepted_by_installed_ui'
+      } else {
+        # The chooser may remain open with OS/version-specific caption.
+        # Restrict every click to a native modal owned by THIS installed
+        # Tauri process or by an HWND whose GW_OWNER is its main window.
+        # Never click a matching button in a foreign window.
+        $accepted=$false
+        $until=(Get-Date).AddSeconds(16)
+        while (!$accepted -and (Get-Date) -lt $until) {
+          $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+          $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+              [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::Window))
+          foreach ($dialog in $windows) {
+            try {
+              $hwnd=[IntPtr]::new([int64]$dialog.Current.NativeWindowHandle)
+              if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) { continue }
+              $trusted=($dialog.Current.ProcessId -eq $proc.Id -or
+                [P04NativeWebViewWindows]::GetWindow($hwnd,4) -eq $proc.MainWindowHandle)
+              if (!$trusted) { continue }
+              $buttons=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                [System.Windows.Automation.PropertyCondition]::new(
+                  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                  [System.Windows.Automation.ControlType]::Button))
+              foreach ($button in $buttons) {
+                if ($button.Current.Name -in @('Select Folder','Choose Folder','Open','Select','OK') -and
+                    $button.Current.IsEnabled) {
+                  $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                  $accepted=$true
+                  break
+                }
+              }
+              if ($accepted) { break }
+            } catch {}
+          }
+          if (!$accepted) { Start-Sleep -Milliseconds 350 }
         }
-        if ($button) { break }
-      } catch {}
-    }
-      if (!$button) { Deny 'native_picker_confirmation_not_found' }
-      $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        if (!$accepted) { Deny 'native_picker_confirmation_not_found_in_owned_os_dialog' }
+        Write-Host 'WO8_NATIVE_WINDOWS_PICKER=real_owned_native_dialog_invoked'
+      }
     }
     Require 'Registered projects'
     Require (Split-Path $fixed -Leaf)
