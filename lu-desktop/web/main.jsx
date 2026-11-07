@@ -37,9 +37,12 @@ function App() {
   const [chats, setChats] = useState([]);
   const [folders, setFolders] = useState([]);
   const [chatId, setChatId] = useState(null);
+  const activeChatRef=useRef(null);
+  activeChatRef.current=chatId;
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
+  const [captureLocalTaskId,setCaptureLocalTaskId]=useState(null);
   const [imageViewer,setImageViewer] = useState(null);
   const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500',amount:'0',sigma:'2',threshold:'3'});
   const [imagePlan,setImagePlan]=useState({chatId:null,imageRef:null,steps:[],redo:[]});
@@ -972,12 +975,35 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setImageExportBusy(false);}
   }
-  async function observeCaptureOneShot(foregroundOnly=false,primaryDisplay=false){
+  async function observeCaptureOneShot(foregroundOnly=false,primaryDisplay=false,localImage=false){
     if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
     setCaptureStarting(true);
     try{
-      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay});
-      if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
+      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay,localImage});
+      if(id){
+        setCaptureTaskId(id);
+        setCaptureLocalTaskId(localImage?id:null);
+        setCaptureReceipt(null);
+        setBackgroundPaneOpen(true);
+      }
+    }catch(e){setError(String(e));}
+    finally{setCaptureStarting(false);}
+  }
+  async function attachLocalObservedFrame(){
+    if(!chatId||!captureTaskId||captureLocalTaskId!==captureTaskId
+       ||observeView.mode!=='active'||captureStarting)return;
+    const activeChat=chatId;
+    setCaptureStarting(true);
+    try{
+      const image=await invoke('lu_observe_capture_local_image',{chatId:activeChat});
+      if(!image)throw new Error('No completed local frame available; inspect the native receipt first.');
+      if(activeChatRef.current!==activeChat){
+        await invoke('lu_release_image',{imageRef:image.imageRef});
+        return;
+      }
+      setImages(prev=>prev.some(p=>p.imageRef===image.imageRef)?prev:[...prev,image]);
+      setCaptureLocalTaskId(null);
+      setActivity('Approved observed frame attached locally. Use the current multimodal GGUF to ask about its visible content.');
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
   }
@@ -1016,7 +1042,7 @@ function App() {
       .then(v=>{
         setObserveView(v);
         if(action==='pause'||action==='stop'){
-          setCaptureTaskId(null);setCaptureReceipt(null);
+          setCaptureTaskId(null);setCaptureReceipt(null);setCaptureLocalTaskId(null);
         }
         setError('');
       })
@@ -2764,6 +2790,14 @@ function App() {
                   onClick={()=>observeCaptureOneShot(false)}>
                   Select window/display · capture one frame
                 </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(true,false,true)}>
+                  Capture foreground app for local GGUF image
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false,true,true)}>
+                  Capture primary display for local GGUF image
+                </button>
               </>}
             {observeView.mode!=='off' &&
               <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
@@ -2777,10 +2811,21 @@ function App() {
             <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
           {captureTaskId && <div aria-label="Native one-shot capture evidence">
             <small role="status">One-shot WGC task: {captureTaskId}.
-              Raw pixels are neither retained nor supplied to the model.</small>
+              Receipts are fully redacted. An explicitly approved local-image
+              capture can temporarily hold one bounded frame in native RAM;
+              it has no network destination and requires a second action to attach.</small>
             <button type="button" onClick={()=>void reviewCaptureReceipt()}>
               Inspect native frame receipt
             </button>
+            {captureLocalTaskId===captureTaskId
+              &&captureReceipt?.chatId===chatId
+              &&captureReceipt.frameObserved
+              &&captureReceipt.sourceIdentityAttested
+              &&observeView.mode==='active' &&
+              <button type="button" disabled={captureStarting}
+                onClick={()=>void attachLocalObservedFrame()}>
+                Attach approved frame to this local multimodal chat
+              </button>}
             {captureReceipt?.chatId===chatId&&
               <small>Capture state: {captureReceipt.state}.
                 {captureReceipt.frameObserved?' WGC frame observed and blanked.':''}

@@ -443,6 +443,9 @@ struct DesktopState {
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
+    /// Opaque image refs derived from user-approved OS observation are
+    /// permanently tainted while registered, and remain chat-bound.
+    observed_image_owners: Mutex<HashMap<String,String>>,
     generation_queue: Arc<GenerationQueue>,
     load_trace: Arc<Mutex<LoadTrace>>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
@@ -888,6 +891,7 @@ impl DesktopState {
             read_approval_ledger: approvals,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
+            observed_image_owners: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
             load_trace,
             supervisor: Arc::new(supervisor),
@@ -1125,6 +1129,41 @@ fn lu_ingest_image_data_url(
     register_image(state.inner(), pinned)
 }
 
+/// Atomically register one admitted OBSERVE_LEARN PNG with the same locks as
+/// ordinary image refs, so no consumer can see it before its taint is bound.
+fn register_observed_local_image(
+    state:&Arc<DesktopState>,chat_id:&str,
+    observed:lu_core::native_observe_image_admission::LocalObservedImage
+)->Result<ImageView,String>{
+    use lu_core::native_observe_egress::{DataProvenance,Destination};
+    if observed.provenance!=DataProvenance::OBSERVE_LEARN||
+        observed.provenance.gate(Destination::LocalInference).is_err()||
+        observed.provenance.gate(Destination::RemoteModel).is_ok(){
+        return Err("Native observed image cannot be declassified".into());
+    }
+    let pinned=observed.pinned;
+    let mut images=state.images.lock().map_err(|_|"Image registry unavailable")?;
+    if images.len()>=4&&!images.contains_key(&pinned.image_ref){
+        return Err("four image limit".into());
+    }
+    let total=images.values().map(|image|image.bytes.len()).sum::<usize>();
+    if !images.contains_key(&pinned.image_ref)
+        &&total.saturating_add(pinned.bytes.len())>MAX_TOTAL_IMAGE_BYTES{
+        return Err("total image size limit".into());
+    }
+    let mut owners=state.observed_image_owners.lock()
+        .map_err(|_|"Observed image ownership unavailable")?;
+    if owners.get(&pinned.image_ref).is_some_and(|owner|owner!=chat_id){
+        return Err("Observed image belongs to another conversation".into());
+    }
+    let view=ImageView{
+        image_ref:pinned.image_ref.clone(),
+        mime_type:pinned.mime_type.into(),
+    };
+    owners.insert(pinned.image_ref.clone(),chat_id.to_owned());
+    images.insert(pinned.image_ref.clone(),pinned);
+    Ok(view)
+}
 fn register_image(state: &Arc<DesktopState>, pinned: PinnedImage) -> Result<ImageView, String> {
     let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
     if images.len() >= 4 && !images.contains_key(&pinned.image_ref) {
@@ -1201,6 +1240,9 @@ fn lu_release_image(
         return Err("invalid image reference".into());
     }
     let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
+    let mut owners=state.observed_image_owners.lock()
+        .map_err(|_|"Observed image ownership unavailable")?;
+    owners.remove(&image_ref);
     Ok(images.remove(&image_ref).is_some())
 }
 
@@ -3185,11 +3227,21 @@ async fn generate_internal(
 )->Result<String,String>{
     let images: Vec<PinnedImage> = {
         let registered = state.images.lock().map_err(|_| "image registry poisoned")?;
+        let observed=state.observed_image_owners.lock()
+            .map_err(|_|"Observed image provenance unavailable")?;
         let mut resolved = Vec::new();
         let mut seen = HashSet::new();
         for id in &image_refs {
             if !seen.insert(id) {
                 return Err("duplicate image reference".into());
+            }
+            if let Some(owner)=observed.get(id){
+                if owner!=&chat_id{
+                    return Err("Observed image cannot cross conversation boundary".into());
+                }
+                lu_core::native_observe_egress::DataProvenance::OBSERVE_LEARN
+                    .gate(lu_core::native_observe_egress::Destination::LocalInference)
+                    .map_err(str::to_owned)?;
             }
             resolved.push(registered.get(id).ok_or("unknown image reference")?.clone());
         }
@@ -6076,17 +6128,24 @@ fn lu_observe_self_signal(
 #[tauri::command]
 async fn lu_observe_capture_one_shot(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,
-    foreground_only:bool,primary_display:Option<bool>
+    foreground_only:bool,primary_display:Option<bool>,local_image:Option<bool>
 )->Result<Option<String>,String>{
     #[cfg(not(windows))]
     {
-        let _=app;let _=state;let _=chat_id;let _=foreground_only;let _=primary_display;
+        let _=app;let _=state;let _=chat_id;
+        let _=foreground_only;let _=primary_display;let _=local_image;
         return Err("Windows Graphics Capture requires interactive Windows".into());
     }
     #[cfg(windows)]
     {
         let primary_display=primary_display.unwrap_or(false);
-        if primary_display&&foreground_only{return Err("Choose exactly one capture source mode".into());}
+        let local_image=local_image.unwrap_or(false);
+        if primary_display&&foreground_only{
+            return Err("Choose exactly one capture source mode".into());
+        }
+        if local_image&&!primary_display&&!foreground_only{
+            return Err("The unverified generic picker cannot send images to Lu".into());
+        }
         state.chats.history(&chat_id)
             .map_err(|_|"Choose an existing conversation")?;
         let running=state.observe.status(&chat_id)?;
@@ -6103,7 +6162,11 @@ async fn lu_observe_capture_one_shot(
             return Err("Installed capture worker signature is invalid".into());
         }
         let approved=tauri::async_runtime::spawn_blocking(move||{
-            let warning=if primary_display{
+            let warning=if local_image&&primary_display{
+                "Share ONE 720p-or-smaller frame from the ENTIRE primary display                  with the LOCAL loaded Lu model?\n\n                 This may reveal sensitive information. Explicitly accepting                  allows an in-memory, local-only image to be attached to this                  conversation after capture. No cloud provider or network                  research operation may receive it. Cancel to keep observation OFF."
+            }else if local_image&&foreground_only{
+                "Share ONE 720p-or-smaller foreground application window frame                  with the LOCAL loaded Lu model after a four-second focus delay?\n\n                 You control what is displayed. The pixels are carried only                  through a bounded native memory pipe and marked local-only.                  They cannot be sent to internet, research or remote models.                  Cancel if this exposure is not approved."
+            }else if primary_display{
                 "Capture the ENTIRE PRIMARY Windows display for ONE frame?\n\n\
                  This can expose sensitive unrelated windows. You decide \
                  what your screen shows. Lu independently checks the real \
@@ -6152,7 +6215,11 @@ async fn lu_observe_capture_one_shot(
                 workspace_id:chat_id.clone(),
                 executable,
                 expected_sha256:expected,
-                args:vec![if primary_display{
+                args:vec![if primary_display&&local_image{
+                    "--lu-observe-primary-monitor-local-image-one-shot"
+                }else if foreground_only&&local_image{
+                    "--lu-observe-foreground-local-image-one-shot"
+                }else if primary_display{
                     "--lu-observe-primary-monitor-one-shot"
                 }else if foreground_only{
                     "--lu-observe-foreground-one-shot"
@@ -6171,6 +6238,23 @@ async fn lu_observe_capture_one_shot(
     }
 }
 
+/// A second deliberate user action: take the already OS-reaped, chat-owned
+/// native WGC frame and attach only its locally admitted PNG image-ref.
+#[tauri::command]
+async fn lu_observe_capture_local_image(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<ImageView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.history(&chat_id)
+            .map_err(|_|"Choose an existing conversation")?;
+        let Some(observed)=state.observe.capture_local_image(&chat_id)? else {
+            return Ok(None);
+        };
+        let image=register_observed_local_image(&state,&chat_id,observed)?;
+        Ok(Some(image))
+    }).await.map_err(|_|"Native local image admission unavailable")?
+}
 #[tauri::command]
 fn lu_observe_capture_available()->bool{
     #[cfg(windows)]
@@ -6234,6 +6318,7 @@ pub fn run() {
             lu_observe_handoff,
             lu_observe_capture_receipt,
             lu_observe_capture_one_shot,
+            lu_observe_capture_local_image,
             lu_observe_capture_available,
             lu_browser_visibility,
             lu_browser_runtime_status,

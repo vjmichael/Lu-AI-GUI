@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9a3e5a5d20854466d7e6a9f83893b908f0bb66f8",
+  "sourceCommitBeforeLock": "fd012e3a0e623cbc0c1fca20e6748d54d0469c68",
   "trackedFileCount": 514,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "0c650bab8913d252ef947fa3a6985cb3db763d9e"
+      "blob": "8cd6fc4a4b848316c95d9faacb444e8306b174c4"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "697e96ca4d9ffcfe35c478f9f63f4105bf7431b7"
+      "blob": "f32d796c0c5f63640c7f5550fbbe46452caec4ea"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "1a2984e4a2ba5a451303c5664b2ee20b1448afba"
+      "blob": "2452b1fca6387493e49e2e3e964731d8a2591a74"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -437,7 +437,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "02abff4604f41b6d865875eae613e069a47686f2"
+      "blob": "523061c9f3acb3f782453d8b934d69ed20598b09"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -469,7 +469,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "eaad1a05d1e9f06b0bb4336799b2e96d4626113f"
+      "blob": "d988ec6d38f2a4e9a2ac97655bcd9a4c87075a66"
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_linux_auth.rs",
@@ -641,7 +641,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "ab0323e8782a50e36f9fce28f50ba46852727f28"
+      "blob": "6c0ef39ecaca24a3411a31b6f75ea16fa25651be"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -761,7 +761,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "91697a206b0f4f5851424cfa744921db9ecf2dd1"
+      "blob": "893ef7d94f653e8cb2d8eff4347f5ed321cda319"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

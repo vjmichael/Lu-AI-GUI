@@ -88,6 +88,7 @@ struct Session {
     scope:Option<ScopedObservationGrant>,
     capture_task_id:Option<String>,
     capture_foreground:bool,
+    capture_local_image_mode:bool,
     capture_guardian:Option<GuardianLease>,
     session_id:Option<String>,
     chat_id:Option<String>,
@@ -140,7 +141,7 @@ impl ObserveHost {
             inner:Mutex::new(Session{
                 controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
-                capture_foreground:false,capture_guardian:None,
+                capture_foreground:false,capture_local_image_mode:false,capture_guardian:None,
                 session_id:None,chat_id:None,sequence:0,
                 event_count:0,recommendations:0,
             }),
@@ -217,6 +218,7 @@ impl ObserveHost {
         session.scope=Some(bound_scope);
         session.capture_task_id=None;
         session.capture_foreground=false;
+        session.capture_local_image_mode=false;
         session.session_id=Some(session_id);
         session.chat_id=Some(chat_id.to_owned());
         session.sequence=0;session.event_count=0;session.recommendations=0;
@@ -243,8 +245,14 @@ impl ObserveHost {
     fn stop_capture(&self,session:&mut Session)->Result<(),String>{
         self.reap_capture(session.capture_task_id.as_deref(),
             session.chat_id.as_deref())?;
+        if let (Some(id),Some(chat))=(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref()){
+            self.capture_processes.discard_local_observe_frame(id,chat)
+                .map_err(|_|"Native local WGC frame cleanup uncertain")?;
+        }
         session.capture_task_id=None;
         session.capture_foreground=false;
+        session.capture_local_image_mode=false;
         session.capture_guardian.take();
         Ok(())
     }
@@ -262,6 +270,11 @@ impl ObserveHost {
         let Some(task_id)=session.session_id.clone() else{return Ok(())};
         self.reap_capture(session.capture_task_id.as_deref(),
             session.chat_id.as_deref())?;
+        if let (Some(id),Some(chat))=(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref()){
+            self.capture_processes.discard_local_observe_frame(id,chat)
+                .map_err(|_|"Revoked local WGC frame cleanup uncertain")?;
+        }
         // The WGC worker is now OS-reaped. An independently stored
         // observation CANCELLED receipt is required before forgetting its
         // ownership; never conflate worker task and observation task.
@@ -275,6 +288,7 @@ impl ObserveHost {
         session.capture_guardian.take();
         session.capture_task_id=None;
         session.capture_foreground=false;
+        session.capture_local_image_mode=false;
         session.session_id=None;
         session.chat_id=None;
         Ok(())
@@ -320,7 +334,7 @@ impl ObserveHost {
             return Ok(Self::view(&Session{
                 controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
-                capture_foreground:false,capture_guardian:None,
+                capture_foreground:false,capture_local_image_mode:false,capture_guardian:None,
                 session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
             }));
@@ -398,7 +412,9 @@ impl ObserveHost {
           ||plan.args.len()!=2
           ||!(plan.args[0]=="--lu-observe-one-shot"
             ||plan.args[0]=="--lu-observe-foreground-one-shot"
-            ||plan.args[0]=="--lu-observe-primary-monitor-one-shot")
+            ||plan.args[0]=="--lu-observe-primary-monitor-one-shot"
+            ||plan.args[0]=="--lu-observe-foreground-local-image-one-shot"
+            ||plan.args[0]=="--lu-observe-primary-monitor-local-image-one-shot")
           ||plan.args[1].to_string_lossy().len()!=32
           ||!plan.args[1].to_string_lossy().bytes().all(|b|b.is_ascii_hexdigit())
           ||!plan.progress_protocol
@@ -415,13 +431,24 @@ impl ObserveHost {
             self.capture_processes.can_cancel(task)){
             return Err("An approved capture picker is already running".into());
         }
+        if let Some(previous)=s.capture_task_id.as_deref(){
+            self.capture_processes.discard_local_observe_frame(previous,chat_id)
+                .map_err(|_|"Old private WGC frame cleanup uncertain")?;
+        }
         let id=plan.task_id.clone();
-        let foreground=plan.args[0]=="--lu-observe-foreground-one-shot"
-            ||plan.args[0]=="--lu-observe-primary-monitor-one-shot";
+        let foreground=matches!(plan.args[0].to_str(),
+            Some("--lu-observe-foreground-one-shot")
+            |Some("--lu-observe-primary-monitor-one-shot")
+            |Some("--lu-observe-foreground-local-image-one-shot")
+            |Some("--lu-observe-primary-monitor-local-image-one-shot"));
+        let local_image=matches!(plan.args[0].to_str(),
+            Some("--lu-observe-foreground-local-image-one-shot")
+            |Some("--lu-observe-primary-monitor-local-image-one-shot"));
         self.capture_processes.start_host_approved(plan)
             .map_err(|e|format!("Trusted capture worker could not start: {e:?}"))?;
         s.capture_task_id=Some(id.clone());
         s.capture_foreground=foreground;
+        s.capture_local_image_mode=local_image;
         s.capture_guardian=Some(guardian);
         Ok(id)
     }
@@ -479,6 +506,44 @@ impl ObserveHost {
             message:"Native one-shot receipt: OS-confirmed foreground HWND or primary monitor identity is checked; generic picker remains unverified. No raw pixels, screenshot or GUI/model-vision verdict is returned.",
             data_origin:"observe_learn",network_egress_allowed:false,
         }))
+    }
+    /// One-use, consent-gated local-only WGC image returned only to the Lu
+    /// native host. No screenshot file, WebView data URL or socket is created.
+    pub(crate) fn capture_local_image(
+        &self,chat_id:&str
+    )->Result<Option<lu_core::native_observe_image_admission::LocalObservedImage>,String>{
+        let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut session)?;
+        let s=Self::owned(&mut session,chat_id)?;
+        if s.controller.mode()!=Mode::Active ||!s.capture_local_image_mode
+            ||!s.capture_foreground{
+            return Err("No active authorized native local-image capture".into());
+        }
+        let id=s.capture_task_id.clone().ok_or("No owned native capture task")?;
+        self.capture_processes.poll()
+            .map_err(|_|"Native local-image process reaping unverified")?;
+        if self.capture_processes.can_cancel(&id){
+            return Err("Native image capture still running; inspect receipt after completion".into());
+        }
+        let row=self.task_store.get(&id)
+            .map_err(|_|"Native frame task unavailable")?
+            .ok_or("Native capture task missing")?;
+        if row.workspace_id.as_deref()!=Some(chat_id)
+            ||row.state!=lu_core::tasks::TaskState::Completed
+            ||row.detail.strip_prefix("SHA-256: ").is_none_or(|sha|
+                sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit())){
+            return Err("Native WGC image receipt not independently completed".into());
+        }
+        let frame=self.capture_processes.take_local_observe_frame(&id,chat_id)
+            .map_err(|_|"Native in-memory frame ownership refused")?
+            .ok_or("No one-use authorized local frame remains")?;
+        let admitted=lu_core::native_observe_image_admission::admit_wgc_frame_locally(
+            &frame.bytes,frame.width,frame.height,frame.row_pitch,true
+        ).map_err(|e|format!("Native local image admission rejected: {e:?}"))?;
+        // The sensitive raw BGRA frame is dropped and scrubbed right after
+        // PNG admission. The returned image retains the no-network label.
+        s.capture_guardian.take();
+        Ok(Some(admitted))
     }
     /// P06 operator-approved privacy erase for a locally authenticated
     /// conversation. This is not a model tool or new observation grant.

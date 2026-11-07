@@ -390,3 +390,27 @@ test('P06 WGC worker only streams one bounded hashed BGRA image for attested OS 
   assert.match(host,/allow_local_image:bool/);
   assert.match(host,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
 });
+
+test('P06 real local WGC image is bound to OS worker, one chat and local GGUF only',()=>{
+  const host=read('../src-tauri/src/lib.rs');
+  const observer=read('../src-tauri/src/observe_desktop.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(observer,/pub\(crate\) fn capture_local_image\(/);
+  assert.match(observer,/!s\.capture_local_image_mode/);
+  assert.match(observer,/take_local_observe_frame\(&id,chat_id\)/);
+  assert.match(observer,/admit_wgc_frame_locally\(/);
+  assert.match(observer,/discard_local_observe_frame\(id,chat\)/);
+  assert.match(host,/async fn lu_observe_capture_local_image\(/);
+  assert.match(host,/register_observed_local_image\(/);
+  assert.match(host,/observed_image_owners: Mutex<HashMap<String,String>>/);
+  assert.match(host,/Observed image cannot cross conversation boundary/);
+  assert.match(host,/DataProvenance::OBSERVE_LEARN/);
+  assert.match(host,/lu_observe_capture_local_image,/);
+  assert.match(ui,/Capture foreground app for local GGUF image/);
+  assert.match(ui,/Capture primary display for local GGUF image/);
+  assert.match(ui,/Attach approved frame to this local multimodal chat/);
+  assert.match(ui,/invoke\('lu_observe_capture_local_image'/);
+  assert.match(ui,/activeChatRef\.current!==activeChat/);
+  assert.match(ui,/setImages\(prev=>prev\.some/);
+  assert.doesNotMatch(host,/open_external_observed_frame/);
+});
