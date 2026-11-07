@@ -1,3 +1,5 @@
+> **2026-11-07 explicit owner philosophy overlay:** The [Canonical AI Execution Layer philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md) and [P01–P12 tool review](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md) are authoritative **for AI Execution Layer philosophy and classification**: Practical AI Capability = f(K, I, A, F); **Foundational, Utility, Specialist**. Latest explicit owner direction controls conflicts over building unnecessary domain micro-apps. The preserved Jan-Mod original and this merged specification still govern native Protobuf/model boundary, authority, supervisor, loop protection and durable-effects semantics; do not rewrite historical decisions. The audit does **not** assert a general model-facing code/CLI/desktop worker already exists and authorizes **no implementation or permission expansion**.
+
 # Lu native tool system — merged authoritative design
 
 **Decision:** 2026-11-04. **Owner's design precedence:** preserve the original
