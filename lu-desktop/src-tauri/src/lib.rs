@@ -2343,7 +2343,7 @@ async fn lu_research_campaign_review(
     let record_campaign=campaign_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||
         research.review_campaign_sources(&chat_id,&campaign_id,limit as usize)
-    ).await.map_err(|_|"Research source review worker unavailable").and_then(|x|x);
+    ).await.map_err(|_|"Research source review worker unavailable".to_string()).and_then(|x|x);
     match result{
         Ok(value)=>{
             if owner.research.campaign_status(&record_chat,&record_campaign)

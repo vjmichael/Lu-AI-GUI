@@ -259,14 +259,14 @@ pub(crate) struct ResearchReportExportView{
 }
 #[derive(Serialize,Clone)]
 #[serde(rename_all="camelCase")]
-#[derive(Serialize,Clone)]
-#[serde(rename_all="camelCase")]
 pub(crate) struct ResearchCampaignReviewItem{
     pub source_id:String,
     pub stage:String,
     pub reason_code:String,
     pub can_retry:bool,
 }
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
 pub(crate) struct ResearchCampaignReviewView{
     pub campaign_id:String,
     pub discovered_dois:u32,
@@ -967,7 +967,7 @@ impl ResearchDesktop{
         let ledger=EvidenceLedger::open(&db)
             .map_err(|_|"Research evidence ledger unavailable")?;
         ledger.campaign_review_rows(campaign_id,120)
-            .map_err(|_|"Research source review inventory unavailable")
+            .map_err(|_|"Research source review inventory unavailable".to_string())
             .map(|rows|rows.into_iter().map(|(source_id,stage,reason_code)|{
                 ResearchCampaignReviewItem{
                     can_retry:matches!(
