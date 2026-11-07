@@ -225,7 +225,21 @@ impl NativeBuildRuntime {
         // Serialize only exact project-scoped immutable journal identifiers.
         // Do not reconstruct a BuildRunView or invent a successful native exit
         // code after restart: the original runtime receipt is authoritative.
-        let journal: Vec<RecoveryView> = durable.into_iter()
+        // Never truncate quarantine state. Every blocked job is still visible
+        // and eligible for exact native OS-only reconciliation.
+        let quarantined: Vec<RecoveryView> = durable.iter()
+            .filter(|job| job.project_id == project_id && job.requires_reconciliation)
+            .map(|job| RecoveryView {
+                project_id: job.project_id.clone(),
+                job_id: job.job_id.clone(),
+                plan_sha256: job.plan_sha256.clone(),
+                phase: format!("{:?}", job.phase).to_lowercase(),
+                requires_reconciliation: true,
+            })
+            .collect();
+        // The UI displays a bounded most-recent subset, not all secrets or
+        // unbounded durable history. The security quarantine above is full.
+        let mut journal: Vec<RecoveryView> = durable.into_iter().rev()
             .filter(|job| job.project_id == project_id)
             .take(32)
             .map(|job| RecoveryView {
@@ -234,18 +248,8 @@ impl NativeBuildRuntime {
                 plan_sha256: job.plan_sha256,
                 phase: format!("{:?}", job.phase).to_lowercase(),
                 requires_reconciliation: job.requires_reconciliation,
-            })
-            .collect();
-        let quarantined: Vec<RecoveryView> = journal.iter()
-            .filter(|job| job.requires_reconciliation)
-            .map(|job| RecoveryView {
-                project_id: job.project_id.clone(),
-                job_id: job.job_id.clone(),
-                plan_sha256: job.plan_sha256.clone(),
-                phase: job.phase.clone(),
-                requires_reconciliation: true,
-            })
-            .collect();
+            }).collect();
+        journal.reverse();
         Ok(BuildStatus {
             ready: availability.is_ok(),
             code: match availability {
