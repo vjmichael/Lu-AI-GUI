@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
-  "trackedFileCount": 533,
+  "trackedFileCount": 535,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -112,12 +112,20 @@
       "blob": "122946cdaab9394e3c85793d2c14ff1bbf6c34d2"
     },
     {
+      "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
+      "blob": "1e86bcebece9416d8ad8553d353998fad4a028e0"
+    },
+    {
+      "path": "docs/LU_AI_EXECUTION_TOOL_REVIEW_20261107.md",
+      "blob": "1dfda20b97e041c63cf2b788fb402aa0f84ce741"
+    },
+    {
       "path": "docs/LU_AI_OPERATIONS_P03.md",
       "blob": "a4d5a01a5e52747928cba910663543b5873342bb"
     },
     {
       "path": "docs/LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md",
-      "blob": "2095f151da5f5548b6ede6f527a188e709dadcb7"
+      "blob": "6af03891b8faf8fbc7270bac0e9fdf31ae43c111"
     },
     {
       "path": "docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md",
@@ -141,11 +149,11 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "323e99f0bb9fa4cdef68f88f17232f2cee94ac8e"
+      "blob": "a91d6c46475cf13f581ea71ae7bb3a7e6f447ce1"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "ccd9a0e84ee1194af6bd836d284f2978f59e8e3b"
+      "blob": "c56f7bbf7b85ae2b2e074604f6e98280ff9d12e2"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -153,11 +161,11 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "e70e9909245a2a3daa3e595dc2d30c9b45a31410"
+      "blob": "ce29dc83010eaaece66b7570c289f5f46e475897"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
-      "blob": "1385f03f41104037a043cee8224d8ea94be2897e"
+      "blob": "dc2886288340acfba435d99ddff2122e525dd93e"
     },
     {
       "path": "docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md",
