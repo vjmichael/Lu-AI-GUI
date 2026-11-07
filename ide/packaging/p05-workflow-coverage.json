@@ -249,19 +249,23 @@
     },
     {
       "path": ".github/workflows/ide-wo8-installed-linux.yml",
-      "blobSha": "8229a794134a7b852a993ae3520ab878803718b1",
+      "blobSha": "f895207832b5ea8744aeee594aa445705b24b2b6",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
-      "prTriggerPruningAuthorized": false
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "8229a794134a7b852a993ae3520ab878803718b1",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
     },
     {
       "path": ".github/workflows/ide-wo8-installed-windows.yml",
-      "blobSha": "f3389b9e2439c9e0eb87635791bd046b0ecd315e",
+      "blobSha": "b34b0f114eaad76b9e4f9e7a156dd81790aafa24",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
-      "prTriggerPruningAuthorized": false
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "f3389b9e2439c9e0eb87635791bd046b0ecd315e",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
     },
     {
       "path": ".github/workflows/ide-wo8-protected-recovery.yml",
@@ -297,11 +301,13 @@
     },
     {
       "path": ".github/workflows/ide-wo9-installed-native.yml",
-      "blobSha": "ef57ffe24b71f61c3f05b3ec44aa2faa96bdc7de",
+      "blobSha": "174a9e64bd66f9c5e9bd1df9c59d5857e80b20d7",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
-      "prTriggerPruningAuthorized": false
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "ef57ffe24b71f61c3f05b3ec44aa2faa96bdc7de",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
     },
     {
       "path": ".github/workflows/ide-wo9-signed-protected-acceptance.yml",

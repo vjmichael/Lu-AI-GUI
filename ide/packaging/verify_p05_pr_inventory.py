@@ -109,6 +109,9 @@ def check_snapshot(prs:dict,workflows:dict):
     original_e2_pins={
         ".github/workflows/ide-e2-supervised-lsp.yml": "6b922291b4bc8eab1d164f121cccc329c12a4f96",
         ".github/workflows/ide-e2-unsigned-installed-smoke.yml": "02fae6f43669b03cb2bf96758a13ae366dd91ab1",
+        ".github/workflows/ide-wo8-installed-windows.yml": "f3389b9e2439c9e0eb87635791bd046b0ecd315e",
+        ".github/workflows/ide-wo8-installed-linux.yml": "8229a794134a7b852a993ae3520ab878803718b1",
+        ".github/workflows/ide-wo9-installed-native.yml": "ef57ffe24b71f61c3f05b3ec44aa2faa96bdc7de",
     }
     for item in rows:
         if item["path"] in original_e2_pins:
