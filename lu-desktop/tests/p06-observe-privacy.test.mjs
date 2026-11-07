@@ -74,6 +74,9 @@ test('P06 native WGC process instance is verified, generic picker stays unverifi
   assert.match(worker,/padded\.fill\(255\)/);
   assert.match(worker,/Lu-WGC-whole-frame-redacted-v2/);
   assert.match(scheduler,/pub fn capture_one_shot\(\)/);
+  const supervisor=read('../../src-tauri/lu-core/src/native_background_process.rs');
+  assert.match(supervisor,/--lu-observe-one-shot"\|"--lu-observe-foreground-one-shot/);
+  assert.match(supervisor,/job\.set_memory_limit\(512\*1024\*1024\)/);  assert.match(scheduler,/pub fn capture_one_shot\(\)/);
   assert.match(desktop,/guardian\.admit_host_worker\(/);
   assert.match(desktop,/observer\.launch_one_shot\(&chat_id,plan,lease\)/);
   assert.match(ui,/fullyRedactedReceipt/);
