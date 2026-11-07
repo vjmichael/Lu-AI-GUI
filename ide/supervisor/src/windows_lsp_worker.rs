@@ -130,6 +130,18 @@ fn min_environment(local: &Path, tools: &Path) -> Result<Vec<u16>, SupervisorErr
     Ok(env.encode_utf16().collect())
 }
 #[cfg(test)]
+mod native_stderr_classification_tests {
+    use super::*;
+    #[test]
+    fn diagnostic_classification_never_exposes_untrusted_message_bytes() {
+        assert_eq!(classify_debug_stderr(b"error: unknown command line argument"), "invalid_option");
+        assert_eq!(classify_debug_stderr(b"Access is denied: C:\\secret.txt"), "permission_denied");
+        assert_eq!(classify_debug_stderr(b"error: custom user source path"), "reported_error");
+        assert_eq!(classify_debug_stderr(b"secret user document content"), "other_nonempty");
+    }
+}
+
+#[cfg(test)]
 mod native_environment_tests {
     use super::*;
     #[test]
@@ -186,6 +198,85 @@ fn native_lsp_exit_code(process: HANDLE) {
         }
     }
 }
+// Debug-only stderr witness. The production worker still gives clangd the
+// inherited NUL handle. Native acceptance captures at most 2048 bytes, emits
+// ONLY a small whitelisted classification (never source text, paths or raw
+// stderr), and cannot compile this capture into a release build.
+fn native_lsp_debug_enabled() -> bool {
+    cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(OsStr::new("1"))
+}
+fn classify_debug_stderr(bytes: &[u8]) -> &'static str {
+    if bytes.is_empty() {
+        return "empty";
+    }
+    let value = String::from_utf8_lossy(bytes).to_ascii_lowercase();
+    if value.contains("unknown command line argument") || value.contains("unknown argument") {
+        "invalid_option"
+    } else if value.contains("permission denied")
+        || value.contains("access is denied")
+        || value.contains("access denied")
+    {
+        "permission_denied"
+    } else if value.contains("no such file") || value.contains("not found") {
+        "missing_file"
+    } else if value.contains("invalid argument") || value.contains("invalid handle") {
+        "invalid_handle_or_argument"
+    } else if value.contains("error:") || value.contains("fatal:") {
+        "reported_error"
+    } else {
+        "other_nonempty"
+    }
+}
+fn inspect_debug_stderr(handle: Option<&Handle>) {
+    if !native_lsp_debug_enabled() {
+        return;
+    }
+    let Some(handle) = handle else {
+        eprintln!("PROTECTED_LSP_NATIVE_STDERR_CLASS=no_debug_pipe");
+        return;
+    };
+    let mut available = 0u32;
+    if unsafe {
+        PeekNamedPipe(
+            handle.0,
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            &mut available,
+            ptr::null_mut(),
+        )
+    } == 0
+    {
+        eprintln!("PROTECTED_LSP_NATIVE_STDERR_CLASS=pipe_unavailable");
+        return;
+    }
+    if available == 0 {
+        eprintln!("PROTECTED_LSP_NATIVE_STDERR_CLASS=empty");
+        return;
+    }
+    let mut output = [0u8; 2048];
+    let limit = available.min(output.len() as u32);
+    let mut read = 0u32;
+    if unsafe {
+        ReadFile(
+            handle.0,
+            output.as_mut_ptr(),
+            limit,
+            &mut read,
+            ptr::null_mut(),
+        )
+    } == 0
+    {
+        eprintln!("PROTECTED_LSP_NATIVE_STDERR_CLASS=read_failed");
+        return;
+    }
+    eprintln!(
+        "PROTECTED_LSP_NATIVE_STDERR_CLASS={}",
+        classify_debug_stderr(&output[..read as usize])
+    );
+}
+
 
 fn nul_stderr() -> Result<Handle, SupervisorError> {
     let mut attrs = SECURITY_ATTRIBUTES {
@@ -216,12 +307,21 @@ fn spawn_contained_stdio(
     command: &mut Vec<u16>,
     cwd: &Path,
     env: &[u16],
-) -> Result<(Handle, Handle, Handle, Handle), SupervisorError> {
+) -> Result<(Handle, Handle, Handle, Handle, Option<Handle>), SupervisorError> {
     let (child_stdin, host_stdin) = inheritable_pipe()?;
     let (host_stdout, child_stdout) = inheritable_pipe()?;
     uninheritable(host_stdin.0)?;
     uninheritable(host_stdout.0)?;
-    let stderr = nul_stderr()?;
+    // Only a CI/debug acceptance session uses an inherited diagnostic pipe.
+    // The fixed OS handle allowlist remains exactly three child handles.
+    // In release the child continues to inherit the NUL stderr handle.
+    let (stderr, debug_stderr) = if native_lsp_debug_enabled() {
+        let (host_read, child_write) = inheritable_pipe()?;
+        uninheritable(host_read.0)?;
+        (child_write, Some(host_read))
+    } else {
+        (nul_stderr()?, None)
+    };
     let mut capabilities = SECURITY_CAPABILITIES::default();
     capabilities.AppContainerSid = profile.sid;
     capabilities.Capabilities = ptr::null_mut();
@@ -316,7 +416,7 @@ fn spawn_contained_stdio(
     }
     // child_stdin/stdout/stderr handles close here in the trusted host;
     // parent holds only stdin-write and stdout-read.
-    Ok((process, thread, host_stdin, host_stdout))
+    Ok((process, thread, host_stdin, host_stdout, debug_stderr))
 }
 
 struct BoundedWrite {
@@ -388,6 +488,7 @@ struct WindowsLspProcess {
     write_queue: SyncSender<BoundedWrite>,
     writer_thread: Option<JoinHandle<()>>,
     stdout_read: Handle,
+    debug_stderr: Option<Handle>,
     released: bool,
 }
 // Process and handle ownership are exclusive; no native HANDLE is shared
@@ -408,6 +509,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
             WAIT_OBJECT_0 => {
                 native_lsp_trace("child_exited_before_write");
                 native_lsp_exit_code(self.process.0);
+                inspect_debug_stderr(self.debug_stderr.as_ref());
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
             _ => {
@@ -449,6 +551,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
             {
                 native_lsp_trace("stdout_peek_failed");
                 native_lsp_exit_code(self.process.0);
+                inspect_debug_stderr(self.debug_stderr.as_ref());
                 return Err(io::Error::last_os_error());
             }
             if available > 0 {
@@ -474,6 +577,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
             if unsafe { WaitForSingleObject(self.process.0, 0) } == WAIT_OBJECT_0 {
                 native_lsp_trace("child_exited_before_read");
                 native_lsp_exit_code(self.process.0);
+                inspect_debug_stderr(self.debug_stderr.as_ref());
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
             thread::sleep(Duration::from_millis(20));
@@ -597,7 +701,7 @@ pub fn start_windows_lsp(
     native_lsp_trace("scm_exact_nul_lease_fsynced");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
-    let (process, child_thread, stdin_write, stdout_read) =
+    let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
         match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
@@ -654,6 +758,7 @@ pub fn start_windows_lsp(
         write_queue,
         writer_thread: Some(writer_thread),
         stdout_read,
+        debug_stderr,
         released: false,
     };
     let gateway = LspGateway::attach_native(
