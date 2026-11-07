@@ -56,6 +56,11 @@ def validate(data: dict, source_sha: str) -> list[dict]:
         raise Denied("bundle_not_review_approved")
     if not REV.fullmatch(source_sha) or data.get("sourceSha") != source_sha:
         raise Denied("source_mismatch")
+    installer = data.get("installerScript")
+    if not isinstance(installer, dict) or not isinstance(installer.get("sha256"), str) or not SHA.fullmatch(installer["sha256"]):
+        raise Denied("pinned_lifecycle_script_missing")
+    if not isinstance(installer.get("source"), str):
+        raise Denied("lifecycle_script_source_missing")
     entries = data.get("files")
     if not isinstance(entries, list) or not 4 <= len(entries) <= 100:
         raise Denied("bundle_file_inventory_incomplete")
@@ -77,6 +82,10 @@ def validate(data: dict, source_sha: str) -> list[dict]:
             else destination.startswith("resources/language-servers/")
         ):
             raise Denied("unapproved_runtime_destination")
+        if role == "service":
+            signer = row.get("signerThumbprint")
+            if not isinstance(signer, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", signer):
+                raise Denied("protected_service_signer_pin_missing")
         if role in roles and role in REQUIRED:
             raise Denied("duplicate_required_binary")
         roles.add(role)
@@ -108,6 +117,9 @@ def stage(manifest: Path, inputs: Path, output: Path, source_sha: str) -> dict:
     if output.exists() or output.is_symlink():
         raise Denied("output_must_be_new")
     root = inputs.resolve(strict=True)
+    helper = safe_asset(root, data["installerScript"]["source"])
+    if sha256(helper).lower() != data["installerScript"]["sha256"].lower():
+        raise Denied("lifecycle_script_digest_changed")
     prepared = []
     for row in entries:
         src = safe_asset(root, row["source"])
@@ -150,6 +162,19 @@ def stage(manifest: Path, inputs: Path, output: Path, source_sha: str) -> dict:
                 record["notices"].append({"path": "resources/third-party-notices/" + notice_name,
                                            "sha256": notice_digest})
             attestation["files"].append(record)
+        installer_path = stage_root / "resources" / "installer" / "wo7-service-lifecycle.ps1"
+        installer_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(helper, installer_path, follow_symlinks=False)
+        if sha256(installer_path).lower() != data["installerScript"]["sha256"].lower():
+            raise Denied("post_copy_lifecycle_script_changed")
+        service = next(row for row in entries if row["role"] == "service")
+        policy = {"schema": "lu.ide.wo7.service-policy.v1", "releaseApproved": True,
+                  "sourceSha": source_sha, "serviceSha256": service["sha256"].lower(),
+                  "signerThumbprint": service["signerThumbprint"].lower()}
+        policy_file = stage_root / "resources" / "wo7-service-policy.json"
+        policy_file.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+        attestation["servicePolicySha256"] = sha256(policy_file)
+        attestation["lifecycleScriptSha256"] = sha256(installer_path)
         (stage_root / "resources" / "wo7-staged-tree.json").write_text(
             json.dumps(attestation, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
