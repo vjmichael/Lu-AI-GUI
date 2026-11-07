@@ -19,6 +19,7 @@ class SignedReleaseGateTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "installer.exe").write_bytes(b"safe unsigned NSIS fixture")
         (self.root / "service.exe").write_bytes(b"safe unsigned service fixture")
+        (self.root / "desktop.exe").write_bytes(b"safe unsigned desktop fixture")
         self.manifest = self.root / "release.json"
         self.data = {
             "schema": "lu.ide.wo7.signed-nsis.v1",
