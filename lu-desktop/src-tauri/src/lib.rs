@@ -313,12 +313,18 @@ async fn lu_model_prepare_transfer(
         f.name==filename&&f.bytes==bytes&&f.sha256==sha256.to_ascii_lowercase()
     ).ok_or("Model file metadata changed; review must restart")?;
     let summary=format!(
-        "Review a FUTURE model transfer plan (NO download now)?\\n\\n\\
-         Repository: {}\\nImmutable revision: {}\\nFile: {}\\nSize: {} bytes\\n\\
-         Expected SHA-256: {}\\nProvider-reported license: {}\\n\\n\\
-         You must independently review the model license and access conditions.\\n\\
-         Lu will NOT install, download or load anything. P05 must separately\\n\\
-         authorize the actual transfer and verify the complete bytes.",
+        r#"Review a FUTURE model transfer plan (NO download now)?
+
+Repository: {}
+Immutable revision: {}
+File: {}
+Size: {} bytes
+Expected SHA-256: {}
+Provider-reported license: {}
+
+You must independently review the model license and access conditions.
+Lu will NOT install, download or load anything.
+P05 must separately authorize the transfer and verify complete bytes."#,
         review.repo_id,review.revision,file.name,file.bytes,
         file.sha256,review.license_label,
     );
