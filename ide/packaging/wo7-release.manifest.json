@@ -19,5 +19,10 @@
     "path": null,
     "sha256": null,
     "signerThumbprint": null
+  },
+  "desktop": {
+    "path": null,
+    "sha256": null,
+    "signerThumbprint": null
   }
 }
