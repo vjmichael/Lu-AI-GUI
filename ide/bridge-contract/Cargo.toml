@@ -1,0 +1,15 @@
+[package]
+name = "lu-ide-bridge-contract"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Shared unprivileged Lu Core ↔ Lu IDE Protobuf wire contract"
+
+[dependencies]
+prost = "0.14"
+
+[build-dependencies]
+prost-build = "0.14"
+protoc-bin-vendored = "3"
