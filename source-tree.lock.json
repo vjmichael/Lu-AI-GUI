@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
-      "blob": "d45554a4d9715afc9d3fe4faa93fba780b448ae0"
+      "blob": "d4e38bbca0a8ac035d516ad19c49202a684c505e"
     },
     {
       "path": "lu-desktop/tests/image-assembly-geometry.test.mjs",
