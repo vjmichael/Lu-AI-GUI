@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from collect_verification_licenses import (
-    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,WEBVIEW_EXACT_CRATES,OBJC2_UPSTREAM_POLICY,EXTERNAL_NATIVE_SDK_SOURCE_RULES,verified_curated_notices,git_blob_sha,Denied
+    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,WEBVIEW_EXACT_CRATES,OBJC2_UPSTREAM_POLICY,EXTERNAL_NATIVE_SDK_SOURCE_RULES,DLOPEN_PINNED_UPSTREAM,verified_curated_notices,git_blob_sha,Denied
 )
 ROOT=Path(__file__).resolve().parents[2]
 class CuratedOriginalNotices(unittest.TestCase):
@@ -24,7 +24,8 @@ class CuratedOriginalNotices(unittest.TestCase):
                          {name+":3.3.0" for name in PROTOC_UPSTREAM_FAMILY} |
                          {name+":"+version for name,version in WEBVIEW_EXACT_CRATES} |
                          {r["name"]+":"+r["version"] for r in OBJC2_UPSTREAM_POLICY} |
-                         {r["name"]+":"+r["version"] for r in EXTERNAL_NATIVE_SDK_SOURCE_RULES})
+                         {r["name"]+":"+r["version"] for r in EXTERNAL_NATIVE_SDK_SOURCE_RULES} |
+                         {name+":"+version for name,version in DLOPEN_PINNED_UPSTREAM})
         for name_version,rule in CURATED_MISSING_NOTICES.items():
             with self.subTest(name_version=name_version):
                 self.load(rule)
@@ -82,6 +83,17 @@ class CuratedOriginalNotices(unittest.TestCase):
             for original,source in rows:
                 self.assertEqual(git_blob_sha(original.read_bytes()),source["blobSha"])
                 self.assertNotIn(b"\r",original.read_bytes())
+    def test_exact_dlopen_upstream_historical_source_both_manifest_versions(self):
+        self.assertEqual(DLOPEN_PINNED_UPSTREAM,[("dlopen2","0.8.2"),
+                                                ("dlopen2_derive","0.4.3")])
+        for name,version in DLOPEN_PINNED_UPSTREAM:
+            rule=CURATED_MISSING_NOTICES[name+":"+version]
+            self.assertEqual(rule["declaredLicense"],"MIT")
+            self.load(rule)
+            original=verified_curated_notices(self.repo,"cargo",name,version,"MIT")
+            self.assertEqual(len(original),1)
+            self.assertEqual(git_blob_sha(original[0][0].read_bytes()),
+                             "d38093a7a564c64ad15e459f2e0a1f86a443c8b3")
     def test_mutated_notice_fails_closed(self):
         rule=CURATED_MISSING_NOTICES["alloc-stdlib:0.3.0"]
         self.load(rule)

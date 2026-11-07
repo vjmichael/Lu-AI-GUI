@@ -171,6 +171,19 @@ for _r in EXTERNAL_NATIVE_SDK_SOURCE_RULES:
         raise Denied('duplicate_external_sdk_notice')
     CURATED_MISSING_NOTICES[_key]={'declaredLicense':_r['declared'],'files':_r['files']}
 
+# Exact immutable historical upstream commit at which both manifests match:
+# dlopen2 0.8.2, dlopen2_derive 0.4.3, MIT original licensed copyright.
+DLOPEN_PINNED_UPSTREAM=[
+    ("dlopen2","0.8.2"),("dlopen2_derive","0.4.3")]
+for _dl_name,_dl_version in DLOPEN_PINNED_UPSTREAM:
+    _key=_dl_name+":"+_dl_version
+    if _key in CURATED_MISSING_NOTICES:raise Denied("duplicate_dlopen_original")
+    CURATED_MISSING_NOTICES[_key]={"declaredLicense":"MIT","files":[{
+        "checkedIn":"ide/packaging/upstream-crate-notices/dlopen2-0.8.2-derive-0.4.3-LICENSE.txt",
+        "originalName":"LICENSE",
+        "url":"https://raw.githubusercontent.com/OpenByteDev/dlopen2/db4a7c6b0a08804ddb793be335011d55c04d7e05/LICENSE",
+        "blobSha":"d38093a7a564c64ad15e459f2e0a1f86a443c8b3"}]}
+
 def verified_curated_notices(repo_root,manager,name,version,declared):
     if manager != "cargo":
         return []
