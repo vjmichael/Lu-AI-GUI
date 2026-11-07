@@ -1,3 +1,5 @@
+> **Benchmarking direct IDs:** [Three-arm real GGUF comparison](LU_ANSF_THREE_ARM_REAL_MODEL_BASELINE_20261107.md) exercises the actual ANSF indexed source-ID resolver from a headless Lu Core adapter and compares it to no-memory and bounded recent-chat conditions under identical model settings. The CI protocol explicitly fails an ANSF no-gain/regression hypothesis; its result is not an installed-app acceptance or a comprehensive M3/M4 claim.
+
 # ANSF direct source IDs, infinite-history navigation, and external multimodal references
 
 **Owner refinement:** November 7, 2026. Stacked on M2 draft PR #90.  

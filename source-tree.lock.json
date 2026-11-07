@@ -1,11 +1,15 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
-  "trackedFileCount": 551,
+  "trackedFileCount": 556,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
       "blob": "f0f8ee91b525755cbc5eca83479b38cd41ce6a95"
+    },
+    {
+      "path": ".github/workflows/lu-ansf-three-arm-benchmark.yml",
+      "blob": "2ea26276c57a43d43a78544259ddaa0b4679483b"
     },
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -116,6 +120,14 @@
       "blob": "73dcb3730ece8de0565ddef027a6d80fc9b116c4"
     },
     {
+      "path": "benchmarks/memory/test_three_arm_real_model.py",
+      "blob": "dd50a0b9ca71e1366114ac30ab12a993ccb52b0d"
+    },
+    {
+      "path": "benchmarks/memory/three_arm_real_model.py",
+      "blob": "a7be171728e2ed6b79a5987b92eea09eaf0896b5"
+    },
+    {
       "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
       "blob": "0919d9b88019a04888d5992589c976937ba71035"
     },
@@ -145,7 +157,11 @@
     },
     {
       "path": "docs/LU_ANSF_DIRECT_IDS_EXTERNAL_ARTIFACTS_20261107.md",
-      "blob": "347180ff186796a4aa217e7c0a5236a839087d72"
+      "blob": "403a6becd4bd6a3c6f807741674d7d4574914a13"
+    },
+    {
+      "path": "docs/LU_ANSF_THREE_ARM_REAL_MODEL_BASELINE_20261107.md",
+      "blob": "410dd6d0f223e3812103e1e679636a605d0c049f"
     },
     {
       "path": "docs/LU_AUTONOMY_01_PRODUCTIVE_CONTAINMENT_AUDIT_20261103.md",
@@ -177,7 +193,7 @@
     },
     {
       "path": "docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md",
-      "blob": "e71f49521c6b1a743586926b0bb2eba0695489bb"
+      "blob": "9efe37f60348f2c68b3d358db15cf9a0f3879771"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -193,7 +209,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "ccf08da71dc36261dd1af79ccfc508be68264ba1"
+      "blob": "e62b9d571686b79ce93e0c43c79f9e44f32c86c4"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -966,6 +982,10 @@
     {
       "path": "src-tauri/lu-core/build.rs",
       "blob": "8cafc46386f43ac7afbda8a2500dfbff5ee2873d"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/ansf_memory_baseline.rs",
+      "blob": "0c8863a10a152f14c226e7ab5142448bfee20f48"
     },
     {
       "path": "src-tauri/lu-core/examples/inference_supervisor_smoke.rs",
