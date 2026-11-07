@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -286,7 +286,7 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  if ($Scenario -ne 'PersistedRestart') {
+  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
     # Native folder chooser must be opened through UI, never by trusting input path.
     Click '+ Open folder'
     Start-Sleep -Seconds 2
@@ -306,7 +306,7 @@ try {
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    if ($Scenario -ne 'PersistedRestart') {
+    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
       # Standard Windows folder dialog address navigation; real desktop input.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
@@ -651,6 +651,12 @@ try {
       if (!$current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { Deny 'explicit_save_not_persisted' }
       Require 'Saved main.rs'
       Write-Host 'WO8_INSTALLED_NATIVE_REVIEW_AND_EXPLICIT_SAVE=PASS'
+    } elseif ($Scenario -eq 'P04ReinstalledProject') {
+      # No new picker registration: verify persisted user catalog and source
+      # in the genuinely reinstalled desktop, without writing source bytes.
+      Require 'Source editor text'
+      Require 'main.rs'
+      Write-Host 'P04_INSTALLED_REINSTALL_PERSISTED_PROJECT_AND_EDITOR=PASS'
     } elseif ($Scenario -eq 'PersistedRestart') {
       if (![IO.File]::ReadAllText((Join-Path $fixed 'main.rs')).Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) {
         Deny 'previously_saved_file_missing_after_restart'
