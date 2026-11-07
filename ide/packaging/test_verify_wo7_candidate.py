@@ -17,7 +17,7 @@ class CandidateTests(unittest.TestCase):
         self.source="a"*40
         self.data={"schema":"lu.ide.wo7.signed-nsis.v1","releaseApproved":False,
                    "sourceSha":self.source,"licensesReviewed":True}
-        for name in ("installer","service"):
+        for name in ("installer","service","desktop"):
             target=self.root/(name+".exe")
             target.write_bytes(name.encode())
             self.data[name]={"path":target.name,
@@ -37,6 +37,7 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(report["stage"],"signed_candidate_for_native_installed_testing")
         self.assertFalse(report["releaseAccepted"])
         self.assertFalse(report["protectedRunTestDebugAccepted"])
+        self.assertEqual(len(report["verifiedSignatures"]),3)
 
     def test_rejects_mismatch(self):
         self.data["service"]["sha256"]="0"*64
