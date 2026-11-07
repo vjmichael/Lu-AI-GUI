@@ -3257,6 +3257,10 @@ function App() {
           <strong>Revise multiple Word, PowerPoint or Excel fields in one new version</strong>
           <small>Select the original document and a NEW output folder through native pickers.
             Every existing value must match. No modifications are made until final native approval.</small>
+          <small role="note">P09 Office fidelity boundary: only 2–32 exact text runs or simple typed cells.
+            Lu preserves unchanged OOXML part content, not ZIP container bytes or guaranteed
+            rendering/layout fidelity. Formulas are not recalculated; charts, embedded objects,
+            macros, signatures and external links are not editable here.</small>
           {officeBatchDraft.map((patch,i)=><fieldset key={i} className="readProposalCard">
             <legend>Change {i+1} of {officeBatchDraft.length}</legend>
             <label className="editReviewAck">Kind
@@ -3415,6 +3419,10 @@ function App() {
           </label>
           <small>Unsupported formulas, signatures, macros, rich objects or unsafe structures are refused.
             Office revisions are new files; they never overwrite the selected original.</small>
+          <small role="note">P09 fidelity: this changes one exact text run or simple typed cell,
+            not entire paragraphs, tables or rich text. Unchanged package PART CONTENT is
+            retained; ZIP metadata, visual layout and Office application rendering are not
+            certified. Check the new version in a dedicated Office application.</small>
           <div className="settingsActions">
             <button type="button" className="primaryButton"
               disabled={!chatId || officeRevisionBusy || !officePatch.expectedOld.trim() ||
