@@ -22,6 +22,7 @@ VALID_VERSION=re.compile(r"^[a-zA-Z0-9._-]{1,60}$")
 VALID_HASH=re.compile(r"^[0-9a-f]{64}$")
 FAULTS={"none","after_prepare","after_backup_rename",
         "after_activation_rename","after_validation","after_commit"}
+ROLLBACK_FAULTS={"after_rollback_journal","after_reject_rename","after_restore_previous"}
 
 class Denied(ValueError):
     pass
@@ -112,7 +113,7 @@ def read_journal(root):
     if not isinstance(rec,dict):
         raise Denied("journal_must_be_an_object")
     if (rec.get("schema")!=SCHEMA or rec.get("state") not in
-            {"prepared","backed_up","activated","validated","committed","rolled_back"}):
+            {"prepared","backed_up","activated","validated","committed","rolling_back","rolled_back"}):
         raise Denied("malformed_transaction_phase")
     for name in ("old","new"):
         r=rec.get(name)
@@ -175,8 +176,10 @@ def upgrade(root,fault="none"):
     crash(fault,"after_commit")
     return "committed_old_version_retained_for_redundancy"
 
-def recover(root,force_rollback=False):
+def recover(root,force_rollback=False,fault="none"):
     root=assert_fixture(root)
+    if fault not in ROLLBACK_FAULTS|{"none"}:
+        raise Denied("unknown_recovery_fault_injection")
     worker_gate(root)
     rec=read_journal(root)
     state=rec["state"]
@@ -188,6 +191,13 @@ def recover(root,force_rollback=False):
         if not same(identity(root,"current"),rec["new"]) or not same(identity(root,"previous"),rec["old"]):
             raise Denied("committed_version_or_redundant_backup_changed")
         return "committed_previous_retained"
+    # A rollback can die between the same-volume renames. Persist its intent
+    # BEFORE the first effect, then treat the recovery state as resumable on
+    # next startup without silently re-activating the rejected candidate.
+    if state!="rolling_back":
+        rec["state"]="rolling_back"
+        atomic_journal(root,rec)
+    crash(fault,"after_rollback_journal")
     previous=root/"previous"
     current=root/"current"
     if previous.exists():
@@ -198,8 +208,10 @@ def recover(root,force_rollback=False):
                 raise Denied("unreviewed_current_or_rejected_payload")
             os.replace(current,root/"rejected")
             fsync_dir(root)
+        crash(fault,"after_reject_rename")
         os.replace(previous,current)
         fsync_dir(root)
+        crash(fault,"after_restore_previous")
     else:
         # Crash immediately after PREPARED: no file effects occurred.
         if not current.exists() or not same(identity(root,"current"),rec["old"]):
@@ -214,15 +226,19 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--operation",choices=["upgrade","recover","rollback"],required=True)
-    p.add_argument("--inject",choices=sorted(FAULTS),default="none")
+    p.add_argument("--inject",choices=sorted(FAULTS|ROLLBACK_FAULTS),default="none")
     args=p.parse_args()
     try:
         if args.operation=="upgrade":
             result=upgrade(args.root,args.inject)
+        elif args.operation=="rollback":
+            # Explicitly disposable fixture-only failure injection. Production
+            # installers cannot run this engine or authorize signing/SCM.
+            result=recover(args.root,True,args.inject)
         else:
             if args.inject!="none":
                 raise Denied("recovery_never_accepts_failure_injection")
-            result=recover(args.root,args.operation=="rollback")
+            result=recover(args.root)
     except (ValueError,TypeError,OSError) as exc:
         print("DENIED: "+(str(exc) if isinstance(exc,Denied) else "transaction_os_operation_failed"),file=sys.stderr)
         return 2

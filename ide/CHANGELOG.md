@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P04 rollback interrupted during rollback (Nov 7):** Added fsync-journal `rolling_back` state and genuine child process death at journal/rejected/previous restore boundaries; resumable exact digests, user-state preservation and worker-quiescence source tests. Signed installed release still gated.
+
 - **P06 dlopen2 complete source MIT originals (Nov 7):** Pinned immutable historical commit containing both dlopen2 0.8.2 and dlopen2_derive 0.4.3 manifests; complete original copyright MIT text source-attested and bundled only for exact versions. Native CI pending.
 
 - **P06 seven native library/SDK notice restorations (Nov 7):** Pinned full upstream MIT and Apache sources for libappindicator-sys, jni-sys-macros, three Android NDK packages and two winapi GNU import libraries. Seven independent native library binary redistribution reviews remain open.
