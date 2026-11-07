@@ -6,6 +6,9 @@
 //! Protobuf UI messages never contain paths or grants.
 #![forbid(unsafe_code)]
 
+pub mod advanced_workflows;
+pub mod reviewed_git;
+pub mod workflow_orchestrator;
 pub mod browser;
 pub mod capabilities;
 pub mod continuity;

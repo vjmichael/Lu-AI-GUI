@@ -2941,6 +2941,1205 @@
           ]
         }
       }
+    },
+    "workflow.preview": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "projectIds"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "kind": {
+            "type": "string",
+            "const": "multi_project_release_review"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "pattern": "^ide-[0-9a-f]{32}$",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "head": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "worktree": {
+                  "type": "string"
+                },
+                "artifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "relativePath": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "byteLength": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "minLength": 64,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "relativePath",
+                      "category",
+                      "byteLength",
+                      "sha256"
+                    ]
+                  }
+                },
+                "blockers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "projectId",
+                "displayName",
+                "branch",
+                "head",
+                "worktree",
+                "artifacts",
+                "blockers"
+              ]
+            }
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "readyForReview": {
+            "type": "boolean"
+          },
+          "readyForRelease": {
+            "type": "boolean"
+          },
+          "liveRemoteVerified": {
+            "type": "boolean"
+          },
+          "executionPerformed": {
+            "type": "boolean"
+          },
+          "packageCreated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "kind",
+          "projects",
+          "fingerprint",
+          "readyForReview",
+          "readyForRelease",
+          "liveRemoteVerified",
+          "executionPerformed",
+          "packageCreated"
+        ]
+      }
+    },
+    "workflow.verify": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "kind": {
+            "type": "string",
+            "const": "multi_project_release_review"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "pattern": "^ide-[0-9a-f]{32}$",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "head": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "worktree": {
+                  "type": "string"
+                },
+                "artifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "relativePath": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "byteLength": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "minLength": 64,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "relativePath",
+                      "category",
+                      "byteLength",
+                      "sha256"
+                    ]
+                  }
+                },
+                "blockers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "projectId",
+                "displayName",
+                "branch",
+                "head",
+                "worktree",
+                "artifacts",
+                "blockers"
+              ]
+            }
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "readyForReview": {
+            "type": "boolean"
+          },
+          "readyForRelease": {
+            "type": "boolean"
+          },
+          "liveRemoteVerified": {
+            "type": "boolean"
+          },
+          "executionPerformed": {
+            "type": "boolean"
+          },
+          "packageCreated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "kind",
+          "projects",
+          "fingerprint",
+          "readyForReview",
+          "readyForRelease",
+          "liveRemoteVerified",
+          "executionPerformed",
+          "packageCreated"
+        ]
+      }
+    },
+    "workflow.manifest": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "byteLength": {
+            "type": "integer"
+          },
+          "projectCount": {
+            "type": "integer"
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "projectFilesExported": {
+            "type": "boolean"
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          },
+          "executionPerformed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "fileName",
+          "sha256",
+          "byteLength",
+          "projectCount",
+          "sourceFingerprint",
+          "projectFilesExported",
+          "releaseApproved",
+          "executionPerformed"
+        ]
+      }
+    },
+    "workflow.bundle": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ide-[0-9a-f]{32}$",
+              "minLength": 36,
+              "maxLength": 36
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "byteLength": {
+            "type": "integer"
+          },
+          "artifactCount": {
+            "type": "integer"
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "archiveFormat": {
+            "type": "string"
+          },
+          "executedProjectCode": {
+            "type": "boolean"
+          },
+          "gitMutated": {
+            "type": "boolean"
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "fileName",
+          "sha256",
+          "byteLength",
+          "artifactCount",
+          "sourceFingerprint",
+          "archiveFormat",
+          "executedProjectCode",
+          "gitMutated",
+          "releaseApproved"
+        ]
+      }
+    },
+    "git.reviewOne": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "localHead": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "worktreeSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "indexFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "fileSize": {
+            "type": "integer"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "codeExecuted": {
+            "type": "boolean"
+          },
+          "gitHooksExecuted": {
+            "type": "boolean"
+          },
+          "remoteUpdated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "localHead",
+          "worktreeSha256",
+          "indexFingerprint",
+          "fileSize",
+          "stage",
+          "codeExecuted",
+          "gitHooksExecuted",
+          "remoteUpdated"
+        ]
+      }
+    },
+    "git.stageOne": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "relativePath": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "localHead": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "worktreeSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "indexFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "fileSize": {
+                "type": "integer"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "codeExecuted": {
+                "type": "boolean"
+              },
+              "gitHooksExecuted": {
+                "type": "boolean"
+              },
+              "remoteUpdated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "projectId",
+              "relativePath",
+              "localHead",
+              "worktreeSha256",
+              "indexFingerprint",
+              "fileSize",
+              "stage",
+              "codeExecuted",
+              "gitHooksExecuted",
+              "remoteUpdated"
+            ]
+          }
+        },
+        "required": [
+          "expected"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "baseHead": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "sourceSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stagedIndexFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stagedBlobOid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "gitHooksExecuted": {
+            "type": "boolean"
+          },
+          "remoteUpdated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "baseHead",
+          "sourceSha256",
+          "stagedIndexFingerprint",
+          "stagedBlobOid",
+          "gitHooksExecuted",
+          "remoteUpdated"
+        ]
+      }
+    },
+    "git.commitOne": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "baseHead": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "sourceSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "stagedIndexFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "stagedBlobOid": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "gitHooksExecuted": {
+                "type": "boolean"
+              },
+              "remoteUpdated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "projectId",
+              "relativePath",
+              "baseHead",
+              "sourceSha256",
+              "stagedIndexFingerprint",
+              "stagedBlobOid",
+              "gitHooksExecuted",
+              "remoteUpdated"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "authorName": {
+            "type": "string",
+            "maxLength": 96
+          },
+          "authorEmail": {
+            "type": "string",
+            "maxLength": 96
+          }
+        },
+        "required": [
+          "stage",
+          "message",
+          "authorName",
+          "authorEmail"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "previousHead": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "sourceSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "gitHooksExecuted": {
+            "type": "boolean"
+          },
+          "remoteUpdated": {
+            "type": "boolean"
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "previousHead",
+          "commitSha",
+          "sourceSha256",
+          "gitHooksExecuted",
+          "remoteUpdated",
+          "releaseApproved"
+        ]
+      }
+    },
+    "workflow.create": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expectedFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "recipeId": {
+                  "type": "string",
+                  "enum": [
+                    "rust_check",
+                    "rust_tests",
+                    "lu_ide_host_tests"
+                  ]
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxItems": 12
+                }
+              },
+              "required": [
+                "projectId",
+                "recipeId",
+                "dependsOn"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 12
+          }
+        },
+        "required": [
+          "projectIds",
+          "expectedFingerprint",
+          "steps"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "maxItems": 8
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "spec": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "recipeId": {
+                      "type": "string",
+                      "enum": [
+                        "rust_check",
+                        "rust_tests",
+                        "lu_ide_host_tests"
+                      ]
+                    },
+                    "dependsOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "maxItems": 12
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "recipeId",
+                    "dependsOn"
+                  ]
+                },
+                "state": {
+                  "type": "string"
+                },
+                "nativeJobId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativePlanSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativeOutputSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "errorCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "spec",
+                "state",
+                "nativeJobId",
+                "nativePlanSha256",
+                "nativeOutputSha256",
+                "errorCode"
+              ]
+            },
+            "maxItems": 12
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          },
+          "automaticExecution": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workflowId",
+          "projectIds",
+          "sourceFingerprint",
+          "tasks",
+          "releaseApproved",
+          "automaticExecution"
+        ]
+      }
+    },
+    "workflow.listRuns": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "workflowId": {
+              "type": "string"
+            },
+            "projectIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "maxItems": 8
+            },
+            "sourceFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "spec": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "projectId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "recipeId": {
+                        "type": "string",
+                        "enum": [
+                          "rust_check",
+                          "rust_tests",
+                          "lu_ide_host_tests"
+                        ]
+                      },
+                      "dependsOn": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "maxItems": 12
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "recipeId",
+                      "dependsOn"
+                    ]
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "nativeJobId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "nativePlanSha256": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "nativeOutputSha256": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "errorCode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "spec",
+                  "state",
+                  "nativeJobId",
+                  "nativePlanSha256",
+                  "nativeOutputSha256",
+                  "errorCode"
+                ]
+              },
+              "maxItems": 12
+            },
+            "releaseApproved": {
+              "type": "boolean"
+            },
+            "automaticExecution": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "workflowId",
+            "projectIds",
+            "sourceFingerprint",
+            "tasks",
+            "releaseApproved",
+            "automaticExecution"
+          ]
+        }
+      }
+    },
+    "workflow.cancelPending": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "workflowId",
+          "step"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "maxItems": 8
+          },
+          "sourceFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "spec": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "recipeId": {
+                      "type": "string",
+                      "enum": [
+                        "rust_check",
+                        "rust_tests",
+                        "lu_ide_host_tests"
+                      ]
+                    },
+                    "dependsOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "maxItems": 12
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "recipeId",
+                    "dependsOn"
+                  ]
+                },
+                "state": {
+                  "type": "string"
+                },
+                "nativeJobId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativePlanSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nativeOutputSha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "errorCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "spec",
+                "state",
+                "nativeJobId",
+                "nativePlanSha256",
+                "nativeOutputSha256",
+                "errorCode"
+              ]
+            },
+            "maxItems": 12
+          },
+          "releaseApproved": {
+            "type": "boolean"
+          },
+          "automaticExecution": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workflowId",
+          "projectIds",
+          "sourceFingerprint",
+          "tasks",
+          "releaseApproved",
+          "automaticExecution"
+        ]
+      }
     }
   }
 }

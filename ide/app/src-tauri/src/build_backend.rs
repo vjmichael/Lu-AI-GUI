@@ -264,6 +264,28 @@ impl NativeBuildRuntime {
             quarantined,
         })
     }
+    /// Read only the existing protected WO6 supervisor's durable OS journal.
+    /// A user-writable WO9 graph file can never self-certify a successful
+    /// native step after host restart. This does not launch or re-run code.
+    pub fn verify_replayed_completed_job(
+        &self, project_id: &str, job_id: &str, plan_sha: &str,
+    ) -> Result<(), String> {
+        if job_id.is_empty() || plan_sha.len() != 64
+            || !plan_sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("WO9_NATIVE_REPLAY_IDENTITY_INVALID".into());
+        }
+        let job = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
+            .into_iter().find(|job| job.job_id == job_id)
+            .ok_or("WO9_NATIVE_REPLAY_JOB_ABSENT")?;
+        if job.project_id != project_id || job.plan_sha256 != plan_sha {
+            return Err("WO9_NATIVE_REPLAY_PROJECT_OR_PLAN_MISMATCH".into());
+        }
+        if job.phase != JobPhase::Completed || job.requires_reconciliation {
+            return Err("WO9_NATIVE_REPLAY_NOT_TERMINALLY_VERIFIED".into());
+        }
+        Ok(())
+    }
+
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let active = locked.current.as_ref().ok_or("BUILD_NO_ACTIVE_JOB")?;

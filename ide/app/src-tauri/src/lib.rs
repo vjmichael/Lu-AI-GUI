@@ -76,6 +76,250 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// WO9-E durable workflow creation from a native Git/artifact fingerprint.
+#[tauri::command]
+async fn ide_workflow_create(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+    steps: Vec<lu_ide_workspace::workflow_orchestrator::WorkflowStep>,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    let registry = Arc::clone(registry.inner());
+    let coordinator = Arc::clone(coordinator.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        coordinator.create(&registry, &project_ids, &expected_fingerprint, steps)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GRAPH_CREATE_TASK_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_workflow_list_runs(
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+) -> Result<Vec<lu_ide_workspace::workflow_orchestrator::WorkflowRun>, String> {
+    coordinator.list().map_err(str::to_owned)
+}
+
+#[tauri::command]
+async fn ide_workflow_cancel_pending(
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    workflow_id: String,
+    step: usize,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    coordinator.cancel_pending(&workflow_id, step).map_err(str::to_owned)
+}
+
+/// WO9-E restart recovery: revalidate a previously completed DAG step
+/// against the protected WO6 journal. Read-only; never executes/replays code.
+#[tauri::command]
+async fn ide_workflow_verify_native_receipt(
+    app: AppHandle,
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    workflow_id: String,
+    step: usize,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("WO9_GRAPH_PROTECTED_JOURNAL_UNAVAILABLE")?;
+        let runtime = Arc::clone(runtime.inner());
+        let coordinator = Arc::clone(coordinator.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            let original = coordinator.pending_native_recheck(&workflow_id, step)
+                .map_err(str::to_owned)?;
+            let job_id = original.native_job_id
+                .ok_or("WO9_NATIVE_JOURNAL_JOB_UNAVAILABLE")?;
+            let plan_sha = original.native_plan_sha256
+                .ok_or("WO9_NATIVE_JOURNAL_PLAN_UNAVAILABLE")?;
+            runtime.verify_replayed_completed_job(
+                &original.spec.project_id, &job_id, &plan_sha)?;
+            coordinator.accept_rechecked_native_pass(
+                &workflow_id, step, &job_id, &plan_sha).map_err(str::to_owned)
+        }).await.map_err(|_| "WO9_GRAPH_REPLAY_INSPECTION_TASK_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, coordinator, workflow_id, step);
+        Err("WO9_GRAPH_PROTECTED_JOURNAL_UNAVAILABLE".into())
+    }
+}
+
+/// This method does NOT implement a second worker. It invokes exactly the
+/// existing WO6 native signed-resource supervisor (including its independent
+/// human OS approval), and records only the resulting native receipt.
+#[tauri::command]
+async fn ide_workflow_run_step(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    workflow_id: String,
+    step: usize,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("WO9_GRAPH_PROTECTED_WORKER_NOT_INSTALLED")?;
+        let runtime = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let coordinator = Arc::clone(coordinator.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            let spec = coordinator.begin_step(&registry, &workflow_id, step)
+                .map_err(str::to_owned)?;
+            let result = runtime.run(&app, &registry, &spec.project_id, &spec.recipe_id);
+            match result {
+                Ok(receipt) => {
+                    coordinator.finish_step(&workflow_id, step,
+                        Some(receipt.job_id), Some(receipt.plan_sha256),
+                        receipt.output_sha256, &receipt.phase, receipt.native_exit_code,
+                        receipt.requires_reconciliation || receipt.timed_out,
+                        receipt.native_error_category).map_err(str::to_owned)
+                }
+                Err(code) => coordinator.finish_step(&workflow_id, step,
+                    None, None, None, "uncertain", None, true, Some(code))
+                    .map_err(str::to_owned),
+            }
+        }).await.map_err(|_| "WO9_GRAPH_NATIVE_WORKER_TASK_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, coordinator, workflow_id, step);
+        Err("WO9_GRAPH_PROTECTED_WORKER_NOT_INSTALLED".into())
+    }
+}
+
+/// WO9-D: native read-only preview for one tracked file; stage/commit
+/// require separate exact-source revalidation and an explicit OS confirmation.
+#[tauri::command]
+async fn ide_git_review_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::reviewed_git::ReviewedGitFile, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_reviewed_git_file(&project_id, &relative_path).map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GIT_REVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_stage_reviewed(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    expected: lu_ide_workspace::reviewed_git::ReviewedGitFile,
+) -> Result<lu_ide_workspace::reviewed_git::ReviewedStageReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let current = registry.preview_reviewed_git_file(
+            &expected.project_id, &expected.relative_path).map_err(str::to_owned)?;
+        if current.local_head != expected.local_head
+            || current.index_fingerprint != expected.index_fingerprint
+            || current.worktree_sha256 != expected.worktree_sha256
+            || current.file_size != expected.file_size {
+            return Err("WO9_GIT_REVIEW_CHANGED".into());
+        }
+        let allow = app.dialog().message(format!(
+            "Stage only this reviewed file?\n{}\nSHA-256 {}\nNo hooks, Git CLI, or remote operations.",
+            current.relative_path, current.worktree_sha256
+        )).title("Lu IDE · One-file Git stage")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+              "Stage reviewed bytes".into(), "Cancel".into())).blocking_show();
+        if !allow { return Err("WO9_GIT_STAGE_NOT_AUTHORIZED".into()); }
+        registry.stage_reviewed_git_file(&current).map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GIT_STAGE_HOST_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_commit_reviewed(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    stage: lu_ide_workspace::reviewed_git::ReviewedStageReceipt,
+    message: String,
+    author_name: String,
+    author_email: String,
+) -> Result<lu_ide_workspace::reviewed_git::ReviewedCommitReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let allow = app.dialog().message(format!(
+            "Create one local Git commit?\nFile: {}\nStaged SHA-256: {}\nMessage: {}\nNo Git hooks or push.",
+            stage.relative_path, stage.source_sha256, message
+        )).title("Lu IDE · Confirm local Git commit")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+              "Commit exact staged file".into(), "Cancel".into())).blocking_show();
+        if !allow { return Err("WO9_GIT_COMMIT_NOT_AUTHORIZED".into()); }
+        registry.commit_reviewed_git_file(&stage, &message, &author_name, &author_email)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GIT_COMMIT_HOST_UNAVAILABLE".to_owned())?
+}
+
+/// WO9-A/B: inspect several explicitly registered projects in one native,
+/// bounded, non-executing release workflow. No paths or commands from WebView.
+#[tauri::command]
+async fn ide_workflow_preview(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowInspection, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_multi_project_workflow(&project_ids).map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_NATIVE_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// WO9-B: reject stale Git HEAD, dirty worktree or changed staged artifacts.
+/// Verifying a plan does not approve packaging or request OS-worker admission.
+#[tauri::command]
+async fn ide_workflow_verify(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowInspection, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.verify_multi_project_workflow(&project_ids, &expected_fingerprint)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_REVALIDATE_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Explicit human-triggered export of a non-executing, immutable manifest
+/// to a fresh OS-picker-selected folder, never a JavaScript-selected path.
+#[tauri::command]
+async fn ide_workflow_export_manifest(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowManifestExport, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let folder = NativePicker(app).choose_project_directory()
+            .map_err(|_| "WORKFLOW_EXPORT_PICKER_UNAVAILABLE")?
+            .ok_or("WORKFLOW_EXPORT_CANCELLED")?;
+        registry.export_workflow_manifest(&project_ids, &expected_fingerprint, &folder)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_EXPORT_HOST_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// WO9-C: real portable ZIP of independently hashed predetermined project
+/// artifacts only. Native OS folder chooser supplies the destination;
+/// WebView cannot submit filesystem paths, commands, Git write or release flags.
+#[tauri::command]
+async fn ide_workflow_export_bundle(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowBundleExport, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = NativePicker(app).choose_project_directory()
+            .map_err(|_| "WORKFLOW_BUNDLE_PICKER_UNAVAILABLE")?
+            .ok_or("WORKFLOW_BUNDLE_CANCELLED")?;
+        registry.export_workflow_bundle(&project_ids, &expected_fingerprint, &selected)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_BUNDLE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read file metadata and bounded SHA-256 under an active registered project.
 /// The result NEVER proves an executable is safe or operable.
 #[tauri::command]
@@ -947,6 +1191,10 @@ pub fn run() {
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
+            let workflows = lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator::new(
+                data.join("workflow-dependencies.json"))
+                .map_err(|_| std::io::Error::other("IDE durable workflow journal failed to open"))?;
+            app.manage(Arc::new(workflows));
             let intents = ExecutionIntents::new(data.join("execution-intents.jsonl"))
                 .map_err(|_| std::io::Error::other("IDE execution-intent journal failed to open"))?;
             app.manage(Arc::new(intents));
@@ -1002,6 +1250,18 @@ pub fn run() {
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
+            ide_workflow_create,
+            ide_workflow_list_runs,
+            ide_workflow_run_step,
+            ide_workflow_verify_native_receipt,
+            ide_workflow_cancel_pending,
+            ide_git_review_file,
+            ide_git_stage_reviewed,
+            ide_git_commit_reviewed,
+            ide_workflow_preview,
+            ide_workflow_verify,
+            ide_workflow_export_manifest,
+            ide_workflow_export_bundle,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,

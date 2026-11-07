@@ -14,7 +14,7 @@ const sections = [
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'languages', title: 'Language services', glyph: '⌁' },
-  { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
+  { id: 'packages', title: 'Packages & workflows', glyph: '⬡' },
   { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Job requests', glyph: '▶' },
 ];
@@ -31,6 +31,25 @@ const taskGateChoices = [
 function App() {
   const [section, setSection] = useState('projects');
   const [projects, setProjects] = useState([]);
+  const [workflowSteps, setWorkflowSteps] = useState([]);
+  const [workflowRuns, setWorkflowRuns] = useState([]);
+  const [workflowRunBusy, setWorkflowRunBusy] = useState(false);
+  const [gitReviewPath, setGitReviewPath] = useState('');
+  const [gitReview, setGitReview] = useState(null);
+  const [gitStageReceipt, setGitStageReceipt] = useState(null);
+  const [gitCommitReceipt, setGitCommitReceipt] = useState(null);
+  const [gitCommitMessage, setGitCommitMessage] = useState('');
+  const [gitAuthorName, setGitAuthorName] = useState('');
+  const [gitAuthorEmail, setGitAuthorEmail] = useState('');
+  const [gitWriteBusy, setGitWriteBusy] = useState(false);
+  const [workflowProjectIds, setWorkflowProjectIds] = useState([]);
+  const [workflowInspection, setWorkflowInspection] = useState(null);
+  const [workflowRevalidated, setWorkflowRevalidated] = useState(false);
+  const [workflowExport, setWorkflowExport] = useState(null);
+  const [workflowBundleExport, setWorkflowBundleExport] = useState(null);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const workflowRequest = useRef(0);
+
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState('');
   const [hint, setHint] = useState('');
@@ -257,6 +276,7 @@ function App() {
       ? reconcileDevelopmentEvidence(activeProject.projectId, projectContext, inventoryComparison, exactCi)
       : null;
   const isSource = section === 'source';
+  const isPackages = section === 'packages';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
@@ -331,6 +351,249 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  function chooseWorkflowProject(projectId, selected) {
+    workflowRequest.current += 1;
+    setWorkflowInspection(null);
+    setWorkflowRevalidated(false);
+    setWorkflowExport(null);
+    setWorkflowBundleExport(null);
+    setWorkflowProjectIds(previous =>
+      selected ? [...new Set([...previous, projectId])].slice(0, 8)
+        : previous.filter(id => id !== projectId));
+  }
+
+  async function previewMultiProjectWorkflow() {
+    const chosen = [...workflowProjectIds];
+    if (chosen.length === 0 || chosen.length > 8) return;
+    const serial = ++workflowRequest.current;
+    setWorkflowBusy(true);
+    setWorkflowInspection(null);
+    setWorkflowRevalidated(false);
+    setWorkflowExport(null);
+    setWorkflowBundleExport(null);
+    setProblem('');
+    try {
+      const value = await invoke('ide_workflow_preview', { projectIds: chosen });
+      if (serial === workflowRequest.current) setWorkflowInspection(value);
+    } catch (error) {
+      if (serial === workflowRequest.current) setProblem('Native workflow inspection rejected: ' + String(error));
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function revalidateMultiProjectWorkflow() {
+    if (!workflowInspection || workflowBusy) return;
+    const serial = ++workflowRequest.current;
+    const projectIds = workflowInspection.projects.map(project => project.projectId);
+    setWorkflowBusy(true);
+    setWorkflowRevalidated(false);
+    setProblem('');
+    try {
+      const verified = await invoke('ide_workflow_verify', {
+        projectIds, expectedFingerprint: workflowInspection.fingerprint,
+      });
+      if (serial === workflowRequest.current &&
+          verified.fingerprint === workflowInspection.fingerprint) {
+        setWorkflowRevalidated(true);
+        setHint('Exact workflow evidence rechecked. No package, Git write, or execution occurred.');
+      }
+    } catch (error) {
+      if (serial === workflowRequest.current) {
+        setWorkflowInspection(null);
+        setProblem('Workflow changed or is blocked; inspect again before review: ' + String(error));
+      }
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function exportMultiProjectManifest() {
+    if (!workflowInspection?.readyForReview || !workflowRevalidated || workflowBusy) return;
+    const serial = ++workflowRequest.current;
+    const projectIds = workflowInspection.projects.map(item => item.projectId);
+    setWorkflowBusy(true);
+    setProblem('');
+    try {
+      // The destination is selected in a native OS dialog by the trusted Tauri
+      // host. The WebView never supplies or receives an absolute path.
+      const exported = await invoke('ide_workflow_export_manifest', {
+        projectIds, expectedFingerprint: workflowInspection.fingerprint,
+      });
+      if (serial === workflowRequest.current) {
+        setWorkflowExport(exported);
+        setWorkflowRevalidated(false); // one explicit review per export
+        setHint('Workflow review manifest exported through native folder picker.');
+      }
+    } catch (error) {
+      if (serial === workflowRequest.current) {
+        setWorkflowRevalidated(false);
+        setProblem('Workflow manifest export denied or cancelled: ' + String(error));
+      }
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function exportMultiProjectBundle() {
+    if (!workflowInspection?.readyForReview || !workflowRevalidated || workflowBusy) return;
+    const serial = ++workflowRequest.current;
+    const projectIds = workflowInspection.projects.map(item => item.projectId);
+    setWorkflowBusy(true);
+    setProblem('');
+    try {
+      // ZIP contains only verified previously discovered project artifacts.
+      // Native OS selection controls destination; no arbitrary path in IPC.
+      const zipped = await invoke('ide_workflow_export_bundle', {
+        projectIds, expectedFingerprint: workflowInspection.fingerprint,
+      });
+      if (serial === workflowRequest.current) {
+        setWorkflowBundleExport(zipped);
+        setWorkflowRevalidated(false);
+        setHint('Verified artifact ZIP created without running project code or modifying Git.');
+      }
+    } catch (error) {
+      if (serial === workflowRequest.current) {
+        setWorkflowRevalidated(false);
+        setProblem('Workflow archive denied or cancelled: ' + String(error));
+      }
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function reviewGitFileForStage() {
+    if (!activeProject || gitWriteBusy || !gitReviewPath.trim()) return;
+    setGitWriteBusy(true);
+    setGitReview(null); setGitStageReceipt(null); setGitCommitReceipt(null);
+    setProblem('');
+    try {
+      const preview = await invoke('ide_git_review_file', {
+        projectId: activeProject.projectId, relativePath: gitReviewPath.trim(),
+      });
+      if (preview.projectId === activeProject.projectId) setGitReview(preview);
+    } catch (error) { setProblem('One-file Git preview denied: ' + String(error)); }
+    finally { setGitWriteBusy(false); }
+  }
+
+  async function stageReviewedGitFile() {
+    if (!gitReview || gitWriteBusy || !activeProject ||
+        gitReview.projectId !== activeProject.projectId) return;
+    setGitWriteBusy(true);
+    setProblem('');
+    try {
+      const staged = await invoke('ide_git_stage_reviewed', { expected: gitReview });
+      if (staged.projectId === activeProject.projectId &&
+          staged.sourceSha256 === gitReview.worktreeSha256) {
+        setGitStageReceipt(staged); setGitReview(null);
+        setHint('One reviewed source file staged using native Git. A separate explicit commit is required.');
+      }
+    } catch (error) { setGitReview(null); setProblem('Native Git stage denied: ' + String(error)); }
+    finally { setGitWriteBusy(false); void refreshGitStatus(); }
+  }
+
+  async function commitReviewedGitFile() {
+    if (!gitStageReceipt || gitWriteBusy || !activeProject ||
+        gitStageReceipt.projectId !== activeProject.projectId) return;
+    setGitWriteBusy(true); setProblem('');
+    try {
+      const done = await invoke('ide_git_commit_reviewed', {
+        stage: gitStageReceipt, message: gitCommitMessage,
+        authorName: gitAuthorName, authorEmail: gitAuthorEmail,
+      });
+      if (done.projectId === activeProject.projectId) {
+        setGitCommitReceipt(done); setGitStageReceipt(null); setGitCommitMessage('');
+        setHint('Local Git commit created. No hooks, push or release action occurred.');
+      }
+    } catch (error) { setProblem('Native Git commit denied: ' + String(error)); }
+    finally { setGitWriteBusy(false); void refreshGitStatus(); }
+  }
+
+  function addWorkflowStep() {
+    if (!workflowInspection?.readyForReview || workflowSteps.length >= 12) return;
+    const choices = workflowInspection.projects;
+    if (!choices.length) return;
+    setWorkflowSteps(before => [...before, {
+      projectId: choices[0].projectId, recipeId: 'rust_check',
+      dependsOn: before.length ? [before.length - 1] : [],
+    }]);
+  }
+
+  async function readWorkflowRuns() {
+    try {
+      const runs = await invoke('ide_workflow_list_runs');
+      setWorkflowRuns(Array.isArray(runs) ? runs.slice(-16) : []);
+    } catch (error) { setProblem('Durable workflow status unavailable: ' + String(error)); }
+  }
+
+  async function createDurableWorkflow() {
+    if (!workflowInspection?.readyForReview || !workflowRevalidated ||
+        workflowRunBusy || !workflowSteps.length) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const run = await invoke('ide_workflow_create', {
+        projectIds: workflowInspection.projects.map(item => item.projectId),
+        expectedFingerprint: workflowInspection.fingerprint, steps: workflowSteps,
+      });
+      setWorkflowRuns(prev => [...prev, run].slice(-16));
+      setWorkflowRevalidated(false);
+      setWorkflowSteps([]);
+      setHint('Durable dependency workflow recorded; no worker was started.');
+    } catch (error) { setProblem('Workflow creation denied: ' + String(error)); }
+    finally { setWorkflowRunBusy(false); }
+  }
+
+  async function runDurableStep(run, index) {
+    if (workflowRunBusy) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_workflow_run_step', {
+        workflowId: run.workflowId, step: index,
+      });
+      setWorkflowRuns(prev => prev.map(item =>
+        item.workflowId === updated.workflowId ? updated : item));
+      setHint('Native step returned. Inspect OS receipts and any dependency quarantine.');
+    } catch (error) {
+      setProblem('Protected workflow step was denied or interrupted: ' + String(error));
+      await readWorkflowRuns();
+    } finally { setWorkflowRunBusy(false); }
+  }
+
+  async function reverifyNativeStepAfterRestart(run, index) {
+    if (workflowRunBusy) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_workflow_verify_native_receipt', {
+        workflowId: run.workflowId, step: index,
+      });
+      setWorkflowRuns(prev => prev.map(item =>
+        item.workflowId === updated.workflowId ? updated : item));
+      setHint('Completed protected step confirmed against native supervisor journal; no code rerun.');
+    } catch (error) {
+      setProblem('WO9 native restart receipt remains unverified: ' + String(error));
+      await readWorkflowRuns();
+    } finally {
+      setWorkflowRunBusy(false);
+    }
+  }
+
+  async function cancelDurableStep(run, index) {
+    if (workflowRunBusy) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_workflow_cancel_pending', {
+        workflowId: run.workflowId, step: index,
+      });
+      setWorkflowRuns(prev => prev.map(item =>
+        item.workflowId === updated.workflowId ? updated : item));
+    } catch (error) { setProblem('Cancellation denied: ' + String(error)); }
+    finally { setWorkflowRunBusy(false); }
   }
 
   async function refreshGitStatus() {
@@ -1402,7 +1665,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -1417,8 +1680,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1>{isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+            isPackages ? 'Multi-project Git and artifact review · No release permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
@@ -1431,7 +1695,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -1723,6 +1987,193 @@ function App() {
             </div>
           </div>
         </section>
+        : isPackages
+        ? <section className="workspaceContent continuityWorkspace" aria-label="Advanced packaging and multi-project workflows">
+            <div className="sectionHeading">
+              <h2>Multi-project release review</h2>
+              <span>WO9 · Native Git and artifact inspection</span>
+            </div>
+            <p>Select up to eight projects that you registered using the operating-system
+              folder picker. Lu IDE observes each exact Git HEAD, working tree and bounded
+              artifact hashes. A review is never a signed release or permission to execute.</p>
+            <div className="continuityDocument">
+              <h3>Projects in workflow</h3>
+              <fieldset className="taskGateGrid" disabled={workflowBusy}>
+                <legend>Include registered, open projects</legend>
+                {projects.filter(project => project.available).map(project =>
+                  <label className="taskGateChoice" key={project.projectId}>
+                    <input type="checkbox"
+                      checked={workflowProjectIds.includes(project.projectId)}
+                      disabled={!project.active || (!workflowProjectIds.includes(project.projectId) &&
+                        workflowProjectIds.length >= 8)}
+                      onChange={event => chooseWorkflowProject(project.projectId, event.target.checked)} />
+                    {project.displayName} ({project.active ? 'open' : 'closed'})
+                  </label>)}
+              </fieldset>
+              {projects.length === 0 && <p>Register projects from the Projects screen first.</p>}
+              <button className="primaryBtn" type="button"
+                disabled={workflowBusy || workflowProjectIds.length === 0}
+                onClick={() => previewMultiProjectWorkflow()}>
+                {workflowBusy ? 'Inspecting native evidence…' : 'Inspect selected workflow'}
+              </button>
+            </div>
+            {workflowInspection && <div className="continuityDocument"
+              aria-label="Multi-project native workflow evidence">
+              <h3>Native workflow review</h3>
+              <p>Plan digest: <code>{workflowInspection.fingerprint}</code></p>
+              <p>Local review: <strong>{workflowInspection.readyForReview ?
+                'Eligible for human source review' : 'Blocked by native evidence'}</strong> ·
+                Remote: not queried · Execution: never started ·
+                Packaging: not performed · Release: not approved</p>
+              {workflowInspection.projects.map(item =>
+                <article className="continuityEvent" key={item.projectId}>
+                  <strong>{item.displayName}</strong>
+                  <p>Local branch: {item.branch || 'Unavailable'} · Git HEAD:
+                    <code> {item.head || 'Unverified'}</code></p>
+                  <p>Worktree: {item.worktree} · Verified artifacts:
+                    {item.artifacts.length}</p>
+                  {item.blockers.length > 0 &&
+                    <p role="status">Blockers: {item.blockers.join(', ')}</p>}
+                  {item.artifacts.map(artifact =>
+                    <p key={artifact.relativePath}><code>{artifact.relativePath}</code>
+                      {' · '}{artifact.byteLength.toLocaleString()} bytes
+                      {' · '}{artifact.sha256}</p>)}
+                </article>)}
+              <button className="ghostBtn" type="button"
+                disabled={workflowBusy || !workflowInspection.readyForReview}
+                onClick={() => revalidateMultiProjectWorkflow()}>
+                Verify frozen Git and artifact evidence again
+              </button>
+              {workflowRevalidated && <p role="status">
+                Exact evidence matched. This does not stage files, create an archive,
+                grant Git write rights, or satisfy native OS and signing gates.</p>}
+              <button className="primaryBtn" type="button"
+                disabled={workflowBusy || !workflowRevalidated}
+                onClick={() => exportMultiProjectManifest()}>
+                Export reviewed manifest to OS-selected folder
+              </button>
+              <button className="ghostBtn" type="button"
+                disabled={workflowBusy || !workflowRevalidated}
+                onClick={() => exportMultiProjectBundle()}>
+                Export verified artifacts as ZIP (no code execution)
+              </button>
+              {workflowBundleExport && <div role="status">
+                <p>Verified ZIP: <strong>{workflowBundleExport.fileName}</strong> ·
+                  {' '}{workflowBundleExport.artifactCount} source artifacts ·
+                  {' '}{workflowBundleExport.byteLength.toLocaleString()} bytes</p>
+                <p>Archive SHA-256: <code>{workflowBundleExport.sha256}</code></p>
+                <p>Git mutations: <strong>None</strong> ·
+                  Project code executed: <strong>No</strong> ·
+                  Installer/release accepted: <strong>No</strong></p>
+              </div>}
+              {workflowExport && <div role="status">
+                <p>Exported: <strong>{workflowExport.fileName}</strong> ·
+                  {' '}{workflowExport.byteLength.toLocaleString()} bytes</p>
+                <p>SHA-256: <code>{workflowExport.sha256}</code></p>
+                <p>Files included in package: <strong>No</strong> ·
+                  Signing: <strong>Not performed</strong> ·
+                  Release approval: <strong>Not granted</strong></p>
+              </div>}
+            </div>}
+            <div className="continuityDocument" aria-label="Durable multi-project dependency workflows">
+              <h3>Durable dependent build/test workflow</h3>
+              <p>Define a sequence of approved offline Cargo steps on the selected projects.
+                The native supervisor requests separate human permission and protected OS
+                admission for every step. No job starts when you create the graph.
+                Crashed and denied jobs block dependents; there is never automatic replay.</p>
+              <button className="ghostBtn" type="button"
+                disabled={!workflowInspection?.readyForReview || workflowSteps.length >= 12}
+                onClick={() => addWorkflowStep()}>Add dependent step</button>
+              {workflowSteps.map((step, index) =>
+                <div className="continuityEvent" key={index}>
+                  <strong>Step {index + 1}</strong>
+                  <label>Project
+                    <select value={step.projectId} disabled={workflowRunBusy}
+                      onChange={event => setWorkflowSteps(previous =>
+                        previous.map((item, i) => i === index ?
+                          {...item, projectId: event.target.value} : item))}>
+                      {workflowInspection?.projects.map(item =>
+                        <option key={item.projectId} value={item.projectId}>
+                          {item.displayName}</option>)}
+                    </select>
+                  </label>
+                  <label>Approved offline recipe
+                    <select value={step.recipeId} disabled={workflowRunBusy}
+                      onChange={event => setWorkflowSteps(previous =>
+                        previous.map((item, i) => i === index ?
+                          {...item, recipeId: event.target.value} : item))}>
+                      <option value="rust_check">Cargo check</option>
+                      <option value="rust_tests">Cargo tests</option>
+                      <option value="lu_ide_host_tests">Lu IDE host tests</option>
+                    </select>
+                  </label>
+                  <fieldset><legend>Requires completed steps</legend>
+                    {workflowSteps.slice(0,index).map((previous, prior) =>
+                      <label key={prior}>
+                        <input type="checkbox" checked={step.dependsOn.includes(prior)}
+                          disabled={workflowRunBusy}
+                          onChange={event => setWorkflowSteps(items =>
+                            items.map((item,i) => i === index ? {...item,
+                              dependsOn: event.target.checked ?
+                                [...item.dependsOn,prior].sort((a,b)=>a-b) :
+                                item.dependsOn.filter(id => id !== prior)} : item))} />
+                        Step {prior + 1}
+                      </label>)}
+                  </fieldset>
+                </div>)}
+              <button className="primaryBtn" type="button"
+                disabled={!workflowRevalidated || workflowRunBusy || !workflowSteps.length}
+                onClick={() => createDurableWorkflow()}>
+                Record exact dependency workflow (no execution)
+              </button>
+              <button className="ghostBtn" type="button"
+                disabled={workflowRunBusy} onClick={() => readWorkflowRuns()}>
+                Refresh durable workflows
+              </button>
+              {workflowRuns.map(run => <article key={run.workflowId}
+                className="continuityEvent">
+                <strong>Workflow <code>{run.workflowId}</code></strong>
+                <p>Frozen evidence: <code>{run.sourceFingerprint}</code></p>
+                <p>Auto-run: disabled · Release approved: no</p>
+                {run.tasks.map((task,index) => {
+                  const ready = task.state === 'pending' &&
+                    task.spec.dependsOn.every(dep => run.tasks[dep]?.state === 'passed') &&
+                    !run.tasks.some(other => ['running','interrupted'].includes(other.state));
+                  return <div className="continuityEvent" key={index}>
+                    <p>Step {index + 1} · {task.spec.recipeId} ·
+                      <strong> {task.state}</strong></p>
+                    <p>Project <code>{task.spec.projectId}</code> ·
+                      Prerequisites: {task.spec.dependsOn.map(dep => dep+1).join(', ') || 'none'}</p>
+                    {task.nativeJobId && <p>Native job <code>{task.nativeJobId}</code> ·
+                      Output <code>{task.nativeOutputSha256 || 'unverified'}</code></p>}
+                    {task.errorCode && <p role="status">{task.errorCode}</p>}
+                    {ready && <button type="button" className="primaryBtn"
+                      disabled={workflowRunBusy}
+                      onClick={() => runDurableStep(run,index)}>
+                      Request separately approved protected step
+                    </button>}
+                    {task.state === 'pending' && <button type="button" className="ghostBtn"
+                      disabled={workflowRunBusy}
+                      onClick={() => cancelDurableStep(run,index)}>Cancel pending step</button>}
+                    {task.state === 'native_receipt_unverified' &&
+                      <div role="status">
+                        <p>Host restarted. This completed step remains blocked until its
+                          exact WO6 protected supervisor job/plan is independently
+                          confirmed. No project code is rerun.</p>
+                        <button type="button" className="ghostBtn"
+                          disabled={workflowRunBusy}
+                          onClick={() => reverifyNativeStepAfterRestart(run,index)}>
+                          Verify stored native completion against OS journal
+                        </button>
+                      </div>}
+                    {task.state === 'interrupted' &&
+                      <p role="status">Native OS reconciliation required.
+                        No automatic replay. Use Job requests to inspect exact kernel cleanup.</p>}
+                  </div>;
+                })}
+              </article>)}
+            </div>
+          </section>
         : isSource
         ? <section className="workspaceContent continuityWorkspace" aria-label="Read-only source control">
             <div className="sectionHeading">
@@ -1730,11 +2181,67 @@ function App() {
               <span>{gitStatus ? gitStatus.worktree.replaceAll('_', ' ') : 'Not inspected'}</span>
             </div>
             <p className="capabilityNotice">
-              Local status is read directly from the registered project.
-              The IDE does not run Git, stage changes, fetch from GitHub, or modify files.
+              Local status is read directly from the registered project. WO9 permits one-file,
+              human-reviewed local staging and commit through native libgit2 only. No hooks,
+              arbitrary commands, remote fetch, push or branch checkout are exposed.
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <div className="continuityDocument" aria-label="Reviewed local Git staging and commit">
+              <h3>Review, stage, commit one tracked file</h3>
+              <p>Only a tracked, regular file under your OS-picker-selected project.
+                Native host checks the exact source SHA, Git HEAD and index before
+                staging its reviewed bytes. Separate operating-system confirmations
+                are required for Stage and Commit. No project scripts or Git hooks run.</p>
+              <label htmlFor="wo9GitPath">Project-relative tracked file</label>
+              <input id="wo9GitPath" type="text" value={gitReviewPath}
+                placeholder="src/main.rs" maxLength={240}
+                disabled={gitWriteBusy || !!gitStageReceipt}
+                onChange={event => { setGitReviewPath(event.target.value);
+                  setGitReview(null); setGitCommitReceipt(null); }} />
+              <button type="button" className="ghostBtn"
+                disabled={gitWriteBusy || !!gitStageReceipt || !gitReviewPath.trim()}
+                onClick={() => reviewGitFileForStage()}>Inspect exact Git file</button>
+              {gitReview && <article className="continuityEvent">
+                <strong>Reviewed local file: {gitReview.relativePath}</strong>
+                <p>HEAD: <code>{gitReview.localHead}</code></p>
+                <p>Exact file SHA: <code>{gitReview.worktreeSha256}</code></p>
+                <p>Index revision: <code>{gitReview.indexFingerprint}</code></p>
+                <p>Size: {gitReview.fileSize.toLocaleString()} bytes. Review this file's
+                  changes in the read-only Diff view before staging.</p>
+                <button type="button" className="primaryBtn"
+                  disabled={gitWriteBusy} onClick={() => stageReviewedGitFile()}>
+                  Confirm and stage these reviewed bytes
+                </button>
+              </article>}
+              {gitStageReceipt && <article className="continuityEvent">
+                <strong>Staged exact file: {gitStageReceipt.relativePath}</strong>
+                <p>Git blob: <code>{gitStageReceipt.stagedBlobOid}</code></p>
+                <p>SHA-256: <code>{gitStageReceipt.sourceSha256}</code></p>
+                <label htmlFor="wo9CommitMessage">Local commit message</label>
+                <input id="wo9CommitMessage" type="text" value={gitCommitMessage}
+                  maxLength={1200} disabled={gitWriteBusy}
+                  onChange={event => setGitCommitMessage(event.target.value)} />
+                <label htmlFor="wo9CommitName">Author name</label>
+                <input id="wo9CommitName" type="text" value={gitAuthorName}
+                  maxLength={96} disabled={gitWriteBusy}
+                  onChange={event => setGitAuthorName(event.target.value)} />
+                <label htmlFor="wo9CommitEmail">Author email</label>
+                <input id="wo9CommitEmail" type="email" value={gitAuthorEmail}
+                  maxLength={96} disabled={gitWriteBusy}
+                  onChange={event => setGitAuthorEmail(event.target.value)} />
+                <button type="button" className="primaryBtn"
+                  disabled={gitWriteBusy || !gitCommitMessage.trim() ||
+                    !gitAuthorName.trim() || !gitAuthorEmail.trim()}
+                  onClick={() => commitReviewedGitFile()}>
+                  Confirm separate local commit (no push)
+                </button>
+              </article>}
+              {gitCommitReceipt && <p role="status">
+                Local commit: <code>{gitCommitReceipt.commitSha}</code>.
+                Remote unchanged; release unapproved.</p>}
+            </div>}
+
             {gitBusy && <p role="status">Inspecting local Git state…</p>}
             {!gitBusy && gitStatus && <div className="continuityBody">
               <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
