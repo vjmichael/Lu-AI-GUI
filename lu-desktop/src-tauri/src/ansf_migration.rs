@@ -232,7 +232,7 @@ fn import_r14_flat(root:&Path,library:&AnsfLibrary,books:&Path)
         };
         let event=LiveEvent{
             event_id:event_identity(&session,(index+1) as u64),
-            kind,text:original.text,user_turn_id:None,generation_id:None,
+            kind,text:original.text,user_turn_id:None,legacy_turn_id:None,generation_id:None,
             call_id:None,tool_id:None,
         };
         book.import_legacy_chat_event(&session,&event)
