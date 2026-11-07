@@ -186,6 +186,43 @@ fn ci_probe_denied_pipe_access() {
             acceptance_trace(other_status);
         }
     }
+    // CI diagnostic only. Compare explicit SecurityImpersonation with the
+    // default Win32 SQOS flags. Both handles are immediately closed and
+    // never treated as authenticated service/Job admission.
+    for (desired, accepted, denied_stage, other_stage) in [
+        (
+            0,
+            "pipe_diag_default_sqos_zero_allowed",
+            "pipe_diag_default_sqos_zero_denied",
+            "pipe_diag_default_sqos_zero_other",
+        ),
+        (
+            FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE,
+            "pipe_diag_default_sqos_data_allowed",
+            "pipe_diag_default_sqos_data_denied",
+            "pipe_diag_default_sqos_data_other",
+        ),
+    ] {
+        let raw = unsafe {
+            CreateFileW(
+                security::ws(security::SERVICE_ENDPOINT).as_ptr(),
+                desired,
+                0,
+                ptr::null(),
+                OPEN_EXISTING,
+                0,
+                ptr::null_mut(),
+            )
+        };
+        if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
+            let _probe_only = Handle(raw);
+            acceptance_trace(accepted);
+        } else if unsafe { GetLastError() } == 5 {
+            acceptance_trace(denied_stage);
+        } else {
+            acceptance_trace(other_stage);
+        }
+    }
 }
 
 fn connect_approved(config: &TrustedBroker) -> Result<Handle, SupervisorError> {
