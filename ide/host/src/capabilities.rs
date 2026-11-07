@@ -234,6 +234,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "fsynced cancelled pending state, no worker started"
         ),
         capability!(
+            "bridge.status",
+            "ide_bridge_status",
+            "Read optional Lu bridge status",
+            "Truthful disabled local Lu peer status; never connects, starts a socket, reads a project, or borrows model permissions.",
+            "read",
+            "standalone native IDE app; no Lu Core installation required",
+            "authenticated=false, paired=false, enabled=false, no disclosure or execution"
+        ),
+        capability!(
             "workflow.preview",
             "ide_workflow_preview",
             "Inspect registered multi-project workflow",
@@ -507,7 +516,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 41);
+        assert_eq!(catalog.capabilities.len(), 42);
         assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
