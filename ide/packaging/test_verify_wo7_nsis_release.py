@@ -1,5 +1,4 @@
 """WO7 fail-closed verifier tests. Mock signatures never imply native acceptance."""
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -22,7 +21,7 @@ class SignedReleaseGateTests(unittest.TestCase):
         (self.root / "service.exe").write_bytes(b"safe unsigned service fixture")
         self.manifest = self.root / "release.json"
         self.data = {
-            "schema": gate.__dict__["audit"].__globals__["__name__"] and "lu.ide.wo7.signed-nsis.v1",
+            "schema": "lu.ide.wo7.signed-nsis.v1",
             "releaseApproved": True,
             "sourceSha": SOURCE,
             "licensesReviewed": True,
@@ -78,10 +77,16 @@ class SignedReleaseGateTests(unittest.TestCase):
         self.denied("service_digest_mismatch")
 
     def test_rejects_symlink_and_parent_escape(self):
-        (self.root / "alias.exe").symlink_to(self.root / "installer.exe")
-        self.data["installer"]["path"] = "alias.exe"
-        self.save()
-        self.denied("symlink_asset_denied")
+        alias = self.root / "alias.exe"
+        try:
+            alias.symlink_to(self.root / "installer.exe")
+        except OSError:
+            # Some Windows users lack symlink creation rights.
+            pass
+        else:
+            self.data["installer"]["path"] = "alias.exe"
+            self.save()
+            self.denied("symlink_asset_denied")
         self.data["installer"]["path"] = "../installer.exe"
         self.save()
         self.denied("unsafe_asset_path")
