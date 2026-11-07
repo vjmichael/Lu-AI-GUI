@@ -488,6 +488,9 @@ impl ObserveHost {
         let receipt_ready=verified_reaped_frame_receipt(
             worker_reaped,terminal,sha.is_some());
         let source_attested=receipt_ready&&current.capture_foreground;
+        let retained=self.capture_processes
+            .has_local_observe_frame(&task_id,chat_id)
+            .map_err(|_|"Native private image retention uncertain")?;
         if worker_reaped{
             current.capture_guardian.take();
         }
@@ -498,7 +501,7 @@ impl ObserveHost {
             frame_observed:receipt_ready,
             frame_sha256:if receipt_ready{sha}else{None},
             source_identity_attested:source_attested,
-            pixels_retained:false,
+            pixels_retained:retained,
             // The pinned P06 worker suppresses the entire BGRA frame in
             // its receipt before emitting any stdout; NOT a visual preview.
             fully_redacted_receipt:receipt_ready,

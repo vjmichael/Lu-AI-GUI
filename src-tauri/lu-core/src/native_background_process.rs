@@ -374,6 +374,13 @@ impl BackgroundProcessSupervisor {
     /// MUST verify active Observe consent, keep the image tainted and admit
     /// its bytes with native_observe_image_admission. No model/tool API has
     /// access to this map.
+    pub fn has_local_observe_frame(
+        &self,task_id:&str,workspace_id:&str
+    )->Result<bool,BackgroundProcessError>{
+        let frames=self.observe_frames.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        Ok(frames.get(task_id).is_some_and(|(owner,_)|owner==workspace_id))
+    }
     pub fn take_local_observe_frame(
         &self,task_id:&str,workspace_id:&str
     )->Result<Option<CapturedBgra>,BackgroundProcessError>{

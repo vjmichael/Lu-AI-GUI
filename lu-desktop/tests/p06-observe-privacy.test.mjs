@@ -59,7 +59,8 @@ test('P06 capture receipts never imply verified visual interpretation or retaine
   assert.match(host,/frame_sha256:if receipt_ready\{sha\}else\{None\}/);
   assert.match(host,/p06_capture_receipt_requires_supervised_os_reap_before_evidence/);
   assert.match(host,/fully_redacted_receipt:receipt_ready/);
-  assert.match(host,/pixels_retained:false/);
+  assert.match(host,/pixels_retained:retained/);
+  assert.match(host,/has_local_observe_frame\(&task_id,chat_id\)/);
   assert.match(host,/visual_interpretation_verified:false/);
   assert.match(desktop,/lu_observe_capture_one_shot/);
   assert.match(ui,/No observation data/);
