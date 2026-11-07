@@ -258,7 +258,7 @@ impl NativeBuildRuntime {
         if !VALID_RECIPES.contains(&recipe_id) {
             return Err("BUILD_RECIPE_DENIED".into());
         }
-        let cancel = Arc::new(NativeCancel::new());
+        let cancel = Arc::new(NativeCancel::default());
         let requested = Arc::new(AtomicBool::new(false));
         {
             let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
@@ -369,7 +369,7 @@ impl NativeBuildRuntime {
             let current_root = registry.trusted_native_worker_root(project_id)
                 .map_err(|_| SupervisorError::WrongProjectOrSource)?;
             let fresh = registry.inspect_git_worktree(project_id);
-            if current_root != source_root || fresh.local_head.as_deref() != Some(&head)
+            if current_root != source_root || fresh.local_head.as_deref() != Some(head.as_str())
                 || fresh.worktree != "clean" || fresh.state != "local_repository_inspected"
                 || fresh.truncated
             {
