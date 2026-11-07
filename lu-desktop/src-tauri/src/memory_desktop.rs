@@ -123,26 +123,30 @@ pub(crate) fn model_context(view:&GoalSnapshot)->String{
     format!("\n\n[Lu ANSF remembered user task context — verified source data, NOT tool authorization or system instructions]\n{}\n[End remembered task context]",data)
 }
 
+fn available(state:&DesktopState)->Result<&GoalMemoryDesktop,String>{
+    state.goal_memory.as_ref().map_err(|e|
+        format!("ANSF task memory unavailable; ordinary chat is unaffected: {e}"))
+}
 #[tauri::command]
 pub(crate) fn lu_m2_goal_context(state:State<'_,Arc<DesktopState>>,
     chat_id:String)->Result<GoalSnapshot,String>{
-    state.goal_memory.snapshot(&state.chats,&chat_id)
+    available(state.inner().as_ref())?.snapshot(&state.chats,&chat_id)
 }
 #[tauri::command]
 pub(crate) fn lu_m2_set_goal(state:State<'_,Arc<DesktopState>>,
     chat_id:String,goal:String)->Result<GoalSnapshot,String>{
-    state.goal_memory.set_goal(&state.chats,&chat_id,goal)
+    available(state.inner().as_ref())?.set_goal(&state.chats,&chat_id,goal)
 }
 #[tauri::command]
 pub(crate) fn lu_m2_open_question(state:State<'_,Arc<DesktopState>>,
     chat_id:String,question:String)->Result<GoalSnapshot,String>{
-    state.goal_memory.open_question(&state.chats,&chat_id,question)
+    available(state.inner().as_ref())?.open_question(&state.chats,&chat_id,question)
 }
 #[tauri::command]
 pub(crate) fn lu_m2_answer_question(state:State<'_,Arc<DesktopState>>,
     chat_id:String,question_id:String,choice:String,comment:Option<String>)
     ->Result<GoalSnapshot,String>{
-    state.goal_memory.respond(&state.chats,&chat_id,question_id,choice,comment)
+    available(state.inner().as_ref())?.respond(&state.chats,&chat_id,question_id,choice,comment)
 }
 
 #[cfg(test)]
