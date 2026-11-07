@@ -2697,7 +2697,8 @@ fn lu_research_claims(
 #[tauri::command]
 async fn lu_research_export_report(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
-    chat_id:String,title:String,format:String
+    chat_id:String,title:String,format:String,
+    include_bibliography:Option<bool>,citation_style:Option<String>
 )->Result<Option<research_desktop::ResearchReportExportView>,String>{
     if !matches!(format.as_str(),"markdown"|"json")
         ||title.trim().is_empty()||title.len()>180
@@ -2734,7 +2735,40 @@ async fn lu_research_export_report(
         return Err("Research report destination exists; choose a new filename".into());
     }
     let report=state.research.verified_report(&chat_id,&title)?;
-    let body=if format=="markdown"{&report.markdown}else{&report.json};
+    // Opt-in P07 integration. Reuse exactly the sealed local bibliography;
+    // malformed/unreviewed sources fail the whole report instead of
+    // generating a partial or fabricated source list.
+    let bibliography=if include_bibliography.unwrap_or(false){
+        let profile=p07_citation_style(
+            citation_style.as_deref().ok_or("Select an explicit citation profile")?
+        )?;
+        Some(state.research.bibliography_preview(&chat_id,profile)?)
+    }else{None};
+    let body=match (format.as_str(),bibliography.as_ref()){
+        ("markdown",Some(bib))=>format!(
+            "{}\n\n{}\n",report.markdown,bib.markdown
+        ),
+        ("markdown",None)=>report.markdown.clone(),
+        ("json",Some(bib))=>{
+            let mut record:serde_json::Value=serde_json::from_str(&report.json)
+                .map_err(|_|"Verified research report was not valid JSON")?;
+            let object=record.as_object_mut()
+                .ok_or("Research evidence report was not a JSON object")?;
+            object.insert("lu_reviewed_bibliography".into(),serde_json::json!({
+                "style":bib.style,
+                "source_count":bib.source_count,
+                "catalog_manifest_sha256":bib.catalog_manifest_sha256,
+                "csl_json":bib.csl_json,
+                "publication_details_verified":false,
+                "quotation_or_page_verified":false,
+                "factual_claim_verified":false
+            }));
+            serde_json::to_string_pretty(&record)
+                .map_err(|_|"Bibliography report JSON encoding refused")?
+        },
+        ("json",None)=>report.json.clone(),
+        _=>return Err("Unsupported research report export format".into()),
+    };
     if body.len()>2*1024*1024{
         return Err("Research report exceeds native export budget".into());
     }
@@ -2759,9 +2793,300 @@ async fn lu_research_export_report(
         format, saved_sha256,
         distinct_sources:report.distinct_sources,
         checked_passages:report.checked_passages,
+        bibliography_sources:bibliography.as_ref().map(|bib|bib.source_count).unwrap_or(0),
         interpretation_verified:false,
-        message:"Derived report saved from rehashed document evidence; factual interpretations remain unverified.",
+        message:if bibliography.is_some(){
+            "Saved local evidence report and appended DOI-attested bibliography. Publication details, quotations and interpretations remain unverified."
+        }else{
+            "Derived report saved from rehashed document evidence; factual interpretations remain unverified."
+        },
     }))
+}
+
+/// The style profile is selected only from an enumerated desktop UI,
+/// never from model-authored formatting instructions.
+fn p07_citation_style(style:&str)->Result<lu_core::web_research_styles::Style,String>{
+    use lu_core::web_research_styles::Style;
+    match style{
+        "apa7"=>Ok(Style::Apa7),"mla9"=>Ok(Style::Mla9),
+        "chicago18"=>Ok(Style::Chicago18),
+        "turabian9"=>Ok(Style::Turabian9),"sbl2"=>Ok(Style::Sbl2),
+        _=>Err("Select a supported, versioned citation profile".into()),
+    }
+}
+
+/// P07 SBL2 canonical Scripture locator: pure deterministic formatting of
+/// the human-provided book, chapter, verse and version. No document access,
+/// hidden Bible text, passage verification or model tool permission.
+#[tauri::command]
+fn lu_research_sbl_scripture_locator(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+    book:String,chapter:u16,first_verse:u16,last_verse:Option<u16>,
+    translation:String
+)->Result<lu_core::web_research_styles::SblScriptureReference,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    lu_core::web_research_styles::format_sbl_scripture_reference(
+        &book,chapter,first_verse,last_verse,&translation
+    ).map_err(|e|format!("Unrecognized or incomplete SBL Scripture locator: {e:?}"))
+}
+
+/// A deterministic edition reference lookup; scholarly book and ISBN
+/// metadata from a fixed publisher-identified record, but no invented
+/// Greek/Hebrew reading, translation or manuscript witness.
+#[tauri::command]
+fn lu_research_sbl_critical_edition_locator(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,edition_id:String,
+    book:String,chapter:u16,first_verse:u16,last_verse:Option<u16>
+)->Result<lu_core::web_research_styles::SblCriticalEditionReference,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    lu_core::web_research_styles::format_sbl_critical_edition_locator(
+        &edition_id,&book,chapter,first_verse,last_verse
+    ).map_err(|e|format!("Unknown or inconsistent critical edition reference: {e:?}"))
+}
+
+/// Render all previously pinned, chat-owned Crossref sources OFFLINE.
+/// Incomplete source data fails the entire preview, without silently
+/// dropping entries or generating model-provided references.
+#[tauri::command]
+async fn lu_research_bibliography_preview(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,style:String
+)->Result<research_desktop::ResearchBibliographyView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    let profile=p07_citation_style(&style)?;
+    let research=Arc::clone(&state.research);
+    tauri::async_runtime::spawn_blocking(move||
+        research.bibliography_preview(&chat_id,profile)
+    ).await.map_err(|_|"Native bibliography preview worker unavailable".to_owned())?
+}
+
+/// Create a NEW reviewed bibliography export. No model, WebView path or
+/// catalog network fetch can select the destination. No existing file is
+/// overwritten; the output is recomputed after the native save dialog.
+#[tauri::command]
+async fn lu_research_bibliography_export(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,style:String,format:String
+)->Result<Option<research_desktop::ResearchBibliographyExportView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    let profile=p07_citation_style(&style)?;
+    if !matches!(format.as_str(),"markdown"|"csl-json"){
+        return Err("Choose a supported bibliography export format".into());
+    }
+    let reviewed=state.research.bibliography_preview(&chat_id,profile)?;
+    let body=if format=="markdown"{
+        reviewed.markdown.clone()
+    }else{
+        serde_json::to_string_pretty(&reviewed.csl_json)
+            .map_err(|_|"CSL-compatible data could not be encoded")?
+    };
+    if body.is_empty()||body.len()>2*1024*1024{
+        return Err("Bibliography export outside bounded size".into());
+    }
+    let content_sha=format!("{:x}",sha2::Sha256::digest(body.as_bytes()));
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        let count=reviewed.source_count;
+        let label=reviewed.style.clone();
+        let digest=content_sha.clone();
+        move||app.dialog().message(format!(
+            "Export a NEW {label} bibliography with {count} reviewed catalog sources?\n\n\
+             Content SHA-256: {digest}\n\n\
+             Source identity and local Crossref-response digests are checked. \
+             Publication details, page numbers, quotations, ancient editions \
+             and factual conclusions remain NOT independently verified. \
+             This will not overwrite any file."
+        )).title("Lu — Review bibliography export")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Choose new file".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Bibliography export consent unavailable")?;
+    if !approved{return Ok(None);}
+    let extension=if format=="markdown"{"md"}else{"json"};
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        let ext=extension.to_owned();
+        move||app.dialog().file()
+            .add_filter("Lu reviewed bibliography",&[ext.as_str()])
+            .set_file_name(if ext=="md"{"Lu Research Bibliography.md"}
+                else{"Lu Research Bibliography CSL.json"})
+            .blocking_save_file()
+    }).await.map_err(|_|"Native bibliography destination dialog unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let destination=selected.into_path()
+        .map_err(|_|"Bibliography destination must be a local file")?;
+    if destination.extension().and_then(|ext|ext.to_str())
+        .is_none_or(|ext|!ext.eq_ignore_ascii_case(extension)){
+        return Err("Choose the matching bibliography extension".into());
+    }
+    let parent=destination.parent().ok_or("No bibliography destination directory")?;
+    let dir=std::fs::symlink_metadata(parent)
+        .map_err(|_|"Bibliography destination directory unavailable")?;
+    if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+        return Err("Bibliography destination must be a normal directory".into());
+    }
+    if std::fs::symlink_metadata(&destination).is_ok(){
+        return Err("Existing bibliography files are never overwritten".into());
+    }
+    let reread=state.research.bibliography_preview(&chat_id,profile)?;
+    let now=if format=="markdown"{reread.markdown}else{
+        serde_json::to_string_pretty(&reread.csl_json)
+            .map_err(|_|"Rechecked CSL-compatible data could not be encoded")?
+    };
+    if reread.catalog_manifest_sha256!=reviewed.catalog_manifest_sha256
+        ||now!=body{
+        return Err("Bibliography changed during native approval; review it again".into());
+    }
+    use std::io::Write;
+    let temp=parent.join(format!(".{}.tmp",next_id("p07-bibliography-")));
+    let write=(||->Result<(),String>{
+        let mut file=std::fs::File::create_new(&temp)
+            .map_err(|_|"New bibliography temporary output refused")?;
+        file.write_all(body.as_bytes())
+            .map_err(|_|"Bibliography write did not complete")?;
+        file.sync_all().map_err(|_|"Bibliography file durability uncertain")?;
+        std::fs::hard_link(&temp,&destination)
+            .map_err(|_|"Bibliography destination could not be created without overwrite")?;
+        Ok(())
+    })();
+    let _=std::fs::remove_file(&temp);
+    write?;
+    Ok(Some(research_desktop::ResearchBibliographyExportView{
+        saved_path:destination.to_string_lossy().into_owned(),
+        format,saved_sha256:content_sha,
+        catalog_manifest_sha256:reviewed.catalog_manifest_sha256,
+        source_count:reviewed.source_count,
+        publication_details_verified:false,
+        message:"Saved new bibliography with hash-checked Crossref source receipts. Human verification of publication details, quotations and interpretations remains required.",
+    }))
+}
+
+/// User-approved, source-bound P07 bibliography preview. The native
+/// Research host retrieves only the existing DOI's Crossref endpoint and
+/// refuses metadata and styles not corroborated by this conversation.
+#[tauri::command]
+async fn lu_research_citation_preview(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,style:String
+)->Result<research_desktop::ResearchCitationPreviewView,String>{
+    let profile=p07_citation_style(&style)?;
+    state.observe.deny_observation_network_egress(&chat_id)?;
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+        ||source_id.chars().any(char::is_control){
+        return Err("Select a previously corroborated Research source".into());
+    }
+    if !state.research.available(){
+        return Err("Pinned native Research HTTPS client unavailable".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let source_id=source_id.clone();
+        let label=profile.label().to_owned();
+        move||app.dialog().message(format!(
+            "Retrieve the current independent Crossref metadata for ONE              previously corroborated source and preview its {label} citation?\n\n             Source: {source_id}\n\n             Only the DOI already saved for this chat is requested.              Missing dates, unsupported editions and ambiguous metadata              are refused; quotes, pages and interpretations are NOT verified."
+        )).title("Lu — Review scholarly citation")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Review citation".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Citation metadata review dialog unavailable")?;
+    if !approved{return Err("Citation review declined".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-citation-");
+    // Keep the network read visible to the same durable task check which
+    // prevents Observe activation while Research network jobs are alive.
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Citation network task admission unavailable")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Citation network task could not start")?;
+    let worker=Arc::clone(&owner.research);
+    let request_owner=Arc::clone(&owner);
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        request_owner.observe.deny_observation_network_egress(&chat_id)?;
+        worker.citation_preview(&chat_id,&source_id,profile)
+    }).await.map_err(|_|"Native citation preview worker unavailable".to_owned()).and_then(|x|x);
+    match result{
+        Ok(preview)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Citation completed without a durable completion receipt")?;
+            Ok(preview)
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(error)
+        },
+    }
+}
+
+/// Explicit human-reviewed replacement of a changed independently fetched
+/// Crossref snapshot. The old and new SHA/title/author/year citation previews
+/// are displayed by native OS UI; no WebView, model, or network payload can
+/// silently amend an existing bibliography.
+#[tauri::command]
+async fn lu_research_citation_review_revision(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String
+)->Result<Option<research_desktop::ResearchCitationRevisionReceipt>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing Research conversation")?;
+    state.observe.deny_observation_network_egress(&chat_id)?;
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+        ||source_id.chars().any(char::is_control){
+        return Err("Select an existing corroborated Research source".into());
+    }
+    if !state.research.available(){
+        return Err("Pinned native Research client unavailable".into());
+    }
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-citation-revision-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Revision network task admission unavailable")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Revision network task start refused")?;
+    let request_owner=Arc::clone(&owner);
+    let research=Arc::clone(&owner.research);
+    let chat=chat_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        request_owner.observe.deny_observation_network_egress(&chat)?;
+        research.prepare_citation_revision(&chat,&source_id)
+    }).await.map_err(|_|"Native catalog revision worker unavailable".to_owned())
+      .and_then(|result|result);
+    let candidate=match result{
+        Ok(record)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Revision fetch completion could not be journaled")?;
+            record
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            return Err(error);
+        }
+    };
+    let old_sha=candidate.expected_previous_sha256.clone();
+    let new_sha=candidate.new_response_sha256.clone();
+    let label=candidate.source_id.clone();
+    let previous=candidate.previous_bibliography.chars().take(2000).collect::<String>();
+    let proposed=candidate.proposed_bibliography.chars().take(2000).collect::<String>();
+    let approved=tauri::async_runtime::spawn_blocking(move||app.dialog()
+        .message(format!(
+            "REVIEW A CHANGED CROSSREF CATALOG RECORD\n\n             Source: {label}\n\n             OLD response SHA-256: {old_sha}\n{previous}\n\n             NEW response SHA-256: {new_sha}\n{proposed}\n\n             The old exact response remains in an append-only audit.              Changing metadata does NOT independently verify publication              details, quotations, passages or a critical edition. Continue?"
+        ))
+        .title("Lu — Compare and approve citation revision")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Approve exact catalog revision".into(),"Reject and keep old".into()
+        )).blocking_show()
+    ).await.map_err(|_|"Native citation revision review unavailable")?;
+    if !approved{return Ok(None);}
+    owner.observe.deny_observation_network_egress(&chat_id)?;
+    let research=Arc::clone(&owner.research);
+    let receipt=tauri::async_runtime::spawn_blocking(move||
+        research.apply_citation_revision(&chat_id,candidate)
+    ).await.map_err(|_|"Catalog revision persistence unavailable".to_owned())??;
+    Ok(Some(receipt))
 }
 
 /// Independently corroborate ONE already-discovered lead against Crossref.
@@ -6327,6 +6652,12 @@ pub fn run() {
             lu_research_verify_quote,
             lu_research_openalex,
             lu_research_crossref,
+            lu_research_citation_preview,
+            lu_research_citation_review_revision,
+            lu_research_bibliography_preview,
+            lu_research_bibliography_export,
+            lu_research_sbl_scripture_locator,
+            lu_research_sbl_critical_edition_locator,
             lu_research_retrieve_document,
             lu_research_cancel_document,
             lu_research_verify_document_passage,

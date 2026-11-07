@@ -1,3 +1,7 @@
+## Current owner-directed status (2026-11-07) — P07 in progress
+
+The owner subsequently authorized continuing P07 scholarly Research and citation development; this **supersedes** the earlier historical text below saying P07 was unstarted or required another instruction. P07 has now implemented evidence-bound native citations, Crossref catalog snapshots, offline bibliography previews and atomic file export, and bounded SBL Scripture/journal support; exact-head native CI and installed GUI acceptance remain OPEN. See [P07 implementation and open acceptance ledger](LU_P07_RESEARCH_STYLES.md). P04/P05 remain deferred. No earlier P06 physical WGC/GGUF acceptance gate is reclassified as PASS.
+
 # Lu Core tools — owner-approved scope, integration architecture, and priority order
 
 **Decision date:** 2026-11-06  
@@ -76,3 +80,7 @@ This decision does not claim the ranked implementation tasks are coded, that cur
 ## 5. Execution boundary
 
 **Current execution stop:** The later owner instruction authorized sequential Pxx source development, one area per turn. **P01 and the later separately approved P02 have bounded source work committed; STOP and wait for explicit authorization before beginning P03.** P01's remaining advanced indexing ideas and native acceptance remain recorded in [P01 filesystem discovery closeout](LU_FILESYSTEM_DISCOVERY_P01.md). No automatic implementation, PR merge or background work is implied.
+
+## P07 start / source adoption (2026-11-06)
+
+The owner authorized moving to the next Pxx phase once P06 source work was complete rather than waiting for physical NSIS/WGC and hardware acceptance. P06 remains open for those independent gates. P07 is now started as a separate branch stacked on P06 with native `RESEARCH-STYLE-01` basic book/journal formatting and evidence-bound no-fabrication rules; full CSL compliance, ancient-source conventions and Research GUI integration remain outside this first slice. [Implementation details](LU_P07_RESEARCH_STYLES.md).

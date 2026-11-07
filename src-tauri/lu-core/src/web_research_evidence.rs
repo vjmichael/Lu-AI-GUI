@@ -125,6 +125,14 @@ pub struct ResearchCampaignStatus {
     pub completed_pages:u32,
     pub blocked_reason:Option<String>,
 }
+/// Immutable local snapshot of the exact, independently fetched Crossref
+/// bytes that survived a separate title/DOI/author citation review.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct StoredCitationCatalog {
+    pub source_id:String,
+    pub response_sha256:String,
+    pub response_json:Vec<u8>,
+}
 pub struct EvidenceLedger { connection: Connection }
 fn bounded(value: &str, cap: usize) -> bool {
     !value.trim().is_empty() && value.len() <= cap && !value.chars().any(char::is_control)
@@ -216,6 +224,21 @@ impl EvidenceLedger {
              publisher_url TEXT NOT NULL,
              catalog_response_sha256 TEXT NOT NULL
            );
+           CREATE TABLE IF NOT EXISTS research_citation_catalog_snapshots(
+             source_id TEXT PRIMARY KEY NOT NULL REFERENCES research_sources(id),
+             response_sha256 TEXT NOT NULL,
+             response_json BLOB NOT NULL,
+             captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+           );
+           CREATE TABLE IF NOT EXISTS research_citation_catalog_revisions(
+             source_id TEXT NOT NULL REFERENCES research_sources(id),
+             revision INTEGER NOT NULL,
+             previous_sha256 TEXT NOT NULL,
+             replacement_sha256 TEXT NOT NULL,
+             prior_json BLOB NOT NULL,
+             approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+             PRIMARY KEY(source_id,revision)
+           );
            CREATE TABLE IF NOT EXISTS research_browser_passage_proofs(
              generation_id TEXT NOT NULL,
              call_id TEXT NOT NULL,
@@ -261,6 +284,155 @@ impl EvidenceLedger {
             })
         ).optional()?.ok_or(EvidenceError::Missing)
     }
+    /// Pin one already host-validated DOI-corroborated catalog response.
+    /// Each source gets one immutable snapshot; a changed Crossref response
+    /// requires a new separately reviewed revision workflow, never an
+    /// automatic overwrite during bibliography/export.
+    pub fn pin_citation_catalog(
+        &mut self,id:&str,response:&[u8]
+    )->Result<StoredCitationCatalog,EvidenceError>{
+        if !bounded(id,128)||response.is_empty()||response.len()>1024*1024
+            ||serde_json::from_slice::<serde_json::Value>(response).is_err(){
+            return Err(EvidenceError::Invalid);
+        }
+        if !matches!(self.status(id)?,SourceStatus::MetadataCorroborated
+            |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+            return Err(EvidenceError::NotCorroborated);
+        }
+        let hash=digest(response);
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_citation_catalog_snapshots
+               (source_id,response_sha256,response_json) VALUES (?1,?2,?3)",
+            params![id,hash,response],
+        )?;
+        let saved=self.citation_catalog(id)?
+            .ok_or(EvidenceError::Missing)?;
+        if saved.response_sha256!=hash||saved.response_json!=response{
+            return Err(EvidenceError::MetadataMismatch);
+        }
+        Ok(saved)
+    }
+    /// Only an independently authorized host review may call this method:
+    /// both the *expected current* snapshot and the replacement bytes must
+    /// have been checked against this chat's independently corroborated DOI,
+    /// title, authors and publication record by the host's trusted parser.
+    /// Preserve prior exact bytes and an append-only revision receipt; refuse
+    /// a stale human approval or concurrent snapshot update atomically.
+    pub fn replace_citation_catalog_after_review(
+        &mut self,id:&str,expected_sha256:&str,replacement:&[u8]
+    )->Result<StoredCitationCatalog,EvidenceError>{
+        if !bounded(id,128)||expected_sha256.len()!=64
+            ||!expected_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+            ||replacement.is_empty()||replacement.len()>1024*1024
+            ||serde_json::from_slice::<serde_json::Value>(replacement).is_err(){
+            return Err(EvidenceError::Invalid);
+        }
+        let previous=self.citation_catalog(id)?
+            .ok_or(EvidenceError::Missing)?;
+        if previous.response_sha256!=expected_sha256
+            ||previous.response_sha256==digest(replacement)
+            ||previous.response_json==replacement{
+            return Err(EvidenceError::MetadataMismatch);
+        }
+        let hash=digest(replacement);
+        let tx=self.connection.transaction()?;
+        let revision:i64=tx.query_row(
+            "SELECT COALESCE(MAX(revision),0)+1 FROM research_citation_catalog_revisions
+             WHERE source_id=?1",[id],|r|r.get(0)
+        )?;
+        if revision<=0||revision>10_000{return Err(EvidenceError::Invalid);}
+        let changed=tx.execute(
+            "UPDATE research_citation_catalog_snapshots
+               SET response_sha256=?3,response_json=?4,captured_at=CURRENT_TIMESTAMP
+             WHERE source_id=?1 AND response_sha256=?2",
+            params![id,expected_sha256,hash,replacement]
+        )?;
+        if changed!=1{return Err(EvidenceError::MetadataMismatch);}
+        tx.execute(
+            "INSERT INTO research_citation_catalog_revisions
+             (source_id,revision,previous_sha256,replacement_sha256,prior_json)
+             VALUES (?1,?2,?3,?4,?5)",
+            params![id,revision,previous.response_sha256,hash,previous.response_json]
+        )?;
+        tx.commit()?;
+        self.citation_catalog(id)?.ok_or(EvidenceError::Missing)
+    }
+    /// A bounded read-only audit of every superseded catalog payload. Each
+    /// prior blob is rehashed so tampered history cannot look legitimate.
+    pub fn citation_catalog_revision_receipts(
+        &self,id:&str
+    )->Result<Vec<(i64,String,String)>,EvidenceError>{
+        if !bounded(id,128){return Err(EvidenceError::Invalid);}
+        let mut stmt=self.connection.prepare(
+            "SELECT revision,previous_sha256,replacement_sha256,prior_json
+             FROM research_citation_catalog_revisions
+             WHERE source_id=?1 ORDER BY revision"
+        )?;
+        let rows=stmt.query_map([id],|r|
+            Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,
+                r.get::<_,String>(2)?,r.get::<_,Vec<u8>>(3)?))
+        )?.collect::<Result<Vec<_>,_>>()?;
+        if rows.len()>10_000{return Err(EvidenceError::Invalid);}
+        let mut result=Vec::with_capacity(rows.len());
+        let mut expected_old:Option<String>=None;
+        for (revision,old,new,bytes) in rows{
+            if revision!=(result.len()+1) as i64||digest(&bytes)!=old
+                ||expected_old.as_deref().is_some_and(|prior|prior!=old){
+                return Err(EvidenceError::MetadataMismatch);
+            }
+            expected_old=Some(new.clone());
+            result.push((revision,old,new));
+        }
+        // An inserted/deleted revision that leaves the active snapshot
+        // inconsistent is not a legitimate review history.
+        if let Some(expected)=expected_old{
+            let active=self.citation_catalog(id)?
+                .ok_or(EvidenceError::MetadataMismatch)?;
+            if active.response_sha256!=expected{
+                return Err(EvidenceError::MetadataMismatch);
+            }
+        }
+        Ok(result)
+    }
+    /// Re-read the exact local catalog snapshot and rehash before use.
+    pub fn citation_catalog(
+        &self,id:&str
+    )->Result<Option<StoredCitationCatalog>,EvidenceError>{
+        if !bounded(id,128){return Err(EvidenceError::Invalid);}
+        let row=self.connection.query_row(
+            "SELECT response_sha256,response_json FROM research_citation_catalog_snapshots
+             WHERE source_id=?1",[id],|r|Ok(StoredCitationCatalog{
+                source_id:id.into(),response_sha256:r.get(0)?,response_json:r.get(1)?,
+            })
+        ).optional()?;
+        if let Some(value)=&row{
+            if !matches!(self.status(id)?,SourceStatus::MetadataCorroborated
+                |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified)
+                ||value.response_json.is_empty()||value.response_json.len()>1024*1024
+                ||digest(&value.response_json)!=value.response_sha256{
+                return Err(EvidenceError::MetadataMismatch);
+            }
+        }
+        Ok(row)
+    }
+    /// Inventory is derived only from persisted, corroborated sources;
+    /// renderer text cannot add a source to the native bibliography.
+    pub fn citation_catalog_source_ids(
+        &self,limit:usize
+    )->Result<Vec<String>,EvidenceError>{
+        if !(1..=121).contains(&limit){return Err(EvidenceError::Invalid);}
+        let mut stmt=self.connection.prepare(
+            "SELECT c.source_id FROM research_citation_catalog_snapshots c
+             INNER JOIN research_sources s ON s.id=c.source_id
+             WHERE s.status IN ('METADATA_CORROBORATED','DOCUMENT_ACCESSED',
+                                'PASSAGE_VERIFIED')
+             ORDER BY c.source_id LIMIT ?1"
+        )?;
+        let ids=stmt.query_map([limit as i64],|r|r.get::<_,String>(0))?
+            .collect::<Result<Vec<_>,_>>()?;
+        Ok(ids)
+    }
+
     pub fn status(&self, id: &str) -> Result<SourceStatus, EvidenceError> {
         let raw: Option<String> = self.connection.query_row(
             "SELECT status FROM research_sources WHERE id=?1", [id], |row| row.get(0)
@@ -1011,7 +1183,7 @@ mod tests {
         assert_eq!(stored.identifier,"doi:10.1000/example");
         assert_eq!(stored.title,"A Verified Study");
         assert_eq!(stored.author,"Jane Doe");
-        assert!(matches!(ledger.discovered_candidate("source-1\\nOTHER"),Err(EvidenceError::Invalid)));
+        assert!(matches!(ledger.discovered_candidate("source-1\nOTHER"),Err(EvidenceError::Invalid)));
         assert!(matches!(ledger.discovered_candidate("source-2"),Err(EvidenceError::Missing)));
         assert!(!ledger.eligible_for_reviewed_bibliography("source-1").unwrap());
     }
@@ -1298,4 +1470,82 @@ mod browser_evidence_tests {
         assert_eq!(saved.observed_text_bytes,9000);
         assert!(!ledger.has_browser_excerpt("g-2","browser-call-2","Not present").unwrap());
     }
+    #[test]
+    fn p07_citation_catalog_snapshot_is_chat_scoped_immutable_and_hash_checked(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        ledger.discover(&Candidate{
+            id:"source-1".into(),title:"Study".into(),
+            author:"Jane Doe".into(),identifier:"doi:10.1000/example".into(),
+        }).unwrap();
+        let bytes=br#"{"message":{"DOI":"10.1000/example"}}"#;
+        assert!(matches!(ledger.pin_citation_catalog("source-1",bytes),
+            Err(EvidenceError::NotCorroborated)));
+        ledger.corroborate("source-1",&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let stored=ledger.pin_citation_catalog("source-1",bytes).unwrap();
+        assert_eq!(stored.response_json,bytes);
+        assert_eq!(ledger.citation_catalog_source_ids(120).unwrap(),vec!["source-1"]);
+        assert_eq!(ledger.pin_citation_catalog("source-1",bytes).unwrap(),stored);
+        assert!(matches!(ledger.pin_citation_catalog(
+            "source-1",br#"{"message":{"DOI":"10.1000/changed"}}"#),
+            Err(EvidenceError::MetadataMismatch)));
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_snapshots SET response_json=?1
+             WHERE source_id='source-1'",[b"corrupted".as_slice()]).unwrap();
+        assert!(matches!(ledger.citation_catalog("source-1"),
+            Err(EvidenceError::MetadataMismatch)));
+    }
+
+    #[test]
+    fn p07_catalog_re_review_preserves_history_denies_stale_receipts_and_recovers(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        ledger.discover(&Candidate{
+            id:"source-1".into(),title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        ledger.corroborate("source-1",&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let first=br#"{"message":{"DOI":"10.1000/example","year":2024}}"#;
+        let second=br#"{"message":{"DOI":"10.1000/example","year":2025}}"#;
+        let old=ledger.pin_citation_catalog("source-1",first).unwrap();
+        assert!(matches!(ledger.replace_citation_catalog_after_review(
+            "source-1",&"0".repeat(64),second
+        ),Err(EvidenceError::MetadataMismatch)));
+        let now=ledger.replace_citation_catalog_after_review(
+            "source-1",&old.response_sha256,second
+        ).unwrap();
+        assert_eq!(now.response_json,second);
+        let receipts=ledger.citation_catalog_revision_receipts("source-1").unwrap();
+        assert_eq!(receipts.len(),1);
+        assert_eq!(receipts[0].1,old.response_sha256);
+        assert_eq!(receipts[0].2,now.response_sha256);
+        assert!(matches!(ledger.replace_citation_catalog_after_review(
+            "source-1",&old.response_sha256,first
+        ),Err(EvidenceError::MetadataMismatch)));
+        let previous=ledger.citation_catalog("source-1").unwrap().unwrap();
+        assert_eq!(previous,now);
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_revisions SET replacement_sha256=?1
+             WHERE source_id='source-1'",["0".repeat(64)]
+        ).unwrap();
+        assert!(matches!(ledger.citation_catalog_revision_receipts("source-1"),
+            Err(EvidenceError::MetadataMismatch)));
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_revisions SET replacement_sha256=?1
+             WHERE source_id='source-1'",[&now.response_sha256]
+        ).unwrap();
+        assert_eq!(ledger.citation_catalog_revision_receipts("source-1").unwrap().len(),1);
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_revisions SET prior_json=x'00'
+             WHERE source_id='source-1'",[]
+        ).unwrap();
+        assert!(matches!(ledger.citation_catalog_revision_receipts("source-1"),
+            Err(EvidenceError::MetadataMismatch)));
+    }
+
 }

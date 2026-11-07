@@ -90,6 +90,24 @@ function App() {
   const [researchBusy,setResearchBusy]=useState(false);
   const [researchResult,setResearchResult]=useState(null);
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
+  const [researchCitationStyle,setResearchCitationStyle]=useState('apa7');
+  const [researchCitationBusy,setResearchCitationBusy]=useState(false);
+  const [researchBibliographyBusy,setResearchBibliographyBusy]=useState(false);
+  const [researchBibliographiesByChat,setResearchBibliographiesByChat]=useState({});
+  const [researchBibliographyExportsByChat,setResearchBibliographyExportsByChat]=useState({});
+  const [sblScriptureBook,setSblScriptureBook]=useState('Genesis');
+  const [sblScriptureTranslation,setSblScriptureTranslation]=useState('NRSV');
+  const [sblScriptureChapter,setSblScriptureChapter]=useState('1');
+  const [sblScriptureFirstVerse,setSblScriptureFirstVerse]=useState('1');
+  const [sblScriptureLastVerse,setSblScriptureLastVerse]=useState('');
+  const [sblScripturePreview,setSblScripturePreview]=useState(null);
+  const [sblEditionId,setSblEditionId]=useState('NA28');
+  const [sblEditionPreview,setSblEditionPreview]=useState(null);
+
+
+  const [researchCitationsByChat,setResearchCitationsByChat]=useState({});
+  const [researchCitationRevisionByChat,setResearchCitationRevisionByChat]=useState({});
+
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
   const [researchDocumentActive,setResearchDocumentActive]=useState(null);
   const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
@@ -102,6 +120,7 @@ function App() {
   });
   const [researchClaimsByChat,setResearchClaimsByChat]=useState({});
   const [researchReportTitle,setResearchReportTitle]=useState('Research evidence report');
+  const [researchReportIncludeBibliography,setResearchReportIncludeBibliography]=useState(false);
   const [wordReplaceFormat,setWordReplaceFormat]=useState('docx');
   const [wordReplaceOld,setWordReplaceOld]=useState('');
   const [wordReplaceNew,setWordReplaceNew]=useState('');
@@ -321,6 +340,94 @@ function App() {
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
   }
+  async function previewSblCriticalEdition(){
+    if(!chatId)return;
+    setSblEditionPreview(null);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_sbl_critical_edition_locator',{
+        chatId,editionId:sblEditionId,book:sblScriptureBook,
+        chapter:Number(sblScriptureChapter),
+        firstVerse:Number(sblScriptureFirstVerse),
+        lastVerse:sblScriptureLastVerse.trim()?Number(sblScriptureLastVerse):null
+      });
+      setSblEditionPreview(receipt);
+    }catch(e){setResearchError(String(e));}
+  }
+  async function previewSblScriptureLocator(){
+    if(!chatId)return;
+    setSblScripturePreview(null);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_sbl_scripture_locator',{
+        chatId,book:sblScriptureBook,
+        chapter:Number(sblScriptureChapter),
+        firstVerse:Number(sblScriptureFirstVerse),
+        lastVerse:sblScriptureLastVerse.trim()?Number(sblScriptureLastVerse):null,
+        translation:sblScriptureTranslation
+      });
+      setSblScripturePreview(receipt);
+    }catch(e){setResearchError(String(e));}
+  }
+  async function previewResearchBibliography(){
+    if(!chatId||researchBibliographyBusy)return;
+    const sourceChat=chatId;
+    setResearchBibliographyBusy(true);setResearchError('');
+    setResearchBibliographiesByChat(old=>({...old,[sourceChat]:null}));
+    try{
+      const view=await invoke('lu_research_bibliography_preview',{
+        chatId:sourceChat,style:researchCitationStyle
+      });
+      setResearchBibliographiesByChat(old=>({...old,[sourceChat]:view}));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBibliographyBusy(false);}
+  }
+  async function exportResearchBibliography(format){
+    if(!chatId||researchBibliographyBusy)return;
+    const sourceChat=chatId;
+    setResearchBibliographyBusy(true);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_bibliography_export',{
+        chatId:sourceChat,style:researchCitationStyle,format
+      });
+      if(receipt)setResearchBibliographyExportsByChat(old=>({
+        ...old,[sourceChat]:receipt
+      }));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBibliographyBusy(false);}
+  }
+  async function reviewResearchCitationRevision(sourceId){
+    if(!chatId||!researchAvailable||researchBusy||researchCitationBusy||!sourceId)return;
+    const sourceChat=chatId;
+    const key=sourceChat+'|'+sourceId;
+    setResearchCitationBusy(true);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_citation_review_revision',{
+        chatId:sourceChat,sourceId
+      });
+      if(receipt){
+        setResearchCitationRevisionByChat(old=>({...old,[key]:receipt}));
+        setResearchCitationsByChat(old=>({...old,[key]:null}));
+        setResearchBibliographiesByChat(old=>({...old,[sourceChat]:null}));
+        setResearchBibliographyExportsByChat(old=>({...old,[sourceChat]:null}));
+      }
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchCitationBusy(false);}
+  }
+  async function previewResearchCitation(sourceId){
+    if(!chatId||!researchAvailable||researchBusy||researchCitationBusy||!sourceId)return;
+    const sourceChat=chatId;
+    const key=sourceChat+'|'+sourceId;
+    setResearchCitationBusy(true);setResearchError('');
+    // An older citation preview cannot survive a newly reviewed style.
+    setResearchCitationsByChat(old=>({...old,[key]:null}));
+    try{
+      const receipt=await invoke('lu_research_citation_preview',{
+        chatId:sourceChat,sourceId,style:researchCitationStyle
+      });
+      setResearchCitationsByChat(old=>({...old,[key]:receipt}));
+      setResearchBibliographiesByChat(old=>({...old,[sourceChat]:null}));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchCitationBusy(false);}
+  }
   async function checkResearchMetadata(sourceId){
     if(!chatId||!researchAvailable||researchBusy||!sourceId)return;
     const sourceChat=chatId;
@@ -361,7 +468,9 @@ function App() {
     setResearchReportBusy(true);setResearchError('');
     try{
       const result=await invoke('lu_research_export_report',{
-        chatId:sourceChat,title:researchReportTitle.trim(),format
+        chatId:sourceChat,title:researchReportTitle.trim(),format,
+        includeBibliography:researchReportIncludeBibliography,
+        citationStyle:researchCitationStyle
       });
       if(result)setResearchReportSavedByChat(old=>({...old,[sourceChat]:result}));
     }catch(error){setResearchError(String(error));}
@@ -2768,7 +2877,7 @@ function App() {
             You choose what the screen exposes. No remote viewing interface.</small>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
             An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
-            the general picker can select a monitor but cannot independently identify the selected OS source. Both paths fully blank the captured frame; neither sends pixels to the model.</small>
+            the general picker can select a monitor but cannot independently identify the selected OS source. Receipt-only capture fully blanks the frame. Separate user-approved local-GGUF image modes retain one private bounded frame for a deliberate second Attach action.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
               <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
@@ -4600,6 +4709,14 @@ function App() {
               <input value={researchReportTitle}
                 onChange={e=>setResearchReportTitle(e.target.value)}/>
             </label>
+            <label>
+              <input type="checkbox" checked={researchReportIncludeBibliography}
+                onChange={e=>setResearchReportIncludeBibliography(e.target.checked)}/>
+              Include reviewed P07 bibliography ({researchCitationStyle})
+            </label>
+            <small>The optional bibliography uses only sealed local Crossref receipts;
+              it never independently validates publication editions, direct
+              quotations, exact pages or factual conclusions.</small>
             <div className="settingsActions">
               <button type="button" disabled={!chatId||researchReportBusy}
                 onClick={()=>void exportResearchReport('markdown')}>
@@ -4615,7 +4732,194 @@ function App() {
                 {' '}{researchReportSavedByChat[chatId].savedPath}
                 {' '}· SHA-256: {researchReportSavedByChat[chatId].savedSha256}
                 {' '}· {researchReportSavedByChat[chatId].checkedPassages}
-                verified passages. Interpretations are not independently certified.</small>}
+                verified passages · {researchReportSavedByChat[chatId].bibliographySources||0}
+                reviewed bibliography sources. Interpretations are not independently certified.</small>}
+          </div>
+          <label>Review citation style
+            <select aria-label="Research citation style" value={researchCitationStyle}
+              disabled={researchCitationBusy}
+              onChange={e=>{
+                setResearchCitationStyle(e.target.value);
+                setResearchCitationsByChat({});
+                setResearchBibliographiesByChat({});
+                setResearchBibliographyExportsByChat({});
+              }}>
+              <option value="apa7">APA 7</option>
+              <option value="mla9">MLA 9</option>
+              <option value="chicago18">Chicago 18 (notes/bibliography)</option>
+              <option value="turabian9">Turabian 9 (notes/bibliography)</option>
+              <option value="sbl2">SBL Handbook 2</option>
+            </select>
+          </label>
+          <small>Academic citations require separately corroborated DOI and author identity.
+            Review Crossref publication metadata before using it; Lu never invents a
+            journal abbreviation, page reference, quotation, or ancient text edition.</small>
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||researchBusy||researchBibliographyBusy}
+              onClick={()=>void previewResearchBibliography()}>
+              {researchBibliographyBusy?'Reviewing bibliography…':'Compile reviewed bibliography offline'}
+            </button>
+            <button type="button" disabled={!chatId||researchBibliographyBusy}
+              onClick={()=>void exportResearchBibliography('markdown')}>
+              Save new bibliography Markdown
+            </button>
+            <button type="button" disabled={!chatId||researchBibliographyBusy}
+              onClick={()=>void exportResearchBibliography('csl-json')}>
+              Save new bibliography CSL-JSON
+            </button>
+          </div>
+          {researchBibliographiesByChat[chatId]&&
+            <div className="researchResults" aria-label="Reviewed citation bibliography preview">
+              <strong>{researchBibliographiesByChat[chatId].style} · {
+                researchBibliographiesByChat[chatId].sourceCount} pinned sources · REVIEW REQUIRED</strong>
+              <small>{researchBibliographiesByChat[chatId].message}</small>
+              <pre>{researchBibliographiesByChat[chatId].markdown.slice(0,12000)}</pre>
+              {researchBibliographiesByChat[chatId].markdown.length>12000&&
+                <small>Preview limited to 12,000 characters. Export includes the full bounded bibliography.</small>}
+              <small>Catalog evidence manifest SHA-256: {
+                researchBibliographiesByChat[chatId].catalogManifestSha256}</small>
+            </div>}
+          {researchBibliographyExportsByChat[chatId]&&
+            <small role="status">New bibliography saved: {
+              researchBibliographyExportsByChat[chatId].savedPath} · SHA-256: {
+              researchBibliographyExportsByChat[chatId].savedSha256}. Publication details remain unverified.</small>}
+          <div className="researchResults" aria-label="SBL2 Scripture locator only">
+            <h4>SBL2 canonical Scripture locator · unverified passage</h4>
+            <small>Choose a canonical book and an explicitly named translation.
+              This formats a reference only. Lu does not fetch or verify Bible text,
+              ancient manuscripts, critical editions or the existence of the verse.
+              Modern Bible translations normally do not create a bibliography entry.</small>
+            <label>Bible book
+              <select aria-label="SBL Scripture book" value={sblScriptureBook}
+                onChange={e=>setSblScriptureBook(e.target.value)}>
+                <option key="Genesis" value="Genesis">Genesis</option>
+                <option key="Exodus" value="Exodus">Exodus</option>
+                <option key="Leviticus" value="Leviticus">Leviticus</option>
+                <option key="Numbers" value="Numbers">Numbers</option>
+                <option key="Deuteronomy" value="Deuteronomy">Deuteronomy</option>
+                <option key="Joshua" value="Joshua">Joshua</option>
+                <option key="Judges" value="Judges">Judges</option>
+                <option key="Ruth" value="Ruth">Ruth</option>
+                <option key="1 Samuel" value="1 Samuel">1 Samuel</option>
+                <option key="2 Samuel" value="2 Samuel">2 Samuel</option>
+                <option key="1 Kings" value="1 Kings">1 Kings</option>
+                <option key="2 Kings" value="2 Kings">2 Kings</option>
+                <option key="1 Chronicles" value="1 Chronicles">1 Chronicles</option>
+                <option key="2 Chronicles" value="2 Chronicles">2 Chronicles</option>
+                <option key="Ezra" value="Ezra">Ezra</option>
+                <option key="Nehemiah" value="Nehemiah">Nehemiah</option>
+                <option key="Esther" value="Esther">Esther</option>
+                <option key="Job" value="Job">Job</option>
+                <option key="Psalms" value="Psalms">Psalms</option>
+                <option key="Proverbs" value="Proverbs">Proverbs</option>
+                <option key="Ecclesiastes" value="Ecclesiastes">Ecclesiastes</option>
+                <option key="Song of Songs" value="Song of Songs">Song of Songs</option>
+                <option key="Isaiah" value="Isaiah">Isaiah</option>
+                <option key="Jeremiah" value="Jeremiah">Jeremiah</option>
+                <option key="Lamentations" value="Lamentations">Lamentations</option>
+                <option key="Ezekiel" value="Ezekiel">Ezekiel</option>
+                <option key="Daniel" value="Daniel">Daniel</option>
+                <option key="Hosea" value="Hosea">Hosea</option>
+                <option key="Joel" value="Joel">Joel</option>
+                <option key="Amos" value="Amos">Amos</option>
+                <option key="Obadiah" value="Obadiah">Obadiah</option>
+                <option key="Jonah" value="Jonah">Jonah</option>
+                <option key="Micah" value="Micah">Micah</option>
+                <option key="Nahum" value="Nahum">Nahum</option>
+                <option key="Habakkuk" value="Habakkuk">Habakkuk</option>
+                <option key="Zephaniah" value="Zephaniah">Zephaniah</option>
+                <option key="Haggai" value="Haggai">Haggai</option>
+                <option key="Zechariah" value="Zechariah">Zechariah</option>
+                <option key="Malachi" value="Malachi">Malachi</option>
+                <option key="Matthew" value="Matthew">Matthew</option>
+                <option key="Mark" value="Mark">Mark</option>
+                <option key="Luke" value="Luke">Luke</option>
+                <option key="John" value="John">John</option>
+                <option key="Acts" value="Acts">Acts</option>
+                <option key="Romans" value="Romans">Romans</option>
+                <option key="1 Corinthians" value="1 Corinthians">1 Corinthians</option>
+                <option key="2 Corinthians" value="2 Corinthians">2 Corinthians</option>
+                <option key="Galatians" value="Galatians">Galatians</option>
+                <option key="Ephesians" value="Ephesians">Ephesians</option>
+                <option key="Philippians" value="Philippians">Philippians</option>
+                <option key="Colossians" value="Colossians">Colossians</option>
+                <option key="1 Thessalonians" value="1 Thessalonians">1 Thessalonians</option>
+                <option key="2 Thessalonians" value="2 Thessalonians">2 Thessalonians</option>
+                <option key="1 Timothy" value="1 Timothy">1 Timothy</option>
+                <option key="2 Timothy" value="2 Timothy">2 Timothy</option>
+                <option key="Titus" value="Titus">Titus</option>
+                <option key="Philemon" value="Philemon">Philemon</option>
+                <option key="Hebrews" value="Hebrews">Hebrews</option>
+                <option key="James" value="James">James</option>
+                <option key="1 Peter" value="1 Peter">1 Peter</option>
+                <option key="2 Peter" value="2 Peter">2 Peter</option>
+                <option key="1 John" value="1 John">1 John</option>
+                <option key="2 John" value="2 John">2 John</option>
+                <option key="3 John" value="3 John">3 John</option>
+                <option key="Jude" value="Jude">Jude</option>
+                <option key="Revelation" value="Revelation">Revelation</option>
+              </select>
+            </label>
+            <label>Translation or version
+              <select aria-label="SBL Scripture translation" value={sblScriptureTranslation}
+                onChange={e=>setSblScriptureTranslation(e.target.value)}>
+                {['NRSV','RSV','NIV','NASB','KJV','CEB'].map(v=><option key={v}>{v}</option>)}
+              </select>
+            </label>
+            <div className="settingsActions">
+              <label>Chapter
+                <input type="number" min="1" max="150" value={sblScriptureChapter}
+                  onChange={e=>setSblScriptureChapter(e.target.value)}/>
+              </label>
+              <label>First verse
+                <input type="number" min="1" max="176" value={sblScriptureFirstVerse}
+                  onChange={e=>setSblScriptureFirstVerse(e.target.value)}/>
+              </label>
+              <label>Last verse (optional)
+                <input type="number" min="1" max="176" value={sblScriptureLastVerse}
+                  onChange={e=>setSblScriptureLastVerse(e.target.value)}/>
+              </label>
+            </div>
+            <button type="button" disabled={!chatId}
+              onClick={()=>void previewSblScriptureLocator()}>
+              Format SBL2 Scripture reference locally
+            </button>
+            {sblScripturePreview&&
+              <div>
+                <strong>{sblScripturePreview.reference}</strong>
+                <small>Passage text not checked; translation and edition unverified.
+                  This is not a bibliography item or scholarly source attestation.</small>
+                <button type="button"
+                  onClick={()=>void navigator.clipboard.writeText(sblScripturePreview.reference)
+                    .catch(e=>setResearchError(String(e)))}>
+                  Copy Scripture reference
+                </button>
+              </div>}
+            <label>Critical-edition reference (not a manuscript-witness check)
+              <select aria-label="SBL critical edition" value={sblEditionId}
+                onChange={e=>{setSblEditionId(e.target.value);setSblEditionPreview(null);}}>
+                <option value="NA28">Novum Testamentum Graece, 28th rev. edition (Greek NT)</option>
+                <option value="RAHLFS-HANHART-2006">Rahlfs–Hanhart, Septuaginta, 2006 (Greek OT)</option>
+              </select>
+            </label>
+            <button type="button" disabled={!chatId}
+              onClick={()=>void previewSblCriticalEdition()}>
+              Format selected critical-edition reference
+            </button>
+            {sblEditionPreview&&
+              <div className="researchResults" aria-label="Critical edition identification only">
+                <strong>{sblEditionPreview.reference}</strong>
+                <small>{sblEditionPreview.editionTitle} · {sblEditionPreview.publisher} · {
+                  sblEditionPreview.publicationYear} · ISBN {sblEditionPreview.isbn}</small>
+                <small>Edition catalog: {sblEditionPreview.catalogUrl}</small>
+                <small>Text readings, verse-numbering equivalences, variant witnesses,
+                  translations and any specific manuscript remain UNVERIFIED.</small>
+                <button type="button" onClick={()=>void navigator.clipboard.writeText(
+                  sblEditionPreview.reference
+                ).catch(e=>setResearchError(String(e)))}>
+                  Copy critical-edition reference
+                </button>
+              </div>}
           </div>
           {researchError&&<small role="alert">{researchError}</small>}
           {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
@@ -4638,6 +4942,45 @@ function App() {
                   onClick={()=>void retrieveResearchDocument(l.sourceId)}>
                   Retrieve bounded PDF/HTML document
                 </button>}
+              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
+                <button type="button" disabled={researchBusy||researchCitationBusy||!researchAvailable}
+                  onClick={()=>void previewResearchCitation(l.sourceId)}>
+                  {researchCitationBusy?'Reviewing catalog…':'Preview evidence-bound citation'}
+                </button>}
+              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
+                <button type="button" disabled={researchBusy||researchCitationBusy||!researchAvailable}
+                  onClick={()=>void reviewResearchCitationRevision(l.sourceId)}>
+                  Review changed Crossref metadata (prior version remains until approval)
+                </button>}
+              {researchCitationRevisionByChat[chatId+'|'+l.sourceId]&&
+                <small role="status">Citation catalog revision #{
+                  researchCitationRevisionByChat[chatId+'|'+l.sourceId].revisionCount} approved.
+                  Previous SHA-256: {researchCitationRevisionByChat[chatId+'|'+l.sourceId].previousSha256};
+                  current SHA-256: {researchCitationRevisionByChat[chatId+'|'+l.sourceId].currentSha256}.
+                  Publication details and passages still need independent review.</small>}
+              {researchCitationsByChat[chatId+'|'+l.sourceId]&&
+                <div className="researchResults" aria-label="Crossref-backed citation preview">
+                  <strong>{researchCitationsByChat[chatId+'|'+l.sourceId].style} · REVIEW REQUIRED</strong>
+                  <pre>{researchCitationsByChat[chatId+'|'+l.sourceId].bibliography}</pre>
+                  {researchCitationsByChat[chatId+'|'+l.sourceId].firstNote&&
+                    <small>First note: {researchCitationsByChat[chatId+'|'+l.sourceId].firstNote}</small>}
+                  <small>Crossref metadata response SHA-256:
+                    {' '}{researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}</small>
+                  <small>{researchCitationsByChat[chatId+'|'+l.sourceId].message}</small>
+                  <details>
+                    <summary>CSL-JSON-compatible source record · evidence limitations included</summary>
+                    <pre>{JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)}</pre>
+                    <button type="button"
+                      onClick={()=>void navigator.clipboard.writeText(
+                        JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)
+                      ).catch(e=>setResearchError(String(e)))}>
+                      Copy reviewed CSL JSON
+                    </button>
+                  </details>
+                  <small>Bibliographic identity matched; publication particulars, quotations,
+                    pages, and interpretations remain unverified. This is a preview,
+                    not a final scholarly citation.</small>
+                </div>}
               {researchDocumentActive?.chatId===chatId
                 &&researchDocumentActive?.sourceId===l.sourceId&&
                 <button type="button" disabled={!researchBusy}

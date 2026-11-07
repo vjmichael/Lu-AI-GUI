@@ -14,6 +14,8 @@ use lu_core::{
     web_research_planner::canonical_doi,
     web_research_analysis::{AnalysisStore,Interpretation,Stance},
     web_research_report::{render_verified_report,VerifiedResearchReport},
+    web_research_styles::{catalog_work_from_crossref,render_correlated,render_bibliography,export_csl_json,Style},
+
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::{search_openalex,search_openalex_cancellable},
 };
@@ -73,6 +75,70 @@ pub(crate) struct ResearchCorroborationView{
     pub verification_status:&'static str,
     pub record_url:String,
     pub citation_verified:bool,
+    pub message:&'static str,
+}
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCitationPreviewView {
+    pub source_id:String,
+    pub style:String,
+    pub bibliography:String,
+    pub first_note:Option<String>,
+    pub catalog_response_sha256:String,
+    pub csl_json:serde_json::Value,
+    pub bibliography_identity_corroborated:bool,
+    pub author_identity_corroborated:bool,
+    pub publication_details_verified:bool,
+    pub quotation_or_page_verified:bool,
+    pub factual_claim_verified:bool,
+    pub coverage:String,
+    pub message:&'static str,
+}
+/// Offline, chat-scoped output built only from sealed Crossref responses.
+/// No model-authored source list or new network request can enter this view.
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchBibliographyView {
+    pub style:String,
+    pub source_count:usize,
+    pub markdown:String,
+    pub csl_json:serde_json::Value,
+    pub catalog_manifest_sha256:String,
+    pub publication_details_verified:bool,
+    pub quotation_or_page_verified:bool,
+    pub factual_claim_verified:bool,
+    pub message:&'static str,
+}
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchBibliographyExportView {
+    pub saved_path:String,
+    pub format:String,
+    pub saved_sha256:String,
+    pub catalog_manifest_sha256:String,
+    pub source_count:usize,
+    pub publication_details_verified:bool,
+    pub message:&'static str,
+}
+/// The native desktop retains the exact downloaded bytes between human
+/// comparison and an atomic revision; no URL or alternate bytes can be
+/// substituted by the WebView, an LLM, or a stale preview.
+pub(crate) struct ResearchCitationRevisionCandidate{
+    pub source_id:String,
+    pub expected_previous_sha256:String,
+    pub new_response_sha256:String,
+    pub previous_bibliography:String,
+    pub proposed_bibliography:String,
+    pub proposed_response:Vec<u8>,
+}
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchCitationRevisionReceipt{
+    pub source_id:String,
+    pub previous_sha256:String,
+    pub current_sha256:String,
+    pub revision_count:usize,
+    pub publication_details_verified:bool,
     pub message:&'static str,
 }
 /// Percent-encode a host-selected, ledger-stored DOI as a Crossref path
@@ -254,6 +320,7 @@ pub(crate) struct ResearchReportExportView{
     pub saved_sha256:String,
     pub distinct_sources:usize,
     pub checked_passages:usize,
+    pub bibliography_sources:usize,
     pub interpretation_verified:bool,
     pub message:&'static str,
 }
@@ -1130,6 +1197,265 @@ impl ResearchDesktop{
     /// User-approved metadata corroboration of one already-persisted
     /// OpenAlex lead. No arbitrary URL, DOI or model-selected authority.
     /// A successful result is ONLY bibliographic corroboration.
+    /// Human-approved citation preview against the *same* independently
+    /// Crossref-corroborated source. Re-fetches exact catalog DOI with the
+    /// native pinned HTTPS client; renderer/model cannot supply metadata,
+    /// a remote URL, author list, date, journal or publication place.
+    /// No new EvidenceLedger promotion or internet/AI tool grant is created.
+    pub(crate) fn citation_preview(
+        &self,chat_id:&str,source_id:&str,style:Style
+    )->Result<ResearchCitationPreviewView,String>{
+        if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
+            ||source_id.len()>128||source_id.chars().any(char::is_control){
+            return Err("Select a known OpenAlex source in this conversation".into());
+        }
+        if !self.available(){
+            return Err("Pinned native Crossref HTTPS client unavailable".into());
+        }
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !matches!(ledger.status(source_id).map_err(|_|"Unknown research source")?,
+            SourceStatus::MetadataCorroborated|
+            SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+            return Err("Independently corroborate this source before citing".into());
+        }
+        let original=ledger.discovered_candidate(source_id)
+            .map_err(|_|"Original source identity unavailable")?;
+        let doi=canonical_doi(&original.identifier)
+            .ok_or("Original source DOI unavailable")?;
+        let url=format!("https://api.crossref.org/works/{}",encode_doi_component(&doi));
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let page=fetcher.fetch_bounded(&url,1024*1024)
+            .map_err(|_|"Crossref citation metadata retrieval unavailable")?;
+        if page.http_status!=200||page.redirect_target.is_some()
+            ||page.canonical_url!=url{
+            return Err("Crossref DOI endpoint redirected or returned an unverified response".into());
+        }
+        let catalog_sha=format!("{:x}",Sha256::digest(&page.bytes));
+        let record=catalog_work_from_crossref(&ledger,source_id,&page.bytes)
+            .map_err(|e|format!("Citation metadata failed identity/quality check: {e:?}"))?;
+        let rendered=render_correlated(&ledger,&record,style)
+            .map_err(|e|format!("Citation style cannot safely render this record: {e:?}"))?;
+        let csl_json=export_csl_json(&ledger,&record)
+            .map_err(|e|format!("CSL-compatible evidence export refused: {e:?}"))?;
+        // Store exactly these already reviewed, DOI-correlated response bytes.
+        // A changed Crossref payload cannot silently rewrite the sealed
+        // citation edition/author/date used by an earlier local bibliography.
+        ledger.pin_citation_catalog(source_id,&page.bytes)
+            .map_err(|_|"Citation catalog changed, cannot overwrite reviewed snapshot")?;
+        Ok(ResearchCitationPreviewView{
+            source_id:rendered.source_id,
+            style:rendered.style.into(),
+            bibliography:rendered.bibliography,
+            first_note:rendered.first_note,
+            catalog_response_sha256:catalog_sha,
+            csl_json,
+            bibliography_identity_corroborated:rendered.bibliography_identity_corroborated,
+            author_identity_corroborated:rendered.author_identity_corroborated,
+            publication_details_verified:rendered.publication_details_verified,
+            quotation_or_page_verified:rendered.quotation_or_page_verified,
+            factual_claim_verified:rendered.factual_claim_verified,
+            coverage:rendered.coverage.into(),
+            message:"Crossref DOI/title/author metadata matched the existing corroborated Research source. Publication particulars, page locators, quotations and historical/factual interpretations still require manual review.",
+        })
+    }
+
+    /// Build a complete local bibliography only from the immutable,
+    /// per-conversation reviewed DOI catalog snapshots. No network access,
+    /// model-authored metadata or guessed missing bibliography fields.
+    pub(crate) fn bibliography_preview(
+        &self,chat_id:&str,style:Style
+    )->Result<ResearchBibliographyView,String>{
+        if !safe_id(chat_id){return Err("Select a trusted Research conversation".into());}
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let ids=ledger.citation_catalog_source_ids(121)
+            .map_err(|_|"Reviewed citation inventory unavailable")?;
+        if ids.is_empty(){return Err("No human-reviewed citation snapshots in this conversation".into());}
+        if ids.len()>120{return Err("Bibliography exceeds 120 reviewed catalog sources".into());}
+        let mut works=Vec::with_capacity(ids.len());
+        let mut provenance=HashMap::new();
+        for id in ids{
+            let pinned=ledger.citation_catalog(&id)
+                .map_err(|_|"Citation snapshot digest or source status changed")?
+                .ok_or("Citation snapshot no longer exists")?;
+            let work=catalog_work_from_crossref(&ledger,&id,&pinned.response_json)
+                .map_err(|e|format!("Stored citation no longer passes DOI checks: {e:?}"))?;
+            provenance.insert(id,pinned.response_sha256);
+            works.push(work);
+        }
+        let rendered=render_bibliography(&ledger,&works,style)
+            .map_err(|e|format!("Citation bibliography refused an unsupported entry: {e:?}"))?;
+        let by_id=works.iter().map(|work|(work.source_id.clone(),work))
+            .collect::<HashMap<String,_>>();
+        let mut csl=Vec::with_capacity(rendered.len());
+        let mut body=format!(
+            "# Research bibliography — {}\n\n**Human review required.**              Corroborated source identity only; publication details, direct              quotations, pages and factual claims are not independently              verified. No ancient texts or guessed SBL abbreviations.\n\n",
+             style.label()
+        );
+        let mut manifest=Sha256::new();
+        for item in &rendered{
+            let work=by_id.get(&item.source_id)
+                .ok_or("Reviewed source identity lost during bibliography assembly")?;
+            let sha=provenance.get(&item.source_id)
+                .ok_or("Citation source response hash unavailable")?;
+            let mut record=export_csl_json(&ledger,*work)
+                .map_err(|_|"Citation structured export rejected corroborated source")?;
+            record["_lu_evidence"]["crossref_response_sha256"]=
+                serde_json::json!(sha);
+            csl.push(record);
+            body.push_str("- ");
+            body.push_str(&item.bibliography);
+            body.push_str("\n");
+            manifest.update(item.source_id.as_bytes());
+            manifest.update([0]);
+            manifest.update(sha.as_bytes());
+            manifest.update([0]);
+        }
+        body.push_str("\n## Crossref catalog response SHA-256 inventory\n\n");
+        for item in &rendered{
+            let sha=provenance.get(&item.source_id)
+                .ok_or("Citation inventory digest unavailable")?;
+            body.push_str(&format!("- {}: {}\n",item.source_id,sha));
+        }
+        if body.len()>2*1024*1024{return Err("Bibliography exceeds native export limit".into());}
+        Ok(ResearchBibliographyView{
+            style:style.label().into(),source_count:rendered.len(),
+            markdown:body,csl_json:serde_json::Value::Array(csl),
+            catalog_manifest_sha256:format!("{:x}",manifest.finalize()),
+            publication_details_verified:false,
+            quotation_or_page_verified:false,factual_claim_verified:false,
+            message:"All entries came from sealed chat-owned DOI/author-attested Crossref snapshots. No source, translation, page, quote or factual interpretation is automatically verified.",
+        })
+    }
+
+    /// Separate supervised Crossref re-review. Existing source, DOI and
+    /// original author/title identities are looked up from the chat-owned
+    /// database, never from the model or user-provided network parameters.
+    /// A revision is proposed, NOT applied, until the native host displays
+    /// old and new bibliography text and receives explicit human approval.
+    pub(crate) fn prepare_citation_revision(
+        &self,chat_id:&str,source_id:&str
+    )->Result<ResearchCitationRevisionCandidate,String>{
+        if !safe_id(chat_id)||!source_id.starts_with("https://openalex.org/")
+            ||source_id.len()>128||source_id.chars().any(char::is_control){
+            return Err("Select a known DOI-correlated Research source".into());
+        }
+        if !self.available(){return Err("Pinned native Crossref client unavailable".into());}
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let pinned=ledger.citation_catalog(source_id)
+            .map_err(|_|"Prior citation snapshot failed its digest check")?
+            .ok_or("No previously reviewed citation to revise")?;
+        let original=ledger.discovered_candidate(source_id)
+            .map_err(|_|"Original catalog identity unavailable")?;
+        let doi=canonical_doi(&original.identifier)
+            .ok_or("Original DOI invalid")?;
+        let url=format!("https://api.crossref.org/works/{}",encode_doi_component(&doi));
+        let fetcher=SecureHttpFetcher{curl_binary:&self.curl,ca_bundle:None};
+        let response=fetcher.fetch_bounded(&url,1024*1024)
+            .map_err(|_|"Crossref catalog re-review fetch unavailable")?;
+        if response.http_status!=200||response.redirect_target.is_some()
+            ||response.canonical_url!=url{
+            return Err("Crossref catalog revision endpoint is not exact/200".into());
+        }
+        let old=catalog_work_from_crossref(&ledger,source_id,&pinned.response_json)
+            .map_err(|_|"Prior citation is no longer a valid catalog record")?;
+        let next=catalog_work_from_crossref(&ledger,source_id,&response.bytes)
+            .map_err(|_|"Changed catalog metadata does not match original source")?;
+        let previous_bibliography=render_correlated(&ledger,&old,Style::Chicago18)
+            .map_err(|_|"Prior citation could not be reviewed")?.bibliography;
+        let proposed_bibliography=render_correlated(&ledger,&next,Style::Chicago18)
+            .map_err(|_|"Proposed revision could not be reviewed")?.bibliography;
+        let new_response_sha256=format!("{:x}",Sha256::digest(&response.bytes));
+        if new_response_sha256==pinned.response_sha256{
+            return Err("Crossref metadata is unchanged; no revision needed".into());
+        }
+        Ok(ResearchCitationRevisionCandidate{
+            source_id:source_id.to_owned(),
+            expected_previous_sha256:pinned.response_sha256,
+            new_response_sha256,previous_bibliography,proposed_bibliography,
+            proposed_response:response.bytes
+        })
+    }
+    /// Called only after native user comparison and approval. Re-validates
+    /// the exact bytes and current ledger source before the atomic CAS.
+    pub(crate) fn apply_citation_revision(
+        &self,chat_id:&str,candidate:ResearchCitationRevisionCandidate
+    )->Result<ResearchCitationRevisionReceipt,String>{
+        if !safe_id(chat_id)||candidate.source_id.len()>128
+            ||!candidate.source_id.starts_with("https://openalex.org/"){
+            return Err("Invalid citation revision conversation or source".into());
+        }
+        let dir=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Citation revision evidence directory unavailable")?;
+        if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+            return Err("Citation revision evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let metadata=fs::symlink_metadata(&db)
+            .map_err(|_|"Reviewed catalog database unavailable")?;
+        if !metadata.file_type().is_file()||metadata.file_type().is_symlink(){
+            return Err("Reviewed catalog database is not trusted".into());
+        }
+        let mut ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Reviewed catalog database could not be opened")?;
+        let _=catalog_work_from_crossref(
+            &ledger,&candidate.source_id,&candidate.proposed_response
+        ).map_err(|_|"Revision no longer passes corroboration checks")?;
+        if format!("{:x}",Sha256::digest(&candidate.proposed_response))
+            !=candidate.new_response_sha256{
+            return Err("Proposed catalog bytes changed during human approval".into());
+        }
+        let pinned=ledger.replace_citation_catalog_after_review(
+            &candidate.source_id,&candidate.expected_previous_sha256,
+            &candidate.proposed_response
+        ).map_err(|_|"Stale consent or conflicting DOI citation revision refused")?;
+        let revisions=ledger.citation_catalog_revision_receipts(&candidate.source_id)
+            .map_err(|_|"Citation revision audit receipt could not be rehashed")?;
+        Ok(ResearchCitationRevisionReceipt{
+            source_id:candidate.source_id,
+            previous_sha256:candidate.expected_previous_sha256,
+            current_sha256:pinned.response_sha256,
+            revision_count:revisions.len(),
+            publication_details_verified:false,
+            message:"Native user-reviewed catalog change recorded with prior immutable bytes and SHA-256 audit. Publication details and quotations remain independently unverified.",
+        })
+    }
+
     pub(crate) fn corroborate_crossref(
         &self,chat_id:&str,source_id:&str
     )->Result<ResearchCorroborationView,String>{
@@ -1210,6 +1536,115 @@ impl ResearchDesktop{
 }
 #[cfg(test)]
 mod tests{
+    #[test]
+    fn p07_catalog_revision_reopens_offline_and_rejects_stale_human_consent(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-p07-revision-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let dir=root.join("lu-research-evidence");
+        fs::create_dir_all(&dir).unwrap();
+        let source="https://openalex.org/W012345";
+        let db=dir.join("c-research.sqlite");
+        let mut ledger=EvidenceLedger::open(&db).unwrap();
+        ledger.discover(&Candidate{
+            id:source.into(),title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into(),
+        }).unwrap();
+        ledger.corroborate(source,&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let make=|year:u16|serde_json::json!({"message":{
+            "DOI":"10.1000/example","type":"book","title":["Study"],
+            "author":[{"given":"Jane","family":"Doe"}],
+            "issued":{"date-parts":[[year]]},"publisher":"Academic Press"
+        }}).to_string();
+        let prior=make(2024);
+        let proposed=make(2025);
+        let old=ledger.pin_citation_catalog(source,prior.as_bytes()).unwrap();
+        drop(ledger);
+        let host=ResearchDesktop::new(root.join("not-installed"),root.clone());
+        let candidate=ResearchCitationRevisionCandidate{
+            source_id:source.into(),expected_previous_sha256:old.response_sha256.clone(),
+            new_response_sha256:format!("{:x}",Sha256::digest(proposed.as_bytes())),
+            previous_bibliography:"Prior reviewed year: 2024".into(),
+            proposed_bibliography:"New reviewed year: 2025".into(),
+            proposed_response:proposed.into_bytes()
+        };
+        let receipt=host.apply_citation_revision("c-research",candidate).unwrap();
+        assert_eq!(receipt.revision_count,1);
+        assert_eq!(receipt.previous_sha256,old.response_sha256);
+        assert!(!receipt.publication_details_verified);
+        let updated=ResearchDesktop::new(root.join("still-not-installed"),root.clone());
+        let bibliography=updated.bibliography_preview("c-research",Style::Apa7).unwrap();
+        assert!(bibliography.markdown.contains("2025"));
+        assert!(!bibliography.markdown.contains("(2024)"));
+        let again=ResearchCitationRevisionCandidate{
+            source_id:source.into(),expected_previous_sha256:old.response_sha256,
+            new_response_sha256:format!("{:x}",Sha256::digest(prior.as_bytes())),
+            previous_bibliography:"2024".into(),
+            proposed_bibliography:"2024".into(),
+            proposed_response:prior.into_bytes()
+        };
+        assert!(updated.apply_citation_revision("c-research",again).is_err());
+        let ledger=EvidenceLedger::open(&db).unwrap();
+        assert_eq!(ledger.citation_catalog_revision_receipts(source).unwrap().len(),1);
+        drop(ledger);
+        drop(updated);
+        drop(host);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-p07-offline-{}-{}",std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let db_root=root.join("lu-research-evidence");
+        fs::create_dir_all(&db_root).unwrap();
+        let db=db_root.join("c-research.sqlite");
+        let mut ledger=EvidenceLedger::open(&db).unwrap();
+        ledger.discover(&Candidate{
+            id:"https://openalex.org/W012345".into(),title:"Study".into(),
+            author:"Jane Doe".into(),identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        ledger.corroborate("https://openalex.org/W012345",&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let bytes=serde_json::json!({"message":{
+            "DOI":"10.1000/example","type":"book","title":["Study"],
+            "author":[{"given":"Jane","family":"Doe"}],
+            "issued":{"date-parts":[[2024]]},"publisher":"Academic Press"
+        }}).to_string();
+        let checked=catalog_work_from_crossref(
+            &ledger,"https://openalex.org/W012345",bytes.as_bytes()
+        ).unwrap();
+        assert_eq!(checked.year,Some(2024));
+        ledger.pin_citation_catalog(
+            "https://openalex.org/W012345",bytes.as_bytes()
+        ).unwrap();
+        drop(ledger);
+        // A brand-new host with no external HTTP client can rebuild the
+        // complete bibliography from only the sealed per-chat SQLite.
+        let research=ResearchDesktop::new(root.join("unused"),root.clone());
+        let view=research.bibliography_preview("c-research",Style::Chicago18).unwrap();
+        assert_eq!(view.source_count,1);
+        assert!(view.markdown.contains("Doe, Jane"));
+        assert!(view.markdown.contains("SHA-256 inventory"));
+        assert!(view.csl_json[0].get("_lu_evidence").is_some());
+        assert!(!view.publication_details_verified);
+        assert!(view.catalog_manifest_sha256.len()==64);
+        assert!(research.bibliography_preview("c-other",Style::Apa7).is_err());
+        drop(research);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     use super::*;
     #[test]
     fn native_browser_read_is_kept_in_research_ledger_not_promoted_to_citation(){
