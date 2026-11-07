@@ -12,6 +12,7 @@
 
 pub mod agent_tool_loop;
 pub mod ansf;
+pub mod ansf_cognitum_bridge;
 pub mod ansf_import;
 pub mod ansf_library;
 pub mod ansf_revisions;
