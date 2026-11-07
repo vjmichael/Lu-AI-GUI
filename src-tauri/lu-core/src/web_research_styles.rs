@@ -554,7 +554,7 @@ pub fn format_sbl_critical_edition_locator(
         ),
         "RAHLFS-HANHART-2006" if !new_testament=>(
             "Septuaginta, Rahlfs-Hanhart revised edition",
-            "Deutsche Bibelgesellschaft",2006,
+            "Hendrickson Publishers (German Bible Society edition)",2006,
             "978-1-59856-180-7",
             "https://www.hendricksonpublishers.com/p/septuaginta-lxx-rahlfs-hanhart-revised-edition/9781598561807"
         ),
