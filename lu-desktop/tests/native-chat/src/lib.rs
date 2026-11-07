@@ -18,6 +18,8 @@ pub mod ansf_goals;
 // ANSF core schema initializes the production artifact-reference table.
 #[path = "../../../../src-tauri/lu-core/src/ansf_artifact_links.rs"]
 pub mod ansf_artifact_links;
+#[path = "../../../../src-tauri/lu-core/src/ansf_live_chat.rs"]
+pub mod ansf_live_chat;
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
