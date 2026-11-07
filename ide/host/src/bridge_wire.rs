@@ -99,6 +99,35 @@ pub fn validate(message: &proto::BridgeEnvelope) -> Result<(), BridgeWireError> 
                 return Err(BridgeWireError::Invalid("goodbye"));
             }
         }
+        Body::ChatRequest(chat) => {
+            if !valid_session(&message.session_id) || message.sequence == 0
+                || !valid_project_id(&chat.project_id)
+                || !id(&chat.thread_id) || !id(&chat.generation_id)
+                || chat.prompt.trim().is_empty() || chat.prompt.len() > 8192
+                || chat.prompt.as_bytes().contains(&0)
+                || chat.max_new_tokens == 0 || chat.max_new_tokens > 2048
+                || chat.history.len() > 12
+                || chat.history.iter().any(|turn| !matches!(turn.role.as_str(),"user"|"assistant")
+                    || turn.text.is_empty() || turn.text.len() > 8192
+                    || turn.text.as_bytes().contains(&0))
+                || chat.history.iter().map(|t| t.text.len()).sum::<usize>() > 24 * 1024
+            { return Err(BridgeWireError::Invalid("coding chat request")); }
+        }
+        Body::ChatReply(reply) => {
+            if !valid_session(&message.session_id) || message.sequence == 0
+                || !valid_project_id(&reply.project_id) || !id(&reply.thread_id)
+                || !id(&reply.generation_id) || !id(&reply.model_session_id)
+                || reply.text.len() > 16384
+                || reply.text.as_bytes().contains(&0)
+                || !matches!(reply.finish_code.as_str(), "completed"|"cancelled"|"failed")
+            { return Err(BridgeWireError::Invalid("coding chat reply")); }
+        }
+        Body::ChatCancel(cancel) => {
+            if !valid_session(&message.session_id) || message.sequence == 0
+                || !valid_project_id(&cancel.project_id)
+                || !id(&cancel.thread_id) || !id(&cancel.generation_id)
+            { return Err(BridgeWireError::Invalid("coding chat cancel")); }
+        }
     }
     if message.encoded_len() > MAX_BRIDGE_BYTES {
         return Err(BridgeWireError::Oversized);
@@ -172,6 +201,38 @@ mod tests {
         };
         assert_eq!(decode(&encode(&ack).unwrap()).unwrap(), ack);
         assert!(encode(&proto::BridgeEnvelope { sequence: 1, ..ack }).is_err());
+    }
+    #[test]
+    fn coding_chat_is_bounded_separate_from_native_lu_chats_and_unable_to_grant_tools() {
+        let body = proto::CodingChatRequest {
+            project_id: format!("ide-{}", "a".repeat(32)),
+            thread_id: "ide-thread-1".into(), generation_id: "gen-1".into(),
+            prompt: "Review this Rust code. No commands.".into(),
+            history: vec![proto::CodingChatTurn {
+                role: "user".into(), text: "Question about source".into()
+            }],
+            max_new_tokens: 512,
+        };
+        let mut msg = proto::BridgeEnvelope {
+            protocol_version: 1, request_id: "coding-1".into(),
+            session_id: "b".repeat(32), sequence: 1,
+            body: Some(Body::ChatRequest(body)),
+        };
+        assert_eq!(decode(&encode(&msg).unwrap()).unwrap(), msg);
+        if let Some(Body::ChatRequest(chat)) = &mut msg.body {
+            chat.prompt = "x".repeat(8193);
+        }
+        assert!(encode(&msg).is_err());
+        if let Some(Body::ChatRequest(chat)) = &mut msg.body {
+            chat.prompt = "What is wrong here?".into();
+            chat.history[0].role = "system".into();
+        }
+        assert!(encode(&msg).is_err());
+        let schema = include_str!("../../proto/lu/ide/v1/bridge.proto");
+        for forbidden in ["absolute_path =","shell_command =","tool_grant =",
+            "access_token =","native_chat_id =","executable_path ="] {
+            assert!(!schema.contains(forbidden));
+        }
     }
     #[test]
     fn source_context_and_proposals_are_bounded_and_project_scoped() {
