@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -272,6 +272,55 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
+    if ($Scenario -eq 'Wo9WorkflowPortfolio') {
+      # Actual installed Tauri WebView, not the standalone frontend served in a
+      # browser. The registered fixture must have a clean HEAD + one artifact.
+      Click 'Packages & workflows'
+      Require 'Multi-project release review'
+      Require 'Projects in workflow'
+      $projectCheck=Find-Control (Split-Path $fixed -Leaf) 'CheckBox' 30
+      if (!$projectCheck.Current.IsEnabled) { Deny 'wo9_portfolio_checkbox_disabled' }
+      $projectCheck.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+      Click 'Inspect selected workflow'
+      [void](Find-Control 'Native workflow review' '' 40)
+      Require 'Eligible for human source review'
+      Require 'Plan digest'
+      Click 'Verify frozen Git and artifact evidence again'
+      Require 'Exact evidence matched'
+      Require 'Export verified artifacts as ZIP'
+      Require 'Record exact dependency workflow'
+      Write-Host 'WO9_INSTALLED_NATIVE_MULTI_PROJECT_REVIEW_AND_PINNED_EXPORT_UI=PASS'
+    }
+    if ($Scenario -eq 'Wo9ReviewedGit') {
+      Click 'Source control'
+      Require 'Reviewed local Git staging and commit'
+      $before=(git -C $fixed rev-parse HEAD).Trim()
+      if ($LASTEXITCODE -ne 0) { Deny 'wo9_fixture_git_head_unavailable' }
+      $pathInput=Find-Control 'Project-relative tracked file' 'Edit' 20
+      $pathInput.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('main.rs')
+      Click 'Inspect exact Git file'
+      Require 'Reviewed local file'
+      Click 'Confirm and stage these reviewed bytes'
+      Confirm-NativeOneUseDialog 'One-file Git stage' 'Stage reviewed bytes'
+      Require 'Staged exact file'
+      foreach($pair in @(
+          @('Local commit message','WO9 installed reviewed Git source'),
+          @('Author name','WO9 Native Acceptance'),
+          @('Author email','wo9@localhost.invalid'))) {
+        $edit=Find-Control $pair[0] 'Edit' 20
+        $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($pair[1])
+      }
+      Click 'Confirm separate local commit'
+      Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file'
+      Require 'Local commit'
+      $after=(git -C $fixed rev-parse HEAD).Trim()
+      if ($LASTEXITCODE -ne 0 -or $before -eq $after) { Deny 'wo9_native_commit_not_observed' }
+      $files=@(git -C $fixed diff-tree --no-commit-id --name-only -r HEAD)
+      if ($files.Count -ne 1 -or $files[0] -ne 'main.rs') {
+        Deny 'wo9_git_commit_changed_unreviewed_files'
+      }
+      Write-Host 'WO9_INSTALLED_ONE_FILE_GIT_STAGE_COMMIT_NO_HOOKS_OR_PUSH=PASS'
+    }
     if ($Scenario -eq 'ProtectedDebuggerCancellation') {
       $sign=Get-AuthenticodeSignature -LiteralPath $exe
       if ($sign.Status -ne 'Valid' -or !$sign.SignerCertificate) {
