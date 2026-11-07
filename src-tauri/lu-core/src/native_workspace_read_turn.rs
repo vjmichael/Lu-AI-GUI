@@ -107,22 +107,22 @@ impl WorkspaceReadTurnSession{
         let mut catalog=if let Some(executable)=git_executable{
             let mut catalog=ModelToolCatalog::new();
             register_git_inspection_tools(&registry,&mut catalog,&root,executable)
-                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+                .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             catalog
         }else{
             let mut catalog=register_bundled_file_tools(&registry,&root)
-                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+                .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             register_inspection_tools(&registry,&mut catalog,&root)
-                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+                .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             // P01: same human-picked root and per-turn read authorization;
             // only a reusable metadata cache is shared between sessions.
             register_discovery_tool(&registry,&mut catalog,&root)
-                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+                .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             register_archive_inspection_tool(&registry,&mut catalog,&root)
-                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+                .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             catalog
         };
-        let descriptors=registry.tools().map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+        let descriptors=registry.tools().map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
         if descriptors.is_empty() || descriptors.iter().any(|d|d.effect!=ToolEffect::ReadWorkspace){
             return Err(WorkspaceReadError::RegistrationFailed);
         }
