@@ -20,7 +20,10 @@ pub mod windows_broker;
 mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_null_device;
-#[cfg(all(target_os = "windows", feature = "windows-worker"))]
+// The SCM-only recovery service must never compile into a plain D7C
+// windows-worker build: its per-job NUL lease requires a separately
+// installed and authenticated protected service identity.
+#[cfg(all(target_os = "windows", feature = "protected-recovery-service"))]
 pub mod windows_recovery_service;
 #[cfg(all(target_os = "windows", feature = "protected-recovery-service"))]
 pub mod windows_service_client;
