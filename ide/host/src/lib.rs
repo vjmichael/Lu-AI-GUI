@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod advanced_workflows;
+pub mod reviewed_git;
 pub mod browser;
 pub mod capabilities;
 pub mod continuity;
