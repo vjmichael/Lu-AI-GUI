@@ -117,6 +117,7 @@ function App() {
   });
   const [researchClaimsByChat,setResearchClaimsByChat]=useState({});
   const [researchReportTitle,setResearchReportTitle]=useState('Research evidence report');
+  const [researchReportIncludeBibliography,setResearchReportIncludeBibliography]=useState(false);
   const [wordReplaceFormat,setWordReplaceFormat]=useState('docx');
   const [wordReplaceOld,setWordReplaceOld]=useState('');
   const [wordReplaceNew,setWordReplaceNew]=useState('');
@@ -433,7 +434,9 @@ function App() {
     setResearchReportBusy(true);setResearchError('');
     try{
       const result=await invoke('lu_research_export_report',{
-        chatId:sourceChat,title:researchReportTitle.trim(),format
+        chatId:sourceChat,title:researchReportTitle.trim(),format,
+        includeBibliography:researchReportIncludeBibliography,
+        citationStyle:researchCitationStyle
       });
       if(result)setResearchReportSavedByChat(old=>({...old,[sourceChat]:result}));
     }catch(error){setResearchError(String(error));}
@@ -4672,6 +4675,14 @@ function App() {
               <input value={researchReportTitle}
                 onChange={e=>setResearchReportTitle(e.target.value)}/>
             </label>
+            <label>
+              <input type="checkbox" checked={researchReportIncludeBibliography}
+                onChange={e=>setResearchReportIncludeBibliography(e.target.checked)}/>
+              Include reviewed P07 bibliography ({researchCitationStyle})
+            </label>
+            <small>The optional bibliography uses only sealed local Crossref receipts;
+              it never independently validates publication editions, direct
+              quotations, exact pages or factual conclusions.</small>
             <div className="settingsActions">
               <button type="button" disabled={!chatId||researchReportBusy}
                 onClick={()=>void exportResearchReport('markdown')}>
@@ -4687,7 +4698,8 @@ function App() {
                 {' '}{researchReportSavedByChat[chatId].savedPath}
                 {' '}· SHA-256: {researchReportSavedByChat[chatId].savedSha256}
                 {' '}· {researchReportSavedByChat[chatId].checkedPassages}
-                verified passages. Interpretations are not independently certified.</small>}
+                verified passages · {researchReportSavedByChat[chatId].bibliographySources||0}
+                reviewed bibliography sources. Interpretations are not independently certified.</small>}
           </div>
           <label>Review citation style
             <select aria-label="Research citation style" value={researchCitationStyle}
