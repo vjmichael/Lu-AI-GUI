@@ -47,6 +47,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           foreach ($path in @('ide/app/fixtures/Test-P04SignedReinstall.ps1',
+              'ide/app/fixtures/Test-P04SignedVersionTransition.ps1',
               'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1',
               'ide/app/fixtures/Test-Wo7SignedInstalledNsis.ps1')) {
             $tokens=$null; $errors=$null

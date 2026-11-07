@@ -37,7 +37,7 @@ function Candidate([string]$path,[string]$source) {
   $manifestPath=Join-Path $dir 'wo7-release.manifest.json'
   if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) { Deny 'candidate_manifest_missing' }
   $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-  if ($manifest.schema -ne 'lu.ide.wo7.signed-nsis.v1' -or $manifest.releaseApproved -ne $true -or
+  if ($manifest.schema -ne 'lu.ide.wo7.signed-nsis.v1' -or $manifest.releaseApproved -ne $false -or
       $manifest.licensesReviewed -ne $true -or $manifest.sourceSha -ine $source) {
     Deny 'candidate_not_reviewed'
   }

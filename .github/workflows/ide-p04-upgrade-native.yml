@@ -78,10 +78,10 @@ jobs:
             (Resolve-Path ide/app/fixtures/Test-P04SignedVersionTransition.ps1).Path,
             [ref]$tokens,[ref]$errors)
           if ($errors.Count) { throw 'DENIED: new reviewed native transaction test invalid' }
-          foreach($case in @(@('signed-old',$env:OLD_SHA),@('signed-new',$env:NEW_SHA))) {
-            python ide/packaging/verify_wo7_candidate.py --manifest ($case[0]+'/wo7-release.manifest.json') --artifact-root $case[0] --source-sha $case[1]
-            if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed distinct signed candidate not accepted' }
-          }
+          python ide/packaging/verify_wo7_candidate.py --manifest signed-old/wo7-release.manifest.json --artifact-root signed-old --source-sha $env:OLD_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: old reviewed signed candidate rejected' }
+          python ide/packaging/verify_wo7_candidate.py --manifest signed-new/wo7-release.manifest.json --artifact-root signed-new --source-sha $env:NEW_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: new reviewed signed candidate rejected' }
       - name: Native signed OS transition and exact old-version recovery
         shell: pwsh
         env:
