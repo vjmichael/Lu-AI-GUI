@@ -83,3 +83,7 @@ Windows also has `Test-P04SignedVersionTransition.ps1` and `ide-p04-upgrade-nati
 ### P04 native signed transition witness repair (November 7)
 
 The review-only Windows two-version workflow downloads the old/new signed candidates into exact GitHub workspace directories `signed-old` and `signed-new`, whereas its own signed transaction host helper originally allowed only `RUNNER_TEMP`. The source witness now admits **only** those two exact reviewed workspace artifact locations (or the fixed isolated CI temporary root), never arbitrary user-provided directories. The Debian GPG-signed transaction helper now passes literal `dpkg-query -f='${Version}'` and `-f='${Status}'` field format tokens instead of expanding them as undefined Bash variables under `set -u`. Both are source/acceptance repair only; two signed versions, actual native transitions and user data preservation are still awaiting real reviewed binaries and OS results.
+
+### P03/P04 stacked branch synchronization
+
+P04 draft PR #84 is stacked on P03 draft PR #80. On November 7, P03 repaired its invalid native E2 protected-clangd workflow, two Rust 1.99 format-only native-host differences, and added fixed-vocabulary debugger response-error diagnostics. P04 branch now carries the **identical content for these P03 files** to prevent a later P04 merge from undoing upstream security/source repairs. This is a source synchronization, **not** a merge, rebase, native OS acceptance or P03 closure; independent exact-head P03/P04 CI gates are still required.

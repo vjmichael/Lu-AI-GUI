@@ -88,3 +88,11 @@
 ### Fixed LLDB-DAP headless launch refinement (latest P03 source, native verification required)
 
 The LLVM 18 LLDB-DAP launch handler explicitly accepts `disableSTDIO` and otherwise defaults to debuggee standard-I/O/pseudo-terminal setup. This first-party, stop/thread/stack-only debuggee requires no terminal I/O. The fixed request now sets `disableSTDIO=true` as well as `disableASLR=false`; neither adds capabilities, unpins a target, permits reverse terminal requests, nor relaxes Bwrap/cgroups/AppContainer. This is a bounded repair hypothesis for the protected Linux launch failure, **not yet real native acceptance**. LLVM source: https://llvm.googlesource.com/llvm-project/+/refs/tags/llvmorg-18.1.2/lldb/tools/lldb-dap/lldb-dap.cpp .
+
+### E2 native Windows/Linux test scheduler repair (November 7 follow-up)
+
+The P03 head `a96560dca4c942bf5fc2a91830566ea5214d12af` lacked any E2 native clangd CI run because `.github/workflows/ide-e2-native-lsp.yml` contained a corrupted concatenated PowerShell line in the Windows clangd PE import check, followed by a duplicated non-YAML fragment after the Linux delegated systemd job. The completed prior E2 native Linux success and protected Windows failure therefore could not be revalidated at that head. The exact source workflow has now been structurally repaired and its Windows/Linux native tests made schedulable again, **not yet proven to pass**. A green source-only matrix does not satisfy this missing E2 native evidence.
+
+### Exact native Rust format repair (November 7)
+
+Older branch-head Windows/Linux native probe and P02 runs failed solely at `cargo fmt --check` due two exact formatter diffs in `ide/sandbox/src/bin/linux_delegated_ci_wo4_host.rs` and `linux_delegated_ci_wo6_dap_host.rs`; Linux/Windows native kernel tests themselves had separately passed. Both expressions are now identical to the Rust 1.99 CI formatter output, without changing security behavior. **Actual final exact-head formatter result remains pending**, distinct from real debugger/clangd acceptance.

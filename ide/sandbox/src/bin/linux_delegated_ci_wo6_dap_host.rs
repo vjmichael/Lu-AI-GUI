@@ -21,8 +21,7 @@ fn run() -> Result<(), &'static str> {
     let mode = args.next();
     if args.next().is_some()
         || mode.as_deref().is_some_and(|arg| {
-            arg != std::ffi::OsStr::new("--cancel")
-                && arg != std::ffi::OsStr::new("--crash-verify")
+            arg != std::ffi::OsStr::new("--cancel") && arg != std::ffi::OsStr::new("--crash-verify")
         })
     {
         return Err("only fixed normal/cancel/crash native acceptance modes supported");
