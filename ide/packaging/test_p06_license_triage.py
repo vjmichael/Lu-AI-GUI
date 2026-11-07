@@ -1,7 +1,7 @@
 """P06 category hints never waive any missing upstream license evidence."""
 import copy
 import unittest
-from p06_license_triage import triage,TriageDenied
+from p06_license_triage import triage,TriageDenied,enforce_known_risk_set
 class TriageTests(unittest.TestCase):
     def setUp(self):
         self.data={"schema":"lu.ide.p04.verification-licenses.v1",
@@ -17,6 +17,28 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(record["unresolvedCount"],2)
         self.assertTrue(all(x["disposition"]=="open" and x["reviewedBy"] is None for x in record["tasks"]))
         self.assertFalse(record["releaseApproved"])
+    def test_mpl_file_level_review_stays_open(self):
+        self.data["resolvedPackages"].append({"manager":"cargo","name":"selectors",
+            "version":"0.38.0","declaredLicense":"MPL-2.0","notices":[]})
+        result=triage(self.data,b"fixture")
+        flags=result["specialLicenseReviews"]
+        self.assertEqual(len(flags),1)
+        self.assertEqual(flags[0]["reviewRoute"],"mpl_2_file_level_conditions")
+        self.assertIsNone(flags[0]["selectedLicenseOption"])
+        self.assertEqual(flags[0]["disposition"],"open")
+    def test_dual_licensed_lgpl_alternative_is_not_forced_lgpl(self):
+        self.data["resolvedPackages"].append({"manager":"cargo","name":"r-efi",
+            "version":"6.0.0","declaredLicense":"MIT OR Apache-2.0 OR LGPL-2.1-or-later","notices":[]})
+        report=triage(self.data,b"fixture")
+        self.assertEqual(report["specialLicenseReviews"][0]["reviewRoute"],"multi_license_choice_review")
+        self.assertIsNone(report["specialLicenseReviews"][0]["selectedLicenseOption"])
+    def test_new_or_disappeared_special_obligation_fails_policy(self):
+        report=triage(self.data,b"fixture")
+        policy={"schema":"lu.ide.p06.known-license-risk.v1","releaseApproved":False,
+                "allRequireIndependentReview":True,"expectedRiskPackages":[{"manager":"cargo",
+                    "name":"unreviewed","version":"1.0","declaredLicense":"GPL-3.0"}]}
+        with self.assertRaisesRegex(TriageDenied,"new_or_missing_copyleft_or_multi_license_review"):
+            enforce_known_risk_set(report,policy)
     def test_missing_package_denied(self):
         self.data["resolvedPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"unresolved_without_resolved_package"):

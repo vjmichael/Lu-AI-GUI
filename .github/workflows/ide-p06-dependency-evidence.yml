@@ -6,6 +6,7 @@ on:
       - 'ide/packaging/test_verify_p06_*'
       - 'ide/packaging/p06-native-acceptance-matrix.json'
       - 'ide/packaging/p06_license_triage.py'
+      - 'ide/packaging/p06-known-license-risk.json'
       - 'ide/packaging/test_p06_license_triage.py'
       - 'ide/packaging/test_p06_source_notice_recovery.py'
       - 'ide/host/LICENSE'
@@ -91,7 +92,7 @@ jobs:
           python ide/packaging/verify_p06_dependency_graph.py --repo-root . --source-sha "$EXACT_SHA" --license-root ide/app/src-tauri/p06-notices --output ide/app/src-tauri/p06-dependency-evidence.json
           python -m unittest discover -s ide/packaging -p 'test_p06_source_notice_recovery.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_license_triage.py' -v
-          python ide/packaging/p06_license_triage.py --inventory ide/app/src-tauri/p06-notices/inventory.json --output ide/app/src-tauri/p06-license-review-queue.json
+          python ide/packaging/p06_license_triage.py --inventory ide/app/src-tauri/p06-notices/inventory.json --output ide/app/src-tauri/p06-license-review-queue.json --known-risk-policy ide/packaging/p06-known-license-risk.json
           python -m unittest discover -s ide/packaging -p 'test_verify_p06_lock_parity.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_candidate_lock.py' -v
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ${{ matrix.os }}

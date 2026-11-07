@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 commercial-license obligations audit (Nov 7):** Recorded five actual MPL-2.0 crates and two multi-licensed `r-efi` versions, requiring explicit legal/notice review without incorrectly treating an LGPL `OR` choice as mandatory. Exact-name/version metadata frozen into hostile review gate; no license or release approval inferred.
+
 - **P05 native WO9 upstream receipt verification repair (Nov 7):** Inspected exact-head Win/Linux failure receipts: WO9 Windows repeated upstream source fetch; WO9 Linux omitted it. Corrected both actual packaging jobs, added complete CI wiring regressions across six E2/WO8/WO9 jobs; real installed UI acceptance remains open.
 
 - **P06 source governance begins (Nov 7):** New P06 branch stacked on P05 draft; independent Win/Linux actual resolved dependency graph CI with npm/Cargo lock hashes, original upstream license archive and source SHA receipts; default-deny six-phase OS/security/release acceptance matrix and hostile tests. No committed lockfile/independent signer/legal review or installed release approval claimed. GitHub rulesets returned empty but protection endpoint forbidden; repository permissions not inferred.

@@ -66,29 +66,68 @@ def triage(data, source_bytes):
             tasks.append({"inventoryError":error,"classification":"source_resolution_error",
                           "disposition":"open","reviewedBy":None,
                           "remediation":"Repair missing dependency metadata or lock evidence and rerun."})
+    # SPDX metadata is not a commercial-license approval. A complete source
+    # notice is also not proof that license choice and obligations are met.
+    flags=[]
+    for (manager,name,version),row in pkgs.items():
+        license_id=row.get("declaredLicense")
+        if not isinstance(license_id,str) or not license_id:
+            route="unknown_license"
+            explanation="No trustworthy declared license: obtain original source terms."
+        elif "MPL-2.0" in license_id:
+            route="mpl_2_file_level_conditions"
+            explanation="Check covered-file source, changes, attribution and binary distribution obligations."
+        elif any(token in license_id for token in ("AGPL-","GPL-","LGPL-","SSPL-")):
+            route=("multi_license_choice_review" if " OR " in license_id
+                   else "copyleft_distribution_review")
+            explanation="Independently determine and record the exact licensing option and its obligations; never infer forced LGPL where MIT/Apache alternatives are offered."
+        else:
+            continue
+        flags.append({"manager":manager,"name":name,"version":version,
+                      "declaredLicense":license_id,"reviewRoute":route,
+                      "requiredReview":explanation,"disposition":"open",
+                      "selectedLicenseOption":None,"reviewedBy":None})
+    flags.sort(key=lambda x:(x["manager"],x["name"],x["version"]))
     return {"schema":"lu.ide.p06.license-triage.v1","sourceSha":data["sourceSha"],
             "inventorySha256":hashlib.sha256(source_bytes).hexdigest(),
             "totalResolvedPackages":len(pkgs),"unresolvedCount":len(tasks),
             "allUnresolvedRemainOpen":True,"upstreamReceiptPresent":True,
-            "legalReviewApproved":False,"releaseApproved":False,"tasks":tasks}
+            "legalReviewApproved":False,"releaseApproved":False,"tasks":tasks,
+            "specialLicenseReviewCount":len(flags),"specialLicenseReviews":flags}
+
+def enforce_known_risk_set(report, policy):
+    if (not isinstance(policy,dict) or policy.get("schema")!="lu.ide.p06.known-license-risk.v1"
+            or policy.get("releaseApproved") is not False
+            or policy.get("allRequireIndependentReview") is not True
+            or not isinstance(policy.get("expectedRiskPackages"),list)):
+        raise TriageDenied("invalid_license_risk_policy")
+    expected={(row["manager"],row["name"],row["version"],row["declaredLicense"])
+              for row in policy["expectedRiskPackages"]}
+    observed={(row["manager"],row["name"],row["version"],row["declaredLicense"])
+              for row in report["specialLicenseReviews"]}
+    if expected!=observed or len(expected)!=len(policy["expectedRiskPackages"]):
+        raise TriageDenied("new_or_missing_copyleft_or_multi_license_review")
+    return True
 
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--inventory",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
+    p.add_argument("--known-risk-policy",type=Path,required=True)
     a=p.parse_args()
     try:
         if a.output.exists() or a.output.is_symlink():raise TriageDenied("triage_output_must_be_new")
         if a.inventory.is_symlink() or a.inventory.stat().st_size>5_000_000:raise TriageDenied("unsafe_inventory")
         raw=a.inventory.read_bytes()
         result=triage(json.loads(raw),raw)
+        enforce_known_risk_set(result,json.loads(a.known_risk_policy.read_text(encoding="utf-8")))
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     except (OSError,ValueError,TypeError,KeyError) as e:
         print("DENIED: "+str(e),file=sys.stderr)
         return 2
     print(json.dumps({"unresolvedCount":result["unresolvedCount"],
-                       "legalReviewApproved":False,"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
+                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
     return 0
 if __name__=="__main__":
     raise SystemExit(main())
