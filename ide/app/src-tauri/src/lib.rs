@@ -76,6 +76,82 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// WO9-E durable workflow creation from a native Git/artifact fingerprint.
+#[tauri::command]
+async fn ide_workflow_create(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+    steps: Vec<lu_ide_workspace::workflow_orchestrator::WorkflowStep>,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    let registry = Arc::clone(registry.inner());
+    let coordinator = Arc::clone(coordinator.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        coordinator.create(&registry, &project_ids, &expected_fingerprint, steps)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GRAPH_CREATE_TASK_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_workflow_list_runs(
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+) -> Result<Vec<lu_ide_workspace::workflow_orchestrator::WorkflowRun>, String> {
+    coordinator.list().map_err(str::to_owned)
+}
+
+#[tauri::command]
+async fn ide_workflow_cancel_pending(
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    workflow_id: String,
+    step: usize,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    coordinator.cancel_pending(&workflow_id, step).map_err(str::to_owned)
+}
+
+/// This method does NOT implement a second worker. It invokes exactly the
+/// existing WO6 native signed-resource supervisor (including its independent
+/// human OS approval), and records only the resulting native receipt.
+#[tauri::command]
+async fn ide_workflow_run_step(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    coordinator: State<'_, Arc<lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator>>,
+    workflow_id: String,
+    step: usize,
+) -> Result<lu_ide_workspace::workflow_orchestrator::WorkflowRun, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("WO9_GRAPH_PROTECTED_WORKER_NOT_INSTALLED")?;
+        let runtime = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let coordinator = Arc::clone(coordinator.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            let spec = coordinator.begin_step(&registry, &workflow_id, step)
+                .map_err(str::to_owned)?;
+            let result = runtime.run(&app, &registry, &spec.project_id, &spec.recipe_id);
+            match result {
+                Ok(receipt) => {
+                    coordinator.finish_step(&workflow_id, step,
+                        Some(receipt.job_id), Some(receipt.plan_sha256),
+                        receipt.output_sha256, &receipt.phase, receipt.native_exit_code,
+                        receipt.requires_reconciliation || receipt.timed_out,
+                        receipt.native_error_category).map_err(str::to_owned)
+                }
+                Err(code) => coordinator.finish_step(&workflow_id, step,
+                    None, None, None, "uncertain", None, true, Some(code))
+                    .map_err(str::to_owned),
+            }
+        }).await.map_err(|_| "WO9_GRAPH_NATIVE_WORKER_TASK_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, coordinator, workflow_id, step);
+        Err("WO9_GRAPH_PROTECTED_WORKER_NOT_INSTALLED".into())
+    }
+}
+
 /// WO9-D: native read-only preview for one tracked file; stage/commit
 /// require separate exact-source revalidation and an explicit OS confirmation.
 #[tauri::command]
@@ -1080,6 +1156,10 @@ pub fn run() {
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
+            let workflows = lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator::new(
+                data.join("workflow-dependencies.json"))
+                .map_err(|_| std::io::Error::other("IDE durable workflow journal failed to open"))?;
+            app.manage(Arc::new(workflows));
             let intents = ExecutionIntents::new(data.join("execution-intents.jsonl"))
                 .map_err(|_| std::io::Error::other("IDE execution-intent journal failed to open"))?;
             app.manage(Arc::new(intents));
@@ -1135,6 +1215,10 @@ pub fn run() {
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
+            ide_workflow_create,
+            ide_workflow_list_runs,
+            ide_workflow_run_step,
+            ide_workflow_cancel_pending,
             ide_git_review_file,
             ide_git_stage_reviewed,
             ide_git_commit_reviewed,
