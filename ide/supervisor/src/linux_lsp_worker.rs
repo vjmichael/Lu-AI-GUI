@@ -757,6 +757,28 @@ impl LinuxLspSession {
 mod tests {
     use super::*;
     #[test]
+    fn native_dap_failure_diagnostics_emit_only_fixed_categories() {
+        assert_eq!(
+            classify_dap_child_failure(
+                b"/private/secret: error while loading shared libraries: libmissing.so"
+            ),
+            "dynamic_library_missing"
+        );
+        assert_eq!(
+            classify_dap_child_failure(b"/private/secret: Permission denied"),
+            "os_permission_denied"
+        );
+        assert_eq!(
+            classify_dap_child_failure(b"child critical: no such file or directory"),
+            "required_file_missing"
+        );
+        assert_eq!(classify_dap_child_failure(b""), "empty");
+        assert_eq!(
+            classify_dap_child_failure(b"secret arbitrary user text"),
+            "other_nonempty"
+        );
+    }
+    #[test]
     fn native_release_bundle_is_not_a_user_writable_project_binary() {
         let unavailable = Path::new("/tmp/nonexistent-unapproved-lsp-release");
         assert!(native_lsp_bundle_digest(unavailable, "lsp_clangd").is_err());
