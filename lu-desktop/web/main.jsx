@@ -104,6 +104,7 @@ function App() {
 
 
   const [researchCitationsByChat,setResearchCitationsByChat]=useState({});
+  const [researchCitationRevisionByChat,setResearchCitationRevisionByChat]=useState({});
 
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
   const [researchDocumentActive,setResearchDocumentActive]=useState(null);
@@ -377,6 +378,24 @@ function App() {
       }));
     }catch(e){setResearchError(String(e));}
     finally{setResearchBibliographyBusy(false);}
+  }
+  async function reviewResearchCitationRevision(sourceId){
+    if(!chatId||!researchAvailable||researchBusy||researchCitationBusy||!sourceId)return;
+    const sourceChat=chatId;
+    const key=sourceChat+'|'+sourceId;
+    setResearchCitationBusy(true);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_citation_review_revision',{
+        chatId:sourceChat,sourceId
+      });
+      if(receipt){
+        setResearchCitationRevisionByChat(old=>({...old,[key]:receipt}));
+        setResearchCitationsByChat(old=>({...old,[key]:null}));
+        setResearchBibliographiesByChat(old=>({...old,[sourceChat]:null}));
+        setResearchBibliographyExportsByChat(old=>({...old,[sourceChat]:null}));
+      }
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchCitationBusy(false);}
   }
   async function previewResearchCitation(sourceId){
     if(!chatId||!researchAvailable||researchBusy||researchCitationBusy||!sourceId)return;
@@ -4888,6 +4907,17 @@ function App() {
                   onClick={()=>void previewResearchCitation(l.sourceId)}>
                   {researchCitationBusy?'Reviewing catalog…':'Preview evidence-bound citation'}
                 </button>}
+              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
+                <button type="button" disabled={researchBusy||researchCitationBusy||!researchAvailable}
+                  onClick={()=>void reviewResearchCitationRevision(l.sourceId)}>
+                  Review changed Crossref metadata (prior version remains until approval)
+                </button>}
+              {researchCitationRevisionByChat[chatId+'|'+l.sourceId]&&
+                <small role="status">Citation catalog revision #{
+                  researchCitationRevisionByChat[chatId+'|'+l.sourceId].revisionCount} approved.
+                  Previous SHA-256: {researchCitationRevisionByChat[chatId+'|'+l.sourceId].previousSha256};
+                  current SHA-256: {researchCitationRevisionByChat[chatId+'|'+l.sourceId].currentSha256}.
+                  Publication details and passages still need independent review.</small>}
               {researchCitationsByChat[chatId+'|'+l.sourceId]&&
                 <div className="researchResults" aria-label="Crossref-backed citation preview">
                   <strong>{researchCitationsByChat[chatId+'|'+l.sourceId].style} · REVIEW REQUIRED</strong>
