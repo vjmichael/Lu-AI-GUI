@@ -595,6 +595,11 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    fn trace_native_fault(&mut self, stage: &'static str) {
+        native_lsp_trace(stage);
+        native_lsp_exit_code(self.process.0);
+        inspect_debug_stderr(self.debug_stderr.as_ref());
+    }
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()> {
         if bytes.is_empty() || bytes.len() > MAX_LSP_STDIO_WRITE {
             native_lsp_trace("outbound_frame_denied");
