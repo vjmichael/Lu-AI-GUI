@@ -140,8 +140,8 @@ try {
     if ($Scenario -ne 'PersistedRestart') {
       # Standard Windows folder dialog address navigation; real desktop input.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
-      [System.Windows.Forms.Clipboard]::SetText($fixed)
-      [System.Windows.Forms.SendKeys]::SendWait('^v')
+      if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
+      [System.Windows.Forms.SendKeys]::SendWait($fixed)
       [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
       Start-Sleep -Seconds 2
       # The Windows directory chooser's confirmation label is OS-version dependent.
