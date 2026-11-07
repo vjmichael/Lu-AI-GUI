@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0358a8a6e533393a50983ece2332d4dc1b13eb44",
+  "sourceCommitBeforeLock": "5de96473fa2491f6e2311c7fbf873b49dcbb2719",
   "trackedFileCount": 509,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "cc4c42757eefb34fecf62e0b500c2269fb1eda76"
+      "blob": "2db7eebbe51cdc9d8a4cfba3a253aa6cf185f3c0"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "028cb7cbfc5a389fb40f3b4eff936b1300496a09"
+      "blob": "158fe011eed1d7695aad329db034bc3012237207"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "eecc0f1ed23e648c9832f3618e4e65d120489a48"
+      "blob": "15db842ee1b7ebb5d72845ddb3bdb15b660355e9"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -805,7 +805,7 @@
     },
     {
       "path": "scripts/verify-observe-nsis-cycle-windows.ps1",
-      "blob": "04d38f30a5bbebd74be8f02cf592c8230706eb23"
+      "blob": "d6b0038b38c251be0d0a51e13d666301de46b324"
     },
     {
       "path": "scripts/verify-observe-ui-contract-windows.ps1",

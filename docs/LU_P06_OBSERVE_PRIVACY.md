@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 bounded real NSIS process execution and partial-install uncertainty
+
+The independent disposable Windows NSIS installation/uninstallation acceptance script now limits **both** native setup stages to an operator-configurable 30–1800 seconds (600 default). It waits on the original OS Process object, inspects the actual exit code, and attempts to terminate its exact process tree on timeout; it preserves the possibly partially written installation and registry for operator recovery rather than blindly deleting data or retrying. The receipt distinguishes a completed installer/uninstaller process exit from incomplete or uncertain native setup. This is stronger source implementation for genuine physical acceptance, not a physical PASS: exact Lu.exe/worker hashes, installer WGC UIA, cancellation and NSIS install/uninstall still require a real Windows run.
+
 ## P06 same-session UIA probes and one exact-head P06 CI matrix
 
 Read-only native Windows privacy/GUI probes now verify the target process shares the **same OS interactive logon session** as the independent reviewer script, before and after UIA inspection. This mirrors the foreground WGC worker's ProcessIdToSessionId gate and fails closed on cross-session substitution; it does not turn the opaque general capture picker into an identified source. The dedicated P06 Windows/Linux CI matrix now triggers on *branch push* (and manual dispatch) only, instead of duplicate push/PR runs that needlessly cancelled each other's exact-head Windows jobs. Broader repo tests remain independent. This is source plus CI coverage, not physical installed-app acceptance.

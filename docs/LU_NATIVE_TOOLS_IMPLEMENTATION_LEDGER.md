@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 bounded actual NSIS verification (2026-11-06):** Disposable installed acceptance script now supervises native installer/uninstaller Process objects with configurable 600s default per-stage timeout and owned OS process-tree kill on expiry; failure marks installation uncertain and preserves state, never deletes arbitrary user data. Node assertions added. This is code only until physical operator run. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 UIA Windows-session guard and CI duplicate prevention (2026-11-06):** Native OS UIA password and independent GUI reviewers must verify their target's SessionId matches the reviewer tool both before and after scanning. The dedicated P06 CI matrix now runs on branch push plus manual dispatch only (not duplicate PR trigger) to reduce exact-head Windows job cancellation. Native/source tests preserved; physical installed/WGC acceptance remains open. [P06](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 same-session WGC source check (2026-11-06):** OS-attested foreground HWND additionally requires Windows `ProcessIdToSessionId` equality with the supervised worker (selection and both sides of frame readback), rejecting zero PID and query errors. Adds Windows native behavioral check and Node contract. Generic picker remains Unknown and no source attribution is fabricated. New exact-head Windows compile pending. [P06](LU_P06_OBSERVE_PRIVACY.md).

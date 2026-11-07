@@ -9,7 +9,8 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$WorkerSha256,
   [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9 _-]+\.exe$')][string]$UninstallerName,
   [switch]$DisposableMachineConfirmed,
-  [switch]$ExerciseNativeUi
+  [switch]$ExerciseNativeUi,
+  [ValidateRange(30,1800)][int]$StageTimeoutSeconds=600
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -34,6 +35,25 @@ function Match-Sha([string]$path,[string]$expected){
 }
 $installer=Regular-Exe $InstallerPath
 Match-Sha $installer $InstallerSha256
+function Invoke-BoundedReviewedExe([string]$path,[string[]]$arguments){
+  # Wait on the original exact OS process object, not a name/PID reused
+  # later. A hung installer/uninstaller cannot run indefinitely.
+  $child=Start-Process -FilePath $path -ArgumentList $arguments -PassThru -ErrorAction Stop
+  if(-not $child.WaitForExit($StageTimeoutSeconds*1000)){
+    # NSIS may have spawned helpers. Kill the owned process tree; preserve
+    # filesystem and registry state as UNCERTAIN for operator inspection.
+    try{
+      if(-not $child.HasExited){$child.Kill($true)}
+      $null=$child.WaitForExit(10000)
+    }catch{
+      Write-Warning 'Native installer tree termination uncertain'
+    }
+    throw 'OS-installed package operation TIMED OUT; partial writes are uncertain'
+  }
+  $child.Refresh()
+  if($child.ExitCode -ne 0){throw "Reviewed native package operation exit: $($child.ExitCode)"}
+  return $child.ExitCode
+}
 $registryLocations=@(
   'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
   'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -66,14 +86,17 @@ $report=[ordered]@{
   wgcPicker='NOT_TESTED'
   pixelRedaction='NOT_TESTED'
   gpuHardwareQuota='NOT_TESTED'
+  processTimeoutSeconds=$StageTimeoutSeconds
+  reviewedStageProcessExit='NOT_TESTED'
+  installationStateUncertain=$false
 }
 $stage='preflight'
 try {
   $stage='installation'
   # Standard NSIS /S, with final /D argument selecting a new test path.
   # If the installer ignores /D, exact target files are absent and fail.
-  $install=Start-Process -FilePath $installer -ArgumentList @('/S',("/D="+$target)) -Wait -PassThru -ErrorAction Stop
-  if($install.ExitCode -ne 0){throw 'Real NSIS install failed'}
+  $null=Invoke-BoundedReviewedExe $installer @('/S',("/D="+$target))
+  $report.reviewedStageProcessExit='INSTALL_PROCESS_EXITED'
   $report.installer='PASS'
   $app=Regular-Exe (Join-Path $target 'Lu.exe')
   $worker=Regular-Exe (Join-Path $target 'lu-observe-capture-worker.exe')
@@ -88,8 +111,8 @@ try {
   }
   $stage='uninstallation'
   $uninstaller=Regular-Exe (Join-Path $target $UninstallerName)
-  $uninstall=Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru -ErrorAction Stop
-  if($uninstall.ExitCode -ne 0){throw 'Real native NSIS uninstaller failed'}
+  $null=Invoke-BoundedReviewedExe $uninstaller @('/S')
+  $report.reviewedStageProcessExit='BOTH_REVIEWED_STAGE_PROCESSES_EXITED'
   $report.uninstaller='PASS'
   if((Test-Path -LiteralPath $app) -or (Test-Path -LiteralPath $worker) -or
     @(Get-Process -Name Lu -ErrorAction SilentlyContinue).Count -gt 0){
@@ -101,6 +124,9 @@ try {
 } catch {
   $report.failureStage=$stage
   $report.failureCategory='NATIVE_INSTALL_CYCLE_NOT_ACCEPTED'
+  # A timeout or a returned error after any installer writes is uncertain;
+  # never auto-remove an operator's files or imply uninstall succeeded.
+  $report.installationStateUncertain=($stage -ne 'preflight')
   throw
 } finally {
   # Never auto-delete a failed installation or registry entry. The exact

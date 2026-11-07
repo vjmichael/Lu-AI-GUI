@@ -256,3 +256,15 @@ test('P06 OS UIA probes require reviewer session and CI runs a single branch-pus
   assert.match(checker,/\$process\.SessionId -ne \$auditor\.SessionId/);
   assert.match(checker,/\$after\.SessionId -ne \$auditor\.SessionId/);
 });
+
+test('P06 actual NSIS process run is time-bounded and never auto-cleans uncertain writes',()=>{
+  const script=read('../../scripts/verify-observe-nsis-cycle-windows.ps1');
+  assert.match(script,/\[ValidateRange\(30,1800\)\]\[int\]\$StageTimeoutSeconds=600/);
+  assert.match(script,/function Invoke-BoundedReviewedExe/);
+  assert.match(script,/WaitForExit\(\$StageTimeoutSeconds\*1000\)/);
+  assert.match(script,/\$child\.Kill\(\$true\)/);
+  assert.match(script,/installationStateUncertain=\$false/);
+  assert.match(script,/installationStateUncertain=\(\$stage -ne 'preflight'\)/);
+  assert.match(script,/reviewedStageProcessExit='BOTH_REVIEWED_STAGE_PROCESSES_EXITED'/);
+  assert.doesNotMatch(script,/Remove-Item -Recurse/);
+});
