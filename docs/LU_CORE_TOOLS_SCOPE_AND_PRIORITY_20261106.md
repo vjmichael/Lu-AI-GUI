@@ -1,3 +1,7 @@
+## Current owner-directed status (2026-11-07) — P07 in progress
+
+The owner subsequently authorized continuing P07 scholarly Research and citation development; this **supersedes** the earlier historical text below saying P07 was unstarted or required another instruction. P07 has now implemented evidence-bound native citations, Crossref catalog snapshots, offline bibliography previews and atomic file export, and bounded SBL Scripture/journal support; exact-head native CI and installed GUI acceptance remain OPEN. See [P07 implementation and open acceptance ledger](LU_P07_RESEARCH_STYLES.md). P04/P05 remain deferred. No earlier P06 physical WGC/GGUF acceptance gate is reclassified as PASS.
+
 # Lu Core tools — owner-approved scope, integration architecture, and priority order
 
 **Decision date:** 2026-11-06  
