@@ -433,9 +433,7 @@ impl DapSession {
 }
 // A native DAP error may embed project paths and user data. Its diagnostic
 // witness is intentionally a fixed vocabulary and never part of authorization.
-fn classify_native_adapter_error(
-    response: &serde_json::Map<String, Value>,
-) -> &'static str {
+fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &'static str {
     let info = response
         .get("message")
         .and_then(Value::as_str)
@@ -457,13 +455,12 @@ fn classify_native_adapter_error(
         "kernel_or_file_access_denied"
     } else if text.contains("no such file") || text.contains("not found") {
         "dependency_or_fixed_target_missing"
-    } else if text.contains("process launch") || text.contains("failed to launch")
+    } else if text.contains("process launch")
+        || text.contains("failed to launch")
         || text.contains("launch failed")
     {
         "target_launch_failed"
-    } else if text.contains("python") || text.contains("resource")
-        || text.contains("platform")
-    {
+    } else if text.contains("python") || text.contains("resource") || text.contains("platform") {
         "debugger_resource_not_ready"
     } else if text.contains("invalid argument") || text.contains("unsupported") {
         "unsupported_debug_adapter_operation"
