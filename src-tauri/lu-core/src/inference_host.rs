@@ -89,6 +89,16 @@ pub trait InferenceBackend {
         cancel: &Cancellation,
         emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), String>;
+    /// Browser proposals require structured function-call support. Other
+    /// engines cannot fall back to parsing arbitrary model prose as commands.
+    fn generate_browser_function_calls(
+        &mut self,
+        _request: &GenerationRequest,
+        _admitted_read_schemas: &[serde_json::Value],
+        _cancel: &Cancellation,
+    ) -> Result<Vec<crate::browser_tool_stream::CompletedToolCall>, String> {
+        Err("backend does not support structured browser function calls".into())
+    }
 }
 pub struct InferenceHost<B: InferenceBackend> {
     backend: B,
@@ -147,6 +157,35 @@ impl<B: InferenceBackend> InferenceHost<B> {
         }
         self.phase = EnginePhase::Idle;
         Ok(())
+    }
+    /// The caller has already admitted the schemas and reserved a generation.
+    /// Keep exactly the same model phase and cancellation custody as text.
+    pub fn generate_browser_function_calls(
+        &mut self,
+        request: GenerationRequest,
+        admitted_read_schemas: &[serde_json::Value],
+        cancel: Cancellation,
+    ) -> Result<Vec<crate::browser_tool_stream::CompletedToolCall>, EngineError> {
+        if self.phase != EnginePhase::Ready {
+            return Err(EngineError::NotLoaded);
+        }
+        if request.prompt.trim().is_empty() || request.prompt.len()>4*1024*1024
+            || !(1..=32768).contains(&request.max_new_tokens)
+            || admitted_read_schemas.len()!=1
+            || admitted_read_schemas[0].pointer("/function/name")
+                .and_then(serde_json::Value::as_str)!=Some("lu_browser_read") {
+            return Err(EngineError::InvalidRequest);
+        }
+        if cancel.is_cancelled(){ return Err(EngineError::Cancelled); }
+        self.phase=EnginePhase::Generating;
+        self.cancellation=Some(cancel.clone());
+        let outcome=self.backend.generate_browser_function_calls(
+            &request,admitted_read_schemas,&cancel
+        );
+        self.cancellation=None;
+        self.phase=EnginePhase::Ready;
+        if cancel.is_cancelled(){ return Err(EngineError::Cancelled); }
+        outcome.map_err(EngineError::Backend)
     }
     pub fn generate(
         &mut self,

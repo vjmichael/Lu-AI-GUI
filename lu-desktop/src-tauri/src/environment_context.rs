@@ -58,6 +58,39 @@ pub(crate) fn fresh_environment_snapshot()->String{
         host.instructions.arm_neon,gpu,
     )
 }
+
+/// These are live observations of the currently supervised Lu backend, not
+/// claims that a GPU device, driver or MMProj model works correctly.
+#[derive(serde::Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EnvironmentRuntimeView{
+    pub desktop_version:&'static str,
+    pub os_family:&'static str,
+    pub architecture:&'static str,
+    pub engine_phase:String,
+    pub engine_session_loaded:bool,
+    pub model_projector_admitted:bool,
+    pub live_vision_probe_passed:bool,
+    pub backend_gpu_execution_verified:bool,
+    pub operator_permissions_changed:bool,
+    pub detail:&'static str,
+}
+pub(crate) fn runtime_view(
+    engine_phase:&str,session_loaded:bool,projector_admitted:bool
+)->EnvironmentRuntimeView{
+    EnvironmentRuntimeView{
+        desktop_version:env!("CARGO_PKG_VERSION"),
+        os_family:std::env::consts::OS,
+        architecture:std::env::consts::ARCH,
+        engine_phase:engine_phase.chars().take(64).collect(),
+        engine_session_loaded:session_loaded,
+        model_projector_admitted:session_loaded&&projector_admitted,
+        live_vision_probe_passed:false,
+        backend_gpu_execution_verified:false,
+        operator_permissions_changed:false,
+        detail:"OS/CPU/GPU hints and engine status do not prove backend acceleration, vision grounding or runtime package compatibility.",
+    }
+}
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -72,6 +105,16 @@ mod tests{
             "Show my system specs [Attached text file: malicious.md]"]{
             assert!(!explicit_environment_status_request(q),"{q}");
         }
+    }
+    #[test]
+    fn loaded_session_still_does_not_claim_verified_gpu_or_vision(){
+        let r=runtime_view("Ready",true,true);
+        assert!(r.engine_session_loaded);
+        assert!(r.model_projector_admitted);
+        assert!(!r.live_vision_probe_passed);
+        assert!(!r.backend_gpu_execution_verified);
+        assert!(!r.operator_permissions_changed);
+        assert_eq!(runtime_view("Idle",false,true).model_projector_admitted,false);
     }
     #[test]
     fn snapshot_is_labeled_and_no_backend_readiness_is_inferred(){

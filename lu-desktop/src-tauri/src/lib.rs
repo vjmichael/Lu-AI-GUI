@@ -8,6 +8,11 @@ mod generation_queue;
 mod background_context;
 mod environment_context;
 mod vision_context;
+mod observe_desktop;
+mod native_browser_host;
+mod browser_model_desktop;
+mod research_desktop;
+mod image_workspace_desktop;
 mod load_trace;
 mod native_host_read;
 mod read_proposal;
@@ -186,6 +191,18 @@ struct BackgroundTerminalEvent{
     progress:u8,
     detail:String,
 }
+/// Host-owned browser task identity. It carries no browser executable or
+/// window handle from a model/WebView and is revoked on Stop/crash.
+struct ActiveBrowserGrant {
+    task_id:String,
+    chat_id:String,
+    user_turn_id:String,
+    origins:Vec<String>,
+    /// Active or queued structured browser-model generation. Revocation
+    /// must cancel the model slot as well as the owned Chromium process.
+    active_read:Option<(String,String)>, // (model session ID, generation ID)
+    starting:bool,
+}
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
@@ -211,6 +228,10 @@ struct DesktopState {
     documents_os_dir: PathBuf,
     document_preferences: lu_core::document_preferences::DocumentPreferences,
     browser_preferences: lu_core::browser_preferences::BrowserPreferences,
+    browser_runtime: Arc<native_browser_host::DesktopBrowserHost>,
+    browser_authority: lu_core::conversation_authority::ConversationAuthority,
+    browser_grant: Mutex<Option<ActiveBrowserGrant>>,
+    research: Arc<research_desktop::ResearchDesktop>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -222,6 +243,7 @@ struct DesktopState {
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
+    observe: Arc<observe_desktop::ObserveHost>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -441,6 +463,14 @@ impl DesktopState {
         let owner = lu_core::desktop_owner::DesktopOwner::acquire(
             &root.join("desktop-owner.sqlite")
         ).map_err(|e| format!("Lu app data directory already in use or unavailable: {e:?}"))?;
+        // Under DesktopOwner's exclusive process lease, previous image
+        // PREPARED exports are UNCERTAIN. Never replay a selected Save path.
+        let mut image_history=lu_core::native_image_revision_history::ImageRevisionLedger::open(
+            &root.join("lu-image-revisions.sqlite")
+        ).map_err(|e|format!("Image revision history unavailable: {e:?}"))?;
+        image_history.reconcile_interrupted()
+            .map_err(|e|format!("Image revision restart recovery failed: {e:?}"))?;
+        drop(image_history);
         let effects = lu_core::journal::EffectJournal::open(
             &root.join("native-effects.sqlite")
         ).map_err(|e| format!("effect journal unavailable: {e:?}"))?;
@@ -583,7 +613,11 @@ impl DesktopState {
             )
         );
 
+        let observe=Arc::new(observe_desktop::ObserveHost::new(
+            Arc::clone(&background_tasks),Arc::clone(&background_processes)
+        ));
         Ok(Self {
+            observe,
             background_processes,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
@@ -611,6 +645,17 @@ impl DesktopState {
             documents_os_dir,
             document_preferences,
             browser_preferences,
+            browser_runtime:Arc::new(native_browser_host::DesktopBrowserHost::new(
+                app.path().resource_dir()
+                    .map_err(|e|format!("Browser resource directory unavailable: {e}"))?,
+                root.clone(),
+            )),
+            browser_authority:lu_core::conversation_authority::ConversationAuthority::new(),
+            browser_grant:Mutex::new(None),
+            research:Arc::new(research_desktop::ResearchDesktop::new(
+                app.path().resource_dir().map_err(|e|format!("Research resource path unavailable: {e}"))?,
+                root.clone(),
+            )),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -638,6 +683,8 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             // The native task supervisor must not depend on a visible
             // WebView. The OS terminates this host thread when Lu exits.
             let _=state.background_processes.poll();
+            // The existing watchdog also expires Lu-only observation leases.
+            state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
                 pushed_cursor,128
             ){
@@ -673,6 +720,9 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                 auto_scan_cursor=notice.sequence;
                 let chat_id=notice.workspace_id;
                 if !chat_id.starts_with("c-")
+                  // Ending a screen-observer lease is NOT a reason to wake
+                  // an AI model, even for opted-in Background notifications.
+                  ||notice.task_id.starts_with("obs-")
                   ||attempted.get(&chat_id).is_some_and(|seq|*seq>=notice.sequence)
                   ||!state.background_tasks.auto_continue_enabled(&chat_id)
                      .unwrap_or(false)
@@ -918,6 +968,22 @@ fn lu_release_image(
 
 /// A diagnostic snapshot can be polled while the blocking engine load runs.
 /// It does not query the engine, acquire the model catalog lock, or expose paths.
+/// Read-only snapshot of Lu's ACTUAL supervised runtime. Never calls a
+/// shell, lists environment variables, installs drivers or grants authority.
+#[tauri::command]
+fn lu_environment_status(
+    state:State<'_,Arc<DesktopState>>
+)->Result<environment_context::EnvironmentRuntimeView,String>{
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Engine diagnostics unavailable")?;
+    let loaded=runtime.session_id.is_some()&&runtime.model_ref.is_some();
+    let catalog=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    let admitted=runtime.model_ref.as_ref().is_some_and(|id|
+        catalog.iter().any(|m|&m.model_ref==id&&m.projector_attached));
+    Ok(environment_context::runtime_view(
+        &format!("{:?}",runtime.phase),loaded,admitted))
+}
+
 /// Host-only model vision diagnostics. Catalog/projector admission alone does
 /// not prove native visual inference; no actual image probe is yet recorded.
 #[derive(Serialize)]
@@ -951,6 +1017,727 @@ fn lu_vision_capability(
             "MMProj admitted; native visual reasoning remains unverified until a real host-scoped image probe succeeds."
         },
     })
+}
+
+/// Returns *measured* browser runtime status and reconciles a crashed native
+/// Chromium/Playwright session. No browser launch, navigation or rights here.
+#[tauri::command]
+async fn lu_browser_runtime_status(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let status=owner.browser_runtime.status(&owner.browser_preferences)?;
+        if !status.running{
+            let previous={
+                let mut grant=owner.browser_grant.lock()
+                    .map_err(|_|"Browser grant lock unavailable")?;
+                if grant.as_ref().is_some_and(|g|!g.starting){
+                    grant.take()
+                }else{None}
+            };
+            if let Some(previous)=previous{
+                owner.browser_authority.revoke_task(&previous.task_id)
+                    .map_err(|_|"Browser crash grant revocation unavailable")?;
+            }
+        }
+        Ok(status)
+    }).await.map_err(|_|"Browser status worker unavailable")?
+}
+fn browser_origin_list(raw:&str)->Result<Vec<String>,String>{
+    use lu_core::browser_authorized_execution::BrowserOriginScope;
+    if raw.len()>2048{return Err("Origin list is too long".into());}
+    let values:Vec<String>=raw.split([',',';','\n']).map(str::trim)
+        .map(str::to_owned).collect();
+    if values.is_empty()||values.len()>8
+        ||values.iter().any(|v|v.is_empty()){
+        return Err("Select one to eight exact HTTPS origins".into());
+    }
+    BrowserOriginScope::from_host_grant(values)
+        .map_err(|_|"Browser origin is not an approved HTTPS origin".into())
+        .map(|s|s.origins())
+}
+/// Shared native Browser start: an explicitly authenticated persisted USER
+/// turn is the sole grant source. Both the settings button and normal-chat
+/// Browser mode call this; no string from a model/webpage mints permission.
+async fn start_browser_for_exact_turn(
+    app:AppHandle,owner:Arc<DesktopState>,
+    chat_id:String,origins:String,turn_id:String
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    use lu_core::{
+        conversation_authority::{TaskAuthority,AuthorizedCapability},
+        contracts::ToolEffect,
+        browser_authorized_execution::BROWSER_READ_TOOL,
+    };
+    let allowed=browser_origin_list(&origins)?;
+    owner.browser_runtime.require_launch_ready()?;
+    if owner.chats.trusted_user_turn_text(&chat_id,&turn_id).is_none(){
+        return Err("Browser turn is no longer authenticated".into());
+    }
+    {
+        let existing=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if existing.is_some(){return Err("Stop the existing Browser task first".into());}
+    }
+    let prompt=format!(
+        "Start a Lu-owned read-only browser for this conversation?\n\n{}\n\n\
+         Browsing may access these HTTPS origins only. Clicks, typing and \
+         form submissions are NOT authorized. The browser may appear if \
+         human verification is required.",
+        allowed.join("\n")
+    );
+    let approved=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(prompt).title("Lu — Read-only Browser grant")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Authorize selected origins".into(),"Cancel".into()
+            )).blocking_show()
+    }).await.map_err(|_|"Browser approval dialog failed")?;
+    if !approved{return Err("Browser grant cancelled".into());}
+    let task_id=next_id("browser-task-");
+    let scope_id=next_id("browser-scope-");
+    owner.browser_authority.open_user_task(TaskAuthority{
+        conversation_id:chat_id.clone(),user_turn_id:turn_id.clone(),
+        task_id:task_id.clone(),execution_scope_id:scope_id,
+        capabilities:vec![AuthorizedCapability{
+            tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead,
+        }],
+        expires_at:Some(std::time::SystemTime::now()+Duration::from_secs(3600)),
+    },&owner.chats).map_err(|e|format!("Native Browser permission denied: {e:?}"))?;
+    {
+        let mut state=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if state.is_some(){
+            let _=owner.browser_authority.revoke_task(&task_id);
+            return Err("Another Browser task started during approval".into());
+        }
+        *state=Some(ActiveBrowserGrant{
+            task_id:task_id.clone(),chat_id:chat_id.clone(),
+            user_turn_id:turn_id,origins:allowed.clone(),
+            active_read:None,starting:true,
+        });
+    }
+    let launch_owner=Arc::clone(&owner);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        launch_owner.browser_runtime.launch_for_native_grant(
+            allowed,&launch_owner.browser_preferences
+        )
+    ).await.map_err(|_|"Browser launch worker unavailable".to_owned())
+        .and_then(|x|x);
+    if let Err(err)=result{
+        let _=owner.browser_runtime.stop();
+        if let Ok(mut grant)=owner.browser_grant.lock(){
+            if grant.as_ref().is_some_and(|g|g.task_id==task_id){grant.take();}
+        }
+        let _=owner.browser_authority.revoke_task(&task_id);
+        return Err(err);
+    }
+    let still_current={
+        let mut grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if let Some(g)=grant.as_mut().filter(|g|g.task_id==task_id){
+            g.starting=false;true
+        }else{false}
+    };
+    if !still_current{
+        let _=owner.browser_runtime.stop();
+        return Err("Browser start was cancelled".into());
+    }
+    owner.browser_runtime.status(&owner.browser_preferences)
+}
+/// Settings startup binds the most recent real USER turn. General chat
+/// Browser research instead binds its own newly journaled exact generation.
+#[tauri::command]
+async fn lu_browser_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,origins:String
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    let turn_id=owner.chats.latest_authenticated_user_turn_id(&chat_id)
+        .ok_or("Browser requires an authenticated human message in this conversation")?;
+    start_browser_for_exact_turn(app,owner,chat_id,origins,turn_id).await
+}
+/// User-owned visibility controls, distinct from browser page tool calls.
+#[tauri::command]
+async fn lu_browser_set_visible(
+    state:State<'_,Arc<DesktopState>>,visible:bool
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if grant.as_ref().is_none_or(|g|g.starting){
+            return Err("No user-approved Browser task".into());
+        }
+        drop(grant);
+        owner.browser_runtime.set_user_visible(visible)?;
+        owner.browser_runtime.status(&owner.browser_preferences)
+    }).await.map_err(|_|"Native browser window operation unavailable")?
+}
+#[tauri::command]
+async fn lu_browser_human_verified(
+    state:State<'_,Arc<DesktopState>>
+)->Result<native_browser_host::BrowserRuntimeView,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?;
+        if grant.as_ref().is_none_or(|g|g.starting){
+            return Err("No approved Browser verification task".into());
+        }
+        drop(grant);
+        owner.browser_runtime.resolve_human_verification()?;
+        owner.browser_runtime.status(&owner.browser_preferences)
+    }).await.map_err(|_|"Browser verification worker unavailable")?
+}
+#[tauri::command]
+async fn lu_browser_stop(
+    state:State<'_,Arc<DesktopState>>
+)->Result<bool,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        // Revoke the current task before stopping the owned Chromium child.
+        let grant=owner.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable")?.take();
+        let revoked=grant.as_ref().map(|g|
+            owner.browser_authority.revoke_task(&g.task_id));
+        if let Some((session_id,generation_id))=grant.as_ref()
+            .and_then(|g|g.active_read.as_ref()){
+            // Stop is also a soft interrupt of the model-owned read step;
+            // queued jobs do not cancel an unrelated active generation.
+            let _=owner.generation_queue.cancel(session_id,generation_id);
+            let _=owner.supervisor.cancel(session_id,generation_id,&next_id("req-"));
+        }
+        let stopped=owner.browser_runtime.stop();
+        if let Some(Err(e))=revoked{
+            return Err(format!("Browser stopped but grant revocation failed: {e:?}"));
+        }
+        stopped
+    }).await.map_err(|_|"Browser shutdown worker unavailable")?
+}
+
+/// A trusted host-only HTTPS research binary must be bundled and hash-pinned
+/// before live discovery becomes available. A model cannot select the binary.
+#[tauri::command]
+fn lu_research_available(state:State<'_,Arc<DesktopState>>)->bool{
+    state.research.available()
+}
+/// Read-only, per-conversation Browser evidence inventory. No network call,
+/// model authority, claimed academic citation or cross-chat aggregation.
+#[tauri::command]
+fn lu_research_browser_evidence(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<research_desktop::ResearchBrowserEvidenceView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for Browser evidence")?;
+    state.research.browser_evidence(&chat_id)
+}
+/// Exact quote proof against a previously admitted, chat-scoped Browser
+/// observation. No model authority, network call or citation promotion.
+#[tauri::command]
+fn lu_research_verify_quote(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,generation_id:String,call_id:String,quote:String,
+    publisher_source_id:Option<String>
+)->Result<research_desktop::ResearchQuoteProofView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation for passage verification")?;
+    state.research.verify_browser_quote(
+        &chat_id,&generation_id,&call_id,&quote,
+        publisher_source_id.as_deref().filter(|s|!s.trim().is_empty())
+    )
+}
+/// A deliberate USER research request, with native network consent. Results
+/// are UNVERIFIED discovery leads and never enter an LLM prompt as citations.
+#[tauri::command]
+async fn lu_research_openalex(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,query:String,page:Option<u32>
+)->Result<research_desktop::ResearchSearchView,String>{
+    let page=page.unwrap_or(1);
+    if !(1..=5).contains(&page){return Err("Invalid research page".into());}
+    if query.trim().is_empty()||query.len()>512
+       ||query.chars().any(char::is_control){
+        return Err("Invalid research query".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for research")?;
+    if !state.research.available(){
+        return Err("Reviewed Lu HTTPS research runtime not installed".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=query.clone();
+        move||app.dialog().message(format!(
+            "Search OpenAlex page {} (of at most five) for this query?\n\n{}\n\n\
+             Lu will access only the OpenAlex HTTPS endpoint, store source \
+             identifiers in this conversation's local evidence ledger and \
+             label results UNVERIFIED until independently corroborated. \
+             This does not grant the AI general network access.",page,query
+        )).title("Lu — Authorize Research discovery")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Search OpenAlex".into(),"Cancel".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Native research approval unavailable")?;
+    if !approved{return Err("Research search cancelled".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research task could not start")?;
+    let worker=Arc::clone(&owner.research);
+    let chat=chat_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.search_page(&chat,&query,page)
+    ).await.map_err(|_|"Research worker unavailable".to_owned()).and_then(|x|x);
+    match result{
+        Ok(page)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Research completed but receipt could not be finalized")?;
+            Ok(page)
+        }
+        Err(err)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(err)
+        }
+    }
+}
+
+/// A native, per-request approval precedes bounded HTTPS document retrieval.
+/// The URL comes from this chat's prior Crossref-corroborated source, not UI or
+/// model text. Each publisher redirect is separately HTTPS/DNS pinned.
+#[tauri::command]
+async fn lu_research_retrieve_document(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String
+)->Result<research_desktop::ResearchDocumentView,String>{
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+        ||source_id.chars().any(char::is_control){
+        return Err("Select an existing Crossref-corroborated source".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for document retrieval")?;
+    if !state.research.available(){
+        return Err("Reviewed Research HTTPS runtime not installed".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let id=source_id.clone();
+        move||app.dialog().message(format!(
+            "Retrieve the actual HTML/PDF document from the HTTPS URL already \
+             recorded for this Crossref-corroborated source?\n\n{}\n\n\
+             Each redirect is separately public-DNS and HTTPS verified \
+             (maximum three). A landing page or redirected PDF will remain \
+             UNVERIFIED as a complete publication without independent identity \
+             attestation. This does not grant general model network access.",id
+        )).title("Lu — Authorize bounded research document retrieval")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Retrieve document".into(),"Cancel".into()
+        )).blocking_show()
+    }).await.map_err(|_|"Native document approval unavailable")?;
+    if !approved{return Err("Research document retrieval cancelled".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-document-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research document task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research document task could not start")?;
+    let research=Arc::clone(&owner.research);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        research.retrieve_document(&chat_id,&source_id)
+    ).await.map_err(|_|"Research document worker unavailable".to_owned()).and_then(|x|x);
+    match result{
+        Ok(document)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Document retrieved but task receipt unavailable")?;
+            Ok(document)
+        },
+        Err(err)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(err)
+        },
+    }
+}
+/// Exact source quote verification reads the already locally stored,
+/// hash-checked document. This command never performs network retrieval.
+#[tauri::command]
+fn lu_research_verify_document_passage(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,quote:String
+)->Result<research_desktop::ResearchDocumentPassageView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation for passage verification")?;
+    state.research.verify_document_passage(&chat_id,&source_id,&quote)
+}
+
+/// All campaign pages share one user-approved fixed OpenAlex query and 120
+/// unique DOI ceiling; no Browser/tool/network grant is created for the model.
+#[tauri::command]
+async fn lu_research_campaign_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,query:String,candidate_ceiling:u32
+)->Result<research_desktop::ResearchCampaignView,String>{
+    if query.trim().is_empty()||query.len()>512||query.chars().any(char::is_control)
+        ||!(1..=120).contains(&candidate_ceiling){
+        return Err("Research campaign query or ceiling invalid".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted conversation for Research")?;
+    if !state.research.available(){
+        return Err("Pinned research HTTPS runtime unavailable".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=query.clone();
+        move||app.dialog().message(format!(
+            "Run an OpenAlex research campaign for this conversation?\n\n\
+             Query: {}\nMaximum distinct DOI leads: {}\n\
+             Maximum search pages: five.\n\n\
+             A fixed public catalog endpoint is read-only. Each page is \
+             checkpointed in this conversation's SQLite. The model gets \
+             no general Browser permission, and discoveries are NOT verified \
+             citations.",query,candidate_ceiling
+        )).title("Lu — Authorize bounded Research campaign")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Run bounded research".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Research campaign approval unavailable")?;
+    if !approved{return Err("Research campaign cancelled by user".into());}
+    let owner=Arc::clone(state.inner());
+    let id=next_id("research-campaign-");
+    let worker=Arc::clone(&owner.research);
+    let _=worker.create_campaign(&chat_id,&id,&query,candidate_ceiling)?;
+    let task_id=next_id("research-job-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research campaign task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research campaign task could not start")?;
+    let lookup_chat=chat_id.clone();
+    let lookup_id=id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.run_campaign(&chat_id,&id)
+    ).await.map_err(|_|"Research campaign worker unavailable".to_owned()).and_then(|x|x);
+    match result{
+        Ok(value)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Research campaign completion receipt unavailable")?;
+            Ok(value)
+        },
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            // Even failed steps leave durable status; a blocked campaign can
+            // be inspected and explicitly resumed, not silently retried.
+            owner.research.campaign_status(&lookup_chat,&lookup_id)
+                .or(Err(error.to_owned()))
+        }
+    }
+}
+#[tauri::command]
+fn lu_research_campaigns(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<research_desktop::ResearchCampaignView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.campaigns(&chat_id)
+}
+#[tauri::command]
+fn lu_research_campaign_cancel(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,campaign_id:String
+)->Result<research_desktop::ResearchCampaignView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.cancel_campaign(&chat_id,&campaign_id)
+}
+#[tauri::command]
+async fn lu_research_campaign_resume(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,campaign_id:String
+)->Result<research_desktop::ResearchCampaignView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    if !state.research.available(){
+        return Err("Pinned research HTTPS runtime unavailable".into());
+    }
+    let prior=state.research.campaign_status(&chat_id,&campaign_id)?;
+    if !matches!(prior.state.as_str(),"PAUSED"|"BLOCKED"|"RUNNING"){
+        return Err("Research campaign is not resumable".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let query=prior.query.clone();
+        move||app.dialog().message(format!(
+            "Resume the saved OpenAlex search from its last checkpoint?\n\n\
+             Query: {}\nCandidate ceiling: {}\nNext page: {}\n\n\
+             No prior Browser/model permission will be reused.",
+            query,prior.candidate_ceiling,prior.next_page
+        )).title("Lu — Reauthorize Research continuation")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Resume Research".into(),"Cancel".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Research resume approval unavailable")?;
+    if !approved{return Err("Research resume cancelled by user".into());}
+    let owner=Arc::clone(state.inner());
+    let worker=Arc::clone(&owner.research);
+    let _=worker.resume_campaign(&chat_id,&campaign_id)?;
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.run_campaign(&chat_id,&campaign_id)
+    ).await.map_err(|_|"Research continuation worker unavailable".to_owned()).and_then(|x|x);
+    result
+}
+
+/// Explicit human-authored claim. A native source recheck is mandatory:
+/// HTML/browser quotations are NOT full-document evidence, and model text
+/// cannot self-approve scientific interpretations.
+#[tauri::command]
+fn lu_research_add_claim(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,claim:String,quote:String,
+    stance:String,reasoning:String
+)->Result<Vec<research_desktop::ResearchClaimView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.add_claim(
+        &chat_id,&source_id,&claim,&quote,&stance,&reasoning
+    )
+}
+#[tauri::command]
+fn lu_research_claims(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<research_desktop::ResearchClaimView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    state.research.claims(&chat_id)
+}
+/// Native Save File owns the destination; the UI/model never supplies paths.
+/// Hard-linking the fully synced temporary file is an atomic no-clobber
+/// publication of derived evidence, never an overwrite of source recordings.
+#[tauri::command]
+async fn lu_research_export_report(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,title:String,format:String
+)->Result<Option<research_desktop::ResearchReportExportView>,String>{
+    if !matches!(format.as_str(),"markdown"|"json")
+        ||title.trim().is_empty()||title.len()>180
+        ||title.chars().any(char::is_control){
+        return Err("Invalid research report format or title".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select a trusted Research conversation")?;
+    let file_type=if format=="markdown"{"md"}else{"json"};
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        let ext=file_type.to_owned();
+        move||app.dialog().file()
+            .add_filter("Lu verified research report",&[ext.as_str()])
+            .set_file_name(if ext=="md"{
+                "Lu Verified Research Report.md"
+            }else{"Lu Verified Research Evidence.json"})
+            .blocking_save_file()
+    }).await.map_err(|_|"Native Research save picker unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let destination=selected.into_path()
+        .map_err(|_|"Research report destination is not a local file")?;
+    if destination.extension().and_then(|x|x.to_str())
+        .is_none_or(|s|!s.eq_ignore_ascii_case(file_type)){
+        return Err("Choose a destination with the matching report extension".into());
+    }
+    let parent=destination.parent().ok_or("Research destination directory unavailable")?;
+    let dir=std::fs::symlink_metadata(parent)
+        .map_err(|_|"Research destination directory cannot be verified")?;
+    if !dir.file_type().is_dir(){
+        return Err("Research destination is not an ordinary directory".into());
+    }
+    if std::fs::symlink_metadata(&destination).is_ok(){
+        return Err("Research report destination exists; choose a new filename".into());
+    }
+    let report=state.research.verified_report(&chat_id,&title)?;
+    let body=if format=="markdown"{&report.markdown}else{&report.json};
+    if body.len()>2*1024*1024{
+        return Err("Research report exceeds native export budget".into());
+    }
+    use std::io::Write;
+    let temp=parent.join(format!(".{}.tmp",next_id("research-export-")));
+    let result=(||->Result<(),String>{
+        let mut file=std::fs::File::create_new(&temp)
+            .map_err(|_|"Research temporary export could not be created")?;
+        file.write_all(body.as_bytes())
+            .map_err(|_|"Research temporary export could not be written")?;
+        file.sync_all()
+            .map_err(|_|"Research export durability check failed")?;
+        std::fs::hard_link(&temp,&destination)
+            .map_err(|_|"Research destination could not be atomically created")?;
+        Ok(())
+    })();
+    let _=std::fs::remove_file(&temp);
+    result?;
+    let saved_sha256=format!("{:x}",sha2::Sha256::digest(body.as_bytes()));
+    Ok(Some(research_desktop::ResearchReportExportView{
+        saved_path:destination.to_string_lossy().into_owned(),
+        format, saved_sha256,
+        distinct_sources:report.distinct_sources,
+        checked_passages:report.checked_passages,
+        interpretation_verified:false,
+        message:"Derived report saved from rehashed document evidence; factual interpretations remain unverified.",
+    }))
+}
+
+/// Independently corroborate ONE already-discovered lead against Crossref.
+/// The trusted local evidence ledger supplies the DOI; the UI/model can
+/// only select its previously discovered OpenAlex source ID.
+#[tauri::command]
+async fn lu_research_crossref(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String
+)->Result<research_desktop::ResearchCorroborationView,String>{
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+       ||source_id.chars().any(char::is_control){
+        return Err("Select an existing OpenAlex research lead".into());
+    }
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for research")?;
+    if !state.research.available(){
+        return Err("Reviewed Lu HTTPS research runtime not installed".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let id=source_id.clone();
+        move||app.dialog().message(format!(
+            "Ask the public Crossref catalog to corroborate this previously \
+             discovered research record?\n\n{}\n\n\
+             Lu will use only the DOI already stored for this chat. \
+             Exact title/author/DOI agreement verifies bibliographic metadata, \
+             NOT a document passage or citation. No model network grant is created.",id
+        )).title("Lu — Authorize Crossref metadata check")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Check Crossref".into(),"Cancel".into()
+        )).blocking_show()
+    }).await.map_err(|_|"Native research metadata approval unavailable")?;
+    if !approved{return Err("Research metadata check cancelled".into());}
+    let owner=Arc::clone(state.inner());
+    let task_id=next_id("research-metadata-");
+    owner.background_tasks.create(&task_id,Some(&chat_id),None)
+        .map_err(|_|"Research metadata task could not be recorded")?;
+    owner.background_tasks.start(&task_id)
+        .map_err(|_|"Research metadata task could not start")?;
+    let worker=Arc::clone(&owner.research);
+    let result=tauri::async_runtime::spawn_blocking(move||
+        worker.corroborate_crossref(&chat_id,&source_id)
+    ).await.map_err(|_|"Research metadata worker unavailable".to_owned()).and_then(|x|x);
+    match result{
+        Ok(checked)=>{
+            owner.background_tasks.complete(&task_id)
+                .map_err(|_|"Research metadata receipt could not be finalized")?;
+            Ok(checked)
+        }
+        Err(error)=>{
+            let _=owner.background_tasks.fail(&task_id);
+            Err(error)
+        }
+    }
+}
+
+/// Human-picked new PNG only: no path or edit authority is exposed to the
+/// model. Current attachment bytes must be host-admitted and still pinned.
+#[tauri::command]
+async fn lu_image_workspace_export(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String,operation:String,
+    x:Option<u32>,y:Option<u32>,width:u32,height:u32
+)->Result<Option<image_workspace_desktop::ImageExportReceipt>,String>{
+    use lu_core::native_image_revision::ImageRevisionOperation as Operation;
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a conversation for image export")?;
+    let source=state.images.lock().map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned().ok_or("Image attachment is no longer admitted")?;
+    let edit=match operation.as_str(){
+        "crop"=>Operation::Crop{
+            x:x.ok_or("Crop requires an X coordinate")?,
+            y:y.ok_or("Crop requires a Y coordinate")?,
+            width,height
+        },
+        "resize"=>Operation::Resize{width,height},
+        _=>return Err("Only deterministic crop and resize are supported".into()),
+    };
+    let image=lu_core::native_image_revision::transform_admitted_image(
+        &source,edit
+    ).map_err(|e|format!("Invalid image revision: {e:?}"))?;
+    let proposed=format!(
+        "Create a new PNG image revision from the already attached original?\n\n\
+         Operation: {}\nOutput: {} × {} pixels\nSource image: {}\n\
+         Expected revision SHA-256: {}\n\n\
+         The original is never overwritten. Choose a NEW filename in the \
+         following OS dialog. Any existing file is rejected.",
+        operation,image.width,image.height,image_ref,image.revision_sha256
+    );
+    let confirmed=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().message(proposed).title("Lu — Approve image revision")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Choose new PNG file".into(),"Cancel".into()
+            )).blocking_show()
+    }).await.map_err(|_|"Native image review unavailable")?;
+    if !confirmed{return Ok(None);}
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||app.dialog().file().add_filter("PNG image", &["png"])
+            .set_file_name("lu-image-revision.png").blocking_save_file()
+    }).await.map_err(|_|"Native image destination picker unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let destination=selected.into_path().map_err(|_|"Image destination is not a local file")?;
+    // The independent durable intent precedes the first filesystem write.
+    // An interrupted export remains UNCERTAIN across restart, never replayed.
+    let root=app.path().app_data_dir()
+        .map_err(|_|"Image history directory unavailable")?;
+    let revision_id=next_id("image-rev-");
+    let name=destination.file_name().and_then(|v|v.to_str())
+        .ok_or("Image output filename unavailable")?.to_owned();
+    let intended=lu_core::native_image_revision_history::ImageRevisionHistoryRow{
+        id:revision_id.clone(),base_ref:image.base_ref.clone(),
+        base_sha256:image.base_sha256.clone(),
+        revision_sha256:image.revision_sha256.clone(),
+        file_name:name,width:image.width,height:image.height,
+        recorded_bytes:0,state:"PREPARED".into(),
+    };
+    tauri::async_runtime::spawn_blocking(move||{
+        use lu_core::native_image_revision_history::ImageRevisionLedger;
+        let mut journal=ImageRevisionLedger::open(&root.join("lu-image-revisions.sqlite"))
+            .map_err(|e|format!("Image revision ledger unavailable: {e:?}"))?;
+        journal.prepare(&chat_id,&intended)
+            .map_err(|e|format!("Image revision intent not persisted: {e:?}"))?;
+        match image_workspace_desktop::write_new_revision(&source,edit,&destination){
+            Ok(saved)=>{
+                if saved.revision_sha256!=intended.revision_sha256
+                   ||saved.base_sha256!=intended.base_sha256
+                   ||saved.width!=intended.width||saved.height!=intended.height{
+                    let _=journal.uncertain(&chat_id,&revision_id);
+                    return Err("Export identity differed from reviewed revision; outcome uncertain".into());
+                }
+                if journal.applied(&chat_id,&revision_id,
+                    &saved.revision_sha256,saved.bytes_written as u64).is_err(){
+                    // The file was created but its durable APPLIED proof was
+                    // not committed. Never claim a clean success/replay.
+                    let _=journal.uncertain(&chat_id,&revision_id);
+                    return Err("Image created but durable history receipt is uncertain".into());
+                }
+                Ok(Some(saved))
+            }
+            Err(error)=>{
+                let _=journal.uncertain(&chat_id,&revision_id);
+                Err(error)
+            }
+        }
+    }).await.map_err(|_|"Image export worker unavailable")?
+}
+
+/// Read-only, chat-scoped immutable export receipts. APPLIED records mean
+/// verified at write time; they do not claim that the file still exists.
+#[tauri::command]
+fn lu_image_workspace_history(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<lu_core::native_image_revision_history::ImageRevisionHistoryRow>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for image history")?;
+    let root=app.path().app_data_dir()
+        .map_err(|_|"Image history directory unavailable")?;
+    let ledger=lu_core::native_image_revision_history::ImageRevisionLedger::open(
+        &root.join("lu-image-revisions.sqlite")
+    ).map_err(|_|"Image revision history unavailable")?;
+    ledger.history(&chat_id,32).map_err(|_|"Image history could not be read".into())
 }
 
 /// Native operator preference. No worker launch, model tool or network grant.
@@ -1657,12 +2444,18 @@ async fn lu_reader_pick_document(app:AppHandle)
     }).await.map_err(|_|"Native Reader worker unavailable")?
 }
 #[tauri::command]
-fn lu_background_tasks(state: State<'_,Arc<DesktopState>>)
-    ->Result<Vec<BackgroundTaskView>,String>{
+fn lu_background_tasks(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<BackgroundTaskView>,String>{
+    // Normal desktop Tasks view stays limited to the selected conversation.
+    // The renderer cannot get another conversation's task detail by
+    // asking for an arbitrary workspace ID that does not exist in ChatStore.
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a valid conversation for background tasks")?;
     state.background_processes.poll()
         .map_err(|_|"Background process status needs reconciliation")?;
-    let tasks=state.background_tasks.dashboard(100)
-        .map_err(|_|"Background task overview unavailable")?;
+    let tasks=state.background_tasks.dashboard_for_workspace(&chat_id,100)
+        .map_err(|_|"Scoped background task overview unavailable")?;
     Ok(tasks.into_iter().map(|task|BackgroundTaskView{
         task_id:task.task_id.clone(),workspace_id:task.workspace_id,
         state:task.state.as_str().to_owned(),
@@ -3464,6 +4257,180 @@ fn lu_rescan_models(state: State<'_, Arc<DesktopState>>) -> Result<usize, String
     Ok(count)
 }
 
+/// Human-only pilot: Lu can observe its own semantic UI hints after native
+/// confirmation. This does NOT capture any Windows desktop pixels or windows
+/// outside Lu and grants no model, memory or computer-control authority.
+#[tauri::command]
+async fn lu_observe_start(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation first")?;
+    let observer=Arc::clone(&state.observe);
+    let dialog=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(
+            "Start Observe & Learn for Lu's OWN UI events for up to 30 minutes?\n\n\
+             This first release candidate reads only Lu application status \
+             changes and error indicators. It cannot see other desktop \
+             windows, screenshots, keyboard input, audio, or clipboard. \
+             It will NOT run AI inference, control your mouse, or remember \
+             anything automatically. You can pause or stop at any time."
+        ).title("Lu — Observe own UI only")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Start Lu UI observation".into(),"Do not observe".into(),
+         )).blocking_show()
+    }).await.map_err(|_|"Native observation consent unavailable")?;
+    if !dialog{return observer.status(&chat_id);}
+    observer.start(&chat_id,next_id("obs-"))
+}
+#[tauri::command]
+fn lu_observe_status(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.status(&chat_id)
+}
+#[tauri::command]
+fn lu_observe_pause(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.pause(&chat_id)
+}
+#[tauri::command]
+fn lu_observe_resume(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.resume(&chat_id)
+}
+#[tauri::command]
+fn lu_observe_stop(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<observe_desktop::ObserveView,String>{
+    state.observe.stop(&chat_id)
+}
+/// Renderer event hints are NOT trusted test outcomes. Only two enumerated
+/// low-information signals are admitted, and no screenshot/text is accepted.
+/// Read-only diagnostic notations from the exact currently consented chat.
+#[tauri::command]
+fn lu_observe_notes(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<observe_desktop::ObserveNoteView>,String>{
+    state.observe.notes(&chat_id)
+}
+/// A data-only handoff for user review. It does not call a model, execute
+/// tests, modify source or upgrade an unverified hint into a verified defect.
+#[tauri::command]
+fn lu_observe_handoff(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<observe_desktop::ObserveHandoffView>,String>{
+    state.observe.handoff(&chat_id)
+}
+
+#[tauri::command]
+fn lu_observe_self_signal(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,kind:String
+)->Result<observe_desktop::ObserveView,String>{
+    let ready= !state.generation_queue.has_jobs()
+        &&state.supervisor.status().is_ok_and(|r|
+            r.phase==lu_core::inference_host::EnginePhase::Ready
+            &&r.generation_id.is_none());
+    state.observe.self_signal(&chat_id,&kind,ready)
+}
+
+/// The picker is an OS-controlled, *additional* permission. It may select a
+/// full display, so this single-frame capture is intentionally distinct from
+/// the Lu-only semantic-observation scope and has no automatic model access.
+#[tauri::command]
+async fn lu_observe_capture_one_shot(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,
+    foreground_only:bool
+)->Result<Option<String>,String>{
+    #[cfg(not(windows))]
+    {
+        let _=app;let _=state;let _=chat_id;let _=foreground_only;
+        return Err("Windows Graphics Capture requires interactive Windows".into());
+    }
+    #[cfg(windows)]
+    {
+        state.chats.history(&chat_id)
+            .map_err(|_|"Choose an existing conversation")?;
+        let running=state.observe.status(&chat_id)?;
+        if running.mode!="active"{
+            return Err("Start Observe & Learn before selecting a capture source".into());
+        }
+        // Pinned by Windows build/installer before Lu itself is compiled.
+        // An absent signature or missing binary fails closed; never fall back
+        // to PATH, downloads, shell, model-provided executables, or dummy data.
+        let expected=option_env!("LU_OBSERVE_CAPTURE_WORKER_SHA256")
+            .ok_or("The verified Windows capture worker is not installed")?
+            .to_owned();
+        if expected.len()!=64||!expected.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err("Installed capture worker signature is invalid".into());
+        }
+        let approved=tauri::async_runtime::spawn_blocking(move||{
+            let warning=if foreground_only{
+                "Capture ONE foreground application window after a four-second \
+                 countdown?\n\n\
+                 Confirm, then click or focus the desired window within \
+                 four seconds. The worker independently checks its Windows \
+                 HWND and owning process ID again before reading one frame. \
+                 It will not capture a whole monitor in this mode. The \
+                 temporary pixels are discarded; only a non-reversible \
+                 capture digest is recorded. No model receives the pixels."
+            }else{
+                "Use Windows' picker to select ONE window or ONE entire display \
+                 for a single frame? A monitor may contain unrelated private \
+                 windows. The selected source is not app-identity attested. \
+                 Pixels are discarded and a digest receipt is recorded only. \
+                 No AI model receives the pixels."
+            };
+            app.dialog().message(warning)
+              .title("Lu — approve one-shot Windows capture")
+              .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                  if foreground_only{"Capture foreground window"}else{"Open Windows picker"}.into(),
+                  "Cancel".into()
+              )).blocking_show()
+        }).await.map_err(|_|"Windows capture confirmation unavailable")?;
+        if !approved{return Ok(None);}
+        let observer=Arc::clone(&state.observe);
+        tauri::async_runtime::spawn_blocking(move||{
+            // The installed worker lives alongside Lu. Its exact hash was
+            // compiled into this host; native supervisor checks again at
+            // execution and refuses reparse points or changed executables.
+            let current=std::env::current_exe()
+                .map_err(|_|"Lu installation path unavailable")?;
+            let executable=current.with_file_name("lu-observe-capture-worker.exe");
+            let task_id=next_id("obs-frame-");
+            let nonce=next_id("");
+            let plan=lu_core::native_background_process::TrustedWorkerPlan{
+                task_id,
+                workspace_id:chat_id.clone(),
+                executable,
+                expected_sha256:expected,
+                args:vec![if foreground_only{
+                    "--lu-observe-foreground-one-shot"
+                }else{"--lu-observe-one-shot"}.into(),nonce.into()],
+                progress_protocol:true,
+                max_runtime_seconds:Some(90),
+            };
+            observer.launch_one_shot(&chat_id,plan).map(Some)
+        }).await.map_err(|_|"Native Windows picker worker unavailable")?
+    }
+}
+
+#[tauri::command]
+fn lu_observe_capture_available()->bool{
+    #[cfg(windows)]
+    {
+        option_env!("LU_OBSERVE_CAPTURE_WORKER_SHA256").is_some_and(|digest|
+            digest.len()==64&&digest.bytes().all(|b|b.is_ascii_hexdigit()))
+            &&std::env::current_exe().ok().map(|path|
+                path.with_file_name("lu-observe-capture-worker.exe").is_file())
+                .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    { false }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -3485,7 +4452,41 @@ pub fn run() {
             lu_load_model,
             lu_load_diagnostics,
             lu_vision_capability,
+            lu_image_workspace_export,
+            lu_image_workspace_history,
+            lu_environment_status,
+            lu_observe_start,
+            lu_observe_status,
+            lu_observe_pause,
+            lu_observe_resume,
+            lu_observe_stop,
+            lu_observe_self_signal,
+            lu_observe_notes,
+            lu_observe_handoff,
+            lu_observe_capture_one_shot,
+            lu_observe_capture_available,
             lu_browser_visibility,
+            lu_browser_runtime_status,
+            lu_research_available,
+            lu_research_browser_evidence,
+            lu_research_verify_quote,
+            lu_research_openalex,
+            lu_research_crossref,
+            lu_research_retrieve_document,
+            lu_research_verify_document_passage,
+            lu_research_campaign_start,
+            lu_research_campaigns,
+            lu_research_campaign_resume,
+            lu_research_campaign_cancel,
+            lu_research_add_claim,
+            lu_research_claims,
+            lu_research_export_report,
+            lu_browser_start,
+            lu_browser_set_visible,
+            lu_browser_human_verified,
+            lu_browser_stop,
+            browser_model_desktop::lu_browser_model_read,
+            browser_model_desktop::lu_generate_browser,
             lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,

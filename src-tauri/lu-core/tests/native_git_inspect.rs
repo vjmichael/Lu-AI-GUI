@@ -45,12 +45,19 @@ impl ToolAuthorizer for Deny {
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 fn git_path() -> PathBuf {
-    let path = PathBuf::from(
-        std::env::var_os("LU_TOOLS03_TEST_GIT_PATH")
-            .expect("CI must set an absolute trusted Git executable for this test"),
-    );
+    // Test fixtures may run from an aggregate native matrix without the
+    // dedicated TOOLS-03 workflow's environment variable. Admit only a
+    // trusted OS installation path; never resolve Git through PATH.
+    let path = std::env::var_os("LU_TOOLS03_TEST_GIT_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            #[cfg(windows)]
+            { PathBuf::from(r"C:\Program Files\Git\cmd\git.exe") }
+            #[cfg(not(windows))]
+            { PathBuf::from("/usr/bin/git") }
+        });
     assert!(path.is_absolute(), "Git executable must be an absolute host path");
-    path.canonicalize().unwrap()
+    path.canonicalize().expect("trusted Git installation must exist")
 }
 fn unique_root() -> PathBuf {
     loop {

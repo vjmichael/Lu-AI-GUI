@@ -127,6 +127,10 @@ async fn full_tree_extraction_requires_exact_approved_manifest_and_reconciles(){
     assert!(matches!(authority.dispatch_bound_durable(
         &registry,&journal,approved,origin,&fence
     ).await,Err(DispatchError::Denied(_))));
+    // Windows refuses directory deletion while either tool registry still
+    // owns an open cap-std directory handle. Release BOTH registry owners
+    // before removing the fixture, including the canceled-path registry.
+    drop(canceled_registry);drop(canceled_catalog);
     drop(journal);drop(catalog);drop(registry);drop(dir);
     fs::remove_dir_all(root).unwrap();
 }

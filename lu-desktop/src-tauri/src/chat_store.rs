@@ -62,6 +62,11 @@ enum Event {
     AssistantProgress { generation_id: String, text: String }, // cumulative checkpoint.
     AssistantCompleted { generation_id: String },
     AssistantCancelled { generation_id: String },
+    /// Internal native browser data; not a USER message or assistant prose.
+    /// A model, worker or page cannot mint this journal event.
+    BrowserObservation {
+        generation_id:String,call_id:String,tool:String,summary:String
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -413,6 +418,29 @@ impl ChatStore {
 
     /// Verify only an exact persisted User turn from an existing host-owned
     /// conversation. Unknown, old imported, duplicate or corrupted turns fail.
+    /// Host-only lookup for the latest durable authenticated USER turn.
+    /// Legacy imported turns and model text cannot authenticate tool tasks.
+    /// Refuse corrupt or duplicate journal rows rather than guessing.
+    pub fn latest_authenticated_user_turn_id(&self, chat_id:&str)->Option<String>{
+        if !valid_id(chat_id,"c-"){return None;}
+        let catalog=self.inner.lock().ok()?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){return None;}
+        let path=self.chat_path(chat_id);
+        if fs::metadata(&path).ok()?.len()>MAX_LOG{return None;}
+        let file=File::open(&path).ok()?;
+        let mut seen=HashSet::new();
+        let mut latest=None;
+        for line in BufReader::new(file).lines(){
+            let line=line.ok()?;
+            if line.is_empty(){return None;}
+            let event:Event=serde_json::from_str(&line).ok()?;
+            if let Event::User{user_turn_id:Some(id),..}=event{
+                if !valid_id(&id,"g-")||!seen.insert(id.clone()){return None;}
+                latest=Some(id);
+            }
+        }
+        latest
+    }
     pub fn trusted_user_turn_text(&self, chat_id: &str, user_turn_id: &str) -> Option<String> {
         if !valid_id(chat_id, "c-") || !valid_id(user_turn_id, "g-") { return None; }
         let catalog = self.inner.lock().ok()?;
@@ -478,6 +506,27 @@ impl ChatStore {
                 text: text.into(),
             },
         )
+    }
+    /// Evidence of a host-authorized, exact-generation browser observation.
+    /// Does not mean the page or any assertion in it has been corroborated.
+    pub fn append_browser_observation(
+        &self,chat_id:&str,generation_id:&str,call_id:&str,
+        tool:&str,summary:&str
+    )->Result<(),String>{
+        if !valid_id(generation_id,"g-")
+            || !valid_id(call_id,"browser-call-")
+            || tool!="lu_browser_read"
+            || summary.is_empty()||summary.len()>3200
+            || summary.chars().any(|x|x=='\0'){
+            return Err("Invalid browser observation receipt".into());
+        }
+        if self.trusted_user_turn_text(chat_id,generation_id).is_none(){
+            return Err("Browser receipt lacks exact persisted human turn".into());
+        }
+        self.append_assistant(chat_id,Event::BrowserObservation{
+            generation_id:generation_id.into(),call_id:call_id.into(),
+            tool:tool.into(),summary:summary.into(),
+        })
     }
     pub fn complete(&self, chat_id: &str, generation_id: &str) -> Result<(), String> {
         self.append_assistant(
@@ -563,6 +612,10 @@ impl ChatStore {
                         }
                     }
                 }
+                Event::BrowserObservation { .. } => {
+                    // Retained for authenticated research recovery, never
+                    // displayed as a user or assistant message.
+                }
                 Event::AssistantCancelled { generation_id } => {
                     if let Some(i) = pending.remove(&generation_id) {
                         if let Some(message) = &mut result[i] {
@@ -583,6 +636,32 @@ mod tests {
     use super::*;
     fn root() -> PathBuf {
         std::env::temp_dir().join(id("lu-conversation-test-"))
+    }
+    #[test]
+    fn durable_browser_observation_is_not_a_user_turn_or_assistant_message(){
+        let root=root();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let user_id=format!("g-{}","a".repeat(32));
+        let call_id=format!("browser-call-{}","b".repeat(32));
+        store.append_user_with_turn_id(&chat.chat_id,&user_id,"Research this claim").unwrap();
+        assert!(store.append_browser_observation(
+            &chat.chat_id,&user_id,&call_id,"lu_browser_read",
+            "URL: https://example.org/claim\\nSHA256: 1234"
+        ).is_ok());
+        assert!(store.append_browser_observation(
+            &chat.chat_id,&format!("g-{}","c".repeat(32)),
+            &call_id,"lu_browser_read","fabricated"
+        ).is_err());
+        assert!(store.append_browser_observation(
+            &chat.chat_id,&user_id,&call_id,"lu_browser_interact","click"
+        ).is_err());
+        drop(store);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.history(&chat.chat_id).unwrap().len(),1);
+        assert_eq!(reopened.latest_authenticated_user_turn_id(&chat.chat_id).as_deref(),
+            Some(user_id.as_str()));
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn survives_restart_and_keeps_chats_separate() {

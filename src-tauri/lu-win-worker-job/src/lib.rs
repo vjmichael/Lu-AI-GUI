@@ -11,6 +11,8 @@
 pub mod file_guard;
 #[cfg(windows)]
 pub mod metadata_guard;
+#[cfg(windows)]
+pub mod browser_window;
 
 #[cfg(windows)]
 mod windows_owned {

@@ -248,3 +248,39 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   max-height:58vh;object-fit:contain;transform-origin:center center;}
 .imageViewerDialog button {cursor:pointer;} .imageViewerDialog button:disabled {opacity:.5;cursor:default;}
 .imageViewerDialog small {overflow-wrap:anywhere;}
+
+
+/* Observe & Learn pilot: persistent visible indication while consent is active. */
+.observePilot{display:grid;gap:6px;padding:10px 12px;margin:6px 0;
+  border:1px solid var(--border,#567);border-radius:9px;}
+.observePilotTop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.observePilot small{overflow-wrap:anywhere;opacity:.83;}
+.observePilot .settingsActions{display:flex;flex-wrap:wrap;gap:8px;}
+.observePilot .observeIndicator{font-weight:600;font-size:12px;}
+.observePilot .observeIndicator.mode-active{color:#ffd566;}
+.observePilot .observeIndicator.mode-paused{color:#a6b6c7;}
+
+/* Native-first Observe awareness notations: no screenshots or hidden workers. */
+.observeNotations{display:grid;gap:7px;margin-top:8px;padding:9px 10px;
+ border:1px solid var(--border,#516275);border-radius:8px;}
+.observeNotations ul{margin:0;padding-left:19px;max-height:130px;overflow-y:auto;
+ font-size:12px;line-height:1.5;}
+.observeNotations li{overflow-wrap:anywhere;}
+.observeNotations button{justify-self:start;}
+.observeHandoff{display:grid;gap:4px;padding:8px;border-radius:6px;
+ background:var(--panel,#202b35);}
+
+/* WAVE4 Research: display unverified catalog leads, not citation receipts. */
+.researchResults{display:grid;gap:6px;margin-top:8px;border:1px solid var(--border,#546);
+ border-radius:8px;padding:10px;}
+.researchResults ul{max-height:260px;overflow:auto;margin:0;padding-left:20px;}
+.researchResults li{margin:8px 0;display:grid;gap:4px;}
+.researchResults small{overflow-wrap:anywhere;}
+
+/* WAVE4 Image Workspace — optional native immutable crop/resize export. */
+.imageRevisionForm{display:grid;gap:8px;padding:10px;border:1px solid var(--border,#546);
+ border-radius:8px;max-height:30vh;overflow:auto;}
+.imageRevisionForm label{display:grid;gap:3px;font-size:12px;}
+.imageRevisionDimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.imageRevisionForm input{max-width:100%;min-width:0;}
+.imageRevisionForm button{justify-self:start;}

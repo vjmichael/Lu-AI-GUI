@@ -60,3 +60,43 @@ Reused tested TOOLS-10 browser visibility-state and SQLite preference modules on
 ## WAVE4-RESEARCH-01 — citation integrity and research analysis core (source integrated)
 
 Reused the existing TOOLS-10 verified-evidence ledger, query planner, thesis evidence analysis, premise/cross-domain revision, sufficiency and maturity modules. Discovery is not a verified citation; interpretation is not a verified passage; early missing evidence does not prove scientific absence. The native Linux and Windows test matrix includes each module. Browser/HTTPS provider ingestion, full-text extraction, durable orchestration and one-turn normal-chat Research network dispatch remain OPEN. No live web search or model browser authority was added by staging these offline modules.
+
+
+### Browser/Research import closeout step — functional host wiring OPEN
+
+Copied the existing TOOLS-10 PR #26 native browser supervisor, native browser tools, Chromium custody and visibility bridge, verified HTTPS/Crossref/OpenAlex research modules, worker script and native acceptance fixtures **without redesign**. These modules preserve explicit NetworkRead/NetworkWrite grants, user-selected origins, host-owned binaries and source verification. Merely exporting core modules does not start the browser or grant model network access. Windows/host packaging and actual one-turn desktop Browser/Research integration remain OPEN pending native acceptance.
+
+
+### WAVE4-BROWSER-02 — owned desktop lifecycle (source implementation)
+
+The active Lu desktop now integrates the original TOOLS-10 headed Chromium/Playwright runtime manifest verifier (default `not-packaged`), OS-owned browser-window custody and native task start/status/show/hide/stop commands. A host-scoped browser task requires an authenticated persisted human conversation turn, separate native approval for each bounded HTTPS origin list, and a NetworkRead-only conversation authority grant. Startup/reservation races and browser crashes revoke the original task. The React Settings panel reports measured `launchReady`, collects exact HTTPS origins, and exposes operator-only start/watch/hide/human-verification/stop controls. No model-facing general-purpose browser execute API was added. A native runtime cannot launch until its fully reviewed Chromium/Node/Playwright package is staged with an exact embedded manifest; ordinary builds fail closed.
+
+The original read-only model Browser tool and structured citation-safe Research modules exist in Lu Core, but the primary GGUF model queue is not yet connected to the Browser dispatch path. Genuine verified Browser-native Windows/Linux installed acceptance and normal-GGUF tool invocation remain OPEN.
+
+
+### WAVE4-RESEARCH-02 — human-approved OpenAlex discovery (source implementation)
+
+The Tauri host now exposes a `lu_research_openalex` command that requires a current, existing chat and a separate native approval dialog before an OpenAlex search. Only a **bundled, SHA-256-pinned** HTTPS client may execute; the default build does not include one and reports `lu_research_available=false`. The request uses TOOLS-10's SSRF-resistant public HTTPS adapter (now clears inherited environment variables) and records each source as `DISCOVERED` in a per-chat WAL-backed EvidenceLedger. UI results are unverified leads, not citations. Each search uses the existing durable TaskStore lifecycle; the host does not silently invoke a model. The pinned network runtime, live Windows/Linux search, Crossref corroboration and full-text passage verification remain OPEN for installed acceptance.
+
+
+### WAVE4-BACKGROUND-02 — chat-scoped desktop status (source)
+Normal Background Tasks now require an actual existing conversation ID and query the task ledger using SQL workspace filtering *before* the LIMIT. The UI passes only the selected chat. Model context already admits only task ID, enum and progress. Global operator task inventory no longer leaks unrelated chat task text into a regular conversation's panel. Native/React CI remains pending.
+
+### WAVE4-ENV-02 — supervised runtime evidence (source)
+Native `lu_environment_status` returns Lu desktop version/OS/architecture and **actual** current engine phase plus MMProj catalog admission, but intentionally marks GPU execution and visual reasoning UNVERIFIED until a real host-owned execution probe demonstrates them. No arbitrary env vars, subprocesses, package installs or permission changes; the native API is read-only.
+
+### WAVE4-IMAGE-WS-02 — deterministic immutable new-version crop/resize (source)
+Image Workspace now has bounded deterministic PNG crop and resize from Lu's existing host-admitted PNG/JPEG bytes, **native operator approval and OS save dialog** and a `create_new` filesystem write that cannot overwrite the original or another existing file. An output digest and dimensions are reported after reopening/rechecking the new PNG. User-provided geometry is revalidated in Lu Core; arbitrary image/model edits and paths are rejected. React's preview offers numeric crop/resize and shows the saved version receipt. This is not the full image editor: pixel masks, annotations, true semantic edit model, persistent revision graph/undo, crash-recovery journal and installed Windows acceptance remain OPEN.
+
+
+### WAVE4 TOOL INTEGRATION 2026-11-06 — candidate acceptance and hardening
+
+**BROWSER:** Added a separate Windows/Linux native GitHub Actions candidate-acceptance workflow. It installs the declared Playwright version in isolated CI, assembles the headed Chromium/Node/Playwright candidate using existing verified source, checks every enumerated payload hash, and tries the existing end-to-end headed BrowserSession test under actual Windows or Linux Xvfb. Only candidate metadata, not an executable runtime, is retained for short-lived approval. **A successfully tested candidate is NOT automatically promoted to reviewed production, bundled with Lu, or granted any web navigation permissions.** Actual vendor signing, full payload digest approval, packaging and installed Windows acceptance remain OPEN.
+
+**RESEARCH:** Added an opt-in Windows build path to stage the OS System32 curl.exe only after a Valid Microsoft Authenticode signature check, pin its SHA-256 into the Tauri host, and include its exact bytes through the existing Research Tauri overlay. Added a Windows native CI job checking signed client, executable version and compiled-in digest. No PATH, model-specified curl, automatic web browsing, unverified citations or silent network authorization. Bundled runtime and live provider acceptance remain OPEN until the Windows CI and installed app prove them.
+
+**BACKGROUND:** Sanitize every legacy TaskStore task ID before embedding it in an ordinary GGUF status observation. IDs containing prompt delimiters, controls, newlines or punctuation outside a minimal token grammar are omitted. Chat-scoping, state enums and percentages are unchanged. Added adversarial task ID fixture. Native CI pending.
+
+**ENVIRONMENT / VISION:** Existing host-native environment status remains read-only and distinguishes detected CPU/platform hints from actually verified GPU backend execution. Loaded MMProj remains an admitted projector, not a proved visual understanding session. No synthetic backend/vision success is claimed. Native/installed GGUF acceptance still OPEN.
+
+**IMAGE WORKSPACE:** Recheck of newly exported immutable PNG revisions now explicitly removes the newly created output if reopening or digest validation fails, rather than leaving an unverified image revision as a successful artifact. Existing crop/resize, no-clobber and source preservation remain. Persistent revision graph, masks/annotation and full installed Windows acceptance still OPEN.

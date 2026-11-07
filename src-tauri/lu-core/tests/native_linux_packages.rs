@@ -223,5 +223,10 @@ async fn model_archive_list_uses_native_cpio_with_strict_output_budget(){
     assert_eq!(data["result"]["total_entries"],1);
     assert_eq!(fs::read(root.join("archive.cpio")).unwrap(),bytes);
     assert_eq!(fs::read_dir(&root).unwrap().count(),1);
-    drop(dir);fs::remove_dir_all(root).unwrap();
+    // Windows cannot remove the fixture while registry-owned cap-std handles remain open.
+    drop(turn);
+    drop(catalog);
+    drop(registry);
+    drop(dir);
+    fs::remove_dir_all(root).unwrap();
 }

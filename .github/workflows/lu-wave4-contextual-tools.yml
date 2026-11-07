@@ -21,8 +21,15 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
+      - run: node --test lu-desktop/tests/browser-staging.test.mjs
+      - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
+      - run: node --test lu-desktop/tests/research-citation-enforcement.test.mjs
+      - run: node --test lu-desktop/tests/research-roadmap-acceptance.test.mjs
+      - run: node --test lu-desktop/tests/image-workspace-history.test.mjs
+      - run: node --test lu-desktop/tests/browser-native-authorization.test.mjs
       - run: grep -Fq 'WorkspaceReadTurnSession::new_git(' lu-desktop/src-tauri/src/workspace_desktop.rs
       - run: grep -Fq 'dashboard_for_workspace(&chat_id,32)' lu-desktop/src-tauri/src/lib.rs
+      - run: node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.research.conf.json'));if(x.bundle.resources['resources/lu-research/curl.exe']!=='lu-research/curl.exe')process.exit(1)"
   core-linux:
     needs: source
     runs-on: ubuntu-24.04
@@ -34,9 +41,19 @@ jobs:
       - run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision_history::tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_citation_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_roadmap_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_citation
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_document
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_report
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
@@ -56,9 +73,19 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision_history::tests
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_visibility_settings
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_preferences
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_authorized_execution::tests
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test browser_native_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_citation_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_roadmap_acceptance
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_citation
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_document
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_report
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_analysis
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_premise
       - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
@@ -105,3 +132,6 @@ jobs:
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib background_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib environment_context::tests
       - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib research_desktop::tests
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib image_workspace_desktop::tests
