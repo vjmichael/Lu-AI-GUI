@@ -45,6 +45,26 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
       - name: Test new Observe privacy desktop contracts
         run: node --test lu-desktop/tests/p06-observe-privacy.test.mjs
+      - name: Build actual React Observe frontend before Tauri macro compilation
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
+          npm run check
+      - name: Compile and test actual Windows WGC worker identity and full-frame redaction
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture
+          cargo build --release --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml
+      - name: Reject malformed native WGC invocation without OS picker
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $worker='src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
+          if(!(Test-Path -LiteralPath $worker)){throw 'WGC worker was not built'}
+          & $worker '--bad-operation' '00112233445566778899aabbccddeeff' 2>$null
+          if($LASTEXITCODE -ne 1){throw 'Native WGC worker failed closedness check'}
       - name: Test real native ObserveHost on Windows
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -56,13 +76,6 @@ jobs:
           $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib observe_desktop::tests -- --nocapture
-      - name: Build actual React Observe privacy controls on Windows
-        if: matrix.os == 'windows-latest'
-        working-directory: lu-desktop
-        run: |
-          npm ci
-          npm run build
-          npm run check
       - name: No installed WGC, NSIS or second-model GPU acceptance inferred
         if: matrix.os == 'windows-latest'
         run: echo "Native policy and desktop compile only; physical WGC/installed NSIS/AMD MMProj and resident small-model acceptance remain separately deferred"
