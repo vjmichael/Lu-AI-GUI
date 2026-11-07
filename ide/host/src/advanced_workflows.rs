@@ -4,7 +4,7 @@
 use crate::IdeWorkspaceRegistry;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fs::{self, File, OpenOptions}, io::Write, path::Path};
 
 const MAX_WORKFLOW_PROJECTS: usize = 8;
 const MAX_ARTIFACTS_PER_PROJECT: usize = 20;
@@ -42,6 +42,22 @@ pub struct WorkflowInspection {
     pub live_remote_verified: bool,
     pub execution_performed: bool,
     pub package_created: bool,
+}
+
+/// Exported manifest is documentation of observed inputs, not an artifact
+/// bundle, a signoff or an authorization to execute package scripts.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowManifestExport {
+    pub schema_version: u32,
+    pub file_name: String,
+    pub sha256: String,
+    pub byte_length: usize,
+    pub project_count: usize,
+    pub source_fingerprint: String,
+    pub project_files_exported: bool,
+    pub release_approved: bool,
+    pub execution_performed: bool,
 }
 
 fn fingerprint(projects: &[WorkflowProject]) -> Result<String, &'static str> {
@@ -143,6 +159,74 @@ impl IdeWorkspaceRegistry {
             });
         }
         workflow_status(out)
+    }
+
+    /// A *native OS folder chooser* supplies destination; no WebView path.
+    /// Export a descriptive, immutable source manifest, not an executable
+    /// archive. Existing files are never overwritten and the user's project
+    /// directory cannot silently become dirty from this export.
+    pub fn export_workflow_manifest(
+        &self,
+        project_ids: &[String],
+        expected_fingerprint: &str,
+        selected_folder: &Path,
+    ) -> Result<WorkflowManifestExport, &'static str> {
+        let current = self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
+        let metadata = fs::symlink_metadata(selected_folder)
+            .map_err(|_| "WORKFLOW_EXPORT_FOLDER_UNAVAILABLE")?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err("WORKFLOW_EXPORT_FOLDER_UNTRUSTED");
+        }
+        let folder = fs::canonicalize(selected_folder)
+            .map_err(|_| "WORKFLOW_EXPORT_FOLDER_UNAVAILABLE")?;
+        if !folder.is_dir() {
+            return Err("WORKFLOW_EXPORT_FOLDER_UNAVAILABLE");
+        }
+        for id in project_ids {
+            let root = self.registered_git_root(id)
+                .map_err(|_| "WORKFLOW_PROJECT_NOT_OPEN")?;
+            if folder.starts_with(&root) {
+                return Err("WORKFLOW_EXPORT_INSIDE_SOURCE_PROJECT");
+            }
+        }
+        let file_name = format!("lu-ide-workflow-{}.json", &current.fingerprint[..20]);
+        let output = folder.join(&file_name);
+        let bytes = serde_json::to_vec_pretty(&current)
+            .map_err(|_| "WORKFLOW_EXPORT_SERIALIZE_FAILED")?;
+        if bytes.len() > 256 * 1024 {
+            return Err("WORKFLOW_EXPORT_TOO_LARGE");
+        }
+        // A preexisting file, including a symlink/reparse point, always denies.
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&output)
+            .map_err(|_| "WORKFLOW_EXPORT_ALREADY_EXISTS_OR_DENIED")?;
+        let result = (|| {
+            file.write_all(&bytes)
+                .map_err(|_| "WORKFLOW_EXPORT_WRITE_FAILED")?;
+            file.sync_all().map_err(|_| "WORKFLOW_EXPORT_SYNC_FAILED")?;
+            drop(file);
+            // Exact Git/artifact re-check *after* the write: changes while the
+            // manifest was being saved cannot silently become accepted.
+            self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
+            #[cfg(unix)]
+            File::open(&folder).and_then(|dir| dir.sync_all())
+                .map_err(|_| "WORKFLOW_EXPORT_DIRECTORY_SYNC_FAILED")?;
+            Ok::<(), &'static str>(())
+        })();
+        if let Err(code) = result {
+            let _ = fs::remove_file(&output);
+            return Err(code);
+        }
+        Ok(WorkflowManifestExport {
+            schema_version: 1,
+            file_name,
+            sha256: format!("{:x}", Sha256::digest(&bytes)),
+            byte_length: bytes.len(),
+            project_count: project_ids.len(),
+            source_fingerprint: current.fingerprint,
+            project_files_exported: false,
+            release_approved: false,
+            execution_performed: false,
+        })
     }
 
     /// TOCTOU guard. A stale plan never permits promotion, packaging or Git
