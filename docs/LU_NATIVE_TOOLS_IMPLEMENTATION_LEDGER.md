@@ -1,3 +1,7 @@
+## M3 recovered original UX — independently browsable ANSF page history (2026-11-07; SOURCE/CI PENDING)
+
+Added original-entry stable-ID backward page queries, host-authenticated history-browser and bounded text-page commands; replaced embedded M3 Recall with independent floating Library inspector. Added native paging/restart/host-auth tests and cross-platform CI. *Not* yet virtualized main chat transcript; still source candidate, not installed acceptance. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
 ## M3 requirement correction: originally agreed ANSF staged memory and development continuity — November 7, 2026
 
 The original ANSF/SQLite specification already included a separate navigable history/search pane, cursor-virtualized infinite-looking active transcript, staged short/long/procedural retrieval and a source-referenced operational ledger to prevent repeated NSIS, Windows SDK, MSVC, LLVM and installer dependency discovery between Lu conversations. The M3 prototype has NOT completed these behaviors. They are HIGH-PRIORITY ACCEPTANCE GATES, not new proposals. See the [M3 fidelity correction](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md). Semantic embeddings are optional accelerators, not substitutes for continuity and original-source navigation.

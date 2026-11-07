@@ -21,6 +21,162 @@ function MessageText({text, role='assistant'}) {
 const MAX_TEXT_ATTACHMENT = 64 * 1024;
 const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
 
+
+/**
+ * Independent human ANSF history reader. Does not call setChatId, setHistory,
+ * setPrompt or touch the live transcript ref; its navigation/query/cursor
+ * state belongs solely to the secondary pane.
+ */
+function AnsfHistoryPane({activeChatId,chats,onClose}){
+  const [browseChatId,setBrowseChatId]=useState(activeChatId||'');
+  const [entries,setEntries]=useState([]);
+  const [before,setBefore]=useState(null);
+  const [hasMore,setHasMore]=useState(false);
+  const [query,setQuery]=useState('');
+  const [matches,setMatches]=useState([]);
+  const [reading,setReading]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const requests=useRef(0);
+  const scrollRef=useRef(null);
+  const prependHeight=useRef(null);
+  useEffect(()=>{
+    if(!activeChatId||!browseChatId)return;
+    const request=++requests.current;
+    setEntries([]);setBefore(null);setHasMore(false);
+    setReading(null);setError('');setBusy(true);
+    invoke('lu_m3_history_page',{
+      chatId:activeChatId,sourceChatId:browseChatId,
+      beforeEntryId:null,limit:24
+    }).then(page=>{
+      if(request!==requests.current)return;
+      setEntries(page.entries);setBefore(page.nextBeforeId);
+      setHasMore(page.hasMore);
+    }).catch(e=>{
+      if(request===requests.current)setError('Older messages unavailable: '+String(e));
+    }).finally(()=>{if(request===requests.current)setBusy(false)});
+    return ()=>{requests.current+=1;};
+  },[activeChatId,browseChatId]);
+  async function older(){
+    if(!hasMore||!before||busy||!activeChatId)return;
+    const request=++requests.current;setBusy(true);setError('');
+    prependHeight.current=scrollRef.current?.scrollHeight??null;
+    try{
+      const page=await invoke('lu_m3_history_page',{
+        chatId:activeChatId,sourceChatId:browseChatId,
+        beforeEntryId:before,limit:24
+      });
+      if(request!==requests.current)return;
+      setEntries(items=>[...page.entries,...items]);
+      setBefore(page.nextBeforeId);setHasMore(page.hasMore);
+    }catch(e){
+      prependHeight.current=null;
+      if(request===requests.current)setError('Older page unavailable: '+String(e));
+    }finally{if(request===requests.current)setBusy(false)}
+  }
+  useLayoutEffect(()=>{
+    const el=scrollRef.current;
+    if(el&&prependHeight.current!==null){
+      el.scrollTop+=el.scrollHeight-prependHeight.current;
+      prependHeight.current=null;
+    }
+  },[entries]);
+  async function search(e){
+    e.preventDefault();
+    if(!activeChatId||!query.trim()||busy)return;
+    const request=++requests.current;setBusy(true);setError('');
+    try{
+      if(query.trim().startsWith('ansf:v1:')){
+        await openSource(query.trim());
+        return;
+      }
+      const hits=await invoke('lu_m3_recall',{
+        chatId:activeChatId,query:query.trim()
+      });
+      if(request===requests.current){setMatches(hits);setReading(null)}
+    }catch(e){if(request===requests.current)setError('Search unavailable: '+String(e))}
+    finally{if(request===requests.current)setBusy(false)}
+  }
+  async function openSource(sourceId){
+    if(!activeChatId)return;
+    const data=await invoke('lu_m3_source_text_page',{
+      chatId:activeChatId,sourceId,offsetChars:0,limitChars:4096
+    });
+    setReading(data);
+  }
+  async function readMore(){
+    if(!reading?.nextOffsetChars||busy||!activeChatId)return;
+    const previous=reading;setBusy(true);setError('');
+    try{
+      const page=await invoke('lu_m3_source_text_page',{
+        chatId:activeChatId,sourceId:previous.sourceId,
+        offsetChars:previous.nextOffsetChars,limitChars:4096
+      });
+      setReading(current=>current?.sourceId===page.sourceId&&
+        current?.nextOffsetChars===page.offsetChars?
+        {...page,text:current.text+page.text}:current);
+    }catch(e){setError('Source continuation unavailable: '+String(e))}
+    finally{setBusy(false)}
+  }
+  async function openChecked(sourceId){
+    if(busy)return;
+    setBusy(true);setError('');
+    try{await openSource(sourceId)}
+    catch(e){setError('Original source unavailable: '+String(e))}
+    finally{setBusy(false)}
+  }
+  return <aside className="ansfHistoryPane" aria-label="Independent ANSF history browser">
+    <header className="ansfHistoryHeader">
+      <div><strong>ANSF Library</strong><small>Independent history · active chat unchanged</small></div>
+      <button type="button" className="subtleButton" onClick={onClose}
+        aria-label="Close history browser">Close</button>
+    </header>
+    <label className="ansfHistoryPicker">Browse original conversation
+      <select value={browseChatId} onChange={e=>setBrowseChatId(e.target.value)}
+        aria-label="Browse history of conversation">
+        {chats.map(c=><option key={c.chatId} value={c.chatId}>{c.title}</option>)}
+      </select>
+    </label>
+    <form onSubmit={search} className="ansfHistorySearch">
+      <input type="search" value={query} maxLength={256}
+        onChange={e=>setQuery(e.target.value)}
+        placeholder="Keywords or exact ansf:v1: ID"
+        aria-label="Search historical messages"/>
+      <button type="submit" disabled={busy||!query.trim()}>Search</button>
+    </form>
+    {error&&<p role="alert" className="ansfHistoryError">{error}</p>}
+    <small>Historical source text is read-only context, never a new tool permission.</small>
+    <div className="ansfHistoryScroll" ref={scrollRef}>
+      {hasMore&&<button type="button" onClick={()=>void older()} disabled={busy}>
+        {busy?'Loading…':'Load older page'}</button>}
+      {entries.map(entry=><article className="ansfHistoryEntry" key={entry.sourceId}>
+        <small>{entry.role==='user'?'You':'Lu'} · {entry.chatTitle}</small>
+        <p>{entry.excerpt}{entry.truncated?' …':''}</p>
+        <button type="button" className="subtleButton" disabled={busy}
+          onClick={()=>void openChecked(entry.sourceId)}>Read full original</button>
+        <code>{entry.sourceId}</code>
+      </article>)}
+      {!entries.length&&!busy&&<small>No completed original entries on this page.</small>}
+      {matches.length>0&&<section aria-label="Historical search results">
+        <h3>Matching originals</h3>
+        {matches.map(hit=><article className="ansfHistoryEntry" key={hit.sourceId}>
+          <strong>{hit.chatTitle}</strong><p>{hit.excerpt}</p>
+          <button type="button" className="subtleButton" disabled={busy}
+            onClick={()=>void openChecked(hit.sourceId)}>Read matching original</button>
+        </article>)}
+      </section>}
+    </div>
+    {reading&&<section className="ansfOriginalReader" aria-label="Exact original source reader">
+      <header><strong>Original · {reading.role}</strong>
+        <button type="button" onClick={()=>setReading(null)}>Close source</button></header>
+      <pre>{reading.text}</pre>
+      <small>{reading.text.length} displayed characters of {reading.totalChars} · {reading.sourceId}</small>
+      {reading.nextOffsetChars!==null&&<button type="button" disabled={busy}
+        onClick={()=>void readMore()}>Read next source page</button>}
+    </section>}
+  </aside>;
+}
+
 function App() {
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
@@ -45,12 +201,7 @@ function App() {
   const [m2PanelOpen,setM2PanelOpen]=useState(false);
   const [m2Busy,setM2Busy]=useState(false);
 
-  const [m3Query,setM3Query]=useState('');
-  const [m3Matches,setM3Matches]=useState([]);
-  const [m3Reading,setM3Reading]=useState(null);
-  const [m3Busy,setM3Busy]=useState(false);
-  const activeChatRef=useRef(null);
-  activeChatRef.current=chatId;
+  const [historyPaneOpen,setHistoryPaneOpen]=useState(false);
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
@@ -1360,34 +1511,6 @@ function App() {
       }
     }catch(error){setError('Clarification not recorded: '+String(error));}
     finally{setM2Busy(false);}
-  }
-  useEffect(()=>{
-    setM3Matches([]);setM3Reading(null);setM3Query('');
-  },[chatId]);
-  async function m3Recall(event){
-    event.preventDefault();
-    if(!chatId||m3Busy||!m3Query.trim())return;
-    const sourceChat=chatId;setM3Busy(true);
-    try{
-      const needle=m3Query.trim();
-      if(needle.startsWith('ansf:v1:')){
-        const data=await invoke('lu_m3_read_source',{chatId:sourceChat,sourceId:needle});
-        if(activeChatRef.current===sourceChat){setM3Matches([]);setM3Reading(data);}
-      }else{
-        const hits=await invoke('lu_m3_recall',{chatId:sourceChat,query:needle});
-        if(activeChatRef.current===sourceChat){setM3Matches(hits);setM3Reading(null);}
-      }
-    }catch(e){if(activeChatRef.current===sourceChat)setError('ANSF recall unavailable: '+String(e));}
-    finally{setM3Busy(false);}
-  }
-  async function m3Read(sourceId){
-    if(!chatId||m3Busy)return;
-    const sourceChat=chatId;setM3Busy(true);
-    try{
-      const data=await invoke('lu_m3_read_source',{chatId:sourceChat,sourceId});
-      if(activeChatRef.current===sourceChat)setM3Reading(data);
-    }catch(e){if(activeChatRef.current===sourceChat)setError('Source could not be verified: '+String(e));}
-    finally{setM3Busy(false);}
   }
   async function refreshChats() {
     const list = await invoke('lu_chats');
@@ -2923,6 +3046,8 @@ function App() {
         <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </div>
     </aside>
+    {historyPaneOpen&&chatId&&<AnsfHistoryPane activeChatId={chatId}
+      chats={chats} onClose={()=>setHistoryPaneOpen(false)}/>}
     <main className="workspace">
       {backgroundTerminalNotice && <button type="button"
         className="backgroundGlobalNotice"
@@ -2953,33 +3078,12 @@ function App() {
             </div>}
           </div>
           {loaded && <button className="quickEject" disabled={busy} title="Unload active model" onClick={unloadModel}>⏏</button>}
+          <button type="button" className="subtleButton" title="Open independent ANSF history"
+            disabled={!chatId} aria-expanded={historyPaneOpen}
+            onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
           <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
-      {chatId&&<section className="m2MemoryPane" aria-label="ANSF memory recall">
-        <form onSubmit={m3Recall} className="folderForm">
-          <label>Recall earlier Lu conversations
-            <input type="search" maxLength={256} value={m3Query}
-              onChange={e=>setM3Query(e.target.value)}
-              placeholder="Keywords or ansf:v1: source ID" aria-label="Search ANSF memory"/>
-          </label>
-          <button type="submit" disabled={m3Busy||!m3Query.trim()}>
-            {m3Busy?'Searching…':'Recall'}</button>
-        </form>
-        <small>Up to 24 earlier local books · original-source lexical matches only · no tool permissions</small>
-        {m3Matches.map(hit=><div className="modelInspection" key={hit.sourceId}>
-          <strong>{hit.chatTitle} · {hit.role}</strong>
-          <small>{hit.excerpt}{hit.truncated?' … [excerpt truncated]':''}</small>
-          <button type="button" className="subtleButton" disabled={m3Busy}
-            onClick={()=>void m3Read(hit.sourceId)}>Read original source</button>
-          <code>{hit.sourceId}</code>
-        </div>)}
-        {m3Reading&&<div className="modelInspection" aria-label="Verified ANSF original">
-          <strong>Verified original · {m3Reading.chatTitle}</strong>
-          <pre>{m3Reading.excerpt}</pre>
-          <code>{m3Reading.sourceId}</code>
-        </div>}
-      </section>}
       {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">
         <header className="m2MemoryHeader">
           <strong>Goal memory {m2Context?.goal?'· '+m2Context.goal.slice(0,75):'· not set'}</strong>

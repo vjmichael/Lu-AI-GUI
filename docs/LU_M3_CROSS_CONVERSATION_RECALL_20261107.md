@@ -53,3 +53,10 @@ C. After model replacement or app restart, Lu recovers a paused task with comple
 D. Baselines quantify duplicate package lookups/downloads, repeated environment setup, redundant search calls, interrupted-work resumption time, false memories, retrieved-source precision, latency and disk/RAM costs.
 
 This is a correction to preserve the ORIGINAL design; not a statement that these gaps are closed.
+
+
+## M3 original-UX recovery — independent History Library pane (source candidate 2026-11-07)
+
+Implemented source: `AnsfStore::page_before` uses stable original-entry IDs and descending SQL LIMIT with oldest-page cursor; `ChatStore::original_history_page` authenticates both active and source book and returns at most 40 user/assistant original entry previews; `original_source_text_page` retrieves the exact original in up to 4096-character chunks. Tauri registers `lu_m3_history_page` and `lu_m3_source_text_page`. React now renders a **secondary independently navigable ANSF History Library overlay** with conversation selector, cross-chat lexical search, older-page navigation, original-source read continuation and scroll-anchor preservation on prepend. The previous embedded M3 Recall area was removed. History pane does not switch chat, update active message array, compose prompt, stream or tool authority. CI adds native page/restart/access tests and source contracts.
+
+**Explicit remaining gaps:** this work makes the *secondary pane* paginated, but the main active conversation currently still calls `lu_history` and materializes its whole transcript; full active-chat virtual scrolling and cancellation-preserving loaded row windows are NOT yet implemented. Previous historic source direct model reads remain 4096-character-capped by design; the human-only page reader can continue up to original length. No physical installed-app acceptance yet.

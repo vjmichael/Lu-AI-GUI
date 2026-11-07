@@ -54,6 +54,26 @@ pub struct RecallHit{
     pub excerpt:String,
     pub truncated:bool,
 }
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct OriginalHistoryPage{
+    pub source_chat_id:String,
+    pub entries:Vec<RecallHit>,
+    pub next_before_id:Option<i64>,
+    pub has_more:bool,
+}
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct OriginalTextPage{
+    pub source_id:String,
+    pub source_chat_id:String,
+    pub role:String,
+    pub text:String,
+    pub offset_chars:usize,
+    pub next_offset_chars:Option<usize>,
+    pub total_chars:usize,
+}
+
 
 /// Literal ASCII terms for the existing per-book SQLite FTS5 index. Query
 /// syntax from prompts/documents never becomes FTS operators or raw SQL.
@@ -689,6 +709,67 @@ impl ChatStore {
             interrupted:false,cancelled:false,
         }).collect())
     }
+    /// One independently navigable page. The active chat ID is an access
+    /// principal, not a destination to which older messages are copied.
+    pub fn original_history_page(
+        &self,active_chat:&str,source_chat:&str,before_id:Option<i64>,limit:usize
+    )->Result<OriginalHistoryPage,String>{
+        self.require(active_chat)?;
+        if limit==0||limit>40{return Err("History page size must be 1..40".into())}
+        let book=self.require(source_chat)?;
+        let (entries,has_more)=book.page_before(
+            source_chat,before_id.unwrap_or(i64::MAX),limit
+        ).map_err(to_err)?;
+        let title:String={
+            let conn=self.catalog.lock().map_err(to_err)?;
+            conn.query_row("SELECT title FROM ansf_desktop_chats WHERE chat_id=?1",
+                [source_chat],|r|r.get(0)).map_err(to_err)?
+        };
+        let next_before_id=if has_more{entries.first().map(|e|e.id)}else{None};
+        let entries=entries.into_iter()
+            .map(|entry|as_recall_hit(&entry,&title,720))
+            .collect::<Result<Vec<_>,_>>()?;
+        Ok(OriginalHistoryPage{
+            source_chat_id:source_chat.to_owned(),entries,
+            next_before_id,has_more,
+        })
+    }
+
+    /// Read exact original message text as bounded character pages. This
+    /// permits human inspection of long messages without lifting the 4 KiB
+    /// automatic model-recall limit or duplicating a transcript.
+    pub fn original_source_text_page(
+        &self,active_chat:&str,source_id:&str,
+        offset_chars:usize,limit_chars:usize
+    )->Result<OriginalTextPage,String>{
+        self.require(active_chat)?;
+        if limit_chars==0||limit_chars>4096||offset_chars>2*1024*1024{
+            return Err("Invalid original source text window".into())
+        }
+        let parsed=AnsfSourceId::parse(source_id).map_err(to_err)?;
+        let book=self.require(parsed.session_id())?;
+        let entry=book.read_entry(parsed.session_id(),parsed.entry_id())
+            .map_err(to_err)?.ok_or("Original ANSF entry no longer exists")?;
+        if entry.stable_source_id().map_err(to_err)?!=source_id||
+           !matches!(entry.role.as_str(),"user"|"assistant")||
+           entry.content.len()>2*1024*1024{
+            return Err("Original source type or size refused".into())
+        }
+        let total_chars=entry.content.chars().count();
+        if offset_chars>total_chars{return Err("Source text cursor beyond end".into())}
+        let text:String=entry.content.chars().skip(offset_chars).take(limit_chars).collect();
+        let next=offset_chars+text.chars().count();
+        Ok(OriginalTextPage{
+            source_id:source_id.to_owned(),
+            source_chat_id:entry.session_id,
+            role:entry.role,
+            text,
+            offset_chars,
+            next_offset_chars:if next<total_chars{Some(next)}else{None},
+            total_chars,
+        })
+    }
+
     pub fn history(&self,chat_id:&str)->Result<Vec<ChatMessage>,String>{
         let book=self.require(chat_id)?;
         let mut last=0i64;

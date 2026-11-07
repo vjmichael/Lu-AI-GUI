@@ -3503,6 +3503,23 @@ fn lu_m3_recall(state:State<'_,Arc<DesktopState>>,chat_id:String,query:String)
     state.chats.recall_for_turn(&chat_id,&query)
 }
 #[tauri::command]
+fn lu_m3_history_page(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_chat_id:String,
+    before_entry_id:Option<i64>,limit:usize
+)->Result<chat_store::OriginalHistoryPage,String>{
+    state.chats.original_history_page(&chat_id,&source_chat_id,before_entry_id,limit)
+}
+#[tauri::command]
+fn lu_m3_source_text_page(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,
+    offset_chars:usize,limit_chars:usize
+)->Result<chat_store::OriginalTextPage,String>{
+    state.chats.original_source_text_page(&chat_id,&source_id,offset_chars,limit_chars)
+}
+
+#[tauri::command]
 fn lu_m3_read_source(state:State<'_,Arc<DesktopState>>,chat_id:String,source_id:String)
     ->Result<chat_store::RecallHit,String>{
     state.chats.known_source_for_turn(&chat_id,&source_id)
@@ -6792,6 +6809,8 @@ pub fn run() {
             memory_desktop::lu_m2_answer_question,
             lu_m3_recall,
             lu_m3_read_source,
+            lu_m3_history_page,
+            lu_m3_source_text_page,
             lu_background_tasks,
             lu_background_guardian_status,
             lu_background_queue_control,

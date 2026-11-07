@@ -263,3 +263,65 @@ mod m3_cross_chat_acceptance{
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+mod m3_independent_history_acceptance{
+    use super::chat_store::ChatStore;
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn fixture()->std::path::PathBuf{
+        std::env::temp_dir().join(format!("lu-history-pages-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn original_paging_is_bounded_stable_and_does_not_rewrite_active_chat(){
+        let root=fixture();let store=ChatStore::open(&root).unwrap();
+        let source=store.create_chat().unwrap().chat_id;
+        let active=store.create_chat().unwrap().chat_id;
+        store.append_user(&active,"Live active draft").unwrap();
+        for n in 0..78{
+            store.append_user(&source,&format!("Historical entry {n:03}")).unwrap();
+        }
+        let first=store.original_history_page(&active,&source,None,24).unwrap();
+        assert_eq!(first.entries.len(),24);
+        assert!(first.has_more);
+        assert_eq!(first.entries.first().unwrap().excerpt,"Historical entry 054");
+        let second=store.original_history_page(&active,&source,first.next_before_id,24).unwrap();
+        assert_eq!(second.entries.len(),24);
+        assert_eq!(second.entries.first().unwrap().excerpt,"Historical entry 030");
+        let third=store.original_history_page(&active,&source,second.next_before_id,40).unwrap();
+        assert_eq!(third.entries.len(),30);
+        assert!(!third.has_more);
+        assert!(third.next_before_id.is_none());
+        assert_eq!(third.entries.first().unwrap().excerpt,"Historical entry 000");
+        assert!(store.original_history_page(&active,&source,None,41).is_err());
+        assert!(store.original_history_page("bad",&source,None,24).is_err());
+        assert_eq!(store.history(&active).unwrap().len(),1);
+        assert!(store.trusted_user_turn_text(&active,"g-00000000000000000000000000000001").is_none());
+        drop(store);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.original_history_page(&active,&source,None,24).unwrap().entries,
+            first.entries);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn original_source_reader_chunks_long_text_without_minting_authority(){
+        let root=fixture();let store=ChatStore::open(&root).unwrap();
+        let source=store.create_chat().unwrap().chat_id;
+        let active=store.create_chat().unwrap().chat_id;
+        let text="Unicode 🚀 source memory ".repeat(300);
+        store.append_user(&source,&text).unwrap();
+        let listing=store.original_history_page(&active,&source,None,10).unwrap();
+        let source_id=&listing.entries[0].source_id;
+        let one=store.original_source_text_page(&active,source_id,0,4096).unwrap();
+        assert_eq!(one.text.chars().count(),4096);
+        let two=store.original_source_text_page(&active,source_id,
+            one.next_offset_chars.unwrap(),4096).unwrap();
+        assert_eq!(format!("{}{}",one.text,two.text),text);
+        assert!(two.next_offset_chars.is_none());
+        assert!(store.original_source_text_page(&active,source_id,0,4097).is_err());
+        assert!(store.original_source_text_page(&active,source_id,text.chars().count()+1,10).is_err());
+        assert_eq!(store.history(&active).unwrap().len(),0);
+        drop(store);fs::remove_dir_all(root).unwrap();
+    }
+}
