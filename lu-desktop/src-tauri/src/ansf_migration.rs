@@ -199,37 +199,104 @@ fn import_one(root:&Path,library:&AnsfLibrary,book_root:&Path,chat:&LegacyChat)
         imported_chat_events:n,imported_goal_events:goals,
         last_source_seq:chat.updated_seq})
 }
+/// R14 flat history had no chat index; it is legacy import input ONLY.
+fn import_r14_flat(root:&Path,library:&AnsfLibrary,books:&Path)
+    ->Result<ImportReceipt,String>{
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FlatLine{role:String,text:String}
+    let source=root.join("chats.jsonl");
+    regular_required(&source,MAX_LEGACY_CHAT)?;
+    let session=format!("c-{:032x}",1);
+    let dest=books.join(format!("{session}.sqlite"));
+    regular_or_missing(&dest)?;
+    let book=AnsfStore::open(&dest).map_err(|e|format!("{e:?}"))?;
+    book.ensure_session(&session,"lu-desktop-local-profile","Previous Lu conversation")
+        .map_err(|e|format!("{e:?}"))?;
+    if book.chapters(&session).map_err(|e|format!("{e:?}"))?.is_empty(){
+        book.start_chapter(&session,"R14 imported history")
+            .map_err(|e|format!("{e:?}"))?;
+    }
+    let mut imported=0;
+    for (index,line) in BufReader::new(File::open(source).map_err(|e|e.to_string())?)
+        .lines().enumerate(){
+        let line=line.map_err(|e|e.to_string())?;
+        if line.len()>MAX_LEGACY_LINE{return Err("Oversized R14 line".into())}
+        if line.trim().is_empty(){continue}
+        let original:FlatLine=serde_json::from_str(&line)
+            .map_err(|e|format!("Invalid R14 history line {}: {e}",index+1))?;
+        let kind=match original.role.as_str(){
+            "user"=>LiveKind::User,
+            "assistant"=>LiveKind::AssistantFinal,
+            _=>return Err("Unsupported R14 conversation role".into()),
+        };
+        let event=LiveEvent{
+            event_id:event_identity(&session,(index+1) as u64),
+            kind,text:original.text,user_turn_id:None,generation_id:None,
+            call_id:None,tool_id:None,
+        };
+        book.import_legacy_chat_event(&session,&event)
+            .map_err(|e|format!("R14 import conflict: {e:?}"))?;
+        imported+=1;
+    }
+    let mut count=0usize;
+    let mut cursor=0;
+    loop{
+        let page=book.live_chat_events_after(&session,cursor,100)
+            .map_err(|e|format!("{e:?}"))?;
+        if page.is_empty(){break}
+        cursor=page.last().unwrap().seq;
+        count+=page.len();
+    }
+    if count!=imported{return Err("Truncated R14 history cannot overwrite ANSF".into())}
+    library.index_book(&BookIndex{
+        session_id:session.clone(),workspace_id:"lu-desktop-local-profile".into(),
+        relative_path:format!("books/{session}.sqlite"),
+        title:"Previous Lu conversation".into(),summary:"R14 exact historical messages".into()
+    }).map_err(|e|format!("{e:?}"))?;
+    for chapter in book.chapters(&session).map_err(|e|format!("{e:?}"))?{
+        library.index_chapter(&ChapterIndex{
+            session_id:session.clone(),chapter_id:chapter.id,
+            title:chapter.title,summary:chapter.summary,
+            start_entry_id:chapter.start_entry_id,end_entry_id:chapter.end_entry_id
+        }).map_err(|e|format!("{e:?}"))?;
+    }
+    Ok(ImportReceipt{
+        session_id:session,imported_chat_events:imported,
+        imported_goal_events:0,last_source_seq:1
+    })
+}
 /// Prepare immutable per-conversation ANSF books under a separate directory.
 /// This does NOT switch the desktop's current writers. The final cutover is
 /// gated on a SQLite conversation/folder catalog and exact acceptance.
 pub fn prepare_legacy_ansf_books(root:&Path)->Result<Vec<ImportReceipt>,String>{
     let index=root.join("conversation-index.json");
-    if !index.exists(){return Ok(vec![]);}
-    regular_required(&index,MAX_LEGACY_INDEX)?;
-    let bytes=fs::read(&index).map_err(|e|e.to_string())?;
-    let metadata:LegacyIndex=serde_json::from_slice(&bytes)
-        .map_err(|e|format!("Legacy chat metadata cannot be decoded: {e}"))?;
-    if metadata.version!=1||metadata.chats.len()>1024||metadata.folders.len()>128 {
-        return Err("Legacy catalog version or capacity invalid".into())
-    }
-    let mut chat_ids=std::collections::HashSet::new();
-    let folder_ids:std::collections::HashSet<_>=metadata.folders.iter()
-        .map(|f|f.folder_id.as_str()).collect();
-    if folder_ids.len()!=metadata.folders.len()||
-       metadata.folders.iter().any(|f|!valid_id(&f.folder_id,"f-")
-           ||f.name.trim().is_empty()){
-        return Err("Invalid legacy folders".into())
-    }
-    for chat in &metadata.chats{
-        if !chat_ids.insert(&chat.chat_id)||
-           chat.updated_seq>metadata.sequence||
-           chat.folder_id.as_ref().is_some_and(|f|!folder_ids.contains(f.as_str())){
-            return Err("Invalid or conflicting legacy chat catalog".into())
+    let metadata:Option<LegacyIndex>=if index.exists(){
+        regular_required(&index,MAX_LEGACY_INDEX)?;
+        let bytes=fs::read(&index).map_err(|e|e.to_string())?;
+        let decoded:LegacyIndex=serde_json::from_slice(&bytes)
+            .map_err(|e|format!("Legacy chat metadata cannot be decoded: {e}"))?;
+        if decoded.version!=1||decoded.chats.len()>1024||decoded.folders.len()>128{
+            return Err("Legacy catalog version or capacity invalid".into())
         }
-        // Keep these fields in old metadata until the new SQLite-native
-        // folder/favorite catalog is implemented; never silently drop them.
-        let _=chat.favorite;
-    }
+        let mut chat_ids=std::collections::HashSet::new();
+        let folder_ids:std::collections::HashSet<_>=decoded.folders.iter()
+            .map(|f|f.folder_id.as_str()).collect();
+        if folder_ids.len()!=decoded.folders.len()||
+           decoded.folders.iter().any(|f|!valid_id(&f.folder_id,"f-")||
+               f.name.trim().is_empty()){
+            return Err("Invalid legacy folders".into())
+        }
+        for chat in &decoded.chats{
+            if !chat_ids.insert(&chat.chat_id)||
+                chat.updated_seq>decoded.sequence||
+                chat.folder_id.as_ref().is_some_and(|f|!folder_ids.contains(f.as_str())){
+                return Err("Invalid or conflicting legacy chat catalog".into())
+            }
+        }
+        Some(decoded)
+    }else{None};
+    if metadata.is_none()&&!root.join("chats.jsonl").exists(){return Ok(vec![])}
     let dest=root.join("ansf");
     fs::create_dir_all(&dest).map_err(|e|e.to_string())?;
     let md=fs::symlink_metadata(&dest).map_err(|e|e.to_string())?;
@@ -246,8 +313,12 @@ pub fn prepare_legacy_ansf_books(root:&Path)->Result<Vec<ImportReceipt>,String>{
     let library=AnsfLibrary::open(&dest.join("library.db"))
         .map_err(|e|format!("{e:?}"))?;
     let mut receipts=Vec::new();
-    for chat in &metadata.chats{
-        receipts.push(import_one(root,&library,&books,chat)?);
+    if let Some(meta)=metadata{
+        for chat in &meta.chats{
+            receipts.push(import_one(root,&library,&books,chat)?);
+        }
+    }else{
+        receipts.push(import_r14_flat(root,&library,&books)?);
     }
     Ok(receipts)
 }
@@ -291,6 +362,27 @@ mod tests{
         fs::write(&path,modified).unwrap();
         assert!(prepare_legacy_ansf_books(&root).is_err());
         drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn r14_flat_jsonl_is_migrated_without_an_index_or_new_authority(){
+        let root=temp();
+        fs::create_dir_all(&root).unwrap();
+        let flat="{\"role\":\"user\",\"text\":\"historical goal\"}\n\
+                  {\"role\":\"assistant\",\"text\":\"historical answer\"}\n";
+        fs::write(root.join("chats.jsonl"),flat).unwrap();
+        let receipts=prepare_legacy_ansf_books(&root).unwrap();
+        assert_eq!(receipts.len(),1);
+        assert_eq!(receipts[0].imported_chat_events,2);
+        let session=&receipts[0].session_id;
+        let book=AnsfStore::open(
+            &root.join("ansf/books").join(format!("{session}.sqlite"))).unwrap();
+        assert_eq!(book.live_chat_events_after(session,0,10).unwrap().len(),2);
+        assert!(book.authenticated_chat_turn(session,
+            &format!("g-{:032x}",1)).unwrap().is_none());
+        assert_eq!(fs::read_to_string(root.join("chats.jsonl")).unwrap(),flat);
+        assert_eq!(prepare_legacy_ansf_books(&root).unwrap(),receipts);
+        drop(book);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
