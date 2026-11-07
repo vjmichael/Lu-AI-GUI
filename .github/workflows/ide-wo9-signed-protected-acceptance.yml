@@ -114,6 +114,8 @@ jobs:
           github-token: ${{ github.token }}
       - name: Verify independently signed exact-source Debian bundle
         shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           [[ "${{ inputs.source_sha }}" =~ ^[0-9a-fA-F]{40}$ ]] || exit 2
@@ -123,10 +125,10 @@ jobs:
           import json, pathlib, hashlib, os, re
           p=pathlib.Path('candidate/wo9-linux-release.json')
           m=json.loads(p.read_text())
-          if m.get('schema')!='lu.ide.wo9.signed-linux.v1' or m.get('sourceSha') != os.environ.get('GITHUB_SHA') and m.get('sourceSha') != pathlib.Path('.git/HEAD').read_text().strip():
-              pass # Native exact SHA is checked separately below with strict env.
           if m.get('schema')!='lu.ide.wo9.signed-linux.v1':
               raise SystemExit('DENIED: unsupported Linux source manifest')
+          if m.get('sourceSha') != os.environ['SOURCE_SHA']:
+              raise SystemExit('DENIED: signed Linux candidate wrong source commit')
           for key in ('debSha256','signedDebPath','detachedSignaturePath'):
               if not m.get(key): raise SystemExit('DENIED: incomplete Linux signed candidate')
           for key in ('signedDebPath','detachedSignaturePath'):
