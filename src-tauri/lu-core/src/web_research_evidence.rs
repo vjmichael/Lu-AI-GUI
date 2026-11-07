@@ -374,9 +374,23 @@ impl EvidenceLedger {
         )?.collect::<Result<Vec<_>,_>>()?;
         if rows.len()>10_000{return Err(EvidenceError::Invalid);}
         let mut result=Vec::with_capacity(rows.len());
+        let mut expected_old:Option<String>=None;
         for (revision,old,new,bytes) in rows{
-            if digest(&bytes)!=old{return Err(EvidenceError::MetadataMismatch);}
+            if revision!=(result.len()+1) as i64||digest(&bytes)!=old
+                ||expected_old.as_deref().is_some_and(|prior|prior!=old){
+                return Err(EvidenceError::MetadataMismatch);
+            }
+            expected_old=Some(new.clone());
             result.push((revision,old,new));
+        }
+        // An inserted/deleted revision that leaves the active snapshot
+        // inconsistent is not a legitimate review history.
+        if let Some(expected)=expected_old{
+            let active=self.citation_catalog(id)?
+                .ok_or(EvidenceError::MetadataMismatch)?;
+            if active.response_sha256!=expected{
+                return Err(EvidenceError::MetadataMismatch);
+            }
         }
         Ok(result)
     }
@@ -1515,6 +1529,17 @@ mod browser_evidence_tests {
         ),Err(EvidenceError::MetadataMismatch)));
         let previous=ledger.citation_catalog("source-1").unwrap().unwrap();
         assert_eq!(previous,now);
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_revisions SET replacement_sha256=?1
+             WHERE source_id='source-1'",["0".repeat(64)]
+        ).unwrap();
+        assert!(matches!(ledger.citation_catalog_revision_receipts("source-1"),
+            Err(EvidenceError::MetadataMismatch)));
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_revisions SET replacement_sha256=?1
+             WHERE source_id='source-1'",[&now.response_sha256]
+        ).unwrap();
+        assert_eq!(ledger.citation_catalog_revision_receipts("source-1").unwrap().len(),1);
         ledger.connection.execute(
             "UPDATE research_citation_catalog_revisions SET prior_json=x'00'
              WHERE source_id='source-1'",[]
