@@ -6063,6 +6063,7 @@ async fn lu_observe_capture_one_shot(
         }).await.map_err(|_|"Windows capture confirmation unavailable")?;
         if !approved{return Ok(None);}
         let observer=Arc::clone(&state.observe);
+        let guardian=Arc::clone(&state.background_scheduler);
         tauri::async_runtime::spawn_blocking(move||{
             // The installed worker lives alongside Lu. Its exact hash was
             // compiled into this host; native supervisor checks again at
@@ -6073,7 +6074,7 @@ async fn lu_observe_capture_one_shot(
             let task_id=next_id("obs-frame-");
             let nonce=next_id("");
             let plan=lu_core::native_background_process::TrustedWorkerPlan{
-                task_id,
+                task_id:task_id.clone(),
                 workspace_id:chat_id.clone(),
                 executable,
                 expected_sha256:expected,
@@ -6083,7 +6084,13 @@ async fn lu_observe_capture_one_shot(
                 progress_protocol:true,
                 max_runtime_seconds:Some(90),
             };
-            observer.launch_one_shot(&chat_id,plan).map(Some)
+            // A Guardian lease must survive the async Tauri command and
+            // remain owned by ObserveHost until OS process reaping completes.
+            // Its CPU/RAM reservation is NOT a validated GPU/VRAM limit.
+            let lease=guardian.admit_host_worker(
+                &chat_id,&task_id,lu_core::native_background_scheduler::ResourceClaim::capture_one_shot()
+            ).map_err(|e|format!("Capture Guardian admission denied: {e:?}"))?;
+            observer.launch_one_shot(&chat_id,plan,lease).map(Some)
         }).await.map_err(|_|"Native Windows picker worker unavailable")?
     }
 }
