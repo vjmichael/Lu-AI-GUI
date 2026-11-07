@@ -12,6 +12,8 @@
 
 **Windows native handle correctness:** The foreground HWND→PID process-instance guard now uses a dedicated Win32 owned-handle RAII wrapper, calling CloseHandle on every result/error path. Query-only rights and a creation-time equality check remain the admission boundary; this is not UI source-content verification.
 
+**Durable revoke/recovery closeout:** The ObserveHost no longer drops the observation task ID on uncertain process cancellation or a failed SQLite status write. Consent is switched OFF before attempting OS cleanup. A watchdog and subsequent status/start checks reconcile the exact old task only *after* host-supervisor worker reaping; the durable observation `CANCELLED` receipt is written before releasing ownership. No old grant or volatile awareness survives, and a fresh consent is required for another session. Native tests cover post-revocation reconciliation and invalid capture-plan Guardian lease release. This is native source/CI evidence, not physical installed crash-recovery proof.
+
 **Outstanding:** exact-head Windows/Linux compilation and repairs; real interactive physical WGC identity/picker/cancellation trials and installed NSIS acceptance; OS identity for generic picker/monitors; trusted sensitive-region selective redaction before *any* image reaches Lu's model; genuine pixel-to-model scope and verified GUI test receipt. User-deferred actual AMD Vulkan/MMProj installed acceptance remains unclaimed. No P07 implementation is authorized.
 
 
