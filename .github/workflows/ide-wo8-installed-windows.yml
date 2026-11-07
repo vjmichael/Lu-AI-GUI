@@ -36,7 +36,7 @@ jobs:
       - name: Validate frontend and Rust host contract
         working-directory: ide/app
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
       - name: Fetch resolved Cargo sources and embed third-party license notices
         shell: pwsh
@@ -44,7 +44,15 @@ jobs:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           $ErrorActionPreference='Stop'
-          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: installer resolved lock graph differs from reviewed OS evidence' }
+          npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: npm locked install failed' }
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Cargo locked resolution failed' }
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: locked reinstall changed OS dependency graph' }
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: cannot resolve native dependency license sources' }
           python ide/packaging/verify_tauri_minor.py --repo-root .
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: resolved Tauri minor mismatch' }

@@ -1,8 +1,36 @@
 # Lu IDE — Development changelog
 
-- **P05 native registered-project restart repair (Nov 7):** Actual Windows installed UI now proved chooser registration and explicit save; subsequent test failed because restarted project was `Closed · ready to reopen`, correctly exposing `Reopen` rather than `Edit`. Updated Windows UIA/Linux GTK AT-SPI to explicitly reopen through real OS UI and verify active state before editor, with hostile source checks. Native recheck pending.
+- **P06 WebView2 runtime obligation (Nov 7):** Kept original MIT wrapper text separate from mandatory three-binding default-deny Microsoft runtime redistribution review, with frozen policy and hostile tests. No legal clearance.
+
+- **P06 selectors MPL full legal text (Nov 7):** Pinned canonical complete MPL-2.0 SPDX v3.28.0 text, checked exact selectors 0.38.0 frozen cargo checksum and preserved mandatory original covered-file source and legal review status. No legal approval inferred.
+
+- **P04 rollback interrupted during rollback (Nov 7):** Added fsync-journal `rolling_back` state and genuine child process death at journal/rejected/previous restore boundaries; resumable exact digests, user-state preservation and worker-quiescence source tests. Signed installed release still gated.
+
+- **P06 dlopen2 complete source MIT originals (Nov 7):** Pinned immutable historical commit containing both dlopen2 0.8.2 and dlopen2_derive 0.4.3 manifests; complete original copyright MIT text source-attested and bundled only for exact versions. Native CI pending.
+
+- **P06 seven native library/SDK notice restorations (Nov 7):** Pinned full upstream MIT and Apache sources for libappindicator-sys, jni-sys-macros, three Android NDK packages and two winapi GNU import libraries. Seven independent native library binary redistribution reviews remain open.
+
+- **P06 Apple SDK policy source audit (Nov 7):** Pinned original objc2 upstream policy across 19 exact packages and source tags; independent Apple SDK derivative/copyright/full linked terms review remains open. No commercial clearance inferred.
+
+- **P06 WebView2 Rust binding original MIT notices (Nov 7):** Three exact native crate tuples pinned to immutable upstream MIT blob; the Microsoft runtime is separately reviewed and release remains denied.
+
+- **P06 Protobuf wrapper vs Google binary legal provenance (Nov 7):** Retrieved original MIT license from upstream protoc-bin-vendored v3.3.0, pinned to nine exact resolved Rust crates with fail-closed source hashes. Added separate nine-entry required embedded Google-built protoc binary redistribution review; MIT wrapper recovery never grants distribution clearance. Tests and CI pending.
+
+- **P06 exact upstream alloc-stdlib/Tauri plugin notices (Nov 7):** Pinned upstream release tags/manifests and complete original BSD-3-Clause, MIT, Apache-2.0 legal texts, staged only on exact missing-notice packages and audited all dual-license originals with immutable Git hashes. No legal signoff; CI evidence pending.
+
+- **P06 actual original r-efi license notices (Nov 7):** Version-tagged 5.3.0 and 6.0.0 `AUTHORS` original MIT/Apache/LGPL option and copyright statements retrieved from upstream, preserved in tree and verified against exact Cargo registry crate bytes via pinned Git blob, with fail-closed modified/wrong-version/symlink tests. Dual-option human review stays open; new OS unresolved count pending.
+
+- **P06 target-specific third-party license prioritization (Nov 7):** Added exact native filtered Cargo dependency graph + notice inventory SHA-bound scope on Windows/Linux, with no legal exemption for absent platform targets or vendored binaries. Latest Windows archive has 45 unresolved entries after three source notice repairs; all remain open until reviewed. Added hostile regression tests and original metadata artifacts for CI review.
+
+- **P05/P06 native persisted project lifecycle (Nov 7):** Real Windows installed source/save passed then reopening failed because the project was closed; added genuine UIA/AT-SPI Reopen → Open status → Edit flow and source regression tests. Native acceptance pending.
+
+- **P06 source lockfiles committed (Nov 7):** Added exact real Windows/Linux reviewed Cargo.lock (500 crates) and package-lock.json (62 npm packages) to Git source, LF-pinned with .gitattributes; removed temporary read-only lockfile log exporter; enforced npm ci/Cargo --locked source graph and hash checks. No signed/installed release approval.
+
+- **P06 commercial-license obligations audit (Nov 7):** Recorded five actual MPL-2.0 crates and two multi-licensed `r-efi` versions, requiring explicit legal/notice review without incorrectly treating an LGPL `OR` choice as mandatory. Exact-name/version metadata frozen into hostile review gate; no license or release approval inferred.
 
 - **P05 native WO9 upstream receipt verification repair (Nov 7):** Inspected exact-head Win/Linux failure receipts: WO9 Windows repeated upstream source fetch; WO9 Linux omitted it. Corrected both actual packaging jobs, added complete CI wiring regressions across six E2/WO8/WO9 jobs; real installed UI acceptance remains open.
+
+- **P06 source governance begins (Nov 7):** New P06 branch stacked on P05 draft; independent Win/Linux actual resolved dependency graph CI with npm/Cargo lock hashes, original upstream license archive and source SHA receipts; default-deny six-phase OS/security/release acceptance matrix and hostile tests. No committed lockfile/independent signer/legal review or installed release approval claimed. GitHub rulesets returned empty but protection endpoint forbidden; repository permissions not inferred.
 
 - **P05 complete unsigned verification artifact license reach (Nov 7):** Extended exact upstream full-text fetch+hashed receipt/actual-package hash to both E2 Windows, WO8 Win/Linux and WO9 Win/Linux package builds. Repaired all corresponding CLI 2.12 pins; preserved exact older workflow blob identities, native installed tests and no-release policy.
 

@@ -93,6 +93,45 @@ class NativeUpgradeTests(unittest.TestCase):
                 finally:
                     fixture.temp.cleanup()
 
+    def test_actual_process_death_during_rollback_resumes_on_recover(self):
+        for point in ("after_rollback_journal","after_reject_rename",
+                      "after_restore_previous"):
+            with self.subTest(point=point):
+                fixture=NativeUpgradeTests("runTest")
+                fixture.setUp()
+                try:
+                    self.assertEqual(fixture.invoke("upgrade").returncode,0)
+                    self.assertEqual(fixture.sha(fixture.root/"current/app.bin"),fixture.new_sha)
+                    killed=fixture.invoke("rollback",point)
+                    self.assertEqual(killed.returncode,73,(point,killed.stderr))
+                    self.assertEqual(read_journal(fixture.root)["state"],"rolling_back")
+                    fixture.preserved(fixture.old_sha) if point=="after_restore_previous" else self.assertEqual(
+                        fixture.sha(fixture.root/"user-state/projects.json"),fixture.user_sha)
+                    completed=fixture.invoke("recover")
+                    self.assertEqual(completed.returncode,0,(point,completed.stdout,completed.stderr))
+                    fixture.preserved(fixture.old_sha)
+                    self.assertEqual(read_journal(fixture.root)["state"],"rolled_back")
+                    self.assertEqual(fixture.invoke("recover").returncode,0)
+                    self.assertNotEqual(fixture.invoke("upgrade").returncode,0)
+                finally:
+                    fixture.temp.cleanup()
+
+    def test_rollback_never_runs_with_active_or_unreconciled_workers(self):
+        self.assertEqual(self.invoke("upgrade").returncode,0)
+        (self.root/"workers.json").write_text(
+            json.dumps({"activeWorkers":1,"allReconciled":False,"osTreeEmpty":False}))
+        attempt=self.invoke("rollback","after_rollback_journal")
+        self.assertEqual(attempt.returncode,2)
+        self.assertIn("workers_not_quiescent_for_upgrade",attempt.stderr)
+        self.assertEqual(read_journal(self.root)["state"],"committed")
+        self.preserved(self.new_sha)
+
+    def test_normal_recover_denies_injected_rollback_fault(self):
+        result=self.invoke("recover","after_restore_previous")
+        self.assertEqual(result.returncode,2)
+        self.assertIn("recovery_never_accepts_failure_injection",result.stderr)
+        self.preserved(self.old_sha)
+
     def test_crash_after_durable_commit_never_silently_reverts_success(self):
         self.assertEqual(self.invoke("upgrade","after_commit").returncode,73)
         self.assertEqual(self.invoke("recover").returncode,0)

@@ -39,9 +39,17 @@ jobs:
         working-directory: ide/app
         shell: pwsh
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-          cargo fetch --manifest-path src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows dependency graph drift' }
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows npm locked reinstall failure' }
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows Cargo locked fetch failure' }
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows post-lock drift' }
           python ../packaging/verify_tauri_minor.py --repo-root ../..
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: transitive Tauri runtime mismatch' }
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
@@ -146,9 +154,13 @@ jobs:
       - name: Native installed Linux source and frontend checks
         working-directory: ide/app
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-          cargo fetch --manifest-path src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          npm ci --ignore-scripts --no-audit --no-fund
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
           python ../packaging/verify_tauri_minor.py --repo-root ../..
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
           python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json

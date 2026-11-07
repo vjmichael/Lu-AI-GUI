@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from upstream_notice_receipt import SOURCES
 import re
 import sys
 
@@ -82,7 +83,10 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
             raise Denied("untrusted_upstream_fetch_receipt")
         compared={r.get("name"):r for r in records if isinstance(r, dict)}
         if len(compared)!=6 or any(
-                compared.get(Path(row["path"]).name, {}).get("bundledSourceSha256") != row["sha256"]
+                (compared.get(Path(row["path"]).name, {}).get("bundledSourceSha256") != row["sha256"]
+                    or compared.get(Path(row["path"]).name, {}).get("sourceRevision") != row["sourceRevision"]
+                    or row.get("sourceRevision") != SOURCES[Path(row["path"]).name][0]
+                    or compared.get(Path(row["path"]).name, {}).get("sourceUrl") != SOURCES[Path(row["path"]).name][1])
                 for row in upstream):
             raise Denied("upstream_fetch_notice_mismatch")
         expected.add("upstream-fetch.json")
@@ -120,6 +124,51 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
             if not isinstance(item,dict):
                 raise Denied("invalid_resolved_package_notice")
             validate_mark(item,"resolved/"+row["manager"]+"/")
+            if row.get("manager")=="cargo":
+                from collect_verification_licenses import CURATED_MISSING_NOTICES,git_blob_sha
+                policy=CURATED_MISSING_NOTICES.get(
+                    str(row.get("name"))+":"+str(row.get("version")))
+                if policy and item.get("upstreamSource") is not None:
+                    allowed={entry["url"]:entry for entry in policy["files"]}
+                    proof=allowed.get(item.get("upstreamSource"))
+                    if (row.get("declaredLicense")!=policy["declaredLicense"]
+                            or proof is None
+                            or item.get("upstreamGitBlobSha")!=proof["blobSha"]
+                            or item.get("originalName")!=proof["originalName"]
+                            or git_blob_sha(safe_file(root,item["path"]).read_bytes())!=proof["blobSha"]):
+                        raise Denied("curated_exact_upstream_notice_receipt_mismatch")
+                    if row.get("name")=="selectors" and row.get("version")=="0.38.0":
+                        if (item.get("canonicalTermsNotPackageOriginal") is not True
+                            or item.get("coveredFileSourceReviewRequired") is not True
+                            or item.get("sourceCrateChecksumSha256")!=
+                                "8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d"):
+                            raise Denied("selectors_mpl_covered_file_review_cannot_be_waived")
+            if (row.get("manager")=="cargo" and row.get("name")=="r-efi"
+                    and item.get("originalName")=="AUTHORS"):
+                from collect_verification_licenses import R_EFI_AUTHOR_GIT_BLOBS,R_EFI_LICENSE,git_blob_sha
+                version=row.get("version")
+                pinned=R_EFI_AUTHOR_GIT_BLOBS.get(version)
+                if (pinned is None or row.get("declaredLicense")!=R_EFI_LICENSE
+                        or item.get("upstreamGitBlobSha")!=pinned
+                        or item.get("upstreamSource")!=
+                            "https://raw.githubusercontent.com/r-efi/r-efi/v"+version+"/AUTHORS"
+                        or git_blob_sha(safe_file(root,item["path"]).read_bytes())!=pinned):
+                    raise Denied("r_efi_original_license_notice_provenance_mismatch")
+    # When original full texts are staged for a reviewed exact package, require
+    # ALL options: a single borrowed license file is not an acceptable record.
+    from collect_verification_licenses import CURATED_MISSING_NOTICES
+    for row in rows:
+        if row.get("manager")!="cargo":
+            continue
+        rule=CURATED_MISSING_NOTICES.get(str(row.get("name"))+":"+str(row.get("version")))
+        if not rule:
+            continue
+        candidates=[item for item in row["notices"]
+                    if item.get("upstreamSource") is not None]
+        if candidates:
+            expected_urls={entry["url"] for entry in rule["files"]}
+            if {item["upstreamSource"] for item in candidates}!=expected_urls or len(candidates)!=len(expected_urls):
+                raise Denied("incomplete_curated_original_notice_set")
     actual=set()
     for folder,dirs,files in os.walk(root,followlinks=False):
         for d in dirs:

@@ -1,0 +1,271 @@
+{
+  "schema": "lu.ide.p06.known-license-risk.v1",
+  "originExactSourceSha": "7310eb1465dfe26fc0aee6b9b450113d1463ad69",
+  "allRequireIndependentReview": true,
+  "releaseApproved": false,
+  "expectedRiskPackages": [
+    {
+      "manager": "cargo",
+      "name": "cssparser",
+      "version": "0.37.0",
+      "declaredLicense": "MPL-2.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "cssparser-macros",
+      "version": "0.7.1",
+      "declaredLicense": "MPL-2.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "dtoa-short",
+      "version": "0.3.5",
+      "declaredLicense": "MPL-2.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "option-ext",
+      "version": "0.2.0",
+      "declaredLicense": "MPL-2.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "r-efi",
+      "version": "5.3.0",
+      "declaredLicense": "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+    },
+    {
+      "manager": "cargo",
+      "name": "r-efi",
+      "version": "6.0.0",
+      "declaredLicense": "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+    },
+    {
+      "manager": "cargo",
+      "name": "selectors",
+      "version": "0.38.0",
+      "declaredLicense": "MPL-2.0"
+    }
+  ],
+  "expectedEmbeddedCompilerPackages": [
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-aarch_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-ppcle_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-s390_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-x86_32",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-x86_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-macos-aarch_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-macos-x86_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-win32",
+      "version": "3.3.0"
+    }
+  ],
+  "expectedAppleSdkPackages": [
+    {
+      "name": "block2",
+      "version": "0.6.2",
+      "tag": "block2-0.6.2",
+      "declared": "MIT"
+    },
+    {
+      "name": "dispatch2",
+      "version": "0.3.1",
+      "tag": "dispatch2-0.3.1",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2",
+      "version": "0.6.5",
+      "tag": "objc2-0.6.5",
+      "declared": "MIT"
+    },
+    {
+      "name": "objc2-encode",
+      "version": "4.1.0",
+      "tag": "objc2-encode-4.1.0",
+      "declared": "MIT"
+    },
+    {
+      "name": "objc2-exception-helper",
+      "version": "0.1.1",
+      "tag": "objc2-exception-helper-0.1.1",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-app-kit",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-cloud-kit",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-core-data",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-core-foundation",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-core-graphics",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-core-image",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-core-location",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-core-text",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-foundation",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "MIT"
+    },
+    {
+      "name": "objc2-io-surface",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-quartz-core",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-ui-kit",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-user-notifications",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "name": "objc2-web-kit",
+      "version": "0.3.2",
+      "tag": "frameworks-0.3.2",
+      "declared": "Zlib OR Apache-2.0 OR MIT"
+    }
+  ],
+  "expectedExternalNativePackages": [
+    {
+      "name": "libappindicator-sys",
+      "version": "0.9.0",
+      "tag": "libappindicator-sys-v0.9.0",
+      "declared": "Apache-2.0 OR MIT"
+    },
+    {
+      "name": "jni-sys-macros",
+      "version": "0.4.1",
+      "tag": "v0.4.1-macros",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "ndk-context",
+      "version": "0.1.1",
+      "tag": "ndk-context-0.1.1",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "ndk-sys",
+      "version": "0.6.0+11769913",
+      "tag": "ndk-sys-0.6.0",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "ndk",
+      "version": "0.9.0",
+      "tag": "ndk-0.9.0",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "winapi-i686-pc-windows-gnu",
+      "version": "0.4.0",
+      "tag": "0.3.9",
+      "declared": "MIT/Apache-2.0"
+    },
+    {
+      "name": "winapi-x86_64-pc-windows-gnu",
+      "version": "0.4.0",
+      "tag": "0.3.9",
+      "declared": "MIT/Apache-2.0"
+    }
+  ],
+  "expectedWebviewBindingPackages": [
+    {
+      "name": "webview2-com",
+      "version": "0.39.1"
+    },
+    {
+      "name": "webview2-com-sys",
+      "version": "0.39.1"
+    },
+    {
+      "name": "webview2-com-macros",
+      "version": "0.8.1"
+    }
+  ]
+}

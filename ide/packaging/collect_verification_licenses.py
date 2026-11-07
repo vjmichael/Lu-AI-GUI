@@ -27,9 +27,9 @@ UPSTREAM = {
     "LLVM-18.1.8-LICENSE.txt": "llvmorg-18.1.8",
     "Python-3.10.11-LICENSE.txt": "v3.10.11",
     "Tauri-LICENSE-MIT.txt": "tauri-v2.12.5",
-    "Tauri-LICENSE-APACHE-2.0.txt": "tauri-2e23492ab9bcec06bab041e0e47447aaa0da298c",
-    "CodeMirror-6-LICENSE-MIT.txt": "codemirror-view-6.0.0",
-    "esbuild-0.25.9-LICENSE-MIT.txt": "esbuild-v0.25.9",
+    "Tauri-LICENSE-APACHE-2.0.txt": "tauri-v2.12.5",
+    "CodeMirror-6-LICENSE-MIT.txt": "6.0.0",
+    "esbuild-0.25.9-LICENSE-MIT.txt": "v0.25.9",
 }
 SHA40 = re.compile(r"^[0-9a-f]{40}$", re.I)
 
@@ -55,6 +55,168 @@ def files_for(root):
         if LICENSE_RE.fullmatch(child.name) and 0<child.stat().st_size<=MAX_TEXT:
             out.append(child)
     return out[:16]
+
+# r-efi's exact released original licensing/copyright notice is AUTHORS,
+# not LICENSE.*. Compare the actual Cargo-locked .crate AUTHORS file with the
+# pinned upstream release bytes and their Git source blob identities. A
+# different version, expression, missing file or changed copyright never
+# inherits an MIT notice. This retrieves documentary evidence, not a legal
+# election of MIT/Apache/LGPL and not an acceptance of binary shipment.
+R_EFI_AUTHOR_GIT_BLOBS = {
+    "5.3.0": "7397b2bd6a8580d51fe7b23783f8f1a05fa70291",
+    "6.0.0": "79c8b7c4a1dabcfbc718b7fe6d43b1892f9850cd",
+}
+R_EFI_LICENSE = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+
+def git_blob_sha(content):
+    return hashlib.sha1(b"blob " + str(len(content)).encode() + bytes([0]) + content).hexdigest()
+
+def verified_r_efi_authors(manager, name, version, declared, folder, repo_root):
+    if manager != "cargo" or name != "r-efi" or version not in R_EFI_AUTHOR_GIT_BLOBS:
+        return None
+    if declared != R_EFI_LICENSE:
+        raise Denied("r_efi_exact_license_expression_changed")
+    local = folder / "AUTHORS"
+    reviewed = repo_root / "ide/packaging/upstream-crate-notices" / ("r-efi-"+version+"-AUTHORS.txt")
+    if not local.exists():
+        return None
+    for candidate in (local,reviewed):
+        if (candidate.is_symlink() or not candidate.is_file()
+                or not 100 <= candidate.stat().st_size <= MAX_TEXT):
+            raise Denied("untrusted_r_efi_original_authors")
+        data = candidate.read_bytes()
+        if git_blob_sha(data) != R_EFI_AUTHOR_GIT_BLOBS[version]:
+            raise Denied("r_efi_source_notice_differs_from_exact_upstream_tag")
+    if local.read_bytes() != reviewed.read_bytes():
+        raise Denied("r_efi_crate_notice_differs_from_reviewed_source")
+    return local
+
+# These ONLY cover exact package versions from reviewed upstream release tags.
+# The canonical original license is archived verbatim in this repository.
+# No SPDX declaration alone can substitute for byte-proven provenance.
+CURATED_MISSING_NOTICES = {
+    "alloc-stdlib:0.3.0": {
+        "declaredLicense": "BSD-3-Clause",
+        "files": [
+            {
+                "checkedIn": "ide/packaging/upstream-crate-notices/alloc-stdlib-0.3.0-LICENSE.txt",
+                "originalName": "LICENSE",
+                "url": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/0.3.0/LICENSE",
+                "blobSha": "cd496ba72eb37e83a44958358d1f89a8a28cbc15"
+            }
+        ]
+    },
+    "tauri-plugin:2.7.2": {
+        "declaredLicense": "Apache-2.0 OR MIT",
+        "files": [
+            {
+                "checkedIn": "ide/packaging/upstream-crate-notices/tauri-plugin-2.7.2-LICENSE-MIT.txt",
+                "originalName": "LICENSE-MIT",
+                "url": "https://raw.githubusercontent.com/tauri-apps/tauri/tauri-plugin-v2.7.2/LICENSE-MIT",
+                "blobSha": "b08530d59433b3060f4fad8751ac2610c0b0aff3"
+            },
+            {
+                "checkedIn": "ide/packaging/upstream-crate-notices/tauri-plugin-2.7.2-LICENSE-APACHE-2.0.txt",
+                "originalName": "LICENSE-APACHE-2.0",
+                "url": "https://raw.githubusercontent.com/tauri-apps/tauri/tauri-plugin-v2.7.2/LICENSE-APACHE-2.0",
+                "blobSha": "f433b1a53f5b830a205fd2df78e2b34974656c7b"
+            }
+        ]
+    }
+}
+
+# MIT applies to the Rust crates; it is NOT evidence of legal status of
+# the bundled Google-built protoc executable. A separate binary review stays
+# required even if the complete original crate LICENSE.txt is recovered.
+PROTOC_UPSTREAM_FAMILY = (["protoc-bin-vendored","protoc-bin-vendored-linux-aarch_64","protoc-bin-vendored-linux-ppcle_64","protoc-bin-vendored-linux-s390_64","protoc-bin-vendored-linux-x86_32","protoc-bin-vendored-linux-x86_64","protoc-bin-vendored-macos-aarch_64","protoc-bin-vendored-macos-x86_64","protoc-bin-vendored-win32"])
+PROTOC_ORIGINAL_LICENSE = {"checkedIn":"ide/packaging/upstream-crate-notices/protoc-bin-vendored-3.3.0-LICENSE.txt","originalName":"LICENSE.txt","url":"https://raw.githubusercontent.com/stepancheg/rust-protoc-bin-vendored/v3.3.0/LICENSE.txt","blobSha":"acce6396f3cd1990471e8415ddf190780fa255b5"}
+for _protoc_name in PROTOC_UPSTREAM_FAMILY:
+    if _protoc_name+":3.3.0" in CURATED_MISSING_NOTICES:
+        raise Denied("duplicate_protoc_notice_rule")
+    CURATED_MISSING_NOTICES[_protoc_name+":3.3.0"] = {
+        "declaredLicense":"MIT",
+        "files":[PROTOC_ORIGINAL_LICENSE],
+    }
+
+
+# MIT original for three exact Rust bindings; NOT Microsoft WebView2 runtime rights.
+WEBVIEW_ORIGINAL_LICENSE = {"checkedIn":"ide/packaging/upstream-crate-notices/webview2-rs-0.39.1-LICENSE.txt","originalName":"LICENSE","url":"https://raw.githubusercontent.com/wravery/webview2-rs/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE","blobSha":"de9a7e660e173136b351982a34f715af424ff812"}
+WEBVIEW_EXACT_CRATES = [["webview2-com","0.39.1"],["webview2-com-sys","0.39.1"],["webview2-com-macros","0.8.1"]]
+for _name,_version in WEBVIEW_EXACT_CRATES:
+    _key=_name+":"+_version
+    if _key in CURATED_MISSING_NOTICES:
+        raise Denied("duplicate_webview_original_notice")
+    CURATED_MISSING_NOTICES[_key]={"declaredLicense":"MIT","files":[WEBVIEW_ORIGINAL_LICENSE]}
+
+# Original upstream licensing policy, NOT complete terms or Apple SDK rights.
+OBJC2_UPSTREAM_POLICY = [{"name":"block2","version":"0.6.2","declared":"MIT","tag":"block2-0.6.2"},{"name":"dispatch2","version":"0.3.1","declared":"Zlib OR Apache-2.0 OR MIT","tag":"dispatch2-0.3.1"},{"name":"objc2","version":"0.6.5","declared":"MIT","tag":"objc2-0.6.5"},{"name":"objc2-encode","version":"4.1.0","declared":"MIT","tag":"objc2-encode-4.1.0"},{"name":"objc2-exception-helper","version":"0.1.1","declared":"Zlib OR Apache-2.0 OR MIT","tag":"objc2-exception-helper-0.1.1"},{"name":"objc2-app-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-cloud-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-data","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-foundation","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-graphics","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-image","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-location","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-text","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-foundation","version":"0.3.2","declared":"MIT","tag":"frameworks-0.3.2"},{"name":"objc2-io-surface","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-quartz-core","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-ui-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-user-notifications","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-web-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"}]
+for _rule in OBJC2_UPSTREAM_POLICY:
+    _key=_rule["name"]+":"+_rule["version"]
+    if _key in CURATED_MISSING_NOTICES:
+        raise Denied("duplicate_objc2_rule")
+    CURATED_MISSING_NOTICES[_key]={
+        "declaredLicense":_rule["declared"],
+        "files":[{
+            "checkedIn":"ide/packaging/upstream-crate-notices/objc2-family-LICENSE.md",
+            "originalName":"LICENSE.md",
+            "url":"https://raw.githubusercontent.com/madsmtm/objc2/"+_rule["tag"]+"/LICENSE.md",
+            "blobSha":"540ae4c81adb5f64a9f61e222b688880da24300e"}],
+    }
+
+# Exact upstream Rust texts do not grant external native SDK or system lib rights.
+EXTERNAL_NATIVE_SDK_SOURCE_RULES = [{"name":"libappindicator-sys","version":"0.9.0","declared":"Apache-2.0 OR MIT","tag":"libappindicator-sys-v0.9.0","external":"Linux system libappindicator shared library","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/libappindicator-sys-0.9.0-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/libappindicator-sys-v0.9.0/LICENSE-MIT","blobSha":"50e79e21ccd1454f00695108ae01eaff9569689a"},{"checkedIn":"ide/packaging/upstream-crate-notices/libappindicator-sys-0.9.0-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/libappindicator-sys-v0.9.0/LICENSE-APACHE","blobSha":"16fe87b06e802f094b3fbb0894b137bca2b16ef1"}]},{"name":"jni-sys-macros","version":"0.4.1","declared":"MIT OR Apache-2.0","tag":"v0.4.1-macros","external":"Java JNI native interface","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/jni-sys-macros-0.4.1-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/jni-rs/jni-sys/v0.4.1-macros/LICENSE-MIT","blobSha":"2008402b8a1299cf118ea38e02116bfcc72e53c3"},{"checkedIn":"ide/packaging/upstream-crate-notices/jni-sys-macros-0.4.1-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/jni-rs/jni-sys/v0.4.1-macros/LICENSE-APACHE","blobSha":"8f71f43fee3f78649d238238cbde51e6d7055c82"}]},{"name":"ndk-context","version":"0.1.1","declared":"MIT OR Apache-2.0","tag":"ndk-context-0.1.1","external":"Android NDK API integration","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/rust-mobile/ndk/ndk-context-0.1.1/LICENSE-MIT","blobSha":"9cf106272ac3b56b0c4c80218e8fc10a664ca5f4"},{"checkedIn":"ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/rust-mobile/ndk/ndk-context-0.1.1/LICENSE-APACHE","blobSha":"261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64"}]},{"name":"ndk-sys","version":"0.6.0+11769913","declared":"MIT OR Apache-2.0","tag":"ndk-sys-0.6.0","external":"Android NDK API integration","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/rust-mobile/ndk/ndk-sys-0.6.0/LICENSE-MIT","blobSha":"9cf106272ac3b56b0c4c80218e8fc10a664ca5f4"},{"checkedIn":"ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/rust-mobile/ndk/ndk-sys-0.6.0/LICENSE-APACHE","blobSha":"261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64"}]},{"name":"ndk","version":"0.9.0","declared":"MIT OR Apache-2.0","tag":"ndk-0.9.0","external":"Android NDK API integration","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/rust-mobile/ndk/ndk-0.9.0/LICENSE-MIT","blobSha":"9cf106272ac3b56b0c4c80218e8fc10a664ca5f4"},{"checkedIn":"ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/rust-mobile/ndk/ndk-0.9.0/LICENSE-APACHE","blobSha":"261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64"}]},{"name":"winapi-i686-pc-windows-gnu","version":"0.4.0","declared":"MIT/Apache-2.0","tag":"0.3.9","external":"Windows GNU import libraries","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/winapi-gnu-0.4.0-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/retep998/winapi-rs/0.3.9/LICENSE-MIT","blobSha":"6f1b4c850cd2bd0d165f122c0274afc95e10a851"},{"checkedIn":"ide/packaging/upstream-crate-notices/winapi-gnu-0.4.0-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/retep998/winapi-rs/0.3.9/LICENSE-APACHE","blobSha":"8dada3edaf50dbc082c9a125058f25def75e625a"}]},{"name":"winapi-x86_64-pc-windows-gnu","version":"0.4.0","declared":"MIT/Apache-2.0","tag":"0.3.9","external":"Windows GNU import libraries","files":[{"checkedIn":"ide/packaging/upstream-crate-notices/winapi-gnu-0.4.0-LICENSE-MIT.txt","originalName":"LICENSE-MIT","url":"https://raw.githubusercontent.com/retep998/winapi-rs/0.3.9/LICENSE-MIT","blobSha":"6f1b4c850cd2bd0d165f122c0274afc95e10a851"},{"checkedIn":"ide/packaging/upstream-crate-notices/winapi-gnu-0.4.0-LICENSE-APACHE.txt","originalName":"LICENSE-APACHE","url":"https://raw.githubusercontent.com/retep998/winapi-rs/0.3.9/LICENSE-APACHE","blobSha":"8dada3edaf50dbc082c9a125058f25def75e625a"}]}]
+for _r in EXTERNAL_NATIVE_SDK_SOURCE_RULES:
+    _key=_r['name']+':'+_r['version']
+    if _key in CURATED_MISSING_NOTICES:
+        raise Denied('duplicate_external_sdk_notice')
+    CURATED_MISSING_NOTICES[_key]={'declaredLicense':_r['declared'],'files':_r['files']}
+
+# Exact immutable historical upstream commit at which both manifests match:
+# dlopen2 0.8.2, dlopen2_derive 0.4.3, MIT original licensed copyright.
+DLOPEN_PINNED_UPSTREAM=[
+    ("dlopen2","0.8.2"),("dlopen2_derive","0.4.3")]
+for _dl_name,_dl_version in DLOPEN_PINNED_UPSTREAM:
+    _key=_dl_name+":"+_dl_version
+    if _key in CURATED_MISSING_NOTICES:raise Denied("duplicate_dlopen_original")
+    CURATED_MISSING_NOTICES[_key]={"declaredLicense":"MIT","files":[{
+        "checkedIn":"ide/packaging/upstream-crate-notices/dlopen2-0.8.2-derive-0.4.3-LICENSE.txt",
+        "originalName":"LICENSE",
+        "url":"https://raw.githubusercontent.com/OpenByteDev/dlopen2/db4a7c6b0a08804ddb793be335011d55c04d7e05/LICENSE",
+        "blobSha":"d38093a7a564c64ad15e459f2e0a1f86a443c8b3"}]}
+
+# Canonical FULL MPL-2.0 legal terms, NOT an original selectors .crate file.
+# Cargo.lock pins selectors 0.38.0 checksum
+# 8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d.
+# File-level covered source, modifications and actual binary shipment need
+# independent review. Keep all MPL special risk records explicitly open.
+SELECTORS_CANONICAL_MPL_TERMS={
+    "checkedIn":"ide/packaging/upstream-crate-notices/selectors-0.38.0-SPDX-MPL-2.0-full-terms.txt",
+    "originalName":"canonical-SPDX-MPL-2.0-full-terms.txt",
+    "url":"https://raw.githubusercontent.com/spdx/license-list-data/v3.28.0/text/MPL-2.0.txt",
+    "blobSha":"ee6256cdb62a765749a71aae3abea32884301cd1"}
+if "selectors:0.38.0" in CURATED_MISSING_NOTICES:
+    raise Denied("duplicate_selectors_canonical_notice")
+CURATED_MISSING_NOTICES["selectors:0.38.0"]={
+    "declaredLicense":"MPL-2.0","files":[SELECTORS_CANONICAL_MPL_TERMS]}
+
+def verified_curated_notices(repo_root,manager,name,version,declared):
+    if manager != "cargo":
+        return []
+    rule = CURATED_MISSING_NOTICES.get(name + ":" + version)
+    if rule is None:
+        return []
+    if declared != rule["declaredLicense"]:
+        raise Denied("curated_notice_exact_license_expression_drift")
+    originals=[]
+    for item in rule["files"]:
+        file=repo_root/item["checkedIn"]
+        if (file.is_symlink() or not file.is_file()
+                or not 100 <= file.stat().st_size <= MAX_TEXT):
+            raise Denied("missing_or_unsafe_curated_source_notice")
+        if git_blob_sha(file.read_bytes()) != item["blobSha"]:
+            raise Denied("curated_notice_differs_from_exact_original_release")
+        originals.append((file,item))
+    return originals
 
 def npm_packages(root):
     node=root/"ide"/"app"/"node_modules"
@@ -169,6 +331,7 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                 item = verified[name]
                 source_rev, source_url = SOURCES[name]
                 if (item.get("sourceRevision") != source_rev
+                        or row.get("sourceRevision") != source_rev
                         or item.get("sourceUrl") != source_url
                         or item.get("matchesUpstream") is not True
                         or item.get("bundledSourceSha256") != row["sha256"]
@@ -182,6 +345,15 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
         results=[]
         for index,(manager,name,version,declared,folder) in enumerate(sorted_rows):
             files=files_for(folder)
+            curated={}
+            if not files:
+                for original,origin in verified_curated_notices(
+                        repo_root,manager,name,version,declared):
+                    files.append(original)
+                    curated[original]=origin
+            authors=verified_r_efi_authors(manager,name,version,declared,folder,repo_root)
+            if authors is not None and authors not in files:
+                files.append(authors)
             notices=[]
             for no,src in enumerate(files):
                 if b"\x00" in src.read_bytes()[:4096]:
@@ -190,8 +362,43 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                 target=stage/relative
                 target.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copyfile(src,target,follow_symlinks=False)
+                notice={"path":relative,"sha256":digest(target),
+                                "originalName":src.name}
+                if src in curated:
+                    origin=curated[src]
+                    notice["originalName"]=origin["originalName"]
+                    notice["upstreamSource"]=origin["url"]
+                    notice["upstreamGitBlobSha"]=origin["blobSha"]
+                    if manager=="cargo" and name=="selectors" and version=="0.38.0":
+                        notice["canonicalTermsNotPackageOriginal"]=True
+                        notice["coveredFileSourceReviewRequired"]=True
+                        notice["sourceCrateChecksumSha256"]="8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d"
+                    for _r in EXTERNAL_NATIVE_SDK_SOURCE_RULES:
+                        if name==_r['name'] and version==_r['version']:
+                            notice['externalNativeBinaryReviewRequired']=True
+                            notice['externalNativeDependency']=_r['external']
+                    if any(r["name"]==name and r["version"]==version for r in OBJC2_UPSTREAM_POLICY):
+                        notice["upstreamLegalTextCompleteness"]="policy_links_external_full_terms"
+                        notice["appleSdkDerivativeReviewRequired"]=True
+                if src.name=="AUTHORS" and manager=="cargo" and name=="r-efi" and version in R_EFI_AUTHOR_GIT_BLOBS:
+                    notice["upstreamSource"]="https://raw.githubusercontent.com/r-efi/r-efi/v"+version+"/AUTHORS"
+                    notice["upstreamGitBlobSha"]=R_EFI_AUTHOR_GIT_BLOBS[version]
+                notices.append(notice)
+            # The platform package @esbuild/<target> is built from the exact
+            # esbuild source release, but its npm tarball has no LICENSE file.
+            # Reuse only the verified, pinned upstream MIT text for that same
+            # esbuild version. Never borrow it for other packages or versions.
+            if (not notices and retrieval is not None and manager=="npm"
+                    and name in {"@esbuild/linux-x64","@esbuild/win32-x64"}
+                    and version=="0.25.9" and declared=="MIT"):
+                reviewed=upstream_dir/"esbuild-0.25.9-LICENSE-MIT.txt"
+                relative=f"resolved/npm/{index:04d}-00.txt"
+                target=stage/relative
+                target.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(reviewed,target,follow_symlinks=False)
                 notices.append({"path":relative,"sha256":digest(target),
-                                "originalName":src.name})
+                                "originalName":"verified-esbuild-v0.25.9-upstream-LICENSE.md",
+                                "upstreamSource":SOURCES["esbuild-0.25.9-LICENSE-MIT.txt"][1]})
             license_id=declared if isinstance(declared,str) and declared.strip() else None
             # The package name/metadata is evidence of resolution, not a legal
             # clearance. Missing text or identifier blocks complete status.
