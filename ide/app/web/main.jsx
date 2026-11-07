@@ -31,6 +31,9 @@ const taskGateChoices = [
 function App() {
   const [section, setSection] = useState('projects');
   const [projects, setProjects] = useState([]);
+  const [workflowSteps, setWorkflowSteps] = useState([]);
+  const [workflowRuns, setWorkflowRuns] = useState([]);
+  const [workflowRunBusy, setWorkflowRunBusy] = useState(false);
   const [gitReviewPath, setGitReviewPath] = useState('');
   const [gitReview, setGitReview] = useState(null);
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
@@ -506,6 +509,72 @@ function App() {
       }
     } catch (error) { setProblem('Native Git commit denied: ' + String(error)); }
     finally { setGitWriteBusy(false); void refreshGitStatus(); }
+  }
+
+  function addWorkflowStep() {
+    if (!workflowInspection?.readyForReview || workflowSteps.length >= 12) return;
+    const choices = workflowInspection.projects;
+    if (!choices.length) return;
+    setWorkflowSteps(before => [...before, {
+      projectId: choices[0].projectId, recipeId: 'rust_check',
+      dependsOn: before.length ? [before.length - 1] : [],
+    }]);
+  }
+
+  async function readWorkflowRuns() {
+    try {
+      const runs = await invoke('ide_workflow_list_runs');
+      setWorkflowRuns(Array.isArray(runs) ? runs.slice(-16) : []);
+    } catch (error) { setProblem('Durable workflow status unavailable: ' + String(error)); }
+  }
+
+  async function createDurableWorkflow() {
+    if (!workflowInspection?.readyForReview || !workflowRevalidated ||
+        workflowRunBusy || !workflowSteps.length) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const run = await invoke('ide_workflow_create', {
+        projectIds: workflowInspection.projects.map(item => item.projectId),
+        expectedFingerprint: workflowInspection.fingerprint, steps: workflowSteps,
+      });
+      setWorkflowRuns(prev => [...prev, run].slice(-16));
+      setWorkflowRevalidated(false);
+      setWorkflowSteps([]);
+      setHint('Durable dependency workflow recorded; no worker was started.');
+    } catch (error) { setProblem('Workflow creation denied: ' + String(error)); }
+    finally { setWorkflowRunBusy(false); }
+  }
+
+  async function runDurableStep(run, index) {
+    if (workflowRunBusy) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_workflow_run_step', {
+        workflowId: run.workflowId, step: index,
+      });
+      setWorkflowRuns(prev => prev.map(item =>
+        item.workflowId === updated.workflowId ? updated : item));
+      setHint('Native step returned. Inspect OS receipts and any dependency quarantine.');
+    } catch (error) {
+      setProblem('Protected workflow step was denied or interrupted: ' + String(error));
+      await readWorkflowRuns();
+    } finally { setWorkflowRunBusy(false); }
+  }
+
+  async function cancelDurableStep(run, index) {
+    if (workflowRunBusy) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_workflow_cancel_pending', {
+        workflowId: run.workflowId, step: index,
+      });
+      setWorkflowRuns(prev => prev.map(item =>
+        item.workflowId === updated.workflowId ? updated : item));
+    } catch (error) { setProblem('Cancellation denied: ' + String(error)); }
+    finally { setWorkflowRunBusy(false); }
   }
 
   async function refreshGitStatus() {
@@ -1577,7 +1646,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -1607,7 +1676,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? previewMultiProjectWorkflow() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -1987,6 +2056,93 @@ function App() {
                   Release approval: <strong>Not granted</strong></p>
               </div>}
             </div>}
+            <div className="continuityDocument" aria-label="Durable multi-project dependency workflows">
+              <h3>Durable dependent build/test workflow</h3>
+              <p>Define a sequence of approved offline Cargo steps on the selected projects.
+                The native supervisor requests separate human permission and protected OS
+                admission for every step. No job starts when you create the graph.
+                Crashed and denied jobs block dependents; there is never automatic replay.</p>
+              <button className="ghostBtn" type="button"
+                disabled={!workflowInspection?.readyForReview || workflowSteps.length >= 12}
+                onClick={() => addWorkflowStep()}>Add dependent step</button>
+              {workflowSteps.map((step, index) =>
+                <div className="continuityEvent" key={index}>
+                  <strong>Step {index + 1}</strong>
+                  <label>Project
+                    <select value={step.projectId} disabled={workflowRunBusy}
+                      onChange={event => setWorkflowSteps(previous =>
+                        previous.map((item, i) => i === index ?
+                          {...item, projectId: event.target.value} : item))}>
+                      {workflowInspection?.projects.map(item =>
+                        <option key={item.projectId} value={item.projectId}>
+                          {item.displayName}</option>)}
+                    </select>
+                  </label>
+                  <label>Approved offline recipe
+                    <select value={step.recipeId} disabled={workflowRunBusy}
+                      onChange={event => setWorkflowSteps(previous =>
+                        previous.map((item, i) => i === index ?
+                          {...item, recipeId: event.target.value} : item))}>
+                      <option value="rust_check">Cargo check</option>
+                      <option value="rust_tests">Cargo tests</option>
+                      <option value="lu_ide_host_tests">Lu IDE host tests</option>
+                    </select>
+                  </label>
+                  <fieldset><legend>Requires completed steps</legend>
+                    {workflowSteps.slice(0,index).map((previous, prior) =>
+                      <label key={prior}>
+                        <input type="checkbox" checked={step.dependsOn.includes(prior)}
+                          disabled={workflowRunBusy}
+                          onChange={event => setWorkflowSteps(items =>
+                            items.map((item,i) => i === index ? {...item,
+                              dependsOn: event.target.checked ?
+                                [...item.dependsOn,prior].sort((a,b)=>a-b) :
+                                item.dependsOn.filter(id => id !== prior)} : item))} />
+                        Step {prior + 1}
+                      </label>)}
+                  </fieldset>
+                </div>)}
+              <button className="primaryBtn" type="button"
+                disabled={!workflowRevalidated || workflowRunBusy || !workflowSteps.length}
+                onClick={() => createDurableWorkflow()}>
+                Record exact dependency workflow (no execution)
+              </button>
+              <button className="ghostBtn" type="button"
+                disabled={workflowRunBusy} onClick={() => readWorkflowRuns()}>
+                Refresh durable workflows
+              </button>
+              {workflowRuns.map(run => <article key={run.workflowId}
+                className="continuityEvent">
+                <strong>Workflow <code>{run.workflowId}</code></strong>
+                <p>Frozen evidence: <code>{run.sourceFingerprint}</code></p>
+                <p>Auto-run: disabled · Release approved: no</p>
+                {run.tasks.map((task,index) => {
+                  const ready = task.state === 'pending' &&
+                    task.spec.dependsOn.every(dep => run.tasks[dep]?.state === 'passed') &&
+                    !run.tasks.some(other => ['running','interrupted'].includes(other.state));
+                  return <div className="continuityEvent" key={index}>
+                    <p>Step {index + 1} · {task.spec.recipeId} ·
+                      <strong> {task.state}</strong></p>
+                    <p>Project <code>{task.spec.projectId}</code> ·
+                      Prerequisites: {task.spec.dependsOn.map(dep => dep+1).join(', ') || 'none'}</p>
+                    {task.nativeJobId && <p>Native job <code>{task.nativeJobId}</code> ·
+                      Output <code>{task.nativeOutputSha256 || 'unverified'}</code></p>}
+                    {task.errorCode && <p role="status">{task.errorCode}</p>}
+                    {ready && <button type="button" className="primaryBtn"
+                      disabled={workflowRunBusy}
+                      onClick={() => runDurableStep(run,index)}>
+                      Request separately approved protected step
+                    </button>}
+                    {task.state === 'pending' && <button type="button" className="ghostBtn"
+                      disabled={workflowRunBusy}
+                      onClick={() => cancelDurableStep(run,index)}>Cancel pending step</button>}
+                    {task.state === 'interrupted' &&
+                      <p role="status">Native OS reconciliation required.
+                        No automatic replay. Use Job requests to inspect exact kernel cleanup.</p>}
+                  </div>;
+                })}
+              </article>)}
+            </div>
           </section>
         : isSource
         ? <section className="workspaceContent continuityWorkspace" aria-label="Read-only source control">
