@@ -296,6 +296,9 @@ impl LinuxLspProcess {
 // Owns nonblocking stdio and the only native child owner, with cgroup as
 // kernel authority. No data path to the WebView and no ambient project mount.
 impl RestrictedLspProcess for LinuxLspProcess {
+    fn trace_native_fault(&mut self, stage: &'static str) {
+        self.trace_dap_native_failure(stage);
+    }
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()> {
         if bytes.is_empty() || bytes.len() > MAX_LSP_WRITE {
             return Err(io::ErrorKind::InvalidInput.into());
