@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3b669a4edec32ff90eac2cc45f5c727408ad5269",
+  "sourceCommitBeforeLock": "785da23784f702e28a36a88186db56cd1c84998a",
   "trackedFileCount": 568,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": "docs/LU_M3_CROSS_CONVERSATION_RECALL_20261107.md",
-      "blob": "f7b536a29b5b31965afb718f833b2e5d31d83162"
+      "blob": "81f84da4e2fa92be88a4378230480a2757ba59a6"
     },
     {
       "path": "docs/LU_M3_SEMANTIC_S1_S4_20261107.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "23ab676d1d364ce1cacdeb7e62b9441ffbb2cce3"
+      "blob": "c66e4fb515e1a7f9682c36533cb83578f096e576"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",

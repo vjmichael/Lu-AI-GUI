@@ -1,3 +1,7 @@
+## M3 requirement correction: originally agreed ANSF staged memory and development continuity — November 7, 2026
+
+The original ANSF/SQLite specification already included a separate navigable history/search pane, cursor-virtualized infinite-looking active transcript, staged short/long/procedural retrieval and a source-referenced operational ledger to prevent repeated NSIS, Windows SDK, MSVC, LLVM and installer dependency discovery between Lu conversations. The M3 prototype has NOT completed these behaviors. They are HIGH-PRIORITY ACCEPTANCE GATES, not new proposals. See the [M3 fidelity correction](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md). Semantic embeddings are optional accelerators, not substitutes for continuity and original-source navigation.
+
 ## M3-S1 / M3-S2 semantic original-book index and hybrid retrieval — November 7, 2026 (SOURCE CANDIDATE; CI PENDING)
 
 Added a rebuildable per-original-ANSF-book vector projection with model-version and source hash checks; bounded exact cosine candidate retrieval; canonical source-ID RRF lexical/semantic fusion; a host-only ChatStore hybrid seam; native synthetic fixture and restart/authority regressions, and Windows/Linux CI jobs. **Not yet** an operational embedding engine or a passed three-arm benchmark. S3 actual local model integration and S4 baseline experiments are still open. See [M3 S1–S4 work ledger](LU_M3_SEMANTIC_S1_S4_20261107.md).
