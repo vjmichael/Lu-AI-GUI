@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO8 C–F source implementation expansion — 2026-11-07 UTC
+
+**Draft branch/PR:** `ide/wo8-installed-e2e-20261107`, [PR #74](https://github.com/vjmichael/Lu-AI-GUI/pull/74) stacked on WO7 PR #73. Added installed **CodeMirror accessible editor**, OS-driven real keyboard review/save with pre-save file hash, explicit process-restart project reopen, real Linux .deb install/X11 window/uninstall, and an **explicit manual** signed WO7-candidate Windows UI native confirmation+Cargo/LLDB acceptance workflow. WO8 source-only syntax and native installed workflows are now separate. A fail-closed `verify_wo8_installed_evidence.py` rejects unsupported releases and skipped/stale/digestless/native-wrong-OS claims; all checked-in evidence is unapproved. See [WO8 ledger](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md).
+
+**Evidence status:** source committed, native exact-head acceptance not yet credited. Real signed candidate not available, Linux full editor and protected features not tested, and Windows installed external-change conflict/cancel/host/service crash recovery remain open. WO7 and WO6 native prerequisites carried forward. Do not mark WO8 release accepted based on parser tests, a running GUI or unsigned NSIS. Physical Windows/user local data not inspected.
+
+
 ### WO8 started — native installed E2E acceptance (2026-11-07 UTC)
 
 **Stack:** `ide/wo8-installed-e2e-20261107` from WO7 PR #73. The next work order is **real installed application behavior**, separate from source-only protocols and WO7 signing. WO7 package, signing, service and evidence source exists but the released installed protected functionality is **not** accepted. WO6 Linux/Windows LLDB native acceptance and reviewed signing material remain OPEN.
