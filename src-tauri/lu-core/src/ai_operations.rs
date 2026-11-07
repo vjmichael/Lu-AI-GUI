@@ -168,17 +168,16 @@ pub fn review_provider_candidate(
 )->Result<(),ProviderReviewError>{
     // Provider cannot be silently inferred from an ambiguous "gf" nickname.
     if c.provider!="hugging_face"{return Err(ProviderReviewError::UnknownProvider)}
-    let mut parts=c.repo_id.split('/');
-    let one=parts.next().unwrap_or("");
-    let two=parts.next().unwrap_or("");
-    if parts.next().is_some()||![one,two].iter().all(|p|
-        !p.is_empty()&&p.len()<=96&&
-        p.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'|b'.')))
-    {return Err(ProviderReviewError::UnsafeRepository)}
+    // The same strict path component rule applies to discovery, review and
+    // P05 handoff. No dot-segments or disguised folder references.
+    if !crate::model_provider_catalog::valid_repo(c.repo_id){
+        return Err(ProviderReviewError::UnsafeRepository)
+    }
     if c.revision.len()!=40||!c.revision.bytes().all(|b|b.is_ascii_hexdigit()){
         return Err(ProviderReviewError::UnpinnedRevision)
     }
     if c.filename.is_empty()||c.filename.len()>200||
+       c.filename.starts_with('.')||c.filename.contains("..")||
        !c.filename.to_ascii_lowercase().ends_with(".gguf")||
        !c.filename.bytes().all(|b|b.is_ascii_alphanumeric()||
            matches!(b,b'-'|b'_'|b'.')){
@@ -293,6 +292,12 @@ mod tests{
         }),Err(ProviderReviewError::UnpinnedRevision));
         assert_eq!(review_provider_candidate(&ProviderCandidate{
             filename:"../escape.gguf",..good.clone()
+        }),Err(ProviderReviewError::UnsafeFilename));
+        assert_eq!(review_provider_candidate(&ProviderCandidate{
+            repo_id:"../other",..good.clone()
+        }),Err(ProviderReviewError::UnsafeRepository));
+        assert_eq!(review_provider_candidate(&ProviderCandidate{
+            filename:"..hidden.gguf",..good.clone()
         }),Err(ProviderReviewError::UnsafeFilename));
         assert_eq!(review_provider_candidate(&ProviderCandidate{
             license_accepted:false,..good.clone()
