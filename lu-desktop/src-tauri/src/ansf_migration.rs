@@ -87,7 +87,7 @@ fn event_identity(session:&str,seq:u64)->String{
 fn type_event(record:LegacyEvent,event_id:String)->Result<Option<LiveEvent>,String>{
     let mut e=LiveEvent{
         event_id,kind:LiveKind::User,text:String::new(),
-        user_turn_id:None,generation_id:None,call_id:None,tool_id:None,
+        user_turn_id:None,legacy_turn_id:None,generation_id:None,call_id:None,tool_id:None,
     };
     match record{
         LegacyEvent::User{text,user_turn_id:_}=>{
