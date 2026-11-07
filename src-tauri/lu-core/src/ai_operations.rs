@@ -192,6 +192,46 @@ pub fn review_provider_candidate(
     if !c.access_approved{return Err(ProviderReviewError::MissingAccessApproval)}
     Ok(())
 }
+/// Metadata-only, non-executable handoff to the future P05 Transfer
+/// Manager. It intentionally cannot enqueue a network job, reserve capacity,
+/// write a destination, or assert a file was downloaded. P05 must independently
+/// revalidate source, redirect, ETag/range, license grant and final SHA/length.
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ReviewedModelTransferIntent{
+    pub provider:String,
+    pub repo_id:String,
+    pub revision:String,
+    pub filename:String,
+    pub sha256:String,
+    pub bytes:u64,
+    pub reported_license:String,
+    pub exact_source_url:String,
+    pub state:&'static str,
+    pub downloaded:bool,
+}
+pub fn make_reviewed_transfer_intent(
+    candidate:&ProviderCandidate<'_>,reported_license:&str
+)->Result<ReviewedModelTransferIntent,ProviderReviewError>{
+    review_provider_candidate(candidate)?;
+    if reported_license.is_empty()||reported_license.len()>80||
+        !reported_license.bytes().all(|b|b.is_ascii_alphanumeric()||
+            matches!(b,b'-'|b'_'|b'.')){
+        return Err(ProviderReviewError::MissingLicenseApproval)
+    }
+    Ok(ReviewedModelTransferIntent{
+        provider:candidate.provider.into(),
+        repo_id:candidate.repo_id.into(),revision:candidate.revision.into(),
+        filename:candidate.filename.into(),sha256:candidate.sha256.to_ascii_lowercase(),
+        bytes:candidate.bytes,reported_license:reported_license.into(),
+        exact_source_url:format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            candidate.repo_id,candidate.revision,candidate.filename,
+        ),
+        state:"awaiting_p05_transfer",downloaded:false,
+    })
+}
+
 /// A capability catalog is optionally bound to the exact current USER turn.
 /// This is a witness only: it cannot be replayed as a policy grant.
 pub fn current_turn_digest(current_user:&str)->Option<String>{
@@ -226,6 +266,21 @@ mod tests{
         assert!(index.retrieve_if_fresh("chat1","session2","source1",&hash,7).is_none());
         assert!(index.retrieve_if_fresh("chat1","session1","source1",&hash,8).is_none());
         assert_eq!(index.len(),0);
+    }
+    #[test] fn reviewed_model_transfer_is_inert_and_pinned(){
+        let candidate=ProviderCandidate{
+            provider:"hugging_face",repo_id:"models/local-gguf",
+            revision:&"a".repeat(40),filename:"model.gguf",
+            sha256:&"b".repeat(64),bytes:8192,
+            license_accepted:true,access_approved:true,
+        };
+        let r=make_reviewed_transfer_intent(&candidate,"apache-2.0").unwrap();
+        assert_eq!(r.state,"awaiting_p05_transfer");
+        assert!(!r.downloaded);
+        assert!(r.exact_source_url.contains("/resolve/"));
+        assert!(make_reviewed_transfer_intent(
+            &ProviderCandidate{access_approved:false,..candidate.clone()},
+            "apache-2.0").is_err());
     }
     #[test] fn provider_review_does_not_accept_name_only_or_mutable_download(){
         let good=ProviderCandidate{provider:"hugging_face",repo_id:"owner/model",
