@@ -1,5 +1,8 @@
 # Lu IDE — standalone development application
 
+> **Current authoritative work tracking (Nov 7, 2026):** [Release Closeout P01–P07](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md). Current phase P01; P07 (Lu Core/DLC bridge) deferred until after Lu Core v1.0. The historical eight-stage design and early R3 notes below are retained as historical design context, **not current implementation or release-acceptance status**. WO9 native installed CI and signed release gates are still open.
+
+
 **Status:** R3.4 Windows smoke accepted; R3.5 candidate adds a native proposal inbox and editor-only approved staging. File saves remain explicit and human-owned; package manager, executable workers and Lu bridge remain disabled.  
 **Repo:** `vjmichael/Lu-AI-GUI` · **IDE-only branch:** `ide/workspace-development`
 
