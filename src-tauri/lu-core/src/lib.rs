@@ -105,6 +105,7 @@ pub mod multimodal_http;
 pub mod multimodal_saved_turn;
 pub mod native_archive_inspect;
 pub mod native_artifact_inspect;
+pub mod native_external_app_action;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
 pub mod native_archive_batch;
