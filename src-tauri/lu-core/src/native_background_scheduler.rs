@@ -750,7 +750,8 @@ mod tests{
     }
     #[test]
     fn p06_guardian_capture_reserves_cpu_ram_without_unverified_gpu_entitlement(){
-        let (queue,_)=fixture();
+        let (_,_,queue)=test_scheduler();
+        let queue=Arc::new(queue);
         let claim=ResourceClaim::capture_one_shot();
         assert_eq!((claim.workers,claim.cpu,claim.ram_mib),(1,1,512));
         assert_eq!((claim.gpu,claim.vram_mib,claim.network),(0,0,0));
