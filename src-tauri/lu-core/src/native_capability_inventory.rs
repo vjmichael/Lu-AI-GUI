@@ -45,18 +45,19 @@ fn effect_label(effect:ToolEffect)->&'static str{
 /// Classification is a reviewed host mapping, NOT model-controlled text.
 /// Unlisted native IDs are unclassified until reviewed; no fourth class exists.
 fn reviewed_meta_class(id:&str)->Option<&'static str>{
-    if id.starts_with("lu.files.")||id.starts_with("lu.inspect.")||
-       id.starts_with("lu.file_discovery.")||id.starts_with("lu.reader.")||
-       id.starts_with("lu.browser.")||id.starts_with("lu.artifact.")||
-       id.starts_with("lu.background_receipt.")||
-       id.starts_with("lu.background_status."){
-        Some("foundational")
-    }else if id.starts_with("lu.archive.")||id.starts_with("lu.git.")||
-       id.starts_with("lu.office.")||id.starts_with("lu.image.")||
-       id.starts_with("lu.csv.")||id.starts_with("lu.research."){
-        Some("utility")
-    }else{
-        None
+    match id{
+        // Exact native tool identities reviewed against their current sources.
+        "lu.files.read_text"|"lu.files.list_directory"|
+        "lu.inspect.stat"|"lu.inspect.search_text"|
+        "lu.file_discovery.discover"|"lu.reader.read"|
+        "lu.artifact.inspect"|"lu.background.status"|
+        "lu.background_receipt.get"|"lu.web.browser.read"|
+        "lu.web.browser.interact"=>Some("foundational"),
+        "lu.archive.list"|"lu.git.status"|"lu.git.log"|
+        "lu.git.diff"=>Some("utility"),
+        // An unreviewed tool remains unclassified rather than being promoted
+        // by merely choosing a familiar module prefix.
+        _=>None
     }
 }
 /// Only exact, *currently permitted* native IDs with a matching installed
@@ -124,5 +125,6 @@ mod classification_tests{
         assert_eq!(reviewed_meta_class("lu.git.diff"),Some("utility"));
         assert_eq!(reviewed_meta_class("lu.archive.list"),Some("utility"));
         assert_eq!(reviewed_meta_class("unreviewed.app.run"),None);
+        assert_eq!(reviewed_meta_class("lu.files.unreviewed_write"),None);
     }
 }
