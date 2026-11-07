@@ -1,3 +1,7 @@
+## P06 durable observation note source and egress metadata
+
+SQLite awareness-note rows now contain `data_origin='observe_learn'` and `network_egress_allowed=0` with database-level CHECK constraints and non-declassifiable defaults. Fresh and old schemas are migrated on open, so old rows inherit the exact same origin and network restriction. The ObserveHost returns the native persisted fields, not a renderer assertion; the separate durable `obs-*` conversation taint still denies all scoped host network calls even if notes are forgotten or expired. This completes native note provenance tagging, **not** every third-party plug-in or external OS process network restriction.
+
 ## P06 Linux admin policy packaged with desktop DEB/RPM
 
 The new `lu-desktop/src-tauri/tauri.linux.conf.json` is the Linux-specific Tauri bundle override: DEB and RPM packages install `org.lu.desktop.observe-learn.policy` in the OS polkit system actions directory without a user-run CLI step. It selects Linux DEB/RPM and drops the Windows-only bundle resources for this packaging configuration. The action uses `auth_admin` only for an **active** local session and refuses inactive/remote authorization by default. Actual OS admin password entry remains owned by the polkit agent. Focused Ubuntu CI now compiles/runs the Linux `/proc` PID/starttime/UID subject test and parses the actual policy and both package mappings. This is packaging **configuration and compilation evidence**, not an installed Linux DEB/RPM/desktop prompt test; actual package build and native auth remains OPEN.

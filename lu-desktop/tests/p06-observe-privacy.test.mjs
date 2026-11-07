@@ -315,3 +315,12 @@ test('P06 Tauri Linux DEB/RPM embeds real admin polkit action and compiles nativ
   assert.match(ci,/rustc --edition=2021 --test lu-desktop\/src-tauri\/src\/observe_linux_auth\.rs/);
   assert.match(ci,/ET\.parse\(policy\)/);
 });
+
+test('P06 durable SQLite awareness rows enforce local-only origin and prevent metadata declassification',()=>{
+  assert.match(tasks,/ALTER TABLE lu_awareness_notes ADD COLUMN data_origin TEXT NOT NULL DEFAULT 'observe_learn'/);
+  assert.match(tasks,/network_egress_allowed INTEGER NOT NULL DEFAULT 0/);
+  assert.match(tasks,/CHECK\(network_egress_allowed=0\)/);
+  assert.match(tasks,/pragma_table_info\('lu_awareness_notes'\)/);
+  assert.match(tasks,/migrated\[0\]\.data_origin/);
+  assert.match(host,/data_origin:n\.data_origin,network_egress_allowed:n\.network_egress_allowed/);
+});

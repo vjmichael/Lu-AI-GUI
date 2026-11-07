@@ -43,7 +43,7 @@ pub(crate) struct ObserveNoteView{
     pub source:String,
     pub priority:String,
     pub created_at:String,
-    pub data_origin:&'static str,
+    pub data_origin:String,
     pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
@@ -510,7 +510,7 @@ impl ObserveHost {
             .into_iter().map(|n|Ok(ObserveNoteView{
                 sequence:n.sequence,kind:n.code,source:n.source,
                 priority:n.priority,created_at:n.created_at,
-                data_origin:"observe_learn",network_egress_allowed:false,
+                data_origin:n.data_origin,network_egress_allowed:n.network_egress_allowed,
             })).collect()
     }
     /// Produces a content-minimized main-model review handoff. No model run,

@@ -122,6 +122,8 @@ pub struct AwarenessNoteRow{
     pub source:String,
     pub priority:String,
     pub created_at:String,
+    pub data_origin:String,
+    pub network_egress_allowed:bool,
 }
 /// Verified non-file output returned from the first-party bounded SHA-256 scanner.
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -255,6 +257,17 @@ impl TaskStore {
                    ON lu_awareness_notes(workspace_id,task_id,sequence);"
             )?;
             tx.commit()?;
+        }
+        // Upgrade legacy and fresh note tables. Defaults label existing
+        // rows and SQLite CHECK clauses prohibit observation declassification.
+        for (name,ddl) in [
+            ("data_origin","ALTER TABLE lu_awareness_notes ADD COLUMN data_origin TEXT NOT NULL DEFAULT 'observe_learn' CHECK(data_origin='observe_learn')"),
+            ("network_egress_allowed","ALTER TABLE lu_awareness_notes ADD COLUMN network_egress_allowed INTEGER NOT NULL DEFAULT 0 CHECK(network_egress_allowed=0)")
+        ]{
+            let count:i64=connection.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('lu_awareness_notes') WHERE name=?1",
+                params![name],|row|row.get(0))?;
+            if count==0{connection.execute_batch(ddl)?;}
         }
         // Native enum-only notes are bounded to seven days. This is a
         // logical SQLite retention limit, not secure erasure of WAL backups.
@@ -737,7 +750,8 @@ impl TaskStore {
         let connection=self.connection.lock()
             .map_err(|_|TaskStoreError::Poisoned)?;
         let mut stmt=connection.prepare(
-            "SELECT task_id,workspace_id,sequence,code,source,priority,created_at
+            "SELECT task_id,workspace_id,sequence,code,source,priority,created_at,
+                    data_origin,network_egress_allowed
              FROM lu_awareness_notes
              WHERE task_id=?1 AND workspace_id=?2
              ORDER BY sequence DESC LIMIT ?3"
@@ -748,6 +762,8 @@ impl TaskStore {
                 sequence:row.get::<_,i64>(2)? as u64,
                 code:row.get(3)?,source:row.get(4)?,
                 priority:row.get(5)?,created_at:row.get(6)?,
+                data_origin:row.get(7)?,
+                network_egress_allowed:row.get::<_,i64>(8)?!=0,
             })
         })?;
         let mut notes=Vec::new();
@@ -1131,6 +1147,9 @@ mod dashboard_tests{
             verified_failure:false};
         store.append_awareness_note("obs-now","c-one",&note).unwrap();
         store.append_awareness_note("obs-other","c-two",&note).unwrap();
+        let migrated=store.awareness_notes("obs-legacy","c-one",8).unwrap();
+        assert_eq!(migrated[0].data_origin,"observe_learn");
+        assert!(!migrated[0].network_egress_allowed);
         assert_eq!(store.awareness_notes("obs-now","c-one",8).unwrap()[0].source,
             "native_runtime");
         assert_eq!(store.delete_awareness_notes_for_workspace("c-one").unwrap(),2);

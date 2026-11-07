@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2f9b85806725112bbfb30bedb425af3ef62219fb",
+  "sourceCommitBeforeLock": "64720d59c96ce6f6b5b8d35a247f4ec1c53564a1",
   "trackedFileCount": 513,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "c66bc93155e75baf2a5d19f636585d69e40441e9"
+      "blob": "daf8cfb043a78003243a519856d1de52300b9810"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "66d67273212d656ed9036848b36568d2e9525ac1"
+      "blob": "b9e4848b701e97ffcbe4ae51b33aba629148718d"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -469,7 +469,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "5a0305d91779e6df3136fedeb3b722ff886f6f2a"
+      "blob": "ce3f22f5c92aea22419852124eda4706c5d8e228"
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_linux_auth.rs",
@@ -641,7 +641,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "295e3c642c39bf75092f9a88b2295577d815f2e1"
+      "blob": "62024fceda93af1c5dfa5172e2fad1b411783402"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -1501,7 +1501,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "150ab4d43a49537851345d7a86fc402efe123e19"
+      "blob": "d48260328a0b65feee15f3079338dc8d76304592"
     },
     {
       "path": "src-tauri/lu-core/src/vision_routing.rs",
