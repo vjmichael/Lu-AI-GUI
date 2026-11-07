@@ -35,6 +35,7 @@ function App() {
   const [workflowInspection, setWorkflowInspection] = useState(null);
   const [workflowRevalidated, setWorkflowRevalidated] = useState(false);
   const [workflowExport, setWorkflowExport] = useState(null);
+  const [workflowBundleExport, setWorkflowBundleExport] = useState(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const workflowRequest = useRef(0);
 
@@ -346,6 +347,7 @@ function App() {
     setWorkflowInspection(null);
     setWorkflowRevalidated(false);
     setWorkflowExport(null);
+    setWorkflowBundleExport(null);
     setWorkflowProjectIds(previous =>
       selected ? [...new Set([...previous, projectId])].slice(0, 8)
         : previous.filter(id => id !== projectId));
@@ -359,6 +361,7 @@ function App() {
     setWorkflowInspection(null);
     setWorkflowRevalidated(false);
     setWorkflowExport(null);
+    setWorkflowBundleExport(null);
     setProblem('');
     try {
       const value = await invoke('ide_workflow_preview', { projectIds: chosen });
@@ -417,6 +420,33 @@ function App() {
       if (serial === workflowRequest.current) {
         setWorkflowRevalidated(false);
         setProblem('Workflow manifest export denied or cancelled: ' + String(error));
+      }
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function exportMultiProjectBundle() {
+    if (!workflowInspection?.readyForReview || !workflowRevalidated || workflowBusy) return;
+    const serial = ++workflowRequest.current;
+    const projectIds = workflowInspection.projects.map(item => item.projectId);
+    setWorkflowBusy(true);
+    setProblem('');
+    try {
+      // ZIP contains only verified previously discovered project artifacts.
+      // Native OS selection controls destination; no arbitrary path in IPC.
+      const zipped = await invoke('ide_workflow_export_bundle', {
+        projectIds, expectedFingerprint: workflowInspection.fingerprint,
+      });
+      if (serial === workflowRequest.current) {
+        setWorkflowBundleExport(zipped);
+        setWorkflowRevalidated(false);
+        setHint('Verified artifact ZIP created without running project code or modifying Git.');
+      }
+    } catch (error) {
+      if (serial === workflowRequest.current) {
+        setWorkflowRevalidated(false);
+        setProblem('Workflow archive denied or cancelled: ' + String(error));
       }
     } finally {
       if (serial === workflowRequest.current) setWorkflowBusy(false);
@@ -1879,6 +1909,20 @@ function App() {
                 onClick={() => exportMultiProjectManifest()}>
                 Export reviewed manifest to OS-selected folder
               </button>
+              <button className="ghostBtn" type="button"
+                disabled={workflowBusy || !workflowRevalidated}
+                onClick={() => exportMultiProjectBundle()}>
+                Export verified artifacts as ZIP (no code execution)
+              </button>
+              {workflowBundleExport && <div role="status">
+                <p>Verified ZIP: <strong>{workflowBundleExport.fileName}</strong> ·
+                  {' '}{workflowBundleExport.artifactCount} source artifacts ·
+                  {' '}{workflowBundleExport.byteLength.toLocaleString()} bytes</p>
+                <p>Archive SHA-256: <code>{workflowBundleExport.sha256}</code></p>
+                <p>Git mutations: <strong>None</strong> ·
+                  Project code executed: <strong>No</strong> ·
+                  Installer/release accepted: <strong>No</strong></p>
+              </div>}
               {workflowExport && <div role="status">
                 <p>Exported: <strong>{workflowExport.fileName}</strong> ·
                   {' '}{workflowExport.byteLength.toLocaleString()} bytes</p>
