@@ -1,6 +1,7 @@
 //! Independent Lu desktop host. No Jan commands, plugins or route handlers.
 //! WebView receives opaque model/image/session IDs only. All disk selection is
 //! from native OS dialogs; only host code can resolve the signed engine package.
+mod ide_bridge;
 mod chat_store;
 mod generation_queue;
 mod prompt_context;
@@ -443,6 +444,45 @@ impl DesktopState {
             supervisor: Arc::new(supervisor),
         })
     }
+}
+
+#[tauri::command]
+fn lu_ide_bridge_status(
+    bridge: State<'_, Arc<ide_bridge::LuIdeBridge>>,
+) -> ide_bridge::BridgeView {
+    bridge.status()
+}
+/// A human must explicitly enable the data-only bridge INSIDE Lu Desktop.
+/// The generated secret is displayed locally and never stored or sent on IPC.
+#[tauri::command]
+async fn lu_ide_bridge_enable(
+    app: AppHandle,
+    state: State<'_, Arc<DesktopState>>,
+    bridge: State<'_, Arc<ide_bridge::LuIdeBridge>>,
+) -> Result<ide_bridge::BridgeView, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let bridge = Arc::clone(bridge.inner());
+    let state = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let approved = app.dialog().message(
+            "Enable local Lu IDE coding help? Only a separately paired IDE process may borrow the loaded model. No IDE files, tools or native chat history are shared. Disabling this connection cancels active IDE generation."
+        ).title("Lu · Enable optional IDE model access")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Enable for this session".into(), "Cancel".into()))
+            .blocking_show();
+        if !approved { return Err("LU_IDE_USER_DENIED".into()); }
+        #[cfg(target_os = "linux")]
+        { bridge.enable(app, state) }
+        #[cfg(not(target_os = "linux"))]
+        { let _ = (app, state, bridge); Err("LU_IDE_NATIVE_PEER_BACKEND_NOT_VERIFIED".into()) }
+    }).await.map_err(|_| "LU_IDE_ENABLE_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+fn lu_ide_bridge_disable(
+    state: State<'_, Arc<DesktopState>>,
+    bridge: State<'_, Arc<ide_bridge::LuIdeBridge>>,
+) -> Result<ide_bridge::BridgeView, String> {
+    bridge.disable(state.inner())
 }
 
 #[tauri::command]
@@ -1040,10 +1080,14 @@ pub fn run() {
         .setup(|app| {
             let state = DesktopState::new(app.handle()).map_err(std::io::Error::other)?;
             app.manage(Arc::new(state));
+            app.manage(Arc::new(ide_bridge::LuIdeBridge::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             lu_status,
+            lu_ide_bridge_status,
+            lu_ide_bridge_enable,
+            lu_ide_bridge_disable,
             lu_list_models,
             lu_import_model,
             lu_attach_projector,
