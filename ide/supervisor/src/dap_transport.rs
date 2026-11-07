@@ -186,6 +186,12 @@ impl DapGateway {
         }
     }
     fn quarantine<T>(&mut self) -> Result<T, SupervisorError> {
+        // Inspect only fixed debug-only native error categories and real
+        // cgroup PID/OOM counters BEFORE cgroup.kill or Windows Job teardown.
+        // A DAP error response itself is never an authority grant.
+        if let Some(process) = self.process.as_mut() {
+            process.trace_native_fault("dap_protocol_quarantined");
+        }
         let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
         if let Some(process) = self.process.as_mut() {
             let _ = process.terminate_tree_and_verify();
