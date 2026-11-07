@@ -32,8 +32,8 @@ jobs:
           npm run check
       - name: Compile default desktop (must remain nonexecuting)
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
-      - name: Compile and test protected Windows build/test dispatch feature
-        run: cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --lib
+      - name: Compile and test protected Windows build/test dispatch and pinned LLDB-DAP self-test
+        run: cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features native-build,native-debug --lib
       - name: Verify no release pins are hard-coded or supplied by CI
         shell: pwsh
         run: |
@@ -69,8 +69,8 @@ jobs:
           npm run build
       - name: Compile disabled-by-default desktop
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib
-      - name: Compile genuine Linux cgroup worker integrated Tauri native dispatcher
-        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --lib
+      - name: Compile genuine Linux cgroup/Cargo and LLDB-DAP worker in Tauri
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build,native-debug --lib
       - name: Scope gate
         run: |
           echo 'PASS only native host SOURCE compilation. Not delegated cgroup, OS cancellation, installed desktop or debugger acceptance.'
