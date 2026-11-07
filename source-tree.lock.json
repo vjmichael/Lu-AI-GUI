@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ae255c520bd68916ea5feb5cac51605fc1d493cb",
-  "trackedFileCount": 490,
+  "sourceCommitBeforeLock": "5147dcb4a5337d8dc5c5979e59edff1cb9013784",
+  "trackedFileCount": 493,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
-      "blob": "4b3f3951f3edaa1d548e1e9be45176722b5dcf59"
+      "blob": "39ca56a28167511e78e442f26703655db92b82be"
     },
     {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-11-background.yml",
-      "blob": "e848e0cb51db5088162980ea83a9ba8d17f10d40"
+      "blob": "70b3b652d17cb77c23345694041595286223aedf"
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
@@ -96,16 +96,20 @@
       "blob": "41b607a0bba8377d47fd046ee1353fa053bc1cc3"
     },
     {
+      "path": "docs/LU_BACKGROUND_SCHEDULER_P02.md",
+      "blob": "c4ada4f02e9efc3679b24ee0f97ab11b3a75cc75"
+    },
+    {
       "path": "docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md",
       "blob": "5ac0cb9f1342e28a13e18b3384ea69b6fd502973"
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "e8b11c94e6fc9c9ff6ccaf8844c401bb616887ef"
+      "blob": "323e99f0bb9fa4cdef68f88f17232f2cee94ac8e"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "a97ffc0acd49ab582d15ddd0a0b4134c135b60ed"
+      "blob": "7860a023b530e2079302a60740c781e216f40a5b"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -113,7 +117,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "3f4e8f3f8b83375035798509fbbdca8c8ceb069f"
+      "blob": "f73a095c0ed626b7ff00f86f8c089a8ee9b78c09"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -189,7 +193,7 @@
     },
     {
       "path": "docs/TOOLS_11_HOST_SUPERVISION.md",
-      "blob": "d62bd195292e197f4e65a430fa01c18eb534e243"
+      "blob": "9142797b8b4bb8e859dfb9c5c4509ffd1676be28"
     },
     {
       "path": "docs/TOOLS_ISO_01_AND_LINUX_ARCHIVE_SUPPORT.md",
@@ -417,7 +421,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "547b7e9465aae1b2045e23227e5331cb216562d9"
+      "blob": "ae4371125b4c5aca55f84a1f902b3e8d85e0a683"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -517,7 +521,11 @@
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
-      "blob": "dee51a606a359617afe774067276c27a07b7ccac"
+      "blob": "8e2ae74c32f0a0e6a932707f44c76e4e9f5e9b34"
+    },
+    {
+      "path": "lu-desktop/tests/background-scheduler.test.mjs",
+      "blob": "35c39539136129fab83d172e23057e7e1218a7d1"
     },
     {
       "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
@@ -721,7 +729,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "2462bdde2affcbcd530932d5b8bc39f81e8ffcee"
+      "blob": "ed0763132f042c4b63b009d854c481421cbad63b"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -737,7 +745,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "11d7676bd89fbafb61e298e8c9968b91004a1f3c"
+      "blob": "3da1a1115154807ea7a484452640f4828097b702"
     },
     {
       "path": "scripts/package-observe-capture-windows.ps1",
@@ -1037,7 +1045,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "0a405a7b6fd55166dc1ed90de252ae7270e7bfbb"
+      "blob": "55785c8c6741a7c5f2692be648e0a7273eda0285"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1130,6 +1138,10 @@
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
       "blob": "f3534c468fb10bd739854c3f296f3272a5e36db6"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
+      "blob": "9c9f885356d8cdaf364db9779fbebab84e35ba25"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
