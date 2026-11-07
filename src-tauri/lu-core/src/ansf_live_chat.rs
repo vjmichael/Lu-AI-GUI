@@ -61,6 +61,8 @@ pub struct LiveEvent{
     pub kind:LiveKind,
     pub text:String,
     pub user_turn_id:Option<String>,
+    /// Historical imported turn identity, retained for auditing, NEVER tool authority.
+    pub legacy_turn_id:Option<String>,
     pub generation_id:Option<String>,
     pub call_id:Option<String>,
     pub tool_id:Option<String>,
@@ -93,6 +95,11 @@ impl LiveEvent{
         if self.user_turn_id.as_deref().is_some_and(|s|!opaque(s,"g-"))||
            self.generation_id.as_deref().is_some_and(|s|!valid_generation(s))||
            self.call_id.as_deref().is_some_and(|s|!valid_call(s)){
+            return Err(AnsfError::InvalidInput)
+        }
+        if self.legacy_turn_id.as_ref().is_some_and(|s|
+            origin!=LiveOrigin::LegacyObserved||self.kind!=LiveKind::User||
+            s.is_empty()||s.len()>128||s.contains('\0')){
             return Err(AnsfError::InvalidInput)
         }
         if self.tool_id.as_ref().is_some_and(|s|s.len()>128||s.contains('\0')){
@@ -129,17 +136,17 @@ impl LiveEvent{
     }
 }
 fn map_row(r:&rusqlite::Row<'_>)->rusqlite::Result<(i64,String,String,String,
-    String,Option<String>,Option<String>,Option<String>,Option<String>,String,Option<i64>)>{
+    String,Option<String>,Option<String>,Option<String>,Option<String>,Option<String>,String,Option<i64>)>{
     Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,
-        r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?))
+        r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?))
 }
 fn decode(row:(i64,String,String,String,String,Option<String>,Option<String>,
-    Option<String>,Option<String>,String,Option<i64>))->Result<StoredLiveEvent,AnsfError>{
-    let(seq,session_id,event_id,kind,text,user_turn_id,generation_id,
+    Option<String>,Option<String>,Option<String>,String,Option<i64>))->Result<StoredLiveEvent,AnsfError>{
+    let(seq,session_id,event_id,kind,text,user_turn_id,legacy_turn_id,generation_id,
         call_id,tool_id,origin,source_entry_id)=row;
     let origin=LiveOrigin::parse(&origin)?;
     let event=LiveEvent{event_id,kind:LiveKind::parse(&kind)?,text,
-        user_turn_id,generation_id,call_id,tool_id};
+        user_turn_id,legacy_turn_id,generation_id,call_id,tool_id};
     event.validate(origin)?;
     Ok(StoredLiveEvent{seq,session_id,event,origin,source_entry_id})
 }
@@ -154,6 +161,7 @@ pub(crate) fn initialize_live_chat_schema(conn:&Connection)->Result<(),AnsfError
               'assistant_completed','assistant_cancelled','browser_observation')),
            text TEXT NOT NULL,
            user_turn_id TEXT,
+           legacy_turn_id TEXT,
            generation_id TEXT,
            call_id TEXT,
            tool_id TEXT,
@@ -202,7 +210,7 @@ impl AnsfStore{
         let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let tx=conn.transaction()?;
         let exists:Option<StoredLiveEvent>=tx.query_row(
-            "SELECT seq,session_id,event_id,kind,text,user_turn_id,generation_id,
+            "SELECT seq,session_id,event_id,kind,text,user_turn_id,legacy_turn_id,generation_id,
                     call_id,tool_id,origin,source_entry_id
              FROM ansf_live_chat_events WHERE event_id=?1",
             [&event.event_id],map_row
@@ -267,11 +275,11 @@ impl AnsfStore{
         }else{None};
         tx.execute(
             "INSERT INTO ansf_live_chat_events
-             (session_id,event_id,kind,text,user_turn_id,generation_id,call_id,
+             (session_id,event_id,kind,text,user_turn_id,legacy_turn_id,generation_id,call_id,
               tool_id,origin,source_entry_id)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![session_id,event.event_id,event.kind.as_str(),
-                event.text,event.user_turn_id,event.generation_id,
+                event.text,event.user_turn_id,event.legacy_turn_id,event.generation_id,
                 event.call_id,event.tool_id,origin.as_str(),source_entry_id],
         )?;
         let seq=tx.last_insert_rowid();
@@ -303,7 +311,7 @@ impl AnsfStore{
            limit>MAX_LIVE_EVENTS_PAGE{return Err(AnsfError::InvalidInput)}
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let mut stmt=conn.prepare(
-            "SELECT seq,session_id,event_id,kind,text,user_turn_id,generation_id,
+            "SELECT seq,session_id,event_id,kind,text,user_turn_id,legacy_turn_id,generation_id,
                     call_id,tool_id,origin,source_entry_id
              FROM ansf_live_chat_events
              WHERE session_id=?1 AND seq>?2 ORDER BY seq LIMIT ?3"
@@ -385,6 +393,7 @@ mod tests{
         LiveEvent{
             event_id:format!("e-{:032x}",n),kind,text:text.into(),
             user_turn_id:turn.map(|v|format!("g-{v:032x}")),
+            legacy_turn_id:None,
             generation_id:gen.map(|v|format!("g-{v:032x}")),
             call_id:None,tool_id:None,
         }
