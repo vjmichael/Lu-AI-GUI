@@ -25,7 +25,10 @@ GATES = {
     "linux-uninstall": ("ide-wo8-installed-linux.yml","ubuntu-24.04"),
     "signed-protected-cargo": ("ide-wo8-signed-protected-e2e.yml","windows-2022"),
     "signed-protected-debug": ("ide-wo8-signed-protected-e2e.yml","windows-2022"),
-    "signed-cancel-recovery": ("ide-wo8-signed-protected-e2e.yml","windows-2022"),
+    "signed-protected-cancellation": ("ide-wo8-protected-recovery.yml","windows-2022"),
+    "signed-host-crash-recovery": ("ide-wo8-protected-recovery.yml","windows-2022"),
+    "signed-service-crash-recovery": ("ide-wo8-protected-recovery.yml","windows-2022"),
+    "signed-source-tamper-denial": ("ide-wo8-protected-recovery.yml","windows-2022"),
 }
 
 
