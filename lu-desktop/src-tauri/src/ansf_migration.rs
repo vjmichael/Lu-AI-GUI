@@ -4,8 +4,9 @@
 //! JSON is a *legacy import boundary*, never the new canonical event format.
 //! The original sources are never removed or modified. They do not grant tools.
 //!
-//! Deliberately not wired to ordinary startup yet: the final cutover requires
-//! a transactional SQLite chat/folder catalog and host verifier switch.
+//! Invoked only by the trusted native SQLite chat facade at the initial
+//! cutover boundary, before the SQLite catalog's durable migration marker.
+//! Later startups never reinterpret stale JSONL as current chat authority.
 use lu_core::{
     ansf::AnsfStore,
     ansf_goals::GoalEvent,
