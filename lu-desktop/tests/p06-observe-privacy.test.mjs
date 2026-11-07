@@ -429,3 +429,19 @@ test('P06 end-to-end local native WGC protocol accepts PNG only after hash and E
   assert.match(ci,/os_owned_image_pipe_enters_real_png_admission_and_remains_off_network/);
   assert.match(ci,/malformed_or_truncated_observed_pixels_never_produce_image_proof/);
 });
+
+test('P06 exact-source WGC binary image transport refuses generic and cross-mode frames',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const supervisor=read('../../src-tauri/lu-core/src/native_background_process.rs');
+  assert.match(worker,/source_kind=match/);
+  assert.match(worker,/native-foreground-window-v1/);
+  assert.match(worker,/native-primary-monitor-v1/);
+  assert.match(worker,/Native local image source identity unavailable/);
+  assert.match(supervisor,/expected_image_source:Option<&'static str>/);
+  assert.match(supervisor,/Some\(fields\[0\]\)!=expected_image_source/);
+  assert.match(supervisor,/if fields\.len\(\)!=4/);
+  assert.match(supervisor,/let expected_image_source=match plan\.args/);
+  assert.match(supervisor,/let mut wrong_source=format!/);
+  assert.match(supervisor,/native-primary-monitor-v1/);
+  assert.match(supervisor,/native-foreground-window-v1/);
+});

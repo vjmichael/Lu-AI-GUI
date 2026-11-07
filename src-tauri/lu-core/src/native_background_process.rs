@@ -90,7 +90,8 @@ impl Drop for CapturedBgra{
 }
 struct ScanProof{sha256:String,bytes:u64,frame:Option<CapturedBgra>}
 fn read_worker_progress(
-    pipe:impl Read,store:&TaskStore,task_id:&str,allow_local_image:bool
+    pipe:impl Read,store:&TaskStore,task_id:&str,
+    expected_image_source:Option<&'static str>
 )->Option<ScanProof>{
     let mut input=BufReader::new(pipe);
     let mut line=Vec::with_capacity(96);
@@ -104,7 +105,7 @@ fn read_worker_progress(
             let mut byte=[0u8;1];
             match input.read(&mut byte){
                 Ok(0)=>return if !line.is_empty()
-                    ||(allow_local_image
+                    ||(expected_image_source.is_some()
                         &&final_result.as_ref().is_some_and(|p:&ScanProof|p.frame.is_none())){
                     // A partial trailing line after a complete binary frame
                     // is never a valid extension of the reviewed protocol.
@@ -149,14 +150,15 @@ fn read_worker_progress(
             // A separate WGC OS-reviewed image mode may append ONE bounded
             // binary BGRA payload after the ordinary fully-blanked receipt.
             // This never calls TaskStore.checkpoint with raw frame bytes.
-            if !allow_local_image ||final_result.as_ref().is_none_or(|v|v.frame.is_some()){
+            if expected_image_source.is_none()
+                ||final_result.as_ref().is_none_or(|v|v.frame.is_some()){
                 return None;
             }
             let fields:Vec<_>=meta.split('\t').collect();
-            if fields.len()!=3{return None;}
-            let width=fields[0].parse::<u32>().ok()?;
-            let height=fields[1].parse::<u32>().ok()?;
-            let raw_sha=fields[2];
+            if fields.len()!=4 ||Some(fields[0])!=expected_image_source{return None;}
+            let width=fields[1].parse::<u32>().ok()?;
+            let height=fields[2].parse::<u32>().ok()?;
+            let raw_sha=fields[3];
             if width==0||height==0||width>1280||height>720||
                 raw_sha.len()!=64||!raw_sha.bytes().all(|b|
                     b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
@@ -201,11 +203,14 @@ impl BackgroundProcessSupervisor {
                ||arg.to_string_lossy().contains('\0')){
             return Err(BackgroundProcessError::InvalidPlan);
         }
-        let allow_local_image=plan.args.first().and_then(|arg|arg.to_str())
-            .is_some_and(|mode|matches!(mode,
-                "--lu-observe-foreground-local-image-one-shot"
-                |"--lu-observe-primary-monitor-local-image-one-shot"));
-        if allow_local_image&&(!plan.progress_protocol||plan.args.len()!=2
+        let expected_image_source=match plan.args.first().and_then(|arg|arg.to_str()){
+            Some("--lu-observe-foreground-local-image-one-shot")=>
+                Some("native-foreground-window-v1"),
+            Some("--lu-observe-primary-monitor-local-image-one-shot")=>
+                Some("native-primary-monitor-v1"),
+            _=>None,
+        };
+        if expected_image_source.is_some()&&(!plan.progress_protocol||plan.args.len()!=2
             ||plan.max_runtime_seconds!=Some(90)){
             return Err(BackgroundProcessError::InvalidPlan);
         }
@@ -312,7 +317,7 @@ impl BackgroundProcessSupervisor {
             let store=Arc::clone(&self.store);
             let task_id=plan.task_id.clone();
             let reader=std::thread::spawn(move||
-                read_worker_progress(pipe,&store,&task_id,allow_local_image)
+                read_worker_progress(pipe,&store,&task_id,expected_image_source)
             );
             workers.get_mut(&plan.task_id)
                 .expect("just registered running worker")
@@ -473,7 +478,7 @@ mod tests{
         store.start("media123").unwrap();
         let digest="a".repeat(64);
         let frames=format!("P\t0\t20\nP\t10\t20\nP\t20\t20\nD\t{digest}\n");
-        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",false).is_some());
+        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",None).is_some());
         let record=store.get("media123").unwrap().unwrap();
         assert_eq!(record.progress,100);
         assert_eq!(record.detail,format!("SHA-256: {digest}"));
@@ -497,7 +502,7 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create("t",Some("w"),None).unwrap();
             store.start("t").unwrap();
-            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",false).is_none());
+            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",None).is_none());
             assert!(store.get("t").unwrap().unwrap().progress<100);
         }
     }
@@ -510,10 +515,10 @@ mod tests{
         let digest="a".repeat(64);
         let bgra=vec![42u8;8]; // two BGRA pixels, 2x1
         let hash=format!("{:x}",Sha256::digest(&bgra));
-        let mut message=format!("P\t1\t1\nD\t{digest}\nB\t2\t1\t{hash}\n").into_bytes();
+        let mut message=format!("P\t1\t1\nD\t{digest}\nB\tnative-foreground-window-v1\t2\t1\t{hash}\n").into_bytes();
         message.extend_from_slice(&bgra);
         let frame=read_worker_progress(Cursor::new(message.clone()),&store,
-            "obs-frame-1",true).unwrap().frame.unwrap();
+            "obs-frame-1",Some("native-foreground-window-v1")).unwrap().frame.unwrap();
         assert_eq!((frame.width,frame.height,frame.row_pitch),(2,1,8));
         assert_eq!(frame.bytes,bgra);
         let record=store.get("obs-frame-1").unwrap().unwrap();
@@ -521,7 +526,13 @@ mod tests{
         // Without explicit host-owned image mode, even an otherwise valid
         // binary payload MUST be rejected.
         assert!(read_worker_progress(Cursor::new(message),&store,
-            "obs-frame-1",false).is_none());
+            "obs-frame-1",None).is_none());
+        // A foreground-host plan cannot accept a valid packet mislabeled
+        // as a primary monitor, or a source without exact OS-backed mode.
+        let mut wrong_source=format!("P\t1\t1\nD\t{digest}\nB\tnative-primary-monitor-v1\t2\t1\t{hash}\n").into_bytes();
+        wrong_source.extend_from_slice(&bgra);
+        assert!(read_worker_progress(Cursor::new(wrong_source),&store,
+            "obs-frame-1",Some("native-foreground-window-v1")).is_none());
     }
     #[test]
     fn os_owned_image_pipe_enters_real_png_admission_and_remains_off_network(){
@@ -534,10 +545,10 @@ mod tests{
         let bgra=vec![1u8,2,3,255,4,5,6,255];
         let hash=format!("{:x}",Sha256::digest(&bgra));
         let digest="b".repeat(64);
-        let mut packet=format!("P\t1\t1\nD\t{digest}\nB\t2\t1\t{hash}\n").into_bytes();
+        let mut packet=format!("P\t1\t1\nD\t{digest}\nB\tnative-foreground-window-v1\t2\t1\t{hash}\n").into_bytes();
         packet.extend_from_slice(&bgra);
         let scanned=read_worker_progress(Cursor::new(packet),&store,
-            "obs-frame-2",true).unwrap();
+            "obs-frame-2",Some("native-foreground-window-v1")).unwrap();
         let frame=scanned.frame.unwrap();
         let admitted=admit_wgc_frame_locally(
             &frame.bytes,frame.width,frame.height,frame.row_pitch,true
@@ -557,7 +568,7 @@ mod tests{
         let bgra=vec![1u8,2,3,255];
         let hash=format!("{:x}",Sha256::digest(&bgra));
         let digest="c".repeat(64);
-        let mut valid=format!("P\t1\t1\nD\t{digest}\nB\t1\t1\t{hash}\n").into_bytes();
+        let mut valid=format!("P\t1\t1\nD\t{digest}\nB\tnative-foreground-window-v1\t1\t1\t{hash}\n").into_bytes();
         valid.extend_from_slice(&bgra);
         let mut wrong=valid.clone();
         *wrong.last_mut().unwrap()^=1;
@@ -568,7 +579,7 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create(&id,Some("c-native"),None).unwrap();
             store.start(&id).unwrap();
-            assert!(read_worker_progress(Cursor::new(packet),&store,&id,true).is_none());
+            assert!(read_worker_progress(Cursor::new(packet),&store,&id,Some("native-foreground-window-v1")).is_none());
         }
     }
     #[test]
