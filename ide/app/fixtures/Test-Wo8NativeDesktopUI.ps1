@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ProtectedBuildDebug')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -74,6 +74,33 @@ function Click([string]$label) {
 function Require([string]$text) {
   [void](Find-Control $text '' 15)
 }
+function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
+  $deadline=(Get-Date).AddSeconds(35)
+  $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+  while ((Get-Date) -lt $deadline) {
+    $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+      (New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Window)))
+    foreach($win in $windows) {
+      try {
+        if ($win.Current.ProcessId -ne $proc.Id -or
+            $win.Current.Name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        $desc=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        foreach($child in $desc) {
+          if ($child.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+              $child.Current.Name -eq $approvalCaption -and $child.Current.IsEnabled) {
+            $child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            return
+          }
+        }
+      } catch {}
+    }
+    Start-Sleep -Milliseconds 350
+  }
+  Deny 'real_native_consent_dialog_not_observed'
+}
 try {
   $proc=Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
   $root=Find-Control 'Lu IDE' '' 30
@@ -142,6 +169,30 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
+    if ($Scenario -eq 'ProtectedBuildDebug') {
+      # Only on explicitly selected real signed WO7 candidate on native Windows.
+      # The true one-use Tauri OS confirmation is driven through UI Automation;
+      # no script calls native worker or forges an approval/IPC payload.
+      Click 'Job requests'
+      Require 'Protected Run / Test'
+      $buildAction=Find-Control 'Request protected Run / Test' 'Button' 25
+      if (!$buildAction.Current.IsEnabled) { Deny 'installed_native_build_not_ready' }
+      Click 'Request protected Run / Test'
+      Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+      [void](Find-Control 'Last worker result:' '' 360)
+      Require 'Native exit: 0'
+      Require 'Reconciliation: not indicated'
+      Require 'Worker output seal:'
+      $debugAction=Find-Control 'Run protected debugger self-test' 'Button' 30
+      if (!$debugAction.Current.IsEnabled) { Deny 'installed_native_debugger_not_ready' }
+      Click 'Run protected debugger self-test'
+      Confirm-NativeOneUseDialog 'Approve one protected native debugger self-test' 'Run fixed debugger self-test'
+      [void](Find-Control 'Native LLDB self-test:' '' 240)
+      Require 'Thread inspection: observed'
+      Require 'Stack: observed'
+      Require 'Kernel tree cleanup: reported by protected supervisor'
+      Write-Host 'WO8_INSTALLED_NATIVE_PROTECTED_BUILD_AND_DEBUG_INSPECTION=PASS'
+    }
     if ($Scenario -eq 'EditorPersistence') {
       $source=Join-Path $fixed 'main.rs'
       $saved=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
