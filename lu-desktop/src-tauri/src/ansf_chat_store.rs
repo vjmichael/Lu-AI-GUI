@@ -386,6 +386,7 @@ impl ChatStore {
         let event=LiveEvent{
             event_id:id("e-"),kind,text:text.into(),
             user_turn_id:turn_id.map(str::to_owned),
+            legacy_turn_id:None,
             generation_id:generation_id.map(str::to_owned),
             call_id:call_id.map(str::to_owned),tool_id:tool_id.map(str::to_owned),
         };
