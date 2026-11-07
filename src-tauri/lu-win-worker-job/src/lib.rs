@@ -8,6 +8,8 @@
 //! this is defense-in-depth, NOT proof of fully race-free process containment.
 
 #[cfg(windows)]
+pub mod system_memory;
+#[cfg(windows)]
 pub mod file_guard;
 #[cfg(windows)]
 pub mod metadata_guard;

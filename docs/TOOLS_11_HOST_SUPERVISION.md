@@ -17,6 +17,10 @@ The owner explicitly approved sequential P02 work after submitting P01 native co
 
 **Open:** CI/native compile and physical installed acceptance; full resource telemetry and worker-adapter coverage beyond the media scan; durable cross-restart recurring permits; verified artifact-result manifest. This continuation supersedes older `Not yet implemented: verified resource budgets` as to conservative *configured admission reservations only*, not actual OS-wide monitoring or hard resident-memory enforcement.
 
+## P02 outstanding-closeout architecture (2026-11-06)
+
+The latest continuation adds native Windows/Linux CPU/available-memory pressure sampling, fail-closed admission, and a shared short-lived Guardian lease now used by three consented OCR operations as well as the scheduled first-party scan. Verified file-scan completion produces an atomic digest/byte-count receipt, not an exported artifact. Lost recurring worker plans are not restored from disk: operators reselect the file and approve a fresh plan through the native dialog before a new job is enqueued. The earlier P02 implementation record remains authoritative for basic queue behavior. [P02 source and acceptance](LU_BACKGROUND_SCHEDULER_P02.md).
+
 ## Execution model
 
 1. User/model proposes a job. The **trusted host**, not the model, validates

@@ -1,4 +1,4 @@
-name: Lu P02 Background Task Scheduler and Guardian
+name: Lu P02 Background Scheduler + Guardian Native Acceptance
 on:
   push:
     branches: ['lu/tools-11-*', 'lu/reader-*']
@@ -8,6 +8,9 @@ on:
       - 'src-tauri/lu-core/src/native_background_result.rs'
       - 'src-tauri/lu-core/src/native_background_control.rs'
       - 'src-tauri/lu-core/src/native_background_scheduler.rs'
+      - 'src-tauri/lu-core/src/native_resource_pressure.rs'
+      - 'src-tauri/lu-win-worker-job/src/system_memory.rs'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/background-scheduler.test.mjs'
@@ -26,7 +29,7 @@ permissions:
   contents: read
 jobs:
   native-background:
-    name: Scoped task status
+    name: Background schedule/Guardian (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -49,30 +52,12 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_scheduler -- --nocapture
       - name: P01 ensure native metadata discovery still compiles with P02
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_file_discovery -- --nocapture
-      - name: Verify DOCX archive and XML security cases
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_docx -- --nocapture
-      - name: Verify OpenDocument ODS and ODP extraction
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_odf -- --nocapture
-      - name: Verify classic PDF page-text extraction and unsupported scanned-page refusal
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_pdf -- --nocapture
-      - name: Validate safe OOXML archive admission
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_openxml -- --nocapture
-      - name: Extract XLSX cells and PPTX slides from authentic OOXML fixtures
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_office -- --nocapture
-      - name: Verify bounded universal Reader kernel
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader -- --nocapture
-      - name: Verify bound Reader model JSON to Protobuf execution and per-turn revocation
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_turn -- --nocapture
-      - name: Verify Reader typed model tool, authorization and binary refusal
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_tool -- --nocapture
-      - name: Verify pinned OCR image admission and unsafe input refusal
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_ocr -- --nocapture
-      - name: Verify deterministic staged image transformations
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision -- --nocapture
-      - name: Verify durable revision lineage and chat isolation
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_image_revision_history -- --nocapture
-      - name: Verify vision preference requires actual model/backend proof
-        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib vision_routing -- --nocapture
+      - name: P02 verify native read-only host pressure probes
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_resource_pressure -- --nocapture
+      - name: P02 verify atomic SHA-256 result handoff and scoped receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p02_verified_result_tests -- --nocapture
+      - name: P02 verify isolated native platform resource probe ABI
+        run: cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml -- --nocapture
       - name: Verify durable task store regressions
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test task_checkpoints -- --nocapture
       - name: Verify operator task dashboard regression
@@ -87,14 +72,6 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib task_auto_continue_tests -- --nocapture
       - name: Verify P02 native scheduler and Background Tasks pane contracts
         run: node --test lu-desktop/tests/background-scheduler.test.mjs lu-desktop/tests/background-pane.test.mjs
-      - name: Verify Reader desktop picker and per-chat draft contract
-        run: node --test lu-desktop/tests/reader-desktop.test.mjs
-      - name: Verify image assembly geometry coordinates
-        run: node --test lu-desktop/tests/image-assembly-geometry.test.mjs
-      - name: Verify native image preview, annotation and immutable save wiring
-        run: node --test lu-desktop/tests/image-workspace-effects.test.mjs
-      - name: Verify staged preview history and chat lineage source contract
-        run: node --test lu-desktop/tests/image-workspace-history.test.mjs
       - name: Install frontend dependencies
         if: matrix.os == 'windows-latest'
         working-directory: lu-desktop

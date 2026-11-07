@@ -55,6 +55,12 @@ pub struct ResultReply {
     pub progress: u32,
     #[prost(bool, tag = "4")]
     pub artifacts_verified: bool,
+    #[prost(string, tag = "5")]
+    pub result_kind: String,
+    #[prost(string, tag = "6")]
+    pub verified_sha256: String,
+    #[prost(uint64, tag = "7")]
+    pub verified_bytes: u64,
 }
 
 fn valid_task_id(id: &str) -> bool {
@@ -115,11 +121,17 @@ impl NativeTool for ResultTool {
                 // Do not suggest polling; Lu's host owns terminal notifications.
                 return Err(failure("TASK_NOT_TERMINAL", true));
             }
+            let proof=self.store.verified_result(&id,workspace)
+                .map_err(|_|failure("TASK_RESULT_UNAVAILABLE",true))?;
             let output = ResultReply {
                 task_id: record.task_id,
                 state: record.state.as_str().into(),
                 progress: u32::from(record.progress),
+                // Hash evidence is not an exported file artifact.
                 artifacts_verified: false,
+                result_kind:proof.as_ref().map_or("",|v|v.kind.as_str()).into(),
+                verified_sha256:proof.as_ref().map_or("",|v|v.sha256.as_str()).into(),
+                verified_bytes:proof.as_ref().map_or(0,|v|v.bytes),
             };
             Ok(ToolOutput {
                 payload: ProtoPayload {
@@ -199,9 +211,18 @@ impl ModelToolCodec for ResultCodec {
                 value.state.as_str(),
                 "COMPLETED" | "FAILED" | "CANCELLED" | "INTERRUPTED" | "TIMED_OUT"
             )
-            || value.artifacts_verified {
-            // Artifacts cannot be certified until a separate trusted manifest
-            // is implemented. Do not promote worker text into evidence.
+            || value.artifacts_verified
+            || (value.result_kind.is_empty() &&
+                 (!value.verified_sha256.is_empty()||value.verified_bytes!=0))
+            || (!value.result_kind.is_empty() &&
+                (value.result_kind!="sha256_scan" ||
+                 value.state!="COMPLETED" || value.progress!=100 ||
+                 value.verified_bytes==0 ||
+                 value.verified_sha256.len()!=64 ||
+                 !value.verified_sha256.bytes().all(|b|
+                     b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()))) {
+            // A verified digest is not a file artifact. Invalid combinations
+            // fail before they enter model context.
             return Err(ModelToolError::InvalidResult("invalid result contents".into()));
         }
         Ok(json!({
@@ -210,7 +231,10 @@ impl ModelToolCodec for ResultCodec {
             "progress": value.progress,
             "terminal": true,
             "artifacts_verified": false,
-            "next_action": "Use Lu's host-approved artifact viewer when available; no output file is verified by this receipt."
+            "result_kind":value.result_kind,
+            "verified_sha256":value.verified_sha256,
+            "verified_bytes":value.verified_bytes,
+            "next_action": "The SHA-256 scan receipt is trusted integrity metadata only; no exported file has been independently verified."
         }))
     }
 }
@@ -266,7 +290,7 @@ pub fn register_model_background_observation(
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_background_result".into(),
         native_tool_id: RESULT_ID.into(),
-        description: "Read host-recorded terminal state for one authorized task. Does not claim file artifacts are verified.".into(),
+        description: "Read host-recorded terminal state and any verified SHA-256 file-scan proof for one authorized task. Does not claim exported file artifacts are verified.".into(),
         parameters: params,
         codec: Arc::new(ResultCodec),
     }).map_err(|e| format!("cannot advertise background result: {e:?}"))?;

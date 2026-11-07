@@ -98,7 +98,7 @@ test('host-owned OCR cancellation and original image region scope are available'
 test('optional scanned-PDF page OCR stays user-selected and fail-closed',()=>{
   assert.match(host,/async fn lu_ocr_read_selected_pdf_page\(/);
   assert.match(host,/option_env!\("LU_OCR_PDF_RENDER_SHA256"\)/);
-  assert.match(host,/recognize_pinned_pdf_page\(/);
+  assert.match(host,/recognize_pinned_pdf_pages\(/);
   assert.match(host,/lu_ocr_read_selected_pdf_page,/);
   assert.match(ui,/Choose PDF and OCR selected page/);
   assert.match(ui,/OCR page \{ocrObservation.page\}/);

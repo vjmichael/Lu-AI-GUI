@@ -1066,6 +1066,15 @@ function App() {
       }
     }
   }
+  async function reapproveScheduledTask(taskId){
+    if(!chatId)return;
+    try{
+      const newId=await invoke('lu_background_reapprove',{chatId,reviewTaskId:taskId});
+      if(newId)await refreshBackgroundTasks();
+    }catch(error){
+      setBackgroundError(String(error));
+    }
+  }
   async function changeQueuedBackgroundState(taskId,action){
     if(!chatId)return;
     try{
@@ -4090,7 +4099,8 @@ function App() {
           <strong>Resource Guardian</strong>
           <span>Queued: {backgroundGuardian.queued} · Running: {backgroundGuardian.running} · Paused: {backgroundGuardian.paused}</span>
           <span>Workers: {backgroundGuardian.workerUsed}/{backgroundGuardian.workerCapacity} · CPU slots: {backgroundGuardian.cpuUsed}/{backgroundGuardian.cpuCapacity} · RAM reservation: {backgroundGuardian.ramUsedMib}/{backgroundGuardian.ramCapacityMib} MiB</span>
-          <small>GPU tasks stay disabled without verified VRAM availability. These are Lu reservation limits, not total system telemetry.</small>
+          <small>{backgroundGuardian.observedAvailableRamMib==null?'Physical RAM probe unavailable':('Physical RAM available: '+backgroundGuardian.observedAvailableRamMib+' MiB')}{backgroundGuardian.observedCpuBusyPercent==null?'':' · CPU busy '+backgroundGuardian.observedCpuBusyPercent+'%'}</small>
+          <small>GPU tasks stay disabled without verified backend VRAM availability. CPU/RAM admission reacts to host pressure; reservations are not actual per-worker consumption.</small>
         </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"
@@ -4136,6 +4146,8 @@ function App() {
             {task.priority && <small>Priority: {task.priority}{task.dueUnix ? ' · Due: '+new Date(task.dueUnix*1000).toLocaleString():''}{task.repeatSeconds ? ' · Repeats every '+Math.round(task.repeatSeconds/60)+' min':''}</small>}
             {['INTERRUPTED','FAILED','NEEDS_REVIEW'].includes(task.state) &&
               <p className="backgroundTaskWarning">Requires review before retrying.</p>}
+            {task.needsReview && <button className="subtleButton" type="button"
+              onClick={()=>void reapproveScheduledTask(task.taskId)}>Reapprove with a selected file…</button>}
             {task.canPause && <button className="subtleButton" type="button"
               onClick={()=>void changeQueuedBackgroundState(task.taskId,'pause')}>Pause queued</button>}
             {task.canResume && <button className="subtleButton" type="button"
@@ -4154,7 +4166,8 @@ function App() {
         <footer className="backgroundPaneFooter">
           Queued tasks can be paused, resumed or cancelled. Running tasks can be cancelled
           with native confirmation, but not paused unless their worker supports it.
-          Recovery never automatically replays interrupted work; ordinary progress does not invoke the AI model.
+          Recovery never automatically replays interrupted work; reapprove using a native file picker.
+          Ordinary progress does not invoke the AI model.
         </footer>
       </aside>
     </div>}

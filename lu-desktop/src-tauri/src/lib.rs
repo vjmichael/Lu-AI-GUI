@@ -245,6 +245,7 @@ struct DesktopState {
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_scheduler: Arc<lu_core::native_background_scheduler::BackgroundScheduler>,
+    background_pressure: Arc<lu_core::native_resource_pressure::PressureMonitor>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
     observe: Arc<observe_desktop::ObserveHost>,
     vision_probe:Mutex<Option<vision_context::VisionProbeReceipt>>,
@@ -627,6 +628,7 @@ impl DesktopState {
                 lu_core::native_background_scheduler::ResourceBudget::interactive_first(),
             ).map_err(|e|format!("Background scheduler unavailable: {e:?}"))?
         );
+        let background_pressure=Arc::new(lu_core::native_resource_pressure::PressureMonitor::new());
         let observe=Arc::new(observe_desktop::ObserveHost::new(
             Arc::clone(&background_tasks),Arc::clone(&background_processes)
         ));
@@ -636,6 +638,7 @@ impl DesktopState {
             ocr_cancellations:Mutex::new(HashMap::new()),
             background_processes,
             background_scheduler,
+            background_pressure,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
             models_dir,
@@ -708,6 +711,8 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             if state.supervisor.status().is_ok_and(|s|s.session_id.is_some()){
                 budget.workers=1;budget.cpu=1;budget.ram_mib=512;
             }
+            let observed=state.background_pressure.sample();
+            let budget=budget.under_host_pressure(observed);
             let _=state.background_scheduler.set_budget(budget);
             let _=state.background_scheduler.tick();
             // The existing watchdog also expires Lu-only observation leases.
@@ -1481,11 +1486,18 @@ async fn lu_ocr_read_attached_image(
     #[cfg(not(windows))]
     let executable=resources.join("lu-ocr").join("tesseract");
     let tessdata=resources.join("lu-ocr").join("tessdata");
+    // This real offline native worker must obtain a host-only Guardian lease
+    // before spawning, without changing the user's OCR authorization.
+    let lease=state.background_scheduler.admit_host_worker(
+        &chat_id,&next_id("ocr-job-"),
+        lu_core::native_background_scheduler::ResourceClaim::ocr(),
+    ).map_err(|e|format!("OCR resource admission denied: {e:?}"))?;
     let token=claim_ocr(state.inner(),&chat_id)?;
     let worker_token=Arc::clone(&token);
-    let outcome=tauri::async_runtime::spawn_blocking(move||
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let _guardian_lease=lease;
         offline_ocr_view(&source.bytes,&executable,expected,&tessdata,expected_data,&worker_token)
-    ).await.map_err(|_|"Native attached-image OCR worker unavailable");
+    }).await.map_err(|_|"Native attached-image OCR worker unavailable");
     finish_ocr(state.inner(),&chat_id,&token);
     Ok(Some(outcome??))
 }
@@ -1541,9 +1553,16 @@ async fn lu_ocr_read_attached_region(
     #[cfg(not(windows))]
     let exe=resources.join("lu-ocr").join("tesseract");
     let tessdata=resources.join("lu-ocr").join("tessdata");
+    // This real offline native worker must obtain a host-only Guardian lease
+    // before spawning, without changing the user's OCR authorization.
+    let lease=state.background_scheduler.admit_host_worker(
+        &chat_id,&next_id("ocr-job-"),
+        lu_core::native_background_scheduler::ResourceClaim::ocr(),
+    ).map_err(|e|format!("OCR resource admission denied: {e:?}"))?;
     let token=claim_ocr(state.inner(),&chat_id)?;
     let worker_token=Arc::clone(&token);
     let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let _guardian_lease=lease;
         let result=lu_core::native_ocr::recognize_pinned_image_region(
             &source.bytes,region,&exe,expected,&tessdata,expected_data,&worker_token
         ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
@@ -1623,9 +1642,16 @@ async fn lu_ocr_read_selected_pdf_page(
           )).blocking_show()
     }).await.map_err(|_|"Native PDF OCR consent unavailable")?;
     if !confirmed{return Ok(None)}
+    // This real offline native worker must obtain a host-only Guardian lease
+    // before spawning, without changing the user's OCR authorization.
+    let lease=state.background_scheduler.admit_host_worker(
+        &chat_id,&next_id("ocr-job-"),
+        lu_core::native_background_scheduler::ResourceClaim::ocr(),
+    ).map_err(|e|format!("OCR resource admission denied: {e:?}"))?;
     let token=claim_ocr(state.inner(),&chat_id)?;
     let worker_token=Arc::clone(&token);
     let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let _guardian_lease=lease;
         let results=lu_core::native_ocr::recognize_pinned_pdf_pages(
             &bytes,page,page_end,&rasterizer,render_sha,&engine,tess_sha,
             &tessdata,data_sha,&worker_token
@@ -3354,6 +3380,8 @@ struct BackgroundGuardianView {
     gpu_capacity:u16,gpu_used:u16,
     disk_capacity:u16,disk_used:u16,
     network_capacity:u16,network_used:u16,
+    observed_available_ram_mib:Option<u64>,
+    observed_cpu_busy_percent:Option<u8>,
 }
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
@@ -3451,6 +3479,74 @@ async fn lu_background_scan_file(
         // The host watchdog owns resource admission and actual process start.
         Ok(Some(task_id))
     }).await.map_err(|_|"Native media picker unavailable")?
+}
+
+/// Recover an interrupted recurring task only after an explicit fresh
+/// user-picked source and confirmation. No original file path/executable or
+/// ability to run survives a restart in the persistent scheduler.
+#[tauri::command]
+async fn lu_background_reapprove(
+    app:AppHandle,
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,review_task_id:String,
+)->Result<Option<String>,String>{
+    state.chats.history(&chat_id)?;
+    let scheduler=Arc::clone(&state.background_scheduler);
+    if scheduler.state_for(&review_task_id,&chat_id)
+        .map_err(|e|format!("Recovery lookup failed: {e:?}"))?
+        .as_deref()!=Some("NEEDS_REVIEW"){
+        return Err("This scheduled task is not waiting for reapproval".into())
+    }
+    tauri::async_runtime::spawn_blocking(move||{
+        let file=app.dialog().file()
+            .add_filter("Media", &["mp4","mkv","mov","webm","avi",
+                "mp3","wav","flac","m4a","ogg"])
+            .blocking_pick_file();
+        let Some(file)=file else{return Ok(None)};
+        let selected=file.into_path().map_err(|_|"Invalid selected media file")?;
+        let meta=fs::symlink_metadata(&selected)
+            .map_err(|_|"Reapproved media source unavailable")?;
+        if !meta.file_type().is_file()||meta.len()==0{
+            return Err("Select a nonempty regular file".into())
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{
+                return Err("Reparse points cannot be background media sources".into())
+            }
+        }
+        let confirmed=app.dialog().message(
+            "Reauthorize this interrupted/restarted scan using the newly selected file? The previous saved schedule contains no file path or executable permission. A new task ID and native worker approval will be created. The source can be changed by this explicit selection."
+        ).title("Lu — Reapprove scheduled work")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Reapprove scan".into(),"Cancel".into()
+         )).blocking_show();
+        if !confirmed{return Ok(None)}
+        let source=selected.canonicalize()
+            .map_err(|_|"Cannot resolve selected media source")?;
+        let exe=std::env::current_exe()
+            .map_err(|_|"Installed Lu executable not available")?;
+        let mut image=File::open(&exe)
+            .map_err(|_|"Cannot verify installed executable")?;
+        let mut hasher=Sha256::new();
+        let mut bytes=[0u8;65536];
+        loop{
+            let n=image.read(&mut bytes)
+                .map_err(|_|"Cannot hash installed executable")?;
+            if n==0{break}
+            hasher.update(&bytes[..n]);
+        }
+        let id=next_id("scan-");
+        scheduler.reapprove_reviewed(&review_task_id,
+            lu_core::native_background_process::TrustedWorkerPlan{
+                task_id:id.clone(),workspace_id:chat_id,
+                executable:exe,expected_sha256:format!("{:x}",hasher.finalize()),
+                args:vec!["--lu-file-scan-worker".into(),source.into_os_string()],
+                progress_protocol:true,max_runtime_seconds:None,
+            }).map_err(|e|format!("Cannot reapprove background schedule: {e:?}"))?;
+        Ok(Some(id))
+    }).await.map_err(|_|"Native task reapproval picker unavailable")?
 }
 
 /// User-selected local document. This is a native operator file-picker
@@ -3604,6 +3700,7 @@ fn lu_background_guardian_status(
         .map_err(|_|"Choose a valid conversation for guardian status")?;
     let snapshot=state.background_scheduler.guardian_snapshot(&chat_id)
         .map_err(|e|format!("Guardian status unavailable: {e:?}"))?;
+    let observed=state.background_pressure.sample();
     Ok(BackgroundGuardianView{
         queued:snapshot.queued,running:snapshot.running,paused:snapshot.paused,
         worker_capacity:snapshot.capacity.workers,worker_used:snapshot.used.workers,
@@ -3612,6 +3709,8 @@ fn lu_background_guardian_status(
         gpu_capacity:snapshot.capacity.gpu,gpu_used:snapshot.used.gpu,
         disk_capacity:snapshot.capacity.disk,disk_used:snapshot.used.disk,
         network_capacity:snapshot.capacity.network,network_used:snapshot.used.network,
+        observed_available_ram_mib:observed.available_ram_mib,
+        observed_cpu_busy_percent:observed.cpu_busy_percent,
     })
 }
 #[tauri::command]
@@ -5899,6 +5998,7 @@ pub fn run() {
             lu_background_tasks,
             lu_background_guardian_status,
             lu_background_queue_control,
+            lu_background_reapprove,
             lu_reader_pick_document,
             lu_reader_ask_document,
             lu_workspace_ask_directory,

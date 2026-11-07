@@ -44,6 +44,20 @@ impl ResourceBudget {
         Self{workers:slots,cpu:slots,ram_mib:1024,
             gpu:0,vram_mib:0,disk:1,network:0}
     }
+    /// Physical RAM and CPU pressure gate starts without claiming GPU VRAM
+    /// or arbitrary OS-wide enforcement. Unknown RAM forbids new jobs.
+    pub fn under_host_pressure(mut self,p:crate::native_resource_pressure::HostPressure)->Self{
+        self.ram_mib=match p.available_ram_mib{
+            Some(free)=>self.ram_mib.min(
+                free.saturating_sub(1024).min(u64::from(u32::MAX)).max(1) as u32),
+            None=>1,
+        };
+        if let Some(cpu)=p.cpu_busy_percent{
+            if cpu>=80{self.workers=self.workers.min(1);self.cpu=self.cpu.min(1);}
+            if cpu>=95{self.ram_mib=1;}
+        }
+        self
+    }
     fn supports(self,used:ResourceClaim,job:ResourceClaim)->bool{
         used.workers.checked_add(job.workers).is_some_and(|n|n<=self.workers)
             &&used.cpu.checked_add(job.cpu).is_some_and(|n|n<=self.cpu)
@@ -56,8 +70,12 @@ impl ResourceBudget {
 }
 impl ResourceClaim{
     pub fn file_scan()->Self{
-        Self{workers:1,cpu:1,ram_mib:256,gpu:0,
+        Self{workers:1,cpu:1,ram_mib:512,gpu:0,
             vram_mib:0,disk:1,network:0}
+    }
+    pub fn ocr()->Self{
+        Self{workers:1,cpu:1,ram_mib:512,gpu:0,
+            vram_mib:0,disk:0,network:0}
     }
     fn add(self,b:Self)->Self{
         Self{
@@ -138,7 +156,26 @@ struct Inner {
     db:Connection,
     plans:BTreeMap<String,Active>,
     running:BTreeMap<String,ResourceClaim>,
+    external:BTreeMap<String,(String,ResourceClaim)>,
     capacity:ResourceBudget,
+}
+/// A short-lived, host-only lease for native OCR and other approved
+/// non-scheduler tool workers. Dropping it releases only a reservation; the
+/// called tool's original authority, cancellation and cleanup remain intact.
+pub struct GuardianLease {
+    owner:Arc<BackgroundScheduler>,
+    task_id:String,
+    workspace_id:String,
+}
+impl Drop for GuardianLease{
+    fn drop(&mut self){
+        if let Ok(mut g)=self.owner.inner.lock(){
+            if g.external.get(&self.task_id)
+                .is_some_and(|(workspace,_)|workspace==&self.workspace_id){
+                g.external.remove(&self.task_id);
+            }
+        }
+    }
 }
 pub struct BackgroundScheduler{
     store:Arc<TaskStore>,
@@ -208,7 +245,8 @@ impl BackgroundScheduler{
                     WHERE state IN ('QUEUED','RUNNING','PAUSED')",[])
             .map_err(db_error)?;
         Ok(Self{store,process,inner:Mutex::new(Inner{
-            db,plans:BTreeMap::new(),running:BTreeMap::new(),capacity:budget,
+            db,plans:BTreeMap::new(),running:BTreeMap::new(),
+            external:BTreeMap::new(),capacity:budget,
         })})
     }
     fn insert(
@@ -399,6 +437,8 @@ impl BackgroundScheduler{
             }
             let occupied=g.running.values().fold(ResourceClaim::default(),
                 |total,x|total.add(*x));
+            let occupied=g.external.values().fold(occupied,
+                |total,(_,claim)|total.add(*claim));
             if !g.capacity.supports(occupied,job.opts.claim){continue}
             let plan=TrustedWorkerPlan{
                 task_id:job.plan.task_id.clone(),
@@ -477,6 +517,24 @@ impl BackgroundScheduler{
     }
     /// Host-only limit updates; shrinking a budget stops further starts,
     /// never kills an already admitted process.
+    /// Called only by authenticated native host tool paths, never by model
+    /// JSON, WebView-provided ids or unreviewed external worker executables.
+    pub fn admit_host_worker(
+        self:&Arc<Self>,workspace_id:&str,task_id:&str,claim:ResourceClaim
+    )->Result<GuardianLease,SchedulerError>{
+        if !valid_id(workspace_id)||!valid_id(task_id)||!claim.valid(){
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        if g.external.contains_key(task_id)||g.running.contains_key(task_id)
+            ||g.plans.contains_key(task_id){return Err(SchedulerError::Duplicate)}
+        let used=g.running.values().fold(ResourceClaim::default(),|acc,x|acc.add(*x));
+        let used=g.external.values().fold(used,|acc,(_,x)|acc.add(*x));
+        if !g.capacity.supports(used,claim){return Err(SchedulerError::ResourceRejected)}
+        g.external.insert(task_id.into(),(workspace_id.into(),claim));
+        Ok(GuardianLease{owner:Arc::clone(self),
+            task_id:task_id.into(),workspace_id:workspace_id.into()})
+    }
     pub fn set_budget(&self,budget:ResourceBudget)->Result<(),SchedulerError>{
         if budget.workers==0||budget.cpu==0||budget.ram_mib==0{
             return Err(SchedulerError::InvalidRequest)
@@ -507,6 +565,8 @@ impl BackgroundScheduler{
         }
         let used=g.running.values().fold(ResourceClaim::default(),
             |a,b|a.add(*b));
+        let used=g.external.values().fold(used,
+            |a,(_,b)|a.add(*b));
         Ok(GuardianSnapshot{
             capacity:g.capacity,used,
             queued:counts[0],running:counts[1],paused:counts[2],
@@ -561,6 +621,74 @@ impl BackgroundScheduler{
             None=>Err(SchedulerError::NotFound),
         }
     }
+    /// After a crash no previous executable/input grant is recoverable.
+    /// A trusted desktop picker and fresh native confirmation must build an
+    /// entirely new host plan. This explicitly supersedes one NEEDS_REVIEW
+    /// schedule without giving a stored path or credential new authority.
+    pub fn reapprove_reviewed(
+        &self,original_id:&str,new_plan:TrustedWorkerPlan
+    )->Result<(),SchedulerError>{
+        if !valid_id(original_id)||!valid_id(&new_plan.task_id)||
+            !valid_id(&new_plan.workspace_id)||original_id==new_plan.task_id||
+            new_plan.args.len()!=2||
+            new_plan.args.first().and_then(|s|s.to_str())!=
+                Some("--lu-file-scan-worker")||
+            !new_plan.executable.is_absolute()||
+            new_plan.expected_sha256.len()!=64||
+            !new_plan.expected_sha256.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        let old=g.db.query_row(
+            "SELECT kind,state,priority,due_unix,repeat_seconds,dependency,
+                workers,cpu,ram_mib,gpu,vram_mib,disk,network,safe_retry,max_retries
+             FROM lu_schedule WHERE task_id=?1 AND workspace_id=?2",
+            params![original_id,&new_plan.workspace_id],|r|{
+                Ok((
+                    r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,u8>(2)?,
+                    r.get::<_,u64>(3)?,r.get::<_,Option<u64>>(4)?,
+                    r.get::<_,Option<String>>(5)?,
+                    r.get::<_,u16>(6)?,r.get::<_,u16>(7)?,
+                    r.get::<_,u32>(8)?,r.get::<_,u16>(9)?,
+                    r.get::<_,u32>(10)?,r.get::<_,u16>(11)?,
+                    r.get::<_,u16>(12)?,r.get::<_,bool>(13)?,
+                    r.get::<_,u8>(14)?,
+                ))
+            }).optional().map_err(db_error)?
+            .ok_or(SchedulerError::NotFound)?;
+        let (kind,state,priority,due,repeat,dependency,
+            workers,cpu,ram_mib,gpu,vram_mib,disk,network,
+            safe_retry,max_retries)=old;
+        if kind!="file_scan"||state!="NEEDS_REVIEW"{
+            return Err(SchedulerError::NotQueued)
+        }
+        let opts=ScheduleOptions{
+            kind,priority:Priority::decode(priority)
+                .ok_or(SchedulerError::InvalidRequest)?,
+            due_unix:due.max(now_unix()).min(now_unix().saturating_add(MAX_REPEAT)),
+            repeat_seconds:repeat,dependency,
+            claim:ResourceClaim{workers,cpu,ram_mib,gpu,vram_mib,disk,network},
+            safe_retry,max_retries,
+        };
+        if !g.capacity.supports(ResourceClaim::default(),opts.claim)
+           ||!opts.claim.valid(){return Err(SchedulerError::ResourceRejected)}
+        Self::insert(&mut g,&new_plan,&opts,&new_plan.task_id,0,0)?;
+        let changed=g.db.execute(
+            "UPDATE lu_schedule SET state='CANCELLED',
+             last_result='superseded_after_explicit_reapproval'
+             WHERE task_id=?1 AND workspace_id=?2 AND state='NEEDS_REVIEW'",
+            params![original_id,&new_plan.workspace_id]).map_err(db_error)?;
+        if changed!=1{return Err(SchedulerError::NotQueued)}
+        g.db.execute(
+            "INSERT INTO lu_schedule_events(task_id,workspace_id,event)
+             VALUES(?1,?2,'REAPPROVED')",
+            params![original_id,&new_plan.workspace_id]).map_err(db_error)?;
+        g.plans.insert(new_plan.task_id.clone(),Active{
+            series_id:new_plan.task_id.clone(),sequence_no:0,
+            retry_count:0,plan:new_plan,opts,
+        });
+        Ok(())
+    }
     pub fn state_for(&self,id:&str,workspace:&str)
         ->Result<Option<String>,SchedulerError>{
         if !valid_id(id)||!valid_id(workspace){
@@ -582,7 +710,7 @@ mod tests{
         let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
         let schedule=BackgroundScheduler::open(Path::new(":memory:"),
             Arc::clone(&store),Arc::clone(&processes),ResourceBudget{
-                workers:1,cpu:1,ram_mib:256,gpu:0,vram_mib:0,disk:1,network:0,
+                workers:1,cpu:1,ram_mib:512,gpu:0,vram_mib:0,disk:1,network:0,
             }).unwrap();
         (store,processes,schedule)
     }
@@ -643,6 +771,67 @@ mod tests{
         drop(g);
         queue.tick_at(now).unwrap();
         assert_eq!(queue.list_owned("c-owner",5).unwrap()[0].state,"NEEDS_REVIEW");
+    }
+    #[test]
+    fn guardian_external_lease_obeys_budget_and_releases_on_drop(){
+        let (_,_,queue)=test_scheduler();
+        let queue=Arc::new(queue);
+        let first=queue.admit_host_worker("c-owner","ocr-1",
+            ResourceClaim::file_scan()).unwrap();
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,1);
+        assert!(queue.admit_host_worker("c-owner","ocr-2",
+            ResourceClaim::file_scan()).is_err());
+        drop(first);
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,0);
+        let second=queue.admit_host_worker("c-owner","ocr-2",
+            ResourceClaim::file_scan()).unwrap();
+        drop(second);
+    }
+    #[test]
+    fn physical_ram_and_cpu_pressure_reduce_new_admission_without_fake_vram(){
+        use crate::native_resource_pressure::HostPressure;
+        let base=ResourceBudget::interactive_first();
+        assert_eq!(base.under_host_pressure(HostPressure{
+            available_ram_mib:Some(512),cpu_busy_percent:Some(95)
+        }).ram_mib,1);
+        assert_eq!(base.under_host_pressure(HostPressure{
+            available_ram_mib:None,cpu_busy_percent:None
+        }).ram_mib,1);
+        let normal=base.under_host_pressure(HostPressure{
+            available_ram_mib:Some(8192),cpu_busy_percent:Some(10)
+        });
+        assert_eq!(normal.gpu,0);
+        assert!(normal.ram_mib>=512);
+    }
+    #[test]
+    fn reviewed_schedule_requires_fresh_plan_and_is_rebound_once(){
+        let (_,_,queue)=test_scheduler();
+        let old="scan-original";
+        queue.enqueue_host_plan(plan(old),
+            ScheduleOptions::file_scan(now_unix()+240,
+                Some(3600),Priority::Normal)).unwrap();
+        {
+            let mut g=queue.inner.lock().unwrap();
+            g.plans.clear();
+            g.db.execute("UPDATE lu_schedule SET state='NEEDS_REVIEW'
+                WHERE task_id=?1",[old]).unwrap();
+        }
+        let mut wrong=plan("scan-second");
+        wrong.workspace_id="c-other".into();
+        wrong.args=vec!["--lu-file-scan-worker".into(),"source".into()];
+        assert!(queue.reapprove_reviewed(old,wrong).is_err());
+        let mut fresh=plan("scan-second");
+        fresh.args=vec!["--lu-file-scan-worker".into(),"new-picked-file".into()];
+        queue.reapprove_reviewed(old,fresh).unwrap();
+        assert_eq!(queue.state_for(old,"c-owner").unwrap().as_deref(),
+            Some("CANCELLED"));
+        let rows=queue.list_owned("c-owner",10).unwrap();
+        let new=rows.iter().find(|r|r.task_id=="scan-second").unwrap();
+        assert_eq!(new.state,"QUEUED");
+        assert_eq!(new.repeat_seconds,Some(3600));
+        let mut duplicate=plan("scan-third");
+        duplicate.args=vec!["--lu-file-scan-worker".into(),"new-picked-file".into()];
+        assert!(queue.reapprove_reviewed(old,duplicate).is_err());
     }
     #[test]
     fn dependency_is_owner_scoped_and_unmet_jobs_do_not_dispatch(){

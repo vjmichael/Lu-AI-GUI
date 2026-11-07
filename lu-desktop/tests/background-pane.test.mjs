@@ -85,3 +85,12 @@ test('host overview has no checkpoint or output path fields',()=>{
   assert.ok(!section.includes('output_folder:'));
   assert.ok(section.includes('last_heartbeat'));
 });
+
+test('P02 recurring schedule review requires real OS picker and independent confirmation',()=>{
+  assert.ok(host.includes('lu_background_reapprove,'));
+  assert.ok(host.includes('Reapprove scheduled work'));
+  assert.ok(host.includes('scheduler.reapprove_reviewed(&review_task_id,'));
+  assert.ok(ui.includes("invoke('lu_background_reapprove'"));
+  assert.ok(ui.includes('task.needsReview'));
+  assert.ok(ui.includes('Reapprove with a selected file'));
+});

@@ -39,6 +39,10 @@ The bounded source path for `FS-DISCOVER-01` is committed through the existing a
 
 The owner authorized P02 after P01 was submitted to GitHub compilation CI. `TASK-SCHED-01` now has a bounded native/desktop scheduler, conservative resource admission, queued media scans, delayed/recurring options, priority, host-owned worker cancellation and existing durable terminal notices. **This is not yet a universal scheduler for every tool worker, an OS-wide live telemetry system, or unattended durable recurrence across host restart.** See [P02 design/ledger](LU_BACKGROUND_SCHEDULER_P02.md). Exact-head CI and native Windows acceptance remain OPEN. **Stop before P03.**
 
+### P02 native-closeout source extension
+
+After actual Windows/Linux native P02 scheduler tests passed at the earlier exact head, the owner instructed completion of P02's remaining tasks. A further bounded source extension now covers host CPU/available-RAM pressure, Windows file-scan job memory cap, host-only shared OCR Guardian leases, explicit restart reapproval using a new OS-picked file, and SHA-256 scan proof persisted atomically with completion. **No unattended restored execution, verified VRAM monitor, or installed-app proof is implied.** [P02 details](LU_BACKGROUND_SCHEDULER_P02.md).
+
 ## 3. Critical interfaces and reuse — avoid duplicate implementations
 
 ### 3.1 Reader, OCR, vision and indexing

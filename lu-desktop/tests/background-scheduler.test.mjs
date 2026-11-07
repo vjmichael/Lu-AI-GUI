@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const core=readFileSync(new URL('../../src-tauri/lu-core/src/native_background_scheduler.rs',import.meta.url),'utf8');
+const pressure=readFileSync(new URL('../../src-tauri/lu-core/src/native_resource_pressure.rs',import.meta.url),'utf8');
+const results=readFileSync(new URL('../../src-tauri/lu-core/src/native_background_result.rs',import.meta.url),'utf8');
+const taskStore=readFileSync(new URL('../../src-tauri/lu-core/src/tasks.rs',import.meta.url),'utf8');
 const supervisor=readFileSync(new URL('../../src-tauri/lu-core/src/native_background_process.rs',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
@@ -71,4 +74,44 @@ test('P02 final output is not fabricated and real terminal handoff stays in Task
   assert.match(host,/pending_terminal_notices_after\(/);
   assert.match(host,/acknowledge_terminal_notice\(/);
   assert.doesNotMatch(core,/eval\(/);
+});
+
+test('P02 live host pressure probes reduce admission and unsafe GPU stays off',()=>{
+  assert.match(pressure,/struct PressureMonitor/);
+  assert.match(pressure,/parse_mem_available/);
+  assert.match(pressure,/parse_proc_cpu/);
+  assert.match(core,/under_host_pressure/);
+  assert.match(host,/background_pressure\.sample\(\)/);
+  assert.match(host,/observed_available_ram_mib/);
+  assert.match(host,/observed_cpu_busy_percent/);
+  assert.match(ui,/observedAvailableRamMib/);
+  assert.match(ui,/observedCpuBusyPercent/);
+  assert.match(core,/gpu:0,vram_mib:0/);
+});
+test('P02 owner-scope reapproval cannot auto-reuse old executor or input file',()=>{
+  assert.match(core,/pub fn reapprove_reviewed/);
+  assert.match(core,/superseded_after_explicit_reapproval/);
+  assert.match(core,/host_restart_rebind_required/);
+  assert.match(host,/fn lu_background_reapprove/);
+  assert.match(host,/Reapprove scheduled work/);
+  assert.match(host,/blocking_pick_file\(\)/);
+  assert.match(ui,/reapproveScheduledTask/);
+  assert.match(ui,/Reapprove with a selected file/);
+});
+test('P02 verifies a native scanner digest and returns no invented file artifact',()=>{
+  assert.match(supervisor,/struct ScanProof/);
+  assert.match(supervisor,/complete_scan_with_receipt/);
+  assert.match(taskStore,/CREATE TABLE IF NOT EXISTS lu_task_verified_results/);
+  assert.match(taskStore,/pub fn complete_scan_with_receipt/);
+  assert.match(taskStore,/pub fn verified_result/);
+  assert.match(results,/verified_sha256/);
+  assert.match(results,/verified_bytes/);
+  assert.match(results,/artifacts_verified: false/);
+});
+test('P02 one Guardian admits both schedulable workers and approved OCR workers',()=>{
+  assert.match(core,/pub fn admit_host_worker/);
+  assert.match(core,/struct GuardianLease/);
+  assert.match(core,/impl Drop for GuardianLease/);
+  assert.match(host,/ResourceClaim::ocr\(\)/);
+  assert.match(host,/OCR resource admission denied/);
 });

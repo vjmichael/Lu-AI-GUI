@@ -123,6 +123,11 @@ pub struct AwarenessNoteRow{
     pub priority:String,
     pub created_at:String,
 }
+/// Verified non-file output returned from the first-party bounded SHA-256 scanner.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TaskVerifiedResult {
+    pub kind:String,pub sha256:String,pub bytes:u64,
+}
 pub struct TaskStore {
     connection: Mutex<Connection>,
 }
@@ -158,6 +163,13 @@ impl TaskStore {
              CREATE TABLE IF NOT EXISTS lu_task_notice_ack(
                event_sequence INTEGER PRIMARY KEY NOT NULL,
                acknowledged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE IF NOT EXISTS lu_task_verified_results (
+               task_id TEXT PRIMARY KEY NOT NULL,
+               kind TEXT NOT NULL CHECK(kind='sha256_scan'),
+               sha256 TEXT NOT NULL CHECK(length(sha256)=64),
+               byte_count INTEGER NOT NULL CHECK(byte_count>0),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE TABLE IF NOT EXISTS lu_task_auto_continue (
                workspace_id TEXT PRIMARY KEY NOT NULL,
@@ -684,6 +696,63 @@ impl TaskStore {
         Ok(result)
     }
 
+    /// Only the trusted, owned-process supervisor calls this after successful
+    /// worker exit and a complete, authenticated protocol transcript. The
+    /// SQLite transaction writes the result and COMPLETED receipt together;
+    /// a crash cannot publish one without the other.
+    pub fn complete_scan_with_receipt(
+        &self,task_id:&str,digest:&str,bytes:u64
+    )->Result<(),TaskStoreError>{
+        if bytes==0||bytes>i64::MAX as u64||digest.len()!=64||
+            !digest.bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
+            return Err(TaskStoreError::InvalidStoredState)
+        }
+        let expected=format!("SHA-256: {digest}");
+        let mut conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=conn.transaction()?;
+        let changed=tx.execute(
+            "UPDATE lu_tasks SET state='COMPLETED',updated_at=CURRENT_TIMESTAMP
+             WHERE task_id=?1 AND state='RUNNING' AND progress=100 AND detail=?2",
+            params![task_id,expected]
+        )?;
+        if changed!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_verified_results(task_id,kind,sha256,byte_count)
+             VALUES(?1,'sha256_scan',?2,?3)",
+            params![task_id,digest,bytes as i64]
+        )?;
+        tx.execute(
+            "INSERT INTO lu_task_events(task_id,event,progress,detail)
+             SELECT task_id,'COMPLETED',progress,detail FROM lu_tasks WHERE task_id=?1",
+            params![task_id]
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+    /// An owned and completed task may expose a bounded digest receipt,
+    /// never a source file path, an output artifact, or raw checkpoint bytes.
+    pub fn verified_result(&self,task_id:&str,workspace:&str)
+        ->Result<Option<TaskVerifiedResult>,TaskStoreError>{
+        if task_id.is_empty()||task_id.len()>128||workspace.is_empty()
+            ||workspace.len()>128||!task_id.bytes().all(|x|
+                x.is_ascii_alphanumeric()||x==b'-'||x==b'_')
+            ||!workspace.bytes().all(|x|
+                x.is_ascii_alphanumeric()||x==b'-'||x==b'_'){
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        conn.query_row(
+            "SELECT r.kind,r.sha256,r.byte_count FROM lu_task_verified_results r
+             JOIN lu_tasks t ON t.task_id=r.task_id
+             WHERE r.task_id=?1 AND t.workspace_id=?2 AND t.state='COMPLETED'",
+            params![task_id,workspace],|row|{
+                Ok(TaskVerifiedResult{
+                    kind:row.get(0)?,sha256:row.get(1)?,
+                    bytes:row.get::<_,i64>(2)? as u64,
+                })
+            }
+        ).optional().map_err(Into::into)
+    }
     pub fn get(&self, task_id: &str) -> Result<Option<TaskRecord>, TaskStoreError> {
         let connection = self
             .connection
@@ -969,3 +1038,36 @@ mod cancellation_tests{
         let _=std::fs::remove_file(dir.with_extension("sqlite-shm"));
     }
 }
+
+#[cfg(test)]
+mod p02_verified_result_tests {
+    use super::*;
+    #[test]
+    fn scan_result_and_terminal_notice_are_atomic_and_owner_scoped(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("scan-s1",Some("c-owner"),None).unwrap();
+        store.start("scan-s1").unwrap();
+        let digest="a".repeat(64);
+        assert!(store.complete_scan_with_receipt("scan-s1",&digest,100).is_err());
+        store.checkpoint("scan-s1",100,&format!("SHA-256: {digest}"),&[]).unwrap();
+        store.complete_scan_with_receipt("scan-s1",&digest,100).unwrap();
+        let r=store.verified_result("scan-s1","c-owner").unwrap().unwrap();
+        assert_eq!(r.kind,"sha256_scan");
+        assert_eq!(r.bytes,100);
+        assert_eq!(r.sha256,digest);
+        assert!(store.verified_result("scan-s1","c-other").unwrap().is_none());
+        assert!(store.complete_scan_with_receipt("scan-s1",&digest,100).is_err());
+        let notices=store.pending_terminal_notices(10).unwrap();
+        assert_eq!(notices.len(),1);
+    }
+    #[test]
+    fn invalid_digest_cannot_publish_output_proof(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("scan-s2",Some("c-owner"),None).unwrap();
+        store.start("scan-s2").unwrap();
+        store.checkpoint("scan-s2",100,"SHA-256: invalid",&[]).unwrap();
+        assert!(store.complete_scan_with_receipt("scan-s2","0",42).is_err());
+        assert!(store.verified_result("scan-s2","c-owner").unwrap().is_none());
+    }
+}
+
