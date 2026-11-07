@@ -556,6 +556,10 @@ mod tests{
             chat.move_chat(&chat_id,Some(folder.folder_id.clone())).unwrap();
             chat.favorite(&chat_id,true).unwrap();
             chat.append_user_with_turn_id(&chat_id,&turn,"Remember ANSF").unwrap();
+            assert_eq!(chat.library.get_book(&chat_id).unwrap().unwrap().title,
+                "Remember ANSF");
+            assert!(chat.library.search_books("Remember ANSF",10).unwrap()
+                .iter().any(|b|b.session_id==chat_id));
             chat.append_progress(&chat_id,&turn,"partial").unwrap();
             chat.append_progress(&chat_id,&turn,"complete").unwrap();
             chat.complete(&chat_id,&turn).unwrap();
