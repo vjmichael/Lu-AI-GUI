@@ -59,6 +59,9 @@ test('P03 public provider metadata search is an explicit read-only Settings acti
   const researcher=readFileSync(new URL('../src-tauri/src/research_desktop.rs',import.meta.url),'utf8');
   assert.match(host,/fn lu_model_provider_search\(/);
   assert.match(host,/fn lu_model_provider_review\(/);
+  assert.match(host,/fn lu_model_prepare_transfer\(/);
+  assert.match(host,/make_reviewed_transfer_intent/);
+  assert.match(host,/blocking_show\(\)/);
   assert.match(host,/fn lu_model_backend_options\(/);
   assert.match(provider,/parse_repo_license/);
   assert.match(provider,/parse_tree/);
@@ -69,5 +72,7 @@ test('P03 public provider metadata search is an explicit read-only Settings acti
   assert.match(ui,/lu_model_provider_search/);
   assert.match(ui,/lu_model_provider_review/);
   assert.match(ui,/In-app downloads are blocked/);
+  assert.match(ui,/lu_model_prepare_transfer/);
+  assert.match(ui,/awaiting_p05_transfer/);
   assert.match(ui,/Model backend availability/);
 });
