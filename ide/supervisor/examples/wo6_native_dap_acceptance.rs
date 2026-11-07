@@ -210,6 +210,11 @@ mod protected {
         while began.elapsed() < Duration::from_secs(35) {
             for event in dap.poll().map_err(|e| e.code())? {
                 match event {
+                    DapEvent::ConfigurationRequested => {
+                        // DAP permits initialized only after launch. Complete the
+                        // fixed empty configuration; never run adapter requests.
+                        dap.configuration_done().map_err(|e| e.code())?;
+                    }
                     DapEvent::Stopped { thread_id } => {
                         stopped = Some(thread_id);
                     }
