@@ -1420,6 +1420,11 @@ impl ResearchDesktop{
             ||!candidate.source_id.starts_with("https://openalex.org/"){
             return Err("Invalid citation revision conversation or source".into());
         }
+        let dir=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Citation revision evidence directory unavailable")?;
+        if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+            return Err("Citation revision evidence directory untrusted".into());
+        }
         let db=self.root.join(format!("{chat_id}.sqlite"));
         let metadata=fs::symlink_metadata(&db)
             .map_err(|_|"Reviewed catalog database unavailable")?;
