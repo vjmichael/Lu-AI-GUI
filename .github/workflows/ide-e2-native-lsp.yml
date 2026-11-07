@@ -67,6 +67,170 @@ jobs:
           $bundle=Join-Path $env:RUNNER_TEMP 'e2-clangd-bundle'
           New-Item -ItemType Directory -Path (Join-Path $bundle 'bin') | Out-Null
           Copy-Item -LiteralPath $clangd -Destination (Join-Path $bundle 'bin\clangd.exe')
+          # The native clangd CI bundle must carry only the matching distro
+          # LLVM sibling runtime libraries, not DLLs from PATH or users'
+          # projects. Each byte participates in the existing sealed digest.
+          $origin=Split-Path $clangd -Parent
+          Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File |
+            Copy-Item -Destination (Join-Path $bundle 'bin')
+          $readobj=Join-Path $origin 'llvm-readobj.exe'
+          if (!(Test-Path -LiteralPath $readobj -PathType Leaf)) {
+            Write-Host 'P03_CLANGD_PE_IMPORT_AUDIT=reader_unavailable_not_a_pass'
+          } else {
+            $raw=@(& $readobj --coff-imports (Join-Path $bundle 'bin\clangd.exe') 2>&1)
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed clangd PE import audit rejected binary' }
+            $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($entry in $raw) {
+              $line=([string]$entry).Trim().ToLowerInvariant()
+              if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
+              $dll=$line.Substring(6)
+              if ($dll -notmatch '^[a-z0-9_.-]+\.dll -Value "LU_IDE_E2_PINNED_LSP_BUNDLE=$bundle"
+          Write-Host "Test-only clangd SHA $((Get-FileHash (Join-Path $bundle 'bin\clangd.exe') -Algorithm SHA256).Hash)"
+          # Diagnostic-only: reject an invalid copied executable or arguments
+          # BEFORE the later real restricted-AppContainer acceptance. This
+          # trusted fixed binary version check does NOT constitute containment.
+          $binary=(Join-Path $bundle 'bin\clangd.exe')
+          # Fully drain native stdout first. Select-Object -First can close
+          # a native pipeline early and manufacture an exit-code failure.
+          $versionLines=@(& $binary --log=error --background-index=false --version 2>&1)
+          $versionStatus=$LASTEXITCODE
+          $versionLines | Select-Object -First 3 | ForEach-Object { Write-Host ([string]$_) }
+          if ($versionStatus -ne 0) { throw 'DENIED: independently staged clangd startup arguments invalid' }
+      - name: Independently install SCM service and verify real AppContainer clangd
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $service=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
+          $hostExe=(Resolve-Path 'ide/supervisor/target/debug/examples/e2_native_lsp_acceptance.exe').Path
+          $serviceSha=(Get-FileHash $service -Algorithm SHA256).Hash
+          $hostSha=(Get-FileHash $hostExe -Algorithm SHA256).Hash
+          $bootstrap=(Resolve-Path 'ide/supervisor/target/debug/windows_null_service_bootstrap.exe').Path
+          $serviceInstalled=$false
+          $nulBootstrapTouched=$false
+          try {
+            & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' -ServiceExecutable $service -ExpectedServiceSha256 $serviceSha -ApprovedHostExecutable $hostExe -ExpectedHostSha256 $hostSha -CiAcceptanceUnsigned -Start
+            if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'DENIED: protected service install failed' }
+            $serviceInstalled=$true
+            # This machine-global NUL DACL change is installer-only, outside
+            # all worker jobs, and names only the restricted SCM service SID.
+            # Mark cleanup BEFORE the call; even a failed grant may mutate it.
+            $nulBootstrapTouched=$true
+            & $bootstrap --grant-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact restricted-service NUL bootstrap failed' }
+            & $bootstrap --verify-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact NUL bootstrap readback failed' }
+            # Fixed stage IDs only: no paths, process tokens or project bytes.
+            $env:LU_IDE_E2_NATIVE_TRACE='1'
+            $env:LU_IDE_NATIVE_ACCEPTANCE_TRACE='1'
+            $env:LU_IDE_E2_TRUSTED_SERVICE=$service
+            & $hostExe
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: native clangd normal acceptance failed' }
+            & $hostExe --cancel
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: native clangd cancellation acceptance failed' }
+          } finally {
+            if ($nulBootstrapTouched) {
+              & $bootstrap --revoke-fixed-service
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact restricted-service NUL bootstrap revocation failed' }
+            }
+            if ($serviceInstalled) {
+              & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected SCM service uninstall failed' }
+            }
+            $global:LASTEXITCODE=0
+          }
+      - name: Label test provenance
+        if: always()
+        run: echo "Acceptance-only self-measured binaries; not signed installer/release evidence."
+
+  delegated-clangd-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Install native test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap clangd
+      - name: Create root-owned, self-measured clangd acceptance bundle
+        run: |
+          # The root itself must be immutable and root-owned, not merely
+          # its bin/ child. The native worker checks the actual root inode.
+          sudo install -d -o root -g root -m 0755 /opt/lu-ide-e2-test
+          sudo install -d -o root -g root -m 0755 /opt/lu-ide-e2-test/bin
+          sudo install -o root -g root -m 0755 "$(command -v clangd)" /opt/lu-ide-e2-test/bin/clangd
+          test ! -L /opt/lu-ide-e2-test
+          test "$(stat -c '%u:%g:%a' /opt/lu-ide-e2-test)" = '0:0:755'
+          test "$(stat -c '%u:%g:%a' /opt/lu-ide-e2-test/bin)" = '0:0:755'
+          echo LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test >> "$GITHUB_ENV"
+      - name: Check genuine systemd delegation support (not root cgroup write access)
+        shell: bash
+        run: |
+          set -euo pipefail
+          systemctl --version | head -n 1
+          cat /proc/self/cgroup
+          cat /sys/fs/cgroup/cgroup.controllers
+          test -x /usr/bin/systemd-run || { echo 'DENIED: no native systemd-run'; exit 1; }
+          test -f /sys/fs/cgroup/cgroup.controllers
+          if ! test "$(id -un)" = runner; then
+            echo 'DENIED: unexpected hosted runner account'; exit 1
+          fi
+          echo 'Systemd manager must prove delegated service controllers; ordinary runner root cgroup write access is irrelevant.'
+      - name: Compile genuine cgroup admission helper and fixed native clangd fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_lsp_host
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_lsp_acceptance
+      - name: Run genuine unprivileged systemd delegated clangd and cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_lsp_host)"
+          # This privileged ACTIONS setup merely asks systemd to provision
+          # an exact delegated CPU/memory/PID unit. The worker executes as
+          # unprivileged runner and MUST prove kernel membership/quotas itself.
+          # No Docker, generic shell worker, direct cgroup chmod, fake cgroupfs
+          # or uncontained fallback on failure. systemd MUST first place
+          # this fixed host executable inside lu-ide-host via ExecStart; the
+          # host then launches only the trusted fixed helper and native LSP
+          # fixture. Enabling controllers in ExecStartPre previously produced
+          # kernel EBUSY as systemd attempted to attach ExecStart to the root.
+          for mode in normal cancel; do
+            cmd=()
+            if [[ "$mode" == cancel ]]; then cmd+=(--cancel); fi
+            result=0
+            sudo /usr/bin/systemd-run --wait --collect --pipe \
+              --unit=lu-ide-delegated \
+              --property=Type=exec \
+              --property=User=runner \
+              --property=Group=runner \
+              --property='Delegate=cpu memory pids' \
+              --property=DelegateSubgroup=lu-ide-host \
+              "$host" "${cmd[@]}" || result=$?
+            if [[ "$result" != 0 ]]; then
+              echo 'DENIED: genuine delegated unit failed; systemd kernel/service evidence follows'
+              sudo systemctl show lu-ide-delegated.service --no-pager \
+                --property=Result,ExecMainCode,ExecMainStatus,ExecStart,ExecStartPre,Delegate,DelegateSubgroup \
+                || true
+              sudo journalctl -u lu-ide-delegated.service --no-pager -n 40 --output=cat || true
+              exit "$result"
+            fi
+            echo "PASS: real systemd delegated Linux clangd $mode fixture"
+          done
+) { throw 'DENIED: malformed clangd native import' }
+              if ($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')) { continue }
+              $bundled=Test-Path -LiteralPath (Join-Path $bundle ('bin\' + $dll))
+              $system=Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $dll))
+              if (!$bundled -and !$system) { [void]$missing.Add($dll) }
+            }
+            foreach ($dll in @($missing | Sort-Object)) { Write-Host "P03_CLANGD_UNRESOLVED_DIRECT_DLL=$dll" }
+            Write-Host "P03_CLANGD_UNRESOLVED_DIRECT_IMPORTS=$($missing.Count)"
+            Write-Host 'P03_CLANGD_PE_IMPORT_AUDIT=diagnostic_only'
+          }
           Add-Content -Path $env:GITHUB_ENV -Value "LU_IDE_E2_PINNED_LSP_BUNDLE=$bundle"
           Write-Host "Test-only clangd SHA $((Get-FileHash (Join-Path $bundle 'bin\clangd.exe') -Algorithm SHA256).Hash)"
           # Diagnostic-only: reject an invalid copied executable or arguments
