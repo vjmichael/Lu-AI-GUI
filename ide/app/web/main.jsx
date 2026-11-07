@@ -31,6 +31,14 @@ const taskGateChoices = [
 function App() {
   const [section, setSection] = useState('projects');
   const [projects, setProjects] = useState([]);
+  const [gitReviewPath, setGitReviewPath] = useState('');
+  const [gitReview, setGitReview] = useState(null);
+  const [gitStageReceipt, setGitStageReceipt] = useState(null);
+  const [gitCommitReceipt, setGitCommitReceipt] = useState(null);
+  const [gitCommitMessage, setGitCommitMessage] = useState('');
+  const [gitAuthorName, setGitAuthorName] = useState('');
+  const [gitAuthorEmail, setGitAuthorEmail] = useState('');
+  const [gitWriteBusy, setGitWriteBusy] = useState(false);
   const [workflowProjectIds, setWorkflowProjectIds] = useState([]);
   const [workflowInspection, setWorkflowInspection] = useState(null);
   const [workflowRevalidated, setWorkflowRevalidated] = useState(false);
@@ -451,6 +459,53 @@ function App() {
     } finally {
       if (serial === workflowRequest.current) setWorkflowBusy(false);
     }
+  }
+
+  async function reviewGitFileForStage() {
+    if (!activeProject || gitWriteBusy || !gitReviewPath.trim()) return;
+    setGitWriteBusy(true);
+    setGitReview(null); setGitStageReceipt(null); setGitCommitReceipt(null);
+    setProblem('');
+    try {
+      const preview = await invoke('ide_git_review_file', {
+        projectId: activeProject.projectId, relativePath: gitReviewPath.trim(),
+      });
+      if (preview.projectId === activeProject.projectId) setGitReview(preview);
+    } catch (error) { setProblem('One-file Git preview denied: ' + String(error)); }
+    finally { setGitWriteBusy(false); }
+  }
+
+  async function stageReviewedGitFile() {
+    if (!gitReview || gitWriteBusy || !activeProject ||
+        gitReview.projectId !== activeProject.projectId) return;
+    setGitWriteBusy(true);
+    setProblem('');
+    try {
+      const staged = await invoke('ide_git_stage_reviewed', { expected: gitReview });
+      if (staged.projectId === activeProject.projectId &&
+          staged.sourceSha256 === gitReview.worktreeSha256) {
+        setGitStageReceipt(staged); setGitReview(null);
+        setHint('One reviewed source file staged using native Git. A separate explicit commit is required.');
+      }
+    } catch (error) { setGitReview(null); setProblem('Native Git stage denied: ' + String(error)); }
+    finally { setGitWriteBusy(false); void refreshGitStatus(); }
+  }
+
+  async function commitReviewedGitFile() {
+    if (!gitStageReceipt || gitWriteBusy || !activeProject ||
+        gitStageReceipt.projectId !== activeProject.projectId) return;
+    setGitWriteBusy(true); setProblem('');
+    try {
+      const done = await invoke('ide_git_commit_reviewed', {
+        stage: gitStageReceipt, message: gitCommitMessage,
+        authorName: gitAuthorName, authorEmail: gitAuthorEmail,
+      });
+      if (done.projectId === activeProject.projectId) {
+        setGitCommitReceipt(done); setGitStageReceipt(null); setGitCommitMessage('');
+        setHint('Local Git commit created. No hooks, push or release action occurred.');
+      }
+    } catch (error) { setProblem('Native Git commit denied: ' + String(error)); }
+    finally { setGitWriteBusy(false); void refreshGitStatus(); }
   }
 
   async function refreshGitStatus() {
@@ -1940,11 +1995,67 @@ function App() {
               <span>{gitStatus ? gitStatus.worktree.replaceAll('_', ' ') : 'Not inspected'}</span>
             </div>
             <p className="capabilityNotice">
-              Local status is read directly from the registered project.
-              The IDE does not run Git, stage changes, fetch from GitHub, or modify files.
+              Local status is read directly from the registered project. WO9 permits one-file,
+              human-reviewed local staging and commit through native libgit2 only. No hooks,
+              arbitrary commands, remote fetch, push or branch checkout are exposed.
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <div className="continuityDocument" aria-label="Reviewed local Git staging and commit">
+              <h3>Review, stage, commit one tracked file</h3>
+              <p>Only a tracked, regular file under your OS-picker-selected project.
+                Native host checks the exact source SHA, Git HEAD and index before
+                staging its reviewed bytes. Separate operating-system confirmations
+                are required for Stage and Commit. No project scripts or Git hooks run.</p>
+              <label htmlFor="wo9GitPath">Project-relative tracked file</label>
+              <input id="wo9GitPath" type="text" value={gitReviewPath}
+                placeholder="src/main.rs" maxLength={240}
+                disabled={gitWriteBusy || !!gitStageReceipt}
+                onChange={event => { setGitReviewPath(event.target.value);
+                  setGitReview(null); setGitCommitReceipt(null); }} />
+              <button type="button" className="ghostBtn"
+                disabled={gitWriteBusy || !!gitStageReceipt || !gitReviewPath.trim()}
+                onClick={() => reviewGitFileForStage()}>Inspect exact Git file</button>
+              {gitReview && <article className="continuityEvent">
+                <strong>Reviewed local file: {gitReview.relativePath}</strong>
+                <p>HEAD: <code>{gitReview.localHead}</code></p>
+                <p>Exact file SHA: <code>{gitReview.worktreeSha256}</code></p>
+                <p>Index revision: <code>{gitReview.indexFingerprint}</code></p>
+                <p>Size: {gitReview.fileSize.toLocaleString()} bytes. Review this file's
+                  changes in the read-only Diff view before staging.</p>
+                <button type="button" className="primaryBtn"
+                  disabled={gitWriteBusy} onClick={() => stageReviewedGitFile()}>
+                  Confirm and stage these reviewed bytes
+                </button>
+              </article>}
+              {gitStageReceipt && <article className="continuityEvent">
+                <strong>Staged exact file: {gitStageReceipt.relativePath}</strong>
+                <p>Git blob: <code>{gitStageReceipt.stagedBlobOid}</code></p>
+                <p>SHA-256: <code>{gitStageReceipt.sourceSha256}</code></p>
+                <label htmlFor="wo9CommitMessage">Local commit message</label>
+                <input id="wo9CommitMessage" type="text" value={gitCommitMessage}
+                  maxLength={1200} disabled={gitWriteBusy}
+                  onChange={event => setGitCommitMessage(event.target.value)} />
+                <label htmlFor="wo9CommitName">Author name</label>
+                <input id="wo9CommitName" type="text" value={gitAuthorName}
+                  maxLength={96} disabled={gitWriteBusy}
+                  onChange={event => setGitAuthorName(event.target.value)} />
+                <label htmlFor="wo9CommitEmail">Author email</label>
+                <input id="wo9CommitEmail" type="email" value={gitAuthorEmail}
+                  maxLength={96} disabled={gitWriteBusy}
+                  onChange={event => setGitAuthorEmail(event.target.value)} />
+                <button type="button" className="primaryBtn"
+                  disabled={gitWriteBusy || !gitCommitMessage.trim() ||
+                    !gitAuthorName.trim() || !gitAuthorEmail.trim()}
+                  onClick={() => commitReviewedGitFile()}>
+                  Confirm separate local commit (no push)
+                </button>
+              </article>}
+              {gitCommitReceipt && <p role="status">
+                Local commit: <code>{gitCommitReceipt.commitSha}</code>.
+                Remote unchanged; release unapproved.</p>}
+            </div>}
+
             {gitBusy && <p role="status">Inspecting local Git state…</p>}
             {!gitBusy && gitStatus && <div className="continuityBody">
               <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
