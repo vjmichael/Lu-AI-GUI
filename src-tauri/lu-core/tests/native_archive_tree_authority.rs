@@ -127,6 +127,11 @@ async fn full_tree_extraction_requires_exact_approved_manifest_and_reconciles(){
     assert!(matches!(authority.dispatch_bound_durable(
         &registry,&journal,approved,origin,&fence
     ).await,Err(DispatchError::Denied(_))));
+    // On Windows, open directory capabilities prevent deleting the fixture.
+    // Release *all* owners, including the cancellation registry and policies,
+    // before testing that the host can reclaim the directory on shutdown.
+    drop(canceled_registry);drop(canceled_catalog);drop(canceled_fence);
+    drop(fence);drop(authority);drop(policy);
     drop(journal);drop(catalog);drop(registry);drop(dir);
     fs::remove_dir_all(root).unwrap();
 }
