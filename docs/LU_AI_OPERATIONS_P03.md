@@ -6,6 +6,12 @@
 
 The following independent, previously open P02 release gates are **DEFERRED BY OWNER**, not passed: (1) physical Windows NSIS install/uninstall, restart and installed GUI acceptance; (2) genuine physical AMD backend GPU/VRAM and GGUF/MMProj inference/offload acceptance. All P03 work must respect that deferred boundary: no fake GPU readiness, no simulated model proof, and no silently enabling background GPU workers.
 
+## Owner continuation checkpoint (after first P03 source commit)
+
+P03 already supplies native, non-authoritative tool preference, cache *infrastructure* only, native local GGUF/MMProj identity/metadata inspection and search, and an inert immutable provider consent validator. The current working branch is [PR #71](https://github.com/vjmichael/Lu-AI-GUI/pull/71), stacked on P02 PR #67. **Do not describe offline/online model downloads, real compatibility/fallback or verified cross-turn source reuse as implemented yet.** Subsequent work should close them when safe; defer NSIS and physical AMD GPU/MMProj offload as separately instructed.
+
+P03 completion sequence: connect actual Reader/Workspace sources to verified fingerprint lifecycle without reusing authorizations; implement explicit provider discovery and user-reviewed immutable download admission, safely reusing the file transfer infrastructure and leaving risky/unavailable network installation blocked; add compatibility/fallback policy with source-grounded evidence; then evaluate/repair real exact-head Windows/Linux CI. Stop at P03, not P04.
+
 ## Existing implementation reused
 
 - Lu Core: `native_capability_inventory`, `conversation_authority`, `capability_router`, `ModelToolCatalog`, `NativeToolTurn`, Protobuf IPC and effect journals; none can be bypassed by AI-OPS ranking.
