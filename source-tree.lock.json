@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "02e172e813a6aa09710bcb90b5e44df723c10d86",
+  "sourceCommitBeforeLock": "37e27d834abb7a83916c06ea262ea7ecd55ce2be",
   "trackedFileCount": 495,
   "files": [
     {
@@ -1141,7 +1141,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "3b4f1aab3a66449de90edad7512318a498068516"
+      "blob": "1ba0c7bf0437ce9f4eb2a3cce81136c246d0abdd"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
@@ -1325,7 +1325,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_resource_pressure.rs",
-      "blob": "55bd60867563ca06fab8f9c198e73fb8b3f6cf6e"
+      "blob": "53e793194f3fedef9b5edc9321ed6c872a35eb55"
     },
     {
       "path": "src-tauri/lu-core/src/native_rpm.rs",
