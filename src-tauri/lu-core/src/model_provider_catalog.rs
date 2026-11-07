@@ -60,7 +60,8 @@ fn safe_license(label:&str)->bool{
     label.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'|b'.'))
 }
 fn valid_name(s:&str)->bool{
-    s.len()>5&&s.len()<=200&&s.to_ascii_lowercase().ends_with(".gguf") &&
+    s.len()>5&&s.len()<=200&&!s.starts_with('.')&&!s.contains("..")&&
+    s.to_ascii_lowercase().ends_with(".gguf") &&
     s.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'|b'.'))
 }
 fn is_restricted(v:&Value)->bool{
