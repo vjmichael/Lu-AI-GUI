@@ -24,8 +24,7 @@ use std::{
 // source text, cgroup names, credentials or untrusted LSP protocol contents.
 fn native_linux_lsp_trace(stage: &'static str) {
     if cfg!(debug_assertions)
-        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-            == Some(std::ffi::OsStr::new("1"))
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
     {
         eprintln!("PROTECTED_LINUX_LSP_STAGE={stage}");
     }
