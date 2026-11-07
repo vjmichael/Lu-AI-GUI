@@ -88,7 +88,8 @@ def cargo_packages(root):
         out=subprocess.run(
             ["cargo","metadata","--offline","--format-version","1",
              "--manifest-path",str(manifest)],
-            text=True,capture_output=True,timeout=90,check=False,
+            text=True,encoding="utf-8",errors="strict",
+            capture_output=True,timeout=90,check=False,
         )
         if out.returncode or len(out.stdout)>25*1024*1024:
             return [], ["cargo_offline_metadata_unavailable"]
