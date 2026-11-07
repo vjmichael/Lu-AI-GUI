@@ -36,6 +36,10 @@ WORKFLOWS = {
     "native-windows-cargo": "ide-d7d-protected-service.yml",
     "native-windows-dap": "ide-wo6-native-os-acceptance.yml",
     "native-linux-dap": "ide-wo6-native-os-acceptance.yml",
+    **{gate: "ide-wo7-installed-acceptance.yml" for gate in REQUIRED - {
+        "native-windows-cargo", "native-windows-dap", "native-linux-dap",
+        "license-and-import-closure"}},
+    "license-and-import-closure": "ide-wo7-release-bundle-audit.yml",
 }
 MAX_ROWS = 64
 
@@ -66,10 +70,14 @@ def audit(data: object, exact_head: str) -> dict:
                 (run_id, job_id) in jobs):
             raise Denied("missing_or_reused_exact_ci_job")
         jobs.add((run_id, job_id))
-        if row.get("workflow") != WORKFLOWS.get(name, row.get("workflow")):
+        if row.get("workflow") != WORKFLOWS[name]:
             raise Denied("native_workflow_path_mismatch")
         if not isinstance(row.get("workflow"), str) or not re.fullmatch(r"ide-[a-z0-9-]+\.yml", row["workflow"]):
             raise Denied("unknown_workflow_provenance")
+        if name.startswith("native-linux") and row["os"] != "ubuntu-24.04":
+            raise Denied("linux_witness_not_from_linux")
+        if not name.startswith("native-linux") and not row["os"].startswith("windows-"):
+            raise Denied("windows_witness_not_from_windows")
         if not isinstance(row.get("witnessSha256"), str) or not SHA64.fullmatch(row["witnessSha256"]):
             raise Denied("missing_native_receipt_digest")
         if row.get("skipped") is not False or row.get("containmentVerified") is not True:
