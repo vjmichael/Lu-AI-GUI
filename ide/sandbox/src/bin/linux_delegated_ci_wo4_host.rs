@@ -25,8 +25,8 @@ fn run() -> Result<(), &'static str> {
     let helper = root.join("target/debug/linux_cgroup_prepare");
     let witness = root.join("target/debug/linux_cgroup_native_witness");
     for fixed in [&helper, &witness] {
-        let meta = fs::symlink_metadata(fixed)
-            .map_err(|_| "fixed acceptance executable missing")?;
+        let meta =
+            fs::symlink_metadata(fixed).map_err(|_| "fixed acceptance executable missing")?;
         if !meta.is_file() || meta.file_type().is_symlink() {
             return Err("fixed acceptance executable changed identity");
         }
