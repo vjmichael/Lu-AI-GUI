@@ -391,13 +391,11 @@ mod tests {
         )
         .unwrap();
         gateway.initialize().unwrap();
-        shared.pending.lock().unwrap().push_back(frame(json!({
-            "seq":1,"type":"event","event":"initialized"
-        })));
+        // Valid DAP adapters answer initialize before their initialized event.
+        // The read-only fixture needs no launch or configurationDone at all.
         shared.pending.lock().unwrap().push_back(frame(json!({
             "seq":2,"type":"response","request_seq":1,"command":"initialize","success":true
         })));
-        assert!(gateway.poll().unwrap().is_empty());
         assert_eq!(gateway.poll().unwrap(), vec![DapEvent::Initialized]);
         assert_eq!(gateway.phase(), DapPhase::Ready);
         gateway.threads().unwrap();
