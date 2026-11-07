@@ -1,0 +1,179 @@
+name: IDE WO9 independently signed installed protected workflows (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed source SHA shared by signed Windows/Linux candidates
+        required: true
+        type: string
+      windows_signed_candidate_run:
+        description: GitHub Actions artifact run containing genuine signed WO7 Windows installer
+        required: true
+        type: string
+      linux_signed_candidate_run:
+        description: GitHub Actions artifact run containing GPG-signed WO9 Debian package
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  genuine-windows-protected-dag:
+    runs-on: windows-2022
+    environment: lu-ide-native-e2e
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.windows_signed_candidate_run }}
+          name: lu-ide-wo7-candidate
+          path: candidate
+          github-token: ${{ github.token }}
+      - name: Verify source, genuine Authenticode and all three pinned binaries
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          if ($env:SOURCE_SHA -notmatch '^[0-9a-fA-F]{40}$' -or
+              (git rev-parse HEAD).Trim() -ine $env:SOURCE_SHA) {
+            throw 'DENIED: signed candidate exact head mismatch'
+          }
+          python ide/packaging/verify_wo7_candidate.py --manifest candidate/wo7-release.manifest.json --artifact-root candidate --source-sha $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Authenticode or license evidence invalid' }
+      - name: Install signed application, run real two-step protected DAG via UI and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $manifest=Get-Content candidate/wo7-release.manifest.json -Raw | ConvertFrom-Json
+          $root=Join-Path $env:ProgramFiles 'Lu IDE'
+          $exe=Join-Path $root 'lu-ide-desktop.exe'
+          if ((Test-Path $root) -or (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
+            throw 'DENIED: signed native acceptance needs fresh isolated host'
+          }
+          $installer=Join-Path (Resolve-Path candidate).Path $manifest.installer.path
+          $installed=$false; $uninstalled=$false
+          try {
+            $install=Start-Process $installer -ArgumentList '/S' -PassThru -Wait
+            if ($install.ExitCode -ne 0) { throw 'DENIED: signed native NSIS installation failed' }
+            $installed=$true
+            if (!(Test-Path $exe) -or
+                (Get-FileHash $exe -Algorithm SHA256).Hash -ine $manifest.desktop.sha256) {
+              throw 'DENIED: installed signed binary changed'
+            }
+            $fixture=Join-Path $env:RUNNER_TEMP ('wo9-protected-'+$env:GITHUB_RUN_ID)
+            New-Item -ItemType Directory -Path (Join-Path $fixture 'src'),(Join-Path $fixture 'dist') -Force | Out-Null
+            [IO.File]::WriteAllText((Join-Path $fixture 'Cargo.toml'),"[package]`nname = `"wo9_native_acceptance`"`nversion = `"0.1.0`"`nedition = `"2021`"`n")
+            [IO.File]::WriteAllText((Join-Path $fixture 'src/main.rs'),"fn main() { println!(`"native`"); }`n")
+            [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),"fn main() { println!(`"native`"); }`n")
+            [IO.File]::WriteAllText((Join-Path $fixture 'dist/verified.tar'),"WO9 native package evidence")
+            & cargo generate-lockfile --manifest-path (Join-Path $fixture 'Cargo.toml') --offline
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: no frozen offline Cargo lockfile' }
+            & git -C $fixture init -q
+            & git -C $fixture add .
+            & git -C $fixture -c user.name=WO9 -c user.email=wo9@localhost.invalid commit -q -m 'fixed signed candidate'
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: source fixture Git HEAD not frozen' }
+            & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -FixtureRoot $fixture -Scenario Wo9ProtectedGraph
+            if (!$?) { throw 'DENIED: genuine installed signed protected two-step OS DAG not accepted' }
+            $uninstallers=@(Get-ChildItem $root -File -Filter '*uninstall*.exe')
+            if ($uninstallers.Count -ne 1) { throw 'DENIED: signed installer missing native uninstaller' }
+            $un=Start-Process $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
+            if ($un.ExitCode -ne 0 -or (Test-Path $exe) -or
+                (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
+              throw 'DENIED: protected SCM service/desktop not uninstalled'
+            }
+            $uninstalled=$true
+            Write-Host 'WO9_SIGNED_WINDOWS_INSTALLED_PROTECTED_DEPENDENCY_GRAPH=PASS'
+            Write-Host 'WO9_RELEASE_APPROVED=FALSE'
+          } finally {
+            if ($installed -and !$uninstalled) { Write-Warning 'Signed Windows native gate not accepted; runner quarantined' }
+          }
+  genuine-linux-protected-dag:
+    runs-on: ubuntu-24.04
+    environment: lu-ide-native-e2e
+    timeout-minutes: 120
+    env:
+      REVIEWED_SIGNER_PUBLIC_KEY: ${{ secrets.WO9_LINUX_RELEASE_GPG_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.linux_signed_candidate_run }}
+          name: lu-ide-wo9-linux-signed-candidate
+          path: candidate
+          github-token: ${{ github.token }}
+      - name: Verify independently signed exact-source Debian bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.source_sha }}" =~ ^[0-9a-fA-F]{40}$ ]] || exit 2
+          test "$(git rev-parse HEAD)" = "${{ inputs.source_sha }}"
+          test -n "$REVIEWED_SIGNER_PUBLIC_KEY" || { echo 'DENIED: missing pinned Linux release signing key'; exit 3; }
+          python3 - <<'PY'
+          import json, pathlib, hashlib, os, re
+          p=pathlib.Path('candidate/wo9-linux-release.json')
+          m=json.loads(p.read_text())
+          if m.get('schema')!='lu.ide.wo9.signed-linux.v1' or m.get('sourceSha') != os.environ.get('GITHUB_SHA') and m.get('sourceSha') != pathlib.Path('.git/HEAD').read_text().strip():
+              pass # Native exact SHA is checked separately below with strict env.
+          if m.get('schema')!='lu.ide.wo9.signed-linux.v1':
+              raise SystemExit('DENIED: unsupported Linux source manifest')
+          for key in ('debSha256','signedDebPath','detachedSignaturePath'):
+              if not m.get(key): raise SystemExit('DENIED: incomplete Linux signed candidate')
+          for key in ('signedDebPath','detachedSignaturePath'):
+              path=pathlib.PurePosixPath(m[key])
+              if path.is_absolute() or '..' in path.parts or len(path.parts)!=1:
+                  raise SystemExit('DENIED: artifact path outside immutable candidate directory')
+          deb=pathlib.Path('candidate')/m['signedDebPath']
+          if hashlib.sha256(deb.read_bytes()).hexdigest()!=m['debSha256']:
+              raise SystemExit('DENIED: signed Debian candidate digest changed')
+          PY
+          test "$(python3 -c 'import json; print(json.load(open("candidate/wo9-linux-release.json"))["sourceSha"])')" = "${{ inputs.source_sha }}" || exit 4
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gnupg libwebkit2gtk-4.1-dev xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
+          mkdir -m 700 -p "$RUNNER_TEMP/wo9-release-gpg"
+          printf '%s\n' "$REVIEWED_SIGNER_PUBLIC_KEY" > "$RUNNER_TEMP/wo9-release-gpg/trusted.asc"
+          gpg --batch --no-default-keyring --keyring "$RUNNER_TEMP/wo9-release-gpg/trusted.gpg" --import "$RUNNER_TEMP/wo9-release-gpg/trusted.asc"
+          deb="$(python3 -c 'import json; print(json.load(open("candidate/wo9-linux-release.json"))["signedDebPath"])')"
+          sig="$(python3 -c 'import json; print(json.load(open("candidate/wo9-linux-release.json"))["detachedSignaturePath"])')"
+          gpgv --keyring "$RUNNER_TEMP/wo9-release-gpg/trusted.gpg" "candidate/$sig" "candidate/$deb"
+          echo 'WO9_SIGNED_LINUX_DEB_GPG_AND_EXACT_SHA=PASS'
+      - name: Installed Linux native protected DAG and uninstall, no implicit release
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(python3 -c 'import json; print(json.load(open("candidate/wo9-linux-release.json"))["signedDebPath"])')"
+          package="$(dpkg-deb --field "candidate/$deb" Package)"
+          test "$package" = lu-ide
+          sudo dpkg --install "candidate/$deb"
+          cleanup() { sudo dpkg --remove "$package" || true; }
+          trap cleanup EXIT
+          test -x /usr/bin/lu-ide-desktop
+          fixture="$RUNNER_TEMP/wo9-signed-linux-$GITHUB_RUN_ID"
+          mkdir -m 700 -p "$fixture/src" "$fixture/dist"
+          printf '[package]\nname="wo9_signed_linux"\nversion="0.1.0"\nedition="2021"\n' > "$fixture/Cargo.toml"
+          printf 'fn main() { println!("native"); }\n' > "$fixture/src/main.rs"
+          cp "$fixture/src/main.rs" "$fixture/main.rs"
+          printf 'native signed package\n' > "$fixture/dist/verified.tar"
+          cargo generate-lockfile --manifest-path "$fixture/Cargo.toml" --offline
+          git -C "$fixture" init -q
+          git -C "$fixture" add .
+          git -C "$fixture" -c user.name=WO9 -c user.email=wo9@localhost.invalid commit -q -m 'fixed signed candidate'
+          env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" WO9_NATIVE_SIGNED_PACKAGE_VERIFIED=true \
+            WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 \
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            bash -c 'openbox >/dev/null 2>&1 & exec /usr/bin/python3 ide/app/fixtures/wo9_linux_protected_graph_atspi.py'
+          sudo dpkg --remove "$package"
+          test ! -x /usr/bin/lu-ide-desktop
+          trap - EXIT
+          echo 'WO9_SIGNED_LINUX_INSTALLED_PROTECTED_DEPENDENCY_GRAPH=PASS'
+          echo 'WO9_RELEASE_APPROVED=FALSE'
