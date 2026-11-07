@@ -177,7 +177,7 @@ mod protected {
             toolchain_sha256: digest,
             runtime_limit_ms: 90_000,
             memory_limit_bytes: 512 * 1024 * 1024,
-            process_limit: 4,
+            process_limit: 16,
             log_limit_bytes: 64 * 1024,
             effect_class: "debug_inspection_isolated".into(),
         };
