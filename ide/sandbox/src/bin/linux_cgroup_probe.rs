@@ -32,7 +32,21 @@ mod probe {
         if !current.starts_with(&mount) {
             return Err(io::Error::other("current cgroup escaped mount"));
         }
-        Ok(current)
+        // The trusted host must be in a separate leaf; the empty delegated
+        // parent is the only place where worker subgroups may be created.
+        if current.file_name().and_then(|v| v.to_str()) != Some("lu-ide-host") {
+            return Err(io::Error::other("no dedicated Lu IDE host leaf"));
+        }
+        let parent = current
+            .parent()
+            .ok_or_else(|| io::Error::other("missing delegated parent"))?;
+        if parent.file_name().and_then(|v| v.to_str()) != Some("lu-ide-delegated")
+            || !parent.starts_with(&mount)
+            || parent == mount
+        {
+            return Err(io::Error::other("unexpected delegated parent identity"));
+        }
+        Ok(parent.to_path_buf())
     }
 
     struct TempChild(PathBuf);
@@ -44,13 +58,19 @@ mod probe {
     }
 
     fn require_controllers(parent: &Path) -> io::Result<()> {
-        let controllers = fs::read_to_string(parent.join("cgroup.controllers"))?;
+        let available = fs::read_to_string(parent.join("cgroup.controllers"))?;
+        let enabled = fs::read_to_string(parent.join("cgroup.subtree_control"))?;
         for required in ["cpu", "memory", "pids"] {
-            if !controllers.split_whitespace().any(|c| c == required) {
+            if !available.split_whitespace().any(|c| c == required)
+                || !enabled.split_whitespace().any(|c| c == required)
+            {
                 return Err(io::Error::other(format!(
-                    "delegated cgroup controller unavailable: {required}"
+                    "delegated CPU/memory/PID controller not activated: {required}"
                 )));
             }
+        }
+        if !fs::read_to_string(parent.join("cgroup.procs"))?.trim().is_empty() {
+            return Err(io::Error::other("delegated parent contains internal processes"));
         }
         Ok(())
     }
@@ -77,6 +97,12 @@ mod probe {
             return Ok(false);
         }
         let _guard = TempChild(child.clone());
+        if !fs::read_to_string(child.join("cgroup.events"))?
+            .lines()
+            .any(|line| line.trim() == "populated 0")
+        {
+            return Err(io::Error::other("new worker cgroup unexpectedly populated"));
+        }
         // Configuring these limits in an EMPTY cgroup never runs code or
         // changes the limits of the parent or any other user process.
         let settings = [
@@ -101,7 +127,7 @@ mod probe {
                 return Ok(false);
             }
         }
-        println!("PASS: delegated cgroup-v2 accepts CPU/memory/PID quotas in an empty child group");
+        println!("PASS: dedicated empty Lu IDE cgroup-v2 parent delegated CPU/memory/PID quotas to a fresh worker child");
         println!("UNVERIFIED: atomic pre-exec placement, subtree kill, bwrap linkage, filesystem/network isolation, recovery");
         Ok(true)
     }
