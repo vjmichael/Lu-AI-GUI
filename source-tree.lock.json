@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "52a55e48997549ea9294e34b595faff857e5abc2",
+  "sourceCommitBeforeLock": "5ec72386998475a6287cebbf7a8696a8c6417153",
   "trackedFileCount": 495,
   "files": [
     {
@@ -421,7 +421,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "9b2b8dd6120cf163c667466b4c75a0cb3162638b"
+      "blob": "2269de7e6fcf45f2dddce51675e334a43b61758d"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
