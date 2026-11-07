@@ -151,8 +151,9 @@ mod m2_native_memory_acceptance {
             r#"{{"version":1,"sequence":3,"folders":[{{"folderId":"{folder}","name":"Original folder"}}],"chats":[{{"chatId":"{source_chat}","title":"Legacy project","folderId":"{folder}","favorite":true,"updatedSeq":3}}]}}"#
         );
         let original=format!(
-            "{{\\\"kind\\\":\\\"user\\\",\\\"text\\\":\\\"Legacy user through migration\\\",\\\"user_turn_id\\\":\\\"{old_turn}\\\"}}\\n\\
-             {{\\\"kind\\\":\\\"assistant_final\\\",\\\"text\\\":\\\"Legacy assistant through migration\\\"}}\\n"
+            r#"{{"kind":"user","text":"Legacy user through migration","user_turn_id":"{old_turn}"}}
+{{"kind":"assistant_final","text":"Legacy assistant through migration"}}
+"#
         );
         let legacy=root.join("conversations").join(format!("{source_chat}.jsonl"));
         fs::write(root.join("conversation-index.json"),&index).unwrap();
