@@ -1,0 +1,6 @@
+{
+  "schema": "lu.ide.wo9.native-release.v1",
+  "sourceSha": null,
+  "observations": [],
+  "description": "Default-deny: unsigned and signed installed WO9 native release gates have not been independently witnessed."
+}
