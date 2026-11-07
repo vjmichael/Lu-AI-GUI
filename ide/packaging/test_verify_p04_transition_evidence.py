@@ -13,7 +13,10 @@ def record(gate, i):
         "newInstallerSha256": ("3" if changing else "2")*64,
         "catalogBeforeSha256": "4"*64, "catalogAfterSha256": "4"*64,
         "sourceBeforeSha256": "5"*64, "sourceAfterSha256": "5"*64,
-        "beforeVersion": "0.1.0", "afterVersion": ("0.2.0" if changing else "0.1.0"),
+        "beforeVersion": "0.1.0",
+        "attemptedVersion": ("0.2.0" if changing else "0.1.0"),
+        "afterVersion": ("0.2.0" if changing and "rollback" not in gate else "0.1.0"),
+        "restoredInstallerSha256": ("2"*64 if "rollback" in gate else None),
         "signedAndReviewed": True, "processTreeEmpty": True,
         "noAutomaticReplay": True, "protectedServiceRemoved": True,
         "failedUpgradeObserved": "rollback" in gate,
@@ -69,6 +72,14 @@ class TransitionEvidenceTests(unittest.TestCase):
 
     def test_duplicate_gate_denied(self):
         self.assertDenied(lambda d: d["observations"].__setitem__(1, copy.deepcopy(d["observations"][0])))
+
+    def test_rollback_did_not_restore_original_version_denied(self):
+        index = next(i for i, row in enumerate(document()["observations"]) if "rollback" in row["gate"])
+        self.assertDenied(lambda d: d["observations"][index].update(afterVersion="0.2.0"))
+
+    def test_rollback_signed_candidate_mismatch_denied(self):
+        index = next(i for i, row in enumerate(document()["observations"]) if "rollback" in row["gate"])
+        self.assertDenied(lambda d: d["observations"][index].update(restoredInstallerSha256="9"*64))
 
     def test_unreviewed_artifact_denied(self):
         self.assertDenied(lambda d: d["observations"][0].update(signedAndReviewed=False))
