@@ -30,6 +30,7 @@ use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod archive_desktop;
 mod archive_batch_desktop;
+mod archive_split_desktop;
 mod archive_process_worker;
 pub use archive_process_worker::run_archive_process_worker;
 mod document_create_desktop;
@@ -6716,6 +6717,9 @@ pub fn run() {
             lu_deny_archive_batch,
             lu_review_archive_tree,
             lu_confirm_archive_tree,
+            archive_split_desktop::lu_p08_split_archive,
+            archive_split_desktop::lu_p08_resume_split,
+            archive_split_desktop::lu_p08_reassemble_archive,
             lu_cancel_archive_tree,
             lu_cancel_archive_preview,
             lu_deny_archive_tree,
