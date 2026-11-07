@@ -3,3 +3,4 @@ ide/app/src-tauri/Cargo.lock text eol=lf
 
 # Preserve exact original license copyright bytes across Windows and Linux.
 ide/packaging/upstream-crate-notices/*.txt text eol=lf
+ide/packaging/upstream-crate-notices/*.md text eol=lf

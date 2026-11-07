@@ -52,6 +52,12 @@ class CuratedOriginalNotices(unittest.TestCase):
             rows=verified_curated_notices(self.repo,"cargo",name,version,"MIT")
             self.assertEqual(len(rows),1)
             self.assertEqual(git_blob_sha(rows[0][0].read_bytes()),rows[0][1]["blobSha"])
+    def test_upstream_markdown_notice_survives_windows_checkout(self):
+        attr=(ROOT/".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("ide/packaging/upstream-crate-notices/*.md text eol=lf",attr)
+        src=(ROOT/"ide/packaging/upstream-crate-notices/objc2-family-LICENSE.md").read_bytes()
+        self.assertNotIn(b"\r",src)
+        self.assertEqual(git_blob_sha(src),"540ae4c81adb5f64a9f61e222b688880da24300e")
     def test_tagged_objc2_original_policy_preserves_apple_warning(self):
         self.assertEqual(len(OBJC2_UPSTREAM_POLICY),19)
         for item in OBJC2_UPSTREAM_POLICY:
