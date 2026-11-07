@@ -177,6 +177,7 @@ jobs:
           for mode in normal cancel; do
             cmd=()
             if [[ "$mode" == cancel ]]; then cmd+=(--cancel); fi
+            result=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
               --unit=lu-ide-delegated \
               --property=Type=exec \
@@ -186,6 +187,14 @@ jobs:
               --property=DelegateSubgroup=lu-ide-host \
               --property="ExecStartPre=$helper" \
               --setenv=LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test \
-              "$fixture" "${cmd[@]}"
+              "$fixture" "${cmd[@]}" || result=$?
+            if [[ "$result" != 0 ]]; then
+              echo 'DENIED: genuine delegated unit failed; systemd kernel/service evidence follows'
+              sudo systemctl show lu-ide-delegated.service --no-pager \
+                --property=Result,ExecMainCode,ExecMainStatus,ExecStart,ExecStartPre,Delegate,DelegateSubgroup \
+                || true
+              sudo journalctl -u lu-ide-delegated.service --no-pager -n 40 --output=cat || true
+              exit "$result"
+            fi
             echo "PASS: real systemd delegated Linux clangd $mode fixture"
           done
