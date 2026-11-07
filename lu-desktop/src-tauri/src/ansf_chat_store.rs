@@ -532,6 +532,7 @@ mod tests{
             assert!(chat.history("../../bad").is_err());
         }
         fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn imports_old_chat_and_preserves_favorites_but_drops_old_grants(){
         let root=tmp();
@@ -613,6 +614,5 @@ mod tests{
         assert!(store.latest_authenticated_user_turn_id(&chats[0].chat_id).is_none());
         drop(store);
         fs::remove_dir_all(root).unwrap();
-    }
     }
 }
