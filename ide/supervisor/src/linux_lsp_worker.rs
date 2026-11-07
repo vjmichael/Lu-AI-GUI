@@ -142,6 +142,8 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
         "lsp_rust_analyzer" => "rust-analyzer",
         "lsp_clangd" => "clangd",
         "lsp_ruff" => "ruff",
+        #[cfg(feature = "dap-transport")]
+        "dap_lldb_fixed" => "lldb-dap",
         _ => return Err(SupervisorError::InvalidPlan),
     };
     let bin = root.join("bin").join(filename);
@@ -431,6 +433,192 @@ pub fn start_linux_lsp(
         native_uri,
     })
 }
+#[cfg(feature = "dap-transport")]
+pub fn start_linux_dap(
+    supervisor: Arc<Supervisor>,
+    job_id: &str,
+    plan: &JobPlan,
+    current_native_head: &str,
+    input: &PublishedInput,
+    release_root: &Path,
+) -> Result<LinuxDapSession, SupervisorError> {
+    native_linux_lsp_trace("begin_recipe_check");
+    if plan.recipe_id != "dap_lldb_fixed" || plan.effect_class != "debug_inspection_isolated" {
+        return Err(SupervisorError::InvalidPlan);
+    }
+    let executable = "lldb-dap";
+    let args: &[&str] = &[];
+    if plan.source_head != current_native_head
+        || plan.input_snapshot_sha256 != input.seal.source_sha256
+        || plan.manifest_sha256 != input.seal.manifest_sha256
+    {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    native_linux_lsp_trace("source_snapshot_verified");
+    let relative = Path::new(&input.seal.manifest_relative_path);
+    if !input.root.join(relative).is_file() {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    native_linux_lsp_trace("bundle_digest_start");
+    if native_lsp_bundle_digest(release_root, &plan.recipe_id)? != plan.toolchain_sha256 {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    native_linux_lsp_trace("bundle_digest_verified");
+    ensure_root_owned_tool(Path::new(BWRAP))?;
+    native_linux_lsp_trace("root_owned_bwrap_verified");
+    let group = make_cgroup(job_id, plan)?;
+    native_linux_lsp_trace("kernel_worker_cgroup_created");
+    let proc_file = OpenOptions::new()
+        .write(true)
+        .open(group.dir.join("cgroup.procs"))
+        .map_err(|_| denied())?;
+    native_linux_lsp_trace("kernel_cgroup_procs_handle_open");
+    let descriptor = proc_file.as_raw_fd();
+    let native_executable = format!("/ls/bin/{executable}");
+    let mut command = Command::new(BWRAP);
+    command
+        .env_clear()
+        .arg("--die-with-parent")
+        .arg("--new-session")
+        .arg("--unshare-all")
+        .arg("--clearenv")
+        .arg("--ro-bind")
+        .arg("/usr")
+        .arg("/usr")
+        .arg("--ro-bind-try")
+        .arg("/bin")
+        .arg("/bin")
+        .arg("--ro-bind-try")
+        .arg("/lib")
+        .arg("/lib")
+        .arg("--ro-bind-try")
+        .arg("/lib64")
+        .arg("/lib64")
+        .arg("--ro-bind")
+        .arg(&input.root)
+        .arg("/workspace")
+        .arg("--ro-bind")
+        .arg(release_root)
+        .arg("/ls")
+        .arg("--tmpfs")
+        .arg("/tmp")
+        .arg("--proc")
+        .arg("/proc")
+        .arg("--dev")
+        .arg("/dev")
+        .arg("--setenv")
+        .arg("HOME")
+        .arg("/tmp")
+        .arg("--setenv")
+        .arg("PATH")
+        .arg("/ls/bin:/usr/bin:/bin")
+        .arg("--setenv")
+        .arg("LANG")
+        .arg("C")
+        .arg("--chdir")
+        .arg("/workspace")
+        .arg("--")
+        .arg(&native_executable)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    unsafe {
+        command.pre_exec(move || attach_pid_in_pre_exec(descriptor));
+    }
+    let proof = proof_for(&group);
+    if !proof.complete() {
+        return Err(denied());
+    }
+    supervisor.consume_grant_after_attestation(job_id, plan, &proof)?;
+    native_linux_lsp_trace("grant_consumed");
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            if group.zero_members() {
+                supervisor.native_deny_before_start(job_id, true)?;
+            } else {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+            }
+            return Err(denied());
+        }
+    };
+    drop(proc_file);
+    native_linux_lsp_trace("bwrap_child_spawned");
+    // Identical OS kernel membership gate to fixed native Cargo: the LSP
+    // cannot advance to Running on cgroup configuration alone.
+    if require_kernel_child_membership(&group, child.id()).is_err() {
+        let _ = group.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(denied());
+    }
+    native_linux_lsp_trace("exact_kernel_pid_membership_verified");
+    let stdin = child.stdin.take().ok_or_else(denied)?;
+    let stdout = child.stdout.take().ok_or_else(denied)?;
+    if let Err(e) =
+        set_nonblocking(stdin.as_raw_fd()).and_then(|_| set_nonblocking(stdout.as_raw_fd()))
+    {
+        let _ = group.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(e);
+    }
+    native_linux_lsp_trace("bounded_stdio_ready");
+    if let Err(e) = supervisor.native_mark_running(job_id) {
+        let _ = group.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(e);
+    }
+    native_linux_lsp_trace("running_receipt_fsynced");
+    let process = LinuxLspProcess {
+        child,
+        stdin,
+        stdout,
+        group,
+        released: false,
+    };
+    let plan_hash = supervisor
+        .inspect()?
+        .into_iter()
+        .find(|x| x.job_id == job_id)
+        .ok_or(SupervisorError::NoSuchJob)?
+        .plan_sha256;
+    let gateway = crate::dap_transport::DapGateway::attach_native(
+        Arc::clone(&supervisor),
+        job_id,
+        &plan_hash,
+        &proof,
+        Box::new(process),
+    )?;
+    native_linux_lsp_trace("gateway_attached");
+    Ok(LinuxDapSession { gateway })
+}
+#[cfg(feature = "dap-transport")]
+pub struct LinuxDapSession {
+    gateway: crate::dap_transport::DapGateway,
+}
+#[cfg(feature = "dap-transport")]
+impl LinuxDapSession {
+    pub fn initialize(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.initialize()
+    }
+    pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
+        self.gateway.phase()
+    }
+    pub fn poll(&mut self) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
+        self.gateway.poll()
+    }
+    pub fn threads(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.threads()
+    }
+    pub fn stack_trace(&mut self, thread_id: u64) -> Result<(), SupervisorError> {
+        self.gateway.stack_trace(thread_id)
+    }
+    pub fn close(self) -> Result<(), SupervisorError> {
+        self.gateway.close()
+    }
+}
+
 pub struct LinuxLspSession {
     gateway: LspGateway,
     native_uri: String,
