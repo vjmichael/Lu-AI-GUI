@@ -509,7 +509,8 @@ function App() {
       if (request !== buildStatusRequest.current ||
           activeProjectIdRef.current !== projectId) return;
       if (!value || typeof value.ready !== 'boolean' ||
-          !Array.isArray(value.recent) || !Array.isArray(value.quarantined))
+          !Array.isArray(value.recent) || !Array.isArray(value.journal) ||
+           !Array.isArray(value.quarantined))
         throw Error('BUILD_STATUS_SHAPE_DENIED');
       setBuildStatus(value);
     } catch {
@@ -518,7 +519,7 @@ function App() {
         setBuildStatus({
           ready: false, code: 'BUILD_HOST_UNAVAILABLE',
           description: 'Trusted native worker status is unavailable.',
-          current: null, recent: [], quarantined: []
+          current: null, recent: [], journal: [], quarantined: []
         });
     }
   }
@@ -1499,6 +1500,20 @@ function App() {
                     disabled={buildBusy || !!buildStatus.current}
                     onClick={() => reconcileProtectedBuild(job)}>Verify OS-only cleanup (no rerun)</button>
                 </div>)}
+              {Array.isArray(buildStatus?.journal) && buildStatus.journal.length > 0 &&
+                <section className="continuityDocument" aria-label="Durable native job journal">
+                  <h3>Durable native job journal (survives restart)</h3>
+                  <p>Exact project-scoped supervisor records. The journal is evidence of
+                    recorded state, not proof that all OS descendants are gone.</p>
+                  {buildStatus.journal.slice(-16).map(item =>
+                    <article className="continuityEvent" key={item.jobId}>
+                      <strong>Durable protected job <code>{item.jobId}</code></strong>
+                      <p>Journal phase: {item.phase} ·
+                        Kernel cleanup reconciliation: {item.requiresReconciliation ?
+                          'required' : 'not indicated'}</p>
+                      <p>Frozen plan digest: <code>{item.planSha256}</code></p>
+                    </article>)}
+                </section>}
               {buildStatus?.recent?.length > 0 && <section aria-label="Recent native worker receipts">
                 <p>Recent native worker receipts: {buildStatus.recent.length}.
                   These results do not substitute for installed-app tests.</p>
