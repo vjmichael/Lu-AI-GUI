@@ -158,6 +158,11 @@ mod frame_geometry_tests {
         assert!(!mask_sensitive_bgra_regions(3,2,16,&mut frame,&many));
         assert_eq!(frame,initial);
     }
+    #[cfg(windows)]
+    #[test]
+    fn native_foreground_visibility_rejects_absent_hwnd(){
+        assert!(windows_capture_worker::visible_window_for_test(0).is_err());
+    }
     #[test]
     fn rejects_invalid_dimensions_truncation_and_unbounded_pitch(){
         assert!(!frame_geometry_valid(0,1080,7680,7680*1080));
@@ -243,6 +248,48 @@ mod windows_capture_worker {
         }
     }
 
+
+    /// OS-backed scope check for an explicitly human-focused WINDOW.
+    /// Window title, application path, and visual content are not read.
+    /// Only a visible, uncloaked top-level native HWND is eligible.
+    #[allow(unsafe_code)]
+    mod visible_window {
+        use windows::{
+            Win32::Foundation::HWND,
+            Win32::UI::WindowsAndMessaging::{
+                GetAncestor,GA_ROOT,IsWindow,IsWindowVisible
+            },
+            Win32::Graphics::Dwm::{
+                DwmGetWindowAttribute,DWMWA_CLOAKED
+            }
+        };
+        pub(super) fn attested(hwnd:usize)->Result<(),&'static str>{
+            if hwnd==0{return Err("Missing top-level OS window identity")}
+            let native=HWND(hwnd as *mut std::ffi::c_void);
+            // SAFETY: HWND comes from Windows Window::foreground or that same
+            // previously selected OS HWND. Read-only OS handle queries.
+            if !unsafe{IsWindow(native)}.as_bool()
+                || !unsafe{IsWindowVisible(native)}.as_bool()
+                || unsafe{GetAncestor(native,GA_ROOT)}!=native {
+                return Err("Window is hidden, invalid or not top-level");
+            }
+            let mut cloak:u32=0;
+            // SAFETY: DWM writes exactly four bytes to this owned scalar.
+            // Failure is not treated as a visible window.
+            unsafe{DwmGetWindowAttribute(
+                native,DWMWA_CLOAKED,
+                (&mut cloak as *mut u32).cast(),
+                std::mem::size_of::<u32>() as u32
+            )}.map_err(|_|"Cannot attest desktop compositor visibility")?;
+            if cloak!=0{return Err("Window is hidden on this desktop")}
+            Ok(())
+        }
+    }
+    #[cfg(test)]
+    pub(super) fn visible_window_for_test(hwnd:usize)->Result<(),&'static str>{
+        visible_window::attested(hwnd)
+    }
+
     struct OneFrame {
         started:Instant,
         captured:bool,
@@ -271,7 +318,8 @@ mod windows_capture_worker {
             if let Some((hwnd,pid,born))=self.foreground_identity{
                 let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
                 if !window.is_valid()||window.process_id()?!=pid
-                    ||process_instance::born_at(pid)?!=born{
+                    ||process_instance::born_at(pid)?!=born
+                    ||visible_window::attested(hwnd).is_err(){
                     control.stop();
                     return Err("Foreground window instance changed".into());
                 }
@@ -307,7 +355,8 @@ mod windows_capture_worker {
             if let Some((hwnd,pid,born))=self.foreground_identity{
                 let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
                 if !window.is_valid()||window.process_id()?!=pid
-                    ||process_instance::born_at(pid)?!=born{
+                    ||process_instance::born_at(pid)?!=born
+                    ||visible_window::attested(hwnd).is_err(){
                     control.stop();
                     return Err("Foreground window instance changed during readback".into());
                 }
@@ -353,6 +402,7 @@ mod windows_capture_worker {
                 return Err("Selected window exceeds Lu's size limit".into());
             }
             let born=process_instance::born_at(pid)?;
+            visible_window::attested(window.as_raw_hwnd() as usize)?;
             let identity=(window.as_raw_hwnd() as usize,pid,born);
             let settings=Settings::new(
                 window,

@@ -1,5 +1,11 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 native foreground visibility and installed relaunch (2026-11-06)
+
+- **OS source admission** now requires top-level root HWND, actual OS visibility and zero DWM cloak status, in addition to HWND/PID/process-creation FILETIME. The foreground worker checks this at human-focused selection and before/after D3D11 readback. Read failures are hard denials, never a fallback to generic monitor/unknown-item capture. This does **not** prove a unique HWND generation or visual content.
+- **Installed native restart trial** uses explicit \`-InspectObserveUi -ExerciseRestart\` with reviewed exe/worker digests. It terminates the first real Lu process, checks directly owned capture children, launches a second native OS process, independently checks UIA root PID, and records a scoped UIA OFF finding or an INCONCLUSIVE result. It does **not** prove durable TaskStore grants, a real crash, installer install/uninstall or visual content.
+- **Boundaries**: Generic WGC picker still lacks OS source identity and remains full-frame-blanked. Sensitive-region detector/pixel bridge, human physical WGC, NSIS cycle and independent visual GUI/effect proof remain OPEN. Source/CI work is not installed acceptance.
+
 ## P06 installed UIA and worker lifetime attestation (harness source only)
 
 The operator-run installed harness now requires Windows UI Automation's root PID to match the genuinely started hash-reviewed Lu process, rechecks after Start/Pause/Resume/Stop and checks the exact earlier observed WGC child PIDs are no longer alive after Stop. A changed worker name or parent cannot by itself produce a false OS-reap PASS. These additional independent OS checks are unexecuted on a physical Windows desktop and do not establish OS picker selection, semantic vision, NSIS installation or region-safe redaction.

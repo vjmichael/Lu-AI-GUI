@@ -9,7 +9,8 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$WorkerSha256,
   [switch]$InspectObserveUi,
   [switch]$ExerciseObservationLifecycle,
-  [switch]$ExerciseCaptureCancellation
+  [switch]$ExerciseCaptureCancellation,
+  [switch]$ExerciseRestart
 )
 $ErrorActionPreference='Stop'
 if($ExerciseObservationLifecycle -and -not $InspectObserveUi){
@@ -17,6 +18,9 @@ if($ExerciseObservationLifecycle -and -not $InspectObserveUi){
 }
 if($ExerciseCaptureCancellation -and -not $ExerciseObservationLifecycle){
   throw 'Capture worker reap trial requires explicit -ExerciseObservationLifecycle and -InspectObserveUi'
+}
+if($ExerciseRestart -and -not $InspectObserveUi){
+  throw 'Restart observation scope test requires explicit -InspectObserveUi'
 }
 if($env:OS -ne 'Windows_NT'){throw 'Physical interactive Windows desktop required'}
 function Verify-Binary([string]$Path,[string]$Digest) {
@@ -45,6 +49,7 @@ $record=[ordered]@{
   observeOffByDefault='NOT_TESTED'
   observeUiLifecycle='NOT_TESTED'
   captureWorkerOsReap='NOT_TESTED'
+  restartOffByDefaultUi='NOT_TESTED'
   wgcPickerAndCancellation='NOT_TESTED'
   foregroundOsSourceInstance='NOT_TESTED'
   sensitiveRegionRedaction='NOT_TESTED'
@@ -212,6 +217,48 @@ try {
         }
         $record.observeUiLifecycle='PASS_UIA_VISIBLE_LIFECYCLE_ONLY'
       }
+    }
+  }
+  if($ExerciseRestart){
+    # Fresh installed native OS process, not React reload or self-report.
+    # This cannot prove a database grant did not persist; UIA OFF only.
+    $child.Refresh()
+    if(-not $child.HasExited){
+      Stop-Process -Id $child.Id -Force -ErrorAction Stop
+      if(-not $child.WaitForExit(10000)){
+        throw 'Original installed Lu process survived restart trial stop'
+      }
+    }
+    if(@(Get-CimInstance -ClassName Win32_Process -Filter "Name='lu-observe-capture-worker.exe'" -ErrorAction Stop |
+      Where-Object { [int64]$_.ParentProcessId -eq [int64]$child.Id }).Count -gt 0){
+      throw 'Owned capture worker survived native Lu shutdown'
+    }
+    $previousPid=$child.Id
+    $child=Start-Process -FilePath $app -PassThru -ErrorAction Stop
+    $restartDeadline=[DateTime]::UtcNow.AddSeconds(30)
+    do {
+      Start-Sleep -Milliseconds 350
+      $child.Refresh()
+      if($child.HasExited){throw 'Installed Lu restart exited prematurely'}
+      if($child.MainWindowHandle -ne [IntPtr]::Zero){break}
+    } while([DateTime]::UtcNow -lt $restartDeadline)
+    if($child.Id -eq $previousPid -or $child.MainWindowHandle -eq [IntPtr]::Zero){
+      throw 'Independent installed native Lu relaunch not established'
+    }
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+    $restartRoot=[System.Windows.Automation.AutomationElement]::FromHandle($child.MainWindowHandle)
+    if($null -eq $restartRoot -or [int64]$restartRoot.Current.ProcessId -ne [int64]$child.Id){
+      throw 'Restarted native UIA window identity not verified'
+    }
+    $offCondition=[System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::NameProperty,'Off')
+    $restartOff=$restartRoot.FindFirst(
+      [System.Windows.Automation.TreeScope]::Descendants,$offCondition)
+    if($null -eq $restartOff){
+      $record.restartOffByDefaultUi='INCONCLUSIVE_SELECT_EXISTING_CHAT'
+    }else{
+      $record.restartOffByDefaultUi='PASS_UIA_OFF_ON_RELAUNCH_ONLY'
     }
   }
 } catch {

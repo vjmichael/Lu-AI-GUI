@@ -73,6 +73,10 @@ test('P06 native WGC process instance is verified, generic picker stays unverifi
   assert.match(worker,/struct ProcessQueryHandle\(HANDLE\)/);
   assert.match(worker,/CloseHandle\(self\.0\)/);
   assert.match(worker,/process_instance::born_at\(pid\)\?!=born/);
+  assert.match(worker,/visible_window::attested\(window\.as_raw_hwnd\(\) as usize\)/);
+  assert.match(worker,/GetAncestor\(native,GA_ROOT\)/);
+  assert.match(worker,/DwmGetWindowAttribute/);
+  assert.match(worker,/DWMWA_CLOAKED/);
   assert.equal((worker.match(/process_instance::born_at\(pid\)\?!=born/g)||[]).length,2);
   assert.match(worker,/Foreground window instance changed during readback/);
   assert.match(worker,/foreground_identity:Option<\(usize,u32,u64\)>/);
@@ -103,6 +107,8 @@ test('P06 physical Windows child-process evidence is opt-in and cannot claim WGC
   assert.match(script,/ParentProcessId/);
   assert.match(script,/uiAutomationWindowProcessAttested='PASS'/);
   assert.match(script,/root\.Current\.ProcessId/);
+  assert.match(script,/\[switch\]\$ExerciseRestart/);
+  assert.match(script,/restartOffByDefaultUi='PASS_UIA_OFF_ON_RELAUNCH_ONLY'/);
   assert.match(script,/FAIL_OBSERVED_OS_PROCESS_STILL_ACTIVE/);
   assert.match(script,/ExecutablePath/);
   assert.match(script,/captureWorkerOsReap='PASS_OS_CHILD_REAP_ONLY'/);

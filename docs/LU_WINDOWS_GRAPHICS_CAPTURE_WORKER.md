@@ -1,5 +1,9 @@
 # OBSERVE-WIN-CAPTURE-05 — Windows native picker and one-frame capture
 
+## P06 OS visible foreground and installed restart follow-up
+
+Foreground-only native capture now checks that the OS window is top-level, visible and not DWM-cloaked, with a readback-before/after identity check. Generic picker remains identity-unverified and wholly blanked. The independent physical installed script optionally tests second-process restart and UIA OFF; **no physical acceptance is claimed**.
+
 ## P06 WIN-IDENTITY / FULL-REDACTION / GUARDIAN follow-up (latest)
 
 **Current source changes supersede the earlier frame-hash/no-redaction paragraphs below.**

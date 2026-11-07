@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d3a270a476b97ef2f30e6784140f93713d2a89a2",
+  "sourceCommitBeforeLock": "b15784f14b336b9759668a383ec8c93d4ae16845",
   "trackedFileCount": 506,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "24b06abebe6d1ddba7a74819a88fc1897b9aedf1"
+      "blob": "6add77907b1a8aaaaba1e8a6f7952933c708c6f8"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "f131314ef5ae1d603fdbcfd652bac8de815daa35"
+      "blob": "95f2fac9e9e888715ac543173fa2de492655e484"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -193,7 +193,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "f4397ec2be5ddc4a609075fc3ec9a8ba21b21553"
+      "blob": "fbb6cedc8eb16acbabe2715ad1e0d93df01038df"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "977a01216044e82d6b8315afc90447436441aeaa"
+      "blob": "46905da8073023689a0692101286fcbaa52c828b"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -797,7 +797,7 @@
     },
     {
       "path": "scripts/verify-observe-installed-windows.ps1",
-      "blob": "62e27e636d37ac7cd65a2f87e493f612424b3f18"
+      "blob": "af1daecc404d2c89efa17a39f8c803743daaf6b4"
     },
     {
       "path": "scripts/verify-source-tree.mjs",
@@ -1985,11 +1985,11 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/Cargo.toml",
-      "blob": "75de5ee855f425a657261ba7544b0e638c16d82d"
+      "blob": "a83c6c3fa9a5686c8c53510d37ebc1d330d4ad5a"
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "3c1eb39f19db7e7c739baebf72f93e692acf3b9b"
+      "blob": "b1cc9aaa40717e2f449a0d7b8fcb66f0ceb4486d"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
