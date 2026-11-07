@@ -68,7 +68,7 @@ pub fn parse_proc_cpu(text:&str)->Option<(u64,u64)>{
     let mut words=line.split_whitespace();
     if words.next()?!="cpu"{return None}
     let mut ticks=Vec::new();
-    for word in words.take(10){
+    for word in words.take(8){
         ticks.push(word.parse::<u64>().ok()?);
     }
     if ticks.len()<4{return None}

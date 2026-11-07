@@ -40,8 +40,14 @@ impl ResourceBudget {
     pub fn interactive_first() -> Self {
         let total=std::thread::available_parallelism()
             .map(|v|v.get()).unwrap_or(1);
+        Self::for_parallelism(total)
+    }
+    fn for_parallelism(total:usize)->Self{
         let slots=total.saturating_sub(1).clamp(1,2) as u16;
-        Self{workers:slots,cpu:slots,ram_mib:1024,
+        // The scheduler's capacity must stay nonzero for its SQLite state
+        // machine, but no job may be admitted on a genuine single-CPU host.
+        let memory=if total<=1{1}else{1024};
+        Self{workers:slots,cpu:slots,ram_mib:memory,
             gpu:0,vram_mib:0,disk:1,network:0}
     }
     /// Physical RAM and CPU pressure gate starts without claiming GPU VRAM
@@ -782,6 +788,10 @@ mod tests{
                 r"C:\Windows\System32\cmd.exe")));
         #[cfg(unix)]
         let executable=PathBuf::from("/bin/true");
+        // Symlink executable paths are correctly denied by the worker
+        // admission check. Resolve the canonical binary in this trusted
+        // fixture instead of relaxing the actual containment boundary.
+        let executable=executable.canonicalize().expect("real OS fixture missing");
         assert!(executable.is_file(),"reviewed real OS worker fixture missing");
         let hash=format!("{:x}",Sha256::digest(fs::read(&executable).unwrap()));
         #[cfg(windows)]
@@ -821,6 +831,15 @@ mod tests{
         let second=queue.admit_host_worker("c-owner","ocr-2",
             ResourceClaim::file_scan()).unwrap();
         drop(second);
+    }
+    #[test]
+    fn a_single_cpu_host_cannot_start_background_workers(){
+        let budget=ResourceBudget::for_parallelism(1);
+        assert_eq!(budget.ram_mib,1);
+        assert!(!budget.supports(ResourceClaim::default(),ResourceClaim::file_scan()));
+        assert!(!budget.supports(ResourceClaim::default(),ResourceClaim::ocr()));
+        let dual=ResourceBudget::for_parallelism(2);
+        assert!(dual.supports(ResourceClaim::default(),ResourceClaim::file_scan()));
     }
     #[test]
     fn physical_ram_and_cpu_pressure_reduce_new_admission_without_fake_vram(){
