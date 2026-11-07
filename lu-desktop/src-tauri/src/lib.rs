@@ -6720,6 +6720,7 @@ pub fn run() {
             archive_split_desktop::lu_p08_split_archive,
             archive_split_desktop::lu_p08_resume_split,
             archive_split_desktop::lu_p08_reassemble_archive,
+            archive_split_desktop::lu_p08_review_publication,
             lu_cancel_archive_tree,
             lu_cancel_archive_preview,
             lu_deny_archive_tree,
