@@ -51,6 +51,7 @@ pub(crate) struct ObserveCaptureReceiptView{
     pub frame_sha256:Option<String>,
     pub source_identity_attested:bool,
     pub pixels_retained:bool,
+    pub fully_redacted_receipt:bool,
     pub visual_interpretation_verified:bool,
     pub message:&'static str,
 }
@@ -395,6 +396,9 @@ impl ObserveHost {
             frame_sha256:if terminal{sha}else{None},
             source_identity_attested:source_attested,
             pixels_retained:false,
+            // The pinned P06 worker suppresses the entire BGRA frame in
+            // its receipt before emitting any stdout; NOT a visual preview.
+            fully_redacted_receipt:terminal&&sha.is_some(),
             visual_interpretation_verified:false,
             message:"Native one-shot receipt: foreground OS window identity is checked by the pinned worker; generic picker source identity remains unverified. No raw pixels are returned, and no GUI or model-vision verdict is inferred.",
         }))
