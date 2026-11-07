@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 WebView2 runtime obligation (Nov 7):** Kept original MIT wrapper text separate from mandatory three-binding default-deny Microsoft runtime redistribution review, with frozen policy and hostile tests. No legal clearance.
+
 - **P06 selectors MPL full legal text (Nov 7):** Pinned canonical complete MPL-2.0 SPDX v3.28.0 text, checked exact selectors 0.38.0 frozen cargo checksum and preserved mandatory original covered-file source and legal review status. No legal approval inferred.
 
 - **P04 rollback interrupted during rollback (Nov 7):** Added fsync-journal `rolling_back` state and genuine child process death at journal/rejected/previous restore boundaries; resumable exact digests, user-state preservation and worker-quiescence source tests. Signed installed release still gated.

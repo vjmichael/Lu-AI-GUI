@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from collect_verification_licenses import OBJC2_UPSTREAM_POLICY,EXTERNAL_NATIVE_SDK_SOURCE_RULES
+from collect_verification_licenses import OBJC2_UPSTREAM_POLICY,EXTERNAL_NATIVE_SDK_SOURCE_RULES,WEBVIEW_EXACT_CRATES
 import sys
 
 class TriageDenied(ValueError): pass
@@ -124,6 +124,15 @@ def triage(data, source_bytes):
                 "externalNativeDependency":rule["external"],"disposition":"open",
                 "reviewRequired":"Verify actual distributed native SDK/system libraries and binaries, license obligations, compiled target closure independently of Rust source notices.",
                 "legalReviewApproved":False,"reviewedBy":None})
+    webview=[]
+    for name,version in WEBVIEW_EXACT_CRATES:
+        row=pkgs.get(("cargo",name,version))
+        if row is not None:
+            webview.append({"manager":"cargo","name":name,"version":version,
+                "rustWrapperDeclaredLicense":row.get("declaredLicense"),
+                "separateMicrosoftRuntimeLicensingRequired":True,
+                "reviewRequired":"Check actual Microsoft WebView2 Runtime distribution, prerequisites, royalty/licensing, installer payload versus OS installation, and precise package closure independently of the MIT Rust bindings.",
+                "disposition":"open","legalReviewApproved":False,"reviewedBy":None})
     return {"schema":"lu.ide.p06.license-triage.v1","sourceSha":data["sourceSha"],
             "inventorySha256":hashlib.sha256(source_bytes).hexdigest(),
             "totalResolvedPackages":len(pkgs),"unresolvedCount":len(tasks),
@@ -136,7 +145,10 @@ def triage(data, source_bytes):
             "appleSdkReviewCount":len(apple),"appleSdkReviews":apple,
             "appleSdkLegalReviewApproved":False,
             "externalNativeReviewCount":len(external),"externalNativeReviews":external,
-            "externalNativeLegalReviewApproved":False}
+            "externalNativeLegalReviewApproved":False,
+            "webviewRuntimeReviewCount":len(webview),
+            "webviewRuntimeReviews":webview,
+            "webviewRuntimeLegalReviewApproved":False}
 
 def enforce_known_risk_set(report, policy):
     if (not isinstance(policy,dict) or policy.get("schema")!="lu.ide.p06.known-license-risk.v1"
@@ -193,6 +205,19 @@ def enforce_external_native_review(report,policy):
         raise TriageDenied("external_native_redistribution_review_mismatch")
     return True
 
+def enforce_webview_runtime_review(report,policy):
+    expected=set(WEBVIEW_EXACT_CRATES)
+    configured=policy.get("expectedWebviewBindingPackages")
+    if not isinstance(configured,list) or len(configured)!=len(expected):
+        raise TriageDenied("missing_webview_runtime_policy")
+    given={(x.get("name"),x.get("version")) for x in configured}
+    actual={(x["name"],x["version"]) for x in report["webviewRuntimeReviews"]}
+    if (given!=expected or actual!=expected
+            or any(x.get("disposition")!="open" or x.get("legalReviewApproved") is not False
+                   for x in report["webviewRuntimeReviews"])):
+        raise TriageDenied("webview_runtime_rights_unreviewed_or_misclassified")
+    return True
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--inventory",type=Path,required=True)
@@ -209,13 +234,14 @@ def main():
         enforce_embedded_binary_review(result,policy)
         enforce_apple_sdk_review(result,policy)
         enforce_external_native_review(result,policy)
+        enforce_webview_runtime_review(result,policy)
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     except (OSError,ValueError,TypeError,KeyError) as e:
         print("DENIED: "+str(e),file=sys.stderr)
         return 2
     print(json.dumps({"unresolvedCount":result["unresolvedCount"],
-                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"embeddedCompilerReviewCount":result["embeddedCompilerReviewCount"],"appleSdkReviewCount":result["appleSdkReviewCount"],"externalNativeReviewCount":result["externalNativeReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
+                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"embeddedCompilerReviewCount":result["embeddedCompilerReviewCount"],"appleSdkReviewCount":result["appleSdkReviewCount"],"externalNativeReviewCount":result["externalNativeReviewCount"],"webviewRuntimeReviewCount":result["webviewRuntimeReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
     return 0
 if __name__=="__main__":
     raise SystemExit(main())

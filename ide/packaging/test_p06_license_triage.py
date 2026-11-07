@@ -1,7 +1,7 @@
 """P06 category hints never waive any missing upstream license evidence."""
 import copy
 import unittest
-from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY,enforce_apple_sdk_review,OBJC2_UPSTREAM_POLICY,enforce_external_native_review,EXTERNAL_NATIVE_SDK_SOURCE_RULES
+from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY,enforce_apple_sdk_review,OBJC2_UPSTREAM_POLICY,enforce_external_native_review,EXTERNAL_NATIVE_SDK_SOURCE_RULES,enforce_webview_runtime_review,WEBVIEW_EXACT_CRATES
 class TriageTests(unittest.TestCase):
     def setUp(self):
         self.data={"schema":"lu.ide.p04.verification-licenses.v1",
@@ -82,6 +82,21 @@ class TriageTests(unittest.TestCase):
         policy["expectedExternalNativePackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"missing_external_native_policy"):
             enforce_external_native_review(result,policy)
+    def test_webview_mit_bindings_do_not_clear_runtime_redistribution(self):
+        for name,version in WEBVIEW_EXACT_CRATES:
+            self.data["resolvedPackages"].append({
+                "manager":"cargo","name":name,"version":version,"declaredLicense":"MIT",
+                "notices":[{"path":"MIT-original"}]})
+        report=triage(self.data,b"fixture")
+        self.assertEqual(report["webviewRuntimeReviewCount"],3)
+        self.assertTrue(all(x["disposition"]=="open" and x["legalReviewApproved"] is False
+                            for x in report["webviewRuntimeReviews"]))
+        policy={"expectedWebviewBindingPackages":[{"name":name,"version":version}
+                 for name,version in WEBVIEW_EXACT_CRATES]}
+        self.assertTrue(enforce_webview_runtime_review(report,policy))
+        policy["expectedWebviewBindingPackages"].pop()
+        with self.assertRaisesRegex(TriageDenied,"missing_webview_runtime_policy"):
+            enforce_webview_runtime_review(report,policy)
     def test_missing_package_denied(self):
         self.data["resolvedPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"unresolved_without_resolved_package"):

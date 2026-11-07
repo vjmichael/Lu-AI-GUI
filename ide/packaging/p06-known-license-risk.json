@@ -253,5 +253,19 @@
       "tag": "0.3.9",
       "declared": "MIT/Apache-2.0"
     }
+  ],
+  "expectedWebviewBindingPackages": [
+    {
+      "name": "webview2-com",
+      "version": "0.39.1"
+    },
+    {
+      "name": "webview2-com-sys",
+      "version": "0.39.1"
+    },
+    {
+      "name": "webview2-com-macros",
+      "version": "0.8.1"
+    }
   ]
 }
