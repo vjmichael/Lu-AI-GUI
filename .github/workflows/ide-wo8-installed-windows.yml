@@ -19,12 +19,20 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+      - name: Prove exact source checkout before installed build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: installed Windows source checkout is not exact pull-request head'
+          }
       - name: Validate frontend and Rust host contract
         working-directory: ide/app
         run: |
