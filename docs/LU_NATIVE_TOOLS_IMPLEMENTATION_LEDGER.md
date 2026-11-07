@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 real OS behavioral checks (2026-11-06):** Focused Windows P06 now queries genuine OpenProcess/GetProcessTimes for its own process twice with stable creation FILETIME and separately executes an external PowerShell sensitive-probe denial for HWND=0; not merely source assertions. No claims about physical WGC or full secret detection. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 actual Windows native E0308 repair (2026-11-06):** Focused Windows CI on `a535b24` showed `IsWindow` in windows 0.62.2 expects `Option<HWND>`, not `HWND`. Updated the OS root/visibility adapter to use `Some(native)` with an exact-source regression; latest Windows compile remains open until green, no downgrade of OS checks. Prior Linux P06 passed. [Details](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 limited OS/UIA sensitive-control inspection (2026-11-06):** Read-only Windows native probe validates exact root HWND/PID/creation FILETIME, queries bounded UIA password-control screen bounds without text values, then rechecks process identity. Output explicitly `INCOMPLETE_UIA_ONLY` and `pixelReleaseAllowed=false`; it does NOT cover all sensitive pixels or map to WGC. Dedicated source and PowerShell parser checks added; independent physical OS verification still open. [Details](LU_P06_OBSERVE_PRIVACY.md).

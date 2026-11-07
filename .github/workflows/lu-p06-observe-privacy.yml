@@ -75,6 +75,18 @@ jobs:
           # Child denial is an expected exit 1; only after asserting it is
           # safe to clear pwsh's inherited negative-test exit status.
           exit 0
+      - name: Refuse untrusted native HWND privacy probe without accessibility scan
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $exe=(Get-Command pwsh -ErrorAction Stop).Source
+          $script=Join-Path $env:GITHUB_WORKSPACE 'scripts/probe-observe-sensitive-window-windows.ps1'
+          $child=Start-Process -FilePath $exe -PassThru -Wait -NoNewWindow -ArgumentList @(
+            '-NoProfile','-NonInteractive','-File',$script,
+            '-WindowHandle','0','-ExpectedPid','1','-ExpectedBirthFileTime','1'
+          )
+          if($child.ExitCode -eq 0){throw 'Invalid OS HWND incorrectly accepted by privacy probe'}
+          Write-Output 'P06 native UIA probe rejected invalid OS HWND without opening capture'
       - name: Syntax-check independent installed-Windows GUI smoke harness
         if: matrix.os == 'windows-latest'
         shell: pwsh

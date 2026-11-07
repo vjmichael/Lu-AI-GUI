@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 real Windows OS source and privacy-denial test fixtures
+
+The focused Windows native P06 suite now queries the OS `GetProcessTimes` creation FILETIME for its **actual runner process** twice (stable positive identity) and rejects zero PID. A separate PowerShell subprocess invokes the read-only UIA password probe with invalid HWND zero and requires a nonzero native exit code without a WGC source or UI traversal. These are real native Windows OS/API and refusal tests, not physical interactive source/GUI acceptance. Generic picker, complete sensitive region coverage and installed NSIS remain OPEN.
+
 ## P06 native Windows compilation repair — 2026-11-06
 
 On `a535b2445d93d7983e963712d88aea91672ad4bc`, focused Windows P06 CI compiled Lu Core and React but rejected the new visible-HWND adapter with Rust E0308: `windows 0.62.2` projects `IsWindow` as `IsWindow(Option<HWND>)`. The native query now passes `Some(native)`; this retains fail-closed visibility checks and adds a source-contract test. A new exact-head Windows worker compile is required before claiming resolution. Linux P06 passed at the previous head.

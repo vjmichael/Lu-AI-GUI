@@ -144,3 +144,12 @@ test('P06 native UIA privacy probe is OS identity bound and cannot authorize ima
   assert.match(ps,/pixelReleaseAllowed=\$false/);
   assert.doesNotMatch(ps,/Current\.Name|Current\.Value|TextPattern|ValuePattern/);
 });
+
+test('P06 real native OS birth and sensitive UIA refusal tests run on Windows',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const ci=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  assert.match(worker,/native_win32_process_birth_is_live_stable_and_query_only/);
+  assert.match(worker,/process_birth_for_test\(own_pid\)/);
+  assert.match(ci,/Refuse untrusted native HWND privacy probe without accessibility scan/);
+  assert.match(ci,/if\(\$child\.ExitCode -eq 0\)\{throw 'Invalid OS HWND incorrectly accepted/);
+});

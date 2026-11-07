@@ -160,6 +160,15 @@ mod frame_geometry_tests {
     }
     #[cfg(windows)]
     #[test]
+    fn native_win32_process_birth_is_live_stable_and_query_only(){
+        let own_pid=std::process::id();
+        let born=windows_capture_worker::process_birth_for_test(own_pid).unwrap();
+        assert!(born>0);
+        assert_eq!(windows_capture_worker::process_birth_for_test(own_pid).unwrap(),born);
+        assert!(windows_capture_worker::process_birth_for_test(0).is_err());
+    }
+    #[cfg(windows)]
+    #[test]
     fn native_foreground_visibility_rejects_absent_hwnd(){
         assert!(windows_capture_worker::visible_window_for_test(0).is_err());
     }
@@ -288,6 +297,10 @@ mod windows_capture_worker {
     #[cfg(test)]
     pub(super) fn visible_window_for_test(hwnd:usize)->Result<(),&'static str>{
         visible_window::attested(hwnd)
+    }
+    #[cfg(test)]
+    pub(super) fn process_birth_for_test(pid:u32)->Result<u64,&'static str>{
+        process_instance::born_at(pid)
     }
 
     struct OneFrame {
