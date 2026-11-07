@@ -190,6 +190,115 @@ pub fn render_correlated(
     })
 }
 
+/// Build a citation record only from the exact Crossref work response
+/// independently fetched by Lu's pinned, host-owned HTTPS client. This
+/// parser does not authenticate the HTTP transport by itself. The caller
+/// must fetch https://api.crossref.org/works/<ledger-discovered-DOI>,
+/// ensure an exact 200/no-redirect response, and preserve the response hash.
+/// DOI, title, authors, type and date are not model-provided metadata.
+pub fn catalog_work_from_crossref(
+    ledger:&EvidenceLedger,source_id:&str,response:&[u8]
+)->Result<CatalogWork,StyleError>{
+    use crate::web_research_planner::canonical_doi;
+    if response.is_empty()||response.len()>1024*1024{
+        return Err(StyleError::InvalidField);
+    }
+    let source=ledger.record(source_id).map_err(|_|StyleError::Uncorroborated)?;
+    if !matches!(source.status,SourceStatus::MetadataCorroborated
+        |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+        return Err(StyleError::Uncorroborated);
+    }
+    let candidate=ledger.discovered_candidate(source_id)
+        .map_err(|_|StyleError::Uncorroborated)?;
+    let expected=canonical_doi(&candidate.identifier)
+        .ok_or(StyleError::IdentityMismatch)?;
+    let body:serde_json::Value=serde_json::from_slice(response)
+        .map_err(|_|StyleError::InvalidField)?;
+    let work=body.get("message").ok_or(StyleError::MissingField)?;
+    let actual=work.get("DOI").and_then(|v|v.as_str())
+        .and_then(canonical_doi).ok_or(StyleError::IdentityMismatch)?;
+    if actual!=expected{return Err(StyleError::IdentityMismatch);}
+    let kind=match work.get("type").and_then(|v|v.as_str()){
+        Some("book")|Some("monograph")=>Kind::Book,
+        Some("journal-article")=>Kind::JournalArticle,
+        _=>return Err(StyleError::Unsupported),
+    };
+    // Crossref may hold alternative titles; do not pick an arbitrary
+    // substitute when the exact independently corroborated one is unclear.
+    let titles=work.get("title").and_then(|v|v.as_array())
+        .ok_or(StyleError::MissingField)?;
+    if titles.len()!=1{return Err(StyleError::InvalidField);}
+    let title=titles[0].as_str().ok_or(StyleError::InvalidField)?;
+    if !bounded(title,1024)||title!=source.title{
+        return Err(StyleError::IdentityMismatch);
+    }
+    let record_url=source.record_url.ok_or(StyleError::Uncorroborated)?;
+    let names=work.get("author").and_then(|v|v.as_array())
+        .ok_or(StyleError::MissingField)?;
+    if names.is_empty()||names.len()>20{return Err(StyleError::InvalidField);}
+    let mut authors=Vec::with_capacity(names.len());
+    for author in names{
+        let given=author.get("given").and_then(|v|v.as_str())
+            .ok_or(StyleError::MissingField)?;
+        let family=author.get("family").and_then(|v|v.as_str())
+            .ok_or(StyleError::MissingField)?;
+        if !bounded(given,128)||!bounded(family,128){
+            return Err(StyleError::InvalidField);
+        }
+        authors.push(Author{given:given.to_owned(),family:family.to_owned()});
+    }
+    // Multiple observed publication year fields are permitted only when
+    // they agree. Never choose one of conflicting print/online/issued years.
+    let mut years=std::collections::BTreeSet::new();
+    for key in ["issued","published","published-print","published-online"]{
+        if let Some(value)=work.get(key){
+            let parts=value.get("date-parts").and_then(|v|v.as_array())
+                .ok_or(StyleError::InvalidField)?;
+            if parts.len()!=1{return Err(StyleError::InvalidField);}
+            let y=parts[0].as_array().and_then(|p|p.first())
+                .and_then(|n|n.as_u64()).ok_or(StyleError::InvalidField)?;
+            if !(1000..=2200).contains(&y){return Err(StyleError::InvalidField);}
+            years.insert(y as u16);
+        }
+    }
+    if years.is_empty(){return Err(StyleError::MissingField);}
+    if years.len()!=1{return Err(StyleError::IdentityMismatch);}
+    let optional=|key:&str|->Result<Option<String>,StyleError>{
+        match work.get(key){
+            None|Some(serde_json::Value::Null)=>Ok(None),
+            Some(value)=>{
+                let text=value.as_str().ok_or(StyleError::InvalidField)?;
+                if !bounded(text,512){return Err(StyleError::InvalidField);}
+                Ok(Some(text.to_owned()))
+            }
+        }
+    };
+    let publisher=optional("publisher")?;
+    let publication_place=optional("publisher-location")?;
+    let volume=optional("volume")?;
+    let issue=optional("issue")?;
+    let journal=if kind==Kind::JournalArticle{
+        let titles=work.get("container-title").and_then(|v|v.as_array())
+            .ok_or(StyleError::MissingField)?;
+        if titles.len()!=1{return Err(StyleError::InvalidField);}
+        let name=titles[0].as_str().ok_or(StyleError::InvalidField)?;
+        if !bounded(name,512){return Err(StyleError::InvalidField);}
+        Some(name.to_owned())
+    }else{None};
+    let record=CatalogWork{
+        source_id:source_id.to_owned(),title:title.to_owned(),record_url,
+        kind,authors,year:years.iter().next().copied(),
+        publisher,publication_place,journal,
+        // Crossref short-container-title is NOT a verified SBL
+        // abbreviation and cannot populate this field automatically.
+        journal_abbreviation:None,volume,issue,
+    };
+    // Enforce the exact original author identity and required book/journal
+    // metadata before any partial citation can leave this native adapter.
+    let _=render_correlated(ledger,&record,Style::Chicago18)?;
+    Ok(record)
+}
+
 /// Render a bounded, deterministic scholarly bibliography *only* after each
 /// entry passed its own existing native EvidenceLedger corroboration. The
 /// result is an all-or-nothing host preview, not a license to invent facts.
@@ -335,6 +444,70 @@ mod tests{
             Err(StyleError::IdentityMismatch));
         assert_eq!(export_csl_json(&ledger,&fake),
             Err(StyleError::IdentityMismatch));
+    }
+    fn crossref_book_response()->serde_json::Value{
+        serde_json::json!({"message":{
+            "DOI":"10.1000/example","type":"book","title":["Study"],
+            "author":[{"given":"Jane","family":"Doe"}],
+            "issued":{"date-parts":[[2024,3,2]]},
+            "published":{"date-parts":[[2024]]},
+            "publisher":"Academic Press","publisher-location":"Chicago"
+        }})
+    }
+    #[test]
+    fn crossref_adapter_attests_doi_title_author_year_and_book_identity(){
+        let ledger=verified();
+        let record=catalog_work_from_crossref(&ledger,"source-1",
+            crossref_book_response().to_string().as_bytes()).unwrap();
+        assert_eq!(record.title,"Study");
+        assert_eq!(record.year,Some(2024));
+        assert_eq!(record.publisher.as_deref(),Some("Academic Press"));
+        assert_eq!(record.authors[0].family,"Doe");
+        let rendered=render_correlated(&ledger,&record,Style::Apa7).unwrap();
+        assert!(rendered.bibliography.contains("Doe, J. (2024)"));
+        assert!(!rendered.publication_details_verified);
+        let exported=export_csl_json(&ledger,&record).unwrap();
+        assert!(exported.get("page").is_none());
+    }
+    #[test]
+    fn crossref_adapter_refuses_conflicting_or_untrusted_secondary_metadata(){
+        let ledger=verified();
+        let baseline=crossref_book_response();
+        for (key,value) in [
+            ("DOI",serde_json::json!("10.1000/imposter")),
+            ("title",serde_json::json!(["Other Title"])),
+            ("author",serde_json::json!([{"given":"Eve","family":"Other"}])),
+            ("type",serde_json::json!("posted-content")),
+            ("issued",serde_json::json!({"date-parts":[[2023]]})),
+            ("publisher",serde_json::json!("Bad\nPublisher")),
+        ]{
+            let mut bad=baseline.clone();
+            bad["message"][key]=value;
+            assert!(catalog_work_from_crossref(&ledger,"source-1",
+                bad.to_string().as_bytes()).is_err(),"{key} must fail closed");
+        }
+        let mut absent=baseline.clone();
+        absent["message"].as_object_mut().unwrap().remove("issued");
+        absent["message"].as_object_mut().unwrap().remove("published");
+        assert_eq!(catalog_work_from_crossref(&ledger,"source-1",
+            absent.to_string().as_bytes()).map(|_|()),Err(StyleError::MissingField));
+        assert_eq!(catalog_work_from_crossref(&ledger,"source-1",b"garbled"),
+            Err(StyleError::InvalidField));
+    }
+    #[test]
+    fn crossref_journal_metadata_never_guesses_sbl_abbreviation(){
+        let ledger=verified();
+        let mut value=crossref_book_response();
+        value["message"]["type"]=serde_json::json!("journal-article");
+        value["message"]["container-title"]=serde_json::json!(["Journal of History"]);
+        value["message"]["short-container-title"]=serde_json::json!(["JH"]);
+        value["message"]["volume"]=serde_json::json!("12");
+        let record=catalog_work_from_crossref(&ledger,"source-1",
+            value.to_string().as_bytes()).unwrap();
+        assert_eq!(record.kind,Kind::JournalArticle);
+        assert!(record.journal_abbreviation.is_none());
+        assert_eq!(render_correlated(&ledger,&record,Style::Sbl2),
+            Err(StyleError::MissingField));
     }
     #[test]
     fn bounded_bibliography_sorts_only_existing_correlated_sources(){
