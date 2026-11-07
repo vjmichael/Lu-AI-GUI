@@ -4,6 +4,12 @@ Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
 
+## P06 WGC closeout continuation — source and physical boundaries (latest)
+
+**Implemented in active P06 draft PR #72:** OS query-only process creation-time bound to the user-selected Windows foreground HWND+PID and reverified immediately inside the single-frame callback; generic OS picker identity remains unverified. Full-frame redaction of all output bytes before the nonce-bound TaskStore capture receipt (not region-aware visual evidence). Existing BackgroundScheduler Guardian now admits one CPU/RAM WGC worker before native spawn, with a host-held lease until actual OS cleanup; GPU/VRAM remains unmeasured and unreserved. Fixed previous P06 Windows CI Tauri macro failure by building React `dist` before desktop host compilation. Added native WGC worker test/build, installed Windows binary/window/UIA smoke harness, strict source-contract regressions and updated P06 docs.
+
+**Still outstanding:** current-head Windows WGC/desktop CI and failure repair; physical installed NSIS and native WGC/interactive UIA acceptance; generic picker source attribution, independent sensitive-area detection/redaction for meaningful image previews, real low-resource resident model lane and verified installed GUI test receipts. No P07 work. Detailed [P06 gap notes](LU_P06_OBSERVE_PRIVACY.md).
+
 ## P06 OBSERVE-PRIVACY-01 — owner-authorized privacy closeout source (2026-11-06)
 
 **Branch:** `lu/p06-observe-privacy-20261106`, stacked directly on P03 PR #71 exact head `f54fd82cccd5803b2912efe7d8be513b19b9b559`. Owner explicitly moved to **P06 Observe & Learn** without ordering development of P04 or P05; those remain separate. P07 is not authorized. The older Observe & Learn draft PR #61 remains an independent older stack and is **not overwritten** by this work.
