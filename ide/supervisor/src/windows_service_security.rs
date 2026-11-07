@@ -689,6 +689,19 @@ impl JobSecurity {
 /// Client-side server attestation. A spoofed, same-user pipe instance cannot
 /// claim to be the recovery service merely by echoing a nonce. Kernel PID,
 /// fixed installed image and restricted Windows service token all must match.
+// Native CI diagnostics classify the *first* failed kernel attestation
+// operation. They neither authorize IPC nor expose process paths, SIDs,
+// certificates, hashes or token fields.
+fn ci_service_attestation_stage(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("CI").as_deref() == Some(OsStr::new("true"))
+        && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(OsStr::new("true"))
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        eprintln!("PROTECTED_SERVICE_ADMISSION_STAGE={stage}");
+    }
+}
 pub fn authenticate_service_server(
     pipe: HANDLE,
     approved_service_path: &Path,
@@ -696,42 +709,67 @@ pub fn authenticate_service_server(
 ) -> Result<(), SupervisorError> {
     let mut pid = 0u32;
     if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 || pid == 0 {
+        ci_service_attestation_stage("service_kernel_pid_denied");
         return Err(denied());
     }
     let server = Handle::new(unsafe {
         OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
+    }).map_err(|_| {
+        ci_service_attestation_stage("service_process_open_denied");
+        denied()
     })?;
     let mut text = vec![0u16; 32768];
     let mut length = text.len() as u32;
     if unsafe { QueryFullProcessImageNameW(server.0, 0, text.as_mut_ptr(), &mut length) } == 0
         || length == 0
     {
+        ci_service_attestation_stage("service_kernel_image_query_denied");
         return Err(denied());
     }
-    let observed = Path::new(&String::from_utf16(&text[..length as usize]).map_err(|_| denied())?)
-        .to_path_buf();
-    let expected = fs::canonicalize(approved_service_path).map_err(|_| denied())?;
-    let observed = fs::canonicalize(observed).map_err(|_| denied())?;
-    if !observed
-        .to_string_lossy()
-        .eq_ignore_ascii_case(&expected.to_string_lossy())
-    {
+    let observed = Path::new(&String::from_utf16(&text[..length as usize]).map_err(|_| {
+        ci_service_attestation_stage("service_kernel_image_encoding_denied");
+        denied()
+    })?).to_path_buf();
+    let expected = fs::canonicalize(approved_service_path).map_err(|_| {
+        ci_service_attestation_stage("service_expected_image_path_denied");
+        denied()
+    })?;
+    let observed = fs::canonicalize(observed).map_err(|_| {
+        ci_service_attestation_stage("service_observed_image_path_denied");
+        denied()
+    })?;
+    if !observed.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()) {
+        ci_service_attestation_stage("service_kernel_image_mismatch");
         return Err(denied());
     }
-    hash_executable(&expected, service_sha256)?;
+    hash_executable(&expected, service_sha256).map_err(|_| {
+        ci_service_attestation_stage("service_image_hash_denied");
+        denied()
+    })?;
     let mut raw = ptr::null_mut();
     if unsafe { OpenProcessToken(server.0, TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
+        ci_service_attestation_stage("service_process_token_open_denied");
         return Err(denied());
     }
     let token = Handle::new(raw)?;
-    let service = parse_sid(&sid_of_service()?)?;
+    let service = parse_sid(&sid_of_service()?).map_err(|_| {
+        ci_service_attestation_stage("service_sid_lookup_denied");
+        denied()
+    })?;
     let local = parse_sid("S-1-5-19")?;
-    if !enabled_member_of_primary_token(token.0, service.0)? || !token_user_is(token.0, local.0)? {
+    if !enabled_member_of_primary_token(token.0, service.0)? {
+        ci_service_attestation_stage("service_restricted_group_denied");
+        return Err(denied());
+    }
+    if !token_user_is(token.0, local.0)? {
+        ci_service_attestation_stage("service_localservice_user_denied");
         return Err(denied());
     }
     if unsafe { IsTokenRestricted(token.0) } == 0 {
+        ci_service_attestation_stage("service_not_restricted");
         return Err(denied());
     }
+    ci_service_attestation_stage("service_identity_authenticated");
     Ok(())
 }
 
