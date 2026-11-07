@@ -14,13 +14,13 @@ pub mod linux_worker;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
 pub mod snapshot;
-pub mod wo6_build_test_evidence;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_null_device;
+pub mod wo6_build_test_evidence;
 // The SCM-only recovery service must never compile into a plain D7C
 // windows-worker build: its per-job NUL lease requires a separately
 // installed and authenticated protected service identity.
