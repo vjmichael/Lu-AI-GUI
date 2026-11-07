@@ -88,6 +88,13 @@ jobs:
             if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
               throw 'DENIED: reopened fixture source unexpectedly mutated'
             }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario ExternalConflict -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: real external-source collision did not preserve disk edits and local draft' }
+            $currentSource=[IO.File]::ReadAllText($sourcePath)
+            if (!$currentSource.Contains('WO8_CONFLICT_EXTERNAL_UPDATE') -or
+                $currentSource.Contains('WO8_UNSAVED_LOCAL_DRAFT')) {
+              throw 'DENIED: external conflict incorrectly saved IDE draft or lost external edit'
+            }
             $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
             if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
             $uninstaller=$uninstallers[0].FullName
