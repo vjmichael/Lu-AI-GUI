@@ -19,6 +19,7 @@ use crate::{
     model_turn_journal::ModelTurnJournal,
     native_archive_inspect::register_archive_inspection_tool,
     native_file_extra::register_inspection_tools,
+    native_file_discovery::register_discovery_tool,
     native_files::register_bundled_file_tools,
     native_git_inspect::register_git_inspection_tools,
     registry::NativeToolRegistry,
@@ -112,6 +113,10 @@ impl WorkspaceReadTurnSession{
             let mut catalog=register_bundled_file_tools(&registry,&root)
                 .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
             register_inspection_tools(&registry,&mut catalog,&root)
+                .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
+            // P01: same human-picked root and per-turn read authorization;
+            // only a reusable metadata cache is shared between sessions.
+            register_discovery_tool(&registry,&mut catalog,&root)
                 .map_err(|_|WorkspaceReadError::RegistrationFailed)?;
             register_archive_inspection_tool(&registry,&mut catalog,&root)
                 .map_err(|_|WorkspaceReadError::RegistrationFailed)?;

@@ -145,6 +145,7 @@ pub mod native_background_result;
 pub mod native_background_control;
 pub mod native_background_process;
 pub mod native_file_extra;
+pub mod native_file_discovery;
 pub mod native_file_transfer;
 pub mod native_file_transfer_tool;
 pub mod native_file_trash_tool;

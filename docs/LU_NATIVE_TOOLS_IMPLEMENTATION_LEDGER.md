@@ -4,13 +4,25 @@ Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
 
+## P01 FS-DISCOVER-01 — bounded AI-first filesystem discovery SOURCE IMPLEMENTED (2026-11-06)
+
+**Latest current work-order state: P01 bounded source implementation complete; no further Pxx authorized until the owner instructs P02.** The owner has superseded the prior documentation-only pause to authorize *sequential Pxx source implementation* but explicitly requires a stop after each Pxx. P02 remains QUEUED / NOT STARTED. Full native Windows/Linux and installed acceptance remain OPEN, not green.
+
+**Actual code:** `src-tauri/lu-core/src/native_file_discovery.rs` exposes one typed Protobuf / narrow JSON model tool `lu_files_discover`, registered through the existing `WorkspaceReadTurnSession` for the authenticated, native-picked root. Reuses current per-turn `ReadWorkspace` authorization, supervised GGUF tool loop, immutable audit and file operations without adding ambient read/write grants. Supports filename, relative-path, file/directory kind, suffix, byte-range, modified-since and ranking. A 4-root **in-memory metadata-only** cache (12,000 entries, 512 dirs, 20 depth) is incrementally checked by directory mtime with 15-second refresh / explicit forced reconciliation and per-hit cap-root freshness checks. Hidden entries, symlinks and path escapes are excluded. A separate opt-in text-query path reads at most 96 files / 4 MiB / 64 KiB per file with bounded excerpts and explicit content continuation; optional text preview cache is **per authorized turn and never persisted**. Incomplete results are flagged, never silently presented as exhaustive. Desktop Ask Workspace and scoped normal Send reuse the same picker, now advertising discovery first for file-location requests.
+
+**Tests added in source only:** native fixtures for stale/removed/renamed files, index generation and refresh, explicit content lookup and continuation, hidden/path traversal and symlink refusal, cached text invalidation; source-contract tests for read-only native registration and source limits. Real compiler/Node/Windows build/model-turn verification was NOT performed.
+
+**Product limitations, explicitly not closed:** no persistent consent-reviewed multi-root profile, OS-native watcher service, semantic/vector index, million-file benchmark, large-document full-text indexing or independent hostile Windows NTFS/reparse/ACL proof. Existing write/edit/trash/copy/move protocols remain unmodified. Those upgrades are optional future P01 refinements or shared P03/P04/P02 infrastructure, not grounds to claim a release-ready or exhaustive filesystem index.
+
+**Engineering detail:** [P01 filesystem discovery closeout](LU_FILESYSTEM_DISCOVERY_P01.md). **Next ranked area is P02 — Background Tasks + Resource Guardian; WAIT for owner instruction.**
+
 ## 2026-11-06 OWNER DECISION — ordered Lu Core tool scope
 
-**This is the current future-work priority order, superseding older feature-expansion recommendations; previous implementation receipts below remain historical evidence.** Full rationale, limits, cross-tool architecture and work-order identifiers: [Lu Core tools — scope and priority order](LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md). The owner explicitly requests **documentation only; do not start any further implementation until instructed**.
+**This is the current future-work priority order, superseding older feature-expansion recommendations; previous implementation receipts below remain historical evidence.** Full rationale, limits, cross-tool architecture and work-order identifiers: [Lu Core tools — scope and priority order](LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md). Historical instruction: documentation only at that checkpoint; the owner subsequently authorized P01 sequential implementation. **Stop before P02 until specifically instructed.**
 
 | Priority | Tool area | Next scoped work order | Scope decision | Work-order state |
 | --- | --- | --- | --- | --- |
-| **P01** | AI-friendly filesystem discovery/search/effects | FS-DISCOVER-01 | Strong indexing/search, safe authorized read/write; highest-frequency native AI tool | **QUEUED — NOT STARTED** |
+| **P01** | AI-friendly filesystem discovery/search/effects | FS-DISCOVER-01 | Native scoped filename/metadata index, bounded content search, freshness; existing safe file effects reused | **SOURCE IMPLEMENTED — NATIVE ACCEPTANCE OPEN** |
 | **P02** | Background Tasks + Resource Guardian | TASK-SCHED-01 | Scheduling/recurrence, multitasking, workload admission, result handoff and recovery | **QUEUED — NOT STARTED** |
 | **P03** | AI Operations Layer + model/provider manager | AI-OPS-01 | Efficient tool/context routing, GPUs, backend compatibility and native model discovery/download pane | **QUEUED — NOT STARTED** |
 | **P04** | Unified Reader/OCR | DOC-STREAM-01 | One user-facing Reader, streamed large books/pages, multilingual OCR, layout/forms, semantic/visual retrieval | **QUEUED — NOT STARTED** |
@@ -23,7 +35,7 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 | **P11** | Git for Lu Core | GIT-CORE-01 | Basic native inspection only; advanced Git belongs to Lu IDE | **MAINTAIN / OPTIONAL** |
 | **P12** | JSON/Protobuf boundary | BOUNDARY-MAINT-01 | Internal validation and bounded repair only, no standalone advanced JSON product | **MAINTAIN / OPTIONAL** |
 
-**Important:** Work-order state here describes *newly scoped future development*, **not** the status of functionality already committed in the integration branch. The current source has previously built components in nearly every domain; their runtime/CI/Windows installed acceptance is still tracked independently. The historic first-page priorities in [completion waves](LU_TOOL_COMPLETION_WAVES.md) are superseded **for future work only**, not deleted. The next implementable change requires a separate owner instruction; no next step is automatically active.
+**Important:** Work-order state here describes *newly scoped future development*, **not** the status of functionality already committed in the integration branch. The current source has previously built components in nearly every domain; their runtime/CI/Windows installed acceptance is still tracked independently. The historic first-page priorities in [completion waves](LU_TOOL_COMPLETION_WAVES.md) are superseded **for future work only**, not deleted. P01 FS-DISCOVER-01 now has a separate bounded source implementation. **The next P02 start requires a new owner instruction; no next step is automatically active.**
 
 ## Follow-on tools workflow pass — OCR, Reader, image interface (2026-11-06)
 

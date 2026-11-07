@@ -3657,7 +3657,7 @@ function App() {
               onClick={()=>void askReaderDocument()}>Ask Reader</button>
             <button type="button" className="subtleButton"
               disabled={!loaded||chatBusy||working||!prompt.trim()}
-              title="Select one folder and let Lu read, search and inspect ZIP metadata inside it for this turn only"
+              title="Choose a folder and let Lu discover files by name, type, size, date or bounded text, then inspect or read them under one approved read-only tool turn"
               onClick={()=>void askWorkspaceDirectory()}>Ask Workspace</button>
             <button type="button" className="subtleButton"
               aria-pressed={workspaceToolsNextSend}

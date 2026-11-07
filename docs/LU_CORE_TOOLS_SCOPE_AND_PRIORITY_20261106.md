@@ -1,7 +1,7 @@
 # Lu Core tools — owner-approved scope, integration architecture, and priority order
 
 **Decision date:** 2026-11-06  
-**Status:** Owner-approved PRODUCT DIRECTION and ordered future DEVELOPMENT QUEUE; documentation-only checkpoint. **Do not start implementation without the owner's subsequent instruction.**  
+**Status:** Owner-approved PRODUCT DIRECTION and sequential DEVELOPMENT QUEUE. The owner's subsequent instruction authorized P01 source development; **P01 bounded source is implemented, and P02 must NOT start without another instruction.**  
 **Project:** Independent Lu Core desktop AI, distinct from Lu IDE and optional DLCs.
 
 ## 1. Why this change is being made
@@ -12,7 +12,7 @@ This is a NEW explicit owner decision and thus takes precedence where it conflic
 
 ## 2. One ordered, owner-approved priority register
 
-Priority is the order in which to consider *future tool-area implementation*, **not a promise that all queued features must ship in v1.0**. Higher items may share common infrastructure; independent verification can proceed without blocking feature-development decisions. Implementation remains PAUSED until the owner instructs a specific work package.
+Priority is the order in which to consider *future tool-area implementation*, **not a promise that all queued features must ship in v1.0**. Higher items may share common infrastructure; independent verification can proceed without blocking feature-development decisions. Implementation is sequential and owner-gated. P01 FS-DISCOVER-01 was explicitly authorized and source-implemented; the next P02 work package is paused until separately instructed.
 
 | Rank | Core tool area | Approved direction / boundary | Initial follow-on work package |
 | --- | --- | --- | --- |
@@ -30,6 +30,10 @@ Priority is the order in which to consider *future tool-area implementation*, **
 | **P12** | **Internal JSON/Protobuf and schema boundary** | INTERNAL/BOUNDARY capability only. Preserve typed Protobuf IPC, schema validation, bounded repair, authorization/response correlation and fail-closed errors. Advanced malformed schema repair is *not* a requested expansion; skip broad tooling and standalone JSON utilities. | BOUNDARY-MAINT-01: compatibility, diagnostics and correctness repairs only, not an expansion initiative. |
 
 **Supporting cross-cutting requirements (not an extra ranked product area):** capability permissions and user authority, durable native receipts, host-owned workers and cancellation, model context continuity, environment/hardware detection and workload admission, trusted provenance and error reporting. These support every ranked tool area. Lu IDE, NVP and optional Cognitum/DLC functionality are not imported into Core simply because they could be useful.
+
+### P01 execution note (2026-11-06)
+
+The bounded source path for `FS-DISCOVER-01` is committed through the existing authenticated Workspace Reader/Tools loop. It provides a memory-only incremental metadata cache, typed `lu_files_discover`, metadata freshness rechecks and bounded optional literal text search. It does **not** provide all-drive discovery, semantic indexing, persistent index storage or independent Windows verification. See [P01 closeout](LU_FILESYSTEM_DISCOVERY_P01.md). P02 remains QUEUED.
 
 ## 3. Critical interfaces and reuse — avoid duplicate implementations
 
@@ -55,4 +59,4 @@ This decision does not claim the ranked implementation tasks are coded, that cur
 
 ## 5. Execution boundary
 
-**Current instruction: DOCUMENT AND STOP.** This document, ledger and cross-references may be committed. **No code, tests, CI cleanup, new work-order implementation, PR merge or background development is authorized by this documentation request.** Wait for the owner's next instruction specifying which ranked item(s) to begin.
+**Current execution stop:** The later owner instruction authorized sequential Pxx source development, one area per turn. **P01 bounded source work is now complete; STOP and wait for explicit authorization before beginning P02.** P01's remaining advanced indexing ideas and native acceptance remain recorded in [P01 filesystem discovery closeout](LU_FILESYSTEM_DISCOVERY_P01.md). No automatic implementation, PR merge or background work is implied.
