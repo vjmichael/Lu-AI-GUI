@@ -1,0 +1,23 @@
+{
+  "schema": "lu.ide.p06.reviewed-lock-graph.v1",
+  "originSourceSha": "7310eb1465dfe26fc0aee6b9b450113d1463ad69",
+  "originalRunId": 42417459140,
+  "cargoRawSha256": "d4312b60209f89181766b60c2982fb8b199e8ed9d6be1a9dcbdcb3dd07abf6b4",
+  "npmCanonicalJsonSha256": "9a61ac00a82c8f8ca57ce6e56b2e9eb355fd66a0d9af6081b199ddf0573e97de",
+  "npmPlatformRawSha256": {
+    "windows-2022": "17e0b32efe2bdafee4e85663fa9bde7dfe5bd839d8d1359d1be824f91075206b",
+    "ubuntu-24.04": "3c137aede8749007c062b80e53bef0c83241b73d21e4c692ae1718882e81a316"
+  },
+  "cargoPackages": 500,
+  "npmPackages": 62,
+  "rawByteParity": {
+    "cargo": true,
+    "npm": false
+  },
+  "semanticParity": {
+    "npm": true
+  },
+  "sourceLockfilesCommitted": false,
+  "releaseApproved": false,
+  "licenseLegalReviewApproved": false
+}
