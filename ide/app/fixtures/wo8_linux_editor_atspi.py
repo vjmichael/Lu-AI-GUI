@@ -271,6 +271,20 @@ def main():
         deny("dedicated_native_x11_runner_required")
     if not ROOT.is_dir() or not str(ROOT).startswith(str(Path(os.environ["RUNNER_TEMP"]).resolve()) + os.sep):
         deny("non_disposable_fixture")
+    if os.environ.get("WO8_P04_REOPEN_ONLY") == "true":
+        # A separately installed, reviewed signed version must reopen the
+        # original project via the persisted native catalog, not pick it anew.
+        if not SOURCE.is_file():
+            deny("installed_upgrade_source_missing")
+        reopened = start()
+        try:
+            accessible(ROOT.name, seconds=18)
+            editor_project()
+            focus_editor()
+            print("P04_NATIVE_SIGNED_DEB_REGISTERED_PROJECT_REOPEN=PASS", flush=True)
+        finally:
+            stop(reopened)
+        return
     if not SOURCE.is_file() or SENTINEL in SOURCE.read_text(encoding="utf-8"):
         deny("fixture_not_pristine")
     original = digest()
