@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO7-B/C/D/E implementation checkpoint — 2026-11-07 UTC
+
+**Branch:** `ide/wo7-signed-nsis-release-20261106`; draft [PR #73](https://github.com/vjmichael/Lu-AI-GUI/pull/73) stacked on WO6 PR #70. The planned **source** for B–E is now present: reviewed, SHA-pinned staged payload/notice tree; PE regular+delay import closure scan; exact Tauri resource handoff; protected per-machine NSIS install/uninstall hooks and bounded LocalService lifecycle; explicitly pinned real signing utility and signed NSIS assembler; Windows-only signed candidate preflight; a real NSIS/SCM installed smoke harness triggered only from a reviewed artifact run; and exact-head per-native-gate evidence consistency checks. **No certificate is supplied; no installer is signed or installed by this code commit; release and protected Run/Test/Debug still not accepted.**
+
+The default unsigned NSIS workflow is deliberately unchanged. `packaging/wo7-release.manifest.json`, `wo7-bundle.inputs.json`, and `wo7-evidence.inputs.json` remain default-deny. Latest source regression run is `.github/workflows/ide-wo7-signed-release-preflight.yml`, tracking the current exact PR head; source-negative CI cannot certify release packaging. Manual signed candidate fixture workflow: `.github/workflows/ide-wo7-installed-acceptance.yml`. Project documents, source paths and remaining acceptance: [WO7 work order](docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md). **Still pending:** real reviewed binaries, notices and dynamic-dependency closure; signer/certificate; Windows NSIS hook compilation and installed service identity/rollback test; protected installed Cargo Run/Test/LLDB-DAP, cancel/crash/reconcile; actual verified signed artifact and release approval. Work may continue independently of GH CI. Physical Windows source/build tree is NOT inspected.
+
+
 ## WO7 started — signed NSIS preflight (2026-11-06 local / 2026-11-07 UTC)
 
 **Branch:** `ide/wo7-signed-nsis-release-20261106`, stacked on WO6 PR #70. **Status:** WO7-A source implemented, CI and real signing/installed acceptance pending. WO6 coding is complete, but protected native LLDB-DAP initialize/cancel/inspect and Windows installed debugger remain outstanding. No such native test was declared accepted.
