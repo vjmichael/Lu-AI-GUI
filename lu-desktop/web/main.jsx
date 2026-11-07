@@ -2738,7 +2738,7 @@ function App() {
             </span>
           </div>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
-            An additionally approved Windows foreground-window capture rechecks HWND and PID;
+            An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
             the general picker can select a monitor. Neither gives the model its pixels.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
@@ -2777,10 +2777,15 @@ function App() {
             {captureReceipt?.chatId===chatId&&
               <small>Capture state: {captureReceipt.state}.
                 {captureReceipt.frameSha256
-                  ?' Frame SHA-256: '+captureReceipt.frameSha256
+                  ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
                   :' No completed frame digest.'}
-                The receipt does not establish source identity,
-                GUI correctness, or visual understanding.</small>}
+                {captureReceipt.sourceIdentityAttested
+                  ?' Foreground HWND, PID and process creation time checked.'
+                  :' Selected source identity is not attested.'}
+                {captureReceipt.fullyRedactedReceipt
+                  ?' Entire captured frame was blanked before receipt output.'
+                  :' No verified redacted frame receipt.'}
+                This is not an image preview, GUI test verdict or model visual understanding.</small>}
           </div>}
           {observeView.mode!=='off'&&
             <small>Observed state-change hints: {observeView.nativeEventCount||0}.
