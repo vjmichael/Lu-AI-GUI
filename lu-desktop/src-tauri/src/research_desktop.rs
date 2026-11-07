@@ -299,6 +299,7 @@ pub(crate) struct ResearchReportExportView{
     pub saved_sha256:String,
     pub distinct_sources:usize,
     pub checked_passages:usize,
+    pub bibliography_sources:usize,
     pub interpretation_verified:bool,
     pub message:&'static str,
 }
