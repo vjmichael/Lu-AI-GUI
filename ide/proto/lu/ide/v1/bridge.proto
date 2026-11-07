@@ -36,12 +36,14 @@ message BridgeHello {
   uint32 maximum_version = 3;
   bytes challenge_nonce = 4;          // Exactly 32 unpredictable bytes.
   repeated BridgeCapability advertised_capabilities = 5;
+  bytes client_proof = 6;           // HMAC of challenge and role, never the secret.
 }
 message BridgeHelloAck {
   uint32 selected_version = 1;
   bytes echoed_challenge_nonce = 2;   // Must match exactly.
   bytes responder_nonce = 3;          // Exactly 32 unpredictable bytes.
   repeated BridgeCapability advertised_capabilities = 4;
+  bytes responder_proof = 5;        // HMAC of both nonces and session ID.
 }
 // A context offer never silently imports a native Lu chat history.
 message ProjectContextOffer {
