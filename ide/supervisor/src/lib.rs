@@ -141,7 +141,13 @@ fn validate_plan(value: &JobPlan) -> bool {
             cfg!(feature = "lsp-transport")
                 && value.effect_class == "language_analysis_isolated"
                 && value.runtime_limit_ms <= 5 * 60_000
-                && value.process_limit <= 4
+                // Linux pids.max counts individual clangd worker threads.
+                // Real native CI observed pids.events max>0 at the old cap 4
+                // during hover, though memory.events oom_kill remained zero.
+                // Allow ONLY fixed clangd up to the already global MAX_PIDS
+                // 16, keeping every other LSP recipe at its original cap 4.
+                && value.process_limit
+                    <= if value.recipe_id == "lsp_clangd" { 16 } else { 4 }
                 && value.log_limit_bytes <= 64 * 1024
         } else if value.recipe_id == "dap_lldb_fixed" {
             cfg!(feature = "dap-transport")
@@ -1236,6 +1242,28 @@ mod tests {
         let mut bad = plan();
         bad.effect_class = "write_anywhere".into();
         assert!(!validate_plan(&bad));
+    }
+    #[cfg(feature = "lsp-transport")]
+    #[test]
+    fn clangd_thread_cap_does_not_broaden_other_lsp_recipes() {
+        let mut fixed = plan();
+        fixed.recipe_id = "lsp_clangd".into();
+        fixed.effect_class = "language_analysis_isolated".into();
+        fixed.process_limit = 16;
+        assert!(validate_plan(&fixed));
+        fixed.process_limit = 17;
+        assert!(!validate_plan(&fixed));
+        for recipe in ["lsp_ruff", "lsp_rust_analyzer"] {
+            fixed.recipe_id = recipe.into();
+            fixed.process_limit = 16;
+            assert!(!validate_plan(&fixed));
+            fixed.process_limit = 4;
+            assert!(validate_plan(&fixed));
+        }
+        fixed.recipe_id = "lsp_clangd".into();
+        fixed.process_limit = 16;
+        fixed.effect_class = "uncontained_analysis".into();
+        assert!(!validate_plan(&fixed));
     }
     #[test]
     fn only_fresh_matching_human_grant_and_never_desktop_execution() {

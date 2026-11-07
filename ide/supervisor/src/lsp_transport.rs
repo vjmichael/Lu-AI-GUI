@@ -64,6 +64,9 @@ const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 pub(crate) trait RestrictedLspProcess: Send {
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()>;
     fn read_bounded(&mut self, limit: usize, timeout: Duration) -> io::Result<Vec<u8>>;
+    /// Optional fixed, debug-only native fault witness BEFORE OS tree kill.
+    /// Never changes authorization or returns any untrusted error content.
+    fn trace_native_fault(&mut self, _stage: &'static str) {}
     /// Must terminate the entire kernel Job/cgroup tree and prove it empty.
     fn terminate_tree_and_verify(&mut self) -> Result<bool, SupervisorError>;
     /// Called only after a durable terminal receipt and verified empty tree.

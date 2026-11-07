@@ -193,7 +193,7 @@ mod enabled {
             toolchain_sha256: bundle_sha,
             runtime_limit_ms: 60_000,
             memory_limit_bytes: 512 * 1024 * 1024,
-            process_limit: 4,
+            process_limit: 16, // Kernel cgroup counts clangd threads; still globally capped.
             log_limit_bytes: 65_536,
             effect_class: "language_analysis_isolated".into(),
         };

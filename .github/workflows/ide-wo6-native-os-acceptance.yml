@@ -20,6 +20,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned upstream Windows Python used only for OS test DLL closure.
+          python-version: '3.10.11'
       - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
         shell: pwsh
         run: |
@@ -41,6 +45,17 @@ jobs:
           New-Item -Force -ItemType Directory (Join-Path $bundle 'debuggee') | Out-Null
           Copy-Item -LiteralPath $lldb -Destination (Join-Path $bundle 'bin\lldb-dap.exe')
           Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File | Copy-Item -Destination (Join-Path $bundle 'bin')
+          # Actual PE audit on run 42391111210 identified precisely this DLL.
+          # No unpinned PATH search, arbitrary binary or general OS rights grant.
+          $python=(Get-Command python.exe -ErrorAction Stop).Source
+          $runtime=Join-Path (Split-Path $python -Parent) 'python310.dll'
+          if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) {
+            throw 'DENIED: pinned Python 3.10 DLL unavailable'
+          }
+          $copied=Join-Path $bundle 'bin\python310.dll'
+          Copy-Item -LiteralPath $runtime -Destination $copied
+          Write-Host "P03_LLDB_PYTHON310_CI_DLL_SHA256=$((Get-FileHash $copied -Algorithm SHA256).Hash)"
+          Write-Host 'P03_LLDB_PYTHON310_SCOPE=CI_ONLY_NOT_RELEASE_APPROVED'
           & $clang -g -O0 -o (Join-Path $bundle 'debuggee\wo6-selftest.exe') 'ide/supervisor/fixtures/debug/wo6_selftest.c'
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party debuggee build failed' }
           $adapter=Join-Path $bundle 'bin\lldb-dap.exe'
@@ -50,6 +65,48 @@ jobs:
           # protected initialize/launch and OS cleanup below are mandatory;
           # never substitute this file-existence check for executable proof.
           Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
+      - name: Audit bounded transitive Windows LLVM DLL imports before AppContainer admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bin=Join-Path $env:LU_IDE_WO6_DAP_BUNDLE 'bin'
+          $origin=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          $reader=if ($origin) { Join-Path (Split-Path $origin.Source -Parent) 'llvm-readobj.exe' } else { 'C:\Program Files\LLVM\bin\llvm-readobj.exe' }
+          if (!(Test-Path -LiteralPath $reader)) {
+            Write-Host 'P03_LLDB_PE_IMPORT_AUDIT=reader_unavailable_not_a_pass'
+          } else {
+            $files=@(Get-ChildItem -LiteralPath $bin -File | Where-Object { $_.Extension -in @('.dll','.exe') })
+            if ($files.Count -gt 512) { throw 'DENIED: transitive LLVM import audit exceeds fixed entry limit' }
+            $fileCount=0
+            $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($file in $files) {
+              $fileCount++
+              $raw=@(& $reader --coff-imports $file.FullName 2>&1)
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: LLVM PE import analysis rejected a staged binary' }
+              foreach ($item in $raw) {
+                $line=([string]$item).Trim().ToLowerInvariant()
+                if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
+                $dll=$line.Substring(6)
+                if ($dll -notmatch '^[a-z0-9_.-]+\.dll$') { throw 'DENIED: invalid native import module name' }
+                if ($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')) { continue }
+                $inBundle=Test-Path -LiteralPath (Join-Path $bin $dll)
+                $inSystem=Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $dll))
+                if (!$inBundle -and !$inSystem) { [void]$missing.Add($dll) }
+              }
+            }
+            Write-Host "P03_LLDB_NATIVE_PE_FILES_AUDITED=$fileCount"
+            foreach ($dll in @($missing | Sort-Object)) { Write-Host "P03_LLDB_UNRESOLVED_TRANSITIVE_DLL=$dll" }
+            Write-Host "P03_LLDB_UNRESOLVED_TRANSITIVE_IMPORTS=$($missing.Count)"
+            Write-Host 'P03_LLDB_PE_IMPORT_AUDIT=diagnostic_only_not_a_loader_or_containment_pass'
+          }
+      - name: Unit-test bounded loader diagnosis and independently probe fixed LLDB initialize
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed loader probe unit tests failed' }
+          python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: copied adapter cannot initialize outside AppContainer; no native containment claim' }
       - name: Verify actual AppContainer debuggee normal/cancel with independent SCM
         shell: pwsh
         run: |
@@ -143,13 +200,14 @@ jobs:
           set -euo pipefail
           cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_dap_host
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --example wo6_native_dap_acceptance
-      - name: Verify real delegated cgroup normal and cancellation
+      - name: Verify independent crash replay, real delegated normal and cancellation
         shell: bash
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_dap_host)"
-          for mode in normal cancel; do
+          for mode in crash normal cancel; do
             args=()
+            if [[ "$mode" == crash ]]; then args+=(--crash-verify); fi
             if [[ "$mode" == cancel ]]; then args+=(--cancel); fi
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \

@@ -20,11 +20,11 @@ fn run() -> Result<(), &'static str> {
     let mut args = env::args_os().skip(1);
     let mode = args.next();
     if args.next().is_some()
-        || mode
-            .as_deref()
-            .is_some_and(|arg| arg != std::ffi::OsStr::new("--cancel"))
+        || mode.as_deref().is_some_and(|arg| {
+            arg != std::ffi::OsStr::new("--cancel") && arg != std::ffi::OsStr::new("--crash-verify")
+        })
     {
-        return Err("only fixed normal/cancellation acceptance modes supported");
+        return Err("only fixed normal/cancel/crash native acceptance modes supported");
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let helper = root.join("target/debug/linux_cgroup_prepare");
@@ -55,6 +55,43 @@ fn run() -> Result<(), &'static str> {
         .env("HOME", "/tmp")
         .env("LANG", "C")
         .env("LU_IDE_E2_NATIVE_TRACE", "1");
+    if mode.as_deref() == Some(std::ffi::OsStr::new("--crash-verify")) {
+        // Two independent OS processes: first exits without running Drop,
+        // then a fresh verifier reopens durable receipts and reads the REAL
+        // kernel cgroup/events. No project-supplied mode, path or debugger.
+        use std::os::unix::fs::PermissionsExt;
+        let unique = format!(
+            "lu-ide-p03-crash-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "invalid native witness clock")?
+                .as_nanos()
+        );
+        let witness = env::temp_dir().join(unique);
+        fs::create_dir(&witness).map_err(|_| "trusted crash witness root cannot be created")?;
+        fs::set_permissions(&witness, fs::Permissions::from_mode(0o700))
+            .map_err(|_| "trusted crash witness root mode failed")?;
+        let status = command
+            .env("LU_IDE_P03_CRASH_WITNESS_ROOT", &witness)
+            .arg("--crash-after-initialize")
+            .status()
+            .map_err(|_| "fixed crash fixture spawn failed")?;
+        if status.code() != Some(73) {
+            return Err("native debugger did not reach crash-after-initialize witness");
+        }
+        let resumed = Command::new(&fixture)
+            .env_clear()
+            .env("LU_IDE_P03_CRASH_WITNESS_ROOT", &witness)
+            .arg("--verify-crash-replay")
+            .status()
+            .map_err(|_| "independent crash replay verifier failed to spawn")?;
+        if !resumed.success() {
+            return Err("kernel cgroup or durable replay did not quarantine host crash");
+        }
+        println!("PASS: actual native debugger supervisor crash/restart evidence");
+        return Ok(());
+    }
     if mode.is_some() {
         command.arg("--cancel");
     }

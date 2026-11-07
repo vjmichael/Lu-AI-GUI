@@ -67,7 +67,24 @@ jobs:
           $bundle=Join-Path $env:RUNNER_TEMP 'e2-clangd-bundle'
           New-Item -ItemType Directory -Path (Join-Path $bundle 'bin') | Out-Null
           Copy-Item -LiteralPath $clangd -Destination (Join-Path $bundle 'bin\clangd.exe')
-          Add-Content -Path $env:GITHUB_ENV -Value "LU_IDE_E2_PINNED_LSP_BUNDLE=$bundle"
+          # The native clangd CI bundle must carry only the matching distro
+          # LLVM sibling runtime libraries, not DLLs from PATH or users'
+          # projects. Each byte participates in the existing sealed digest.
+          $origin=Split-Path $clangd -Parent
+          Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File |
+            Copy-Item -Destination (Join-Path $bundle 'bin')
+          $readobj=Join-Path $origin 'llvm-readobj.exe'
+          if (!(Test-Path -LiteralPath $readobj -PathType Leaf)) {
+            Write-Host 'P03_CLANGD_PE_IMPORT_AUDIT=reader_unavailable_not_a_pass'
+          } else {
+            $raw=@(& $readobj --coff-imports (Join-Path $bundle 'bin\clangd.exe') 2>&1)
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed clangd PE import audit rejected binary' }
+            $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($entry in $raw) {
+              $line=([string]$entry).Trim().ToLowerInvariant()
+              if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
+              $dll=$line.Substring(6)
+              if ($dll -notmatch '^[a-z0-9_.-]+\.dll
           Write-Host "Test-only clangd SHA $((Get-FileHash (Join-Path $bundle 'bin\clangd.exe') -Algorithm SHA256).Hash)"
           # Diagnostic-only: reject an invalid copied executable or arguments
           # BEFORE the later real restricted-AppContainer acceptance. This
@@ -140,8 +157,14 @@ jobs:
           sudo apt-get install -y bubblewrap clangd
       - name: Create root-owned, self-measured clangd acceptance bundle
         run: |
-          sudo install -d -m 755 /opt/lu-ide-e2-test/bin
-          sudo install -o root -g root -m 755 "$(command -v clangd)" /opt/lu-ide-e2-test/bin/clangd
+          # The root itself must be immutable and root-owned, not merely
+          # its bin/ child. The native worker checks the actual root inode.
+          sudo install -d -o root -g root -m 0755 /opt/lu-ide-e2-test
+          sudo install -d -o root -g root -m 0755 /opt/lu-ide-e2-test/bin
+          sudo install -o root -g root -m 0755 "$(command -v clangd)" /opt/lu-ide-e2-test/bin/clangd
+          test ! -L /opt/lu-ide-e2-test
+          test "$(stat -c '%u:%g:%a' /opt/lu-ide-e2-test)" = '0:0:755'
+          test "$(stat -c '%u:%g:%a' /opt/lu-ide-e2-test/bin)" = '0:0:755'
           echo LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test >> "$GITHUB_ENV"
       - name: Check genuine systemd delegation support (not root cgroup write access)
         shell: bash

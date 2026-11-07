@@ -55,6 +55,8 @@ pub enum DapPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DapEvent {
     Initialized,
+    // Adapter may announce configuration only AFTER the fixed launch request.
+    ConfigurationRequested,
     LaunchAcknowledged,
     Stopped { thread_id: u64 },
     Continued,
@@ -72,6 +74,8 @@ pub struct DapSession {
     seq: u64,
     pending: BTreeMap<u64, &'static str>,
     initialized_event: bool,
+    launch_sent: bool,
+    configuration_done_sent: bool,
 }
 impl Default for DapSession {
     fn default() -> Self {
@@ -86,6 +90,8 @@ impl DapSession {
             seq: 1,
             pending: BTreeMap::new(),
             initialized_event: false,
+            launch_sent: false,
+            configuration_done_sent: false,
         }
     }
     pub fn phase(&self) -> DapPhase {
@@ -146,14 +152,50 @@ impl DapSession {
         if !valid || program.contains("..") || program.chars().any(char::is_control) {
             return Err(DapError::InvalidMessage);
         }
-        self.phase = DapPhase::Launching;
-        self.request(
+        let frame = self.request(
             "launch",
             json!({
                 "program": program, "stopOnEntry": true, "noDebug": false,
+                // LLVM LLDB-DAP defaults disableASLR=true. In a restricted
+                // Bwrap/AppArmor namespace that tries forbidden personality(2)
+                // ASLR disabling. Leave kernel ASLR ON; do not widen privileges.
+                "disableASLR": false,
+                // Test-only, headless fixed fixture never needs terminal IO.
+                // LLVM 18 otherwise allocates a pseudo-terminal, which can
+                // be denied under the kernel Bwrap/AppArmor namespace.
+                // Disabling target stdio reduces exposed I/O; no shell.
+                "disableSTDIO": true,
                 "args": [], "env": {}, "runInTerminal": false
             }),
-        )
+        )?;
+        self.launch_sent = true;
+        self.phase = DapPhase::Launching;
+        Ok(frame)
+    }
+
+    /// Read-only pending signal for adapters that emit initialized immediately
+    /// after the response (even before the fixed launch is sent). The trusted
+    /// native host may examine this after launch; no DAP instruction is sent.
+    pub fn configuration_needed(&self) -> bool {
+        self.launch_sent
+            && self.initialized_event
+            && !self.configuration_done_sent
+            && matches!(
+                self.phase,
+                DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
+            )
+    }
+
+    /// Complete ONLY the fixed debugger's empty configuration transaction.
+    /// This cannot launch a target, run a terminal, evaluate code or select a
+    /// path. It is legal only after a pinned launch and the adapter's event.
+    pub fn configuration_done(&mut self) -> Result<Vec<u8>, DapError> {
+        if !self.configuration_needed() {
+            return Err(DapError::InvalidPhase);
+        }
+        let frame = self.request("configurationDone", json!({}))?;
+        self.configuration_done_sent = true;
+        Ok(frame)
     }
 
     /// Read-only inspection of a debugger whose target was separately approved.
@@ -258,15 +300,63 @@ impl DapSession {
                     .remove(&request_seq)
                     .ok_or(DapError::UnexpectedResponse)?;
                 if command != Some(expected) || obj.get("success") != Some(&Value::Bool(true)) {
+                    // Debug-only, fixed categories of real adapter launch
+                    // failure; never print the untrusted adapter message,
+                    // target path or debugger-provided source text.
+                    if cfg!(debug_assertions)
+                        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                            == Some(std::ffi::OsStr::new("1"))
+                    {
+                        // Fixed schema metadata only: distinguish a
+                        // structurally unexpected response from LLDB's
+                        // explicit launch refusal. Never log raw adapter
+                        // paths, messages, child output or error numbers.
+                        let mismatch = command != Some(expected);
+                        eprintln!(
+                            "PROTECTED_DAP_RESPONSE_CORRELATION={}",
+                            if mismatch {
+                                "wrong_command"
+                            } else {
+                                "exact_request_command"
+                            }
+                        );
+                        eprintln!(
+                            "PROTECTED_DAP_RESPONSE_RESULT={}",
+                            if obj.get("success") == Some(&Value::Bool(false)) {
+                                "adapter_reported_failure"
+                            } else if obj.get("success") == Some(&Value::Bool(true)) {
+                                "adapter_reported_success"
+                            } else {
+                                "missing_or_invalid_success_flag"
+                            }
+                        );
+                        eprintln!(
+                            "PROTECTED_DAP_ADAPTER_ERROR_SCHEMA={}",
+                            if obj
+                                .get("body")
+                                .and_then(|body| body.get("error"))
+                                .and_then(|error| error.get("format"))
+                                .and_then(Value::as_str)
+                                .is_some()
+                            {
+                                "structured_error_format_present"
+                            } else {
+                                "no_structured_error_format"
+                            }
+                        );
+                        eprintln!(
+                            "PROTECTED_DAP_ADAPTER_FAILURE_CLASS={}",
+                            classify_native_adapter_error(obj)
+                        );
+                    }
                     return Err(DapError::AdapterFailed);
                 }
                 match expected {
+                    // DAP explicitly permits launch after initialize RESPONSE.
+                    // Blocking on the later initialized EVENT deadlocks LLDB-DAP
+                    // because that event may be emitted only after launch.
                     "initialize" if self.phase == DapPhase::Initializing => {
-                        self.phase = if self.initialized_event {
-                            DapPhase::Ready
-                        } else {
-                            DapPhase::AwaitingInitializedEvent
-                        };
+                        self.phase = DapPhase::Ready;
                         Ok(Some(DapEvent::Initialized))
                     }
                     "launch" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
@@ -274,6 +364,15 @@ impl DapSession {
                             self.phase = DapPhase::Ready;
                         }
                         Ok(Some(DapEvent::LaunchAcknowledged))
+                    }
+                    "configurationDone"
+                        if self.configuration_done_sent
+                            && matches!(
+                                self.phase,
+                                DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
+                            ) =>
+                    {
+                        Ok(None)
                     }
                     "threads" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
                         let body = obj
@@ -323,16 +422,14 @@ impl DapSession {
                     .ok_or(DapError::InvalidMessage)?;
                 match event {
                     "initialized"
-                        if matches!(
-                            self.phase,
-                            DapPhase::Initializing | DapPhase::AwaitingInitializedEvent
-                        ) =>
+                        if !self.initialized_event
+                            && matches!(
+                                self.phase,
+                                DapPhase::Ready | DapPhase::Launching | DapPhase::Stopped
+                            ) =>
                     {
                         self.initialized_event = true;
-                        if self.phase == DapPhase::AwaitingInitializedEvent {
-                            self.phase = DapPhase::Ready;
-                        }
-                        Ok(None)
+                        Ok(Some(DapEvent::ConfigurationRequested))
                     }
                     "stopped"
                         if matches!(
@@ -376,6 +473,58 @@ impl DapSession {
         }
     }
 }
+// A native DAP error may embed project paths and user data. Its diagnostic
+// witness is intentionally a fixed vocabulary and never part of authorization.
+fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &'static str {
+    // LLDB-DAP often puts a generic "error" in message and the actual
+    // reason in body.error.format. Classify the BOUNDED nested reason first.
+    // Never expose the message, arbitrary paths, or debugger-provided text.
+    let detail = response
+        .get("body")
+        .and_then(|value| value.get("error"))
+        .and_then(|value| value.get("format"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let headline = response
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let text = format!("{detail} {headline}").to_ascii_lowercase();
+    if text.contains("ptrace") || text.contains("trace me") {
+        "ptrace_or_trace_denied"
+    } else if text.contains("personality") || text.contains("aslr") {
+        "aslr_personality_or_debuggee_policy_denied"
+    } else if text.contains("seccomp") || text.contains("sandbox") {
+        "sandbox_execution_denied"
+    } else if text.contains("permission denied")
+        || text.contains("operation not permitted")
+        || text.contains("access denied")
+    {
+        "kernel_or_file_access_denied"
+    } else if text.contains("no such file")
+        || text.contains("not found")
+        || text.contains("file does not exist")
+    {
+        "dependency_or_fixed_target_missing"
+    } else if text.contains("spawn")
+        || text.contains("failed to launch")
+        || text.contains("launch failed")
+        || text.contains("could not launch")
+    {
+        "target_launch_failed"
+    } else if text.contains("python") || text.contains("resource") || text.contains("platform") {
+        "debugger_resource_not_ready"
+    } else if text.contains("invalid argument")
+        || text.contains("unsupported")
+        || text.contains("invalid launch")
+    {
+        "unsupported_debug_adapter_operation"
+    } else if text.trim().is_empty() {
+        "no_adapter_error_detail"
+    } else {
+        "other_adapter_error"
+    }
+}
 fn frame_length(header: &[u8]) -> Result<usize, DapError> {
     let text = std::str::from_utf8(header).map_err(|_| DapError::InvalidFrame)?;
     let mut length = None;
@@ -417,15 +566,17 @@ mod tests {
             .unwrap()
             .contains("supportsRunInTerminalRequest"));
         assert_eq!(s.initialize().unwrap_err(), DapError::InvalidPhase);
-        let evt = framed(json!({"seq": 10, "type":"event","event":"initialized"}));
-        assert!(s.receive(&evt[..8]).unwrap().is_empty());
-        assert!(s.receive(&evt[8..]).unwrap().is_empty());
-        assert_eq!(s.phase(), DapPhase::Initializing);
         let resp = framed(json!({
             "seq":11,"type":"response","request_seq":1,"command":"initialize","success":true
         }));
         assert_eq!(s.receive(&resp).unwrap(), vec![DapEvent::Initialized]);
         assert_eq!(s.phase(), DapPhase::Ready);
+        let evt = framed(json!({"seq": 10, "type":"event","event":"initialized"}));
+        assert!(s.receive(&evt[..8]).unwrap().is_empty());
+        assert_eq!(
+            s.receive(&evt[8..]).unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
         s.threads().unwrap();
         assert_eq!(
             s.receive(&framed(json!({
@@ -494,6 +645,15 @@ mod tests {
             .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
             .unwrap();
         assert!(std::str::from_utf8(&wire).unwrap().contains("stopOnEntry"));
+        // Preserve ASLR rather than asking the confined debugger to invoke
+        // prohibited personality(ADDR_NO_RANDOMIZE), as LLVM itself recommends
+        // for isolated native test environments.
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""disableASLR":false"#));
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""disableSTDIO":true"#));
         assert_eq!(session.phase(), DapPhase::Launching);
         let observed = session
             .receive(&framed(json!({
@@ -533,12 +693,15 @@ mod tests {
             session.receive(&response).unwrap(),
             vec![DapEvent::Initialized]
         );
-        assert_eq!(session.phase(), DapPhase::AwaitingInitializedEvent);
-        session
-            .receive(&framed(json!({
-                "seq":1,"type":"event","event":"initialized"
-            })))
-            .unwrap();
+        assert_eq!(session.phase(), DapPhase::Ready);
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":1,"type":"event","event":"initialized"
+                })))
+                .unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
         assert_eq!(session.phase(), DapPhase::Ready);
         // An uncorrelated reply stays rejected even with a legal server seq.
         assert_eq!(
@@ -552,6 +715,156 @@ mod tests {
         );
         assert_eq!(session.phase(), DapPhase::Quarantined);
     }
+    #[test]
+    fn launch_after_initialize_response_and_config_only_after_native_event() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        assert_eq!(
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":1,"type":"response","request_seq":1,
+                    "command":"initialize","success":true
+                })))
+                .unwrap(),
+            vec![DapEvent::Initialized]
+        );
+        assert_eq!(session.phase(), DapPhase::Ready);
+        // This must not wait for the adapter's initialized EVENT, which LLDB
+        // may send only after the client's fixed, supervisor-authorized launch.
+        session
+            .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+            .unwrap();
+        assert_eq!(
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":2,"type":"event","event":"initialized"
+                })))
+                .unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
+        let frame = session.configuration_done().unwrap();
+        assert!(std::str::from_utf8(&frame)
+            .unwrap()
+            .contains("configurationDone"));
+        assert_eq!(
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        assert!(session
+            .receive(&framed(json!({
+                "seq":3,"type":"response","request_seq":3,
+                "command":"configurationDone","success":true
+            })))
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":4,"type":"event","event":"initialized"
+                })))
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
+
+    #[test]
+    fn early_valid_initialized_event_is_deferred_until_fixed_launch() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        session
+            .receive(&framed(json!({
+                "seq": 1, "type": "response", "request_seq": 1,
+                "command": "initialize", "success": true
+            })))
+            .unwrap();
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq": 2, "type": "event", "event": "initialized"
+                })))
+                .unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
+        assert!(!session.configuration_needed());
+        assert_eq!(
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        session
+            .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+            .unwrap();
+        assert!(session.configuration_needed());
+        session.configuration_done().unwrap();
+        assert!(!session.configuration_needed());
+    }
+
+    #[test]
+    fn premature_initialized_event_denied_without_response() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":1,"type":"event","event":"initialized"
+                })))
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
+
+    #[test]
+    fn native_adapter_error_classes_never_include_untrusted_paths() {
+        let mut response = serde_json::Map::new();
+        response.insert(
+            "message".into(),
+            Value::String("error: ptrace operation not permitted /private/source.c".into()),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "ptrace_or_trace_denied"
+        );
+        response.insert(
+            "message".into(),
+            Value::String("error: failed to launch /private/source.c".into()),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "target_launch_failed"
+        );
+        response.insert("message".into(), Value::String("error".into()));
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":{"format":"personality set failed: Operation not permitted"}}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "aslr_personality_or_debuggee_policy_denied"
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":{"format":"ptrace denied by /secret/project"}}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "ptrace_or_trace_denied"
+        );
+        response.clear();
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "no_adapter_error_detail"
+        );
+    }
+
     #[test]
     fn reverse_request_is_quarantined_not_dispatched() {
         let mut s = DapSession::new();

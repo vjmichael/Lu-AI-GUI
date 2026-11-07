@@ -132,11 +132,103 @@ mod protected {
         }
         Err("DENIED: actual native DAP handshake timed out".into())
     }
+    // Genuine native host-crash witness, available ONLY in the debug test
+    // executable and enabled by its fixed trusted systemd CI host. No model,
+    // project or WebView is given an option to exit the supervisor.
+    #[cfg(target_os = "linux")]
+    fn witness_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let root = PathBuf::from(
+            env::var_os("LU_IDE_P03_CRASH_WITNESS_ROOT")
+                .ok_or("DENIED: trusted P03 crash witness root missing")?,
+        );
+        if !cfg!(debug_assertions)
+            || root.parent() != Some(env::temp_dir().as_path())
+            || !root
+                .file_name()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| x.starts_with("lu-ide-p03-crash-"))
+            || !root.is_dir()
+        {
+            return Err("DENIED: only fixed CI-owned crash witness root is permitted".into());
+        }
+        Ok(root)
+    }
+    #[cfg(target_os = "linux")]
+    fn verify_crash_replay() -> Result<(), Box<dyn std::error::Error>> {
+        let root = witness_root()?;
+        let id = fs::read_to_string(root.join("crash-job-id"))?;
+        let id = id.trim();
+        if !id.starts_with("job-")
+            || id.len() != 36
+            || !id[4..].bytes().all(|c| c.is_ascii_hexdigit())
+        {
+            return Err("DENIED: invalid native crash journal identity".into());
+        }
+        let replay = Supervisor::open(root.join("receipts.jsonl")).map_err(|e| e.code())?;
+        let observed = replay.inspect().map_err(|e| e.code())?;
+        if observed.len() != 1
+            || observed[0].job_id != id
+            || !observed[0].requires_reconciliation
+            || matches!(observed[0].phase, JobPhase::Completed | JobPhase::Cancelled)
+        {
+            return Err(
+                "DENIED: host crash did not quarantine unfinished OS work on restart".into(),
+            );
+        }
+        // A cgroup witness must use actual kernel populated evidence, not
+        // assumptions from journal flags or a mocked process table.
+        let scope = fs::read_to_string("/proc/self/cgroup")?;
+        let relative = scope
+            .lines()
+            .find_map(|line| line.strip_prefix("0::"))
+            .ok_or("DENIED: host has no real cgroup v2 membership")?;
+        let leaf = PathBuf::from("/sys/fs/cgroup").join(relative.trim_start_matches('/'));
+        if leaf.file_name().and_then(|x| x.to_str()) != Some("lu-ide-host") {
+            return Err("DENIED: crash verifier was not independently delegated".into());
+        }
+        let parent = leaf
+            .parent()
+            .ok_or("DENIED: delegated parent unavailable")?;
+        if !matches!(
+            parent.file_name().and_then(|x| x.to_str()),
+            Some("lu-ide-delegated" | "lu-ide-delegated.service")
+        ) {
+            return Err("DENIED: unexpected cgroup recovery parent".into());
+        }
+        let group = parent.join(format!("lu-ide-{id}"));
+        let began = Instant::now();
+        let empty = loop {
+            let events = fs::read_to_string(group.join("cgroup.events"))?;
+            let clean = events.lines().any(|line| line == "populated 0")
+                && fs::read_to_string(group.join("cgroup.procs"))?
+                    .trim()
+                    .is_empty();
+            if clean || began.elapsed() >= Duration::from_secs(8) {
+                break clean;
+            }
+            thread::sleep(Duration::from_millis(40));
+        };
+        if !empty {
+            return Err("DENIED: real kernel cgroup retained child after supervisor crash".into());
+        }
+        println!(
+            "PASS: real host crash -> kernel empty worker cgroup -> durable replay quarantined"
+        );
+        Ok(())
+    }
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let args: Vec<String> = env::args().skip(1).collect();
         let cancel = args.as_slice() == ["--cancel"];
-        if !args.is_empty() && !cancel {
-            return Err("DENIED: only normal or fixed cancellation acceptance".into());
+        #[cfg(target_os = "linux")]
+        let crash = args.as_slice() == ["--crash-after-initialize"];
+        #[cfg(not(target_os = "linux"))]
+        let crash = false;
+        #[cfg(target_os = "linux")]
+        if args.as_slice() == ["--verify-crash-replay"] {
+            return verify_crash_replay();
+        }
+        if !args.is_empty() && !cancel && !crash {
+            return Err("DENIED: only fixed native test modes accepted".into());
         }
         let bundle =
             PathBuf::from(env::var_os("LU_IDE_WO6_DAP_BUNDLE").ok_or(
@@ -153,6 +245,13 @@ mod protected {
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_nanos()
         );
+        #[cfg(target_os = "linux")]
+        let root = if crash {
+            witness_root()?
+        } else {
+            env::temp_dir().join(format!("lu-ide-wo6-native-dap-{nonce}"))
+        };
+        #[cfg(not(target_os = "linux"))]
         let root = env::temp_dir().join(format!("lu-ide-wo6-native-dap-{nonce}"));
         let source = root.join("source");
         let staging = root.join("stage");
@@ -200,7 +299,22 @@ mod protected {
         dap.initialize().map_err(|e| e.code())?;
         poll_until_ready(&mut dap, cancel)?;
         println!("PASS: native OS-restricted LLDB-DAP initialize");
+        #[cfg(target_os = "linux")]
+        if crash {
+            // Persist independent identity before abrupt exit. process::exit
+            // skips Rust Drop, so only the kernel PDEATHSIG, systemd process
+            // scope, and later fresh-host journal replay can establish safety.
+            let path = root.join("crash-job-id");
+            fs::write(&path, &prepared.job_id)?;
+            fs::File::open(path)?.sync_all()?;
+            std::process::exit(73);
+        }
         dap.launch_fixed_fixture().map_err(|e| e.code())?;
+        // The adapter may have sent initialized in the same read that
+        // completed initialize, before the native fixed launch was issued.
+        if dap.configuration_needed() {
+            dap.configuration_done().map_err(|e| e.code())?;
+        }
         let began = Instant::now();
         let mut stopped = None;
         let mut threads = false;
@@ -210,6 +324,11 @@ mod protected {
         while began.elapsed() < Duration::from_secs(35) {
             for event in dap.poll().map_err(|e| e.code())? {
                 match event {
+                    DapEvent::ConfigurationRequested => {
+                        // DAP permits initialized only after launch. Complete the
+                        // fixed empty configuration; never run adapter requests.
+                        dap.configuration_done().map_err(|e| e.code())?;
+                    }
                     DapEvent::Stopped { thread_id } => {
                         stopped = Some(thread_id);
                     }

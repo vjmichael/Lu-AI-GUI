@@ -46,7 +46,7 @@ fn fixed_server(
         "lsp_clangd" => Ok((
             "clangd",
             "clangd",
-            &["--log=error", "--background-index=false"],
+            &["--log=error", "--background-index=false", "-j=1"],
         )),
         "lsp_ruff" => Ok(("ruff", "ruff", &["server"])),
         _ => Err(SupervisorError::InvalidPlan),
@@ -55,11 +55,21 @@ fn fixed_server(
 fn audit_bundle(root: &Path) -> Result<String, SupervisorError> {
     let meta = fs::symlink_metadata(root).map_err(|_| denied())?;
     native_linux_lsp_trace("bundle_root_metadata_read");
-    if !meta.is_dir()
-        || meta.file_type().is_symlink()
-        || meta.uid() != 0
-        || meta.mode() & 0o022 != 0
-    {
+    // Fixed nonidentifying debug-only classification of native admission.
+    if !meta.is_dir() {
+        native_linux_lsp_trace("bundle_root_not_directory");
+        return Err(denied());
+    }
+    if meta.file_type().is_symlink() {
+        native_linux_lsp_trace("bundle_root_symlink_denied");
+        return Err(denied());
+    }
+    if meta.uid() != 0 {
+        native_linux_lsp_trace("bundle_root_not_root_owned");
+        return Err(denied());
+    }
+    if meta.mode() & 0o022 != 0 {
+        native_linux_lsp_trace("bundle_root_group_or_world_writable");
         return Err(denied());
     }
     native_linux_lsp_trace("bundle_root_owner_mode_verified");
@@ -247,7 +257,7 @@ impl LinuxLspProcess {
         {
             return;
         }
-        eprintln!("PROTECTED_LINUX_DAP_CHILD_FAILURE_STAGE={stage}");
+        eprintln!("PROTECTED_LINUX_DAP_OR_LSP_CHILD_FAILURE_STAGE={stage}");
         let state = match self.child.try_wait() {
             Ok(Some(status)) if status.success() => "exited_zero",
             Ok(Some(_)) => "exited_nonzero",
@@ -286,6 +296,9 @@ impl LinuxLspProcess {
 // Owns nonblocking stdio and the only native child owner, with cgroup as
 // kernel authority. No data path to the WebView and no ambient project mount.
 impl RestrictedLspProcess for LinuxLspProcess {
+    fn trace_native_fault(&mut self, stage: &'static str) {
+        self.trace_dap_native_failure(stage);
+    }
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()> {
         if bytes.is_empty() || bytes.len() > MAX_LSP_WRITE {
             return Err(io::ErrorKind::InvalidInput.into());
@@ -460,7 +473,19 @@ pub fn start_linux_lsp(
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        // The ordinary released worker discards stderr. The independent
+        // debug-only native acceptance fixture may collect up to 2048 bytes
+        // into an OS pipe, then emit ONLY fixed categories after failure.
+        .stderr(
+            if cfg!(debug_assertions)
+                && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+            {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            },
+        );
     unsafe {
         command.pre_exec(move || attach_pid_in_pre_exec(descriptor));
     }
@@ -507,11 +532,12 @@ pub fn start_linux_lsp(
         return Err(e);
     }
     native_linux_lsp_trace("running_receipt_fsynced");
+    let debug_stderr = child.stderr.take();
     let process = LinuxLspProcess {
         child,
         stdin,
         stdout,
-        debug_stderr: None,
+        debug_stderr,
         group,
         released: false,
     };
@@ -726,6 +752,12 @@ impl LinuxDapSession {
         &mut self,
     ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
         self.gateway.poll()
+    }
+    pub fn configuration_needed(&self) -> bool {
+        self.gateway.configuration_needed()
+    }
+    pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.configuration_done()
     }
     pub fn threads(&mut self) -> Result<(), SupervisorError> {
         self.gateway.threads()

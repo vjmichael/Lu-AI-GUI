@@ -278,7 +278,8 @@ impl NativeLspRuntime {
             manifest_sha256:input.seal.manifest_sha256.clone(),
             toolchain_sha256:install.bundle_sha256,
             runtime_limit_ms:5*60_000,
-            memory_limit_bytes:512*1024*1024,process_limit:4,
+            memory_limit_bytes:512*1024*1024,
+            process_limit:if server_id=="clangd"{16}else{4},
             log_limit_bytes:64*1024,
             effect_class:"language_analysis_isolated".into(),
         };

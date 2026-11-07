@@ -62,7 +62,7 @@ fn fixed_server(
         "lsp_clangd" => Ok((
             "clangd",
             "clangd.exe",
-            &["--log=error", "--background-index=false"],
+            &["--log=error", "--background-index=false", "-j=1"],
         )),
         "lsp_ruff" => Ok(("ruff", "ruff.exe", &["server"])),
         _ => Err(SupervisorError::InvalidPlan),
@@ -141,6 +141,18 @@ fn min_environment(local: &Path, tools: &Path) -> Result<Vec<u16>, SupervisorErr
 mod native_stderr_classification_tests {
     use super::*;
     #[test]
+    fn native_exit_statuses_are_classified_without_paths_or_rights_changes() {
+        assert_eq!(classify_native_exit(0xc0000135), "dependency_dll_missing");
+        assert_eq!(
+            classify_native_exit(0xc0000142),
+            "dll_initialization_failed"
+        );
+        assert_eq!(classify_native_exit(0xc0000022), "kernel_access_denied");
+        assert_eq!(classify_native_exit(0xc000007b), "invalid_binary_format");
+        assert_eq!(classify_native_exit(1), "other_nonzero");
+        assert_eq!(classify_native_exit(0), "zero");
+    }
+    #[test]
     fn diagnostic_classification_never_exposes_untrusted_message_bytes() {
         assert_eq!(
             classify_debug_stderr(b"error: unknown command line argument"),
@@ -218,6 +230,19 @@ fn uninheritable(raw: HANDLE) -> Result<(), SupervisorError> {
         Ok(())
     }
 }
+// Fixed, nonidentifying Windows NTSTATUS classification for native CI only.
+// Loader errors explain why a verified AppContainer may exit before any DAP/LSP
+// bytes; none of these statuses authorize a weaker execution path.
+fn classify_native_exit(code: u32) -> &'static str {
+    match code {
+        0 => "zero",
+        0xc0000135 => "dependency_dll_missing",
+        0xc0000142 => "dll_initialization_failed",
+        0xc0000022 => "kernel_access_denied",
+        0xc000007b => "invalid_binary_format",
+        _ => "other_nonzero",
+    }
+}
 // Safe fixed-purpose native fault evidence. The numeric process exit status
 // is never used to grant access or declare containment; debug acceptance only.
 fn native_lsp_exit_code(process: HANDLE) {
@@ -227,6 +252,10 @@ fn native_lsp_exit_code(process: HANDLE) {
         let mut code = 0u32;
         if unsafe { GetExitCodeProcess(process, &mut code) } != 0 {
             eprintln!("PROTECTED_LSP_NATIVE_EXIT_CODE={code}");
+            eprintln!(
+                "PROTECTED_LSP_NATIVE_EXIT_CLASS={}",
+                classify_native_exit(code)
+            );
         }
     }
 }
@@ -566,6 +595,11 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    fn trace_native_fault(&mut self, stage: &'static str) {
+        native_lsp_trace(stage);
+        native_lsp_exit_code(self.process.0);
+        inspect_debug_stderr(self.debug_stderr.as_ref());
+    }
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()> {
         if bytes.is_empty() || bytes.len() > MAX_LSP_STDIO_WRITE {
             native_lsp_trace("outbound_frame_denied");
@@ -1038,6 +1072,12 @@ impl WindowsDapSession {
         &mut self,
     ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
         self.gateway.poll()
+    }
+    pub fn configuration_needed(&self) -> bool {
+        self.gateway.configuration_needed()
+    }
+    pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.configuration_done()
     }
     pub fn threads(&mut self) -> Result<(), SupervisorError> {
         self.gateway.threads()

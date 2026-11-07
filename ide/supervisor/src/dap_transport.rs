@@ -110,6 +110,16 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    pub(crate) fn configuration_needed(&self) -> bool {
+        self.session.configuration_needed()
+    }
+    pub(crate) fn configuration_done(&mut self) -> Result<(), SupervisorError> {
+        // The pinned native adapter can emit initialized only after launch.
+        // This is the empty, nonexecuting DAP configuration confirmation.
+        let frame = self.session.configuration_done().map_err(protocol_denied)?;
+        trace_dap("fixed_configuration_done_requested");
+        self.send(&frame)
+    }
     pub(crate) fn threads(&mut self) -> Result<(), SupervisorError> {
         let frame = self.session.threads().map_err(protocol_denied)?;
         self.send(&frame)
@@ -176,6 +186,12 @@ impl DapGateway {
         }
     }
     fn quarantine<T>(&mut self) -> Result<T, SupervisorError> {
+        // Inspect only fixed debug-only native error categories and real
+        // cgroup PID/OOM counters BEFORE cgroup.kill or Windows Job teardown.
+        // A DAP error response itself is never an authority grant.
+        if let Some(process) = self.process.as_mut() {
+            process.trace_native_fault("dap_protocol_quarantined");
+        }
         let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
         if let Some(process) = self.process.as_mut() {
             let _ = process.terminate_tree_and_verify();
@@ -381,13 +397,11 @@ mod tests {
         )
         .unwrap();
         gateway.initialize().unwrap();
-        shared.pending.lock().unwrap().push_back(frame(json!({
-            "seq":1,"type":"event","event":"initialized"
-        })));
+        // Valid DAP adapters answer initialize before their initialized event.
+        // The read-only fixture needs no launch or configurationDone at all.
         shared.pending.lock().unwrap().push_back(frame(json!({
             "seq":2,"type":"response","request_seq":1,"command":"initialize","success":true
         })));
-        assert!(gateway.poll().unwrap().is_empty());
         assert_eq!(gateway.poll().unwrap(), vec![DapEvent::Initialized]);
         assert_eq!(gateway.phase(), DapPhase::Ready);
         gateway.threads().unwrap();

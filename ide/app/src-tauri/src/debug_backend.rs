@@ -403,6 +403,11 @@ impl NativeDebugRuntime {
             return Err("DEBUG_INITIALIZE_TIMEOUT".into());
         }
         session.launch_fixed_fixture().map_err(|e| e.code().to_owned())?;
+        // Handle a valid initialized event already consumed during the
+        // initialize response read. Never issue configuration before launch.
+        if session.configuration_needed() {
+            session.configuration_done().map_err(|e| e.code().to_owned())?;
+        }
         let began = Instant::now();
         let mut stopped_thread = None;
         let mut threads_response = false;
@@ -415,6 +420,12 @@ impl NativeDebugRuntime {
             }
             for event in session.poll().map_err(|e| e.code().to_owned())? {
                 match event {
+                    DapEvent::ConfigurationRequested => {
+                        // LLDB may send initialized AFTER the pinned native launch.
+                        // Complete only empty configuration; do not accept an
+                        // arbitrary source, terminal or debugger command.
+                        session.configuration_done().map_err(|e| e.code().to_owned())?;
+                    }
                     DapEvent::Stopped { thread_id } => stopped_thread = Some(thread_id),
                     DapEvent::ThreadsReceived => threads_response = true,
                     DapEvent::StackTraceReceived => stack_response = true,
