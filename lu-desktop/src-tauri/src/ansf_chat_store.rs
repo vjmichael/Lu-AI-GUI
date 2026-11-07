@@ -170,6 +170,7 @@ impl ChatStore {
         }else{None};
         let mut conn=self.catalog.lock().map_err(to_err)?;
         let tx=conn.transaction().map_err(to_err)?;
+        let has_legacy_index=legacy.is_some();
         if let Some(saved)=legacy{
             if saved.version!=1||saved.chats.len()>1024||
                saved.folders.len()>128||saved.sequence>i64::MAX as u64{
@@ -205,7 +206,7 @@ impl ChatStore {
                 [saved.sequence as i64]
             ).map_err(to_err)?;
         }
-        if legacy.is_none() {
+        if !has_legacy_index {
             // Older R14 clients only had a flat chats.jsonl, not the
             // conversation index. It was converted to an ANSF book above.
             for receipt in &migration_receipts{
