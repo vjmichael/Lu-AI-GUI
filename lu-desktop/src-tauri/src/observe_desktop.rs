@@ -596,6 +596,23 @@ mod tests{
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
     }
     #[test]
+    fn p06_trusted_runtime_error_persists_but_cannot_claim_verified_gui_failure(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-runtime".into()).unwrap();
+        host.host_model_failure("c-main").unwrap();
+        let rows=host.notes("c-main").unwrap();
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0].source,"native_runtime");
+        assert_eq!(rows[0].kind,"error_indicator");
+        let summary=host.handoff("c-main").unwrap().unwrap();
+        assert_eq!(summary.verified_failures,0);
+        assert!(!summary.main_model_may_treat_as_verified_failure);
+        assert_eq!(host.forget_notes("c-main").unwrap(),1);
+        assert!(host.handoff("c-main").unwrap().is_none());
+    }
+    #[test]
     fn p06_forget_notes_erases_current_chat_and_invalidates_handoff(){
         let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
         let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
