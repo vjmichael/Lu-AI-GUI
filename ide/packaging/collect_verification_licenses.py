@@ -192,6 +192,21 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                 shutil.copyfile(src,target,follow_symlinks=False)
                 notices.append({"path":relative,"sha256":digest(target),
                                 "originalName":src.name})
+            # The platform package @esbuild/<target> is built from the exact
+            # esbuild source release, but its npm tarball has no LICENSE file.
+            # Reuse only the verified, pinned upstream MIT text for that same
+            # esbuild version. Never borrow it for other packages or versions.
+            if (not notices and retrieval is not None and manager=="npm"
+                    and name in {"@esbuild/linux-x64","@esbuild/win32-x64"}
+                    and version=="0.25.9" and declared=="MIT"):
+                reviewed=upstream_dir/"esbuild-0.25.9-LICENSE-MIT.txt"
+                relative=f"resolved/npm/{index:04d}-00.txt"
+                target=stage/relative
+                target.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(reviewed,target,follow_symlinks=False)
+                notices.append({"path":relative,"sha256":digest(target),
+                                "originalName":"verified-esbuild-v0.25.9-upstream-LICENSE.md",
+                                "upstreamSource":SOURCES["esbuild-0.25.9-LICENSE-MIT.txt"][1]})
             license_id=declared if isinstance(declared,str) and declared.strip() else None
             # The package name/metadata is evidence of resolution, not a legal
             # clearance. Missing text or identifier blocks complete status.
