@@ -136,6 +136,45 @@ def stop(proc):
             proc.wait(timeout=4)
 
 
+def _native_dialog_ancestor(node):
+    # Inspect an actual AT-SPI modal/file-chooser ancestry, not an unrelated
+    # app button named Open or Select. No web JS, IPC or synthetic picker.
+    current = node
+    for _ in range(10):
+        try:
+            current = current.parent
+            if current is None:
+                return False
+            role = (current.getRoleName() or "").casefold()
+            if "dialog" in role or "file chooser" in role:
+                return True
+        except Exception:
+            return False
+    return False
+
+
+def _native_picker_confirm():
+    candidates = ("select", "open", "choose folder")
+    checked = 0
+    for obj in elements():
+        try:
+            name = (obj.name or "").strip().casefold()
+            role = (obj.getRoleName() or "").casefold()
+            if name in candidates and ("button" in role) and _native_dialog_ancestor(obj):
+                checked += 1
+                action = obj.queryAction()
+                for i in range(action.nActions):
+                    if action.getName(i).casefold() in ("click", "press", "activate"):
+                        if action.doAction(i):
+                            print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=real_atspi_action", flush=True)
+                            return
+        except Exception:
+            continue
+    print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
+          "matching_dialog_buttons=" + str(checked), flush=True)
+    deny("native_dialog_confirmation_not_found")
+
+
 def select_native_folder():
     activate("+ Open folder")
     time.sleep(1)
@@ -143,15 +182,25 @@ def select_native_folder():
     type_text(str(ROOT))
     key("Return")
     time.sleep(1)
-    # GTK folder picker normally accepts via the Open/Select action.
-    for button in ("Select", "Open", "Choose Folder"):
-        try:
-            activate(button, timeout=2)
-            break
-        except RuntimeError:
-            continue
+    _native_picker_confirm()
     accessible("Registered projects", seconds=15)
-    accessible(ROOT.name, seconds=15)
+    try:
+        accessible(ROOT.name, seconds=15)
+    except RuntimeError:
+        # Only fixed-vocabulary native AT-SPI diagnostics. Never log a user
+        # project path, source text, arbitrary accessible names or credentials.
+        categories = {"dialog": 0, "file chooser": 0, "button": 0, "text": 0}
+        for obj in elements():
+            try:
+                role = (obj.getRoleName() or "").casefold()
+                for label in categories:
+                    if label in role:
+                        categories[label] += 1
+            except Exception:
+                pass
+        print("P04_NATIVE_LINUX_PICKER_ATSPI_ROLES=" +
+              ",".join(k + ":" + str(v) for k, v in sorted(categories.items())), flush=True)
+        raise
 
 
 def editor_project():
