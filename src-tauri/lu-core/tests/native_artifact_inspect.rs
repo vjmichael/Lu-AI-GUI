@@ -27,7 +27,7 @@ fn fixture()->PathBuf{
 #[tokio::test]
 async fn model_cannot_approve_or_fabricate_an_artifact(){
     let dir=fixture();
-    fs::write(dir.join("empty.xlsx"),[]).unwrap();
+    fs::write(dir.join("empty.xlsx"),b"").unwrap();
     fs::write(dir.join("record.json"),b"{\"written\":true}").unwrap();
     let reg=NativeToolRegistry::new();
     let mut cat=ModelToolCatalog::new();
