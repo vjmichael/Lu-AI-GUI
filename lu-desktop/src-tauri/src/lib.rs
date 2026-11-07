@@ -239,6 +239,41 @@ fn lu_model_preflight(
     Ok(inspect_registered_model(&state.models_dir,&record))
 }
 
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct BackendOptionView{
+    backend:&'static str,
+    engine:&'static str,
+    packaged:bool,
+    runtime_inference_verified:bool,
+    gpu_execution_verified:bool,
+    selectable:bool,
+    detail:&'static str,
+}
+/// These are package/route *availability* facts, not benchmarks, driver
+/// measurements, generic GPU memory telemetry or additional runnable engines.
+/// The currently pinned llama.cpp engine is the only implemented local route.
+#[tauri::command]
+fn lu_model_backend_options()->Vec<BackendOptionView>{
+    vec![
+        BackendOptionView{
+            backend:if cfg!(windows){"vulkan"}else{"cpu"},
+            engine:"pinned llama.cpp",
+            packaged:true,runtime_inference_verified:false,
+            gpu_execution_verified:false,selectable:true,
+            detail:"Pinned package identity is checked by the desktop at startup. Actual model inference/offload must be observed after load.",
+        },
+        BackendOptionView{backend:"rocm",engine:"llama.cpp",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,detail:"Not packaged or independently verified."},
+        BackendOptionView{backend:"cuda",engine:"llama.cpp",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,detail:"Not packaged or independently verified."},
+        BackendOptionView{backend:"vllm",engine:"vLLM",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,detail:"Provider adapter not yet installed or authorized."},
+    ]
+}
 /// Search/read actions are initiated only by a Settings user gesture. No
 /// model, WebView-supplied URL, arbitrary origin, or downloader is admitted.
 #[tauri::command]
@@ -5999,6 +6034,7 @@ pub fn run() {
             lu_status,
             lu_list_models,
             lu_model_preflight,
+            lu_model_backend_options,
             lu_model_provider_search,
             lu_model_provider_review,
             lu_import_model,
