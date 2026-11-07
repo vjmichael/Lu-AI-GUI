@@ -38,6 +38,17 @@ jobs:
         run: |
           npm install --ignore-scripts --no-audit --no-fund
           npm run check
+      - name: Fetch resolved Cargo sources and embed third-party license notices
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: cannot resolve native dependency license sources' }
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: third-party verification licenses not generated' }
+          Write-Host 'P04_UNSIGNED_INSTALLER_LICENSES=ACTUAL_RESOLVED_NOTICES_BUNDLED_NO_RELEASE_APPROVAL'
       - name: Build real default-disabled unsigned Windows NSIS
         working-directory: ide/app
         shell: pwsh
@@ -45,6 +56,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Attach unsigned Windows NSIS and matching resolved license bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-p04-windows-unsigned-verification
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+          if-no-files-found: error
+          retention-days: 7
       - name: Parse real Windows UI acceptance fixture without executing it
         shell: pwsh
         run: |

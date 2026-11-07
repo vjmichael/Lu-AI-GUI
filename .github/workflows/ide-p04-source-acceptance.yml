@@ -38,6 +38,8 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - name: Validate P04 hostile native state and rollback evidence
         run: python -m unittest discover -s ide/packaging -p 'test_verify_p04_transition_evidence.py' -v
+      - name: Verify license collector includes authentic notices and default-deny modes
+        run: python -m unittest discover -s ide/packaging -p 'test_collect_verification_licenses.py' -v
       - name: Verify signed WO7 source and candidate refusal tests
         run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_*.py' -v
       - name: Verify installed WO8 evidence default-deny

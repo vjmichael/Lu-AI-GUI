@@ -3,6 +3,9 @@
     "active": true,
     "targets": [
       "deb"
-    ]
+    ],
+    "resources": {
+      "verification-notices/": "THIRD_PARTY_LICENSES"
+    }
   }
 }

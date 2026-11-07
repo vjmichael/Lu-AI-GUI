@@ -8,6 +8,9 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    },
+    "resources": {
+      "verification-notices/": "THIRD_PARTY_LICENSES"
     }
   }
 }
