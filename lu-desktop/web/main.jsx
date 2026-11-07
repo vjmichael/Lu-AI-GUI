@@ -95,6 +95,13 @@ function App() {
   const [researchBibliographyBusy,setResearchBibliographyBusy]=useState(false);
   const [researchBibliographiesByChat,setResearchBibliographiesByChat]=useState({});
   const [researchBibliographyExportsByChat,setResearchBibliographyExportsByChat]=useState({});
+  const [sblScriptureBook,setSblScriptureBook]=useState('Genesis');
+  const [sblScriptureTranslation,setSblScriptureTranslation]=useState('NRSV');
+  const [sblScriptureChapter,setSblScriptureChapter]=useState('1');
+  const [sblScriptureFirstVerse,setSblScriptureFirstVerse]=useState('1');
+  const [sblScriptureLastVerse,setSblScriptureLastVerse]=useState('');
+  const [sblScripturePreview,setSblScripturePreview]=useState(null);
+
 
   const [researchCitationsByChat,setResearchCitationsByChat]=useState({});
 
@@ -328,6 +335,20 @@ function App() {
       setResearchResult({...result,chatId:sourceChat});
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function previewSblScriptureLocator(){
+    if(!chatId)return;
+    setSblScripturePreview(null);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_sbl_scripture_locator',{
+        chatId,book:sblScriptureBook,
+        chapter:Number(sblScriptureChapter),
+        firstVerse:Number(sblScriptureFirstVerse),
+        lastVerse:sblScriptureLastVerse.trim()?Number(sblScriptureLastVerse):null,
+        translation:sblScriptureTranslation
+      });
+      setSblScripturePreview(receipt);
+    }catch(e){setResearchError(String(e));}
   }
   async function previewResearchBibliography(){
     if(!chatId||researchBibliographyBusy)return;
@@ -4716,6 +4737,119 @@ function App() {
             <small role="status">New bibliography saved: {
               researchBibliographyExportsByChat[chatId].savedPath} · SHA-256: {
               researchBibliographyExportsByChat[chatId].savedSha256}. Publication details remain unverified.</small>}
+          <div className="researchResults" aria-label="SBL2 Scripture locator only">
+            <h4>SBL2 canonical Scripture locator · unverified passage</h4>
+            <small>Choose a canonical book and an explicitly named translation.
+              This formats a reference only. Lu does not fetch or verify Bible text,
+              ancient manuscripts, critical editions or the existence of the verse.
+              Modern Bible translations normally do not create a bibliography entry.</small>
+            <label>Bible book
+              <select aria-label="SBL Scripture book" value={sblScriptureBook}
+                onChange={e=>setSblScriptureBook(e.target.value)}>
+                <option key="Genesis" value="Genesis">Genesis</option>
+                <option key="Exodus" value="Exodus">Exodus</option>
+                <option key="Leviticus" value="Leviticus">Leviticus</option>
+                <option key="Numbers" value="Numbers">Numbers</option>
+                <option key="Deuteronomy" value="Deuteronomy">Deuteronomy</option>
+                <option key="Joshua" value="Joshua">Joshua</option>
+                <option key="Judges" value="Judges">Judges</option>
+                <option key="Ruth" value="Ruth">Ruth</option>
+                <option key="1 Samuel" value="1 Samuel">1 Samuel</option>
+                <option key="2 Samuel" value="2 Samuel">2 Samuel</option>
+                <option key="1 Kings" value="1 Kings">1 Kings</option>
+                <option key="2 Kings" value="2 Kings">2 Kings</option>
+                <option key="1 Chronicles" value="1 Chronicles">1 Chronicles</option>
+                <option key="2 Chronicles" value="2 Chronicles">2 Chronicles</option>
+                <option key="Ezra" value="Ezra">Ezra</option>
+                <option key="Nehemiah" value="Nehemiah">Nehemiah</option>
+                <option key="Esther" value="Esther">Esther</option>
+                <option key="Job" value="Job">Job</option>
+                <option key="Psalms" value="Psalms">Psalms</option>
+                <option key="Proverbs" value="Proverbs">Proverbs</option>
+                <option key="Ecclesiastes" value="Ecclesiastes">Ecclesiastes</option>
+                <option key="Song of Songs" value="Song of Songs">Song of Songs</option>
+                <option key="Isaiah" value="Isaiah">Isaiah</option>
+                <option key="Jeremiah" value="Jeremiah">Jeremiah</option>
+                <option key="Lamentations" value="Lamentations">Lamentations</option>
+                <option key="Ezekiel" value="Ezekiel">Ezekiel</option>
+                <option key="Daniel" value="Daniel">Daniel</option>
+                <option key="Hosea" value="Hosea">Hosea</option>
+                <option key="Joel" value="Joel">Joel</option>
+                <option key="Amos" value="Amos">Amos</option>
+                <option key="Obadiah" value="Obadiah">Obadiah</option>
+                <option key="Jonah" value="Jonah">Jonah</option>
+                <option key="Micah" value="Micah">Micah</option>
+                <option key="Nahum" value="Nahum">Nahum</option>
+                <option key="Habakkuk" value="Habakkuk">Habakkuk</option>
+                <option key="Zephaniah" value="Zephaniah">Zephaniah</option>
+                <option key="Haggai" value="Haggai">Haggai</option>
+                <option key="Zechariah" value="Zechariah">Zechariah</option>
+                <option key="Malachi" value="Malachi">Malachi</option>
+                <option key="Matthew" value="Matthew">Matthew</option>
+                <option key="Mark" value="Mark">Mark</option>
+                <option key="Luke" value="Luke">Luke</option>
+                <option key="John" value="John">John</option>
+                <option key="Acts" value="Acts">Acts</option>
+                <option key="Romans" value="Romans">Romans</option>
+                <option key="1 Corinthians" value="1 Corinthians">1 Corinthians</option>
+                <option key="2 Corinthians" value="2 Corinthians">2 Corinthians</option>
+                <option key="Galatians" value="Galatians">Galatians</option>
+                <option key="Ephesians" value="Ephesians">Ephesians</option>
+                <option key="Philippians" value="Philippians">Philippians</option>
+                <option key="Colossians" value="Colossians">Colossians</option>
+                <option key="1 Thessalonians" value="1 Thessalonians">1 Thessalonians</option>
+                <option key="2 Thessalonians" value="2 Thessalonians">2 Thessalonians</option>
+                <option key="1 Timothy" value="1 Timothy">1 Timothy</option>
+                <option key="2 Timothy" value="2 Timothy">2 Timothy</option>
+                <option key="Titus" value="Titus">Titus</option>
+                <option key="Philemon" value="Philemon">Philemon</option>
+                <option key="Hebrews" value="Hebrews">Hebrews</option>
+                <option key="James" value="James">James</option>
+                <option key="1 Peter" value="1 Peter">1 Peter</option>
+                <option key="2 Peter" value="2 Peter">2 Peter</option>
+                <option key="1 John" value="1 John">1 John</option>
+                <option key="2 John" value="2 John">2 John</option>
+                <option key="3 John" value="3 John">3 John</option>
+                <option key="Jude" value="Jude">Jude</option>
+                <option key="Revelation" value="Revelation">Revelation</option>
+              </select>
+            </label>
+            <label>Translation or version
+              <select aria-label="SBL Scripture translation" value={sblScriptureTranslation}
+                onChange={e=>setSblScriptureTranslation(e.target.value)}>
+                {['NRSV','RSV','NIV','NASB','KJV','CEB'].map(v=><option key={v}>{v}</option>)}
+              </select>
+            </label>
+            <div className="settingsActions">
+              <label>Chapter
+                <input type="number" min="1" max="150" value={sblScriptureChapter}
+                  onChange={e=>setSblScriptureChapter(e.target.value)}/>
+              </label>
+              <label>First verse
+                <input type="number" min="1" max="176" value={sblScriptureFirstVerse}
+                  onChange={e=>setSblScriptureFirstVerse(e.target.value)}/>
+              </label>
+              <label>Last verse (optional)
+                <input type="number" min="1" max="176" value={sblScriptureLastVerse}
+                  onChange={e=>setSblScriptureLastVerse(e.target.value)}/>
+              </label>
+            </div>
+            <button type="button" disabled={!chatId}
+              onClick={()=>void previewSblScriptureLocator()}>
+              Format SBL2 Scripture reference locally
+            </button>
+            {sblScripturePreview&&
+              <div>
+                <strong>{sblScripturePreview.reference}</strong>
+                <small>Passage text not checked; translation and edition unverified.
+                  This is not a bibliography item or scholarly source attestation.</small>
+                <button type="button"
+                  onClick={()=>void navigator.clipboard.writeText(sblScripturePreview.reference)
+                    .catch(e=>setResearchError(String(e)))}>
+                  Copy Scripture reference
+                </button>
+              </div>}
+          </div>
           {researchError&&<small role="alert">{researchError}</small>}
           {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
             <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
