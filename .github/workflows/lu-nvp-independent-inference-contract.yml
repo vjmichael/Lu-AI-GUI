@@ -1,0 +1,59 @@
+name: Lu alpha-to-NVP independent inference core contracts
+
+on:
+  push:
+    branches:
+      - lu/nvp-independent-inference-contract-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-source-and-core:
+    name: Linux pinned Lu alpha source and real Rust inference contract tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assert exact Lu alpha source identities, no shipping external socket
+        run: python tools/lu_nvp_source_seal.py
+      - name: Compile and run independent Lu inference lifecycle/protobuf/host authority
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test p2_inference_lifecycle
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test protobuf_wire
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test host_resource_authority
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-nvp-linux-source-contract
+          path: lu_nvp_source_contract.json
+          if-no-files-found: error
+
+  windows-source-and-core:
+    name: Windows pinned Lu alpha source and real Rust inference contract tests
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assert exact Lu alpha source identities, no shipping external socket
+        run: python tools/lu_nvp_source_seal.py
+      - name: Compile and run independent Lu inference lifecycle/protobuf/host authority
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test p2_inference_lifecycle
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test protobuf_wire
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test host_resource_authority
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-nvp-windows-source-contract
+          path: lu_nvp_source_contract.json
+          if-no-files-found: error
