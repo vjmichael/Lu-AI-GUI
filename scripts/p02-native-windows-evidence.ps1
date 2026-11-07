@@ -26,6 +26,16 @@ $ramMiB = [long][math]::Floor([double]$os.FreePhysicalMemory / 1024.0)
 $cpuSamples = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop |
     Where-Object { $null -ne $_.LoadPercentage } |
     ForEach-Object { [double]$_.LoadPercentage })
+if ($cpuSamples.Count -eq 0) {
+    # Some WDDM/VM hosts omit Win32_Processor.LoadPercentage. Use a real
+    # Windows performance counter; never replace an unavailable sample with 0.
+    try {
+        $counter = Get-Counter -Counter '\Processor(_Total)\% Processor Time' -ErrorAction Stop
+        $cpuSamples = @($counter.CounterSamples | ForEach-Object { [double]$_.CookedValue })
+    } catch {
+        $cpuSamples = @()
+    }
+}
 if ($ramMiB -le 0 -or $cpuSamples.Count -eq 0) {
     throw 'Native Windows RAM/CPU counters are unavailable'
 }
@@ -91,7 +101,6 @@ if ($RequireGpu -and ($gpu.status -ne 'measured' -or
 $evidence = [ordered]@{
     schema = 'lu-p02-native-physical-evidence-v1'
     utc = (Get-Date).ToUniversalTime().ToString('o')
-    computer = $env:COMPUTERNAME
     platform = 'Windows'
     availableRamMiB = $ramMiB
     observedCpuPercent = $cpuPercent
