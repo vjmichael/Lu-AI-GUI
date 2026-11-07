@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -177,6 +177,43 @@ function Start-ProtectedSlowTest {
   Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
   [void](Find-Control 'Cancel and verify process-tree termination' 'Button' 30)
 }
+function Prepare-Wo9ProtectedSlowGraph {
+  Click 'Packages & workflows'
+  Require 'Multi-project release review'
+  $checkbox=Find-Control (Split-Path $fixed -Leaf) 'CheckBox' 25
+  if (!$checkbox.Current.IsEnabled) { Deny 'wo9_recovery_project_not_selectable' }
+  $checkbox.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+  Click 'Inspect selected workflow'
+  Require 'Eligible for human source review'
+  Click 'Verify frozen Git and artifact evidence again'
+  Require 'Exact evidence matched'
+  Click 'Add dependent step'
+  Click 'Add dependent step'
+  Require 'Step 2'
+  # The first step must actually run the 90-second disposable Rust test:
+  # simply selecting rust_check would finish before cancellation/crash.
+  $recipe=Find-Control 'Approved offline recipe' 'ComboBox' 20
+  if (!$recipe.Current.IsKeyboardFocusable) { Deny 'wo9_slow_recipe_not_accessible' }
+  $recipe.SetFocus()
+  [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{ENTER}')
+  Click 'Record exact dependency workflow'
+  Require 'Durable dependent build/test workflow'
+  Require 'Auto-run: disabled'
+  $launch=Find-Control 'Request separately approved protected step' 'Button' 25
+  if (!$launch.Current.IsEnabled) { Deny 'wo9_recovery_first_step_unavailable' }
+}
+function Ensure-Wo9DependentsBlocked {
+  Click 'Packages & workflows'
+  Click 'Refresh durable workflows'
+  Require 'Durable dependent build/test workflow'
+  Require 'Auto-run: disabled'
+  Require 'Release approved: no'
+  $launch=$null
+  try { $launch=Find-Control 'Request separately approved protected step' 'Button' 4 } catch {}
+  if ($launch -and $launch.Current.IsEnabled) {
+    Deny 'wo9_interrupted_or_cancelled_step_unlocked_dependents'
+  }
+}
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
   $deadline=(Get-Date).AddSeconds(35)
   $desktop=[System.Windows.Automation.AutomationElement]::RootElement
@@ -272,6 +309,51 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
+    if ($Scenario -in @('Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')) {
+      # This test MUST be performed against an independently signed, installed
+      # protected WO7 candidate. No unsigned Tauri or mocked worker path.
+      $sig=Get-AuthenticodeSignature -LiteralPath $exe
+      if ($sig.Status -ne 'Valid' -or !$sig.SignerCertificate) {
+        Deny 'wo9_graph_recovery_requires_real_signed_installed_app'
+      }
+      [void](VerifiedInstalledService)
+      $initial=ProtectedWorkerCount
+      Prepare-Wo9ProtectedSlowGraph
+      if ((ProtectedWorkerCount) -ne $initial) {
+        Deny 'wo9_graph_creation_autostarted_native_worker'
+      }
+      Click 'Request separately approved protected step'
+      Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+      Click 'Job requests'
+      [void](Find-Control 'Cancel and verify process-tree termination' 'Button' 40)
+      $nativeId=ActiveProtectedJobId
+      Wait-RealProtectedWorker $initial
+      if ($Scenario -eq 'Wo9ProtectedGraphCancel') {
+        Click 'Cancel and verify process-tree termination'
+        Wait-WorkerReturnToBaseline $initial
+        Verify-DurableJobEvidence $nativeId
+        Ensure-Wo9DependentsBlocked
+        Write-Host 'WO9_SIGNED_INSTALLED_GRAPH_CANCEL_DEPENDENTS_BLOCKED_AND_NATIVE_REAP=PASS'
+      } else {
+        # Kill the real installed Tauri process during native Cargo execution.
+        # The supervisor/OS must reap protected child processes. On restart,
+        # the persisted running DAG node must remain interrupted, not replayed.
+        $previous=$proc.Id
+        Stop-Process -Id $previous -Force -ErrorAction Stop
+        $proc.WaitForExit(10000) | Out-Null
+        Wait-WorkerReturnToBaseline $initial
+        $proc=Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
+        Require 'Workspace projects'
+        Require (Split-Path $fixed -Leaf)
+        Click 'Packages & workflows'
+        Click 'Refresh durable workflows'
+        Require 'interrupted'
+        Ensure-Wo9DependentsBlocked
+        Click 'Job requests'
+        Verify-DurableJobEvidence $nativeId
+        Write-Host 'WO9_SIGNED_INSTALLED_GRAPH_HOST_CRASH_NO_AUTOREPLAY_AND_DURABLE_RECEIPT=PASS'
+      }
+    }
     if ($Scenario -eq 'Wo9ProtectedGraph') {
       # Signed-release-only test: the portable unsigned IDE must never launch.
       $sign=Get-AuthenticodeSignature -LiteralPath $exe
