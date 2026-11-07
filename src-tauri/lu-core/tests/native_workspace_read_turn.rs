@@ -53,13 +53,15 @@ async fn authorized_file_read_and_archive_inspection_share_one_model_session(){
     assert!(capabilities.iter().any(|c|c.public_name=="lu_files_read_text"));
     assert!(schemas.iter().any(|s|s["function"]["name"]=="lu_archive_list"));
     assert!(schemas.iter().any(|s|s["function"]["name"]=="lu_files_read_text"));
+    assert!(schemas.iter().any(|s|s["function"]["name"]=="lu_artifact_inspect"));
     let mut model=Scripted(VecDeque::from(vec![
         r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"memo.txt"}}"#.into(),
         r#"{"kind":"tool","name":"lu_archive_list","arguments":{"path":"data.zip"}}"#.into(),
+        r#"{"kind":"tool","name":"lu_artifact_inspect","arguments":{"path":"data.zip","format":"zip"}}"#.into(),
         r#"{"kind":"final","text":"The workspace has approved text and a ZIP."}"#.into(),
     ]));
     let result=session.run_journaled("Inspect this approved workspace",&mut model,&Cancellation::default(),&journal).await.unwrap();
-    assert_eq!(result.tool_calls,2);
+    assert_eq!(result.tool_calls,3);
     assert_eq!(result.answer,"The workspace has approved text and a ZIP.");
     drop(session);drop(journal);
     fs::remove_dir_all(root).unwrap();
