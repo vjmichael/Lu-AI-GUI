@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE 07 protected Windows acceptance and closeout (Nov 6–7): historical exact head `750638e` yielded native behavioral PASS for protected SCM handshake/READY, independent overlapping NUL grants + revoke, host-crash fsynced recovery and fresh-nonce retry, service-loss Job kill/refused false recovery, and real confined offline Cargo completion/published output/restart. Red workflow exit discovered to be missing SYSTEM/Admin SCM DELETE right and expected-negative-probe `$LASTEXITCODE`; corrected both, made privileged uninstall fail if `sc delete` fails. Fixed D7B Windows crash fixture's reserved `$PID` name. **New exact-head complete all-job green and protected Cargo cancellation remain open.** Ledger: `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
 - IDE 07 WO2/WO3 (Nov 6): native CI proved Windows exact-user pipe opened, then service image/kernel token authenticated under query-only restricted-SID check; service refused owner before READY. Implemented narrow, authenticated-client impersonation for verified process PID, creation, pinned executable and TokenUser checks, reverting to restricted LocalService before any privileged effect. Fixed D7B independent owner-crash fixture dispatch; applied six exact Rustfmt hunks. Latest exact-head native Cargo/SCM/crash acceptance pending. See `docs/IDE_WORK_BATCH_02_20261106.md`.
 
 
