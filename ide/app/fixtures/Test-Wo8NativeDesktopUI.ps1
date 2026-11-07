@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -227,6 +227,26 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
+    if ($Scenario -eq 'ProtectedDebuggerCancellation') {
+      $sign=Get-AuthenticodeSignature -LiteralPath $exe
+      if ($sign.Status -ne 'Valid' -or !$sign.SignerCertificate) {
+        Deny 'unsigned_debugger_cancellation_test_denied'
+      }
+      $service=VerifiedInstalledService
+      $initial=ProtectedWorkerCount
+      Click 'Job requests'
+      $button=Find-Control 'Run protected debugger self-test' 'Button' 30
+      if (!$button.Current.IsEnabled) { Deny 'native_debugger_unavailable' }
+      Click 'Run protected debugger self-test'
+      Confirm-NativeOneUseDialog 'Approve one protected native debugger self-test' 'Run fixed debugger self-test'
+      [void](Find-Control 'Request debugger cancellation' 'Button' 30)
+      $dapJob=ActiveProtectedDebuggerJobId
+      Wait-RealProtectedWorker $initial
+      Click 'Request debugger cancellation'
+      Wait-WorkerReturnToBaseline $initial
+      Verify-DurableDebuggerEvidence $dapJob
+      Write-Host 'WO8_SIGNED_INSTALLED_NATIVE_DAP_CANCEL_AND_DURABLE_RECEIPT=PASS'
+    }
     if ($Scenario -in @('ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial')) {
       $sign=Get-AuthenticodeSignature -LiteralPath $exe
       if ($sign.Status -ne 'Valid' -or !$sign.SignerCertificate) {
@@ -418,6 +438,29 @@ try {
     } catch {}
   }
   Deny 'active_native_job_id_not_exposed_by_installed_ui'
+}
+function ActiveProtectedDebuggerJobId {
+  $deadline=(Get-Date).AddSeconds(25)
+  while ((Get-Date) -lt $deadline) {
+    try {
+      $record=Find-Control 'Active debug session:' '' 2
+      $name=[string]$record.Current.Name
+      if ($name -match 'Active debug session:\\s*(?<id>job-[0-9a-zA-Z_-]{8,})') {
+        return $Matches['id']
+      }
+    } catch {}
+  }
+  Deny 'active_native_debugger_job_id_not_exposed'
+}
+function Verify-DurableDebuggerEvidence([string]$jobId) {
+  [void](Find-Control ('Durable debugger job '+$jobId) '' 45)
+  $button=$null
+  try { $button=Find-Control 'Verify protected debugger cleanup (no execution)' 'Button' 3 } catch {}
+  if ($button -and $button.Current.IsEnabled) {
+    Click 'Verify protected debugger cleanup (no execution)'
+    Confirm-NativeOneUseDialog 'Reconcile interrupted protected debugger' 'Verify OS cleanup'
+    [void](Find-Control ('Durable debugger job '+$jobId) '' 35)
+  }
 }
 function Verify-DurableJobEvidence([string]$jobId) {
   $observed=Find-Control $jobId '' 35
