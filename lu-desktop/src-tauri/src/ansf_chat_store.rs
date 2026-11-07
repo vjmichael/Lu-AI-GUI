@@ -14,10 +14,10 @@ use rand::{rngs::OsRng,RngCore};
 use rusqlite::{params,Connection,OptionalExtension};
 use serde::{Serialize,Deserialize};
 use std::{
-    collections::{HashMap,HashSet},
+    collections::{HashMap,HashSet,VecDeque},
     fs,
     path::{Path,PathBuf},
-    sync::Mutex,
+    sync::{Arc,Mutex},
 };
 use crate::ansf_migration::prepare_legacy_ansf_books;
 
@@ -52,6 +52,9 @@ pub struct ChatStore{
     root:PathBuf,
     library:AnsfLibrary,
     catalog:Mutex<Connection>,
+    // Bounded hot-book handles avoid repeated SQLite schema initialization
+    // for each streamed checkpoint; cold books remain solely on disk.
+    hot_books:Mutex<VecDeque<(String,Arc<AnsfStore>)>>,
 }
 fn id(prefix:&str)->String{
     let mut bytes=[0u8;16];OsRng.fill_bytes(&mut bytes);
@@ -115,13 +118,23 @@ impl ChatStore {
              INSERT OR IGNORE INTO ansf_desktop_state(name,value) VALUES('sequence',0);
              INSERT OR IGNORE INTO ansf_desktop_state(name,value) VALUES('legacy_cutover',0);"
         ).map_err(to_err)?;
-        let mut store=Self{root:root.to_owned(),library,catalog:Mutex::new(conn)};
+        let mut store=Self{root:root.to_owned(),library,catalog:Mutex::new(conn),
+            hot_books:Mutex::new(VecDeque::new())};
         store.reconcile_legacy_cutover()?;
         store.reconcile_activity()?;
         Ok(store)
     }
-    fn ansf_book(&self,chat_id:&str)->Result<AnsfStore,String>{
+    fn ansf_book(&self,chat_id:&str)->Result<Arc<AnsfStore>,String>{
         if !valid_id(chat_id,"c-"){return Err("invalid conversation identity".into())}
+        {
+            let mut hot=self.hot_books.lock().map_err(to_err)?;
+            if let Some(i)=hot.iter().position(|(id,_)|id==chat_id){
+                let item=hot.remove(i).ok_or("Cache bookkeeping failed")?;
+                let result=Arc::clone(&item.1);
+                hot.push_back(item);
+                return Ok(result)
+            }
+        }
         let book=self.library.get_book(chat_id).map_err(to_err)?
             .ok_or("ANSF conversation not indexed")?;
         if book.session_id!=chat_id||
@@ -135,7 +148,16 @@ impl ChatStore {
         if !meta.is_file()||meta.file_type().is_symlink(){
             return Err("ANSF book is not a regular local SQLite database".into())
         }
-        AnsfStore::open(&path).map_err(to_err)
+        let opened=Arc::new(AnsfStore::open(&path).map_err(to_err)?);
+        let mut hot=self.hot_books.lock().map_err(to_err)?;
+        // Another thread may have opened the same book while we checked
+        // the host-owned Library. Reuse that handle instead of duplicating.
+        if let Some((_,prior))=hot.iter().find(|(name,_)|name==chat_id){
+            return Ok(Arc::clone(prior))
+        }
+        while hot.len()>=8 {hot.pop_front();}
+        hot.push_back((chat_id.to_owned(),Arc::clone(&opened)));
+        Ok(opened)
     }
     fn known(conn:&Connection,chat_id:&str)->Result<bool,String>{
         if !valid_id(chat_id,"c-"){return Ok(false)}
@@ -144,7 +166,7 @@ impl ChatStore {
             [chat_id],|r|r.get::<_,bool>(0)
         ).map_err(to_err)
     }
-    fn require(&self,chat_id:&str)->Result<AnsfStore,String>{
+    fn require(&self,chat_id:&str)->Result<Arc<AnsfStore>,String>{
         let conn=self.catalog.lock().map_err(to_err)?;
         if !Self::known(&conn,chat_id)?{return Err("unknown conversation".into())}
         self.ansf_book(chat_id)
