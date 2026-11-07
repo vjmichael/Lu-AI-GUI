@@ -304,15 +304,14 @@ pub fn catalog_work_from_crossref(
         if !bounded(name,512){return Err(StyleError::InvalidField);}
         Some(name.to_owned())
     }else{None};
+    // Resolve any explicitly reviewed journal short name before moving
+    // the owned container title into the final catalog record.
+    let journal_abbreviation=journal.as_deref()
+        .and_then(sbl_known_journal_abbreviation).map(str::to_owned);
     let record=CatalogWork{
         source_id:source_id.to_owned(),title:title.to_owned(),record_url,
         kind,authors,year:years.iter().next().copied(),
-        publisher,publication_place,journal,
-        // Only a fixed reviewed title-to-SBL abbreviation map can
-        // populate this field. Crossref short-container-title is ignored.
-        journal_abbreviation:journal.as_deref()
-            .and_then(sbl_known_journal_abbreviation).map(str::to_owned),
-        volume,issue,
+        publisher,publication_place,journal,journal_abbreviation,volume,issue,
     };
     // Enforce the exact original author identity and required book/journal
     // metadata before any partial citation can leave this native adapter.
