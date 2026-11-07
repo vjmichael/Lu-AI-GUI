@@ -20,7 +20,7 @@ use crate::{
     registry::NativeToolRegistry,
 };
 
-pub const ID:&str="lu.files.discover";
+pub const ID:&str="lu.file_discovery.discover";
 const INPUT:&str="type.googleapis.com/lu.v1.DiscoverFilesRequest";
 const OUTPUT:&str="type.googleapis.com/lu.v1.DiscoverFilesResult";
 const MAX_ENTRIES:usize=12_000;
