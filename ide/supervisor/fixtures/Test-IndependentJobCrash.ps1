@@ -61,14 +61,14 @@ try {
   }
   # SYNCHRONIZE: both native handles must open and be unsignaled while
   # the parent Job owner is alive. These are not PID-only postmortem checks.
-  foreach ($pid in @($child,$grandchild)) {
-    $handle=[LuD7KernelWitness]::OpenProcess(0x00100000,$false,$pid)
+  foreach ($observedChildPid in @($child,$grandchild)) {
+    $handle=[LuD7KernelWitness]::OpenProcess(0x00100000,$false,$observedChildPid)
     if ($handle -eq [IntPtr]::Zero) {
-      throw "DENIED: child $pid could not be independently opened"
+      throw "DENIED: child $observedChildPid could not be independently opened"
     }
-    $children.Add([pscustomobject]@{Pid=$pid;Handle=$handle})
+    $children.Add([pscustomobject]@{Pid=$observedChildPid;Handle=$handle})
     if ([LuD7KernelWitness]::WaitForSingleObject($handle,0) -ne 258) {
-      throw "DENIED: child $pid not live before owner crash"
+      throw "DENIED: child $observedChildPid not live before owner crash"
     }
   }
   $crashAt=[DateTime]::UtcNow
