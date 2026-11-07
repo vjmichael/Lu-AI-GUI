@@ -1475,7 +1475,8 @@ function App() {
               </>}
               {buildResult?.projectId === activeProject?.projectId && <div role="status">
                 <p>Last worker result: <strong>{buildResult.phase}</strong> · Job {buildResult.jobId}</p>
-                <p>Native exit: {String(buildResult.nativeExitCode ?? 'unknown')} · Timed out:
+                <p>Native exit: {String(buildResult.nativeExitCode ?? 'unknown')} ·
+                  Fixed OS error category: {buildResult.nativeErrorCategory || 'not reported'} · Timed out:
                   {buildResult.timedOut ? 'yes' : 'no'} · Reconciliation:
                   {buildResult.requiresReconciliation ? 'required' : 'not indicated'}</p>
                 <p>Source: <code>{buildResult.inputSnapshotSha256}</code></p>
