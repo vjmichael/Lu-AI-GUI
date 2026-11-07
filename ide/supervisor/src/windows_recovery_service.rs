@@ -363,6 +363,27 @@ fn revoke_null_before_ack(
     Ok(())
 }
 
+fn terminate_and_hold_after_denial(
+    owner: HANDLE,
+    job: HANDLE,
+    witness: &mut Witness,
+    active: &Active,
+    nul: &mut Option<crate::windows_null_device::ServiceNullLease>,
+    config: &InstalledConfig,
+    request: &Admission,
+    owner_already_exited: bool,
+) -> Result<(), SupervisorError> {
+    // Preserve kill-intent in the protected journal before changing Job
+    // state. Every successful cleanup then verifies zero native processes,
+    // revokes the exact package SID and enters the recovery hold.
+    witness.record("kill_requested")?;
+    let killed = kill_and_verify(job);
+    witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
+    if !killed { return Err(denied()); }
+    revoke_null_before_ack(nul, witness, config, request)?;
+    hold_for_recovery(owner, job, witness, active, owner_already_exited)
+}
+
 fn valid_id(id: &str) -> bool {
     id.len() == 36 && id.starts_with("job-") && id[4..].bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -660,28 +681,16 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         return Err(denied());
     }
     let mut witness = Witness::new(&config.evidence_root, &request)?;
+    let mut nul: Option<crate::windows_null_device::ServiceNullLease> = None;
     witness.record("ready")?;
     send(pipe, &request.nonce, "ready")?;
     loop {
         match unsafe { WaitForSingleObject(owner.process_handle(), 0) } {
             WAIT_OBJECT_0 => {
                 witness.record("owner_exited")?;
-                witness.record("kill_requested")?;
-                let killed = kill_and_verify(job.0);
-                witness.record(if killed {
-                    "tree_empty"
-                } else {
-                    "kill_unverified"
-                })?;
-                if !killed {
-                    return Err(denied());
-                }
-                return hold_for_recovery(
-                    owner.process_handle(),
-                    job.0,
-                    &mut witness,
-                    &active,
-                    true,
+                return terminate_and_hold_after_denial(
+                    owner.process_handle(), job.0, &mut witness, &active,
+                    &mut nul, config, &request, true,
                 );
             }
             WAIT_TIMEOUT => {}
@@ -702,51 +711,66 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         } == 0
         {
             witness.record("pipe_lost")?;
-            witness.record("kill_requested")?;
-            let killed = kill_and_verify(job.0);
-            witness.record(if killed {
-                "tree_empty"
-            } else {
-                "kill_unverified"
-            })?;
-            if !killed {
-                return Err(denied());
-            }
-            return hold_for_recovery(owner.process_handle(), job.0, &mut witness, &active, false);
+            return terminate_and_hold_after_denial(
+                owner.process_handle(), job.0, &mut witness, &active,
+                &mut nul, config, &request, false,
+            );
         }
         if available > 0 {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Release {
+            struct Command {
                 schema: String,
                 operation: String,
                 nonce: String,
             }
-            let message: Release =
-                serde_json::from_slice(&read_message(pipe)?).map_err(|_| denied())?;
+            // Unknown messages are not executable authority. Never let a
+            // client skip native Job reaping or the exact null-device revocation.
+            let message: Command = match read_message(pipe)
+                .and_then(|bytes| serde_json::from_slice(&bytes).map_err(|_| denied()))
+            {
+                Ok(value) => value,
+                Err(_) => {
+                    return terminate_and_hold_after_denial(
+                        owner.process_handle(), job.0, &mut witness, &active,
+                        &mut nul, config, &request, false,
+                    );
+                }
+            };
+            if message.schema == "lu.ide.d7d.nul-grant.v1"
+                && message.operation == "nul_grant"
+                && message.nonce == request.nonce
+                && nul.is_none()
+                && matches!(job_empty(job.0), Ok(true))
+            {
+                // LocalService-only action, with an OS-derived exact package
+                // SID. Persist a recoverable intent BEFORE touching NUL, so
+                // an unexpected service termination cannot leave an unknown
+                // machine-global permission to the disposed AppContainer.
+                witness.record("nul_intent")?;
+                persist_null_intent(&config.evidence_root, &request)?;
+                let lease = crate::windows_null_device::ServiceNullLease::grant(
+                    &request.job_id,
+                )?;
+                nul = Some(lease);
+                witness.record("nul_granted")?;
+                send(pipe, &request.nonce, "nul_granted")?;
+                continue;
+            }
             if message.schema != "lu.ide.d7d.release.v1"
                 || message.operation != "release"
                 || message.nonce != request.nonce
                 || !matches!(job_empty(job.0), Ok(true))
             {
-                witness.record("kill_requested")?;
-                let killed = kill_and_verify(job.0);
-                witness.record(if killed {
-                    "tree_empty"
-                } else {
-                    "kill_unverified"
-                })?;
-                if !killed {
-                    return Err(denied());
-                }
-                return hold_for_recovery(
-                    owner.process_handle(),
-                    job.0,
-                    &mut witness,
-                    &active,
-                    false,
+                return terminate_and_hold_after_denial(
+                    owner.process_handle(), job.0, &mut witness, &active,
+                    &mut nul, config, &request, false,
                 );
             }
+            // Normal completion or cancellation is not a successful service
+            // release until the exact package SID permission is revoked,
+            // verified, and recorded under the protected service profile.
+            revoke_null_before_ack(&mut nul, &mut witness, config, &request)?;
             witness.record("released_empty")?;
             send(pipe, &request.nonce, "released_empty")?;
             return Ok(());
