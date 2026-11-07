@@ -1,0 +1,86 @@
+name: IDE P04 signed NSIS reinstall and persistent user project acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Reviewed exact source commit SHA
+        required: true
+        type: string
+      candidate_run_id:
+        description: Exact run with reviewed lu-ide-wo7-candidate
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-signed-reinstall:
+    runs-on: windows-2022
+    timeout-minutes: 80
+    environment: lu-ide-release-witness
+    steps:
+      - name: Validate explicit signed candidate locator before fetching
+        shell: pwsh
+        env:
+          EXACT_SHA: ${{ inputs.source_sha }}
+          ARTIFACT_RUN: ${{ inputs.candidate_run_id }}
+        run: |
+          if ($env:EXACT_SHA -notmatch '^[0-9a-fA-F]{40}$' -or
+              $env:ARTIFACT_RUN -notmatch '^[0-9]{1,20}$') {
+            throw 'DENIED: P04 reviewed exact source SHA and artifact run ID required'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-candidate
+          path: candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify exact signed candidate and PowerShell scripts
+        shell: pwsh
+        env:
+          EXACT_SHA: ${{ inputs.source_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ine $env:EXACT_SHA) { throw 'DENIED: exact source SHA mismatch' }
+          foreach ($path in @('ide/app/fixtures/Test-P04SignedReinstall.ps1','ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'DENIED: native P04 PowerShell fixture is invalid' }
+          }
+          python ide/packaging/verify_wo7_candidate.py --manifest candidate/wo7-release.manifest.json --artifact-root candidate --source-sha $env:EXACT_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed signed candidate preflight failed' }
+      - name: Real signed NSIS uninstall, reinstall and OS project-catalog preservation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $manifest=Get-Content candidate/wo7-release.manifest.json -Raw | ConvertFrom-Json
+          $dir=(Resolve-Path candidate).Path
+          $fixture=Join-Path $env:RUNNER_TEMP ('ide-p04-reinstall-'+$env:GITHUB_RUN_ID)
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),('fn main() { println!("p04"); }'+[Environment]::NewLine))
+          $pins=@{
+            InstallerPath=(Join-Path $dir $manifest.installer.path)
+            InstallerSha256=$manifest.installer.sha256
+            InstallerSigner=$manifest.installer.signerThumbprint
+            ServiceSha256=$manifest.service.sha256
+            ServiceSigner=$manifest.service.signerThumbprint
+            DesktopSha256=$manifest.desktop.sha256
+            DesktopSigner=$manifest.desktop.signerThumbprint
+            InstallRoot=(Join-Path $env:ProgramFiles 'Lu IDE')
+            FixtureRoot=$fixture
+          }
+          & ide/app/fixtures/Test-P04SignedReinstall.ps1 @pins
+          if (!$?) { throw 'DENIED: actual signed reinstall witness failed' }
+      - name: Do not overclaim normal reinstall as version upgrade
+        run: |
+          echo 'P04_NATIVE_SAME_VERSION_REINSTALL_ONLY'
+          echo 'P04_DIFFERENT_VERSION_UPGRADE_AND_ROLLBACK=NOT_PROVEN'
+          echo 'P04_PROTECTED_RELEASE=NOT_PROVEN'
+          echo 'P04_RELEASE_APPROVED=NO'
