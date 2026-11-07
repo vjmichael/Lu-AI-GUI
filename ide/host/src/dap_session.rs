@@ -55,6 +55,8 @@ pub enum DapPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DapEvent {
     Initialized,
+    // Adapter may announce configuration only AFTER the fixed launch request.
+    ConfigurationRequested,
     LaunchAcknowledged,
     Stopped { thread_id: u64 },
     Continued,
@@ -72,6 +74,8 @@ pub struct DapSession {
     seq: u64,
     pending: BTreeMap<u64, &'static str>,
     initialized_event: bool,
+    launch_sent: bool,
+    configuration_done_sent: bool,
 }
 impl Default for DapSession {
     fn default() -> Self {
@@ -86,6 +90,8 @@ impl DapSession {
             seq: 1,
             pending: BTreeMap::new(),
             initialized_event: false,
+            launch_sent: false,
+            configuration_done_sent: false,
         }
     }
     pub fn phase(&self) -> DapPhase {
@@ -146,14 +152,32 @@ impl DapSession {
         if !valid || program.contains("..") || program.chars().any(char::is_control) {
             return Err(DapError::InvalidMessage);
         }
-        self.phase = DapPhase::Launching;
-        self.request(
+        let frame = self.request(
             "launch",
             json!({
                 "program": program, "stopOnEntry": true, "noDebug": false,
                 "args": [], "env": {}, "runInTerminal": false
             }),
-        )
+        )?;
+        self.launch_sent = true;
+        self.phase = DapPhase::Launching;
+        Ok(frame)
+    }
+
+    /// Complete ONLY the fixed debugger's empty configuration transaction.
+    /// This cannot launch a target, run a terminal, evaluate code or select a
+    /// path. It is legal only after a pinned launch and the adapter's event.
+    pub fn configuration_done(&mut self) -> Result<Vec<u8>, DapError> {
+        if !self.launch_sent
+            || !self.initialized_event
+            || self.configuration_done_sent
+            || !matches!(self.phase, DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped)
+        {
+            return Err(DapError::InvalidPhase);
+        }
+        let frame = self.request("configurationDone", json!({}))?;
+        self.configuration_done_sent = true;
+        Ok(frame)
     }
 
     /// Read-only inspection of a debugger whose target was separately approved.
@@ -261,12 +285,11 @@ impl DapSession {
                     return Err(DapError::AdapterFailed);
                 }
                 match expected {
+                    // DAP explicitly permits launch after initialize RESPONSE.
+                    // Blocking on the later initialized EVENT deadlocks LLDB-DAP
+                    // because that event may be emitted only after launch.
                     "initialize" if self.phase == DapPhase::Initializing => {
-                        self.phase = if self.initialized_event {
-                            DapPhase::Ready
-                        } else {
-                            DapPhase::AwaitingInitializedEvent
-                        };
+                        self.phase = DapPhase::Ready;
                         Ok(Some(DapEvent::Initialized))
                     }
                     "launch" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
@@ -274,6 +297,15 @@ impl DapSession {
                             self.phase = DapPhase::Ready;
                         }
                         Ok(Some(DapEvent::LaunchAcknowledged))
+                    }
+                    "configurationDone"
+                        if self.configuration_done_sent
+                            && matches!(
+                                self.phase,
+                                DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
+                            ) =>
+                    {
+                        Ok(None)
                     }
                     "threads" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
                         let body = obj
@@ -323,16 +355,14 @@ impl DapSession {
                     .ok_or(DapError::InvalidMessage)?;
                 match event {
                     "initialized"
-                        if matches!(
-                            self.phase,
-                            DapPhase::Initializing | DapPhase::AwaitingInitializedEvent
-                        ) =>
+                        if !self.initialized_event
+                            && matches!(
+                                self.phase,
+                                DapPhase::Ready | DapPhase::Launching | DapPhase::Stopped
+                            ) =>
                     {
                         self.initialized_event = true;
-                        if self.phase == DapPhase::AwaitingInitializedEvent {
-                            self.phase = DapPhase::Ready;
-                        }
-                        Ok(None)
+                        Ok(Some(DapEvent::ConfigurationRequested))
                     }
                     "stopped"
                         if matches!(
@@ -417,15 +447,17 @@ mod tests {
             .unwrap()
             .contains("supportsRunInTerminalRequest"));
         assert_eq!(s.initialize().unwrap_err(), DapError::InvalidPhase);
-        let evt = framed(json!({"seq": 10, "type":"event","event":"initialized"}));
-        assert!(s.receive(&evt[..8]).unwrap().is_empty());
-        assert!(s.receive(&evt[8..]).unwrap().is_empty());
-        assert_eq!(s.phase(), DapPhase::Initializing);
         let resp = framed(json!({
             "seq":11,"type":"response","request_seq":1,"command":"initialize","success":true
         }));
         assert_eq!(s.receive(&resp).unwrap(), vec![DapEvent::Initialized]);
         assert_eq!(s.phase(), DapPhase::Ready);
+        let evt = framed(json!({"seq": 10, "type":"event","event":"initialized"}));
+        assert!(s.receive(&evt[..8]).unwrap().is_empty());
+        assert_eq!(
+            s.receive(&evt[8..]).unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
         s.threads().unwrap();
         assert_eq!(
             s.receive(&framed(json!({
@@ -533,12 +565,15 @@ mod tests {
             session.receive(&response).unwrap(),
             vec![DapEvent::Initialized]
         );
-        assert_eq!(session.phase(), DapPhase::AwaitingInitializedEvent);
-        session
-            .receive(&framed(json!({
-                "seq":1,"type":"event","event":"initialized"
-            })))
-            .unwrap();
+        assert_eq!(session.phase(), DapPhase::Ready);
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":1,"type":"event","event":"initialized"
+                })))
+                .unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
         assert_eq!(session.phase(), DapPhase::Ready);
         // An uncorrelated reply stays rejected even with a legal server seq.
         assert_eq!(
@@ -552,6 +587,58 @@ mod tests {
         );
         assert_eq!(session.phase(), DapPhase::Quarantined);
     }
+    #[test]
+    fn launch_after_initialize_response_and_config_only_after_native_event() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
+        assert_eq!(
+            session.receive(&framed(json!({
+                "seq":1,"type":"response","request_seq":1,
+                "command":"initialize","success":true
+            }))).unwrap(),
+            vec![DapEvent::Initialized]
+        );
+        assert_eq!(session.phase(), DapPhase::Ready);
+        // This must not wait for the adapter's initialized EVENT, which LLDB
+        // may send only after the client's fixed, supervisor-authorized launch.
+        session.launch_fixed_fixture("/ls/debuggee/wo6-selftest").unwrap();
+        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
+        assert_eq!(
+            session.receive(&framed(json!({
+                "seq":2,"type":"event","event":"initialized"
+            }))).unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
+        let frame = session.configuration_done().unwrap();
+        assert!(std::str::from_utf8(&frame).unwrap().contains("configurationDone"));
+        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
+        assert!(session.receive(&framed(json!({
+            "seq":3,"type":"response","request_seq":3,
+            "command":"configurationDone","success":true
+        }))).unwrap().is_empty());
+        assert_eq!(
+            session.receive(&framed(json!({
+                "seq":4,"type":"event","event":"initialized"
+            }))).unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
+
+    #[test]
+    fn premature_initialized_event_denied_without_response() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        assert_eq!(
+            session.receive(&framed(json!({
+                "seq":1,"type":"event","event":"initialized"
+            }))).unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
+
     #[test]
     fn reverse_request_is_quarantined_not_dispatched() {
         let mut s = DapSession::new();
