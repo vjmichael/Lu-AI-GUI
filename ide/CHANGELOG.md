@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO7-B/C/D/E source implementation (Nov 7 UTC): committed fixed reviewed Windows payload staging, no-extra-file Tauri handoff, PE regular/delay imports audit, release-only Tauri NSIS hooks/config, privileged LocalService service lifecycle, SHA-pinned native Authenticode signing and NSIS assembly, signed candidate preflight, actual Windows NSIS + SCM installed smoke fixture/manual exact-artifact workflow, and fail-closed exact-head release evidence consistency. Added hostile Python source tests plus Windows PowerShell syntax check; source test verdict must be taken from **current** PR #73 run, not stale earlier green. No approved LLDB adapter, real cert, installer package, native protected UI execution, or final release receipt. See [WO7 ledger](docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md).
+
+
 - **WO7-A signed NSIS source preflight started (2026-11-06 local):** new stacked branch `ide/wo7-signed-nsis-release-20261106`, protected Windows installer/service SHA and signer validation, exact SHA review records, default-deny manifest and hostile cross-OS tests/workflow. No binary signed or staged; upstream WO6 native DAP, final third-party license inventory and protected installed application remain OPEN. [WO7 ledger](docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md).
 
 
