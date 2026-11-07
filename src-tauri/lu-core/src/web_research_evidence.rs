@@ -329,7 +329,7 @@ impl EvidenceLedger {
     pub fn citation_catalog_source_ids(
         &self,limit:usize
     )->Result<Vec<String>,EvidenceError>{
-        if !(1..=120).contains(&limit){return Err(EvidenceError::Invalid);}
+        if !(1..=121).contains(&limit){return Err(EvidenceError::Invalid);}
         let mut stmt=self.connection.prepare(
             "SELECT c.source_id FROM research_citation_catalog_snapshots c
              INNER JOIN research_sources s ON s.id=c.source_id
