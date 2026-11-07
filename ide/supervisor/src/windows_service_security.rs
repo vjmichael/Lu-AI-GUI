@@ -35,9 +35,10 @@ use windows_sys::Win32::{
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
-        RevertToSelf, SecurityImpersonation, TokenIsAppContainer, TokenUser, ACCESS_ALLOWED_ACE,
-        ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED,
-        TOKEN_DUPLICATE, TOKEN_QUERY, TOKEN_USER,
+        RevertToSelf, SecurityImpersonation, TokenGroups, TokenRestrictedSids,
+        TokenIsAppContainer, TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
+        DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES,
+        TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
     },
     System::{
         Pipes::{
@@ -689,6 +690,58 @@ impl JobSecurity {
 /// Client-side server attestation. A spoofed, same-user pipe instance cannot
 /// claim to be the recovery service merely by echoing a nonce. Kernel PID,
 /// fixed installed image and restricted Windows service token all must match.
+// A query-only token handle is sufficient for OS-backed service SID
+// admission. A foreign service token must never be duplicated merely to
+// run CheckTokenMembership: token duplication is not an authentication
+// prerequisite and may be denied by the service token's own ACL.
+// Check the enabled normal group AND the restricting SID list. This
+// preserves the two-list restricted-token access-check semantics.
+fn query_token_sid_list(
+    token: HANDLE,
+    class: i32,
+    wanted_sid: *mut c_void,
+    require_enabled: bool,
+) -> Result<bool, SupervisorError> {
+    let mut len = 0u32;
+    unsafe {
+        GetTokenInformation(token, class, ptr::null_mut(), 0, &mut len);
+    }
+    let offset = std::mem::offset_of!(TOKEN_GROUPS, Groups);
+    if len as usize > 32768 || (len as usize) < offset + size_of::<SID_AND_ATTRIBUTES>() {
+        return Err(denied());
+    }
+    let capacity = len as usize;
+    let mut aligned = vec![0usize; capacity.div_ceil(size_of::<usize>())];
+    if unsafe {
+        GetTokenInformation(token, class, aligned.as_mut_ptr().cast(), len, &mut len)
+    } == 0 || len as usize > capacity || (len as usize) < offset
+    {
+        return Err(denied());
+    }
+    let groups = unsafe { &*(aligned.as_ptr() as *const TOKEN_GROUPS) };
+    let count = groups.GroupCount as usize;
+    if count == 0 || count > ((len as usize - offset) / size_of::<SID_AND_ATTRIBUTES>()) {
+        return Err(denied());
+    }
+    let items = unsafe { std::slice::from_raw_parts(groups.Groups.as_ptr(), count) };
+    let mut found = false;
+    for item in items {
+        if item.Sid.is_null() {
+            return Err(denied());
+        }
+        if unsafe { EqualSid(item.Sid, wanted_sid) } != 0 {
+            if found {
+                return Err(denied()); // unexpected duplicate service SID
+            }
+            if require_enabled && (item.Attributes & 0x0000_0004) == 0 {
+                return Err(denied()); // SE_GROUP_ENABLED required
+            }
+            found = true;
+        }
+    }
+    Ok(found)
+}
+
 // Native CI diagnostics classify the *first* failed kernel attestation
 // operation. They neither authorize IPC nor expose process paths, SIDs,
 // certificates, hashes or token fields.
@@ -747,8 +800,8 @@ pub fn authenticate_service_server(
         denied()
     })?;
     let mut raw = ptr::null_mut();
-    if unsafe { OpenProcessToken(server.0, TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
-        ci_service_attestation_stage("service_process_token_open_denied");
+    if unsafe { OpenProcessToken(server.0, TOKEN_QUERY, &mut raw) } == 0 {
+        ci_service_attestation_stage("service_process_token_query_denied");
         return Err(denied());
     }
     let token = Handle::new(raw)?;
@@ -757,8 +810,12 @@ pub fn authenticate_service_server(
         denied()
     })?;
     let local = parse_sid("S-1-5-19")?;
-    if !enabled_member_of_primary_token(token.0, service.0)? {
-        ci_service_attestation_stage("service_restricted_group_denied");
+    if !query_token_sid_list(token.0, TokenGroups, service.0, true)? {
+        ci_service_attestation_stage("service_enabled_group_denied");
+        return Err(denied());
+    }
+    if !query_token_sid_list(token.0, TokenRestrictedSids, service.0, false)? {
+        ci_service_attestation_stage("service_restricting_sid_denied");
         return Err(denied());
     }
     if !token_user_is(token.0, local.0)? {
