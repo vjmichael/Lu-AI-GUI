@@ -149,6 +149,78 @@ impl ModelView {
     }
 }
 
+/// P03 native model compatibility inspection. A GGUF header and MMProj
+/// identity are useful negative preflight checks, never proof that a specific
+/// architecture, Vulkan driver, offload count or license is compatible.
+#[derive(Clone,Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelInspectionView{
+    model_ref:String,
+    filename:String,
+    file_bytes:Option<u64>,
+    gguf_version:Option<u32>,
+    tensor_count:Option<u64>,
+    metadata_count:Option<u64>,
+    projector_attached:bool,
+    projector_checked:bool,
+    load_allowed:bool,
+    runtime_compatible:bool,
+    backend_requested:&'static str,
+    provider_download_enabled:bool,
+    status:&'static str,
+    detail:&'static str,
+}
+fn inspect_registered_model(root:&Path,record:&StoredModel)->ModelInspectionView{
+    let mut view=ModelInspectionView{
+        model_ref:record.model_ref.clone(),filename:record.filename.clone(),
+        file_bytes:None,gguf_version:None,tensor_count:None,
+        metadata_count:None,projector_attached:record.projector_attached,
+        projector_checked:false,load_allowed:false,runtime_compatible:false,
+        backend_requested:if cfg!(windows){"pinned llama.cpp Vulkan requested; not proven"}
+            else{"pinned llama.cpp CPU baseline; not proven"},
+        provider_download_enabled:false,status:"unavailable",
+        detail:"Selected model is missing or cannot pass native file/header admission.",
+    };
+    let dir=model_directory(root,record);
+    if !is_real_directory(&dir){return view}
+    let mut admission=ModelAdmissionManager::new();
+    let Ok(admitted)=admission.admit(&dir,&record.filename)else{return view};
+    if admitted.recheck().is_err(){return view}
+    let h=admitted.header();
+    view.gguf_version=Some(h.version);
+    view.tensor_count=Some(h.tensor_count);
+    view.metadata_count=Some(h.metadata_count);
+    view.file_bytes=Some(h.file_bytes);
+    if record.projector_attached{
+        let Ok(name)=projector_filename_for_model(&record.model_ref)else{return view};
+        let Ok(projector)=admit_projector(&dir,&name)else{
+            view.status="projector_unavailable";
+            view.detail="The recorded MMProj is missing or fails native identity/header admission.";
+            return view
+        };
+        if projector.recheck().is_err(){
+            view.status="projector_unavailable";
+            view.detail="Projector identity changed during preflight; load refused.";
+            return view
+        }
+        view.projector_checked=true;
+    }
+    view.load_allowed=true;
+    view.status="header_checked";
+    view.detail="GGUF/MMProj basic headers and current files checked. Architecture, license, context capacity, GPU offload and real model inference remain unverified until trusted engine execution.";
+    view
+}
+#[tauri::command]
+fn lu_model_preflight(
+    state:State<'_,Arc<DesktopState>>,model_ref:String
+)->Result<ModelInspectionView,String>{
+    let models=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    let record=models.iter().find(|m|m.model_ref==model_ref)
+        .cloned().ok_or("Unknown registered local model")?;
+    drop(models);
+    Ok(inspect_registered_model(&state.models_dir,&record))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeView {
@@ -2797,10 +2869,15 @@ async fn lu_load_model(
                 return Err("Finish or cancel queued generations before loading a model".into());
             }
             let catalog = worker_state.catalog.lock().map_err(|_| "catalog poisoned")?;
-            if !catalog.iter().any(|m| m.model_ref == model_ref) {
-                return Err("unknown model".into());
-            }
+            let record = catalog.iter().find(|m|m.model_ref==model_ref)
+                .cloned().ok_or("unknown model")?;
             drop(catalog);
+            // The currently registered host-owned model and companion must
+            // still pass native preflight; no WebView path or URL is admitted.
+            let inspection=inspect_registered_model(&worker_state.models_dir,&record);
+            if !inspection.load_allowed {
+                return Err("Local GGUF/MMProj is unavailable or failed identity/header preflight".into());
+            }
             {
                 let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
                 trace.record("catalog_verified", None);
@@ -5881,6 +5958,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             lu_status,
             lu_list_models,
+            lu_model_preflight,
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,
