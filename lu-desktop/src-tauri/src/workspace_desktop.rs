@@ -241,6 +241,10 @@ async fn ask_scoped_read_for_chat(
             if available.is_empty()||available.iter().any(|t|t.effect!="read_workspace"){
                 return Err("No safe read-only native tool registered".into())
             }
+            // P03 preferences are computed only from the persisted exact
+            // current human request and the already admitted read-only set.
+            // Never interpret source text as a routing instruction or grant.
+            let preferred=lu_core::ai_operations::recommended_read_tools(&prompt,&available);
             let _=event_app.emit("lu-native-turn-capabilities",NativeToolCatalogEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),tools:available,
             });
