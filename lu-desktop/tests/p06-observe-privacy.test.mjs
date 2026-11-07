@@ -49,6 +49,8 @@ test('P06 capture receipts never imply verified visual interpretation or retaine
   assert.match(host,/capture_guardian:Option<GuardianLease>/);
   assert.match(host,/session\.capture_guardian\.take\(\)/);
   assert.match(host,/release_guardian_when_reaped/);
+  assert.match(host,/capture_processes\.poll\(\)\s*\.map_err\(/);
+  assert.doesNotMatch(host,/let _=self\.capture_processes\.poll\(\)/);
   assert.match(host,/fully_redacted_receipt:terminal&&sha\.is_some\(\)/);
   assert.match(host,/pixels_retained:false/);
   assert.match(host,/visual_interpretation_verified:false/);
