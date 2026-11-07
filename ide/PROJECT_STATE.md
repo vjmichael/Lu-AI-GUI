@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## P05 final native-gated operations decision — November 7, 2026
+
+P05 has accounted for every earlier IDE PR (30 original-snapshot heads) and every original IDE CI workflow (38 source-pinned checks), reviewed the seven late divergent patches and preserved unique parallel work. The result is an explicit **retain all** decision, not arbitrary inactivity: no old PR may be closed or retargeted and no security/installed/release CI trigger may be removed before verified P02–P04 native-equivalent coverage. New machine-readable CI owner/disposition matrix and hostile source tests prevent such premature operations. P05 audit/source development is complete; exact-head P05 Windows/Linux CI still required, and physical GitHub cleanup is a **native-acceptance dependency**. P06 not started.
+
 ## P05 historical PR reconciliation — November 7, 2026
 
 Source audit complete: 15 genuine WO9 ancestors, 7 late-diverged patches reviewed, 3 B2/B3 unported feature PRs retained, 1 WO10 deferred, and 4 P01–P04 stacked drafts. PR #70 original native Cargo/LLDB receipts are archived in WO6 documentation with exact run IDs and prior-head caveat. Semantic-source tests prevent false PR closure/native approval; operational GitHub PR closure/CI reduction remains gated on P03/P04 installed and security acceptance. [Semantic record](packaging/p05-semantic-reconciliation.json).

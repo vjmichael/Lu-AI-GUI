@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P05 final operations disposition (2026-11-07):** All 30 previously open IDE PRs and 38 native/source/signed CI workflows were individually retained for stated source and acceptance reasons. Machine-readable P02/P03/P04 CI owner/retention matrix and five hostile regression checks added. No safe PR closure, retarget, CI delete or trigger reduction is authorized until native/installed signed release acceptance; source review work complete without falsely satisfying external gates.
+
+
 - **P05 final historical source audit (2026-11-07):** Verified 15 WO9-ancestral commits, reviewed all seven late-divergent patch groups, archived PR #70 native proof without promoting it to current-head OS acceptance, and isolated #43/#45/#46 unported B2/B3 features and deferred #76 WO10. Machine-readable semantic source ledger and hostile Windows/Linux CI added. No unsupported PR or security workflow closure; operational cleanup remains gated on P03/P04 native/signed release evidence.
 
 

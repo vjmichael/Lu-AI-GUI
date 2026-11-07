@@ -7,6 +7,8 @@ on:
       - 'ide/packaging/test_verify_p05_pr_inventory.py'
       - 'ide/packaging/p05-semantic-reconciliation.json'
       - 'ide/packaging/test_p05_semantic_reconciliation.py'
+      - 'ide/packaging/p05-ci-retention-decision.json'
+      - 'ide/packaging/test_p05_ci_retention.py'
       - 'ide/docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md'
       - 'ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md'
       - 'ide/PROJECT_STATE.md'
@@ -49,5 +51,7 @@ jobs:
         run: python -m unittest discover -s ide/packaging -p 'test_verify_p05_pr_inventory.py' -v
       - name: Verify all historical source behavior classifications and excluded features
         run: python -m unittest discover -s ide/packaging -p 'test_p05_semantic_reconciliation.py' -v
+      - name: Deny unsafe CI trigger reduction and PR closures while native gates remain open
+        run: python -m unittest discover -s ide/packaging -p 'test_p05_ci_retention.py' -v
       - name: Audit result scope
         run: echo "P05_SOURCE_PROVENANCE_ONLY_0_PR_CLOSURES_0_NATIVE_GATE_REPLACEMENTS_NO_RELEASE_APPROVAL"
