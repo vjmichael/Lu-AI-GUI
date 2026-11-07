@@ -182,6 +182,10 @@ fn import_one(root:&Path,library:&AnsfLibrary,book_root:&Path,chat:&LegacyChat)
     if stored!=n{
         return Err("Legacy source was truncated or ANSF book contains unexpected events".into())
     }
+    if book.native_goal_records(&chat.chat_id)
+        .map_err(|e|format!("{e:?}"))?.len()!=goals{
+        return Err("Legacy goal/clarification records were lost or source truncated".into())
+    }
     // Index last, once the original book's records are verified. A failed
     // Library write can be recovered by replay; originals remain immutable.
     library.index_book(&BookIndex{
