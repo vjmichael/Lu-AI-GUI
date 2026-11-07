@@ -600,36 +600,58 @@ mod tests {
     fn launch_after_initialize_response_and_config_only_after_native_event() {
         let mut session = DapSession::new();
         session.initialize().unwrap();
-        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
         assert_eq!(
-            session.receive(&framed(json!({
-                "seq":1,"type":"response","request_seq":1,
-                "command":"initialize","success":true
-            }))).unwrap(),
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":1,"type":"response","request_seq":1,
+                    "command":"initialize","success":true
+                })))
+                .unwrap(),
             vec![DapEvent::Initialized]
         );
         assert_eq!(session.phase(), DapPhase::Ready);
         // This must not wait for the adapter's initialized EVENT, which LLDB
         // may send only after the client's fixed, supervisor-authorized launch.
-        session.launch_fixed_fixture("/ls/debuggee/wo6-selftest").unwrap();
-        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
+        session
+            .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+            .unwrap();
         assert_eq!(
-            session.receive(&framed(json!({
-                "seq":2,"type":"event","event":"initialized"
-            }))).unwrap(),
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":2,"type":"event","event":"initialized"
+                })))
+                .unwrap(),
             vec![DapEvent::ConfigurationRequested]
         );
         let frame = session.configuration_done().unwrap();
-        assert!(std::str::from_utf8(&frame).unwrap().contains("configurationDone"));
-        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
-        assert!(session.receive(&framed(json!({
-            "seq":3,"type":"response","request_seq":3,
-            "command":"configurationDone","success":true
-        }))).unwrap().is_empty());
+        assert!(std::str::from_utf8(&frame)
+            .unwrap()
+            .contains("configurationDone"));
         assert_eq!(
-            session.receive(&framed(json!({
-                "seq":4,"type":"event","event":"initialized"
-            }))).unwrap_err(),
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        assert!(session
+            .receive(&framed(json!({
+                "seq":3,"type":"response","request_seq":3,
+                "command":"configurationDone","success":true
+            })))
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":4,"type":"event","event":"initialized"
+                })))
+                .unwrap_err(),
             DapError::InvalidMessage
         );
         assert_eq!(session.phase(), DapPhase::Quarantined);
@@ -639,14 +661,18 @@ mod tests {
     fn early_valid_initialized_event_is_deferred_until_fixed_launch() {
         let mut session = DapSession::new();
         session.initialize().unwrap();
-        session.receive(&framed(json!({
-            "seq": 1, "type": "response", "request_seq": 1,
-            "command": "initialize", "success": true
-        }))).unwrap();
+        session
+            .receive(&framed(json!({
+                "seq": 1, "type": "response", "request_seq": 1,
+                "command": "initialize", "success": true
+            })))
+            .unwrap();
         assert_eq!(
-            session.receive(&framed(json!({
-                "seq": 2, "type": "event", "event": "initialized"
-            }))).unwrap(),
+            session
+                .receive(&framed(json!({
+                    "seq": 2, "type": "event", "event": "initialized"
+                })))
+                .unwrap(),
             vec![DapEvent::ConfigurationRequested]
         );
         assert!(!session.configuration_needed());
