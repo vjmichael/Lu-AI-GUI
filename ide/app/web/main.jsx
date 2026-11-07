@@ -14,7 +14,7 @@ const sections = [
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'languages', title: 'Language services', glyph: '⌁' },
-  { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
+  { id: 'packages', title: 'Packages & workflows', glyph: '⬡' },
   { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Job requests', glyph: '▶' },
 ];
@@ -31,6 +31,12 @@ const taskGateChoices = [
 function App() {
   const [section, setSection] = useState('projects');
   const [projects, setProjects] = useState([]);
+  const [workflowProjectIds, setWorkflowProjectIds] = useState([]);
+  const [workflowInspection, setWorkflowInspection] = useState(null);
+  const [workflowRevalidated, setWorkflowRevalidated] = useState(false);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const workflowRequest = useRef(0);
+
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState('');
   const [hint, setHint] = useState('');
@@ -257,6 +263,7 @@ function App() {
       ? reconcileDevelopmentEvidence(activeProject.projectId, projectContext, inventoryComparison, exactCi)
       : null;
   const isSource = section === 'source';
+  const isPackages = section === 'packages';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
@@ -331,6 +338,59 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  function chooseWorkflowProject(projectId, selected) {
+    workflowRequest.current += 1;
+    setWorkflowInspection(null);
+    setWorkflowRevalidated(false);
+    setWorkflowProjectIds(previous =>
+      selected ? [...new Set([...previous, projectId])].slice(0, 8)
+        : previous.filter(id => id !== projectId));
+  }
+
+  async function previewMultiProjectWorkflow() {
+    const chosen = [...workflowProjectIds];
+    if (chosen.length === 0 || chosen.length > 8) return;
+    const serial = ++workflowRequest.current;
+    setWorkflowBusy(true);
+    setWorkflowInspection(null);
+    setWorkflowRevalidated(false);
+    setProblem('');
+    try {
+      const value = await invoke('ide_workflow_preview', { projectIds: chosen });
+      if (serial === workflowRequest.current) setWorkflowInspection(value);
+    } catch (error) {
+      if (serial === workflowRequest.current) setProblem('Native workflow inspection rejected: ' + String(error));
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function revalidateMultiProjectWorkflow() {
+    if (!workflowInspection || workflowBusy) return;
+    const serial = ++workflowRequest.current;
+    const projectIds = workflowInspection.projects.map(project => project.projectId);
+    setWorkflowBusy(true);
+    setWorkflowRevalidated(false);
+    setProblem('');
+    try {
+      const verified = await invoke('ide_workflow_verify', {
+        projectIds, expectedFingerprint: workflowInspection.fingerprint,
+      });
+      if (serial === workflowRequest.current &&
+          verified.fingerprint === workflowInspection.fingerprint) {
+        setWorkflowRevalidated(true);
+        setHint('Exact workflow evidence rechecked. No package, Git write, or execution occurred.');
+      }
+    } catch (error) {
+      if (serial === workflowRequest.current) {
+        setWorkflowInspection(null);
+        setProblem('Workflow changed or is blocked; inspect again before review: ' + String(error));
+      }
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
   }
 
   async function refreshGitStatus() {
@@ -1417,8 +1477,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1>{isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+            isPackages ? 'Multi-project Git and artifact review · No release permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
@@ -1431,7 +1492,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? previewMultiProjectWorkflow() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -1723,6 +1784,68 @@ function App() {
             </div>
           </div>
         </section>
+        : isPackages
+        ? <section className="workspaceContent continuityWorkspace" aria-label="Advanced packaging and multi-project workflows">
+            <div className="sectionHeading">
+              <h2>Multi-project release review</h2>
+              <span>WO9 · Native Git and artifact inspection</span>
+            </div>
+            <p>Select up to eight projects that you registered using the operating-system
+              folder picker. Lu IDE observes each exact Git HEAD, working tree and bounded
+              artifact hashes. A review is never a signed release or permission to execute.</p>
+            <div className="continuityDocument">
+              <h3>Projects in workflow</h3>
+              <fieldset className="taskGateGrid" disabled={workflowBusy}>
+                <legend>Include registered, open projects</legend>
+                {projects.filter(project => project.available).map(project =>
+                  <label className="taskGateChoice" key={project.projectId}>
+                    <input type="checkbox"
+                      checked={workflowProjectIds.includes(project.projectId)}
+                      disabled={!project.active || (!workflowProjectIds.includes(project.projectId) &&
+                        workflowProjectIds.length >= 8)}
+                      onChange={event => chooseWorkflowProject(project.projectId, event.target.checked)} />
+                    {project.displayName} ({project.active ? 'open' : 'closed'})
+                  </label>)}
+              </fieldset>
+              {projects.length === 0 && <p>Register projects from the Projects screen first.</p>}
+              <button className="primaryBtn" type="button"
+                disabled={workflowBusy || workflowProjectIds.length === 0}
+                onClick={() => previewMultiProjectWorkflow()}>
+                {workflowBusy ? 'Inspecting native evidence…' : 'Inspect selected workflow'}
+              </button>
+            </div>
+            {workflowInspection && <div className="continuityDocument"
+              aria-label="Multi-project native workflow evidence">
+              <h3>Native workflow review</h3>
+              <p>Plan digest: <code>{workflowInspection.fingerprint}</code></p>
+              <p>Local review: <strong>{workflowInspection.readyForReview ?
+                'Eligible for human source review' : 'Blocked by native evidence'}</strong> ·
+                Remote: not queried · Execution: never started ·
+                Packaging: not performed · Release: not approved</p>
+              {workflowInspection.projects.map(item =>
+                <article className="continuityEvent" key={item.projectId}>
+                  <strong>{item.displayName}</strong>
+                  <p>Local branch: {item.branch || 'Unavailable'} · Git HEAD:
+                    <code> {item.head || 'Unverified'}</code></p>
+                  <p>Worktree: {item.worktree} · Verified artifacts:
+                    {item.artifacts.length}</p>
+                  {item.blockers.length > 0 &&
+                    <p role="status">Blockers: {item.blockers.join(', ')}</p>}
+                  {item.artifacts.map(artifact =>
+                    <p key={artifact.relativePath}><code>{artifact.relativePath}</code>
+                      {' · '}{artifact.byteLength.toLocaleString()} bytes
+                      {' · '}{artifact.sha256}</p>)}
+                </article>)}
+              <button className="ghostBtn" type="button"
+                disabled={workflowBusy || !workflowInspection.readyForReview}
+                onClick={() => revalidateMultiProjectWorkflow()}>
+                Verify frozen Git and artifact evidence again
+              </button>
+              {workflowRevalidated && <p role="status">
+                Exact evidence matched. This does not stage files, create an archive,
+                grant Git write rights, or satisfy native OS and signing gates.</p>}
+            </div>}
+          </section>
         : isSource
         ? <section className="workspaceContent continuityWorkspace" aria-label="Read-only source control">
             <div className="sectionHeading">
