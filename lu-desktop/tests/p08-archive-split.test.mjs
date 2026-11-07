@@ -10,7 +10,7 @@ const tests=read('../../src-tauri/lu-core/tests/native_archive_split.rs');
 test('P08 native split is not advertised as native spanned ZIP/RAR/7z',()=>{
   assert.match(core,/NOT native/);
   assert.match(core,/lu-archive-byte-parts/);
-  assert.match(host,/not.*spanned/i);
+  assert.match(host,/NOT native split ZIP\/RAR\/7z/i);
   assert.match(ui,/not natively\s+spanned ZIP\/RAR\/7z/);
   assert.match(core,/512\*1024\*1024/);
   assert.match(core,/const MAX_PARTS:usize=128/);
