@@ -242,7 +242,11 @@ mod tests {
         let mut opened=File::open(&file_path).unwrap();
         assert_eq!(probe_granted_file(&link,&mut opened,1024).unwrap(),
             ArtifactPresence::Changed);
-        drop(opened);drop(book);
+        drop(opened);
+        fs::remove_file(&file_path).unwrap();
+        assert!(File::open(&file_path).is_err());
+        assert_eq!(book.artifact_links_for_entry("session",entry).unwrap(),vec![link]);
+        drop(book);
         fs::remove_dir_all(root).unwrap();
     }
 }
