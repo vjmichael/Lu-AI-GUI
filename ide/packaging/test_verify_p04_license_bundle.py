@@ -25,6 +25,8 @@ class VerifyPackageNoticesTests(unittest.TestCase):
         lic.mkdir(parents=True)
         for name in UPSTREAM:
             (lic/name).write_text("License text\n"+"x"*300,encoding="utf-8")
+        (self.root/"ide/app/package-lock.json").write_text('{"lockfileVersion":3}'+" "*120,encoding="utf-8")
+        (self.root/"ide/app/src-tauri/Cargo.lock").write_text("# auto-generated Cargo.lock\n"+"a"*120,encoding="utf-8")
         self.out=self.root/"notices"
         with patch("collect_verification_licenses.cargo_packages",return_value=([],[])):
             bundle(self.root,self.out,HEAD)

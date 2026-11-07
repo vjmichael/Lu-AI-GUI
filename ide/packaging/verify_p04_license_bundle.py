@@ -55,6 +55,7 @@ def audit(root:Path,source_sha:str,require_complete=False):
             data.get("licenseLegalReviewApproved") is not False):
         raise Denied("untrusted_notice_inventory")
     rows,upstream=data.get("resolvedPackages"),data.get("upstreamLicenses")
+    locks=data.get("dependencyLocks")
     pending=data.get("unresolved")
     if not isinstance(rows,list) or len(rows)>4000 or data.get("packageCount")!=len(rows):
         raise Denied("resolved_dependency_count_mismatch")
@@ -74,6 +75,17 @@ def audit(root:Path,source_sha:str,require_complete=False):
         if not isinstance(item,dict) or not isinstance(item.get("sourceRevision"),str):
             raise Denied("upstream_notice_provenance_missing")
         validate_mark(item,"upstream/")
+    if not isinstance(locks,list) or len(locks)>2:
+        raise Denied("invalid_resolved_dependency_lock_inventory")
+    seen_managers=set()
+    for entry in locks:
+        if not isinstance(entry,dict) or entry.get("manager") not in {"npm","cargo"} or entry.get("manager") in seen_managers:
+            raise Denied("duplicate_or_untrusted_dependency_lock")
+        seen_managers.add(entry["manager"])
+        lockname=entry["manager"]
+        if entry.get("sourcePath")!=("ide/app/package-lock.json" if lockname=="npm" else "ide/app/src-tauri/Cargo.lock"):
+            raise Denied("untrusted_lockfile_origin")
+        validate_mark(entry,"dependency-locks/"+lockname+".lock")
     for row in rows:
         if not isinstance(row,dict) or row.get("manager") not in {"npm","cargo"} or not isinstance(row.get("name"),str) or not isinstance(row.get("version"),str):
             raise Denied("untrusted_resolved_package")

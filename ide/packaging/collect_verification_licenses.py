@@ -25,8 +25,8 @@ MAX_PACKAGES = 4000
 UPSTREAM = {
     "LLVM-18.1.8-LICENSE.txt": "llvmorg-18.1.8",
     "Python-3.10.11-LICENSE.txt": "v3.10.11",
-    "Tauri-LICENSE-MIT.txt": "tauri-dev",
-    "Tauri-LICENSE-APACHE-2.0.txt": "tauri-dev",
+    "Tauri-LICENSE-MIT.txt": "tauri-2e23492ab9bcec06bab041e0e47447aaa0da298c",
+    "Tauri-LICENSE-APACHE-2.0.txt": "tauri-2e23492ab9bcec06bab041e0e47447aaa0da298c",
     "CodeMirror-6-LICENSE-MIT.txt": "codemirror-view-6.0.0",
     "esbuild-0.25.9-LICENSE-MIT.txt": "esbuild-v0.25.9",
 }
@@ -165,10 +165,26 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False):
                 errors.append(f"unresolved_notice_or_id:{manager}:{name}:{version}")
             results.append({"manager":manager,"name":name,"version":version,
                             "declaredLicense":license_id,"notices":notices})
+        locks=[]
+        for manager,relative in (
+            ("npm","ide/app/package-lock.json"),
+            ("cargo","ide/app/src-tauri/Cargo.lock"),
+        ):
+            src=repo_root/relative
+            if src.is_symlink() or not src.is_file() or not 100<=src.stat().st_size<=8*1024*1024:
+                errors.append("resolved_lockfile_missing_or_untrusted:"+manager)
+                continue
+            target=stage/"dependency-locks"/(manager+".lock")
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(src,target,follow_symlinks=False)
+            locks.append({"manager":manager,"sourcePath":relative,
+                          "path":target.relative_to(stage).as_posix(),
+                          "sha256":digest(target)})
         report={"schema":"lu.ide.p04.verification-licenses.v1",
                 "sourceSha":source_sha,
                 "packageCount":len(results),
                 "upstreamLicenses":copied,
+                "dependencyLocks":locks,
                 "resolvedPackages":results,
                 "unresolved":sorted(set(errors)),
                 "completeForReleaseReview":not errors,
