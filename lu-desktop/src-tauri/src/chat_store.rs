@@ -2,6 +2,7 @@
 //! Stored conversation IDs are host-generated. No UI-controlled path is opened.
 //! The legacy flat R14 chat log is imported once and left untouched for rollback.
 use rand::{rngs::OsRng, RngCore};
+use lu_core::ansf_goals::{GoalEvent,project_goal_events};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -67,6 +68,9 @@ enum Event {
     BrowserObservation {
         generation_id:String,call_id:String,tool:String,summary:String
     },
+    /// Human-origin goal/clarification context, explicitly NOT a User turn.
+    /// The model and tool outputs never gain authority from these records.
+    GoalMemory { entry: GoalEvent },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -551,6 +555,52 @@ impl ChatStore {
         }
         append_event(&self.chat_path(chat_id), &event)
     }
+    // Called while the ChatStore index lock is held. The immutable JSONL is
+    // the source of user action provenance; ANSF is a derived SQLite index.
+    fn read_memory_events(&self,chat_id:&str)->Result<Vec<GoalEvent>,String>{
+        let path=self.chat_path(chat_id);
+        let metadata=fs::symlink_metadata(&path).map_err(|e|e.to_string())?;
+        if metadata.file_type().is_symlink()||!metadata.is_file()||metadata.len()>MAX_LOG{
+            return Err("Invalid memory source journal".into())
+        }
+        let file=File::open(&path).map_err(|e|e.to_string())?;
+        let mut events=Vec::new();
+        for line in BufReader::new(file).lines(){
+            let line=line.map_err(|e|e.to_string())?;
+            if line.trim().is_empty(){continue;}
+            let event:Event=serde_json::from_str(&line)
+                .map_err(|e|format!("Corrupt source memory journal: {e}"))?;
+            if let Event::GoalMemory{entry}=event{
+                events.push(entry);
+                if events.len()>1024{return Err("Memory event capacity exceeded".into())}
+            }
+        }
+        project_goal_events(&events)
+            .map_err(|_|"Invalid source memory event chain")?;
+        Ok(events)
+    }
+    /// Read user-origin context only. No event is promoted to a User tool
+    /// authorization turn or inserted as an ordinary chat message.
+    pub fn memory_events(&self,chat_id:&str)->Result<Vec<GoalEvent>,String>{
+        let catalog=self.inner.lock().map_err(|_|"chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){
+            return Err("Unknown memory conversation".into())
+        }
+        self.read_memory_events(chat_id)
+    }
+    /// Only trusted desktop code mints event/question IDs; the renderer has
+    /// no generic event-injection API. Validate against the *current* journal
+    /// while holding the ChatStore lock so concurrent answers cannot race.
+    pub fn append_goal_memory_event(&self,chat_id:&str,event:GoalEvent)->Result<(),String>{
+        let catalog=self.inner.lock().map_err(|_|"chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){
+            return Err("Unknown memory conversation".into())
+        }
+        let mut events=self.read_memory_events(chat_id)?;
+        events.push(event.clone());
+        project_goal_events(&events).map_err(|_|"Invalid goal or clarification transition")?;
+        append_event(&self.chat_path(chat_id),&Event::GoalMemory{entry:event})
+    }
     pub fn history(&self, chat_id: &str) -> Result<Vec<ChatMessage>, String> {
         let catalog = self.inner.lock().map_err(|_| "chat lock poisoned")?;
         if !catalog.chats.iter().any(|c| c.chat_id == chat_id) {
@@ -615,6 +665,9 @@ impl ChatStore {
                 Event::BrowserObservation { .. } => {
                     // Retained for authenticated research recovery, never
                     // displayed as a user or assistant message.
+                }
+                Event::GoalMemory{..}=>{
+                    // Memory context remains separate from tool-granting user turns.
                 }
                 Event::AssistantCancelled { generation_id } => {
                     if let Some(i) = pending.remove(&generation_id) {

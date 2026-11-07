@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
-  "trackedFileCount": 542,
+  "trackedFileCount": 547,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -14,6 +14,10 @@
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
       "blob": "30f85a998b6a860ce562adbedba572014c0b7df6"
+    },
+    {
+      "path": ".github/workflows/lu-m2-memory.yml",
+      "blob": "970974cbe2c3856d9e67fd13a754ac56a0d8a40b"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -157,7 +161,7 @@
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "d7f39f4d653b3eb94c57da304d3b576434c0c727"
+      "blob": "49edcf883abaa852b901de6ddfc0aa4da5122a4c"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -165,7 +169,7 @@
     },
     {
       "path": "docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md",
-      "blob": "0df6a12fd7d96d8ca3b9ccbfe1bd40be66af3922"
+      "blob": "b17f4abf6602c370890d39069685942e35228c9e"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -176,8 +180,12 @@
       "blob": "3cd13ca08c605825249adddee44f15c47e8ff06e"
     },
     {
+      "path": "docs/LU_M2_ANSF_GOAL_CLARIFICATION_CONTINUITY_20261107.md",
+      "blob": "3f5c05bcc6a9c99155fac249e26de358609a0faf"
+    },
+    {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "981fca675156001b72cf0aa7ad72aa3fa3798475"
+      "blob": "126daaaab4eaeeba4c61a7c8fae077459fc1106f"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -473,7 +481,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
-      "blob": "acbdf30200dfc0ff73ea11f1615146de06243697"
+      "blob": "7a785f225bebddeaa30894d838d6e2059a26fe13"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -509,7 +517,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "21c9b4ec4c540abcb02a008e03c4764ca4d02cb8"
+      "blob": "19f27b7070236826c137d1de22d8c52a6aec9a02"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -518,6 +526,10 @@
     {
       "path": "lu-desktop/src-tauri/src/main.rs",
       "blob": "239325cf112525e5e3d25140fa101460e83ed4d4"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/memory_desktop.rs",
+      "blob": "3146df1e998c2e1b60c93d1f78578024c2a1d690"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -676,6 +688,10 @@
       "blob": "b6e946d9dc8f5b2029df93a47de243c1deb24c3f"
     },
     {
+      "path": "lu-desktop/tests/m2-ansf-memory.test.mjs",
+      "blob": "81a1b150f48b95bfb7e3c2ba25818f27dd10ca45"
+    },
+    {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
       "blob": "bed636bd5f57242fbffcb9e006de7a0a9234d52f"
     },
@@ -685,11 +701,11 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
-      "blob": "6755813a407ecb1c3a2982f4d40aa3f5931ef70e"
+      "blob": "252a5e3a22b88bc8163efbecf44c7c8acfc402de"
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "a0a851d43d94e0994ab117668cf7dcdbb7901b9c"
+      "blob": "e98b5580e22cbfd08fb8288f0af0443e5d3b4254"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -849,7 +865,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "03124d58b93bf15eea6b69f9065187cd97f22102"
+      "blob": "d60a14ec02341d887b51601c73134b25bab11ecc"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -865,7 +881,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "3da1a1115154807ea7a484452640f4828097b702"
+      "blob": "15b491c6c2beb0be270a2f88b252a9b4b12d502f"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
@@ -929,7 +945,7 @@
     },
     {
       "path": "src-tauri/lu-core/MEMORY_AND_MEDIA_ROADMAP.md",
-      "blob": "c75871e3218ea88d1bb2a269877321b08659f576"
+      "blob": "a5c64ef5c4ef83ef1c7dfbb269c5675a17ac7ba6"
     },
     {
       "path": "src-tauri/lu-core/README.md",
@@ -977,7 +993,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "b27eb57ddd9765cdc1a0985b1daaba8305088b52"
+      "blob": "abdc01025f0bcc5cc8a87f6560b85613146d4390"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_goals.rs",
+      "blob": "813475c604a87c63c029b3856a7248ebf593d2d5"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_import.rs",
@@ -1197,7 +1217,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "c73014ef9958b28d4810339c1eab734a7b824460"
+      "blob": "dda068dc1b3d6d4374f2145430c95494c86b5b35"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",

@@ -12,7 +12,73 @@ pub mod conversation_authority {
 #[path = "../../../src-tauri/src/chat_store.rs"]
 mod chat_store;
 
+// Real M2 ANSF goal events and chat journal compile together without Tauri.
+#[path = "../../../../src-tauri/lu-core/src/ansf_goals.rs"]
+pub mod ansf_goals;
 // The production ANSF SQLite module is compiled directly without a mock.
-// The newer local ANSF bridge is not yet present in this published revision.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
+
+
+#[cfg(test)]
+mod m2_native_memory_acceptance {
+    use super::{ansf::AnsfStore,ansf_goals::{GoalEvent,GoalEventKind,project_goal_events},
+        chat_store::ChatStore};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn event(n:u8,k:GoalEventKind,q:Option<String>,text:&str,choice:Option<&str>)
+        ->GoalEvent{
+        GoalEvent{
+            event_id:format!("m-{:032x}",n),
+            goal_id:format!("goal-{:032x}",1),
+            question_id:q,
+            kind:k,text:text.into(),
+            choice:choice.map(str::to_owned),comment:None,
+        }
+    }
+    #[test]
+    fn real_chat_journal_and_ansf_sqlite_survive_restart_without_memory_based_authority(){
+        let tmp=std::env::temp_dir().join(format!("lu-m2-portable-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&tmp).unwrap();
+        let chats=ChatStore::open(&tmp).unwrap();
+        let a=chats.create_chat().unwrap();
+        let b=chats.create_chat().unwrap();
+        let records=[
+            event(1,GoalEventKind::SetGoal,None,"Ship a stable alpha",None),
+            event(2,GoalEventKind::AskQuestion,
+                Some(format!("q-{:032x}",1)),"Does it require Windows?",None),
+            event(3,GoalEventKind::RespondQuestion,
+                Some(format!("q-{:032x}",1)),"",Some("not_now")),
+        ];
+        for e in &records {chats.append_goal_memory_event(&a.chat_id,e.clone()).unwrap();}
+        let ansf=AnsfStore::open(&tmp.join("lu-ansf.sqlite")).unwrap();
+        ansf.ensure_session(&a.chat_id,"lu-profile","Lu goals").unwrap();
+        for e in chats.memory_events(&a.chat_id).unwrap(){
+            ansf.mirror_goal_event(&a.chat_id,&e).unwrap();
+        }
+        assert_eq!(ansf.goal_events(&a.chat_id).unwrap(),records);
+        assert_eq!(project_goal_events(&records).unwrap().questions[0].status,"deferred");
+        assert!(chats.memory_events(&b.chat_id).unwrap().is_empty());
+        assert!(chats.history(&a.chat_id).unwrap().is_empty());
+        assert!(chats.trusted_user_turn_text(&a.chat_id,&format!("g-{:032x}",1)).is_none());
+        drop(ansf);drop(chats);
+        let chats=ChatStore::open(&tmp).unwrap();
+        let ansf=AnsfStore::open(&tmp.join("lu-ansf.sqlite")).unwrap();
+        for e in chats.memory_events(&a.chat_id).unwrap(){
+            ansf.mirror_goal_event(&a.chat_id,&e).unwrap();
+        }
+        assert_eq!(ansf.goal_events(&a.chat_id).unwrap(),records);
+        let yes=event(4,GoalEventKind::RespondQuestion,
+            Some(format!("q-{:032x}",1)),"",Some("yes"));
+        chats.append_goal_memory_event(&a.chat_id,yes.clone()).unwrap();
+        ansf.mirror_goal_event(&a.chat_id,&yes).unwrap();
+        assert_eq!(project_goal_events(&ansf.goal_events(&a.chat_id).unwrap())
+            .unwrap().questions[0].status,"answered");
+        assert!(chats.append_goal_memory_event(&a.chat_id,event(5,
+            GoalEventKind::RespondQuestion,Some(format!("q-{:032x}",1)),"",Some("no"))).is_err());
+        assert!(chats.memory_events(&b.chat_id).unwrap().is_empty());
+        drop(ansf);drop(chats);
+        fs::remove_dir_all(tmp).unwrap();
+    }
+}

@@ -177,6 +177,7 @@ impl AnsfStore {
                SELECT RAISE(ABORT,'ANSF source entries are immutable');
              END;",
         )?;
+        crate::ansf_goals::initialize_goal_schema(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

@@ -1,3 +1,7 @@
+## M2 memory-first implementation — November 7, 2026
+
+The owner authorized M2: real ANSF SQLite-backed goal and clarification continuity connected to production ChatStore, ordinary local inference and a small Yes/No/Not now with optional comment UI. See [M2 work order](LU_M2_ANSF_GOAL_CLARIFICATION_CONTINUITY_20261107.md). No new specialist tool family or broad execution permission is implied. M3 source-backed relevance retrieval, M4 verified procedures and M5 installed acceptance remain separately gated.
+
 ## Human-centered, memory-first priority — November 7, 2026
 
 Owner clarification: the AI model's latent intelligence matters in service of **human-defined goals**, not merely tool efficiency. Clarifying questions should operate as a cyclical information-gathering step; remembered answers and prior verified procedures should reduce rediscovery and user effort. Source-of-truth expansion: [human-centered K/I/A/F and memory-first sequence](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md), linked to [canonical K/I/A/F philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md).
