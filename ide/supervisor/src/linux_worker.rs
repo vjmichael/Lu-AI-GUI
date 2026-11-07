@@ -137,6 +137,71 @@ pub fn installed_toolchain_digest() -> Result<String, SupervisorError> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
+// Cgroup-v2 domain controllers cannot be enabled in a non-root cgroup
+// containing internal processes. Provisioning must therefore place the
+// trusted IDE host in its own leaf, next to the worker's cgroups, under a
+// dedicated, empty delegated parent. The worker never modifies ancestor
+// controllers or migrates an already-running host process.
+fn select_delegated_parent(root: &Path, current: &Path) -> Result<PathBuf, SupervisorError> {
+    if current.file_name().and_then(|v| v.to_str()) != Some("lu-ide-host") {
+        return Err(denied());
+    }
+    let parent = current.parent().ok_or_else(denied)?;
+    if !matches!(
+        parent.file_name().and_then(|v| v.to_str()),
+        Some("lu-ide-delegated" | "lu-ide-delegated.service")
+    ) || !parent.starts_with(root)
+        || parent == root
+    {
+        return Err(denied());
+    }
+    Ok(parent.to_path_buf())
+}
+fn has_controllers(data: &str) -> bool {
+    ["cpu", "memory", "pids"]
+        .iter()
+        .all(|required| data.split_whitespace().any(|token| token == *required))
+}
+fn require_delegated_limits(parent: &Path) -> Result<(), SupervisorError> {
+    // "controllers" is availability, not activation: the kernel creates
+    // writable child quota files only when subtree_control enables them.
+    if fs::read_to_string(parent.join("cgroup.type"))
+        .map_err(|_| denied())?
+        .trim()
+        != "domain"
+    {
+        return Err(denied());
+    }
+    let available = fs::read_to_string(parent.join("cgroup.controllers")).map_err(|_| denied())?;
+    let enabled =
+        fs::read_to_string(parent.join("cgroup.subtree_control")).map_err(|_| denied())?;
+    if !has_controllers(&available) || !has_controllers(&enabled) {
+        return Err(denied());
+    }
+    // Domain parent must have no internal tasks. A peer host leaf is mandatory;
+    // never move processes or enable controllers in the user's cgroup.
+    if !fs::read_to_string(parent.join("cgroup.procs"))
+        .map_err(|_| denied())?
+        .trim()
+        .is_empty()
+    {
+        return Err(denied());
+    }
+    Ok(())
+}
+fn parse_empty_cgroup_events(contents: &str) -> bool {
+    let mut found = None;
+    for line in contents.lines() {
+        if let Some(value) = line.strip_prefix("populated ") {
+            if found.is_some() || (value != "0" && value != "1") {
+                return false;
+            }
+            found = Some(value == "0");
+        }
+    }
+    found == Some(true)
+}
+
 fn current_cgroup_parent() -> Result<PathBuf, SupervisorError> {
     let data = fs::read_to_string("/proc/self/cgroup").map_err(|_| denied())?;
     let line = data
@@ -153,7 +218,9 @@ fn current_cgroup_parent() -> Result<PathBuf, SupervisorError> {
     if !actual.starts_with(&root) {
         return Err(denied());
     }
-    Ok(actual)
+    let parent = select_delegated_parent(&root, &actual)?;
+    require_delegated_limits(&parent)?;
+    Ok(parent)
 }
 
 fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> {
@@ -164,15 +231,14 @@ fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> 
         return Err(denied());
     }
     let parent = current_cgroup_parent()?;
-    let available = fs::read_to_string(parent.join("cgroup.controllers")).map_err(|_| denied())?;
-    for controller in ["cpu", "memory", "pids"] {
-        if !available.split_whitespace().any(|x| x == controller) {
-            return Err(denied());
-        }
-    }
     let dir = parent.join(format!("lu-ide-{job_id}"));
     fs::create_dir(&dir).map_err(|_| denied())?;
     let mut group = Cgroup { dir, active: true };
+    // A brand-new dedicated worker cgroup may not already hold a process.
+    if !group.zero_members() {
+        group.remove_empty();
+        return Err(denied());
+    }
     let settings = [
         ("cpu.max", "50000 100000".to_owned()),
         ("memory.max", plan.memory_limit_bytes.to_string()),
@@ -202,14 +268,15 @@ struct Cgroup {
 }
 impl Cgroup {
     fn remove_empty(&mut self) {
-        let _ = fs::remove_dir(&self.dir);
-        self.active = false;
+        // Never lose the cleanup obligation if the kernel rejects rmdir.
+        if self.zero_members() && fs::remove_dir(&self.dir).is_ok() {
+            self.active = false;
+        }
     }
     fn zero_members(&self) -> bool {
-        if let Ok(data) = fs::read_to_string(self.dir.join("cgroup.events")) {
-            return data.lines().any(|line| line.trim() == "populated 0");
-        }
-        false
+        fs::read_to_string(self.dir.join("cgroup.events"))
+            .map(|data| parse_empty_cgroup_events(&data))
+            .unwrap_or(false)
     }
     fn await_empty(&self, limit: Duration) -> bool {
         let start = Instant::now();
@@ -241,6 +308,44 @@ impl Drop for Cgroup {
             }
         }
     }
+}
+
+/// An independently readable kernel witness for the actual spawned PID.
+/// `pre_exec` moving the child is necessary but not sufficient evidence:
+/// refuse a forged/absent /proc identity or missing cgroup.procs membership
+/// before the supervisor can record a job as Running.
+fn require_kernel_child_membership(group: &Cgroup, pid: u32) -> Result<(), SupervisorError> {
+    if pid == 0 {
+        return Err(denied());
+    }
+    let proc_identity = fs::read_to_string(format!("/proc/{pid}/cgroup")).map_err(|_| denied())?;
+    let mut v2 = proc_identity
+        .lines()
+        .filter_map(|line| line.strip_prefix("0::"));
+    let relative = v2.next().ok_or_else(denied)?;
+    if v2.next().is_some()
+        || !relative.starts_with('/')
+        || relative
+            .split('/')
+            .any(|component| component == "." || component == "..")
+    {
+        return Err(denied());
+    }
+    let kernel_root = fs::canonicalize(CGROUP_ROOT).map_err(|_| denied())?;
+    let observed = fs::canonicalize(kernel_root.join(relative.trim_start_matches('/')))
+        .map_err(|_| denied())?;
+    let expected = fs::canonicalize(&group.dir).map_err(|_| denied())?;
+    if observed != expected {
+        return Err(denied());
+    }
+    let procs = fs::read_to_string(group.dir.join("cgroup.procs")).map_err(|_| denied())?;
+    if !procs
+        .lines()
+        .any(|entry| entry.parse::<u32>().ok() == Some(pid))
+    {
+        return Err(denied());
+    }
+    Ok(())
 }
 
 struct CgroupTerminator<'a> {
@@ -544,8 +649,14 @@ pub fn execute_linux_worker(
         }
     };
     drop(proc_file);
-    // The child is already in cgroup before Bubblewrap starts, and cannot
-    // inherit host credentials from environment or file descriptors.
+    // The actual kernel must confirm the just-spawned child still belongs to
+    // this exact newly created cgroup before publishing Running. Unexpected
+    // early exit, migration, stale PID or missing /proc accounting all deny.
+    if require_kernel_child_membership(&group, child.id()).is_err() {
+        let _ = group.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(denied());
+    }
     supervisor.native_mark_running(job_id)?;
     let stdout = child.stdout.take().ok_or_else(denied)?;
     let stderr = child.stderr.take().ok_or_else(denied)?;
@@ -681,6 +792,42 @@ pub fn reconcile_linux_interrupted(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_explicit_sibling_host_leaf_can_use_delegated_parent() {
+        let root = Path::new("/sys/fs/cgroup");
+        let base = root.join("user.slice").join("lu-ide-delegated");
+        let good = base.join("lu-ide-host");
+        assert_eq!(select_delegated_parent(root, &good).unwrap(), base);
+        let service = root.join("system.slice/lu-ide-delegated.service");
+        assert_eq!(
+            select_delegated_parent(root, &service.join("lu-ide-host")).unwrap(),
+            service
+        );
+        assert!(select_delegated_parent(root, &root.join("user.slice")).is_err());
+        assert!(select_delegated_parent(root, &base.join("other-host")).is_err());
+        assert!(select_delegated_parent(root, &root.join("lu-ide-host")).is_err());
+        assert!(
+            select_delegated_parent(root, Path::new("/tmp/lu-ide-delegated/lu-ide-host")).is_err()
+        );
+    }
+
+    #[test]
+    fn quota_controllers_must_be_enabled_not_merely_available() {
+        assert!(has_controllers("cpu memory pids io cpuset"));
+        assert!(!has_controllers("cpu memory io"));
+        assert!(!has_controllers("+cpu +memory +pids"));
+        assert!(!has_controllers("cpuset memory pids"));
+    }
+
+    #[test]
+    fn cgroup_empty_evidence_rejects_missing_or_conflicting_values() {
+        assert!(parse_empty_cgroup_events("populated 0\nfrozen 0\n"));
+        assert!(!parse_empty_cgroup_events("populated 1\nfrozen 0\n"));
+        assert!(!parse_empty_cgroup_events("frozen 0\n"));
+        assert!(!parse_empty_cgroup_events("populated 0\npopulated 1\n"));
+        assert!(!parse_empty_cgroup_events("populated 0\npopulated 0\n"));
+    }
 
     #[test]
     fn arbitrary_toolchain_and_bwrap_paths_are_not_accepted() {

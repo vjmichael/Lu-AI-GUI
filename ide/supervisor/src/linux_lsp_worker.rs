@@ -354,6 +354,13 @@ pub fn start_linux_lsp(
         }
     };
     drop(proc_file);
+    // Identical OS kernel membership gate to fixed native Cargo: the LSP
+    // cannot advance to Running on cgroup configuration alone.
+    if require_kernel_child_membership(&group, child.id()).is_err() {
+        let _ = group.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(denied());
+    }
     let stdin = child.stdin.take().ok_or_else(denied)?;
     let stdout = child.stdout.take().ok_or_else(denied)?;
     if let Err(e) =
