@@ -184,6 +184,21 @@ for _dl_name,_dl_version in DLOPEN_PINNED_UPSTREAM:
         "url":"https://raw.githubusercontent.com/OpenByteDev/dlopen2/db4a7c6b0a08804ddb793be335011d55c04d7e05/LICENSE",
         "blobSha":"d38093a7a564c64ad15e459f2e0a1f86a443c8b3"}]}
 
+# Canonical FULL MPL-2.0 legal terms, NOT an original selectors .crate file.
+# Cargo.lock pins selectors 0.38.0 checksum
+# 8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d.
+# File-level covered source, modifications and actual binary shipment need
+# independent review. Keep all MPL special risk records explicitly open.
+SELECTORS_CANONICAL_MPL_TERMS={
+    "checkedIn":"ide/packaging/upstream-crate-notices/selectors-0.38.0-SPDX-MPL-2.0-full-terms.txt",
+    "originalName":"canonical-SPDX-MPL-2.0-full-terms.txt",
+    "url":"https://raw.githubusercontent.com/spdx/license-list-data/v3.28.0/text/MPL-2.0.txt",
+    "blobSha":"ee6256cdb62a765749a71aae3abea32884301cd1"}
+if "selectors:0.38.0" in CURATED_MISSING_NOTICES:
+    raise Denied("duplicate_selectors_canonical_notice")
+CURATED_MISSING_NOTICES["selectors:0.38.0"]={
+    "declaredLicense":"MPL-2.0","files":[SELECTORS_CANONICAL_MPL_TERMS]}
+
 def verified_curated_notices(repo_root,manager,name,version,declared):
     if manager != "cargo":
         return []
@@ -354,6 +369,10 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                     notice["originalName"]=origin["originalName"]
                     notice["upstreamSource"]=origin["url"]
                     notice["upstreamGitBlobSha"]=origin["blobSha"]
+                    if manager=="cargo" and name=="selectors" and version=="0.38.0":
+                        notice["canonicalTermsNotPackageOriginal"]=True
+                        notice["coveredFileSourceReviewRequired"]=True
+                        notice["sourceCrateChecksumSha256"]="8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d"
                     for _r in EXTERNAL_NATIVE_SDK_SOURCE_RULES:
                         if name==_r['name'] and version==_r['version']:
                             notice['externalNativeBinaryReviewRequired']=True

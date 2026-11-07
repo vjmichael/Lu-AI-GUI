@@ -25,7 +25,7 @@ class CuratedOriginalNotices(unittest.TestCase):
                          {name+":"+version for name,version in WEBVIEW_EXACT_CRATES} |
                          {r["name"]+":"+r["version"] for r in OBJC2_UPSTREAM_POLICY} |
                          {r["name"]+":"+r["version"] for r in EXTERNAL_NATIVE_SDK_SOURCE_RULES} |
-                         {name+":"+version for name,version in DLOPEN_PINNED_UPSTREAM})
+                         {name+":"+version for name,version in DLOPEN_PINNED_UPSTREAM} | {"selectors:0.38.0"})
         for name_version,rule in CURATED_MISSING_NOTICES.items():
             with self.subTest(name_version=name_version):
                 self.load(rule)
@@ -94,6 +94,18 @@ class CuratedOriginalNotices(unittest.TestCase):
             self.assertEqual(len(original),1)
             self.assertEqual(git_blob_sha(original[0][0].read_bytes()),
                              "d38093a7a564c64ad15e459f2e0a1f86a443c8b3")
+    def test_mpl_full_text_is_canonical_not_original_crate_source(self):
+        rule=CURATED_MISSING_NOTICES["selectors:0.38.0"]
+        self.assertEqual(rule["declaredLicense"],"MPL-2.0")
+        self.load(rule)
+        result=verified_curated_notices(self.repo,"cargo","selectors","0.38.0","MPL-2.0")
+        self.assertEqual(len(result),1)
+        data=result[0][0].read_bytes()
+        self.assertIn(b"Mozilla Public License Version 2.0",data)
+        self.assertEqual(git_blob_sha(data),"ee6256cdb62a765749a71aae3abea32884301cd1")
+        self.assertIn("/spdx/license-list-data/",rule["files"][0]["url"])
+        with self.assertRaisesRegex(Denied,"curated_notice_exact_license_expression_drift"):
+            verified_curated_notices(self.repo,"cargo","selectors","0.38.0","MIT")
     def test_mutated_notice_fails_closed(self):
         rule=CURATED_MISSING_NOTICES["alloc-stdlib:0.3.0"]
         self.load(rule)

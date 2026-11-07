@@ -137,6 +137,12 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
                             or item.get("originalName")!=proof["originalName"]
                             or git_blob_sha(safe_file(root,item["path"]).read_bytes())!=proof["blobSha"]):
                         raise Denied("curated_exact_upstream_notice_receipt_mismatch")
+                    if row.get("name")=="selectors" and row.get("version")=="0.38.0":
+                        if (item.get("canonicalTermsNotPackageOriginal") is not True
+                            or item.get("coveredFileSourceReviewRequired") is not True
+                            or item.get("sourceCrateChecksumSha256")!=
+                                "8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d"):
+                            raise Denied("selectors_mpl_covered_file_review_cannot_be_waived")
             if (row.get("manager")=="cargo" and row.get("name")=="r-efi"
                     and item.get("originalName")=="AUTHORS"):
                 from collect_verification_licenses import R_EFI_AUTHOR_GIT_BLOBS,R_EFI_LICENSE,git_blob_sha

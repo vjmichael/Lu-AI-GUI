@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 selectors MPL full legal text (Nov 7):** Pinned canonical complete MPL-2.0 SPDX v3.28.0 text, checked exact selectors 0.38.0 frozen cargo checksum and preserved mandatory original covered-file source and legal review status. No legal approval inferred.
+
 - **P04 rollback interrupted during rollback (Nov 7):** Added fsync-journal `rolling_back` state and genuine child process death at journal/rejected/previous restore boundaries; resumable exact digests, user-state preservation and worker-quiescence source tests. Signed installed release still gated.
 
 - **P06 dlopen2 complete source MIT originals (Nov 7):** Pinned immutable historical commit containing both dlopen2 0.8.2 and dlopen2_derive 0.4.3 manifests; complete original copyright MIT text source-attested and bundled only for exact versions. Native CI pending.
