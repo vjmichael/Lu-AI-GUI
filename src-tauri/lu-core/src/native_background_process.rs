@@ -529,7 +529,7 @@ mod tests{
             "obs-frame-1",None).is_none());
         // A foreground-host plan cannot accept a valid packet mislabeled
         // as a primary monitor, or a source without exact OS-backed mode.
-        let mut wrong_source=format!("P\t1\t1\nD\t{digest}\nB\tnative-primary-monitor-v1\t2\t1\t{hash}\n").into_bytes();
+        let mut wrong_source=format!("P\t1\t1\nD\t{digest}\nB\tnative-primary-monitor-v1\t2\t1\t{hash}\n").into_bytes();;
         wrong_source.extend_from_slice(&bgra);
         assert!(read_worker_progress(Cursor::new(wrong_source),&store,
             "obs-frame-1",Some("native-foreground-window-v1")).is_none());
