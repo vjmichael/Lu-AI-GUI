@@ -239,6 +239,26 @@ fn lu_model_preflight(
     Ok(inspect_registered_model(&state.models_dir,&record))
 }
 
+/// Search/read actions are initiated only by a Settings user gesture. No
+/// model, WebView-supplied URL, arbitrary origin, or downloader is admitted.
+#[tauri::command]
+async fn lu_model_provider_search(
+    state:State<'_,Arc<DesktopState>>,query:String
+)->Result<Vec<lu_core::model_provider_catalog::ModelLead>,String>{
+    let host=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        host.research.model_provider_search(&query)
+    ).await.map_err(|_|"Model provider search worker stopped")?
+}
+#[tauri::command]
+async fn lu_model_provider_review(
+    state:State<'_,Arc<DesktopState>>,repo_id:String,revision:String
+)->Result<lu_core::model_provider_catalog::ModelRepoReview,String>{
+    let host=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        host.research.model_provider_review(&repo_id,&revision)
+    ).await.map_err(|_|"Model provider review worker stopped")?
+}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeView {
@@ -5979,6 +5999,8 @@ pub fn run() {
             lu_status,
             lu_list_models,
             lu_model_preflight,
+            lu_model_provider_search,
+            lu_model_provider_review,
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,
