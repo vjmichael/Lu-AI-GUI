@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | **P01 — Authoritative baseline** | Reconcile current `main` and the WO9 standalone IDE source, establish *one* release-candidate branch, review historical draft PR dependencies and possible unported files; explicitly exclude WO10 | **SOURCE BASELINE COMPLETE** — [draft PR #78](https://github.com/vjmichael/Lu-AI-GUI/pull/78), with retained exceptions E01–E05 | Candidate branch and draft review PR exist; main Lu Core untouched; source provenance and divergence inventory recorded; candidate not promoted or merged before source/integration validation |
 | **P02 — Deterministic native build and test repair** | Resolve frontend/icon ordering, JavaScript allowlists, Linux AT-SPI helper arguments, Windows accessibility/selector mismatch; exact-head Win/Linux CI | **SOURCE REPAIR IN PROGRESS — exact-head CI/GUI pending** | Repeatable locked source build; native tests and OS GUI automation scripts pass at the candidate exact SHA, with real failure logs reviewed |
-| **P03 — WO4–WO6 native security acceptance** | Linux cgroup/Bubblewrap, Windows AppContainer/Job/SCM, protected clangd, native LLDB-DAP, protected cancellation and durable host/service crash recovery | NOT STARTED | Independent actual OS denial, normal operation, process-tree kill, kernel containment and reopened durable receipts; no weaker fallback |
+| **P03 — WO4–WO6 native security acceptance** | Linux cgroup/Bubblewrap, Windows AppContainer/Job/SCM, protected clangd, native LLDB-DAP, protected cancellation and durable host/service crash recovery | **SOURCE REPAIRS IN PROGRESS — exact-head OS acceptance open** | Independent actual OS denial, normal operation, process-tree kill, kernel containment and reopened durable receipts; no weaker fallback |
 | **P04 — WO7–WO9 installed acceptance** | Signed Windows NSIS and Linux Debian package, authentic release dependencies/notices, native install/edit/Git/ZIP/build/test/debug/restart/uninstall/upgrade/rollback | NOT STARTED | Installed signed artifact hashes, reviewed licenses/dependencies, native per-OS fixtures with exact receipts; release manifests independently accepted |
 | **P05 — GitHub operations reduction** | Review older stacked and parallel IDE PRs; preserve all unique code; close/retarget only after verified consolidation; remove redundant CI without losing required security gates | NOT STARTED | Account for every IDE PR and corresponding source/evidence, document why superseded or retained; no history loss or premature mass closure |
 | **P06 — Governance and reproducibility** | Lockfiles, dependency review, rulesets and required checks, artifact provenance/retention, single machine-readable native acceptance matrix | NOT STARTED | Reproducible exact-head packages; trusted release evidence; documented mandatory branch checks; no unreviewed promotion |
@@ -21,7 +21,7 @@
 
 **P01 completion checkpoint:** Draft [PR #78](https://github.com/vjmichael/Lu-AI-GUI/pull/78) now contains an independently checked `main`+IDE source snapshot, with WO10 excluded and exceptions E01–E05 retained in the [P01 source audit](IDE_P01_INTEGRATION_AUDIT_20261107.md). **P01 source consolidation is complete; P02–P06 native/release acceptance remains open.**
 
-**Stop rule:** Work on phases sequentially. Report what changed, which subtasks remain, and whether the next phase is safe. Do **not** begin the next phase automatically after closing the current one.
+**Stop rule:** By explicit owner direction P03 can advance while recorded P02 verification remains open; do not upgrade P02 to PASS. Work on phases sequentially. Report what changed, which subtasks remain, and whether the next phase is safe. Do **not** begin the next phase automatically after closing the current one.
 
 ## P01 — Work checklist
 
@@ -49,12 +49,12 @@
 - [x] Expose explicit accessible `Execution requests` heading; on a missing native Windows UIA control, record a bounded actual accessibility-tree snapshot while continuing to fail closed. [ ] Prove the installed UI interactions really work and repair any OS-verified selector/control failure.
 - [ ] Freeze P02 exact SHA, run all Windows/Linux native/installed checks, inspect real failures and repair them; do not extrapolate from prior heads.
 
-## P03 — Native security checklist (not started)
+## P03 — Native security checklist (started by owner after P02 source work; see [P03 native security evidence](IDE_P03_NATIVE_SECURITY_ACCEPTANCE_20261107.md))
 
 - [ ] WO4 delegated cgroup-v2/Bubblewrap actual kernel OS admission and rejection; crash-safe cleanup.
-- [ ] WO5 protected Windows `clangd` stderr `permission_denied`; Linux `SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED`; real completion/hover/diagnostics.
-- [ ] WO6 Windows LLDB-DAP launch exit `3221225781` (likely dependency load failure; inspect actual DLLs), Linux `no_stdout_yet`/handshake timeout.
-- [ ] Actual protected Cargo/run/test/LSP/DAP normal flow, explicit authorization, cancellation, child reaping, service crash, restart, durable quarantine and no silent replay.
+- [x] Add Windows nonidentifying native loader/access status classes and Linux bundle owner/mode failure classes (diagnostic-only, still fail-closed). [ ] Resolve protected Windows `clangd` permission denial and Linux delegated bundle/containment admission; verify real completion/hover/diagnostics.
+- [x] Repair source DAP initialize/launch sequencing and add single fixed empty configurationDone with negative protocol tests. [x] Add bounded Windows loader category and test-only initialize probe. [ ] Prove native Windows DLL root-cause repair and Linux protected initialize/stop/threads/stack/cancel on exact head.
+- [ ] Obtain independent protected Cargo/run/test/LSP/DAP normal flow, explicit authorization, cancellation, child reaping, service crash, restart, durable quarantine and no silent replay; source-only/CI queue is not acceptance.
 
 ## P04 — Installed release checklist (not started)
 
