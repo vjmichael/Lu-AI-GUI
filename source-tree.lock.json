@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c2ebc43f8cfa05e0c72da9e553e37c1c705c2f0f",
-  "trackedFileCount": 486,
+  "sourceCommitBeforeLock": "78ad2fcb14f647d1e03f3f0a117f8bd854d60fe2",
+  "trackedFileCount": 487,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -101,15 +101,19 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "ba0065bbcc11cf6c500d0dacad06f066998fc6cd"
+      "blob": "d1ed47a025b242d2b5cad0a8e586c145eee73e06"
+    },
+    {
+      "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
+      "blob": "3770ceb6edfc35cd84b1a26d75ed065eec67a222"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "58fec5a714858d3b6432e4c8f55aba04afc5e434"
+      "blob": "cdddf5d23aaa197872de1184feb1ef1e5cb6073d"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
-      "blob": "f9e15064a8f22f8d2a8e2e9f30ef033066a33931"
+      "blob": "1385f03f41104037a043cee8224d8ea94be2897e"
     },
     {
       "path": "docs/LU_OBSERVATION_SCOPE_AND_GUI_VERIFICATION_V1.md",
@@ -141,7 +145,7 @@
     },
     {
       "path": "docs/LU_TOOL_COMPLETION_WAVES.md",
-      "blob": "44bc36e0b167bdf92da951fb22282737b5b9da52"
+      "blob": "3925017efb7f5fa7d5945c6b8fa50a214c97b258"
     },
     {
       "path": "docs/LU_V1_01_WINDOWS_ICON_IMPORT_DEV_20261103.md",
