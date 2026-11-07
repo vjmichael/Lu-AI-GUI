@@ -271,6 +271,90 @@ mod tests {
             blockers: vec![],
         }
     }
+    struct FakePicker(std::path::PathBuf);
+    impl crate::NativeDirectoryPicker for FakePicker {
+        fn choose_project_directory(&mut self) -> Result<Option<std::path::PathBuf>, crate::IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    fn native_fixture() -> (Fixture, IdeWorkspaceRegistry, String) {
+        use git2::{Repository, Signature};
+        let root = std::env::temp_dir().join(format!(
+            "wo9-native-workflow-{}", rand::random::<u64>()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let project = root.join("picked-by-native-dialog");
+        std::fs::create_dir_all(project.join("dist")).unwrap();
+        std::fs::write(project.join("dist").join("verified.tar"), b"frozen archive data").unwrap();
+        let repo = Repository::init(&project).unwrap();
+        let mut idx = repo.index().unwrap();
+        idx.add_path(std::path::Path::new("dist/verified.tar")).unwrap();
+        idx.write().unwrap();
+        let tree_id = idx.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let who = Signature::now("WO9 test", "test@localhost.invalid").unwrap();
+        repo.commit(Some("HEAD"), &who, &who, "fixed fixture", &tree, &[]).unwrap();
+        drop(tree);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
+        let project_id = registry.register_from_native_picker(&mut FakePicker(project))
+            .unwrap().unwrap().project_id;
+        (Fixture(root), registry, project_id)
+    }
+
+    #[test]
+    fn native_registered_project_freezes_real_git_and_artifact_digests() {
+        let (_temp, registry, project_id) = native_fixture();
+        let selected = vec![project_id.clone()];
+        let plan = registry.inspect_multi_project_workflow(&selected).unwrap();
+        assert!(plan.ready_for_review, "{:?}", plan.projects[0].blockers);
+        assert_eq!(plan.projects[0].artifacts.len(), 1);
+        assert_eq!(plan.projects[0].head.as_deref().map(str::len), Some(40));
+        assert!(registry.verify_multi_project_workflow(&selected, &plan.fingerprint).is_ok());
+        assert!(registry.inspect_multi_project_workflow(
+            &[project_id.clone(), project_id],
+        ).is_err());
+        assert!(!plan.ready_for_release);
+        assert!(!plan.execution_performed);
+    }
+
+    #[test]
+    fn native_export_is_new_only_and_source_drift_denied() {
+        let (temp, registry, project_id) = native_fixture();
+        let selected = vec![project_id.clone()];
+        let plan = registry.inspect_multi_project_workflow(&selected).unwrap();
+        let destination = temp.0.join("exported-by-native-picker");
+        std::fs::create_dir_all(&destination).unwrap();
+        let report = registry.export_workflow_manifest(
+            &selected, &plan.fingerprint, &destination,
+        ).unwrap();
+        assert!(destination.join(&report.file_name).exists());
+        assert!(!report.project_files_exported);
+        assert!(!report.release_approved);
+        assert!(registry.export_workflow_manifest(
+            &selected, &plan.fingerprint, &destination,
+        ).is_err(), "overwrite of a reviewed plan must be denied");
+        let registered_root = registry.trusted_native_worker_root(&project_id).unwrap();
+        assert!(registry.export_workflow_manifest(
+            &selected, &plan.fingerprint, &registered_root,
+        ).is_err(), "export must not silently dirty a project root");
+        std::fs::write(registered_root.join("dist/verified.tar"), b"changed externally").unwrap();
+        assert_eq!(
+            registry.verify_multi_project_workflow(&selected, &plan.fingerprint)
+                .unwrap_err(),
+            "WORKFLOW_SOURCE_OR_ARTIFACT_DRIFT",
+        );
+        assert!(registry.export_workflow_manifest(
+            &selected, &plan.fingerprint, &destination,
+        ).is_err());
+    }
+
     #[test]
     fn deterministic_multi_project_plan_not_a_release() {
         let a = workflow_status(vec![project("a"), project("b")]).unwrap();
