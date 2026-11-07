@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## WO7 started — signed NSIS preflight (2026-11-06 local / 2026-11-07 UTC)
+
+**Branch:** `ide/wo7-signed-nsis-release-20261106`, stacked on WO6 PR #70. **Status:** WO7-A source implemented, CI and real signing/installed acceptance pending. WO6 coding is complete, but protected native LLDB-DAP initialize/cancel/inspect and Windows installed debugger remain outstanding. No such native test was declared accepted.
+
+- New `packaging/verify_wo7_nsis_release.py` and default-deny `packaging/wo7-release.manifest.json`: signed installer and SCM-service actual binary SHA-256 and Authenticode signer/validity preflight on **real Windows**, exact source head, independently completed license/acceptance records and WO6 debugger approval. No auto sign, fetch, install or worker authorization. Test injection is isolated and cannot make the release CLI accept Linux.
+- New hostile source tests on both OSes and source-negative workflow `.github/workflows/ide-wo7-signed-release-preflight.yml`. Neither a green fixture suite nor a passing preflight establishes an installed signed NSIS release.
+- Scope/remaining gates: [WO7 ledger](docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md) — reproducible reviewed dependency/package staging; actual certificate-backed signing; SCM privileged install/uninstall rollback; exact signed installed Run/Test/Debug and cancellation/recovery; independent WO4–WO6 native OS acceptance. **Release disabled; no signing certificate/binary supplied; no installation accepted.**
+- Local user machine/source trees: **NOT INSPECTED** in this GitHub-only source change. GitHub branch commits are not installed artifacts or proof of local status.
+
+
 **Current work-order count: 7 open of 10 (WO4–WO10).** WO1 native Windows compiler/test repair gates passed on the accepted Windows baseline; WO2 protected AppContainer Cargo and WO3 restricted SCM/cancellation/host-and-service-crash acceptance passed together at `bd39d01129f8e4a894edaf3e4a1734fb3dbd1867` ([D7D run 42322328821](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42322328821), [D7B run 42322328831](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42322328831)). This is *native source/OS acceptance*, not installed NSIS release or live LSP enablement.
 
 **WO4 STARTED** on branch `ide/wo4-linux-delegated-containment-20261106`, draft [PR #68](https://github.com/vjmichael/Lu-AI-GUI/pull/68) stacked on the accepted Windows PR #65. Linux worker now checks a separately provisioned, empty `lu-ide-delegated` cgroup parent with host in `lu-ide-host`, requires active CPU/memory/PID controllers, uniquely trustworthy kernel `cgroup.events` emptiness and retains cleanup obligation after `rmdir` failure. Linux admission probe follows the same gate. **Linux actual delegated execution/kill/recovery remains unaccepted** because hosted CI has no writable delegation. See [WO4 ledger](docs/IDE_WORK_ORDER_04_LINUX_DELEGATION_20261106.md). WO5 native LSP, WO6 build/test/DAP, WO7 signed NSIS, WO8 installed E2E, WO9 workflows, WO10 optional Lu bridge remain open.
