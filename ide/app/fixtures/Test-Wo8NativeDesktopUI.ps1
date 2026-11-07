@@ -175,6 +175,11 @@ try {
       # no script calls native worker or forges an approval/IPC payload.
       Click 'Job requests'
       Require 'Protected Run / Test'
+      # Native accessible select rather than a hidden direct invocation.
+      $recipe=Find-Control 'Recipe' 'ComboBox' 20
+      if (!$recipe.Current.IsKeyboardFocusable) { Deny 'fixed_recipe_selector_not_focusable' }
+      $recipe.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{ENTER}')
       $buildAction=Find-Control 'Request protected Run / Test' 'Button' 25
       if (!$buildAction.Current.IsEnabled) { Deny 'installed_native_build_not_ready' }
       Click 'Request protected Run / Test'
