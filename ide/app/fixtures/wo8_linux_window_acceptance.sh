@@ -21,7 +21,10 @@ for attempt in $(seq 1 45); do
   sleep 1
 done
 [[ -n "$window" ]] || { echo 'WO8_NATIVE_LINUX_DENIED:no_real_window' >&2; exit 12; }
+# Xvfb alone is not a window manager; use a real EWMH-capable WM in CI.
+# A mapped window must be activated and keyboard focus independently verified.
 xdotool windowactivate --sync "$window" || { echo 'WO8_NATIVE_LINUX_DENIED:window_not_focusable' >&2; exit 13; }
+xdotool windowfocus --sync "$window" || { echo 'WO8_NATIVE_LINUX_DENIED:window_keyboard_focus_denied' >&2; exit 16; }
 name="$(xdotool getwindowname "$window")"
 [[ "$name" == *"Lu IDE"* ]] || { echo 'WO8_NATIVE_LINUX_DENIED:unexpected_window_title' >&2; exit 14; }
 # A native window is a smoke, not proof of editor/selection protocol behavior.
