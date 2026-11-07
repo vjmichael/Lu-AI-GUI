@@ -104,6 +104,7 @@ pub mod model_turn_journal;
 pub mod multimodal_http;
 pub mod multimodal_saved_turn;
 pub mod native_archive_inspect;
+pub mod native_artifact_inspect;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
 pub mod native_archive_batch;
