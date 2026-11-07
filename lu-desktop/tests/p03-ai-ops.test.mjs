@@ -27,6 +27,8 @@ test('P03 model inspection does not certify compatibility or invent GPU proof',(
   assert.match(host,/ModelAdmissionManager::new\(\)/);
   assert.match(host,/projector\.recheck\(\)/);
   assert.match(host,/runtime_compatible:false/);
+  assert.match(host,/gguf_metadata_summary::inspect_metadata/);
+  assert.match(ui,/modelInspection\.reportedContextLength/);
   assert.match(host,/provider_download_enabled:false/);
   assert.match(host,/if !inspection\.load_allowed/);
   assert.match(host,/lu_model_preflight,/);
