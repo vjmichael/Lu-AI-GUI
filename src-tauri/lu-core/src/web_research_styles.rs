@@ -379,7 +379,8 @@ pub fn export_csl_json(
 /// translation, critical edition or bibliography entry. Primary-source
 /// editions, DSS, papyri, Apocrypha and original-language citations need
 /// separately reviewed witness/edition authority and are NOT inferred.
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(serde::Serialize,Debug,Clone,PartialEq,Eq)]
+#[serde(rename_all="camelCase")]
 pub struct SblScriptureReference{
     pub reference:String,
     pub book:String,
