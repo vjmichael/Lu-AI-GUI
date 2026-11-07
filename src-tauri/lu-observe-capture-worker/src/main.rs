@@ -26,6 +26,46 @@ fn frame_geometry_valid(width:u32,height:u32,row_pitch:u32,buffer_len:usize)->bo
     let max_padded=MAX_FRAME_BYTES+(MAX_FRAME_HEIGHT as usize)*4096;
     mapped_len<=max_padded&&buffer_len>=useful_end&&buffer_len<=max_padded
 }
+// P06 privacy primitive for a FUTURE OS-attested sensitive-region mask.
+// Geometry-only rectangles supplied by the renderer/model are NOT trusted
+// evidence. There is deliberately no live caller that emits unmasked pixels.
+// Actual WGC receipt keeps suppressing the full frame until native identity,
+// trusted region detection and operator acceptance are independently proven.
+#[derive(Clone,Copy,Debug)]
+#[allow(dead_code)]
+struct SensitiveRect{left:u32,top:u32,width:u32,height:u32}
+#[allow(dead_code)]
+fn mask_sensitive_bgra_regions(
+    frame_width:u32,frame_height:u32,row_pitch:u32,
+    frame:&mut [u8],regions:&[SensitiveRect]
+)->bool {
+    const MAX_MASKS:usize=4096;
+    // Empty/incomplete evidence cannot be interpreted as "nothing private".
+    // All rectangles are validated BEFORE any byte is changed so one bad
+    // rectangle never leaves a partially redacted buffer available to callers.
+    if regions.is_empty()||regions.len()>MAX_MASKS
+        ||!frame_geometry_valid(frame_width,frame_height,row_pitch,frame.len()){
+        return false;
+    }
+    for rect in regions{
+        if rect.width==0||rect.height==0
+            ||rect.left.checked_add(rect.width).is_none_or(|v|v>frame_width)
+            ||rect.top.checked_add(rect.height).is_none_or(|v|v>frame_height){
+            return false;
+        }
+    }
+    let pitch=row_pitch as usize;
+    for rect in regions{
+        let left=(rect.left as usize)*4;
+        let right=((rect.left+rect.width) as usize)*4;
+        for y in rect.top..rect.top+rect.height{
+            let base=y as usize*pitch;
+            frame[base+left..base+right].fill(0);
+        }
+    }
+    true
+}
+
 /// Fail-closed FULL-FRAME redaction: no raw or selectively visible pixels
 /// contribute to the host receipt. The OS readback only establishes a
 /// geometrically valid WGC callback. No trusted sensitive-region classifier
@@ -85,6 +125,38 @@ mod frame_geometry_tests {
         assert!(frame_receipt(nonce,2,2,12,&padded[..19]).is_none());
         assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded).is_none());
         assert!(frame_receipt(nonce,0,2,12,&padded).is_none());
+    }
+    #[test]
+    fn future_sensitive_region_mask_is_stride_correct_without_touching_padding(){
+        let mut frame=vec![99u8;32]; // 3-pixel active BGRA row, 4 pad bytes
+        let regions=[SensitiveRect{left:1,top:0,width:1,height:2}];
+        assert!(mask_sensitive_bgra_regions(3,2,16,&mut frame,&regions));
+        assert_eq!(&frame[4..8],&[0;4]);
+        assert_eq!(&frame[20..24],&[0;4]);
+        assert_eq!(&frame[0..4],&[99;4]);
+        assert_eq!(&frame[8..16],&[99;8]);
+        assert_eq!(&frame[24..32],&[99;8]);
+    }
+    #[test]
+    fn invalid_or_untrusted_mask_never_partially_writes_raw_frame(){
+        let initial=vec![77u8;32];
+        let valid=SensitiveRect{left:1,top:0,width:1,height:2};
+        for bad in [
+            SensitiveRect{left:u32::MAX,top:0,width:1,height:1},
+            SensitiveRect{left:2,top:0,width:2,height:1},
+            SensitiveRect{left:0,top:2,width:1,height:1},
+            SensitiveRect{left:0,top:0,width:0,height:1}
+        ]{
+            let mut frame=initial.clone();
+            assert!(!mask_sensitive_bgra_regions(3,2,16,&mut frame,&[valid,bad]));
+            assert_eq!(frame,initial);
+        }
+        let mut frame=initial.clone();
+        assert!(!mask_sensitive_bgra_regions(3,2,16,&mut frame,&[]));
+        assert_eq!(frame,initial);
+        let many=vec![valid;4097];
+        assert!(!mask_sensitive_bgra_regions(3,2,16,&mut frame,&many));
+        assert_eq!(frame,initial);
     }
     #[test]
     fn rejects_invalid_dimensions_truncation_and_unbounded_pitch(){

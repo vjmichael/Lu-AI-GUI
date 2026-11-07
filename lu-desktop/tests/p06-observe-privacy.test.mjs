@@ -106,3 +106,16 @@ test('P06 physical Windows child-process evidence is opt-in and cannot claim WGC
   assert.match(script,/visionOrGuiTestAcceptance='NOT_TESTED'/);
   assert.doesNotMatch(script,/Press-ObservedButton 'Approve'/);
 });
+
+test('P06 bounded region mask is not a shortcut around native OS source and privacy attestation',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  assert.match(worker,/fn mask_sensitive_bgra_regions/);
+  assert.match(worker,/regions\.is_empty\(\)\|\|regions\.len\(\)>MAX_MASKS/);
+  assert.match(worker,/rect\.left\.checked_add\(rect\.width\)/);
+  assert.match(worker,/invalid_or_untrusted_mask_never_partially_writes_raw_frame/);
+  assert.match(worker,/future_sensitive_region_mask_is_stride_correct_without_touching_padding/);
+  // Only fully blanked, nonce-bound receipts remain connected to WGC frame events.
+  assert.match(worker,/fn frame_receipt\(/);
+  assert.match(worker,/Lu-WGC-whole-frame-redacted-v2/);
+  assert.doesNotMatch(worker,/mask_sensitive_bgra_regions\(width,height,row_pitch,buffer/);
+});

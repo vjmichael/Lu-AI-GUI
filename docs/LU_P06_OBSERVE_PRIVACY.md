@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 selective-region masking engine foundation (source only, NOT pixel-release acceptance)
+
+A bounded BGRA rectangle-mask primitive is now compiled in the Windows capture-worker crate. It validates **every** proposed region before writing, rejects an empty mask, more than 4096 regions, overflow/out-of-frame coordinates and invalid strides, masks four bytes per pixel without modifying D3D row padding, and tests that a late invalid rectangle leaves the entire original buffer unchanged. This is **only the deterministic sanitization algorithm**, not verified sensitive-data detection. A native trusted Windows accessibility/surface classifier still needs to bind each region to the actual HWND/process instance and validate that every confidential surface is covered. Arbitrary model/renderer/UIA hints cannot grant pixel export; when region evidence is absent, the current live WGC path continues to hash only a **fully blanked frame** and retains no pixels. No new model image bridge, recording, screenshots or selective preview have been enabled. Cross-platform Rust behavior and actual Windows native compile remain CI-gated.
+
 ## P06 supervised receipt gate and opt-in native worker reap trial (2026-11-06)
 
 - **Native receipt gate:** A terminal TaskStore row and plausible SHA-256 alone can no longer produce a successful one-shot receipt while the OS supervisor still owns a cancellable live worker. `ObserveHost::capture_receipt` requires **all three**: task `Completed`, validated digest, and supervised process no longer active after a successful `poll`. On uncertainty `image_received`, `fully_redacted_receipt`, `source_identity_attested` and `frame_sha256` are withheld; Guardian custody is retained. A focused Rust regression enumerates all negative combinations.
