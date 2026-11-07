@@ -150,6 +150,14 @@ mod native_stderr_classification_tests {
             classify_debug_stderr(b"secret user document content"),
             "other_nonempty"
         );
+        assert_eq!(
+            classify_debug_denial_context(b"failed to open stdout: Permission denied"),
+            "stdout"
+        );
+        assert_eq!(
+            classify_debug_denial_context(b"failed to create temporary cache: Permission denied"),
+            "cache_or_temp"
+        );
     }
 }
 
@@ -244,6 +252,42 @@ fn classify_debug_stderr(bytes: &[u8]) -> &'static str {
         "other_nonempty"
     }
 }
+// A second fixed enum helps separate filesystem from stdio/loader denial.
+// It never emits raw stderr, arbitrary filenames or the denied absolute path.
+// All classifications are evidence hints, NOT security authorization.
+fn classify_debug_denial_context(bytes: &[u8]) -> &'static str {
+    let text = String::from_utf8_lossy(bytes).to_ascii_lowercase();
+    if text.contains("stdin") || text.contains("standard input") {
+        "stdin"
+    } else if text.contains("stdout") || text.contains("standard output") {
+        "stdout"
+    } else if text.contains("stderr") || text.contains("standard error") {
+        "stderr"
+    } else if text.contains("pipe") {
+        "pipe"
+    } else if text.contains("config") || text.contains(".clangd") {
+        "config"
+    } else if text.contains("cache") || text.contains("temp") {
+        "cache_or_temp"
+    } else if text.contains("resource") || text.contains("library") || text.contains("dll") {
+        "resources_or_dependency"
+    } else if text.contains("index") {
+        "index"
+    } else if text.contains("socket") || text.contains("network") {
+        "network"
+    } else if text.contains("workspace") || text.contains("main.c") {
+        "workspace"
+    } else if text.contains("open") || text.contains("read") {
+        "open_or_read"
+    } else if text.contains("create") || text.contains("write") {
+        "create_or_write"
+    } else if text.contains("path") || text.contains("directory") || text.contains("file") {
+        "filesystem"
+    } else {
+        "unspecified"
+    }
+}
+
 fn inspect_debug_stderr(handle: Option<&Handle>) {
     if !native_lsp_debug_enabled() {
         return;
@@ -290,6 +334,10 @@ fn inspect_debug_stderr(handle: Option<&Handle>) {
     eprintln!(
         "PROTECTED_LSP_NATIVE_STDERR_CLASS={}",
         classify_debug_stderr(&output[..read as usize])
+    );
+    eprintln!(
+        "PROTECTED_LSP_NATIVE_DENIAL_CONTEXT={}",
+        classify_debug_denial_context(&output[..read as usize])
     );
 }
 
