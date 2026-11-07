@@ -64,6 +64,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The protected feature build must see real first-party icon and dist
+      # assets before tauri-build or generate_context! inspects these files.
+      - name: Build generated IDE icon and frontend before native feature checks
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
       - name: Install Linux native Tauri WebKit dependencies
         if: runner.os == 'Linux'
         run: |
