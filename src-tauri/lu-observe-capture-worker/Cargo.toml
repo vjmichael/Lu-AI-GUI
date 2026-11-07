@@ -12,6 +12,9 @@ description = "Host-supervised one-shot Windows.Graphics.Capture picker worker f
 [dependencies]
 windows-capture = "=2.0.1"
 sha2 = "=0.10.9"
+# Same pinned Windows API package already used by windows-capture 2.0.1.
+# Limited query-only process timestamps; no UI privileges or injection.
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [profile.release]
 lto = "thin"
