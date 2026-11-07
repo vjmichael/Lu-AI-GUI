@@ -1,3 +1,9 @@
+## P10 IMAGE-BASICS-01 started — 2026-11-07
+
+**Owner decision:** Lu should operate common external applications effectively through supervised execution rather than reproduce those applications as native micro-apps. Model knowledge and planning remain model-side; Lu owns authorized scoped I/O, observation, reliable effects, policy/permissions versus authority distinction, resource supervision and recovery. Canonical policy: `docs/LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md`. P07 and P09 existing bounded functionality are suitable and retained, with **no feature expansion requested** for P09.
+
+**P10 branch:** `lu/p10-image-boundary-20261107` stacked on draft P09 #82. Audited existing immutable crop/resize/rotate/flip, solid redaction, visible annotations, filters, staged preview, new PNG export, chat-scoped history and uncertain recovery. P10 work is maintenance/correctness only: new native redaction opacity/source preservation and bounded edit sequence tests; Node scope/source contracts; dedicated two-OS CI; `docs/LU_P10_IMAGE_BASICS.md`. Advanced graphics and generative authoring belong to approved external apps, not Lu Core. **Exact-head native/installed application acceptance OPEN.** P08 and P09 separate engineering gates remain unchanged.
+
 ## P09 OFFICE-BOUNDARY-01 — started 2026-11-07
 
 **Owner directed progression from P08 to P09.** Scope is bounded DOCX/PPTX/XLSX reading and ordinary non-destructive revisions, with no full Office suite or specialist citation engine. Branch `lu/p09-office-boundary-20261107` stacked on P08 `d5be5c38`. Existing reader/author/revision code provides typed cell and slide selections, exact-source SHA review, immutable original and no-clobber new file publication. P09 added explicit per-edit fidelity warnings to React single/batch review screens, a source-contract regression test and a dedicated two-OS native Office CI workflow. Capability/limitation matrix and evidence gates: `docs/LU_P09_OFFICE_BOUNDARY.md`.
