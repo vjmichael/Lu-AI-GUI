@@ -415,6 +415,12 @@ impl NativeDebugRuntime {
             }
             for event in session.poll().map_err(|e| e.code().to_owned())? {
                 match event {
+                    DapEvent::ConfigurationRequested => {
+                        // LLDB may send initialized AFTER the pinned native launch.
+                        // Complete only empty configuration; do not accept an
+                        // arbitrary source, terminal or debugger command.
+                        session.configuration_done().map_err(|e| e.code().to_owned())?;
+                    }
                     DapEvent::Stopped { thread_id } => stopped_thread = Some(thread_id),
                     DapEvent::ThreadsReceived => threads_response = true,
                     DapEvent::StackTraceReceived => stack_response = true,
