@@ -21,7 +21,7 @@ if ($env:OS -ne 'Windows_NT' -or $env:GITHUB_ACTIONS -ne 'true' -or !$env:RUNNER
   Deny 'disposable_native_runner_only'
 }
 $exe=(Resolve-Path -LiteralPath $InstalledExecutable).Path
-if ($exe -notlike '*\\lu-ide-desktop.exe') { Deny 'unexpected_executable' }
+if ([IO.Path]::GetFileName($exe) -ine 'lu-ide-desktop.exe') { Deny 'unexpected_executable' }
 if ($ExpectedSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash -ine $ExpectedSha256) {
   Deny 'installed_binary_digest_mismatch'
