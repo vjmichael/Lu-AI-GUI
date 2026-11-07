@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## P05 historical PR reconciliation — November 7, 2026
+
+Source audit complete: 15 genuine WO9 ancestors, 7 late-diverged patches reviewed, 3 B2/B3 unported feature PRs retained, 1 WO10 deferred, and 4 P01–P04 stacked drafts. PR #70 original native Cargo/LLDB receipts are archived in WO6 documentation with exact run IDs and prior-head caveat. Semantic-source tests prevent false PR closure/native approval; operational GitHub PR closure/CI reduction remains gated on P03/P04 installed and security acceptance. [Semantic record](packaging/p05-semantic-reconciliation.json).
+
 ## P05 E2 native workflow compatibility repair — November 7, 2026
 
 Two older E2 unsigned installed Windows NSIS workflows were missing required P04 legal resource staging and failed before running installed GUI smoke. P05 now builds exact-source resolved license evidence, includes it in the installer, emits verified package/notice hashes and preserves native installed test steps. Original and reviewed replacement Git blob SHAs are tracked, not silently rewritten. P05's Windows/Linux source audit passed on prior head; native installed E2 revalidation is still outstanding. No security or installed test was disabled.

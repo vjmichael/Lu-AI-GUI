@@ -5,6 +5,8 @@ on:
       - 'ide/packaging/p05-*'
       - 'ide/packaging/verify_p05_pr_inventory.py'
       - 'ide/packaging/test_verify_p05_pr_inventory.py'
+      - 'ide/packaging/p05-semantic-reconciliation.json'
+      - 'ide/packaging/test_p05_semantic_reconciliation.py'
       - 'ide/docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md'
       - 'ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md'
       - 'ide/PROJECT_STATE.md'
@@ -45,5 +47,7 @@ jobs:
           --workflow-inventory ide/packaging/p05-workflow-coverage.json
       - name: Hostile closed-PR, missing-workflow, deferred bridge and false-native regression
         run: python -m unittest discover -s ide/packaging -p 'test_verify_p05_pr_inventory.py' -v
+      - name: Verify all historical source behavior classifications and excluded features
+        run: python -m unittest discover -s ide/packaging -p 'test_p05_semantic_reconciliation.py' -v
       - name: Audit result scope
         run: echo "P05_SOURCE_PROVENANCE_ONLY_0_PR_CLOSURES_0_NATIVE_GATE_REPLACEMENTS_NO_RELEASE_APPROVAL"

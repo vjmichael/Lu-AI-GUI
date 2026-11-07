@@ -1,0 +1,266 @@
+{
+  "schema": "lu.ide.p05.semantic-reconciliation.v1",
+  "sourceCandidateSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+  "wo9SourceHead": "0d271606c8bcaeabe799cb970e0b6d4aefd25089",
+  "snapshotAuditCount": 30,
+  "method": "GitHub exact historical commit ancestry and diff review; current lexical witnesses; no inference of installed/native release parity.",
+  "ancestral": [
+    {
+      "pr": 48,
+      "headSha": "ca606dfb378ce31945a768a23e9ab6a31cbe60e8",
+      "aheadBy": 0,
+      "behindBy": 784
+    },
+    {
+      "pr": 49,
+      "headSha": "1dd4a58d84d6bc5f383f75e463b15f82baea6de8",
+      "aheadBy": 0,
+      "behindBy": 782
+    },
+    {
+      "pr": 50,
+      "headSha": "c403a8ba47d6ac1662b8627ce5ab34a9a16b591e",
+      "aheadBy": 0,
+      "behindBy": 779
+    },
+    {
+      "pr": 51,
+      "headSha": "ef623bfd22f8dfc8b1674a44911e98825be8ab53",
+      "aheadBy": 0,
+      "behindBy": 777
+    },
+    {
+      "pr": 52,
+      "headSha": "c091fbe174b85a0c0f90c67933fdb2069000cd24",
+      "aheadBy": 0,
+      "behindBy": 774
+    },
+    {
+      "pr": 54,
+      "headSha": "32b208a76ed17910554b8ca6b7e8647577e6657a",
+      "aheadBy": 0,
+      "behindBy": 771
+    },
+    {
+      "pr": 55,
+      "headSha": "341b3ab5ea268770bb01fdcf32cbb8d06452b095",
+      "aheadBy": 0,
+      "behindBy": 769
+    },
+    {
+      "pr": 60,
+      "headSha": "b172095a6a101bc9efb4250f0f2d35678fec9b12",
+      "aheadBy": 0,
+      "behindBy": 725
+    },
+    {
+      "pr": 62,
+      "headSha": "4c2b639c379dcfab3a16f17708b621047c099d30",
+      "aheadBy": 0,
+      "behindBy": 686
+    },
+    {
+      "pr": 63,
+      "headSha": "988bf11a3607d627740088ea6335fcb19a9e3085",
+      "aheadBy": 0,
+      "behindBy": 631
+    },
+    {
+      "pr": 64,
+      "headSha": "73b8a5bc8f779c309f8a7c2b2b27972dcd091afc",
+      "aheadBy": 0,
+      "behindBy": 620
+    },
+    {
+      "pr": 65,
+      "headSha": "bd39d01129f8e4a894edaf3e4a1734fb3dbd1867",
+      "aheadBy": 0,
+      "behindBy": 340
+    },
+    {
+      "pr": 68,
+      "headSha": "91134704c308d98d196d0becc9302dde73754ce2",
+      "aheadBy": 0,
+      "behindBy": 315
+    },
+    {
+      "pr": 69,
+      "headSha": "785ca287d74c39f525e0f0bfc4e6e30d65afd063",
+      "aheadBy": 0,
+      "behindBy": 284
+    },
+    {
+      "pr": 75,
+      "headSha": "0d271606c8bcaeabe799cb970e0b6d4aefd25089",
+      "aheadBy": 0,
+      "behindBy": 0
+    }
+  ],
+  "divergent": [
+    {
+      "pr": 47,
+      "headSha": "efe731d874e11309f4646d150827a723ed9932f7",
+      "uniqueCommitsBeyondWo9": 1,
+      "analysis": "C3 multiline macro matcher and non-vacuous capability count retained in evolved test",
+      "nativeEquivalenceAccepted": false
+    },
+    {
+      "pr": 53,
+      "headSha": "272c6637b4e70851871484b0f8ffc1fd9477af7a",
+      "uniqueCommitsBeyondWo9": 1,
+      "analysis": "Original Rust formatting changes reviewed; no independent OS equivalence inferred",
+      "nativeEquivalenceAccepted": false
+    },
+    {
+      "pr": 56,
+      "headSha": "c36858ca215fb26ab33224dadae7a324260e3ed8",
+      "uniqueCommitsBeyondWo9": 1,
+      "analysis": "WSAEACCES 10013 remains sole AppContainer network-denial pass",
+      "nativeEquivalenceAccepted": false
+    },
+    {
+      "pr": 58,
+      "headSha": "6923b43f52adfd1f0e59ddb82d7f2b3666298c97",
+      "uniqueCommitsBeyondWo9": 2,
+      "analysis": "Fail-closed WinSock diagnostics retained with explicit non-WSAEACCES rejection",
+      "nativeEquivalenceAccepted": false
+    },
+    {
+      "pr": 70,
+      "headSha": "c0b83a304566d803e19082591d36debffe501698",
+      "uniqueCommitsBeyondWo9": 1,
+      "analysis": "Original prior-head WO6 kernel/Cargo and LLDB evidence archived with exact run IDs",
+      "nativeEquivalenceAccepted": false
+    },
+    {
+      "pr": 73,
+      "headSha": "d42586345a8fce5713b3232669dbd2b7241440c0",
+      "uniqueCommitsBeyondWo9": 1,
+      "analysis": "Desktop executable exists in signed-negative fixture",
+      "nativeEquivalenceAccepted": false
+    },
+    {
+      "pr": 74,
+      "headSha": "bd0f4f1280fb09c3ff0ba672d99dd47588537558",
+      "uniqueCommitsBeyondWo9": 4,
+      "analysis": "Linux Openbox/focus and Windows exe basename corrections exist",
+      "nativeEquivalenceAccepted": false
+    }
+  ],
+  "parallelUnported": [
+    {
+      "pr": 43,
+      "headSha": "3cb62b2d151945e40356884ac0e884c8e49edb64",
+      "disposition": "retain_for_separate_feature_review",
+      "portAccepted": false
+    },
+    {
+      "pr": 45,
+      "headSha": "21b1d88aaa8353e0f28020d6a7ec37bc135627b3",
+      "disposition": "retain_for_separate_feature_review",
+      "portAccepted": false
+    },
+    {
+      "pr": 46,
+      "headSha": "a94c5d6af266f9a0940b4b9d03ce9d7671d98457",
+      "disposition": "retain_for_separate_feature_review",
+      "portAccepted": false
+    }
+  ],
+  "excludedBridge": {
+    "pr": 76,
+    "headSha": "8d59bce140d189cc798dc87a2a35eed61e88bc7b",
+    "disposition": "do_not_merge_before_lu_core_v1"
+  },
+  "phaseChain": [
+    {
+      "pr": 78,
+      "headSha": "a8b0a8f0270856954acd1132e30477e387004c98",
+      "disposition": "stacked_draft_not_release_accepted"
+    },
+    {
+      "pr": 79,
+      "headSha": "fab2c06e47454b37758c716b304d202e9af55f66",
+      "disposition": "stacked_draft_not_release_accepted"
+    },
+    {
+      "pr": 80,
+      "headSha": "ed070647dde289f85340cdc25d8c8f8df33543fb",
+      "disposition": "stacked_draft_not_release_accepted"
+    },
+    {
+      "pr": 84,
+      "headSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+      "disposition": "stacked_draft_not_release_accepted"
+    }
+  ],
+  "witnesses": [
+    {
+      "pr": 47,
+      "path": "ide/app/tests/standalone.test.mjs",
+      "terms": [
+        "capability!\\(\\s*",
+        "commands.length, 41"
+      ]
+    },
+    {
+      "pr": 56,
+      "path": "ide/sandbox/src/bin/windows_appcontainer_probe.rs",
+      "terms": [
+        "Some(10013)",
+        "1000 + raw"
+      ]
+    },
+    {
+      "pr": 58,
+      "path": "ide/sandbox/src/bin/windows_appcontainer_probe.rs",
+      "terms": [
+        "Some(10013)",
+        "1000 + raw"
+      ]
+    },
+    {
+      "pr": 70,
+      "path": "ide/docs/IDE_WORK_ORDER_06_PROTECTED_BUILD_TEST_DEBUG_20261106.md",
+      "terms": [
+        "Historical WO6 evidence from PR #70",
+        "42340446866",
+        "42341239874"
+      ]
+    },
+    {
+      "pr": 73,
+      "path": "ide/packaging/test_verify_wo7_nsis_release.py",
+      "terms": [
+        "\"desktop.exe\""
+      ]
+    },
+    {
+      "pr": 74,
+      "path": ".github/workflows/ide-wo8-installed-linux.yml",
+      "terms": [
+        "openbox"
+      ]
+    },
+    {
+      "pr": 74,
+      "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
+      "terms": [
+        "GetFileName($exe)",
+        "unexpected_executable"
+      ]
+    },
+    {
+      "pr": 74,
+      "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
+      "terms": [
+        "windowfocus --sync",
+        "command -v openbox",
+        "wm_pid"
+      ]
+    }
+  ],
+  "nativeReleaseAccepted": false,
+  "prClosureAuthorized": false,
+  "ciRemovalAuthorized": false
+}

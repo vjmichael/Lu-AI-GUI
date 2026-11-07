@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P05 final historical source audit (2026-11-07):** Verified 15 WO9-ancestral commits, reviewed all seven late-divergent patch groups, archived PR #70 native proof without promoting it to current-head OS acceptance, and isolated #43/#45/#46 unported B2/B3 features and deferred #76 WO10. Machine-readable semantic source ledger and hostile Windows/Linux CI added. No unsupported PR or security workflow closure; operational cleanup remains gated on P03/P04 native/signed release evidence.
+
+
 - **P05 E2 installed CI repair (Nov 7, 2026):** Investigated E2 Windows NSIS native CI failure: Tauri's P04 `verification-notices` resource was absent in two older smoke build workflows. Added prebuild actual resolved licenses and exact-package SHA/license receipts to both E2 variants, kept all installed UI test steps and strengthened missing-artifact denial. Audited original and replacement workflow Git blob SHAs; new native OS retest still required. P05 phase remains source audit complete / PR-ops reductions gated behind native acceptance.
 
 
