@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from upstream_notice_receipt import SOURCES
 import re
 import sys
 
@@ -82,7 +83,10 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
             raise Denied("untrusted_upstream_fetch_receipt")
         compared={r.get("name"):r for r in records if isinstance(r, dict)}
         if len(compared)!=6 or any(
-                compared.get(Path(row["path"]).name, {}).get("bundledSourceSha256") != row["sha256"]
+                (compared.get(Path(row["path"]).name, {}).get("bundledSourceSha256") != row["sha256"]
+                    or compared.get(Path(row["path"]).name, {}).get("sourceRevision") != row["sourceRevision"]
+                    or row.get("sourceRevision") != SOURCES[Path(row["path"]).name][0]
+                    or compared.get(Path(row["path"]).name, {}).get("sourceUrl") != SOURCES[Path(row["path"]).name][1])
                 for row in upstream):
             raise Denied("upstream_fetch_notice_mismatch")
         expected.add("upstream-fetch.json")

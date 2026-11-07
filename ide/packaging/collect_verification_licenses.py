@@ -27,9 +27,9 @@ UPSTREAM = {
     "LLVM-18.1.8-LICENSE.txt": "llvmorg-18.1.8",
     "Python-3.10.11-LICENSE.txt": "v3.10.11",
     "Tauri-LICENSE-MIT.txt": "tauri-v2.12.5",
-    "Tauri-LICENSE-APACHE-2.0.txt": "tauri-2e23492ab9bcec06bab041e0e47447aaa0da298c",
-    "CodeMirror-6-LICENSE-MIT.txt": "codemirror-view-6.0.0",
-    "esbuild-0.25.9-LICENSE-MIT.txt": "esbuild-v0.25.9",
+    "Tauri-LICENSE-APACHE-2.0.txt": "tauri-v2.12.5",
+    "CodeMirror-6-LICENSE-MIT.txt": "6.0.0",
+    "esbuild-0.25.9-LICENSE-MIT.txt": "v0.25.9",
 }
 SHA40 = re.compile(r"^[0-9a-f]{40}$", re.I)
 
@@ -169,6 +169,7 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                 item = verified[name]
                 source_rev, source_url = SOURCES[name]
                 if (item.get("sourceRevision") != source_rev
+                        or row.get("sourceRevision") != source_rev
                         or item.get("sourceUrl") != source_url
                         or item.get("matchesUpstream") is not True
                         or item.get("bundledSourceSha256") != row["sha256"]

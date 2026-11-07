@@ -43,3 +43,7 @@ All six unsigned native package-building paths (the two E2 Windows NSIS, WO8 Win
 ## Declared MPL-2.0 and alternative-license obligations (commercial readiness)
 
 The 521-package previous native OS inventory identified **five MPL-2.0 crates** (`cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext`, `selectors`) with possible covered-file source/notice obligations and **two `r-efi` versions** declaring `MIT OR Apache-2.0 OR LGPL-2.1-or-later`. MPL is not a ban on commercial software; an `OR` license expression does not force LGPL. An independent review must establish exact distribution scope, changes, notices and any chosen permissive licensing alternative. P06 now detects all declared copyleft or alternative-copyleft options, makes each an open review case, and compares the discovered list to a SHA-reviewed seven-item reference. A changed/new or silently disappearing entry DENIES source review rather than disappearing from the commercial license ledger. Neither permission nor legal signoff is automatically issued.
+
+## Canonical upstream source revision consistency
+
+Corrected three stale sourceRevision strings in the canonical notice inventory (Tauri Apache, CodeMirror and esbuild). The resolved package notice bundle now records the same exact upstream tag as the HTTPS fetch receipt, and the verifier denies altered/mismatched source revisions and source URLs even if the notice bytes and hashes are intact. Exact source audit regression runs in P06 CI. Full package-specific copyright review remains outstanding.
