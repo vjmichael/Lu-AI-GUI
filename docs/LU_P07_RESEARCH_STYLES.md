@@ -26,3 +26,7 @@ Build reviewed metadata adapter including author/date/container/publisher proven
 - MLA Handbook ninth edition; APA Publication Manual seventh edition
 
 All edition and example claims require verification against official manuals before release. The narrow formatter returns bounded placeholders **never** in place of missing data; it refuses to render unsupported formats.
+
+## P07 source-bound authors and CSL-JSON-compatible export
+
+Further native source now cross-checks the exact ordered author list against the original discovered author identity that `EvidenceLedger::corroborate` previously matched to the trusted catalog. A model-substituted author cannot be rendered under the verified source ID. `export_csl_json` produces a structured, bounded CSL-JSON-compatible book/journal reference with authored title/URL, author name fields, explicit year and only supplied publisher/journal/volume/issue. It does **not** invent a page, ancient-text locator or SBL abbreviation. The `_lu_evidence` extension explicitly marks bibliographic/author identity corroborated while publication details, passages, pages and factual claims are **NOT independently verified** pending an enriched host catalog adapter. This structured export is a native function, not yet a Research GUI command or complete citeproc rendering.

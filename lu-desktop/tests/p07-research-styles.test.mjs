@@ -34,3 +34,14 @@ test('P07 native Linux Windows tests retain exact source lock and evidence-verif
   assert.match(wf,/web_research_styles::tests/);
   assert.match(wf,/web_research_evidence::tests/);
 });
+
+test('P07 CSL JSON has ledger-verified author identity but discloses incomplete secondary metadata',()=>{
+  assert.match(src,/ledger\.discovered_candidate\(&work\.source_id\)/);
+  assert.match(src,/original!=attested_one&&original!=attested_other/);
+  assert.match(src,/pub fn export_csl_json\(/);
+  assert.match(src,/author_identity_corroborated:true/);
+  assert.match(src,/publication_details_verified:false/);
+  assert.match(src,/quotation_or_page_verified:false/);
+  assert.match(src,/csl_json_preserves_attested_identity_and_never_invents_locator/);
+  assert.doesNotMatch(src,/"page":|page_locator:\s*Some/);
+});

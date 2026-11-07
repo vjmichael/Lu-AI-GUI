@@ -26,6 +26,8 @@ The new `lu-desktop/src-tauri/tauri.linux.conf.json` is the Linux-specific Tauri
 
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+**P06 egress boundary repair (2026-11-07):** The native `network_egress_allowed=false` flag now rejects all four network destination classes regardless of whether the origin tag is `ObserveLearn` or `OrdinaryUser`; prior code only applied the deny flag to `ObserveLearn`. The immutable Observe-origin declassification rejection remains. Added Rust regression for ordinary-origin denied egress, local inference and taint-preserving joins. Commit `cbdccd4`; exact-head CI and installed verification remain OPEN.
+
 ## P06 bounded real NSIS process execution and partial-install uncertainty
 
 The independent disposable Windows NSIS installation/uninstallation acceptance script now limits **both** native setup stages to an operator-configurable 30–1800 seconds (600 default). It waits on the original OS Process object, inspects the actual exit code, and attempts to terminate its exact process tree on timeout; it preserves the possibly partially written installation and registry for operator recovery rather than blindly deleting data or retrying. The receipt distinguishes a completed installer/uninstaller process exit from incomplete or uncertain native setup. This is stronger source implementation for genuine physical acceptance, not a physical PASS: exact Lu.exe/worker hashes, installer WGC UIA, cancellation and NSIS install/uninstall still require a real Windows run.

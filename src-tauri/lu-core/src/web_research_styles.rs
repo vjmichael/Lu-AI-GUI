@@ -37,6 +37,10 @@ pub struct RenderedCitation{
     pub style:&'static str,pub source_id:String,pub bibliography:String,
     pub first_note:Option<String>,
     pub bibliography_identity_corroborated:bool,
+    pub author_identity_corroborated:bool,
+    /// Secondary year/publisher/journal detail is not yet independently
+    /// corroborated in the existing ledger. Requires a future catalog adapter.
+    pub publication_details_verified:bool,
     pub quotation_or_page_verified:bool,
     pub factual_claim_verified:bool,
     pub coverage:&'static str,
@@ -117,6 +121,18 @@ pub fn render_correlated(
        source.record_url.as_deref()!=Some(work.record_url.as_str()){
         return Err(StyleError::IdentityMismatch);
     }
+    // The model must not replace the author list after catalog
+    // corroboration. Compare against the original discovered identity which
+    // corroborate() checked against the trusted bibliography author field.
+    let catalog=ledger.discovered_candidate(&work.source_id)
+        .map_err(|_|StyleError::Uncorroborated)?;
+    let names=work.authors.iter().map(full).collect::<Vec<_>>();
+    let attested_one=names.join("; ");
+    let attested_other=names.join(", ");
+    let original=catalog.author.split_whitespace().collect::<Vec<_>>().join(" ");
+    if original!=attested_one&&original!=attested_other{
+        return Err(StyleError::IdentityMismatch);
+    }
     if work.kind==Kind::AncientSource{
         // Must additionally validate ancient work, edition, translation,
         // explicit passage locator and an SBL abbreviation. Never guess.
@@ -167,9 +183,58 @@ pub fn render_correlated(
         style:style.label(),source_id:work.source_id.clone(),
         bibliography:if bib.ends_with('.') {bib}else{format!("{bib}.")},
         first_note:note,bibliography_identity_corroborated:true,
+        author_identity_corroborated:true,
+        publication_details_verified:false,
         quotation_or_page_verified:false,factual_claim_verified:false,
         coverage:"BASIC_BOOK_JOURNAL_ONLY_REVIEW_REQUIRED",
     })
+}
+
+/// A bounded CSL-JSON-compatible data record; not a CSL rendering engine.
+    /// It exports *only* reviewed fields, preserving provenance and no-page
+    /// honesty. Never serializes page numbers, guesses abbreviations or
+    /// invents article metadata.
+pub fn export_csl_json(
+    ledger:&EvidenceLedger,work:&CatalogWork
+)->Result<serde_json::Value,StyleError>{
+    let _=render_correlated(ledger,work,Style::Chicago18)?;
+    let year=work.year.ok_or(StyleError::MissingField)?;
+    let author=work.authors.iter().map(|a|
+        serde_json::json!({"family":a.family,"given":a.given})).collect::<Vec<_>>();
+    let mut item=serde_json::json!({
+        "id":work.source_id,
+        "type":if work.kind==Kind::Book{"book"}else{"article-journal"},
+        "title":work.title,
+        "URL":work.record_url,
+        "author":author,
+        "issued":{"date-parts":[[year]]},
+        "_lu_evidence":{
+            "source_id":work.source_id,
+            "bibliography_identity_corroborated":true,
+            "author_identity_corroborated":true,
+            "publication_details_verified":false,
+            "quotation_or_page_verified":false,
+            "factual_claim_verified":false
+        }
+    });
+    if let Some(publisher)=&work.publisher{
+        item["publisher"]=serde_json::json!(publisher);
+    }
+    if let Some(place)=&work.publication_place{
+        item["publisher-place"]=serde_json::json!(place);
+    }
+    if work.kind==Kind::JournalArticle{
+        if let Some(journal)=&work.journal{
+            item["container-title"]=serde_json::json!(journal);
+        }
+        if let Some(volume)=&work.volume{
+            item["volume"]=serde_json::json!(volume);
+        }
+        if let Some(issue)=&work.issue{
+            item["issue"]=serde_json::json!(issue);
+        }
+    }
+    Ok(item)
 }
 
 #[cfg(test)]
@@ -226,6 +291,22 @@ mod tests{
         let mut undated=book();undated.year=None;
         assert_eq!(render_correlated(&l,&undated,Style::Mla9),
             Err(StyleError::MissingField));
+    }
+    #[test]
+    fn csl_json_preserves_attested_identity_and_never_invents_locator(){
+        let ledger=verified();let work=book();
+        let json=export_csl_json(&ledger,&work).unwrap();
+        assert_eq!(json["type"],"book");
+        assert_eq!(json["author"][0]["family"],"Doe");
+        assert_eq!(json["issued"]["date-parts"][0][0],2024);
+        assert_eq!(json["_lu_evidence"]["publication_details_verified"],false);
+        assert!(json.get("page").is_none());
+        let mut fake=work.clone();
+        fake.authors[0].family="Impostor".into();
+        assert_eq!(render_correlated(&ledger,&fake,Style::Apa7),
+            Err(StyleError::IdentityMismatch));
+        assert_eq!(export_csl_json(&ledger,&fake),
+            Err(StyleError::IdentityMismatch));
     }
     #[test]
     fn sbl_does_not_invent_journal_abbreviations(){

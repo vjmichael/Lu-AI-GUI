@@ -18,7 +18,7 @@ pub struct DataProvenance {
 impl DataProvenance{
     pub const OBSERVE_LEARN:Self=Self{origin:DataOrigin::ObserveLearn,network_egress_allowed:false};
     pub fn gate(self, destination:Destination)->Result<(),&'static str>{
-        if self.origin==DataOrigin::ObserveLearn && !self.network_egress_allowed
+        if !self.network_egress_allowed
             &&matches!(destination,Destination::NetworkSocket|Destination::NetworkWorker|Destination::RemoteModel|Destination::BrowserNavigation){
             return Err("Observe & Learn content is local-only: network egress denied");
         }
@@ -56,5 +56,15 @@ mod tests{
         assert_eq!(ordinary.joined(DataProvenance::OBSERVE_LEARN),DataProvenance::OBSERVE_LEARN);
         assert_eq!(DataProvenance::OBSERVE_LEARN.joined(ordinary),DataProvenance::OBSERVE_LEARN);
         assert_eq!(ordinary.joined(ordinary),ordinary);
+        // The network-deny bit is an independent policy boundary, even if
+        // the origin is ordinary or an upstream adapter loses a taint label.
+        let restricted=DataProvenance{origin:DataOrigin::OrdinaryUser,network_egress_allowed:false};
+        for destination in [Destination::NetworkSocket,Destination::NetworkWorker,
+            Destination::RemoteModel,Destination::BrowserNavigation]{
+            assert!(restricted.gate(destination).is_err());
+        }
+        assert!(restricted.gate(Destination::LocalInference).is_ok());
+        assert_eq!(ordinary.joined(restricted),restricted);
+        assert_eq!(restricted.joined(ordinary),restricted);
     }
 }
