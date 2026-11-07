@@ -149,3 +149,29 @@ test('P07 bibliography previews all reviewed sources offline, exports with trust
   assert.match(ui,/researchBibliographiesByChat\[chatId\]/);
   assert.match(ui,/publication details remain unverified/i);
 });
+
+test('P07 SBL2 primary-source locator is explicit, bounded, offline and not a verified quote',()=>{
+  const native=read('../src-tauri/src/lib.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(src,/pub fn format_sbl_scripture_reference\(/);
+  assert.match(src,/SBL2_CANONICAL_BIBLE_LOCATOR_ONLY_UNVERIFIED/);
+  assert.match(src,/passage_verified:false,translation_verified:false/);
+  assert.match(src,/bibliographic_entry_required:false/);
+  assert.match(src,/sbl_scripture_locator_formats_only_user_supplied_book_verse_translation/);
+  assert.match(src,/sbl_canonical_book_abbreviation/);
+  assert.match(native,/fn lu_research_sbl_scripture_locator\(/);
+  assert.match(native,/lu_research_sbl_scripture_locator,/);
+  assert.match(ui,/invoke\('lu_research_sbl_scripture_locator'/);
+  assert.match(ui,/SBL2 canonical Scripture locator/);
+  assert.match(ui,/Copy Scripture reference/);
+  assert.match(ui,/This is not a bibliography item or scholarly source attestation/);
+});
+test('P07 reviewed SBL2 secondary abbreviation map and Chicago 18 six-plus author rule remain bounded',()=>{
+  assert.match(src,/pub fn sbl_known_journal_abbreviation\(/);
+  assert.match(src,/Journal of Biblical Literature/);
+  assert.match(src,/Catholic Biblical Quarterly/);
+  assert.match(src,/sbl_small_reviewed_journal_map_never_uses_unreviewed_short_title/);
+  assert.match(src,/p07_chicago18_many_authors_preserves_first_three_before_et_al/);
+  assert.match(src,/Style::Chicago18 if xs\.len\(\)>6/);
+  assert.match(src,/journal_abbreviation=journal\.as_deref\(\)/);
+});
