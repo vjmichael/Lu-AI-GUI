@@ -100,7 +100,7 @@ impl LiveEvent{
                  origin==LiveOrigin::HostAuthenticated &&
                  self.user_turn_id.as_deref().is_some_and(|s|opaque(s,"g-"))),
             LiveKind::ReaderUser=>
-                origin==LiveOrigin::HostAuthenticated&&!self.text.is_empty()&&
+                !self.text.is_empty()&&
                 self.generation_id.is_some()&&self.user_turn_id.is_none()&&
                 self.call_id.is_none()&&self.tool_id.is_none(),
             LiveKind::AssistantFinal=>
