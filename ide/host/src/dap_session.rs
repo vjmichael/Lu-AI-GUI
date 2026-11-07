@@ -238,7 +238,11 @@ impl DapSession {
             .get("seq")
             .and_then(Value::as_u64)
             .ok_or(DapError::InvalidMessage)?;
-        if seq == 0 || seq > MAX_SEQ {
+        // DAP adapter-assigned message sequence values are transport
+        // metadata and may start at zero. Only the separately tracked
+        // positive client request_seq permits a response to be accepted.
+        // Continue to enforce the bounded ceiling for hostile adapters.
+        if seq > MAX_SEQ {
             return Err(DapError::InvalidMessage);
         }
         match obj.get("type").and_then(Value::as_str) {
@@ -359,6 +363,8 @@ impl DapSession {
                     // Outputs and capabilities can contain hostile text/paths.
                     // Do not forward them to WebView or execute adapter commands.
                     "output" | "thread" | "module" | "loadedSource" | "process" | "breakpoint"
+                    | "capabilities" | "invalidated" | "memory"
+                    | "progressStart" | "progressUpdate" | "progressEnd"
                         if !matches!(self.phase, DapPhase::Detached) =>
                     {
                         Ok(None)
@@ -508,6 +514,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn native_adapter_sequence_zero_and_standard_progress_are_not_authority() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        // Several standards-conforming adapters start their own sequence at 0.
+        // That sequence cannot satisfy the independently tracked client ID.
+        let event = framed(json!({
+            "seq":0,"type":"event","event":"progressStart",
+            "body":{"progressId":"test","title":"untrusted output"}
+        }));
+        assert!(session.receive(&event).unwrap().is_empty());
+        let response = framed(json!({
+            "seq":0,"type":"response","request_seq":1,
+            "command":"initialize","success":true
+        }));
+        assert_eq!(session.receive(&response).unwrap(), vec![DapEvent::Initialized]);
+        assert_eq!(session.phase(), DapPhase::AwaitingInitializedEvent);
+        session.receive(&framed(json!({
+            "seq":1,"type":"event","event":"initialized"
+        }))).unwrap();
+        assert_eq!(session.phase(), DapPhase::Ready);
+        // An uncorrelated reply stays rejected even with a legal server seq.
+        assert_eq!(session.receive(&framed(json!({
+            "seq":0,"type":"response","request_seq":0,
+            "command":"threads","success":true
+        }))).unwrap_err(), DapError::UnexpectedResponse);
+        assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
     #[test]
     fn reverse_request_is_quarantined_not_dispatched() {
         let mut s = DapSession::new();
