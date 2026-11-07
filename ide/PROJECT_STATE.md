@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Release Closeout P01–P07 — canonical current phase ledger (November 7, 2026)
+
+**Current active phase: P01 authoritative release-candidate baseline.** Seven phases replace loose "next WO" work. **P07 is expressly DEFERRED until after Lu Core v1.0 and explicit user approval.** The authoritative phase/subtask list, exact-source and native test acceptance, outstanding dependency audits and no-autopromotion policy are in [IDE Release Closeout P01–P07](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md). Phases P02–P06 are sequenced; do not start the next phase until reporting a completed phase and obtaining further user direction.
+
+P01 must combine current `main` and the last nondeferred IDE source from WO9; preserve Lu Core and original Lu workflows/docs, exclude experimental WO10 bridge branch, and keep all source branches and older PRs open until independent comparison. Earlier independent buffer-identity and project-search PRs have missing/nonancestral source; source coverage and exact-head native acceptance are **NOT** assumed complete. WO9 current installed and protected feature CI is red. No installed signed Lu IDE release is approved.
+
+
 ### WO9 exact-head native repair and restart ledger — November 7, 2026 UTC
 
 **PR #75 draft / WO9-D–F:** Real Linux Tauri installed compile exposed `ReviewedStageReceipt: Deserialize` missing (Rust E0277); fixed with strict deserialize. Native frontend schema inspection incorrectly counted injected `coordinator` as a WebView key; repaired. WO9 Win/Linux host Rust and React tests previously passed on exact head `16fb0ad`; newer source changes require fresh runs. Added **opt-in native-build Tauri compilation** on Windows and Ubuntu to close the prior host-only test gap. WO9-E replay security now demotes persisted completed DAG steps to `native_receipt_unverified` after host restart and requires an explicit read-only exact project/job/plan match with the protected WO6 supervisor journal to unlock dependent work. A running/crashed step is quarantined and never auto-runs. Manual signed Windows installed workflow now exercises a slow native Cargo cancellation and installed-host crash/restart with no dependent auto-run; **not real accepted yet** without reviewed signing and independent OS receipts. WO9-F real installed Win/Linux GUI tests and all signed-release gates remain OPEN. [WO9 work ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
