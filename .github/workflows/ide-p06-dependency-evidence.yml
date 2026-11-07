@@ -1,0 +1,97 @@
+name: IDE P06 exact-head dependency graph and upstream license provenance (NOT RELEASE)
+on:
+  pull_request:
+    paths:
+      - 'ide/packaging/verify_p06_*'
+      - 'ide/packaging/test_verify_p06_*'
+      - 'ide/packaging/p06-native-acceptance-matrix.json'
+      - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
+      - '.github/workflows/ide-p06-dependency-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  resolved-dependency-and-notice-evidence:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Require exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Reject forged native approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_verify_p06_acceptance_matrix.py' -v
+          python ide/packaging/verify_p06_acceptance_matrix.py --matrix ide/packaging/p06-native-acceptance-matrix.json
+      - name: Generate actual npm lock without untrusted project scripts
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          test -f package-lock.json
+      - name: Generate actual resolved Cargo graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          test -f ide/app/src-tauri/Cargo.lock
+      - name: Reject resolved Tauri drift and run hostile graph tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          python -m unittest discover -s ide/packaging -p 'test_verify_p06_dependency_graph.py' -v
+      - name: Fetch original six pinned upstream licenses and resolved npm/Cargo texts
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha "$EXACT_SHA" --output ide/app/src-tauri/p06-upstream-receipt.json
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/p06-notices --source-sha "$EXACT_SHA" --upstream-receipt ide/app/src-tauri/p06-upstream-receipt.json
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/p06-notices --source-sha "$EXACT_SHA" --require-upstream
+      - name: Hash resolved npm/Cargo graphs and license source evidence
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python ide/packaging/verify_p06_dependency_graph.py --repo-root . --source-sha "$EXACT_SHA" --license-root ide/app/src-tauri/p06-notices --output ide/app/src-tauri/p06-dependency-evidence.json
+          echo 'P06_SOURCE_EVIDENCE_ONLY_NOT_SIGNED_OR_INSTALLED_ACCEPTANCE'
+      - name: Retain exact generated locks, upstream notices and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-p06-resolved-locks-${{ matrix.os }}-unapproved
+          path: |
+            ide/app/package-lock.json
+            ide/app/src-tauri/Cargo.lock
+            ide/app/src-tauri/p06-upstream-receipt.json
+            ide/app/src-tauri/p06-notices/**
+            ide/app/src-tauri/p06-dependency-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
