@@ -55,5 +55,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'P07 native Research host compiler failed' }
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart -- --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'P07 installed-host offline bibliography restart test failed' }
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p07_catalog_revision_reopens_offline_and_rejects_stale_human_consent -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'P07 native revision-restart/stale-consent test failed' }
       - name: Verify no model fabricated citations or academic locator claims
         run: node --test lu-desktop/tests/p07-research-styles.test.mjs
