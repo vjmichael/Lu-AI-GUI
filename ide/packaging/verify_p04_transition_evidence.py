@@ -63,12 +63,22 @@ def evaluate(document, exact_head):
             raise Denied("user_catalog_or_source_changed")
         if ((row["oldInstallerSha256"].lower() != row["newInstallerSha256"].lower()) != changing):
             raise Denied("same_version_misreported_as_upgrade_or_wrong_reinstall_identity")
-        if row.get("beforeVersion") == row.get("afterVersion") and changing:
-            raise Denied("upgrade_must_change_real_version")
-        if (not isinstance(row.get("beforeVersion"), str) or
-                not isinstance(row.get("afterVersion"), str) or
-                not row["beforeVersion"] or not row["afterVersion"]):
-            raise Denied("unidentified_installed_versions")
+        for key in ("beforeVersion", "afterVersion"):
+            if not isinstance(row.get(key), str) or not row[key]:
+                raise Denied("unidentified_installed_versions")
+        if changing:
+            if not isinstance(row.get("attemptedVersion"), str) or (
+                    not row["attemptedVersion"] or row["attemptedVersion"] == row["beforeVersion"]):
+                raise Denied("upgrade_attempt_must_change_version")
+            if "rollback" in gate:
+                if row["afterVersion"] != row["beforeVersion"]:
+                    raise Denied("rollback_did_not_restore_old_version")
+                if row.get("restoredInstallerSha256") != row["oldInstallerSha256"]:
+                    raise Denied("rollback_did_not_restore_original_signed_candidate")
+            elif row["afterVersion"] != row["attemptedVersion"]:
+                raise Denied("upgrade_result_version_not_observed")
+        elif row["afterVersion"] != row["beforeVersion"]:
+            raise Denied("reinstall_changed_version")
         if row.get("signedAndReviewed") is not True or row.get("processTreeEmpty") is not True:
             raise Denied("unverified_package_or_os_cleanup")
         if row.get("noAutomaticReplay") is not True or row.get("protectedServiceRemoved") is not True:
