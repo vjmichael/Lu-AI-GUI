@@ -56,7 +56,8 @@ const tests = [
     host.includes('--lu-observe-foreground-one-shot') &&
     ui.includes("if(action==='pause'||action==='stop'){") &&
     ui.includes('setCaptureTaskId(null);setCaptureReceipt(null)') &&
-    ui.includes('Both paths fully blank the captured frame; neither sends pixels to the model.') &&
+    ui.includes('Receipt-only capture fully blanks the frame.') &&
+    ui.includes('Separate user-approved local-GGUF image modes retain one private bounded frame') &&
     ui.includes('Entire captured frame was blanked before receipt output.') &&
     ui.includes('Attach approved frame to this local multimodal chat') &&
     ui.includes('Capture primary display for local GGUF image') &&
