@@ -14,6 +14,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 **Revocation/recovery:** Fixed a real uncertainty case where ObserveHost revoked consent but discarded session/task identity before a cancelled observation receipt was safely persisted. Native `reconcile_revoked` holds old task/worker custody, purges volatile awareness immediately, retries OS reaping and SQL terminal receipt from the watchdog/status/start paths, and prevents unconsented session renewal while cleanup is pending. Added regression for source-only recovery; interactive installed crash/restart remains OPEN.
 
+**CI convergence:** The overlapping historic Observe workflow was updated to use an actual frontend dependency install (no absent npm lockfile) and native host code compilation without fake llama binaries. The existing WGC worker still builds from pinned Rust sources; no phantom engine load, NSIS install or observed app run is counted as PASS. Same exact-head CI/physical gates stay OPEN.
+
 **Still outstanding:** current-head Windows WGC/desktop CI and failure repair; physical installed NSIS and native WGC/interactive UIA acceptance; generic picker source attribution, independent sensitive-area detection/redaction for meaningful image previews, real low-resource resident model lane and verified installed GUI test receipts. No P07 work. Detailed [P06 gap notes](LU_P06_OBSERVE_PRIVACY.md).
 
 ## P06 OBSERVE-PRIVACY-01 — owner-authorized privacy closeout source (2026-11-06)
