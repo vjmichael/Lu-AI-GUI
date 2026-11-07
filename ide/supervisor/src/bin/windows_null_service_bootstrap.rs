@@ -24,8 +24,8 @@ mod native {
             AclSizeInformation,
             Authorization::{
                 ConvertStringSidToSidW, GetSecurityInfo, SetEntriesInAclW, SetSecurityInfo,
-                EXPLICIT_ACCESS_W, GRANT_ACCESS, REVOKE_ACCESS, SE_KERNEL_OBJECT,
-                TRUSTEE_IS_SID, TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
+                EXPLICIT_ACCESS_W, GRANT_ACCESS, REVOKE_ACCESS, SE_KERNEL_OBJECT, TRUSTEE_IS_SID,
+                TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
             },
             CheckTokenMembership, EqualSid, GetAce, GetAclInformation, IsValidSid,
             ACCESS_ALLOWED_ACE, ACL, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, PSID,
@@ -39,27 +39,42 @@ mod native {
     const FILE_SHARE_WRITE: u32 = 2;
     const DEVICE: &str = r"\\.\NUL";
 
-    fn denied() -> String { "DENIED: service-only NUL security provisioning".into() }
+    fn denied() -> String {
+        "DENIED: service-only NUL security provisioning".into()
+    }
     struct Sid(PSID);
     impl Drop for Sid {
         fn drop(&mut self) {
-            if !self.0.is_null() { unsafe { LocalFree(self.0); } }
+            if !self.0.is_null() {
+                unsafe {
+                    LocalFree(self.0);
+                }
+            }
         }
     }
     struct Handle(HANDLE);
     impl Drop for Handle {
-        fn drop(&mut self) { unsafe { CloseHandle(self.0); } }
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
     }
     struct Local(*mut c_void);
     impl Drop for Local {
         fn drop(&mut self) {
-            if !self.0.is_null() { unsafe { LocalFree(self.0); } }
+            if !self.0.is_null() {
+                unsafe {
+                    LocalFree(self.0);
+                }
+            }
         }
     }
     fn parse_sid(value: &str) -> Result<Sid, String> {
         let mut sid = ptr::null_mut();
         if unsafe { ConvertStringSidToSidW(ws(value).as_ptr(), &mut sid) } == 0
-            || sid.is_null() || unsafe { IsValidSid(sid) } == 0
+            || sid.is_null()
+            || unsafe { IsValidSid(sid) } == 0
         {
             return Err(denied());
         }
@@ -87,20 +102,33 @@ mod native {
                 ptr::null_mut(),
             )
         };
-        if raw.is_null() || raw == INVALID_HANDLE_VALUE { Err(denied()) } else { Ok(Handle(raw)) }
+        if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+            Err(denied())
+        } else {
+            Ok(Handle(raw))
+        }
     }
     fn with_acl<T>(
-        handle: HANDLE, callback: impl FnOnce(*mut ACL) -> Result<T, String>,
+        handle: HANDLE,
+        callback: impl FnOnce(*mut ACL) -> Result<T, String>,
     ) -> Result<T, String> {
         let mut acl = ptr::null_mut();
         let mut descriptor = ptr::null_mut();
         if unsafe {
             GetSecurityInfo(
-                handle, SE_KERNEL_OBJECT as i32, DACL_SECURITY_INFORMATION,
-                ptr::null_mut(), ptr::null_mut(), &mut acl,
-                ptr::null_mut(), &mut descriptor,
+                handle,
+                SE_KERNEL_OBJECT as i32,
+                DACL_SECURITY_INFORMATION,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut acl,
+                ptr::null_mut(),
+                &mut descriptor,
             )
-        } != 0 || descriptor.is_null() || acl.is_null() {
+        } != 0
+            || descriptor.is_null()
+            || acl.is_null()
+        {
             return Err(denied());
         }
         let _owner = Local(descriptor);
@@ -110,23 +138,30 @@ mod native {
         let mut info = ACL_SIZE_INFORMATION::default();
         if unsafe {
             GetAclInformation(
-                acl, (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-                size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation,
+                acl,
+                (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+                size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
             )
-        } == 0 { return Err(denied()); }
+        } == 0
+        {
+            return Err(denied());
+        }
         let mut matched = None;
         for index in 0..info.AceCount {
             let mut ptr_ace = ptr::null_mut();
-            if unsafe { GetAce(acl, index, &mut ptr_ace) } == 0
-                || ptr_ace.is_null()
-            { return Err(denied()); }
+            if unsafe { GetAce(acl, index, &mut ptr_ace) } == 0 || ptr_ace.is_null() {
+                return Err(denied());
+            }
             let ace = unsafe { &*(ptr_ace as *const ACCESS_ALLOWED_ACE) };
             if ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
                 continue;
             }
             // A deny-ACE collision is treated as a non-adoptable policy; a
             // broad/unknown ACE type is never reinterpreted as grantable.
-            if ace.Header.AceType != 0 && ace.Header.AceType != 1 { continue; }
+            if ace.Header.AceType != 0 && ace.Header.AceType != 1 {
+                continue;
+            }
             let sid = (&ace.SidStart as *const u32).cast_mut().cast::<c_void>();
             if unsafe { EqualSid(sid, service) } != 0 {
                 if matched.is_some() || ace.Header.AceType != 0 {
@@ -152,16 +187,24 @@ mod native {
                 },
             };
             let mut next = ptr::null_mut();
-            if unsafe { SetEntriesInAclW(1, &mut entry, acl, &mut next) } != 0
-                || next.is_null()
-            { return Err(denied()); }
+            if unsafe { SetEntriesInAclW(1, &mut entry, acl, &mut next) } != 0 || next.is_null() {
+                return Err(denied());
+            }
             let _new_acl = Local(next.cast());
             if unsafe {
                 SetSecurityInfo(
-                    handle, SE_KERNEL_OBJECT as i32, DACL_SECURITY_INFORMATION,
-                    ptr::null_mut(), ptr::null_mut(), next, ptr::null_mut(),
+                    handle,
+                    SE_KERNEL_OBJECT as i32,
+                    DACL_SECURITY_INFORMATION,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    next,
+                    ptr::null_mut(),
                 )
-            } != 0 { return Err(denied()); }
+            } != 0
+            {
+                return Err(denied());
+            }
             Ok(())
         })
     }
@@ -169,24 +212,36 @@ mod native {
         // No project-selected device path, operation, SID, executable or
         // caller-provided policy is ever accepted by this privileged tool.
         let args: Vec<String> = std::env::args().skip(1).collect();
-        if args.len() != 1 || !matches!(
-            args[0].as_str(),
-            "--grant-fixed-service" | "--verify-fixed-service" | "--revoke-fixed-service"
-        ) { return Err(denied()); }
+        if args.len() != 1
+            || !matches!(
+                args[0].as_str(),
+                "--grant-fixed-service" | "--verify-fixed-service" | "--revoke-fixed-service"
+            )
+        {
+            return Err(denied());
+        }
         let writable = args[0] != "--verify-fixed-service";
-        if writable { must_be_elevated_admin()?; }
+        if writable {
+            must_be_elevated_admin()?;
+        }
         let sid_text = sid_of_service().map_err(|_| denied())?;
-        if !sid_text.starts_with("S-1-5-80-") { return Err(denied()); }
+        if !sid_text.starts_with("S-1-5-80-") {
+            return Err(denied());
+        }
         let sid = parse_sid(&sid_text)?;
         let device = open_device(writable)?;
         let was = with_acl(device.0, |acl| find_exact_service_ace(acl, sid.0))?;
         match args[0].as_str() {
             "--grant-fixed-service" => {
-                if was.is_none() { change(device.0, sid.0, GRANT_ACCESS)?; }
+                if was.is_none() {
+                    change(device.0, sid.0, GRANT_ACCESS)?;
+                }
             }
             "--revoke-fixed-service" => {
                 if was.is_some() {
-                    if was != Some(SERVICE_PERMISSIONS) { return Err(denied()); }
+                    if was != Some(SERVICE_PERMISSIONS) {
+                        return Err(denied());
+                    }
                     change(device.0, sid.0, REVOKE_ACCESS)?;
                 }
             }
@@ -199,7 +254,9 @@ mod native {
         } else {
             Some(SERVICE_PERMISSIONS)
         };
-        if observed != expected { return Err(denied()); }
+        if observed != expected {
+            return Err(denied());
+        }
         println!("PASS: exact Lu IDE service NUL DACL authority verified (no broad package ACE)");
         Ok(())
     }
