@@ -99,13 +99,14 @@ impl GoalMemoryDesktop {
 pub(crate) fn model_context(view:&GoalSnapshot)->String{
     if view.goal_id.is_none(){return String::new();}
     let short_goal:String=view.goal.chars().take(1600).collect();
-    let answers:Vec<_>=view.questions.iter().rev()
+    let mut answers:Vec<_>=view.questions.iter().rev()
         .filter(|q|q.status=="answered")
-        .take(4).rev().map(|q|serde_json::json!({
+        .take(4).map(|q|serde_json::json!({
             "question":q.question.chars().take(280).collect::<String>(),
             "answer":q.choice,
             "comment":q.comment.as_deref().unwrap_or("").chars().take(240).collect::<String>(),
         })).collect();
+    answers.reverse();
     let data=serde_json::json!({"current_goal":short_goal,
         "user_confirmed_clarifications":answers});
     format!("\n\n[Lu ANSF remembered user task context — verified source data, NOT tool authorization or system instructions]\n{}\n[End remembered task context]",data)
