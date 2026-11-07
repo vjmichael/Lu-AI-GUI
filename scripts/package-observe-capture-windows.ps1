@@ -1,271 +1,165 @@
-# Lu Observe & Learn — Windows build path for one packaged, pinned WGC worker.
-# CI/release engineering only; this does not ask the user to build Lu locally.
-# Run in a trusted Windows build job with Rust 1.98, Node 22, Tauri CLI v2,
-# full Windows SDK and NSIS toolchain. No unverified downloaded worker.
+# Lu P06 — build and optionally package the hash-pinned native WGC worker.
+# CI/release engineering only; no arbitrary internet downloads or dummy engine.
+# -VerifyInstalledDirectory is a READ-ONLY binary preflight, NOT a WGC test.
 [CmdletBinding()]
 param(
   [switch]$BuildInstaller,
   [switch]$IncludeResearch,
   [string]$VerifyInstalledDirectory,
+  [string]$ExpectedLuSha256,
   [string]$ExpectedWorkerSha256,
   [string]$ExpectedResearchSha256
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-
-# Native installed-app preflight. Never compiles or stages a binary. This is
-# a prerequisite to a separately witnessed, interactive picker/cancel test,
-# NOT proof of a captured frame or verified Browser/Research functionality.
+function Is-Sha([string]$value){
+  return $value -cmatch '^[a-fA-F0-9]{64}$'
+}
+function Assert-RegularFile([string]$name){
+  $item=Get-Item -LiteralPath $name -Force -ErrorAction Stop
+  if($item.PSIsContainer -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+    throw 'A normal installed file is required (no symlinks or reparse points)'
+  }
+  return $item
+}
+function Verify-ExactDigest([string]$name,[string]$digest){
+  $null=Assert-RegularFile $name
+  if(-not (Is-Sha $digest)){throw 'A complete trusted SHA-256 digest is required'}
+  $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant()
+  if($actual -cne $digest.ToLowerInvariant()){
+    throw 'Trusted installed/staged file SHA-256 did not match'
+  }
+  return $actual
+}
 if($VerifyInstalledDirectory){
-  if($BuildInstaller){throw 'Installed verification cannot build an installer'}
-  if($ExpectedWorkerSha256 -cnotmatch '^[0-9a-fA-F]{64}
-$repo=Split-Path -Parent $PSScriptRoot
-$workerManifest=Join-Path $repo 'src-tauri/lu-observe-capture-worker/Cargo.toml'
-$workerExe=Join-Path $repo 'src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
-$desktopDir=Join-Path $repo 'lu-desktop'
-$tauriDir=Join-Path $desktopDir 'src-tauri'
-$stage=Join-Path $tauriDir 'resources/lu-observe-capture-worker.exe'
-$overlay=Join-Path $tauriDir 'tauri.observe.capture.conf.json'
-
-if($IncludeResearch -and -not $BuildInstaller){
-  throw 'Research installer integration requires -BuildInstaller'
-}
-if(-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-  throw 'A trusted Windows Rust/Cargo toolchain is required'
-}
-if(-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  throw 'Node/npm is required to build the Lu desktop'
-}
-
-# Build the actual WGC picker/D3D11 frame worker. Always use a pinned manifest.
-& cargo build --release --manifest-path $workerManifest
-if($LASTEXITCODE -ne 0){throw 'Windows Graphics Capture worker compile failed'}
-if(-not (Test-Path -LiteralPath $workerExe -PathType Leaf)){
-  throw 'Compiled Windows capture worker missing'
-}
-
-# Native host embeds this digest. Native supervisor independently hashes the
-# installed executable before launching. A mismatch must fail closed.
-$digest=(Get-FileHash -LiteralPath $workerExe -Algorithm SHA256).Hash.ToLowerInvariant()
-if($digest -notmatch '^[0-9a-f]{64}$'){throw 'Invalid capture worker digest'}
-New-Item -ItemType Directory -Path (Split-Path -Parent $stage) -Force | Out-Null
-Copy-Item -LiteralPath $workerExe -Destination $stage -Force
-$stagedDigest=(Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash.ToLowerInvariant()
-if($stagedDigest -cne $digest){throw 'Staged capture worker digest mismatch'}
-$env:LU_OBSERVE_CAPTURE_WORKER_SHA256=$digest
-
-Push-Location $desktopDir
-try {
-  & npm ci
-  if($LASTEXITCODE -ne 0){throw 'Lu dependencies could not be restored'}
-  & npm run build
-  if($LASTEXITCODE -ne 0){throw 'Lu frontend build failed'}
-}
-finally {Pop-Location}
-
-if($BuildInstaller){
-  # Tauri CLI must run from the actual lu-desktop project root. Running it
-  # from the repository root resolves the wrong src-tauri directory.
-  # Build a single opt-in overlay so WGC and Research can ship together.
-  $bundleOverlay=$overlay
-  $temporaryOverlay=$null
-  try {
-    if($IncludeResearch){
-      & (Join-Path $repo 'scripts/stage-research-windows.ps1')
-      if($LASTEXITCODE -and $LASTEXITCODE -ne 0){
-        throw 'Trusted Research HTTPS client staging failed'
-      }
-      $researchOverlay=Join-Path $tauriDir 'tauri.research.conf.json'
-      $captureConfig=Get-Content -LiteralPath $overlay -Raw | ConvertFrom-Json
-      $researchConfig=Get-Content -LiteralPath $researchOverlay -Raw | ConvertFrom-Json
-      foreach($property in $researchConfig.bundle.resources.PSObject.Properties){
-        if($captureConfig.bundle.resources.PSObject.Properties[$property.Name]){
-          throw 'Duplicate resource destination in combined installer'
-        }
-        $captureConfig.bundle.resources |
-          Add-Member -MemberType NoteProperty -Name $property.Name -Value $property.Value
-      }
-      $temporaryOverlay=Join-Path $tauriDir 'tauri.observe.research.generated.conf.json'
-      $captureConfig | ConvertTo-Json -Depth 10 |
-        Set-Content -LiteralPath $temporaryOverlay -Encoding utf8
-      $bundleOverlay=$temporaryOverlay
-    }
-    Push-Location $desktopDir
-    try {
-      # --config merge-patches resource mappings into the baseline Lu NSIS
-      # bundle. This path builds the actual desktop app, not test placeholders.
-      & cargo tauri build --ci --config $bundleOverlay
-      if($LASTEXITCODE -ne 0){throw 'Lu NSIS build with trusted resources failed'}
-    } finally {Pop-Location}
-  } finally {
-    if($temporaryOverlay -and (Test-Path -LiteralPath $temporaryOverlay)){
-      Remove-Item -LiteralPath $temporaryOverlay -Force
-    }
+  if($BuildInstaller -or $IncludeResearch){
+    throw 'Read-only installed verification cannot compile, stage or install software'
   }
-}else{
-  & cargo build --release --locked --manifest-path (Join-Path $tauriDir 'Cargo.toml')
-  if($LASTEXITCODE -ne 0){throw 'Lu desktop native host build failed'}
-  # Non-installer desktop binary has to be next to the pinned worker.
-  $appExe=Join-Path $tauriDir 'target/release/lu-desktop.exe'
-  if(Test-Path -LiteralPath $appExe -PathType Leaf){
-    Copy-Item -LiteralPath $workerExe -Destination (Join-Path (Split-Path -Parent $appExe) 'lu-observe-capture-worker.exe') -Force
-  }
-}
-Write-Output ("Lu Windows Graphics Capture build complete. Verified worker SHA-256: "+$digest)
-Write-Output 'This build path does not by itself prove physical Windows picker/GUI acceptance.'
-){
-    throw 'Expected worker SHA-256 from trusted CI artifact is required'
+  if(-not (Is-Sha $ExpectedLuSha256) -or -not (Is-Sha $ExpectedWorkerSha256)){
+    throw 'Reviewed exact Lu.exe and WGC worker SHA-256 digests are mandatory'
   }
   $dir=(Resolve-Path -LiteralPath $VerifyInstalledDirectory -ErrorAction Stop).Path
-  $checks=@{
-    'Lu.exe'=$null
-    'lu-observe-capture-worker.exe'=$ExpectedWorkerSha256
+  $verified=@()
+  foreach($entry in @(
+    @{name='Lu.exe';expected=$ExpectedLuSha256},
+    @{name='lu-observe-capture-worker.exe';expected=$ExpectedWorkerSha256}
+  )){
+    $candidate=Join-Path $dir $entry.name
+    $item=Assert-RegularFile $candidate
+    $digest=Verify-ExactDigest $candidate $entry.expected
+    $verified+=@{name=$entry.name;sha256=$digest;bytes=$item.Length}
   }
   if($ExpectedResearchSha256){
-    if($ExpectedResearchSha256 -cnotmatch '^[0-9a-fA-F]{64}
-$repo=Split-Path -Parent $PSScriptRoot
-$workerManifest=Join-Path $repo 'src-tauri/lu-observe-capture-worker/Cargo.toml'
-$workerExe=Join-Path $repo 'src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
-$desktopDir=Join-Path $repo 'lu-desktop'
-$tauriDir=Join-Path $desktopDir 'src-tauri'
-$stage=Join-Path $tauriDir 'resources/lu-observe-capture-worker.exe'
-$overlay=Join-Path $tauriDir 'tauri.observe.capture.conf.json'
-
-if(-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-  throw 'A trusted Windows Rust/Cargo toolchain is required'
-}
-if(-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  throw 'Node/npm is required to build the Lu desktop'
-}
-
-# Build the actual WGC picker/D3D11 frame worker. Always use a pinned manifest.
-& cargo build --release --manifest-path $workerManifest
-if($LASTEXITCODE -ne 0){throw 'Windows Graphics Capture worker compile failed'}
-if(-not (Test-Path -LiteralPath $workerExe -PathType Leaf)){
-  throw 'Compiled Windows capture worker missing'
-}
-
-# Native host embeds this digest. Native supervisor independently hashes the
-# installed executable before launching. A mismatch must fail closed.
-$digest=(Get-FileHash -LiteralPath $workerExe -Algorithm SHA256).Hash.ToLowerInvariant()
-if($digest -notmatch '^[0-9a-f]{64}$'){throw 'Invalid capture worker digest'}
-New-Item -ItemType Directory -Path (Split-Path -Parent $stage) -Force | Out-Null
-Copy-Item -LiteralPath $workerExe -Destination $stage -Force
-$stagedDigest=(Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash.ToLowerInvariant()
-if($stagedDigest -cne $digest){throw 'Staged capture worker digest mismatch'}
-$env:LU_OBSERVE_CAPTURE_WORKER_SHA256=$digest
-
-Push-Location $desktopDir
-try {
-  & npm ci
-  if($LASTEXITCODE -ne 0){throw 'Lu dependencies could not be restored'}
-  & npm run build
-  if($LASTEXITCODE -ne 0){throw 'Lu frontend build failed'}
-}
-finally {Pop-Location}
-
-if($BuildInstaller){
-  # --config is RFC7396 merge-patched into the baseline Tauri config,
-  # including the original inference DLLs and all other bundle resources.
-  & cargo tauri build --ci --config $overlay
-  if($LASTEXITCODE -ne 0){throw 'Lu NSIS build with capture worker failed'}
-}else{
-  & cargo build --release --locked --manifest-path (Join-Path $tauriDir 'Cargo.toml')
-  if($LASTEXITCODE -ne 0){throw 'Lu desktop native host build failed'}
-  # Non-installer desktop binary has to be next to the pinned worker.
-  $appExe=Join-Path $tauriDir 'target/release/lu-desktop.exe'
-  if(Test-Path -LiteralPath $appExe -PathType Leaf){
-    Copy-Item -LiteralPath $workerExe -Destination (Join-Path (Split-Path -Parent $appExe) 'lu-observe-capture-worker.exe') -Force
-  }
-}
-Write-Output ("Lu Windows Graphics Capture build complete. Verified worker SHA-256: "+$digest)
-Write-Output 'This build path does not by itself prove physical Windows picker/GUI acceptance.'
-){
-      throw 'Invalid trusted Research client SHA-256'
-    }
-    $checks['lu-research/curl.exe']=$ExpectedResearchSha256
-  }
-  $verified=@()
-  foreach($name in ($checks.Keys | Sort-Object)){
-    $candidate=Join-Path $dir $name
-    $item=Get-Item -LiteralPath $candidate -ErrorAction Stop
-    if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){
-      throw "Installed entry is not a regular file: $name"
-    }
-    $digest=(Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
-    if($checks[$name] -and $digest -cne $checks[$name].ToLowerInvariant()){
-      throw "Installed binary differs from trusted build: $name"
-    }
-    $verified+=@{ name=$name;sha256=$digest;bytes=$item.Length }
+    $candidate=Join-Path $dir 'lu-research/curl.exe'
+    $item=Assert-RegularFile $candidate
+    $digest=Verify-ExactDigest $candidate $ExpectedResearchSha256
+    $verified+=@{name='lu-research/curl.exe';sha256=$digest;bytes=$item.Length}
   }
   [pscustomobject]@{
-    schema=1
+    schema=2
     stage='installed-binary-preflight'
-    status='PASS'
-    captureFrameVerified=$false
-    pickerCancellationVerified=$false
-    desktopBrowserVerified=$false
-    researchNetworkVerified=$false
-    installDirectory=$dir
+    verifiedBinaryDigests='PASS'
+    nativeGuiLaunch='NOT_TESTED'
+    wgcPicker='NOT_TESTED'
+    sensitiveRedaction='NOT_TESTED'
+    installedNsisCycle='NOT_TESTED'
+    modelVision='NOT_TESTED'
     files=$verified
-  } | ConvertTo-Json -Depth 5
+  } | ConvertTo-Json -Depth 6
   return
 }
+if($ExpectedLuSha256){throw '-ExpectedLuSha256 is for installed-binary verification only'}
+if($IncludeResearch -and -not $BuildInstaller){
+  throw 'Research resource combination requires an actual NSIS installer build'
+}
+if($ExpectedWorkerSha256 -and -not (Is-Sha $ExpectedWorkerSha256)){
+  throw 'Expected Windows WGC worker SHA-256 is invalid'
+}
+if($ExpectedResearchSha256 -and -not (Is-Sha $ExpectedResearchSha256)){
+  throw 'Expected Research binary SHA-256 is invalid'
+}
+if(-not (Get-Command cargo -ErrorAction SilentlyContinue)){
+  throw 'Trusted Windows Cargo/Rust toolchain required'
+}
+if(-not (Get-Command npm -ErrorAction SilentlyContinue)){
+  throw 'Node/npm is required for the native Lu frontend'
+}
 $repo=Split-Path -Parent $PSScriptRoot
-$workerManifest=Join-Path $repo 'src-tauri/lu-observe-capture-worker/Cargo.toml'
-$workerExe=Join-Path $repo 'src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
-$desktopDir=Join-Path $repo 'lu-desktop'
-$tauriDir=Join-Path $desktopDir 'src-tauri'
-$stage=Join-Path $tauriDir 'resources/lu-observe-capture-worker.exe'
-$overlay=Join-Path $tauriDir 'tauri.observe.capture.conf.json'
-
-if(-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-  throw 'A trusted Windows Rust/Cargo toolchain is required'
+$desktop=Join-Path $repo 'lu-desktop'
+$tauri=Join-Path $desktop 'src-tauri'
+$manifest=Join-Path $repo 'src-tauri/lu-observe-capture-worker/Cargo.toml'
+$worker=Join-Path $repo 'src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
+$staged=Join-Path $tauri 'resources/lu-observe-capture-worker.exe'
+$overlay=Join-Path $tauri 'tauri.observe.capture.conf.json'
+if($env:OS -ne 'Windows_NT'){throw 'Native WGC worker build requires Windows'}
+$null=Assert-RegularFile $manifest
+$null=Assert-RegularFile $overlay
+# No default Docker, shell-installed helper, fake hash, or downloaded worker.
+& cargo build --release --manifest-path $manifest
+if($LASTEXITCODE -ne 0){throw 'Native Windows WGC worker build failed'}
+$null=Assert-RegularFile $worker
+$digest=(Get-FileHash -Algorithm SHA256 -LiteralPath $worker).Hash.ToLowerInvariant()
+if($ExpectedWorkerSha256 -and $digest -cne $ExpectedWorkerSha256.ToLowerInvariant()){
+  throw 'Built worker differs from the independently reviewed worker digest'
 }
-if(-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  throw 'Node/npm is required to build the Lu desktop'
-}
-
-# Build the actual WGC picker/D3D11 frame worker. Always use a pinned manifest.
-& cargo build --release --manifest-path $workerManifest
-if($LASTEXITCODE -ne 0){throw 'Windows Graphics Capture worker compile failed'}
-if(-not (Test-Path -LiteralPath $workerExe -PathType Leaf)){
-  throw 'Compiled Windows capture worker missing'
-}
-
-# Native host embeds this digest. Native supervisor independently hashes the
-# installed executable before launching. A mismatch must fail closed.
-$digest=(Get-FileHash -LiteralPath $workerExe -Algorithm SHA256).Hash.ToLowerInvariant()
-if($digest -notmatch '^[0-9a-f]{64}$'){throw 'Invalid capture worker digest'}
-New-Item -ItemType Directory -Path (Split-Path -Parent $stage) -Force | Out-Null
-Copy-Item -LiteralPath $workerExe -Destination $stage -Force
-$stagedDigest=(Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash.ToLowerInvariant()
-if($stagedDigest -cne $digest){throw 'Staged capture worker digest mismatch'}
+New-Item -ItemType Directory -Path (Split-Path -Parent $staged) -Force | Out-Null
+Copy-Item -LiteralPath $worker -Destination $staged -Force
+$null=Verify-ExactDigest $staged $digest
 $env:LU_OBSERVE_CAPTURE_WORKER_SHA256=$digest
-
-Push-Location $desktopDir
-try {
-  & npm ci
-  if($LASTEXITCODE -ne 0){throw 'Lu dependencies could not be restored'}
+Push-Location $desktop
+try{
+  # This project has no checked-in npm package-lock.json. npm ci cannot run.
+  & npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+  if($LASTEXITCODE -ne 0){throw 'Lu frontend dependencies unavailable'}
   & npm run build
-  if($LASTEXITCODE -ne 0){throw 'Lu frontend build failed'}
-}
-finally {Pop-Location}
-
+  if($LASTEXITCODE -ne 0){throw 'Lu actual React frontend build failed'}
+}finally{Pop-Location}
+$temporary=$null
 if($BuildInstaller){
-  # --config is RFC7396 merge-patched into the baseline Tauri config,
-  # including the original inference DLLs and all other bundle resources.
-  & cargo tauri build --ci --config $overlay
-  if($LASTEXITCODE -ne 0){throw 'Lu NSIS build with capture worker failed'}
-}else{
-  & cargo build --release --locked --manifest-path (Join-Path $tauriDir 'Cargo.toml')
-  if($LASTEXITCODE -ne 0){throw 'Lu desktop native host build failed'}
-  # Non-installer desktop binary has to be next to the pinned worker.
-  $appExe=Join-Path $tauriDir 'target/release/lu-desktop.exe'
-  if(Test-Path -LiteralPath $appExe -PathType Leaf){
-    Copy-Item -LiteralPath $workerExe -Destination (Join-Path (Split-Path -Parent $appExe) 'lu-observe-capture-worker.exe') -Force
+  $bundleOverlay=$overlay
+  try{
+    if($IncludeResearch){
+      $researchScript=Join-Path $repo 'scripts/stage-research-windows.ps1'
+      $null=Assert-RegularFile $researchScript
+      & $researchScript
+      if($LASTEXITCODE -and $LASTEXITCODE -ne 0){
+        throw 'Reviewed Research runtime staging failed'
+      }
+      $researchOverlay=Join-Path $tauri 'tauri.research.conf.json'
+      $capture=Get-Content -LiteralPath $overlay -Raw | ConvertFrom-Json
+      $research=Get-Content -LiteralPath $researchOverlay -Raw | ConvertFrom-Json
+      foreach($property in $research.bundle.resources.PSObject.Properties){
+        if($capture.bundle.resources.PSObject.Properties[$property.Name]){
+          throw 'Duplicate destination resource in combined WGC/Research overlay'
+        }
+        $capture.bundle.resources |
+          Add-Member -MemberType NoteProperty -Name $property.Name -Value $property.Value
+      }
+      $temporary=Join-Path $tauri 'tauri.observe.research.generated.conf.json'
+      $capture|ConvertTo-Json -Depth 30 |
+        Set-Content -LiteralPath $temporary -Encoding UTF8
+      $bundleOverlay=$temporary
+    }
+    Push-Location $desktop
+    try{
+      # The actual NSIS packaging toolchain and pinned inference resources
+      # must exist independently; no inert placeholders are acceptable.
+      & cargo tauri build --ci --config $bundleOverlay
+      if($LASTEXITCODE -ne 0){throw 'Actual NSIS packaging build failed'}
+    }finally{Pop-Location}
+  }finally{
+    if($temporary -and (Test-Path -LiteralPath $temporary)){
+      Remove-Item -LiteralPath $temporary -Force
+    }
   }
+}else{
+  & cargo build --release --locked --manifest-path (Join-Path $tauri 'Cargo.toml')
+  if($LASTEXITCODE -ne 0){throw 'Lu native desktop compile failed'}
+  $app=Join-Path $tauri 'target/release/lu-desktop.exe'
+  $null=Assert-RegularFile $app
+  $destination=Join-Path (Split-Path -Parent $app) 'lu-observe-capture-worker.exe'
+  Copy-Item -LiteralPath $worker -Destination $destination -Force
+  $null=Verify-ExactDigest $destination $digest
 }
-Write-Output ("Lu Windows Graphics Capture build complete. Verified worker SHA-256: "+$digest)
-Write-Output 'This build path does not by itself prove physical Windows picker/GUI acceptance.'
+Write-Output ("Compiled Windows WGC worker, verified SHA-256: "+$digest)
+Write-Output 'This build and binary check DO NOT prove installed/interactive WGC, GUI or model acceptance.'
