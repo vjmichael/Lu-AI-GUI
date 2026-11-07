@@ -221,18 +221,21 @@ function App() {
       try {
         const debug = await invoke('ide_debug_status', { projectId });
         if (alive && activeProjectIdRef.current === projectId &&
-            debug && typeof debug.ready === 'boolean')
+            debug && typeof debug.ready === 'boolean' &&
+            Array.isArray(debug.journal) && Array.isArray(debug.quarantined))
           setDebugStatus(debug);
       } catch {
         if (alive && activeProjectIdRef.current === projectId)
           setDebugStatus({ ready:false, code:'DEBUG_HOST_UNAVAILABLE',
-            description:'Protected debugger status unavailable', current:null, last:null });
+            description:'Protected debugger status unavailable', current:null, last:null,
+            journal: [], quarantined: [] });
       }
       try {
         const value = await invoke('ide_build_status', { projectId });
         if (!alive || activeProjectIdRef.current !== projectId) return;
         if (value && typeof value.ready === 'boolean' &&
-            Array.isArray(value.recent) && Array.isArray(value.quarantined))
+            Array.isArray(value.recent) && Array.isArray(value.journal) &&
+            Array.isArray(value.quarantined))
           setBuildStatus(value);
       } catch {
         if (alive && activeProjectIdRef.current === projectId)
@@ -509,7 +512,8 @@ function App() {
       if (request !== buildStatusRequest.current ||
           activeProjectIdRef.current !== projectId) return;
       if (!value || typeof value.ready !== 'boolean' ||
-          !Array.isArray(value.recent) || !Array.isArray(value.quarantined))
+          !Array.isArray(value.recent) || !Array.isArray(value.journal) ||
+           !Array.isArray(value.quarantined))
         throw Error('BUILD_STATUS_SHAPE_DENIED');
       setBuildStatus(value);
     } catch {
@@ -518,7 +522,7 @@ function App() {
         setBuildStatus({
           ready: false, code: 'BUILD_HOST_UNAVAILABLE',
           description: 'Trusted native worker status is unavailable.',
-          current: null, recent: [], quarantined: []
+          current: null, recent: [], journal: [], quarantined: []
         });
     }
   }
@@ -1499,8 +1503,38 @@ function App() {
                     disabled={buildBusy || !!buildStatus.current}
                     onClick={() => reconcileProtectedBuild(job)}>Verify OS-only cleanup (no rerun)</button>
                 </div>)}
-              {buildStatus?.recent?.length > 0 && <p>Recent native worker receipts:
-                {buildStatus.recent.length}. These results do not substitute for installed-app tests.</p>}
+              {Array.isArray(buildStatus?.journal) && buildStatus.journal.length > 0 &&
+                <section className="continuityDocument" aria-label="Durable native job journal">
+                  <h3>Durable native job journal (survives restart)</h3>
+                  <p>Exact project-scoped supervisor records. The journal is evidence of
+                    recorded state, not proof that all OS descendants are gone.</p>
+                  {buildStatus.journal.slice(-16).map(item =>
+                    <article className="continuityEvent" key={item.jobId}>
+                      <strong>Durable protected job <code>{item.jobId}</code></strong>
+                      <p>Journal phase: {item.phase} ·
+                        Kernel cleanup reconciliation: {item.requiresReconciliation ?
+                          'required' : 'not indicated'}</p>
+                      <p>Frozen plan digest: <code>{item.planSha256}</code></p>
+                    </article>)}
+                </section>}
+              {buildStatus?.recent?.length > 0 && <section aria-label="Recent native worker receipts">
+                <p>Recent native worker receipts: {buildStatus.recent.length}.
+                  These results do not substitute for installed-app tests.</p>
+                <div className="continuityEvents">
+                  {buildStatus.recent.slice(-8).map(item =>
+                    <article className="continuityEvent" key={item.jobId}>
+                      <strong>Recorded protected job <code>{item.jobId}</code></strong>
+                      <p>Recipe: {item.recipeId} · Phase: {item.phase} ·
+                        Reconciliation: {item.requiresReconciliation ? 'required' : 'not indicated'}</p>
+                      <p>Source HEAD: <code>{item.sourceHead}</code></p>
+                      <p>Frozen input: <code>{item.inputSnapshotSha256}</code></p>
+                      <p>Native result: {String(item.nativeExitCode ?? 'not reported')} ·
+                        OS error: {item.nativeErrorCategory || 'not reported'}</p>
+                      <p>Kernel cleanup must be independently verified; an IDE receipt alone
+                        is not installed-app release acceptance.</p>
+                    </article>)}
+                </div>
+              </section>}
             </div>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native debugger self-test">
               <h3>Protected debugger (LLDB-DAP)</h3>
@@ -1537,6 +1571,19 @@ function App() {
                     Verify protected debugger cleanup (no execution)
                   </button>
                 </div>)}
+              {Array.isArray(debugStatus?.journal) && debugStatus.journal.length > 0 &&
+                <section className="continuityDocument" aria-label="Durable protected debugger journal">
+                  <h3>Durable debugger jobs (survive restart)</h3>
+                  {debugStatus.journal.slice(-16).map(item =>
+                    <article className="continuityEvent" key={item.jobId}>
+                      <strong>Durable debugger job <code>{item.jobId}</code></strong>
+                      <p>Journal phase: {item.phase} ·
+                        OS reconciliation: {item.requiresReconciliation ?
+                          'required' : 'not indicated'}</p>
+                      <p>Frozen plan digest: <code>{item.planSha256}</code></p>
+                    </article>)}
+                  <p>Journal entries are not simulated debugger results or release acceptance.</p>
+                </section>}
               {debugResult?.projectId === activeProject?.projectId && <div role="status">
                 <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
                 <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:

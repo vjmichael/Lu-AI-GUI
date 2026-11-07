@@ -158,6 +158,8 @@ pub struct BuildStatus {
     description: &'static str,
     current: Option<ActiveView>,
     recent: Vec<BuildRunView>,
+    // Persisted supervisor journal; unlike recent, survives a host restart.
+    journal: Vec<RecoveryView>,
     quarantined: Vec<RecoveryView>,
 }
 #[derive(Serialize)]
@@ -219,8 +221,27 @@ impl NativeBuildRuntime {
         let recent = locked.recent.values()
             .filter(|job| job.project_id == project_id).cloned().collect();
         drop(locked);
-        let quarantined = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .into_iter().filter(|job| job.project_id == project_id)
+        let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+        // Serialize only exact project-scoped immutable journal identifiers.
+        // Do not reconstruct a BuildRunView or invent a successful native exit
+        // code after restart: the original runtime receipt is authoritative.
+        // Never truncate quarantine state. Every blocked job is still visible
+        // and eligible for exact native OS-only reconciliation.
+        let quarantined: Vec<RecoveryView> = durable.iter()
+            .filter(|job| job.project_id == project_id && job.requires_reconciliation)
+            .map(|job| RecoveryView {
+                project_id: job.project_id.clone(),
+                job_id: job.job_id.clone(),
+                plan_sha256: job.plan_sha256.clone(),
+                phase: format!("{:?}", job.phase).to_lowercase(),
+                requires_reconciliation: true,
+            })
+            .collect();
+        // The UI displays a bounded most-recent subset, not all secrets or
+        // unbounded durable history. The security quarantine above is full.
+        let mut journal: Vec<RecoveryView> = durable.into_iter().rev()
+            .filter(|job| job.project_id == project_id)
+            .take(32)
             .map(|job| RecoveryView {
                 project_id: job.project_id,
                 job_id: job.job_id,
@@ -228,6 +249,7 @@ impl NativeBuildRuntime {
                 phase: format!("{:?}", job.phase).to_lowercase(),
                 requires_reconciliation: job.requires_reconciliation,
             }).collect();
+        journal.reverse();
         Ok(BuildStatus {
             ready: availability.is_ok(),
             code: match availability {
@@ -238,6 +260,7 @@ impl NativeBuildRuntime {
                 admission, human approval and terminal OS cleanup are checked for each job.",
             current,
             recent,
+            journal,
             quarantined,
         })
     }

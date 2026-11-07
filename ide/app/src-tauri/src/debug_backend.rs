@@ -141,6 +141,7 @@ pub struct DebugStatus {
     code: String,
     current: Option<DebugActive>,
     last: Option<DebugWitness>,
+    journal: Vec<DebugInterrupted>,
     quarantined: Vec<DebugInterrupted>,
     description: &'static str,
 }
@@ -190,16 +191,31 @@ impl NativeDebugRuntime {
             });
         let last = self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
             .as_ref().filter(|v| v.project_id == project_id).cloned();
-        let quarantined: Vec<DebugInterrupted> = self.supervisor.inspect()
-            .map_err(|e| e.code().to_owned())?.into_iter()
+        let durable = self.supervisor.inspect()
+            .map_err(|e| e.code().to_owned())?;
+        // Security decision uses every outstanding job, not the bounded UI list.
+        let quarantined: Vec<DebugInterrupted> = durable.iter()
             .filter(|job| job.project_id == project_id && job.requires_reconciliation)
+            .map(|job| DebugInterrupted {
+                project_id: job.project_id.clone(),
+                job_id: job.job_id.clone(),
+                plan_sha256: job.plan_sha256.clone(),
+                phase: format!("{:?}", job.phase).to_lowercase(),
+                requires_reconciliation: true,
+            }).collect();
+        // Last successful DAP result is session-only; never fabricate it after
+        // restart. Display the newest persisted job IDs as journal metadata.
+        let mut journal: Vec<DebugInterrupted> = durable.into_iter().rev()
+            .filter(|job| job.project_id == project_id)
+            .take(32)
             .map(|job| DebugInterrupted {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
                 phase: format!("{:?}", job.phase).to_lowercase(),
-                requires_reconciliation: true,
+                requires_reconciliation: job.requires_reconciliation,
             }).collect();
+        journal.reverse();
         Ok(DebugStatus {
             ready: available.is_ok() && quarantined.is_empty(),
             code: match available {
@@ -208,6 +224,7 @@ impl NativeDebugRuntime {
             },
             current,
             last,
+            journal,
             quarantined,
             description: "Only fixed LLDB-DAP self-test debuggee. Project debug launches remain disabled.",
         })
