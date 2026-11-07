@@ -432,3 +432,37 @@ fn exact_service_sid_ace(acl: *mut ACL, sid: PSID) -> Result<Option<u32>, Superv
     }
     Ok(found)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn concurrent_service_acl_operations_cannot_overlap() {
+        use std::{
+            sync::mpsc::{channel, TryRecvError},
+            thread,
+            time::Duration,
+        };
+        // No privileged device is touched. The second session must not
+        // enter the shared ACL read/modify/verify transaction until the
+        // first session releases it, even with a different job SID.
+        let first = lock_nul_acl().expect("initial lock");
+        let (ready_tx, ready_rx) = channel();
+        let (acquired_tx, acquired_rx) = channel();
+        let other = thread::spawn(move || {
+            ready_tx.send(()).expect("ready");
+            let _second = lock_nul_acl().expect("second lock");
+            acquired_tx.send(()).expect("acquired");
+        });
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("second thread ready");
+        assert_eq!(acquired_rx.try_recv(), Err(TryRecvError::Empty));
+        drop(first);
+        acquired_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("second session acquired after release");
+        other.join().expect("thread completion");
+    }
+}
