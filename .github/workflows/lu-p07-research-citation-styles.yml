@@ -30,5 +30,28 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_styles::tests -- --nocapture
       - name: Test existing source and passage verification invariant
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence::tests -- --nocapture
+      - name: Compile actual P07 React and native Research/Tauri host on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          if (Test-Path 'package-lock.json') {
+            npm ci
+          } else {
+            npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'P07 frontend dependencies failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'P07 React build failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'P07 React contract checks failed' }
+          Pop-Location
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content $path -Raw | ConvertFrom-Json
+          # Static compilation is not a distributable, signed or installed engine.
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'P07 native Research host compiler failed' }
       - name: Verify no model fabricated citations or academic locator claims
         run: node --test lu-desktop/tests/p07-research-styles.test.mjs
