@@ -19,7 +19,11 @@ class StagingTests(unittest.TestCase):
         self.inputs.mkdir()
         self.dst = self.root / "installed-payload"
         self.manifest = self.root / "inventory.json"
-        self.data = {"schema": "lu.ide.wo7.bundle.v1", "approved": True, "sourceSha": HEAD, "files": []}
+        helper = self.inputs / "service-install.ps1"
+        helper.write_bytes(b"trusted helper fixture")
+        self.data = {"schema": "lu.ide.wo7.bundle.v1", "approved": True, "sourceSha": HEAD,
+                     "installerScript": {"source": helper.name,
+                        "sha256": hashlib.sha256(helper.read_bytes()).hexdigest()}, "files": []}
         assets = [
             ("desktop", "lu-ide-desktop.exe"),
             ("service", "resources/recovery/windows_recovery_service.exe"),
@@ -34,7 +38,8 @@ class StagingTests(unittest.TestCase):
             license_file.write_text("Example notice only", encoding="utf-8")
             self.data["files"].append({"role": role, "source": src.name,
                 "destination": dst, "sha256": hashlib.sha256(content).hexdigest(),
-                "license": "Apache-2.0", "dependenciesReviewed": True,
+                "license": "Apache-2.0", "signerThumbprint": "b" * 40 if role == "service" else None,
+                "dependenciesReviewed": True,
                 "importClosureReviewed": True, "notices": [{"source": license_file.name,
                     "sha256": hashlib.sha256(license_file.read_bytes()).hexdigest()}]})
         self.write_manifest()
@@ -52,6 +57,8 @@ class StagingTests(unittest.TestCase):
         report = stage(self.manifest, self.inputs, self.dst, HEAD)
         self.assertFalse(report["releaseApproved"])
         self.assertEqual(len(report["files"]), 4)
+        self.assertTrue((self.dst / "resources" / "installer" / "wo7-service-lifecycle.ps1").exists())
+        self.assertTrue(json.loads((self.dst / "resources" / "wo7-service-policy.json").read_text())["releaseApproved"])
         self.assertTrue((self.dst / "resources" / "third-party-notices" / "000-000.txt").exists())
         with self.assertRaisesRegex(Denied, "output_must_be_new"):
             stage(self.manifest, self.inputs, self.dst, HEAD)
