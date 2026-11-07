@@ -40,6 +40,8 @@ jobs:
         run: python -m unittest discover -s ide/packaging -p 'test_verify_p04_transition_evidence.py' -v
       - name: Verify license collector includes authentic notices and default-deny modes
         run: python -m unittest discover -s ide/packaging -p 'test_collect_verification_licenses.py' -v
+      - name: Audit package notice hashes and deny forged legal approvals
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_p04_license_bundle.py' -v
       - name: Exercise real filesystem upgrades, abrupt process death and disk rollback
         run: python -m unittest discover -s ide/packaging -p 'test_p04_transactional_upgrade.py' -v
       - name: Verify signed WO7 source and candidate refusal tests

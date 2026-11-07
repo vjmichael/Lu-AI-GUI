@@ -46,6 +46,15 @@ jobs:
           npm run check
           python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha ${{ github.event.pull_request.head.sha || github.sha }}
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Verify legal bytes and bind inventory to real Debian package digest
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo "DENIED: only one Debian package accepted"; exit 2; }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --artifact "${packages[0]}" --receipt ide/app/src-tauri/verification-package-receipt.json
       - name: Attach unsigned Debian and matching resolved dependency licenses
         uses: actions/upload-artifact@v4
         with:
@@ -53,6 +62,7 @@ jobs:
           path: |
             ide/app/src-tauri/target/release/bundle/deb/*.deb
             ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
           if-no-files-found: error
           retention-days: 7
       - name: Real Debian installation GTK/X11 window and package removal

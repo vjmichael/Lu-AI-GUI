@@ -28,6 +28,23 @@ $tauri=Join-Path $repo 'ide/app/src-tauri'
 $app=Join-Path $tauri 'target/release/lu-ide-desktop.exe'
 if (!(Test-Path -LiteralPath $app -PathType Leaf)) { Deny 'reviewed_prebuilt_desktop_missing' }
 $review=Get-Content -LiteralPath $ApprovedInventory -Raw | ConvertFrom-Json
+# P04: the existing WO7 reviewed native DLL notices do not cover the
+# compiled frontend JS or actual resolved Cargo dependency graph. Require a
+# second independently reviewed, SHA-pinned legal inventory and exact source
+# before bundling an installer. This is a gate, not an automatic sign-off.
+$legalBundle=Join-Path $repo 'ide/app/src-tauri/verification-notices'
+$legalManifest=Join-Path $legalBundle 'inventory.json'
+if (!(Test-Path -LiteralPath $legalManifest -PathType Leaf)) {
+  Deny 'complete_resolved_npm_cargo_notices_unavailable'
+}
+& python (Join-Path $repo 'ide/packaging/verify_p04_license_bundle.py') `
+  --license-root $legalBundle --source-sha $SourceSha --require-complete
+if ($LASTEXITCODE -ne 0) { Deny 'reviewed_resolved_dependency_licenses_incomplete' }
+$legalSha=(Get-FileHash -LiteralPath $legalManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($review.licenseReviewApproved -ne $true -or
+    $review.licenseInventorySha256 -ine $legalSha) {
+  Deny 'independent_resolved_dependency_license_review_missing'
+}
 $reviewedDesktop=@($review.files | Where-Object { $_.role -eq 'desktop' })
 $reviewedService=@($review.files | Where-Object { $_.role -eq 'service' })
 if ($reviewedDesktop.Count -ne 1 -or $reviewedService.Count -ne 1) { Deny 'signed_roles_not_uniquely_reviewed' }
@@ -59,6 +76,15 @@ if ($LASTEXITCODE -ne 0) { Deny 'native_static_pe_import_closure_failed' }
 & python (Join-Path $scriptRoot 'prepare_wo7_tauri_bundle.py') `
   --payload $NewPayloadRoot --desktop $app --tauri-dir $tauri --source-sha $SourceSha
 if ($LASTEXITCODE -ne 0) { Deny 'source_to_native_tauri_payload_mismatch' }
+# Independently reviewed legal bytes are part of the exact signed Tauri
+# resources. Do not modify the already verified native executable or add
+# unlisted DLLs. Copy after native stage security gate, before NSIS packaging.
+$legalTauri=Join-Path $tauri 'resources/third-party-licenses'
+if (Test-Path -LiteralPath $legalTauri) { Deny 'legal_destination_must_be_new' }
+Copy-Item -LiteralPath $legalBundle -Destination $legalTauri -Recurse
+& python (Join-Path $repo 'ide/packaging/verify_p04_license_bundle.py') `
+  --license-root $legalTauri --source-sha $SourceSha --require-complete
+if ($LASTEXITCODE -ne 0) { Deny 'bundled_native_license_bytes_changed' }
 $desktopSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $app).Hash
 Push-Location (Join-Path $repo 'ide/app')
 try {
@@ -93,11 +119,13 @@ $policy=Get-Content (Join-Path $NewPayloadRoot 'resources/wo7-service-policy.jso
 Copy-Item -LiteralPath $installer -Destination (Join-Path $NewCandidateRoot 'lu-ide-signed-setup.exe')
 Copy-Item -LiteralPath $service -Destination (Join-Path $NewCandidateRoot 'windows_recovery_service.exe')
 Copy-Item -LiteralPath $app -Destination (Join-Path $NewCandidateRoot 'lu-ide-desktop.exe')
+Copy-Item -LiteralPath $legalTauri -Destination (Join-Path $NewCandidateRoot 'THIRD_PARTY_LICENSES') -Recurse
 $candidate=[ordered]@{
   schema='lu.ide.wo7.signed-nsis.v1'
   releaseApproved=$false
   sourceSha=$SourceSha
   licensesReviewed=$true
+  licenseInventorySha256=$legalSha
   acceptance=@{nativeWindows='pending';installedSigned='pending';serviceLifecycle='pending';uninstall='pending'}
   installer=@{path='lu-ide-signed-setup.exe';sha256=(Get-FileHash (Join-Path $NewCandidateRoot 'lu-ide-signed-setup.exe') -Algorithm SHA256).Hash.ToLowerInvariant();signerThumbprint=$InstallerSignerThumbprint.ToLowerInvariant()}
   service=@{path='windows_recovery_service.exe';sha256=(Get-FileHash (Join-Path $NewCandidateRoot 'windows_recovery_service.exe') -Algorithm SHA256).Hash.ToLowerInvariant();signerThumbprint=$policy.signerThumbprint}

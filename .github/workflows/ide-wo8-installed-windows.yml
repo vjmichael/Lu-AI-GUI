@@ -56,6 +56,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Verify all collected legal bytes against exact unsigned NSIS hash
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setup.Count -ne 1) { throw 'DENIED: exact verified NSIS candidate required' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: packaged Windows licenses do not match source and installer hash' }
       - name: Attach unsigned Windows NSIS and matching resolved license bundle
         uses: actions/upload-artifact@v4
         with:
@@ -63,6 +73,7 @@ jobs:
           path: |
             ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
             ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
           if-no-files-found: error
           retention-days: 7
       - name: Parse real Windows UI acceptance fixture without executing it
