@@ -166,8 +166,7 @@ fn smoke() -> Result<(), String> {
     }
     if overlapping_null
         && (std::env::var_os("CI").as_deref() != Some(std::ffi::OsStr::new("true"))
-            || std::env::var_os("GITHUB_ACTIONS").as_deref()
-                != Some(std::ffi::OsStr::new("true")))
+            || std::env::var_os("GITHUB_ACTIONS").as_deref() != Some(std::ffi::OsStr::new("true")))
     {
         return Err("DENIED: overlapping global-device ACL fixture is disposable CI only".into());
     }
