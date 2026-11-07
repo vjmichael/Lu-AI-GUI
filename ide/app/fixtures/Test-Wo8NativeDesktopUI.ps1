@@ -61,6 +61,10 @@ public static class P04NativeWebViewWindows {
   public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")]
   public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+  [DllImport("user32.dll")]
+  public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
   public static IntPtr[] RendererHandles(IntPtr top) {
     var results = new List<IntPtr>();
     Enumeration callback = (hwnd, data) => {
@@ -392,32 +396,169 @@ try {
       Deny 'non_disposable_or_missing_fixture'
     }
     if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
-      # Standard Windows folder dialog address navigation; real desktop input.
+      # Native chooser name is not an IDE project registration.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
       [System.Windows.Forms.SendKeys]::SendWait($fixed)
       [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-      Start-Sleep -Seconds 2
-      # The Windows directory chooser's confirmation label is OS-version dependent.
-      $button=$null
-      foreach ($name in @('Select Folder','Choose Folder','Open','Select')) {
-      try {
+      Start-Sleep -Milliseconds 900
+      $accepted=$false
+      $sawChooser=$false
+      $deadline=(Get-Date).AddSeconds(16)
+      while (!$accepted -and (Get-Date) -lt $deadline) {
         $desktop=[System.Windows.Automation.AutomationElement]::RootElement
-        $buttons=$desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-          ([System.Windows.Automation.PropertyCondition]::new(
+        $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+          [System.Windows.Automation.PropertyCondition]::new(
             [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            [System.Windows.Automation.ControlType]::Button)))
-        foreach($entry in $buttons) {
-          if ($entry.Current.Name -eq $name -and $entry.Current.IsEnabled) { $button=$entry; break }
+            [System.Windows.Automation.ControlType]::Window))
+        foreach ($dialog in $windows) {
+          try {
+            $hwnd=[IntPtr]::new([int64]$dialog.Current.NativeWindowHandle)
+            if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) { continue }
+            $trusted=($dialog.Current.ProcessId -eq $proc.Id -or
+              [P04NativeWebViewWindows]::GetWindow($hwnd,4) -eq $proc.MainWindowHandle)
+            if (!$trusted) { continue }
+            $children=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+              [System.Windows.Automation.Condition]::TrueCondition)
+            foreach ($entry in $children) {
+              $name=[string]$entry.Current.Name
+              $kind=[string]$entry.Current.ControlType.ProgrammaticName
+              if ($name -notin @('Select Folder','Choose Folder','Select','Open') -or
+                  $kind -notin @('ControlType.Button','ControlType.Pane')) { continue }
+              $sawChooser=$true
+              if (!$entry.Current.IsEnabled) { continue }
+              # Windows 2022 real IFileDialog exposed Select Folder as Pane.
+              # First use InvokePattern; else actual user32 mouse input,
+              # bounded to the exact process-owned dialog rectangle.
+              try {
+                $invoke=$entry.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                $invoke.Invoke()
+                $accepted=$true
+              } catch {
+                $rect=$entry.Current.BoundingRectangle
+                $owner=$dialog.Current.BoundingRectangle
+                if ($rect.Width -lt 8 -or $rect.Height -lt 8) { continue }
+                $px=[int][Math]::Round($rect.Left+$rect.Width/2)
+                $py=[int][Math]::Round($rect.Top+$rect.Height/2)
+                if ($px -le $owner.Left -or $px -ge $owner.Right -or
+                    $py -le $owner.Top -or $py -ge $owner.Bottom) { continue }
+                [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+                [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($px,$py)
+                [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                $accepted=$true
+                Write-Host 'WO8_NATIVE_WINDOWS_PICKER=real_owned_pane_mouse_click'
+              }
+              if ($accepted) { break }
+            }
+            if ($accepted) { break }
+          } catch {}
         }
-        if ($button) { break }
-      } catch {}
-    }
-      if (!$button) { Deny 'native_picker_confirmation_not_found' }
-      $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        if (!$accepted) { Start-Sleep -Milliseconds 350 }
+      }
+      if (!$accepted) {
+        # Real Windows 2022 UIA logs showed the native Select Folder pane
+        # INSIDE the installed desktop window's fragment, not as a separate
+        # RootElement child window. Search only that exact installed HWND.
+        $installedRoot=WindowRoot
+        if (!$installedRoot) { Deny 'installed_window_missing_during_picker' }
+        $all=$installedRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        foreach ($entry in $all) {
+          try {
+            if ([string]$entry.Current.Name -ne 'Select Folder' -or
+                [string]$entry.Current.ControlType.ProgrammaticName -notin
+                  @('ControlType.Pane','ControlType.Button')) { continue }
+            $sawChooser=$true
+            $rect=$entry.Current.BoundingRectangle
+            $bounds=$installedRoot.Current.BoundingRectangle
+            if ($rect.Width -lt 8 -or $rect.Height -lt 8) {
+              Write-Host 'WO8_NATIVE_WINDOWS_PICKER=pane_without_clickable_bounds'
+              continue
+            }
+            $px=[int][Math]::Round($rect.Left+$rect.Width/2)
+            $py=[int][Math]::Round($rect.Top+$rect.Height/2)
+            if ($px -le $bounds.Left -or $px -ge $bounds.Right -or
+                $py -le $bounds.Top -or $py -ge $bounds.Bottom) {
+              Write-Host 'WO8_NATIVE_WINDOWS_PICKER=pane_outside_installed_window'
+              continue
+            }
+            # Only physical native OS pointer events; zero web scripting.
+            [void][P04NativeWebViewWindows]::SetForegroundWindow($proc.MainWindowHandle)
+            [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($px,$py)
+            [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+            [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+            $accepted=$true
+            Write-Host 'WO8_NATIVE_WINDOWS_PICKER=installed_hwnd_native_pane_click'
+            break
+          } catch {}
+        }
+      }
+      if (!$accepted -and $sawChooser) { Deny 'native_picker_owned_dialog_could_not_be_confirmed' }
+      if ($accepted) {
+        Write-Host 'WO8_NATIVE_WINDOWS_PICKER=owned_native_dialog_confirmed'
+        Start-Sleep -Milliseconds 800
+      }
+      # Explicitly deny a chooser that remains open after native action.
+      # A folder name inside that chooser is not the app catalog.
+      $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+      $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+        [System.Windows.Automation.PropertyCondition]::new(
+          [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+          [System.Windows.Automation.ControlType]::Window))
+      foreach ($dialog in $windows) {
+        try {
+          $hwnd=[IntPtr]::new([int64]$dialog.Current.NativeWindowHandle)
+          if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) { continue }
+          $owned=($dialog.Current.ProcessId -eq $proc.Id -or
+            [P04NativeWebViewWindows]::GetWindow($hwnd,4) -eq $proc.MainWindowHandle)
+          if (!$owned) { continue }
+          $controls=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.Condition]::TrueCondition)
+          foreach ($item in $controls) {
+            if ([string]$item.Current.Name -eq 'Select Folder') {
+              Deny 'native_folder_picker_still_open_after_confirmation'
+            }
+          }
+        } catch {
+          if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
+        }
+      }
+      # Recheck the installed main window provider as well. A still-open
+      # Windows IFileDialog may be nested inside this fragment instead of
+      # having its own desktop RootElement child HWND.
+      $installedRoot=WindowRoot
+      if (!$installedRoot) { Deny 'installed_window_disappeared_after_picker' }
+      $remaining=$installedRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+      foreach ($item in $remaining) {
+        try {
+          if ([string]$item.Current.Name -eq 'Select Folder' -and
+              [string]$item.Current.ControlType.ProgrammaticName -in
+                @('ControlType.Pane','ControlType.Button')) {
+            Deny 'native_picker_still_open_in_installed_hwnd'
+          }
+        } catch {
+          if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
+        }
+      }
+      if (!$accepted) { Write-Host 'WO8_NATIVE_WINDOWS_PICKER=dialog_closed_by_os_path_enter' }
     }
     Require 'Registered projects'
     Require (Split-Path $fixed -Leaf)
+    # The registry persists the directory across desktop restart but the
+    # newly launched desktop intentionally restores it as CLOSED. The real
+    # UI exposes Reopen, not Edit, until that explicit project transition.
+    # Never bypass via host IPC or assume catalog presence means active.
+    $closed=$null
+    try { $closed=Find-Control 'Closed · ready to reopen' '' 3 } catch {}
+    if ($closed) {
+      Click 'Reopen'
+      Require 'Open · editor available'
+      Write-Host 'WO8_NATIVE_PROJECT_REOPEN=real_installed_ui_reactivated'
+    } else {
+      Require 'Open · editor available'
+    }
     Click 'Edit'
     Require 'Source explorer and editor'
     Click 'main.rs'

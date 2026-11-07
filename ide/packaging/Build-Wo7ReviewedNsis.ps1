@@ -48,7 +48,7 @@ if (!(Test-Path -LiteralPath $legalManifest -PathType Leaf)) {
   Deny 'complete_resolved_npm_cargo_notices_unavailable'
 }
 & python (Join-Path $repo 'ide/packaging/verify_p04_license_bundle.py') `
-  --license-root $legalBundle --source-sha $SourceSha --require-complete
+  --license-root $legalBundle --source-sha $SourceSha --require-complete --require-upstream
 if ($LASTEXITCODE -ne 0) { Deny 'reviewed_resolved_dependency_licenses_incomplete' }
 $legalSha=(Get-FileHash -LiteralPath $legalManifest -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($review.licenseReviewApproved -ne $true -or
@@ -76,7 +76,7 @@ $cliManifest=Join-Path $cliRoot 'package.json'
 $cli=Join-Path $repo 'ide/app/node_modules/.bin/tauri.cmd'
 if (!(Test-Path $cliManifest) -or !(Test-Path $cli)) { Deny 'preinstalled_pinned_tauri_cli_missing' }
 $cliVersion=(Get-Content $cliManifest -Raw | ConvertFrom-Json).version
-if ($cliVersion -ne '2.12.1') { Deny 'bundler_version_not_reviewed' }
+if ($cliVersion -ne '2.12.4') { Deny 'bundler_version_not_reviewed' }
 $scriptRoot=Join-Path $repo 'ide/packaging'
 & python (Join-Path $scriptRoot 'stage_wo7_windows_release.py') `
   --manifest $ApprovedInventory --inputs $InputRoot --output $NewPayloadRoot --source-sha $SourceSha
@@ -93,7 +93,7 @@ $legalTauri=Join-Path $tauri 'resources/third-party-licenses'
 if (Test-Path -LiteralPath $legalTauri) { Deny 'legal_destination_must_be_new' }
 Copy-Item -LiteralPath $legalBundle -Destination $legalTauri -Recurse
 & python (Join-Path $repo 'ide/packaging/verify_p04_license_bundle.py') `
-  --license-root $legalTauri --source-sha $SourceSha --require-complete
+  --license-root $legalTauri --source-sha $SourceSha --require-complete --require-upstream
 if ($LASTEXITCODE -ne 0) { Deny 'bundled_native_license_bytes_changed' }
 $desktopSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $app).Hash
 Push-Location (Join-Path $repo 'ide/app')

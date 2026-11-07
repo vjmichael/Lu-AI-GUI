@@ -1,5 +1,27 @@
 # Lu IDE — Development changelog
 
+- **P05 native registered-project restart repair (Nov 7):** Actual Windows installed UI now proved chooser registration and explicit save; subsequent test failed because restarted project was `Closed · ready to reopen`, correctly exposing `Reopen` rather than `Edit`. Updated Windows UIA/Linux GTK AT-SPI to explicitly reopen through real OS UI and verify active state before editor, with hostile source checks. Native recheck pending.
+
+- **P05 native WO9 upstream receipt verification repair (Nov 7):** Inspected exact-head Win/Linux failure receipts: WO9 Windows repeated upstream source fetch; WO9 Linux omitted it. Corrected both actual packaging jobs, added complete CI wiring regressions across six E2/WO8/WO9 jobs; real installed UI acceptance remains open.
+
+- **P05 complete unsigned verification artifact license reach (Nov 7):** Extended exact upstream full-text fetch+hashed receipt/actual-package hash to both E2 Windows, WO8 Win/Linux and WO9 Win/Linux package builds. Repaired all corresponding CLI 2.12 pins; preserved exact older workflow blob identities, native installed tests and no-release policy.
+
+- **P05 version and upstream license closeout (Nov 7):** Pinned full Rust/JS/CLI Tauri 2.12 family after actual cross-platform `tauri 2.11.5` vs `tauri-runtime` 2.12 compiler failures. Added fail-closed Cargo.lock drift tests. E2 native NSIS now retrieves, hashes, compares and bundles all six canonical upstream original license texts with per-source exact SHA provenance, plus npm/Cargo notices. Missing/mismatched upstream receipts denied; transitive legal review and real installed OS gates remain open.
+
+- **P05 native CI triage and Tauri version guard (Nov 7, 2026):** Exact-head P05 Windows/Linux source matrix passed at `85cf291`, but both real unsigned Windows E2 NSIS builds failed due Cargo semver drift to `tauri 2.12.5` vs pinned `@tauri-apps/api 2.11.1`. Pinned Rust `tauri = =2.11.5`; added reusable fail-closed Rust/JS/CLI compatibility validation and eight hostile tests to exact-head P05 CI. Kept original E2 installed tests, notices, provenance and default-deny release policy; native retest pending.
+
+- **P05 final operations disposition (2026-11-07):** All 30 previously open IDE PRs and 38 native/source/signed CI workflows were individually retained for stated source and acceptance reasons. Machine-readable P02/P03/P04 CI owner/retention matrix and five hostile regression checks added. No safe PR closure, retarget, CI delete or trigger reduction is authorized until native/installed signed release acceptance; source review work complete without falsely satisfying external gates.
+
+
+- **P05 final historical source audit (2026-11-07):** Verified 15 WO9-ancestral commits, reviewed all seven late-divergent patch groups, archived PR #70 native proof without promoting it to current-head OS acceptance, and isolated #43/#45/#46 unported B2/B3 features and deferred #76 WO10. Machine-readable semantic source ledger and hostile Windows/Linux CI added. No unsupported PR or security workflow closure; operational cleanup remains gated on P03/P04 native/signed release evidence.
+
+
+- **P05 E2 installed CI repair (Nov 7, 2026):** Investigated E2 Windows NSIS native CI failure: Tauri's P04 `verification-notices` resource was absent in two older smoke build workflows. Added prebuild actual resolved licenses and exact-package SHA/license receipts to both E2 variants, kept all installed UI test steps and strengthened missing-artifact denial. Audited original and replacement workflow Git blob SHAs; new native OS retest still required. P05 phase remains source audit complete / PR-ops reductions gated behind native acceptance.
+
+
+- **P05 — GitHub source and CI consolidation inventory (Nov 7, 2026):** Created separate P05 branch stacked on P04; audited all **30 currently open IDE PRs** (78 total open repository PRs) against P04 exact Git tree, pinning original heads and unique source SHA-1s. #43/#45 buffer identity, #46 Find in Project remain unported; #76 WO10 explicitly deferred. All 38 IDE workflows remain preserved and source-pinned; Windows/Linux P05 hostile inventory CI rejects premature PR closures, fake native evidence and dropped source/security gates. Semantic code/CI comparisons, native P02–P04 acceptance and resulting individual PR/CI reduction remain outstanding; **zero PRs closed and zero workflows disabled**. [P05 report](docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md).
+
+
 - **P04 source licensing and OS rollback extension (Nov 7, 2026):** unsigned native Windows and Linux package verification includes resolved npm/Cargo legal notices plus exact package SHA receipts. Added a native Linux `dpkg` post-install failure-injection and old-package recovery test (no signature required, real package manager and preserved user-state digest). Signed WO7 builder requires complete independently reviewed legal evidence as a separate input outside the clean source tree. Source implemented; OS/installed CI outcomes and protected installer upgrades still open.
 
 

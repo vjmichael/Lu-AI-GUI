@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from subprocess import CompletedProcess
 from unittest.mock import patch
-from collect_verification_licenses import bundle, Denied, UPSTREAM
+from collect_verification_licenses import bundle, cargo_packages, Denied, UPSTREAM
 
 HEAD="a"*40
 
@@ -39,6 +40,30 @@ class LicenseBundleTests(unittest.TestCase):
         with patch("collect_verification_licenses.cargo_packages",
                    return_value=([("cargo","cfg-if","1.0.0","MIT",self.cargo)],[])):
             return bundle(self.root,self.out,HEAD,require_complete)
+
+    def test_windows_cargo_metadata_explicit_utf8_not_cp1252(self):
+        sample={"packages":[{
+            "name":"unicode-crate",
+            "version":"0.1.0",
+            "license":"MIT",
+            "manifest_path":str(self.root/"ide/app/src-tauri/Cargo.toml"),
+        }]}
+        with patch("collect_verification_licenses.subprocess.run",
+                   return_value=CompletedProcess(["cargo","metadata"],0,
+                                                 json.dumps(sample,ensure_ascii=False),"")) as run:
+            rows, errors=cargo_packages(self.root)
+        self.assertFalse(errors)
+        self.assertEqual(rows[0][1],"unicode-crate")
+        self.assertEqual(run.call_args.kwargs["encoding"],"utf-8")
+        self.assertEqual(run.call_args.kwargs["errors"],"strict")
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+
+    def test_malformed_cargo_metadata_stream_fails_closed(self):
+        with patch("collect_verification_licenses.subprocess.run",
+                   return_value=CompletedProcess(["cargo","metadata"],0,None,"")):
+            rows, errors=cargo_packages(self.root)
+        self.assertEqual(rows,[])
+        self.assertEqual(errors,["cargo_offline_metadata_unavailable"])
 
     def test_actual_npm_cargo_license_bytes_and_upstream_text_copied(self):
         d=self.collect(True)
