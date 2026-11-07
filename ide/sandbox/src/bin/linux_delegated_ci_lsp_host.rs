@@ -78,7 +78,11 @@ fn run() -> Result<(), &'static str> {
     }
     println!(
         "PASS: native Linux delegated clangd {} and durable receipt",
-        if mode.is_some() { "cancellation" } else { "normal execution" }
+        if mode.is_some() {
+            "cancellation"
+        } else {
+            "normal execution"
+        }
     );
     Ok(())
 }
