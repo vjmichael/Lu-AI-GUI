@@ -1,0 +1,89 @@
+name: IDE P03 exact-head native security source and protocol gates
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/supervisor/**'
+      - 'ide/sandbox/**'
+      - 'ide/docs/IDE_P03_NATIVE_SECURITY_ACCEPTANCE_20261107.md'
+      - '.github/workflows/ide-p03-native-security-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-security-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            features: lsp-transport,dap-transport,linux-worker
+          - os: windows-2025
+            features: lsp-transport,dap-transport,protected-recovery-service
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact source SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Test strict DAP ordering, fixed debugger launch, rejection and correlation
+        run: cargo test --manifest-path ide/host/Cargo.toml dap_session -- --nocapture
+      - name: Native protected LSP/DAP protocol and supervisor security tests
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features ${{ matrix.features }} --lib
+      - name: Compile native feature-gated OS acceptance harness
+        run: cargo check --manifest-path ide/supervisor/Cargo.toml --features ${{ matrix.features }} --all-targets
+      - name: Format exact host/supervisor sources
+        shell: bash
+        run: |
+          cargo fmt --manifest-path ide/host/Cargo.toml --all --check
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml --all --check
+      - name: Classify Windows LLDB-DAP loader status without spawning a project
+        shell: bash
+        run: python ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py
+      - name: Source evidence boundary
+        shell: bash
+        run: |
+          echo 'P03_THIS_JOB=SOURCE_AND_NATIVE_PROTOCOL_ONLY'
+          echo 'P03_KERNEL_CONTAINMENT_LSP_DAP_CANCEL_AND_INSTALLED_APP=NOT_ACCEPTED_BY_SOURCE_CHECK'
+  linux-delegation-rejection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Linux fixed OS worker negative and exact native source checks
+        run: |
+          cargo test --manifest-path ide/sandbox/Cargo.toml --all-targets
+          cargo check --manifest-path ide/sandbox/Cargo.toml --all-targets
+      - name: Report actual kernel cgroup delegation (not a simulated pass)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat /proc/self/cgroup
+          if [[ -w /sys/fs/cgroup/cgroup.subtree_control ]]; then
+            echo 'P03_HOST_CGROUP_WRITABLE=OBSERVED_BUT_EXECUTION_NOT_VERIFIED'
+          else
+            echo 'P03_HOST_CGROUP_DELEGATED_EXECUTION=NOT_VERIFIED'
+          fi
+          echo 'P03_BWRAP_DENIAL_CRASH_RECOVERY=NEEDS_INDEPENDENT_KERNEL_WITNESS'
