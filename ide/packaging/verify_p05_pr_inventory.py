@@ -113,7 +113,7 @@ def check_snapshot(prs:dict,workflows:dict):
     for item in rows:
         if item["path"] in original_e2_pins:
             if (item.get("originalBlobSha")!=original_e2_pins[item["path"]]
-                    or item.get("reviewedRepair")!="P04 resolved license resource preparation and exact unsigned installer/notice SHA receipt; no security/installed gate removed"
+                    or item.get("reviewedRepair")!="P04 resolved third-party notice staging and exact unsigned NSIS artifact/notice SHA, P05 resolved-graph Tauri 2.12 alignment guard; native GUI and security acceptance preserved"
                     or item.get("criticalNativeOrReleaseEvidence") is not True):
                 raise Denied("reviewed_e2_ci_repair_provenance_missing")
         elif "originalBlobSha" in item or "reviewedRepair" in item:

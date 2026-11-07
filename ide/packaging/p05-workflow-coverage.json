@@ -77,23 +77,23 @@
     },
     {
       "path": ".github/workflows/ide-e2-supervised-lsp.yml",
-      "blobSha": "dded4b6d56240766153fd0039e0a906177b266ae",
+      "blobSha": "3a00405ca439c2a33a7ea6581f1dd60cea377a1f",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
       "prTriggerPruningAuthorized": false,
       "originalBlobSha": "6b922291b4bc8eab1d164f121cccc329c12a4f96",
-      "reviewedRepair": "P04 resolved license resource preparation and exact unsigned installer/notice SHA receipt; no security/installed gate removed"
+      "reviewedRepair": "P04 resolved third-party notice staging and exact unsigned NSIS artifact/notice SHA, P05 resolved-graph Tauri 2.12 alignment guard; native GUI and security acceptance preserved"
     },
     {
       "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
-      "blobSha": "9d86a31ae02234e148d3c768e326d31e84d51a6f",
+      "blobSha": "ae1f54fe89fd8a0485a7315772776bcfc5debfbd",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
       "prTriggerPruningAuthorized": false,
       "originalBlobSha": "02fae6f43669b03cb2bf96758a13ae366dd91ab1",
-      "reviewedRepair": "P04 resolved license resource preparation and exact unsigned installer/notice SHA receipt; no security/installed gate removed"
+      "reviewedRepair": "P04 resolved third-party notice staging and exact unsigned NSIS artifact/notice SHA, P05 resolved-graph Tauri 2.12 alignment guard; native GUI and security acceptance preserved"
     },
     {
       "path": ".github/workflows/ide-p02-native-checks.yml",

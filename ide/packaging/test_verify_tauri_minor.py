@@ -15,7 +15,7 @@ class TauriAlignmentTests(unittest.TestCase):
         self.package = {"dependencies": {"@tauri-apps/api": "2.12.4"}}
         self.flush_package()
         for path in WORKFLOWS:
-            self.write(path, "npx --yes @tauri-apps/cli@2.12.5 build --bundles nsis\n"
+            self.write(path, "npx --yes @tauri-apps/cli@2.12.4 build --bundles nsis\n"
                              "& ide/app/fixtures/Test-InstalledAlphaNsis.ps1\n")
     def write(self, name, data):
         p = self.root / name
@@ -34,7 +34,7 @@ class TauriAlignmentTests(unittest.TestCase):
             check_alignment(self.root)
     def test_cross_minor_resolved_cargo_denied(self):
         self.write("ide/app/src-tauri/Cargo.toml",
-                   '[dependencies]\ntauri = { version = "=2.12.5", features = [] }\n')
+                   '[dependencies]\ntauri = { version = "=2.13.0", features = [] }\n')
         with self.assertRaisesRegex(VersionDenied, "rust_js_major_minor_mismatch"):
             check_alignment(self.root)
     def test_js_npm_range_denied(self):
@@ -50,7 +50,7 @@ class TauriAlignmentTests(unittest.TestCase):
             check_alignment(self.root)
     def test_installed_native_smoke_step_cannot_disappear(self):
         self.write(WORKFLOWS[1],
-                   "npx --yes @tauri-apps/cli@2.12.5 build --bundles nsis\n")
+                   "npx --yes @tauri-apps/cli@2.12.4 build --bundles nsis\n")
         with self.assertRaisesRegex(VersionDenied, "installed_native_smoke_gate_removed"):
             check_alignment(self.root)
     def test_installed_api_mismatch_denied(self):

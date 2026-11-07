@@ -97,7 +97,7 @@
     },
     {
       "path": ".github/workflows/ide-e2-supervised-lsp.yml",
-      "gitBlobSha": "dded4b6d56240766153fd0039e0a906177b266ae",
+      "gitBlobSha": "3a00405ca439c2a33a7ea6581f1dd60cea377a1f",
       "phaseOwner": "P03",
       "disposition": "retain_existing_workflow",
       "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
@@ -106,7 +106,7 @@
     },
     {
       "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
-      "gitBlobSha": "9d86a31ae02234e148d3c768e326d31e84d51a6f",
+      "gitBlobSha": "ae1f54fe89fd8a0485a7315772776bcfc5debfbd",
       "phaseOwner": "P03",
       "disposition": "retain_existing_workflow",
       "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
