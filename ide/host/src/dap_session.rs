@@ -307,6 +307,43 @@ impl DapSession {
                         && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
                             == Some(std::ffi::OsStr::new("1"))
                     {
+                        // Fixed schema metadata only: distinguish a
+                        // structurally unexpected response from LLDB's
+                        // explicit launch refusal. Never log raw adapter
+                        // paths, messages, child output or error numbers.
+                        let mismatch = command != Some(expected);
+                        eprintln!(
+                            "PROTECTED_DAP_RESPONSE_CORRELATION={}",
+                            if mismatch {
+                                "wrong_command"
+                            } else {
+                                "exact_request_command"
+                            }
+                        );
+                        eprintln!(
+                            "PROTECTED_DAP_RESPONSE_RESULT={}",
+                            if obj.get("success") == Some(&Value::Bool(false)) {
+                                "adapter_reported_failure"
+                            } else if obj.get("success") == Some(&Value::Bool(true)) {
+                                "adapter_reported_success"
+                            } else {
+                                "missing_or_invalid_success_flag"
+                            }
+                        );
+                        eprintln!(
+                            "PROTECTED_DAP_ADAPTER_ERROR_SCHEMA={}",
+                            if obj
+                                .get("body")
+                                .and_then(|body| body.get("error"))
+                                .and_then(|error| error.get("format"))
+                                .and_then(Value::as_str)
+                                .is_some()
+                            {
+                                "structured_error_format_present"
+                            } else {
+                                "no_structured_error_format"
+                            }
+                        );
                         eprintln!(
                             "PROTECTED_DAP_ADAPTER_FAILURE_CLASS={}",
                             classify_native_adapter_error(obj)
