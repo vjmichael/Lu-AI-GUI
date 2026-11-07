@@ -25,6 +25,11 @@ function App() {
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [modelSearch, setModelSearch] = useState('');
+  const [providerQuery,setProviderQuery] = useState('');
+  const [providerHits,setProviderHits] = useState([]);
+  const [providerReview,setProviderReview] = useState(null);
+  const [providerBusy,setProviderBusy] = useState(false);
+  const [providerFailure,setProviderFailure] = useState('');
   const [modelInspection, setModelInspection] = useState(null);
   const [runtime, setRuntime] = useState({ phase: 'Idle', modelRef: null, sessionId: null });
   const [chats, setChats] = useState([]);
@@ -1343,6 +1348,30 @@ function App() {
       setExpandedFolders(p => [...p, created.folderId]);
       await refreshChats();
     });
+  }
+  async function searchPublicModels(){
+    if(providerBusy || !providerQuery.trim()) return;
+    setProviderBusy(true);setProviderFailure('');setProviderHits([]);setProviderReview(null);
+    try{
+      const hits=await invoke('lu_model_provider_search',{query:providerQuery.trim()});
+      setProviderHits(hits);
+    }catch(error){setProviderFailure(String(error));}
+    finally{setProviderBusy(false);}
+  }
+  async function inspectPublicModel(lead){
+    if(providerBusy)return;
+    setProviderBusy(true);setProviderFailure('');setProviderReview(null);
+    try{
+      const detail=await invoke('lu_model_provider_review',{
+        repoId:lead.repoId,revision:lead.revision
+      });
+      if(detail.repoId!==lead.repoId||detail.revision!==lead.revision ||
+          detail.downloadAvailable!==false || !detail.files?.length){
+        throw Error('Native provider review returned an invalid or changed catalog result');
+      }
+      setProviderReview(detail);
+    }catch(error){setProviderFailure(String(error));}
+    finally{setProviderBusy(false);}
   }
   function importModel() {
     action('Importing GGUF', async () => {
@@ -4606,7 +4635,39 @@ function App() {
         <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available || !modelInspection?.loadAllowed || modelInspection.modelRef!==selectedModel} onClick={loadModel}>Load inspected model</button>
           <button className="subtleButton" disabled={busy || !loaded} onClick={unloadModel}>Unload current model</button></div>
         <div className="settingsStatus"><span className="statusDot" data-ready={loaded}></span>{activity || (loaded ? 'Ready' : 'No model loaded')}</div>
-        <p className="settingsNotice">Remote provider search/download is not enabled. A future reviewed transfer needs an explicit source, immutable revision, SHA-256, license/access approval and user-chosen destination. No URL or network permission is inferred from a model name. The pinned engine currently requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
+        <section aria-label="Public GGUF model discovery" className="modelProviderReview">
+          <h4>Public model discovery (Hugging Face)</h4>
+          <small>Explicit search uses Lu's separately hash-pinned public HTTPS reader. It cannot send credentials or download weights.</small>
+          <label>Search public model repositories
+            <input value={providerQuery} maxLength={96} autoComplete="off"
+              placeholder="e.g. qwen gguf"
+              onChange={event=>setProviderQuery(event.target.value)}/>
+          </label>
+          <button type="button" className="subtleButton" disabled={providerBusy||!providerQuery.trim()}
+            onClick={()=>void searchPublicModels()}>
+            {providerBusy?'Inspecting public catalog…':'Search public GGUF repositories'}
+          </button>
+          {providerFailure&&<small role="alert">{providerFailure}</small>}
+          {!!providerHits.length&&<div aria-label="Provider model search results">
+            {providerHits.map(lead=><button key={lead.repoId+lead.revision}
+              className="settingsModel" type="button" disabled={providerBusy}
+              onClick={()=>void inspectPublicModel(lead)}>
+              <strong>{lead.repoId}</strong>
+              <small>Revision {lead.revision.slice(0,12)} · reported license {lead.licenseLabel} · inspect files</small>
+            </button>)}
+          </div>}
+          {providerReview&&<div className="modelInspection" aria-label="Pinned model file review">
+            <strong>{providerReview.repoId}</strong>
+            <small>Exact revision {providerReview.revision} · provider-reported license {providerReview.licenseLabel}</small>
+            {providerReview.files.map(file=><div key={file.name}>
+              <strong>{file.name}</strong>
+              <small>{(file.bytes/1048576).toFixed(1)} MiB · SHA-256 {file.sha256}</small>
+            </div>)}
+            <small>Read-only preview. The license and model architecture require your review. In-app downloads are blocked until the P05 native Transfer Manager can validate HTTPS redirects, bytes, cancellation, resumable identity and separate approval.</small>
+            <a href={providerReview.sourceUrl} rel="noopener noreferrer" target="_blank">View pinned repository externally</a>
+          </div>}
+        </section>
+        <p className="settingsNotice">A remote search result never installs, imports or loads a model. Use the existing native GGUF import picker for files you have downloaded and checked. The pinned engine requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
       </div>
     </div>}
   </div>;
