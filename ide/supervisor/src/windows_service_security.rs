@@ -35,10 +35,10 @@ use windows_sys::Win32::{
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
-        RevertToSelf, SecurityImpersonation, TokenGroups, TokenRestrictedSids,
-        TokenIsAppContainer, TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
-        DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES,
-        TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
+        RevertToSelf, SecurityImpersonation, TokenGroups, TokenIsAppContainer, TokenRestrictedSids,
+        TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
+        SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS,
+        TOKEN_QUERY, TOKEN_USER,
     },
     System::{
         Pipes::{
@@ -720,9 +720,9 @@ fn query_token_sid_list(
     }
     let capacity = len as usize;
     let mut aligned = vec![0usize; capacity.div_ceil(size_of::<usize>())];
-    if unsafe {
-        GetTokenInformation(token, class, aligned.as_mut_ptr().cast(), len, &mut len)
-    } == 0 || len as usize > capacity || (len as usize) < offset
+    if unsafe { GetTokenInformation(token, class, aligned.as_mut_ptr().cast(), len, &mut len) } == 0
+        || len as usize > capacity
+        || (len as usize) < offset
     {
         return Err(denied());
     }
@@ -757,8 +757,7 @@ fn ci_service_attestation_stage(stage: &'static str) {
     if cfg!(debug_assertions)
         && std::env::var_os("CI").as_deref() == Some(OsStr::new("true"))
         && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(OsStr::new("true"))
-        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
-            == Some(OsStr::new("1"))
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref() == Some(OsStr::new("1"))
     {
         eprintln!("PROTECTED_SERVICE_ADMISSION_STAGE={stage}");
     }
@@ -775,7 +774,8 @@ pub fn authenticate_service_server(
     }
     let server = Handle::new(unsafe {
         OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
-    }).map_err(|_| {
+    })
+    .map_err(|_| {
         ci_service_attestation_stage("service_process_open_denied");
         denied()
     })?;
@@ -790,7 +790,8 @@ pub fn authenticate_service_server(
     let observed = Path::new(&String::from_utf16(&text[..length as usize]).map_err(|_| {
         ci_service_attestation_stage("service_kernel_image_encoding_denied");
         denied()
-    })?).to_path_buf();
+    })?)
+    .to_path_buf();
     let expected = fs::canonicalize(approved_service_path).map_err(|_| {
         ci_service_attestation_stage("service_expected_image_path_denied");
         denied()
@@ -799,7 +800,10 @@ pub fn authenticate_service_server(
         ci_service_attestation_stage("service_observed_image_path_denied");
         denied()
     })?;
-    if !observed.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()) {
+    if !observed
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&expected.to_string_lossy())
+    {
         ci_service_attestation_stage("service_kernel_image_mismatch");
         return Err(denied());
     }
