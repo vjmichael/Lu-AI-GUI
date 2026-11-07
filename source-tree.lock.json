@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f104a6f63dee0160e8e5a5aa2f658a06066ec972",
+  "sourceCommitBeforeLock": "c954d7164e10d53ed2ee82d731ff6d0292e0fee7",
   "trackedFileCount": 506,
   "files": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "8f7805fb93ab2d4a619264d65f65c8d0d5cbdc15"
+      "blob": "b386ed76c4cde151f7c5af725b49fd8fe4895717"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
