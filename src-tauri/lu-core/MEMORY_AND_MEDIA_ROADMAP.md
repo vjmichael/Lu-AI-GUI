@@ -1,3 +1,5 @@
+> **M1 source audit completed — 2026-11-07.** See [M1 live-binding and authority map](../../docs/LU_M1_MEMORY_EVIDENCE_AND_AUTHORITY_AUDIT_20261107.md). The current desktop's real chat journal is `ChatStore` (JSONL), and prompt construction takes bounded same-chat history. ANSF books, ANSF library, revisions and import/sync are present in Core, but **not proved connected to live desktop prompt retrieval**. The ANSF importer targets Jan message JSONL, not necessarily Lu's live event format. M2 must preserve the host-authenticated `ChatStore` turn as authority, add stable source mapping and clarification/goal continuity, and avoid a parallel memory DB. Documentation only; no new UI/model or executor integration completed.
+
 # Lu Core milestones — memory, conversation UX, and optional A/V
 
 **Status:** Owner design clarification / staged implementation (2026-10-25).
