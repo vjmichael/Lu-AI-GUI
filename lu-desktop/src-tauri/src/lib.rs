@@ -2764,6 +2764,136 @@ async fn lu_research_export_report(
     }))
 }
 
+/// The style profile is selected only from an enumerated desktop UI,
+/// never from model-authored formatting instructions.
+fn p07_citation_style(style:&str)->Result<lu_core::web_research_styles::Style,String>{
+    use lu_core::web_research_styles::Style;
+    match style{
+        "apa7"=>Ok(Style::Apa7),"mla9"=>Ok(Style::Mla9),
+        "chicago18"=>Ok(Style::Chicago18),
+        "turabian9"=>Ok(Style::Turabian9),"sbl2"=>Ok(Style::Sbl2),
+        _=>Err("Select a supported, versioned citation profile".into()),
+    }
+}
+
+/// Render all previously pinned, chat-owned Crossref sources OFFLINE.
+/// Incomplete source data fails the entire preview, without silently
+/// dropping entries or generating model-provided references.
+#[tauri::command]
+async fn lu_research_bibliography_preview(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,style:String
+)->Result<research_desktop::ResearchBibliographyView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    let profile=p07_citation_style(&style)?;
+    let research=Arc::clone(&state.research);
+    tauri::async_runtime::spawn_blocking(move||
+        research.bibliography_preview(&chat_id,profile)
+    ).await.map_err(|_|"Native bibliography preview worker unavailable".to_owned())?
+}
+
+/// Create a NEW reviewed bibliography export. No model, WebView path or
+/// catalog network fetch can select the destination. No existing file is
+/// overwritten; the output is recomputed after the native save dialog.
+#[tauri::command]
+async fn lu_research_bibliography_export(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,style:String,format:String
+)->Result<Option<research_desktop::ResearchBibliographyExportView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    let profile=p07_citation_style(&style)?;
+    if !matches!(format.as_str(),"markdown"|"csl-json"){
+        return Err("Choose a supported bibliography export format".into());
+    }
+    let reviewed=state.research.bibliography_preview(&chat_id,profile)?;
+    let body=if format=="markdown"{
+        reviewed.markdown.clone()
+    }else{
+        serde_json::to_string_pretty(&reviewed.csl_json)
+            .map_err(|_|"CSL-compatible data could not be encoded")?
+    };
+    if body.is_empty()||body.len()>2*1024*1024{
+        return Err("Bibliography export outside bounded size".into());
+    }
+    let content_sha=format!("{:x}",sha2::Sha256::digest(body.as_bytes()));
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        let count=reviewed.source_count;
+        let label=reviewed.style.clone();
+        let digest=content_sha.clone();
+        move||app.dialog().message(format!(
+            "Export a NEW {label} bibliography with {count} reviewed catalog sources?\n\n\
+             Content SHA-256: {digest}\n\n\
+             Source identity and local Crossref-response digests are checked. \
+             Publication details, page numbers, quotations, ancient editions \
+             and factual conclusions remain NOT independently verified. \
+             This will not overwrite any file."
+        )).title("Lu — Review bibliography export")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Choose new file".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Bibliography export consent unavailable")?;
+    if !approved{return Ok(None);}
+    let extension=if format=="markdown"{"md"}else{"json"};
+    let selected=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        let ext=extension.to_owned();
+        move||app.dialog().file()
+            .add_filter("Lu reviewed bibliography",&[ext.as_str()])
+            .set_file_name(if ext=="md"{"Lu Research Bibliography.md"}
+                else{"Lu Research Bibliography CSL.json"})
+            .blocking_save_file()
+    }).await.map_err(|_|"Native bibliography destination dialog unavailable")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let destination=selected.into_path()
+        .map_err(|_|"Bibliography destination must be a local file")?;
+    if destination.extension().and_then(|ext|ext.to_str())
+        .is_none_or(|ext|!ext.eq_ignore_ascii_case(extension)){
+        return Err("Choose the matching bibliography extension".into());
+    }
+    let parent=destination.parent().ok_or("No bibliography destination directory")?;
+    let dir=std::fs::symlink_metadata(parent)
+        .map_err(|_|"Bibliography destination directory unavailable")?;
+    if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+        return Err("Bibliography destination must be a normal directory".into());
+    }
+    if std::fs::symlink_metadata(&destination).is_ok(){
+        return Err("Existing bibliography files are never overwritten".into());
+    }
+    let reread=state.research.bibliography_preview(&chat_id,profile)?;
+    let now=if format=="markdown"{reread.markdown}else{
+        serde_json::to_string_pretty(&reread.csl_json)
+            .map_err(|_|"Rechecked CSL-compatible data could not be encoded")?
+    };
+    if reread.catalog_manifest_sha256!=reviewed.catalog_manifest_sha256
+        ||now!=body{
+        return Err("Bibliography changed during native approval; review it again".into());
+    }
+    use std::io::Write;
+    let temp=parent.join(format!(".{}.tmp",next_id("p07-bibliography-")));
+    let write=(||->Result<(),String>{
+        let mut file=std::fs::File::create_new(&temp)
+            .map_err(|_|"New bibliography temporary output refused")?;
+        file.write_all(body.as_bytes())
+            .map_err(|_|"Bibliography write did not complete")?;
+        file.sync_all().map_err(|_|"Bibliography file durability uncertain")?;
+        std::fs::hard_link(&temp,&destination)
+            .map_err(|_|"Bibliography destination could not be created without overwrite")?;
+        Ok(())
+    })();
+    let _=std::fs::remove_file(&temp);
+    write?;
+    Ok(Some(research_desktop::ResearchBibliographyExportView{
+        saved_path:destination.to_string_lossy().into_owned(),
+        format,saved_sha256:content_sha,
+        catalog_manifest_sha256:reviewed.catalog_manifest_sha256,
+        source_count:reviewed.source_count,
+        publication_details_verified:false,
+        message:"Saved new bibliography with hash-checked Crossref source receipts. Human verification of publication details, quotations and interpretations remains required.",
+    }))
+}
+
 /// User-approved, source-bound P07 bibliography preview. The native
 /// Research host retrieves only the existing DOI's Crossref endpoint and
 /// refuses metadata and styles not corroborated by this conversation.
@@ -2772,13 +2902,7 @@ async fn lu_research_citation_preview(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,source_id:String,style:String
 )->Result<research_desktop::ResearchCitationPreviewView,String>{
-    use lu_core::web_research_styles::Style;
-    let profile=match style.as_str(){
-        "apa7"=>Style::Apa7,"mla9"=>Style::Mla9,
-        "chicago18"=>Style::Chicago18,"turabian9"=>Style::Turabian9,
-        "sbl2"=>Style::Sbl2,
-        _=>return Err("Select a supported, versioned citation profile".into()),
-    };
+    let profile=p07_citation_style(&style)?;
     state.observe.deny_observation_network_egress(&chat_id)?;
     state.chats.history(&chat_id)
         .map_err(|_|"Choose an existing Research conversation")?;
@@ -6392,6 +6516,8 @@ pub fn run() {
             lu_research_openalex,
             lu_research_crossref,
             lu_research_citation_preview,
+            lu_research_bibliography_preview,
+            lu_research_bibliography_export,
             lu_research_retrieve_document,
             lu_research_cancel_document,
             lu_research_verify_document_passage,
