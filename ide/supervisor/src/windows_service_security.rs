@@ -300,8 +300,17 @@ impl PipeSecurity {
         // Its own kernel-verified service SID receives explicit server rights.
         // No BA grant on the IPC endpoint: administrators are machine TCB
         // but do not need to connect as a desktop worker.
+        //
+        // SCM services execute at SYSTEM mandatory integrity. Without an
+        // explicit pipe label, a medium/high desktop host can have the exact
+        // approved TokenUser in this DACL but still be denied by Mandatory
+        // Integrity Control (MIC), before DACL evaluation. The explicit
+        // MEDIUM mandatory label permits that desktop host to request its
+        // narrow client rights, while NO_WRITE_UP still prevents a LOW
+        // integrity AppContainer from writing to this trusted IPC endpoint.
+        // Authorization still requires kernel PID/token + pinned image hash.
         let sddl = format!(
-            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})",
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})S:(ML;;NW;;;ME)",
             sid_of_service()?,
             approved_user_sid
         );
@@ -808,9 +817,14 @@ mod tests {
         let sid = "S-1-5-21-11-22-33-1001";
         validate_approved_host_user_sid(sid).unwrap();
         let template = format!(
-            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})",
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})S:(ML;;NW;;;ME)",
             "S-1-5-80-1-2-3-4-5", sid
         );
+        // Medium/no-write-up is an explicit MIC policy, not another
+        // discretionary ACE that would authorize extra user accounts.
+        assert!(template.ends_with("S:(ML;;NW;;;ME)"));
+        assert!(!template.contains("S:(ML;;NW;;;LW)"));
+        assert!(!template.contains(";;;AC)"));
         assert!(template.contains("0x00100003;;;S-1-5-21-11-22-33-1001"));
         assert!(!template.contains(";;;IU"));
         assert!(!template.contains(";;;AU"));
