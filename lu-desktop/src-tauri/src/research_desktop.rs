@@ -1279,7 +1279,7 @@ impl ResearchDesktop{
             .collect::<HashMap<_,_>>();
         let mut csl=Vec::with_capacity(rendered.len());
         let mut body=format!(
-            "# Research bibliography — {}\\n\\n**Human review required.**              Corroborated source identity only; publication details, direct              quotations, pages and factual claims are not independently              verified. No ancient texts or guessed SBL abbreviations.\\n\\n",
+            "# Research bibliography — {}\n\n**Human review required.**              Corroborated source identity only; publication details, direct              quotations, pages and factual claims are not independently              verified. No ancient texts or guessed SBL abbreviations.\n\n",
              style.label()
         );
         let mut manifest=Sha256::new();
@@ -1295,17 +1295,17 @@ impl ResearchDesktop{
             csl.push(record);
             body.push_str("- ");
             body.push_str(&item.bibliography);
-            body.push_str("\\n");
+            body.push_str("\n");
             manifest.update(item.source_id.as_bytes());
             manifest.update([0]);
             manifest.update(sha.as_bytes());
             manifest.update([0]);
         }
-        body.push_str("\\n## Crossref catalog response SHA-256 inventory\\n\\n");
+        body.push_str("\n## Crossref catalog response SHA-256 inventory\n\n");
         for item in &rendered{
             let sha=provenance.get(&item.source_id)
                 .ok_or("Citation inventory digest unavailable")?;
-            body.push_str(&format!("- {}: {}\\n",item.source_id,sha));
+            body.push_str(&format!("- {}: {}\n",item.source_id,sha));
         }
         if body.len()>2*1024*1024{return Err("Bibliography exceeds native export limit".into());}
         Ok(ResearchBibliographyView{
