@@ -218,6 +218,26 @@ struct LinuxLspProcess {
     group: Cgroup,
     released: bool,
 }
+// Report only a boolean/unknown kernel resource-exhaustion witness, never
+// process identity or raw cgroup file contents. Read while the Job is alive
+// and before fail-closed cgroup.kill; missing controls remain unavailable.
+fn kernel_limit_hit(path: &Path, key: &str) -> &'static str {
+    match std::fs::read_to_string(path) {
+        Ok(data) => {
+            for line in data.lines() {
+                if let Some(number) = line.strip_prefix(key).and_then(|v| v.strip_prefix(' ')) {
+                    return match number.trim().parse::<u64>() {
+                        Ok(0) => "no",
+                        Ok(_) => "yes",
+                        Err(_) => "unavailable",
+                    };
+                }
+            }
+            "unavailable"
+        }
+        Err(_) => "unavailable",
+    }
+}
 impl LinuxLspProcess {
     fn trace_dap_native_failure(&mut self, stage: &'static str) {
         if !cfg!(debug_assertions)
@@ -235,6 +255,14 @@ impl LinuxLspProcess {
             Err(_) => "status_unavailable",
         };
         eprintln!("PROTECTED_LINUX_DAP_CHILD_STATE={state}");
+        eprintln!(
+            "PROTECTED_LINUX_DAP_PIDS_MAX_HIT={}",
+            kernel_limit_hit(&self.group.dir.join("pids.events"), "max")
+        );
+        eprintln!(
+            "PROTECTED_LINUX_DAP_MEMORY_OOM_HIT={}",
+            kernel_limit_hit(&self.group.dir.join("memory.events"), "oom_kill")
+        );
         if let Some(stderr) = &mut self.debug_stderr {
             let fd = stderr.as_raw_fd();
             let readable = poll_fd(fd, libc::POLLIN | libc::POLLHUP, 0).unwrap_or(false);
@@ -756,6 +784,16 @@ impl LinuxLspSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn kernel_quota_witness_emits_only_bounded_boolean_or_unavailable() {
+        let file = std::env::temp_dir().join(format!("wo6-kernel-limit-{:032x}", rand::random::<u128>()));
+        std::fs::write(&file, "max 0\\nother 12\\noom_kill 1\\n").unwrap();
+        assert_eq!(kernel_limit_hit(&file, "max"), "no");
+        assert_eq!(kernel_limit_hit(&file, "oom_kill"), "yes");
+        assert_eq!(kernel_limit_hit(&file, "none"), "unavailable");
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(kernel_limit_hit(&file, "max"), "unavailable");
+    }
     #[test]
     fn native_dap_failure_diagnostics_emit_only_fixed_categories() {
         assert_eq!(
