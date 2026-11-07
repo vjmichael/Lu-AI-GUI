@@ -16,5 +16,5 @@ class SourceNotices(unittest.TestCase):
         self.assertIn('name in {"@esbuild/linux-x64","@esbuild/win32-x64"}',text)
         self.assertIn("if (not notices and retrieval is not None",text)
         self.assertIn('SOURCES["esbuild-0.25.9-LICENSE-MIT.txt"]',text)
-        self.assertEqual(UPSTREAM["esbuild-0.25.9-LICENSE-MIT.txt"],"esbuild-v0.25.9")
+        self.assertEqual(UPSTREAM["esbuild-0.25.9-LICENSE-MIT.txt"],"v0.25.9")
 if __name__=="__main__":unittest.main()
