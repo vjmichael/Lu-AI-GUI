@@ -4,6 +4,15 @@ Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
 
+## P03 source closeout continuation — real Reader/tool binding and model catalog (latest 2026-11-06)
+
+- **Implemented:** Fresh operator-picked Reader evidence re-identification (exact per-chat/session/source SHA-256+mtime epoch after *successful* native Reader turn; no cached file grant or skipped tool read); existing P01 Workspace discovery rechecks current per-file metadata and content.
+- **Implemented:** Explicit public Hugging Face model search in Settings using hash-pinned native HTTPS Research adapter; immutable revision, exact model repo/license, safe root-level GGUF LFS SHA/size review; no credentials or automatic download.
+- **Implemented:** Native modal for transfer *metadata* approval with independent live re-fetch, resulting in inert `awaiting_p05_transfer` intent. **Weights are not downloaded**; no transport/retries/resume/atomic publication until P05.
+- **Implemented:** Descriptive GGUF metadata, local MMProj preflight, strict task-aware backend selection policy (vision requires live proof; explicitly required Vulkan cannot silently fall back). Unsupported ROCm/CUDA/vLLM remain disabled, GPU/VRAM scheduling unchanged.
+- **Testing:** New P03 tests and dedicated Windows/Linux CI authored, latest final SHA pending native success. Earlier P02 native acceptance is not transferable to this source.
+- **Remains:** exact-head CI repair; P05 supervised network transfer with identity-valid resume; owner-deferred physical Windows installer/GPU/MMProj acceptance. Detailed [P03 ledger](LU_AI_OPERATIONS_P03.md). P04 not started.
+
 ## P03 implementation checkpoint and owner continuation (2026-11-06)
 
 **Exact reference:** P03 draft [PR #71](https://github.com/vjmichael/Lu-AI-GUI/pull/71), source `1b4bbaa9219787ad4680fea4662f3898d31e9019`, stacked on P02 draft PR #67. **Owner order now:** document the previous P03 implementation first, then finish the outstanding P03 work; do not start P04. Earlier P02 physical NSIS and AMD Vulkan/MMProj/GPU/VRAM gates were explicitly **deferred, not passed**. Security constraints remain mandatory.
