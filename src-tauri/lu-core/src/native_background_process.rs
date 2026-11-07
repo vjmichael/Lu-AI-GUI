@@ -478,7 +478,7 @@ mod tests{
         store.start("media123").unwrap();
         let digest="a".repeat(64);
         let frames=format!("P\t0\t20\nP\t10\t20\nP\t20\t20\nD\t{digest}\n");
-        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",false).is_some());
+        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",None).is_some());
         let record=store.get("media123").unwrap().unwrap();
         assert_eq!(record.progress,100);
         assert_eq!(record.detail,format!("SHA-256: {digest}"));
@@ -502,7 +502,7 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create("t",Some("w"),None).unwrap();
             store.start("t").unwrap();
-            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",false).is_none());
+            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",None).is_none());
             assert!(store.get("t").unwrap().unwrap().progress<100);
         }
     }
