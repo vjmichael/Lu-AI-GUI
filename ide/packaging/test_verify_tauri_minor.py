@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from verify_tauri_minor import check_alignment, VersionDenied, WORKFLOWS
+from verify_tauri_minor import check_alignment, VersionDenied, WORKFLOWS, EXTRA_PACKAGE_WORKFLOWS
 
 class TauriAlignmentTests(unittest.TestCase):
     def setUp(self):
@@ -17,6 +17,11 @@ class TauriAlignmentTests(unittest.TestCase):
         for path in WORKFLOWS:
             self.write(path, "npx --yes @tauri-apps/cli@2.12.4 build --bundles nsis\n"
                              "& ide/app/fixtures/Test-InstalledAlphaNsis.ps1\n")
+        for path in EXTRA_PACKAGE_WORKFLOWS:
+            self.write(path, "npx --yes @tauri-apps/cli@2.12.4 build --bundles deb\n"
+                             "python upstream_notice_receipt.py --repo-root .\n"
+                             "python collect_verification_licenses.py --upstream-receipt foo\n"
+                             "python verify_p04_license_bundle.py --require-upstream\n")
     def write(self, name, data):
         p = self.root / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +76,20 @@ class TauriAlignmentTests(unittest.TestCase):
                    '[[package]]\nname = "tauri-runtime"\nversion = "2.12.2"\n'
                    '[[package]]\nname = "tauri-runtime-wry"\nversion = "2.12.3"\n')
         self.assertEqual(check_alignment(self.root)["minor"], "2.12")
+    def test_new_installed_native_cli_minor_drift_denied(self):
+        self.write(EXTRA_PACKAGE_WORKFLOWS[0],
+                   "npx --yes @tauri-apps/cli@2.11.5 build --bundles nsis\n"
+                   "python upstream_notice_receipt.py\npython collect_verification_licenses.py --upstream-receipt foo\n"
+                   "python verify_p04_license_bundle.py --require-upstream\n")
+        with self.assertRaisesRegex(VersionDenied, "native_package_cli_major_minor_mismatch"):
+            check_alignment(self.root)
+    def test_missing_real_upstream_retrieval_denied(self):
+        self.write(EXTRA_PACKAGE_WORKFLOWS[1],
+                   "npx --yes @tauri-apps/cli@2.12.4 build --bundles deb\n"
+                   "python collect_verification_licenses.py --upstream-receipt foo\n"
+                   "python verify_p04_license_bundle.py --require-upstream\n")
+        with self.assertRaisesRegex(VersionDenied, "native_package_upstream_license_gate_removed"):
+            check_alignment(self.root)
     def test_missing_workflow_denied(self):
         (self.root / WORKFLOWS[0]).unlink()
         with self.assertRaisesRegex(VersionDenied, "required_installed_workflow_missing"):

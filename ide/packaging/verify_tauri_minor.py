@@ -13,6 +13,11 @@ import tomllib
 EXACT_RUST = re.compile(r"=(\d+)\.(\d+)\.(\d+)")
 EXACT_NPM = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 CLI_VERSION = re.compile(r"@tauri-apps/cli@(\d+\.\d+\.\d+)")
+EXTRA_PACKAGE_WORKFLOWS = (
+    ".github/workflows/ide-wo8-installed-windows.yml",
+    ".github/workflows/ide-wo8-installed-linux.yml",
+    ".github/workflows/ide-wo9-installed-native.yml",
+)
 WORKFLOWS = (
     ".github/workflows/ide-e2-supervised-lsp.yml",
     ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
@@ -69,6 +74,18 @@ def check_alignment(root: Path):
                 raise VersionDenied("resolved_tauri_runtime_major_minor_mismatch:" + component)
             if component == "tauri" and resolved[0] != rust_spec[1:]:
                 raise VersionDenied("resolved_tauri_core_patch_drift")
+    for rel in EXTRA_PACKAGE_WORKFLOWS:
+        try:
+            body = (root / rel).read_text(encoding="utf-8")
+        except OSError as e:
+            raise VersionDenied("native_package_workflow_missing:" + rel) from e
+        found = CLI_VERSION.findall(body)
+        if not found or len(found) > 2 or any(
+                EXACT_NPM.fullmatch(v).group(1, 2) != minor for v in found):
+            raise VersionDenied("native_package_cli_major_minor_mismatch:" + rel)
+        if ("upstream_notice_receipt.py" not in body or "--upstream-receipt" not in body
+                or "--require-upstream" not in body or "collect_verification_licenses.py" not in body):
+            raise VersionDenied("native_package_upstream_license_gate_removed:" + rel)
     installed = root / "ide/app/node_modules/@tauri-apps/api/package.json"
     if installed.exists():
         try:

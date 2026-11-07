@@ -46,7 +46,11 @@ jobs:
           $ErrorActionPreference='Stop'
           cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: cannot resolve native dependency license sources' }
-          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: resolved Tauri minor mismatch' }
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha $env:SOURCE_SHA --output ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: upstream licenses not retrieved from exact origins' }
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: third-party verification licenses not generated' }
           Write-Host 'P04_UNSIGNED_INSTALLER_LICENSES=ACTUAL_RESOLVED_NOTICES_BUNDLED_NO_RELEASE_APPROVAL'
       - name: Build real default-disabled unsigned Windows NSIS
@@ -54,7 +58,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
       - name: Verify all collected legal bytes against exact unsigned NSIS hash
         shell: pwsh
@@ -64,7 +68,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
           if ($setup.Count -ne 1) { throw 'DENIED: exact verified NSIS candidate required' }
-          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: packaged Windows licenses do not match source and installer hash' }
       - name: Attach unsigned Windows NSIS and matching resolved license bundle
         uses: actions/upload-artifact@v4
@@ -105,6 +109,9 @@ jobs:
             $noticeFile=Join-Path $root 'THIRD_PARTY_LICENSES\inventory.json'
             if (!(Test-Path -LiteralPath $noticeFile -PathType Leaf)) {
               throw 'DENIED: installed NSIS verification package omitted third-party license evidence'
+            }
+            if (!(Test-Path -LiteralPath (Join-Path $root 'THIRD_PARTY_LICENSES\upstream-fetch.json') -PathType Leaf)) {
+              throw 'DENIED: installed NSIS omitted retrieved original upstream license evidence'
             }
             $notice=Get-Content -LiteralPath $noticeFile -Raw | ConvertFrom-Json
             if ($notice.sourceSha -ine '${{ github.event.pull_request.head.sha || github.sha }}' -or
