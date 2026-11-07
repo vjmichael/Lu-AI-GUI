@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO8-A/B native Windows installed acceptance started (Nov 7 UTC): stacked draft branch `ide/wo8-installed-e2e-20261107`; added real unsigned NSIS install and UI Automation host, OS picker, tabs/source-open, read-only digest and no-worker-autostart checks, uninstall and dedicated Windows OS CI. Declares no native result until exact-head CI; WO8-C–F editing persistence/Linux/signed protected OS acceptance open. [Work-order evidence](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md).
+
+
 - WO7-B/C/D/E source implementation (Nov 7 UTC): committed fixed reviewed Windows payload staging, no-extra-file Tauri handoff, PE regular/delay imports audit, release-only Tauri NSIS hooks/config, privileged LocalService service lifecycle, SHA-pinned native Authenticode signing and NSIS assembly, signed candidate preflight, actual Windows NSIS + SCM installed smoke fixture/manual exact-artifact workflow, and fail-closed exact-head release evidence consistency. Added hostile Python source tests plus Windows PowerShell syntax check; source test verdict must be taken from **current** PR #73 run, not stale earlier green. No approved LLDB adapter, real cert, installer package, native protected UI execution, or final release receipt. See [WO7 ledger](docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md).
 
 
