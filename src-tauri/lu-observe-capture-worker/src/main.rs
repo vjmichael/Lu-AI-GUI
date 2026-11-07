@@ -263,6 +263,12 @@ mod frame_geometry_tests {
     }
     #[cfg(windows)]
     #[test]
+    fn native_foreground_source_must_share_interactive_session(){
+        assert!(windows_capture_worker::process_session_for_test(std::process::id()).is_ok());
+        assert!(windows_capture_worker::process_session_for_test(0).is_err());
+    }
+    #[cfg(windows)]
+    #[test]
     fn native_win32_process_birth_is_live_stable_and_query_only(){
         let own_pid=std::process::id();
         let born=windows_capture_worker::process_birth_for_test(own_pid).unwrap();
@@ -324,6 +330,27 @@ mod windows_capture_worker {
                 OpenProcess,GetProcessTimes,PROCESS_QUERY_LIMITED_INFORMATION
             }
         };
+        /// Refuse a foreground window owned by a different interactive
+        /// Windows logon/session. HWND visibility and DWM cloaking alone do
+        /// not establish same-session source authority.
+        pub(super) fn same_session(pid:u32)->Result<(),&'static str>{
+            use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+            if pid==0{return Err("Missing native window PID")}
+            let mut mine=0u32;
+            let mut selected=0u32;
+            // SAFETY: both PIDs originate from OS handles; Win32 writes into
+            // distinct initialized u32 scalars. Query failure fails closed.
+            unsafe{
+                ProcessIdToSessionId(std::process::id(),&mut mine)
+            }.map_err(|_|"Current native desktop session unavailable")?;
+            unsafe{
+                ProcessIdToSessionId(pid,&mut selected)
+            }.map_err(|_|"Selected app session unavailable")?;
+            if mine!=selected{
+                return Err("Selected HWND belongs to another Windows session");
+            }
+            Ok(())
+        }
         // Win32 HANDLE is *not* an automatically owning COM/WinRT object.
         // Keep the process-query-only resource within a small RAII boundary.
         struct ProcessQueryHandle(HANDLE);
@@ -405,6 +432,10 @@ mod windows_capture_worker {
     pub(super) fn process_birth_for_test(pid:u32)->Result<u64,&'static str>{
         process_instance::born_at(pid)
     }
+    #[cfg(test)]
+    pub(super) fn process_session_for_test(pid:u32)->Result<(),&'static str>{
+        process_instance::same_session(pid)
+    }
 
     struct OneFrame {
         started:Instant,
@@ -435,6 +466,7 @@ mod windows_capture_worker {
                 let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
                 if !window.is_valid()||window.process_id()?!=pid
                     ||process_instance::born_at(pid)?!=born
+                    ||process_instance::same_session(pid).is_err()
                     ||visible_window::attested(hwnd).is_err(){
                     control.stop();
                     return Err("Foreground window instance changed".into());
@@ -475,6 +507,7 @@ mod windows_capture_worker {
                 let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
                 if !window.is_valid()||window.process_id()?!=pid
                     ||process_instance::born_at(pid)?!=born
+                    ||process_instance::same_session(pid).is_err()
                     ||visible_window::attested(hwnd).is_err(){
                     control.stop();
                     return Err("Foreground window instance changed during readback".into());
@@ -521,6 +554,7 @@ mod windows_capture_worker {
                 return Err("Selected window exceeds Lu's size limit".into());
             }
             let born=process_instance::born_at(pid)?;
+            process_instance::same_session(pid)?;
             visible_window::attested(window.as_raw_hwnd() as usize)?;
             let identity=(window.as_raw_hwnd() as usize,pid,born);
             let settings=Settings::new(

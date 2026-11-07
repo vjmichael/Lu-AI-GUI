@@ -233,3 +233,13 @@ test('P06 reviewed native UIA checks require a pinned source commit and explicit
   assert.match(script,/sourceCommit=\(\[string\]\$plan\.sourceCommit\)/);
   assert.doesNotMatch(script,/Current\.Name|ValuePattern|TextPattern|InvokePattern/);
 });
+
+test('P06 native foreground selected window belongs to same Windows session as supervised worker',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const manifest=read('../../src-tauri/lu-observe-capture-worker/Cargo.toml');
+  assert.match(worker,/ProcessIdToSessionId/);
+  assert.match(worker,/fn same_session\(pid:u32\)/);
+  assert.match(worker,/process_instance::same_session\(pid\)\?/);
+  assert.match(worker,/native_foreground_source_must_share_interactive_session/);
+  assert.match(manifest,/Win32_System_RemoteDesktop/);
+});

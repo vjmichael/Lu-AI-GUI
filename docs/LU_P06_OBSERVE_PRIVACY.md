@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 Windows logon/session-bound foreground capture admission
+
+The reviewed Windows foreground window path now checks the **actual Windows Remote Desktop Services process session ID** of the selected application against the supervised capture worker's own OS session, via `ProcessIdToSessionId`. Failed lookups, zero PID, or cross-session targets are refused before capture. The same-session check repeats before and after D3D11 readback, alongside HWND/PID/process-creation FILETIME and visible/uncloaked root-window tests. A native Windows unit test checks the worker's own real PID is accepted and PID zero refused; Linux source contracts remain unaffected. This is a further defense against cross-session misattribution, **not** proof that the standard system picker exposes a real selected HWND or monitor. Generic OS picker stays content-minimized and identity-unverified.
+
 ## P06 actual Windows frontend check repair (2026-11-06)
 
 Focused Windows native CI at previous SHA `c56a74fd9c3466c1914e480eab250e175369df10` passed all Observe privacy/core/Node tests and reached the actual React frontend build, but `npm run check` failed the **legacy wording assertion** in `lu-desktop/scripts/check-ui.mjs`. The UI correctly had changed from ambiguous pixel-delivery language to “both paths fully blank the captured frame,” and now distinguishes a WGC frame observed from a model image received. Repaired the source contract to assert these **current** safety statements, not merely delete the check. New exact-head Windows CI and installed-app acceptance remain OPEN.
