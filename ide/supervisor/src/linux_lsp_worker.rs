@@ -55,11 +55,21 @@ fn fixed_server(
 fn audit_bundle(root: &Path) -> Result<String, SupervisorError> {
     let meta = fs::symlink_metadata(root).map_err(|_| denied())?;
     native_linux_lsp_trace("bundle_root_metadata_read");
-    if !meta.is_dir()
-        || meta.file_type().is_symlink()
-        || meta.uid() != 0
-        || meta.mode() & 0o022 != 0
-    {
+    // Fixed nonidentifying debug-only classification of native admission.
+    if !meta.is_dir() {
+        native_linux_lsp_trace("bundle_root_not_directory");
+        return Err(denied());
+    }
+    if meta.file_type().is_symlink() {
+        native_linux_lsp_trace("bundle_root_symlink_denied");
+        return Err(denied());
+    }
+    if meta.uid() != 0 {
+        native_linux_lsp_trace("bundle_root_not_root_owned");
+        return Err(denied());
+    }
+    if meta.mode() & 0o022 != 0 {
+        native_linux_lsp_trace("bundle_root_group_or_world_writable");
         return Err(denied());
     }
     native_linux_lsp_trace("bundle_root_owner_mode_verified");
