@@ -5,6 +5,8 @@
 mod lsp_backend;
 #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
 mod build_backend;
+#[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+mod debug_backend;
 use std::{path::PathBuf, sync::Arc};
 
 use lu_ide_workspace::{execution_intents::ExecutionIntents, continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
@@ -260,6 +262,76 @@ async fn ide_observe_task_ci(
     })
     .await
     .map_err(|_| "TASK_CI_UNAVAILABLE".to_owned())?
+}
+
+// WO6 native debugger fixture. The WebView cannot submit an executable,
+// adapter path, PID, expression, breakpoint condition, arguments or token.
+// All execution is restricted to the independently pinned self-test bundle.
+#[tauri::command]
+async fn ide_debug_status(
+    app: AppHandle,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        let backend = app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEBUG_PROTECTED_HOST_UNAVAILABLE")?;
+        let backend = Arc::clone(backend.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            backend.status(&app, &project_id)
+        }).await.map_err(|_| "DEBUG_STATUS_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result).map_err(|_| "DEBUG_STATUS_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, project_id);
+        Ok(serde_json::json!({
+            "ready":false, "code":"DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED",
+            "description":"Default IDE does not ship a native debugger.",
+            "current":null, "last":null
+        }))
+    }
+}
+#[tauri::command]
+async fn ide_debug_run_fixture(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        let backend = app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEBUG_PROTECTED_HOST_UNAVAILABLE")?;
+        let backend = Arc::clone(backend.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            backend.run_fixture(&app, &registry, &project_id)
+        }).await.map_err(|_| "DEBUG_EXECUTION_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result).map_err(|_| "DEBUG_RESULT_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, project_id);
+        Err("DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED".into())
+    }
+}
+#[tauri::command]
+async fn ide_debug_cancel(
+    app: AppHandle,
+    project_id: String,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        let backend = app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEBUG_PROTECTED_HOST_UNAVAILABLE")?;
+        return backend.cancel(&project_id, job_id.as_deref()).map(str::to_owned);
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, project_id, job_id);
+        Err("DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED".into())
+    }
 }
 
 // WO6 native protected Cargo: explicit feature-only host authority.
@@ -864,6 +936,11 @@ pub fn run() {
                 Ok(native) => { app.manage(Arc::new(native)); },
                 Err(code) => eprintln!("IDE protected build/test unavailable: {code}"),
             }
+            #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+            match debug_backend::NativeDebugRuntime::new(app.handle()) {
+                Ok(native) => { app.manage(Arc::new(native)); },
+                Err(code) => eprintln!("IDE protected debugger unavailable: {code}"),
+            }
             #[cfg(all(windows, feature = "native-lsp"))]
             match lsp_backend::NativeLspRuntime::new(app.handle()) {
                 Ok(native) => {app.manage(Arc::new(native));},
@@ -888,6 +965,9 @@ pub fn run() {
             ide_build_start,
             ide_build_cancel,
             ide_build_reconcile,
+            ide_debug_status,
+            ide_debug_run_fixture,
+            ide_debug_cancel,
             ide_read_project_context,
             ide_record_task_update,
             ide_observe_task_ci,
