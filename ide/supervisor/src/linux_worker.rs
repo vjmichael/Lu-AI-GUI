@@ -80,6 +80,8 @@ pub struct ExecutionResult {
     pub exit_code: Option<i32>,
     pub stdout_sha256: String,
     pub stderr_sha256: String,
+    /// Fixed, information-minimal native error category. Never raw stderr.
+    pub stderr_category: &'static str,
     pub stdout_bytes_recorded: usize,
     pub stderr_bytes_recorded: usize,
     pub output_truncated: bool,
@@ -530,6 +532,42 @@ struct Captured {
     sha256: String,
     bytes: usize,
     truncated: bool,
+    category: &'static str,
+}
+fn classify_native_output(first: &[u8]) -> &'static str {
+    let lower = String::from_utf8_lossy(first).to_ascii_lowercase();
+    if lower.contains("creating new namespace failed")
+        || lower.contains("unshare failed")
+        || lower.contains("user namespaces are not enabled")
+    {
+        "bubblewrap_namespace_denied"
+    } else if lower.contains("operation not permitted")
+        || lower.contains("permission denied")
+    {
+        "native_permission_denied"
+    } else if lower.contains("failed to download")
+        || lower.contains("network is unreachable")
+    {
+        "unexpected_network_request"
+    } else if lower.contains("lock file needs to be updated")
+        || lower.contains("lockfile needs to be updated")
+    {
+        "offline_lockfile_incompatible"
+    } else if lower.contains("could not execute process")
+        || lower.contains("couldn't execute")
+    {
+        "compiler_exec_failed"
+    } else if lower.contains("no such file or directory") {
+        "required_file_missing"
+    } else if lower.contains("failed to parse manifest") {
+        "manifest_denied"
+    } else if lower.contains("error:") {
+        "native_reported_error"
+    } else if first.is_empty() {
+        "empty"
+    } else {
+        "unclassified_nonempty"
+    }
 }
 fn collect_limited<R: Read + Send + 'static>(
     mut source: R,
@@ -540,11 +578,14 @@ fn collect_limited<R: Read + Send + 'static>(
         let mut buffer = [0_u8; TOTAL_LOG_BUFFER];
         let mut kept = 0_usize;
         let mut truncated = false;
+        let mut diagnostic_prefix = Vec::with_capacity(2048);
         loop {
             let n = source.read(&mut buffer)?;
             if n == 0 {
                 break;
             }
+            let prefix_left = 2048_usize.saturating_sub(diagnostic_prefix.len());
+            diagnostic_prefix.extend_from_slice(&buffer[..n.min(prefix_left)]);
             let len = n.min(max.saturating_sub(kept));
             digest.update(&buffer[..len]);
             kept += len;
@@ -556,6 +597,7 @@ fn collect_limited<R: Read + Send + 'static>(
             sha256: format!("{:x}", digest.finalize()),
             bytes: kept,
             truncated,
+            category: classify_native_output(&diagnostic_prefix),
         })
     })
 }
@@ -752,6 +794,7 @@ pub fn execute_linux_worker(
         exit_code: status.code(),
         stdout_sha256: out.sha256,
         stderr_sha256: err.sha256,
+        stderr_category: err.category,
         stdout_bytes_recorded: out.bytes,
         stderr_bytes_recorded: err.bytes,
         output_truncated: out.truncated || err.truncated,
