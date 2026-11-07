@@ -361,8 +361,9 @@ impl ObserveHost {
     /// P06 operator-approved privacy erase for a locally authenticated
     /// conversation. This is not a model tool or new observation grant.
     pub(crate) fn forget_notes(&self,chat_id:&str)->Result<usize,String>{
+        // Forget must remain available even if a separate capture worker is
+        // temporarily unresponsive during expiry/reaping.
         let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
-        self.refresh_expiry(&mut s)?;
         let removed=self.task_store.delete_awareness_notes_for_workspace(chat_id)
             .map_err(|_|"Could not erase scoped observation notes")?;
         if s.chat_id.as_deref()==Some(chat_id){
