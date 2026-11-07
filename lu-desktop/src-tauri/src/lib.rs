@@ -2776,6 +2776,22 @@ fn p07_citation_style(style:&str)->Result<lu_core::web_research_styles::Style,St
     }
 }
 
+/// P07 SBL2 canonical Scripture locator: pure deterministic formatting of
+/// the human-provided book, chapter, verse and version. No document access,
+/// hidden Bible text, passage verification or model tool permission.
+#[tauri::command]
+fn lu_research_sbl_scripture_locator(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+    book:String,chapter:u16,first_verse:u16,last_verse:Option<u16>,
+    translation:String
+)->Result<lu_core::web_research_styles::SblScriptureReference,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    lu_core::web_research_styles::format_sbl_scripture_reference(
+        &book,chapter,first_verse,last_verse,&translation
+    ).map_err(|e|format!("Unrecognized or incomplete SBL Scripture locator: {e:?}"))
+}
+
 /// Render all previously pinned, chat-owned Crossref sources OFFLINE.
 /// Incomplete source data fails the entire preview, without silently
 /// dropping entries or generating model-provided references.
@@ -6518,6 +6534,7 @@ pub fn run() {
             lu_research_citation_preview,
             lu_research_bibliography_preview,
             lu_research_bibliography_export,
+            lu_research_sbl_scripture_locator,
             lu_research_retrieve_document,
             lu_research_cancel_document,
             lu_research_verify_document_passage,
