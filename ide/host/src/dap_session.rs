@@ -434,37 +434,53 @@ impl DapSession {
 // A native DAP error may embed project paths and user data. Its diagnostic
 // witness is intentionally a fixed vocabulary and never part of authorization.
 fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &'static str {
-    let info = response
+    // LLDB-DAP often puts a generic "error" in message and the actual
+    // reason in body.error.format. Classify the BOUNDED nested reason first.
+    // Never expose the message, arbitrary paths, or debugger-provided text.
+    let detail = response
+        .get("body")
+        .and_then(|value| value.get("error"))
+        .and_then(|value| value.get("format"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let headline = response
         .get("message")
         .and_then(Value::as_str)
-        .or_else(|| {
-            response
-                .get("body")
-                .and_then(|v| v.get("error"))
-                .and_then(|v| v.get("format"))
-                .and_then(Value::as_str)
-        })
         .unwrap_or("");
-    let text = info.to_ascii_lowercase();
+    let text = format!("{detail} {headline}").to_ascii_lowercase();
     if text.contains("ptrace") || text.contains("trace me") {
         "ptrace_or_trace_denied"
+    } else if text.contains("personality") || text.contains("aslr") {
+        "aslr_personality_or_debuggee_policy_denied"
+    } else if text.contains("seccomp") || text.contains("sandbox") {
+        "sandbox_execution_denied"
     } else if text.contains("permission denied")
         || text.contains("operation not permitted")
         || text.contains("access denied")
     {
         "kernel_or_file_access_denied"
-    } else if text.contains("no such file") || text.contains("not found") {
+    } else if text.contains("no such file")
+        || text.contains("not found")
+        || text.contains("file does not exist")
+    {
         "dependency_or_fixed_target_missing"
-    } else if text.contains("process launch")
+    } else if text.contains("spawn")
         || text.contains("failed to launch")
         || text.contains("launch failed")
+        || text.contains("could not launch")
     {
         "target_launch_failed"
-    } else if text.contains("python") || text.contains("resource") || text.contains("platform") {
+    } else if text.contains("python")
+        || text.contains("resource")
+        || text.contains("platform")
+    {
         "debugger_resource_not_ready"
-    } else if text.contains("invalid argument") || text.contains("unsupported") {
+    } else if text.contains("invalid argument")
+        || text.contains("unsupported")
+        || text.contains("invalid launch")
+    {
         "unsupported_debug_adapter_operation"
-    } else if text.is_empty() {
+    } else if text.trim().is_empty() {
         "no_adapter_error_detail"
     } else {
         "other_adapter_error"
@@ -782,6 +798,26 @@ mod tests {
         assert_eq!(
             classify_native_adapter_error(&response),
             "target_launch_failed"
+        );
+        response.insert(
+            "message".into(),
+            Value::String("error".into()),
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":{"format":"personality set failed: Operation not permitted"}}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "aslr_personality_or_debuggee_policy_denied"
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":{"format":"ptrace denied by /secret/project"}}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "ptrace_or_trace_denied"
         );
         response.clear();
         assert_eq!(
