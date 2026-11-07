@@ -165,7 +165,11 @@ fn has_controllers(data: &str) -> bool {
 fn require_delegated_limits(parent: &Path) -> Result<(), SupervisorError> {
     // "controllers" is availability, not activation: the kernel creates
     // writable child quota files only when subtree_control enables them.
-    if fs::read_to_string(parent.join("cgroup.type")).map_err(|_| denied())?.trim() != "domain" {
+    if fs::read_to_string(parent.join("cgroup.type"))
+        .map_err(|_| denied())?
+        .trim()
+        != "domain"
+    {
         return Err(denied());
     }
     let available = fs::read_to_string(parent.join("cgroup.controllers")).map_err(|_| denied())?;
@@ -314,8 +318,7 @@ fn require_kernel_child_membership(group: &Cgroup, pid: u32) -> Result<(), Super
     if pid == 0 {
         return Err(denied());
     }
-    let proc_identity =
-        fs::read_to_string(format!("/proc/{pid}/cgroup")).map_err(|_| denied())?;
+    let proc_identity = fs::read_to_string(format!("/proc/{pid}/cgroup")).map_err(|_| denied())?;
     let mut v2 = proc_identity
         .lines()
         .filter_map(|line| line.strip_prefix("0::"));
