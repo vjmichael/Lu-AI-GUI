@@ -61,3 +61,39 @@ test('P07 bibliography preview is bounded, sorted, atomic and cannot duplicate c
   assert.match(src,/bounded_bibliography_sorts_only_existing_correlated_sources/);
   assert.doesNotMatch(src,/factual_claim_verified:true/);
 });
+
+test('P07 Crossref metadata adapter refuses DOI/title/year/author substitution and SBL guesswork',()=>{
+  assert.match(src,/pub fn catalog_work_from_crossref\(/);
+  assert.match(src,/canonical_doi\(&candidate\.identifier\)/);
+  assert.match(src,/if actual!=expected/);
+  assert.match(src,/if years\.len\(\)!=1/);
+  assert.match(src,/if !bounded\(title,1024\)\|\|title!=source\.title/);
+  assert.match(src,/journal_abbreviation:None/);
+  assert.match(src,/render_correlated\(ledger,&record,Style::Chicago18\)/);
+  assert.match(src,/crossref_adapter_attests_doi_title_author_year_and_book_identity/);
+  assert.match(src,/crossref_adapter_refuses_conflicting_or_untrusted_secondary_metadata/);
+  assert.match(src,/crossref_journal_metadata_never_guesses_sbl_abbreviation/);
+});
+test('P07 only the user-approved native Research host can preview citations from pinned Crossref metadata',()=>{
+  const host=read('../src-tauri/src/research_desktop.rs');
+  const desktop=read('../src-tauri/src/lib.rs');
+  const ui=read('../web/main.jsx');
+  const tasks=read('../../src-tauri/lu-core/src/tasks.rs');
+  assert.match(host,/pub\(crate\) fn citation_preview\(/);
+  assert.match(host,/ledger\.discovered_candidate\(source_id\)/);
+  assert.match(host,/encode_doi_component\(&doi\)/);
+  assert.match(host,/fetcher\.fetch_bounded\(&url,1024\*1024\)/);
+  assert.match(host,/page\.http_status!=200\|\|page\.redirect_target\.is_some\(\)/);
+  assert.match(host,/catalog_work_from_crossref\(&ledger,source_id,&page\.bytes\)/);
+  assert.match(host,/Sha256::digest\(&page\.bytes\)/);
+  assert.match(desktop,/async fn lu_research_citation_preview\(/);
+  assert.match(desktop,/lu_research_citation_preview,/);
+  assert.match(desktop,/state\.observe\.deny_observation_network_egress\(&chat_id\)/);
+  assert.match(desktop,/next_id\("research-citation-"\)/);
+  assert.match(desktop,/request_owner\.observe\.deny_observation_network_egress\(&chat_id\)/);
+  assert.match(tasks,/pub fn active_research_network_tasks/);
+  assert.match(ui,/invoke\('lu_research_citation_preview'/);
+  assert.match(ui,/Preview evidence-bound citation/);
+  assert.match(ui,/Crossref-backed citation preview/);
+  assert.match(ui,/REVIEW REQUIRED/);
+});
