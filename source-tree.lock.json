@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ccdadf88672ad1e2543cef36fc9331b6ec5a5930",
+  "sourceCommitBeforeLock": "f91c10b3fd6cc2f830aaa2bd3eed132d7653660d",
   "trackedFileCount": 513,
   "files": [
     {
@@ -601,7 +601,7 @@
     },
     {
       "path": "lu-desktop/tests/image-workspace-history.test.mjs",
-      "blob": "149b5a5fc94e891f872e9025a3113aca5dec8c9b"
+      "blob": "b6e946d9dc8f5b2029df93a47de243c1deb24c3f"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
