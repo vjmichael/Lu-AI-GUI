@@ -62,6 +62,8 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
       - name: Native Rust Core tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture
+      - name: P01 compile and test cap-scoped filesystem metadata discovery (native)
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_file_discovery -- --nocapture
       - name: Checked hostile archive/member tests
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_inspect -- --nocapture
   desktop:
@@ -115,6 +117,8 @@ jobs:
         working-directory: lu-desktop
       - name: Build actual production scanner acceptance worker
         run: cargo build --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+      - name: P01 verify frontend workspace discovery and authority contracts
+        run: node --test lu-desktop/tests/filesystem-discovery.test.mjs lu-desktop/tests/workspace-desktop.test.mjs
       - name: Run UI regressions
         run: npm run test:ui
         working-directory: lu-desktop
