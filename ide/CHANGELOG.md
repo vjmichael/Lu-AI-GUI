@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO10-A/B optional Lu Core bridge development started (Nov 7 UTC): separate versioned Protobuf data-only inter-app contract, canonical strict wire codec, host-only handshake and replay/project/grant policy with intentionally absent production peer proof, offline truthful Tauri bridge status UI, typed read-only capability, Win/Linux native contract CI, exact branch/ledger docs. No socket/model session, shared Lu chat or tool authority; WO9-F and earlier installed native release gates remain OPEN. [WO10 ledger](docs/IDE_WORK_ORDER_10_OPTIONAL_LU_BRIDGE_20261107.md).
+
+
 - WO9-D/E/F native repairs and restart revalidation (Nov 7 UTC): fixed installed Linux Tauri Rust E0277 by deriving strict `Deserialize` on native one-file Git staged receipt; excluded injected coordinator State from frontend IPC request-schema test; added real Windows/Linux `native-build` feature compilation. Hardened durable DAG reload: previously passed steps require exact native supervisor journal revalidation and human-triggered no-rerun verification before subsequent protected job authorization; crash quarantine stays fail-closed. Expanded signed Windows installed WO9 harness with real slow Cargo cancellation, OS worker reap, host crash/restart and no-auto-replay tests. Host Win/Linux + frontend previously green on `16fb0ad`; latest exact-head native install and signed tests **not accepted**. See [WO9 ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
 
 
