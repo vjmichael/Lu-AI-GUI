@@ -6,6 +6,8 @@ param(
   [Parameter(Mandatory=$true)][string]$SignerThumbprint,
   [Parameter(Mandatory=$true)][string]$ServiceSha256,
   [Parameter(Mandatory=$true)][string]$ServiceSignerThumbprint,
+  [Parameter(Mandatory=$true)][string]$DesktopSha256,
+  [Parameter(Mandatory=$true)][string]$DesktopSignerThumbprint,
   [Parameter(Mandatory=$true)][string]$InstallRoot
 )
 Set-StrictMode -Version Latest
@@ -70,7 +72,7 @@ try {
   SignaturePin $serviceExe $ServiceSha256 $ServiceSignerThumbprint
   $service=ServiceIdentity $serviceExe
   if ($service.State -notin @('Stopped','Running')) { Deny 'unexpected_service_state' }
-  if (!(Test-Path -LiteralPath $app -PathType Leaf)) { Deny 'installed_desktop_missing' }
+  SignaturePin $app $DesktopSha256 $DesktopSignerThumbprint
   foreach ($cycle in 1..2) {
     $proc=Start-Process -FilePath $app -WorkingDirectory $root -PassThru
     $launched+= $proc
@@ -87,7 +89,6 @@ try {
   if ($uninstaller.Count -ne 1) { Deny 'nsis_uninstaller_missing_or_ambiguous' }
   $uninstall=Start-Process -FilePath $uninstaller[0].FullName -ArgumentList '/S' -PassThru -Wait
   if ($uninstall.ExitCode -ne 0) { Deny 'nsis_service_uninstall_failed' }
-  $uninstalled=$true
   Start-Sleep -Seconds 3
   if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
     Deny 'protected_service_left_after_uninstall'
@@ -95,6 +96,7 @@ try {
   if (Test-Path -LiteralPath $serviceExe -PathType Leaf) {
     Deny 'protected_service_binary_left_after_uninstall'
   }
+  $uninstalled=$true
 } finally {
   foreach($proc in $launched) {
     try { $proc.Refresh(); if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } } catch {}
