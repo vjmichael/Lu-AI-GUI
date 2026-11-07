@@ -39,9 +39,9 @@ jobs:
         working-directory: ide/app
         shell: pwsh
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-          cargo fetch --manifest-path src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
           python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows dependency graph drift' }
           npm ci --ignore-scripts --no-audit --no-fund
@@ -154,9 +154,9 @@ jobs:
       - name: Native installed Linux source and frontend checks
         working-directory: ide/app
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-          cargo fetch --manifest-path src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
           python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
           npm ci --ignore-scripts --no-audit --no-fund
           cargo fetch --locked --manifest-path src-tauri/Cargo.toml

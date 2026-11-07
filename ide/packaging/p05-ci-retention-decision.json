@@ -97,7 +97,7 @@
     },
     {
       "path": ".github/workflows/ide-e2-supervised-lsp.yml",
-      "gitBlobSha": "ac84fb863cbdf581b4f40d91a7b598b61b19e293",
+      "gitBlobSha": "c2be7149dc3424d7c296aae2f98a6fd37b99c77b",
       "phaseOwner": "P03",
       "disposition": "retain_existing_workflow",
       "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
@@ -106,7 +106,7 @@
     },
     {
       "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
-      "gitBlobSha": "40265803017d3aec61639bf3adffee3fd024f95e",
+      "gitBlobSha": "6d8761823e67575cb979b15570f8fb44d571d4d5",
       "phaseOwner": "P03",
       "disposition": "retain_existing_workflow",
       "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
@@ -286,7 +286,7 @@
     },
     {
       "path": ".github/workflows/ide-wo8-installed-linux.yml",
-      "gitBlobSha": "a13b235f14070650fc0d2d725962f9f001f3a842",
+      "gitBlobSha": "cbb33c566a492ed176d7af8ef381019c5753605e",
       "phaseOwner": "P04",
       "disposition": "retain_existing_workflow",
       "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
@@ -295,7 +295,7 @@
     },
     {
       "path": ".github/workflows/ide-wo8-installed-windows.yml",
-      "gitBlobSha": "a0d16ccb4b04504ead52594b365d772b95eb2fe5",
+      "gitBlobSha": "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
       "phaseOwner": "P04",
       "disposition": "retain_existing_workflow",
       "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
@@ -340,7 +340,7 @@
     },
     {
       "path": ".github/workflows/ide-wo9-installed-native.yml",
-      "gitBlobSha": "788875554e4d0ebcaf117d9e92f38ad8943815df",
+      "gitBlobSha": "60c1bf3d20fb08dcdcfd183a8ffec76599fa6c52",
       "phaseOwner": "P04",
       "disposition": "retain_existing_workflow",
       "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",

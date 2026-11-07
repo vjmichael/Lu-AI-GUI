@@ -45,7 +45,7 @@ jobs:
         shell: bash
         run: |
           cd ide/app
-          npm install --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
       - name: Offline installer asset and license-redistribution audit
         shell: bash
@@ -77,7 +77,7 @@ jobs:
         shell: bash
         run: |
           cd ide/app
-          npm install --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run build
       - name: Compile standalone desktop with read-only LSP status and provider catalog
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
@@ -114,14 +114,14 @@ jobs:
           toolchain: '1.99.1'
       - name: Install frontend dependencies
         working-directory: ide/app
-        run: npm install --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Prepare exact-source resolved licenses for real NSIS Tauri resources
         shell: pwsh
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           $ErrorActionPreference='Stop'
-          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: installer resolved lock graph differs from reviewed OS evidence' }
           npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund

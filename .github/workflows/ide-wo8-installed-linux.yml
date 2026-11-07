@@ -38,11 +38,11 @@ jobs:
             xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
       - name: Fetch resolved Cargo sources before collecting license notices
         run: |
-          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
       - name: Build frontend and real native Linux Debian package
         working-directory: ide/app
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
           python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
           npm ci --ignore-scripts --no-audit --no-fund
