@@ -1,0 +1,48 @@
+name: Lu M2 Canonical ANSF Conversation Migration
+on:
+  push:
+    branches:
+      - lu/m2-ansf-canonical-conversation-20261107
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/ansf*.rs'
+      - 'lu-desktop/src-tauri/src/ansf_migration.rs'
+      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
+      - 'lu-desktop/src-tauri/src/memory_desktop.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/**'
+      - '.github/workflows/lu-m2-ansf-cutover.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact committed frozen source
+        run: node scripts/verify-source-tree.mjs
+      - name: Real ANSF immutable live chat tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_live_chat::tests -- --nocapture
+      - name: ANSF native relational goal records
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_goal_records::tests -- --nocapture
+      - name: Production portable ANSF desktop chat and migration integration tests
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml -- --nocapture
+      - name: Production host authorization regression on canonical ANSF turns
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml -- --nocapture
+      - name: Existing ANSF book integrity tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test ansf -- --nocapture

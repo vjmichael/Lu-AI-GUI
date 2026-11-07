@@ -15,6 +15,8 @@
 pub mod agent_tool_loop;
 pub mod ai_operations;
 pub mod ansf;
+pub mod ansf_live_chat;
+pub mod ansf_goal_records;
 pub mod ansf_source_ids;
 pub mod ansf_artifact_links;
 pub mod ansf_goals;

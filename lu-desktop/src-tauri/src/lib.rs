@@ -1,7 +1,9 @@
 //! Independent Lu desktop host. No Jan commands, plugins or route handlers.
 //! WebView receives opaque model/image/session IDs only. All disk selection is
 //! from native OS dialogs; only host code can resolve the signed engine package.
+#[path = "ansf_chat_store.rs"]
 mod chat_store;
+mod ansf_migration;
 mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
@@ -3641,7 +3643,9 @@ async fn generate_internal(
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
-            let events = state.chats.history(&chat_id)?;
+            let events = state.chats.recent_model_history(&chat_id,32)?;
+            // ANSF performs one indexed bounded source read; it does not load
+            // the complete human-visible conversation into inference context.
             // With at most one turn per chat pending, the last user event is
             // this submission. Read history *after* waiting so later turns
             // use completed previous replies, but never duplicate ourselves.

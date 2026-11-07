@@ -1,7 +1,9 @@
 //! AUTH-01: real desktop ChatStore user-turn verifier drives Lu Core dispatch.
 //! A host-readable file is NOT an authorization grant.
-#[path = "../../../src-tauri/src/chat_store.rs"]
+#[path = "../../../src-tauri/src/ansf_chat_store.rs"]
 mod chat_store;
+#[path = "../../../src-tauri/src/ansf_migration.rs"]
+mod ansf_migration;
 #[path = "../../../src-tauri/src/native_host_read.rs"]
 mod native_host_read;
 #[path = "../../../src-tauri/src/read_proposal.rs"]
