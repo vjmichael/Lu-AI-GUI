@@ -195,3 +195,30 @@ test('P07 native Research report optionally includes only sealed bibliography ev
   assert.match(ui,/citationStyle:researchCitationStyle/);
   assert.match(wf,/p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart/);
 });
+
+test('P07 catalog revision requires native side-by-side comparison with durable SHA-chain receipts',()=>{
+  const ledger=read('../../src-tauri/lu-core/src/web_research_evidence.rs');
+  const host=read('../src-tauri/src/research_desktop.rs');
+  const commands=read('../src-tauri/src/lib.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(ledger,/CREATE TABLE IF NOT EXISTS research_citation_catalog_revisions/);
+  assert.match(ledger,/pub fn replace_citation_catalog_after_review\(/);
+  assert.match(ledger,/previous\.response_sha256!=expected_sha256/);
+  assert.match(ledger,/WHERE source_id=\?1 AND response_sha256=\?2/);
+  assert.match(ledger,/pub fn citation_catalog_revision_receipts\(/);
+  assert.match(ledger,/active\.response_sha256!=expected/);
+  assert.match(ledger,/p07_catalog_re_review_preserves_history_denies_stale_receipts_and_recovers/);
+  assert.match(host,/pub\(crate\) fn prepare_citation_revision\(/);
+  assert.match(host,/pub\(crate\) fn apply_citation_revision\(/);
+  assert.match(host,/let old=catalog_work_from_crossref/);
+  assert.match(host,/let next=catalog_work_from_crossref/);
+  assert.match(host,/replace_citation_catalog_after_review\(/);
+  assert.match(commands,/async fn lu_research_citation_review_revision\(/);
+  assert.match(commands,/lu_research_citation_review_revision,/);
+  assert.match(commands,/Approve exact catalog revision/);
+  assert.match(commands,/Reject and keep old/);
+  assert.match(commands,/next_id\("research-citation-revision-"\)/);
+  assert.match(ui,/invoke\('lu_research_citation_review_revision'/);
+  assert.match(ui,/Review changed Crossref metadata/);
+  assert.match(ui,/researchCitationRevisionByChat/);
+});
