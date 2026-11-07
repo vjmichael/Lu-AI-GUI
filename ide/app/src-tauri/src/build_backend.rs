@@ -16,6 +16,7 @@ use std::{
 use lu_ide_workspace::IdeWorkspaceRegistry;
 use lu_ide_execution_supervisor::{
     snapshot::{publish_input, verify_input},
+    wo6_output_evidence::{audit_published_output, ArtifactEntry},
     JobPlan, JobPhase, Supervisor,
 };
 use serde::Serialize;
@@ -131,6 +132,11 @@ pub struct BuildRunView {
     pub native_exit_code: Option<i64>,
     pub output_sha256: Option<String>,
     pub output_bytes: Option<u64>,
+    pub artifact_manifest_sha256: Option<String>,
+    pub artifact_evidence_state: String,
+    pub artifact_files: Vec<ArtifactEntry>,
+    pub artifact_count: usize,
+    pub artifact_truncated: bool,
     pub timed_out: bool,
     pub requires_reconciliation: bool,
     pub installed_app_accepted: bool,
@@ -411,6 +417,38 @@ impl NativeBuildRuntime {
             // artifact digest requires a separately reviewed output audit.
             None, None,
         );
+        // Only attempt a read-only publication witness after the exact
+        // native supervisor has recorded Completed. Failed/quarantined or
+        // cancelled jobs never expose executable artifact paths to WebView.
+        #[cfg(windows)]
+        let published = if native.summary.phase == JobPhase::Completed
+            && !native.output_root.as_os_str().is_empty()
+        {
+            audit_published_output(&native.output_root).ok()
+        } else {
+            None
+        };
+        #[cfg(target_os = "linux")]
+        let published = if native.summary.phase == JobPhase::Completed {
+            audit_published_output(&native.output_directory).ok()
+        } else {
+            None
+        };
+        let artifact_evidence_state = if published.is_some() {
+            "read_only_post_termination_tree_hashed"
+        } else {
+            "no_trusted_artifact_manifest"
+        };
+        let (artifact_manifest_sha256, artifact_files, artifact_count, artifact_truncated) =
+            match published {
+                Some(manifest) => (
+                    Some(manifest.tree_sha256),
+                    manifest.files,
+                    manifest.file_count,
+                    manifest.truncated,
+                ),
+                None => (None, Vec::new(), 0, false),
+            };
         Ok(BuildRunView {
             project_id: project_id.to_owned(),
             job_id: prepared.job_id,
@@ -424,6 +462,11 @@ impl NativeBuildRuntime {
             native_exit_code: exit_code,
             output_sha256,
             output_bytes,
+            artifact_manifest_sha256,
+            artifact_evidence_state: artifact_evidence_state.to_owned(),
+            artifact_files,
+            artifact_count,
+            artifact_truncated,
             timed_out: native.timed_out,
             requires_reconciliation: evidence.requires_reconciliation,
             // A native worker reply is NOT independently installed-app
