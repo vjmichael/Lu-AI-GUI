@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 exact upstream alloc-stdlib/Tauri plugin notices (Nov 7):** Pinned upstream release tags/manifests and complete original BSD-3-Clause, MIT, Apache-2.0 legal texts, staged only on exact missing-notice packages and audited all dual-license originals with immutable Git hashes. No legal signoff; CI evidence pending.
+
 - **P06 actual original r-efi license notices (Nov 7):** Version-tagged 5.3.0 and 6.0.0 `AUTHORS` original MIT/Apache/LGPL option and copyright statements retrieved from upstream, preserved in tree and verified against exact Cargo registry crate bytes via pinned Git blob, with fail-closed modified/wrong-version/symlink tests. Dual-option human review stays open; new OS unresolved count pending.
 
 - **P06 target-specific third-party license prioritization (Nov 7):** Added exact native filtered Cargo dependency graph + notice inventory SHA-bound scope on Windows/Linux, with no legal exemption for absent platform targets or vendored binaries. Latest Windows archive has 45 unresolved entries after three source notice repairs; all remain open until reviewed. Added hostile regression tests and original metadata artifacts for CI review.

@@ -12,6 +12,7 @@ on:
       - 'ide/packaging/test_p06_target_license_scope.py'
       - 'ide/packaging/test_p06_source_notice_recovery.py'
       - 'ide/packaging/test_p06_r_efi_authors.py'
+      - 'ide/packaging/test_p06_exact_upstream_notice_fallback.py'
       - 'ide/packaging/upstream-crate-notices/**'
       - 'ide/packaging/test_p06_license_provenance.py'
       - 'ide/host/LICENSE'
@@ -100,6 +101,7 @@ jobs:
             test "$(git hash-object --no-filters "$p")" = "$(git rev-parse "HEAD:$p")"
             test "$(git hash-object "$p")" = "$(git rev-parse "HEAD:$p")"
           done
+          python -m unittest discover -s ide/packaging -p 'test_p06_exact_upstream_notice_fallback.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_r_efi_authors.py' -v
       - name: Fetch original six pinned upstream licenses and resolved npm/Cargo texts
         shell: bash

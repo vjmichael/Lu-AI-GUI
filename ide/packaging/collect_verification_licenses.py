@@ -91,6 +91,59 @@ def verified_r_efi_authors(manager, name, version, declared, folder, repo_root):
         raise Denied("r_efi_crate_notice_differs_from_reviewed_source")
     return local
 
+# These ONLY cover exact package versions from reviewed upstream release tags.
+# The canonical original license is archived verbatim in this repository.
+# No SPDX declaration alone can substitute for byte-proven provenance.
+CURATED_MISSING_NOTICES = {
+    "alloc-stdlib:0.3.0": {
+        "declaredLicense": "BSD-3-Clause",
+        "files": [
+            {
+                "checkedIn": "ide/packaging/upstream-crate-notices/alloc-stdlib-0.3.0-LICENSE.txt",
+                "originalName": "LICENSE",
+                "url": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/0.3.0/LICENSE",
+                "blobSha": "cd496ba72eb37e83a44958358d1f89a8a28cbc15"
+            }
+        ]
+    },
+    "tauri-plugin:2.7.2": {
+        "declaredLicense": "Apache-2.0 OR MIT",
+        "files": [
+            {
+                "checkedIn": "ide/packaging/upstream-crate-notices/tauri-plugin-2.7.2-LICENSE-MIT.txt",
+                "originalName": "LICENSE-MIT",
+                "url": "https://raw.githubusercontent.com/tauri-apps/tauri/tauri-plugin-v2.7.2/LICENSE-MIT",
+                "blobSha": "b08530d59433b3060f4fad8751ac2610c0b0aff3"
+            },
+            {
+                "checkedIn": "ide/packaging/upstream-crate-notices/tauri-plugin-2.7.2-LICENSE-APACHE-2.0.txt",
+                "originalName": "LICENSE-APACHE-2.0",
+                "url": "https://raw.githubusercontent.com/tauri-apps/tauri/tauri-plugin-v2.7.2/LICENSE-APACHE-2.0",
+                "blobSha": "f433b1a53f5b830a205fd2df78e2b34974656c7b"
+            }
+        ]
+    }
+}
+
+def verified_curated_notices(repo_root,manager,name,version,declared):
+    if manager != "cargo":
+        return []
+    rule = CURATED_MISSING_NOTICES.get(name + ":" + version)
+    if rule is None:
+        return []
+    if declared != rule["declaredLicense"]:
+        raise Denied("curated_notice_exact_license_expression_drift")
+    originals=[]
+    for item in rule["files"]:
+        file=repo_root/item["checkedIn"]
+        if (file.is_symlink() or not file.is_file()
+                or not 100 <= file.stat().st_size <= MAX_TEXT):
+            raise Denied("missing_or_unsafe_curated_source_notice")
+        if git_blob_sha(file.read_bytes()) != item["blobSha"]:
+            raise Denied("curated_notice_differs_from_exact_original_release")
+        originals.append((file,item))
+    return originals
+
 def npm_packages(root):
     node=root/"ide"/"app"/"node_modules"
     if not node.is_dir():
@@ -218,6 +271,12 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
         results=[]
         for index,(manager,name,version,declared,folder) in enumerate(sorted_rows):
             files=files_for(folder)
+            curated={}
+            if not files:
+                for original,origin in verified_curated_notices(
+                        repo_root,manager,name,version,declared):
+                    files.append(original)
+                    curated[original]=origin
             authors=verified_r_efi_authors(manager,name,version,declared,folder,repo_root)
             if authors is not None and authors not in files:
                 files.append(authors)
@@ -231,6 +290,11 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                 shutil.copyfile(src,target,follow_symlinks=False)
                 notice={"path":relative,"sha256":digest(target),
                                 "originalName":src.name}
+                if src in curated:
+                    origin=curated[src]
+                    notice["originalName"]=origin["originalName"]
+                    notice["upstreamSource"]=origin["url"]
+                    notice["upstreamGitBlobSha"]=origin["blobSha"]
                 if src.name=="AUTHORS" and manager=="cargo" and name=="r-efi" and version in R_EFI_AUTHOR_GIT_BLOBS:
                     notice["upstreamSource"]="https://raw.githubusercontent.com/r-efi/r-efi/v"+version+"/AUTHORS"
                     notice["upstreamGitBlobSha"]=R_EFI_AUTHOR_GIT_BLOBS[version]
