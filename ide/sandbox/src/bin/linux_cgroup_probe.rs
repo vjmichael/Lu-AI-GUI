@@ -69,8 +69,13 @@ mod probe {
                 )));
             }
         }
-        if !fs::read_to_string(parent.join("cgroup.procs"))?.trim().is_empty() {
-            return Err(io::Error::other("delegated parent contains internal processes"));
+        if !fs::read_to_string(parent.join("cgroup.procs"))?
+            .trim()
+            .is_empty()
+        {
+            return Err(io::Error::other(
+                "delegated parent contains internal processes",
+            ));
         }
         Ok(())
     }
