@@ -164,7 +164,7 @@ fn validate(req:&DiscoverFilesRequest)->Result<(),ToolFailure>{
 }
 fn timestamp(meta:&cap_std::fs::Metadata)->(u64,u128){
     let d=meta.modified().ok()
-        .and_then(|s|s.duration_since(UNIX_EPOCH).ok());
+        .and_then(|s|s.into_std().duration_since(UNIX_EPOCH).ok());
     (d.map_or(0,|v|v.as_secs()),d.map_or(0,|v|v.as_nanos()))
 }
 fn forbidden(meta:&cap_std::fs::Metadata)->bool{
