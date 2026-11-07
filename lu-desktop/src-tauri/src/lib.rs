@@ -6216,6 +6216,32 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn p03_local_model_inspection_never_claims_runtime_or_remote_provider(){
+        let root=std::env::temp_dir().join(next_id("lu-p03-inspection-"));
+        fs::create_dir_all(&root).unwrap();
+        let model=StoredModel{
+            model_ref:"m-0123456789abcdef0123456789abcdef".into(),
+            filename:"local.gguf".into(),model_subdir:None,
+            projector_attached:false,
+        };
+        fs::write(root.join("local.gguf"),[
+            b"GGUF".as_slice(),&3u32.to_le_bytes(),
+            &1u64.to_le_bytes(),&1u64.to_le_bytes(),
+        ].concat()).unwrap();
+        let pass=inspect_registered_model(&root,&model);
+        assert!(pass.load_allowed);
+        assert_eq!(pass.gguf_version,Some(3));
+        assert!(!pass.runtime_compatible);
+        assert!(!pass.provider_download_enabled);
+        let missing_projector=StoredModel{projector_attached:true,..model.clone()};
+        let blocked=inspect_registered_model(&root,&missing_projector);
+        assert!(!blocked.load_allowed);
+        assert_eq!(blocked.status,"projector_unavailable");
+        fs::write(root.join("local.gguf"),b"invalid contents").unwrap();
+        assert!(!inspect_registered_model(&root,&model).load_allowed);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn host_image_reference_matches_core_pinned_identity() {
         // Core's image digest uses its first 16 bytes (32 hex chars) and
         // the host prefix `img-` contributes 4 characters, total 36.
