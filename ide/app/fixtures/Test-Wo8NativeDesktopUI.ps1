@@ -445,7 +445,7 @@ function ActiveProtectedDebuggerJobId {
     try {
       $record=Find-Control 'Active debug session:' '' 2
       $name=[string]$record.Current.Name
-      if ($name -match 'Active debug session:\\s*(?<id>job-[0-9a-zA-Z_-]{8,})') {
+      if ($name -match 'Active debug session:\s*(?<id>job-[0-9a-zA-Z_-]{8,})') {
         return $Matches['id']
       }
     } catch {}
