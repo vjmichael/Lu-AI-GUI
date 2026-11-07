@@ -13,6 +13,7 @@
 #![deny(unsafe_code)]
 
 pub mod agent_tool_loop;
+pub mod ai_operations;
 pub mod ansf;
 pub mod ansf_import;
 pub mod ansf_library;
@@ -77,6 +78,7 @@ pub mod diagnostic_localization;
 pub mod durable;
 pub mod export_contract;
 pub mod gguf_preflight;
+pub mod gguf_metadata_summary;
 pub mod host_resource_authority;
 pub mod host_session;
 pub mod host_typed_evidence;
@@ -92,6 +94,7 @@ pub mod llama_cli_backend;
 pub mod mmproj_admission;
 pub mod model;
 pub mod model_admission;
+pub mod model_provider_catalog;
 pub mod model_import;
 pub mod model_json_boundary;
 pub mod model_turn_journal;

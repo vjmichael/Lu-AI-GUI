@@ -149,6 +149,205 @@ impl ModelView {
     }
 }
 
+/// P03 native model compatibility inspection. A GGUF header and MMProj
+/// identity are useful negative preflight checks, never proof that a specific
+/// architecture, Vulkan driver, offload count or license is compatible.
+#[derive(Clone,Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelInspectionView{
+    model_ref:String,
+    filename:String,
+    file_bytes:Option<u64>,
+    gguf_version:Option<u32>,
+    tensor_count:Option<u64>,
+    metadata_count:Option<u64>,
+    architecture:Option<String>,
+    tokenizer_model:Option<String>,
+    reported_context_length:Option<u64>,
+    gguf_file_type:Option<u32>,
+    projector_attached:bool,
+    projector_checked:bool,
+    load_allowed:bool,
+    runtime_compatible:bool,
+    backend_requested:&'static str,
+    provider_download_enabled:bool,
+    status:&'static str,
+    detail:&'static str,
+}
+fn inspect_registered_model(root:&Path,record:&StoredModel)->ModelInspectionView{
+    let mut view=ModelInspectionView{
+        model_ref:record.model_ref.clone(),filename:record.filename.clone(),
+        file_bytes:None,gguf_version:None,tensor_count:None,
+        metadata_count:None,architecture:None,tokenizer_model:None,
+        reported_context_length:None,gguf_file_type:None,
+        projector_attached:record.projector_attached,
+        projector_checked:false,load_allowed:false,runtime_compatible:false,
+        backend_requested:if cfg!(windows){"pinned llama.cpp Vulkan requested; not proven"}
+            else{"pinned llama.cpp CPU baseline; not proven"},
+        provider_download_enabled:false,status:"unavailable",
+        detail:"Selected model is missing or cannot pass native file/header admission.",
+    };
+    let dir=model_directory(root,record);
+    if !is_real_directory(&dir){return view}
+    let mut admission=ModelAdmissionManager::new();
+    let Ok(admitted)=admission.admit(&dir,&record.filename)else{return view};
+    if admitted.recheck().is_err(){return view}
+    let h=admitted.header();
+    view.gguf_version=Some(h.version);
+    view.tensor_count=Some(h.tensor_count);
+    view.metadata_count=Some(h.metadata_count);
+    view.file_bytes=Some(h.file_bytes);
+    if record.projector_attached{
+        let Ok(name)=projector_filename_for_model(&record.model_ref)else{return view};
+        let Ok(projector)=admit_projector(&dir,&name)else{
+            view.status="projector_unavailable";
+            view.detail="The recorded MMProj is missing or fails native identity/header admission.";
+            return view
+        };
+        if projector.recheck().is_err(){
+            view.status="projector_unavailable";
+            view.detail="Projector identity changed during preflight; load refused.";
+            return view
+        }
+        view.projector_checked=true;
+    }
+    view.load_allowed=true;
+    view.status="header_checked";
+    view.detail="GGUF/MMProj basic headers and current files checked. Architecture, license, context capacity, GPU offload and real model inference remain unverified until trusted engine execution.";
+    // Metadata is untrusted, best-effort descriptive data: a malformed or
+    // unsupported KV never upgrades compatibility or bypasses header admission.
+    if let Ok(summary)=lu_core::gguf_metadata_summary::inspect_metadata(
+        &dir.join(&record.filename)
+    ){
+        view.architecture=summary.architecture;
+        view.tokenizer_model=summary.tokenizer_model;
+        view.reported_context_length=summary.reported_context_length;
+        view.gguf_file_type=summary.file_type;
+        view.status="metadata_checked";
+        view.detail="Bounded GGUF metadata parsed. Reported architecture/context/quantization are descriptive, NOT verified backend, license, tokenizer or GPU compatibility.";
+    }
+    view
+}
+#[tauri::command]
+fn lu_model_preflight(
+    state:State<'_,Arc<DesktopState>>,model_ref:String
+)->Result<ModelInspectionView,String>{
+    let models=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    let record=models.iter().find(|m|m.model_ref==model_ref)
+        .cloned().ok_or("Unknown registered local model")?;
+    drop(models);
+    Ok(inspect_registered_model(&state.models_dir,&record))
+}
+
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct BackendOptionView{
+    backend:&'static str,
+    engine:&'static str,
+    packaged:bool,
+    runtime_inference_verified:bool,
+    gpu_execution_verified:bool,
+    selectable:bool,
+    detail:&'static str,
+}
+/// These are package/route *availability* facts, not benchmarks, driver
+/// measurements, generic GPU memory telemetry or additional runnable engines.
+/// The currently pinned llama.cpp engine is the only implemented local route.
+#[tauri::command]
+fn lu_model_backend_options()->Vec<BackendOptionView>{
+    vec![
+        BackendOptionView{
+            backend:if cfg!(windows){"vulkan"}else{"cpu"},
+            engine:"pinned llama.cpp",
+            packaged:true,runtime_inference_verified:false,
+            gpu_execution_verified:false,selectable:true,
+            detail:"Pinned package identity is checked by the desktop at startup. Actual model inference/offload must be observed after load.",
+        },
+        BackendOptionView{backend:"rocm",engine:"llama.cpp",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,detail:"Not packaged or independently verified."},
+        BackendOptionView{backend:"cuda",engine:"llama.cpp",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,detail:"Not packaged or independently verified."},
+        BackendOptionView{backend:"vllm",engine:"vLLM",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,detail:"Provider adapter not yet installed or authorized."},
+    ]
+}
+/// Search/read actions are initiated only by a Settings user gesture. No
+/// model, WebView-supplied URL, arbitrary origin, or downloader is admitted.
+#[tauri::command]
+async fn lu_model_provider_search(
+    state:State<'_,Arc<DesktopState>>,query:String
+)->Result<Vec<lu_core::model_provider_catalog::ModelLead>,String>{
+    let host=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        host.research.model_provider_search(&query)
+    ).await.map_err(|_|"Model provider search worker stopped")?
+}
+#[tauri::command]
+async fn lu_model_provider_review(
+    state:State<'_,Arc<DesktopState>>,repo_id:String,revision:String
+)->Result<lu_core::model_provider_catalog::ModelRepoReview,String>{
+    let host=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        host.research.model_provider_review(&repo_id,&revision)
+    ).await.map_err(|_|"Model provider review worker stopped")?
+}
+/// Reviewed P03 transfer INTENT only. The host independently fetches and
+/// checks the exact public revision and digest again before showing a real
+/// native operator confirmation. No network write or model-load follows.
+#[tauri::command]
+async fn lu_model_prepare_transfer(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    repo_id:String,revision:String,filename:String,
+    sha256:String,bytes:u64,
+)->Result<Option<lu_core::ai_operations::ReviewedModelTransferIntent>,String>{
+    let host=Arc::clone(state.inner());
+    let review_repo=repo_id.clone();
+    let review_revision=revision.clone();
+    let review=tauri::async_runtime::spawn_blocking(move||
+        host.research.model_provider_review(&review_repo,&review_revision)
+    ).await.map_err(|_|"Pinned model metadata review interrupted")??;
+    let file=review.files.iter().find(|f|
+        f.name==filename&&f.bytes==bytes&&f.sha256==sha256.to_ascii_lowercase()
+    ).ok_or("Model file metadata changed; review must restart")?;
+    let summary=format!(
+        r#"Review a FUTURE model transfer plan (NO download now)?
+
+Repository: {}
+Immutable revision: {}
+File: {}
+Size: {} bytes
+Expected SHA-256: {}
+Provider-reported license: {}
+
+Only confirm if you have reviewed and ACCEPT the provider's applicable
+license and access conditions. The license label is not the full legal text.
+Lu will NOT install, download or load anything.
+P05 must separately authorize the transfer and verify complete bytes."#,
+        review.repo_id,review.revision,file.name,file.bytes,
+        file.sha256,review.license_label,
+    );
+    let accepted=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(summary)
+            .title("Lu — Review immutable model transfer metadata")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "I accept terms; prepare plan only".into(),"Cancel".into(),
+            )).blocking_show()
+    ).await.map_err(|_|"Native model review unavailable")?;
+    if !accepted{return Ok(None)}
+    let candidate=lu_core::ai_operations::ProviderCandidate{
+        provider:"hugging_face",repo_id:&repo_id,revision:&revision,
+        filename:&filename,sha256:&sha256,bytes,
+        license_accepted:true,access_approved:true,
+    };
+    let intent=lu_core::ai_operations::make_reviewed_transfer_intent(
+        &candidate,&review.license_label
+    ).map_err(|_|"Provider transfer metadata was refused")?;
+    Ok(Some(intent))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeView {
@@ -242,6 +441,7 @@ struct DesktopState {
     generation_queue: Arc<GenerationQueue>,
     load_trace: Arc<Mutex<LoadTrace>>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
+    source_reuse: lu_core::ai_operations::SourceReuseIndex,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_scheduler: Arc<lu_core::native_background_scheduler::BackgroundScheduler>,
@@ -641,6 +841,7 @@ impl DesktopState {
             background_pressure,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
+            source_reuse:lu_core::ai_operations::SourceReuseIndex::new(),
             models_dir,
             catalog_path,
             chats: ChatStore::open(&root)?,
@@ -2797,10 +2998,15 @@ async fn lu_load_model(
                 return Err("Finish or cancel queued generations before loading a model".into());
             }
             let catalog = worker_state.catalog.lock().map_err(|_| "catalog poisoned")?;
-            if !catalog.iter().any(|m| m.model_ref == model_ref) {
-                return Err("unknown model".into());
-            }
+            let record = catalog.iter().find(|m|m.model_ref==model_ref)
+                .cloned().ok_or("unknown model")?;
             drop(catalog);
+            // The currently registered host-owned model and companion must
+            // still pass native preflight; no WebView path or URL is admitted.
+            let inspection=inspect_registered_model(&worker_state.models_dir,&record);
+            if !inspection.load_allowed {
+                return Err("Local GGUF/MMProj is unavailable or failed identity/header preflight".into());
+            }
             {
                 let mut trace = worker_state.load_trace.lock().map_err(|_| "load trace poisoned")?;
                 trace.record("catalog_verified", None);
@@ -5881,6 +6087,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             lu_status,
             lu_list_models,
+            lu_model_preflight,
+            lu_model_backend_options,
+            lu_model_provider_search,
+            lu_model_provider_review,
+            lu_model_prepare_transfer,
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,
@@ -6135,6 +6346,32 @@ mod tests {
         let wrong = r#"[{"model_ref":"m-0123456789abcdef0123456789abcdef","filename":"main.gguf","model_subdir":"m-ffffffffffffffffffffffffffffffff","projector_attached":false}]"#;
         fs::write(&file, wrong).unwrap();
         assert!(checked_catalog(&file).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn p03_local_model_inspection_never_claims_runtime_or_remote_provider(){
+        let root=std::env::temp_dir().join(next_id("lu-p03-inspection-"));
+        fs::create_dir_all(&root).unwrap();
+        let model=StoredModel{
+            model_ref:"m-0123456789abcdef0123456789abcdef".into(),
+            filename:"local.gguf".into(),model_subdir:None,
+            projector_attached:false,
+        };
+        fs::write(root.join("local.gguf"),[
+            b"GGUF".as_slice(),&3u32.to_le_bytes(),
+            &1u64.to_le_bytes(),&1u64.to_le_bytes(),
+        ].concat()).unwrap();
+        let pass=inspect_registered_model(&root,&model);
+        assert!(pass.load_allowed);
+        assert_eq!(pass.gguf_version,Some(3));
+        assert!(!pass.runtime_compatible);
+        assert!(!pass.provider_download_enabled);
+        let missing_projector=StoredModel{projector_attached:true,..model.clone()};
+        let blocked=inspect_registered_model(&root,&missing_projector);
+        assert!(!blocked.load_allowed);
+        assert_eq!(blocked.status,"projector_unavailable");
+        fs::write(root.join("local.gguf"),b"invalid contents").unwrap();
+        assert!(!inspect_registered_model(&root,&model).load_allowed);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

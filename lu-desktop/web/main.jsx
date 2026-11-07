@@ -24,6 +24,15 @@ const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
 function App() {
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [modelSearch, setModelSearch] = useState('');
+  const [providerQuery,setProviderQuery] = useState('');
+  const [providerHits,setProviderHits] = useState([]);
+  const [providerReview,setProviderReview] = useState(null);
+  const [providerTransferIntent,setProviderTransferIntent] = useState(null);
+  const [providerBusy,setProviderBusy] = useState(false);
+  const [providerFailure,setProviderFailure] = useState('');
+  const [modelInspection, setModelInspection] = useState(null);
+  const [modelBackends,setModelBackends] = useState([]);
   const [runtime, setRuntime] = useState({ phase: 'Idle', modelRef: null, sessionId: null });
   const [chats, setChats] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -1007,6 +1016,22 @@ function App() {
     return()=>{active=false;};
   },[settingsOpen]);
 
+  useEffect(()=>{
+    if (!settingsOpen || !selectedModel) { setModelInspection(null); return; }
+    let alive=true;
+    setModelInspection(null);
+    invoke('lu_model_backend_options').then(options=>{
+      if(alive)setModelBackends(options);
+    }).catch(()=>{if(alive)setModelBackends([]);});
+    invoke('lu_model_preflight',{modelRef:selectedModel})
+      .then(view=>{if(alive)setModelInspection(view);})
+      .catch(()=>{if(alive)setModelInspection({
+        modelRef:selectedModel,status:'inspection_unavailable',loadAllowed:false,
+        detail:'Native model compatibility inspection failed. No model was loaded.'
+      });});
+    return()=>{alive=false;};
+  },[settingsOpen,selectedModel,models]);
+
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
     setModels(knownModels);
@@ -1328,6 +1353,47 @@ function App() {
       setExpandedFolders(p => [...p, created.folderId]);
       await refreshChats();
     });
+  }
+  async function searchPublicModels(){
+    if(providerBusy || !providerQuery.trim()) return;
+    setProviderBusy(true);setProviderFailure('');setProviderHits([]);setProviderReview(null);setProviderTransferIntent(null);
+    try{
+      const hits=await invoke('lu_model_provider_search',{query:providerQuery.trim()});
+      setProviderHits(hits);
+    }catch(error){setProviderFailure(String(error));}
+    finally{setProviderBusy(false);}
+  }
+  async function inspectPublicModel(lead){
+    if(providerBusy)return;
+    setProviderBusy(true);setProviderFailure('');setProviderReview(null);setProviderTransferIntent(null);
+    try{
+      const detail=await invoke('lu_model_provider_review',{
+        repoId:lead.repoId,revision:lead.revision
+      });
+      if(detail.repoId!==lead.repoId||detail.revision!==lead.revision ||
+          detail.downloadAvailable!==false || !detail.files?.length){
+        throw Error('Native provider review returned an invalid or changed catalog result');
+      }
+      setProviderReview(detail);
+    }catch(error){setProviderFailure(String(error));}
+    finally{setProviderBusy(false);}
+  }
+  async function preparePinnedTransfer(file){
+    if(providerBusy||!providerReview)return;
+    setProviderBusy(true);setProviderFailure('');setProviderTransferIntent(null);
+    try{
+      const reviewed=await invoke('lu_model_prepare_transfer',{
+        repoId:providerReview.repoId,revision:providerReview.revision,
+        filename:file.name,sha256:file.sha256,bytes:file.bytes
+      });
+      if(reviewed){
+        if(reviewed.downloaded!==false||reviewed.state!=='awaiting_p05_transfer'){
+          throw Error('Native model review returned an invalid state');
+        }
+        setProviderTransferIntent(reviewed);
+      }
+    }catch(error){setProviderFailure(String(error));}
+    finally{setProviderBusy(false);}
   }
   function importModel() {
     action('Importing GGUF', async () => {
@@ -4561,17 +4627,86 @@ function App() {
             Original file was not overwritten.
           </small>}
         </section>
-        <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
+        <h3>Models</h3><p>GGUF models are discovered only from Lu's existing model store, never loaded automatically. Searching below is local and read-only.</p>
+        <label className="modelSearchLabel">Search registered local models
+          <input type="search" value={modelSearch} maxLength={100} autoComplete="off"
+            placeholder="Filename…" onChange={event=>setModelSearch(event.target.value)}/>
+        </label>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
         <button className="subtleButton full" onClick={importModel} disabled={busy}>Import GGUF from another location</button>
-        <div className="settingsModelList">{models.map(m => <button key={m.modelRef} className={'settingsModel '+(selectedModel === m.modelRef ? 'selected' : '')}
+        <div className="settingsModelList">{models.filter(m=>m.filename.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase()))
+          .map(m => <button key={m.modelRef} className={'settingsModel '+(selectedModel === m.modelRef ? 'selected' : '')}
           onClick={() => setSelectedModel(m.modelRef)} disabled={busy}>
           <strong>{m.filename}</strong><small>{m.projectorAttached ? 'GGUF + MMProj' : 'GGUF only'} · {m.available ? 'Available' : 'Missing file'}</small></button>)}</div>
+        {modelInspection?.modelRef===selectedModel&&<section className="modelInspection" aria-label="Local model compatibility inspection">
+          <strong>Pre-load compatibility: {modelInspection.status.replaceAll('_',' ')}</strong>
+          <small>{modelInspection.detail}</small>
+          {modelInspection.fileBytes!=null&&<small>
+            GGUF v{modelInspection.ggufVersion} · {(modelInspection.fileBytes/1048576).toFixed(1)} MiB on disk ·
+            {modelInspection.tensorCount} header tensors ·
+            MMProj {modelInspection.projectorAttached?(modelInspection.projectorChecked?'header checked':'unavailable'):'not paired'}
+          </small>}
+          {modelInspection.architecture&&<small>GGUF-reported architecture: {modelInspection.architecture}
+            {modelInspection.tokenizerModel?' · tokenizer: '+modelInspection.tokenizerModel:''}
+            {modelInspection.reportedContextLength?' · reported context: '+modelInspection.reportedContextLength.toLocaleString()+' tokens':''}
+            {modelInspection.ggufFileType!=null?' · GGUF file-type code: '+modelInspection.ggufFileType:''}
+          </small>}
+          <small>Backend: {modelInspection.backendRequested}. Metadata is untrusted and does not certify architecture support, license or GPU/VRAM compatibility.</small>
+        </section>}
         <button className="subtleButton full" disabled={busy || loaded || !selected || selected.projectorAttached} onClick={attachProjector}>Attach MMProj to selected model</button>
-        <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected model</button>
+        <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available || !modelInspection?.loadAllowed || modelInspection.modelRef!==selectedModel} onClick={loadModel}>Load inspected model</button>
           <button className="subtleButton" disabled={busy || !loaded} onClick={unloadModel}>Unload current model</button></div>
         <div className="settingsStatus"><span className="statusDot" data-ready={loaded}></span>{activity || (loaded ? 'Ready' : 'No model loaded')}</div>
-        <p className="settingsNotice">Vulkan acceleration is requested; device offload requires verification from the engine logs. Model selection never activates weights.</p>
+        <section aria-label="Public GGUF model discovery" className="modelProviderReview">
+          <h4>Public model discovery (Hugging Face)</h4>
+          <small>Explicit search uses Lu's separately hash-pinned public HTTPS reader. It cannot send credentials or download weights.</small>
+          <label>Search public model repositories
+            <input value={providerQuery} maxLength={96} autoComplete="off"
+              placeholder="e.g. qwen gguf"
+              onChange={event=>setProviderQuery(event.target.value)}/>
+          </label>
+          <button type="button" className="subtleButton" disabled={providerBusy||!providerQuery.trim()}
+            onClick={()=>void searchPublicModels()}>
+            {providerBusy?'Inspecting public catalog…':'Search public GGUF repositories'}
+          </button>
+          {providerFailure&&<small role="alert">{providerFailure}</small>}
+          {!!providerHits.length&&<div aria-label="Provider model search results">
+            {providerHits.map(lead=><button key={lead.repoId+lead.revision}
+              className="settingsModel" type="button" disabled={providerBusy}
+              onClick={()=>void inspectPublicModel(lead)}>
+              <strong>{lead.repoId}</strong>
+              <small>Revision {lead.revision.slice(0,12)} · reported license {lead.licenseLabel} · inspect files</small>
+            </button>)}
+          </div>}
+          {providerReview&&<div className="modelInspection" aria-label="Pinned model file review">
+            <strong>{providerReview.repoId}</strong>
+            <small>Exact revision {providerReview.revision} · provider-reported license {providerReview.licenseLabel}</small>
+            {providerReview.files.map(file=><div key={file.name}>
+              <strong>{file.name}</strong>
+              <small>{(file.bytes/1048576).toFixed(1)} MiB · SHA-256 {file.sha256}</small>
+              <button type="button" className="subtleButton" disabled={providerBusy}
+                onClick={()=>void preparePinnedTransfer(file)}>
+                Review immutable future download plan (does not download)
+              </button>
+            </div>)}
+            {providerTransferIntent&&<small role="status">
+              Metadata reviewed for {providerTransferIntent.filename} · expected SHA-256 {providerTransferIntent.sha256}.
+              Transfer state: awaiting P05; no file has been downloaded or installed.
+            </small>}
+            <small>Read-only preview. The license and model architecture require your review. In-app downloads are blocked until the P05 native Transfer Manager can validate HTTPS redirects, bytes, cancellation, resumable identity and separate approval.</small>
+            <a href={providerReview.sourceUrl} rel="noopener noreferrer" target="_blank">View pinned repository externally</a>
+          </div>}
+        </section>
+        <section aria-label="Model backend availability">
+          <h4>Inference backends</h4>
+          {modelBackends.map(item=><div className="modelInspection" key={item.backend}>
+            <strong>{item.engine} — {item.backend}</strong>
+            <small>{item.selectable?'Current pinned engine path':'Unavailable; not selectable'} ·
+              {item.gpuExecutionVerified?' GPU proven':' GPU not proven'} · {item.detail}</small>
+          </div>)}
+          <small>Only the currently packaged pinned engine is available. Lu will not silently switch to ROCm, CUDA, vLLM or CPU on a strict backend request.</small>
+        </section>
+        <p className="settingsNotice">A remote search result never installs, imports or loads a model. Use the existing native GGUF import picker for files you have downloaded and checked. The pinned engine requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
       </div>
     </div>}
   </div>;
