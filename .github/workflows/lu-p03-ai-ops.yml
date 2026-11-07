@@ -34,6 +34,8 @@ jobs:
         run: node scripts/verify-source-tree.mjs
       - name: Test P03 native capability routing and digest-guarded context
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ai_operations -- --nocapture
+      - name: Test bounded actual GGUF KV metadata parser
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gguf_metadata_summary -- --nocapture
       - name: Test fail-closed backend selection contract
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib compute_runtime -- --nocapture
       - name: Verify P03 desktop-host/UI source contracts
