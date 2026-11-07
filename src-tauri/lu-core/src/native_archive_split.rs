@@ -313,3 +313,51 @@ pub fn reassemble(source_root:&Dir,destination_root:&Dir,folder_name:&str,token:
         note:"Byte-exact archive reassembled; source multipart group left intact.",
     })
 }
+
+/// Read-only crash recovery: verify an output group against the exact approved
+/// source plan. Partial publication is never renamed, resumed, or deleted here.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub enum PublicationReview {
+    Absent,
+    Incomplete { verified_parts: usize, expected_parts: usize },
+    Complete,
+}
+pub fn reconcile_publication(root:&Dir,m:&Plan)->Result<PublicationReview,SplitError>{
+    checked(m)?;
+    let out=folder(&m.source)?;
+    let meta=match root.symlink_metadata(&out){
+        Ok(v)=>v,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>
+            return Ok(PublicationReview::Absent),
+        Err(e)=>return Err(io(e)),
+    };
+    if !meta.is_dir()||meta.file_type().is_symlink(){
+        return Err(SplitError::StageConflict);
+    }
+    let published=root.open_dir(&out).map_err(io)?;
+    let mut seen=std::collections::BTreeSet::new();
+    for entry in published.read_dir(".").map_err(io)?{
+        let entry=entry.map_err(io)?;
+        let name=entry.file_name().into_string()
+            .map_err(|_|SplitError::StageConflict)?;
+        if name!=MANIFEST&&!m.chunks.iter().any(|c|c.name==name){
+            return Err(SplitError::StageConflict);
+        }
+        if !seen.insert(name){return Err(SplitError::StageConflict);}
+    }
+    let mut count=0usize;
+    for c in &m.chunks{
+        if seen.contains(&c.name){exact(&published,c)?;count+=1;}
+    }
+    if seen.contains(MANIFEST){
+        if read_plan(&published)?!=*m{return Err(SplitError::StageConflict);}
+        if count!=m.chunks.len(){return Err(SplitError::IncompletePublication);}
+        // A valid manifest and individually valid parts are not sufficient:
+        // the reconstructed byte stream must match the original SHA-256.
+        if inspect(root,&out)?!=*m{return Err(SplitError::PartCorrupt);}
+        return Ok(PublicationReview::Complete);
+    }
+    Ok(PublicationReview::Incomplete{
+        verified_parts:count,expected_parts:m.chunks.len()
+    })
+}
