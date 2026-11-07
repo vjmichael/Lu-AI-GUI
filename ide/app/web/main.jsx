@@ -11,6 +11,7 @@ const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
+  { id: 'lu-bridge', title: 'Lu connection', glyph: '◎' },
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'languages', title: 'Language services', glyph: '⌁' },
@@ -30,6 +31,8 @@ const taskGateChoices = [
 
 function App() {
   const [section, setSection] = useState('projects');
+  const [bridgeStatus, setBridgeStatus] = useState(null);
+  const [bridgeStatusBusy, setBridgeStatusBusy] = useState(false);
   const [projects, setProjects] = useState([]);
   const [workflowSteps, setWorkflowSteps] = useState([]);
   const [workflowRuns, setWorkflowRuns] = useState([]);
@@ -152,6 +155,25 @@ function App() {
         detail: 'Native language-service status could not be verified.'
       }));
   }, []);
+
+  async function refreshBridgeStatus() {
+    setBridgeStatusBusy(true);
+    try {
+      const status = await invoke('ide_bridge_status');
+      if (status?.connectionState === 'not_connected' &&
+          status.enabled === false && status.paired === false) {
+        setBridgeStatus(status);
+      } else {
+        // Unexpected flags may not promote an unverified local process to Lu.
+        setBridgeStatus(null);
+        setProblem('Unverified Lu connection status was denied.');
+      }
+    } catch (error) {
+      setBridgeStatus(null);
+      setProblem('Lu bridge remains offline: ' + String(error));
+    } finally { setBridgeStatusBusy(false); }
+  }
+  useEffect(() => { void refreshBridgeStatus(); }, []);
 
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
@@ -277,6 +299,7 @@ function App() {
       : null;
   const isSource = section === 'source';
   const isPackages = section === 'packages';
+  const isLuBridge = section === 'lu-bridge';
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
@@ -1672,7 +1695,7 @@ function App() {
       </nav>
       <div className="ideRailFooter">
         <div className="bridgeLine"><span className="bridgeDot"/>
-          <span>Lu connection</span><strong>Not connected</strong>
+          <span>Lu connection</span><strong>{bridgeStatus?.paired ? 'Connected' : 'Not connected'}</strong>
         </div>
         <p>Lu integration will use an optional, versioned bridge. This app works independently.</p>
       </div>
@@ -1680,8 +1703,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1>{isJobs ? 'Execution requests' : isLuBridge ? 'Optional Lu connection' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+            isLuBridge ? 'WO10 data-only protocol · Local peer authentication required · Disabled by default' :
             isPackages ? 'Multi-project Git and artifact review · No release permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
@@ -1987,6 +2011,45 @@ function App() {
             </div>
           </div>
         </section>
+        : isLuBridge
+        ? <section className="workspaceContent continuityWorkspace" aria-label="Optional Lu Core bridge">
+            <div className="sectionHeading"><h2>Lu connection</h2>
+              <span>WO10 · Optional out-of-process integration</span></div>
+            <div className="continuityDocument">
+              <h3>Connection status: {bridgeStatus?.paired ? 'Paired' : 'Not connected'}</h3>
+              <p>Lu IDE remains a standalone application. Opening a project,
+                viewing source, or launching Lu Core does not grant an AI access
+                to your project or automatically create a bridge connection.</p>
+              <p>Current bridge contract: version 1 · Protobuf · bounded canonical
+                data frames · independently scoped project and conversation IDs.</p>
+              <p>Trusted OS peer identity:
+                <strong> {bridgeStatus?.peerAuthenticated ? 'Verified' : 'Not verified'}</strong></p>
+              <p>Endpoint:
+                <strong> {bridgeStatus?.endpointVerified ? 'Verified' : 'Not available'}</strong></p>
+              <p>Bridge policy:
+                <strong> {bridgeStatus?.enabled ? 'Enabled' : 'Off'}</strong></p>
+              <p>Automatic project disclosure: <strong>Disabled</strong> ·
+                Autonomous code execution: <strong>Disabled</strong></p>
+              <p>The transport and mutual peer-authentication implementation must
+                pass independent Windows and Linux native testing before
+                connection can be enabled. A claimed Lu identity, socket name,
+                Protobuf message, or advertised capability is not permission.</p>
+              <button type="button" className="ghostBtn"
+                disabled={bridgeStatusBusy} onClick={() => refreshBridgeStatus()}>
+                {bridgeStatusBusy ? 'Checking native status…' : 'Check native bridge status'}
+              </button>
+            </div>
+            <div className="continuityDocument">
+              <h3>Planned coding-assistant boundary</h3>
+              <p>Lu can eventually offer selected context or a proposed source
+                change for the IDE's existing review inbox. Each project/thread
+                remains separate. Applying a change, saving a file, staging Git,
+                or starting a protected worker requires independent IDE approval.</p>
+              <p>No active AI chat or live inference session is available in this
+                standalone candidate. Do not share source on the assumption that
+                Lu is connected.</p>
+            </div>
+          </section>
         : isPackages
         ? <section className="workspaceContent continuityWorkspace" aria-label="Advanced packaging and multi-project workflows">
             <div className="sectionHeading">
