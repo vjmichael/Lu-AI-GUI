@@ -1,3 +1,9 @@
+## P09 OFFICE-BOUNDARY-01 — started 2026-11-07
+
+**Owner directed progression from P08 to P09.** Scope is bounded DOCX/PPTX/XLSX reading and ordinary non-destructive revisions, with no full Office suite or specialist citation engine. Branch `lu/p09-office-boundary-20261107` stacked on P08 `d5be5c38`. Existing reader/author/revision code provides typed cell and slide selections, exact-source SHA review, immutable original and no-clobber new file publication. P09 added explicit per-edit fidelity warnings to React single/batch review screens, a source-contract regression test and a dedicated two-OS native Office CI workflow. Capability/limitation matrix and evidence gates: `docs/LU_P09_OFFICE_BOUNDARY.md`.
+
+**P09 source development progress:** boundary audit and UX disclosure changes committed. **Exact-head CI and installed application acceptance still OPEN.** No advanced charts, macros, formulas, intricate formatting, layout renderer or specialist tools are being built. P08 native and installed release gates are retained independently and NOT presumed passed.
+
 ## P08 ARCHIVE-SPLIT-01 started — November 7, 2026
 
 **Owner-directed P07 boundary:** General-purpose evidence-bound citations and exports are enough for Core at this stage. Comprehensive SBL bibliography/ancient text work, specialist critical-edition/textual work and independent publication detail validation belong to specialist software/DLC; no longer Core release blockers. P07 exact-head native CI and installed app verification remain engineering gates, not presumed PASS.
