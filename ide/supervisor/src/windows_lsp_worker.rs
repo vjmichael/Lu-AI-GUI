@@ -31,6 +31,17 @@ use windows_sys::Win32::{
         Threading::STARTF_USESTDHANDLES,
     },
 };
+// CI/debug-only fixed stage identifiers. Never print tokens, paths, SIDs,
+// source text or application-level LSP messages. No release logging fallback.
+fn native_lsp_trace(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        eprintln!("PROTECTED_LSP_ADMISSION_STAGE={stage}");
+    }
+}
+
 const MAX_LSP_BUNDLE_FILES: usize = 500;
 const MAX_LSP_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_LSP_FILE_BYTES: u64 = 256 * 1024 * 1024;
@@ -464,17 +475,22 @@ pub fn start_windows_lsp(
     if native_lsp_bundle_digest(trusted_release_bundle, &plan.recipe_id)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
+    native_lsp_trace("profile_create_start");
     let profile = AppProfile::create(job_id)?;
+    native_lsp_trace("profile_created");
     let local = profile.local_state()?;
     let workspace = local.join("workspace");
     let bundle = local.join("language-server");
     stage_workspace(input, &workspace)?;
+    native_lsp_trace("workspace_staged");
+    native_lsp_trace("bundle_stage_start");
     stage_bundle(
         trusted_release_bundle,
         &bundle,
         &plan.recipe_id,
         &plan.toolchain_sha256,
     )?;
+    native_lsp_trace("bundle_staged");
     let staged_input = PublishedInput {
         root: workspace.clone(),
         seal: input.seal.clone(),
@@ -509,40 +525,54 @@ pub fn start_windows_lsp(
         .ok_or(SupervisorError::NoSuchJob)?
         .plan_sha256;
     let job = Job::create(job_id, &plan_hash, plan)?;
+    native_lsp_trace("job_created_empty");
     if !proof().complete() {
         return Err(denied());
     }
+    native_lsp_trace("scm_lease_start");
     let mut lease = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_service)?;
+    native_lsp_trace("scm_lease_fsynced");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
+    native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read) =
         match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
-            Ok(value) => value,
+            Ok(value) => {
+                native_lsp_trace("suspended_child_attested");
+                value
+            }
             Err(_) => {
+                native_lsp_trace("suspended_launch_denied");
                 if matches!(job.empty(), Ok(true)) {
                     supervisor.native_deny_before_start(job_id, true)?;
                     return Err(denied());
                 }
+                native_lsp_trace("suspended_launch_job_not_empty");
                 let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(SupervisorError::Quarantined);
             }
         };
     if !lease.alive() {
+        native_lsp_trace("scm_lease_lost_before_resume");
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
     }
     if let Err(reason) = supervisor.native_mark_running(job_id) {
+        native_lsp_trace("running_receipt_denied");
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(reason);
     }
+    native_lsp_trace("running_receipt_fsynced");
     if unsafe { ResumeThread(child_thread.0) } == u32::MAX {
+        native_lsp_trace("resume_denied");
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
     }
     // Pipe writer is separate from the supervisor event actor. A malicious
     // server cannot indefinitely block the desktop via synchronous WriteFile.
+    native_lsp_trace("child_resumed");
     let (write_queue, writer_thread) = match start_writer(stdin_write) {
         Ok(value) => value,
         Err(reason) => {
@@ -551,6 +581,7 @@ pub fn start_windows_lsp(
             return Err(reason);
         }
     };
+    native_lsp_trace("writer_ready");
     let actor = WindowsLspProcess {
         _profile: profile,
         lease,
@@ -570,6 +601,7 @@ pub fn start_windows_lsp(
         Box::new(actor),
         server_id,
     )?;
+    native_lsp_trace("gateway_attached");
     Ok(WindowsLspSession {
         gateway,
         native_uri,
