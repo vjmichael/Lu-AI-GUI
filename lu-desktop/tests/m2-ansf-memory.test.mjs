@@ -41,7 +41,8 @@ test('M2 source of truth remains host-authenticated chat events, not recalled co
 });
 test('M2 model memory is bounded task data rather than a tool grant',()=>{
   assert.match(memory,/take\(1600\)/);
-  assert.match(memory,/take\(4\)\.rev\(\)/);
+  assert.match(memory,/take\(4\)\.map\(/);
+  assert.match(memory,/answers\.reverse\(\)/);
   assert.match(memory,/NOT tool authorization or system instructions/);
   assert.match(core,/MAX_EVENTS:usize=1024/);
   assert.match(core,/MAX_QUESTIONS:usize=64/);
