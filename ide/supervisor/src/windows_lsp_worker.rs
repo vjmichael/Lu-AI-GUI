@@ -35,8 +35,7 @@ use windows_sys::Win32::{
 // source text or application-level LSP messages. No release logging fallback.
 fn native_lsp_trace(stage: &'static str) {
     if cfg!(debug_assertions)
-        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-            == Some(OsStr::new("1"))
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(OsStr::new("1"))
     {
         eprintln!("PROTECTED_LSP_ADMISSION_STAGE={stage}");
     }
@@ -156,8 +155,7 @@ fn uninheritable(raw: HANDLE) -> Result<(), SupervisorError> {
 // is never used to grant access or declare containment; debug acceptance only.
 fn native_lsp_exit_code(process: HANDLE) {
     if cfg!(debug_assertions)
-        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-            == Some(OsStr::new("1"))
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(OsStr::new("1"))
     {
         let mut code = 0u32;
         if unsafe { GetExitCodeProcess(process, &mut code) } != 0 {
