@@ -96,20 +96,27 @@ def witness(stage: str, argv: list[str]) -> bool:
                 output.extend(chunk[:max(0, 65536 - len(output))])
                 if len(stdout) > 65536 or len(stderr) > 65536:
                     break
-            header_end = stdout.find(b"\r\n\r\n")
-            if header_end >= 0 and header_end < 512:
+            while stdout and not ready:
+                header_end = stdout.find(b"\r\n\r\n")
+                if header_end < 0 or header_end >= 512:
+                    break
                 header = bytes(stdout[:header_end])
                 try:
                     size = int(header.split(b"Content-Length: ", 1)[1].split(b"\r\n")[0])
                     if size <= 0 or size > 65536:
                         break
-                    if len(stdout) >= header_end + 4 + size:
-                        body = json.loads(stdout[header_end + 4:header_end + 4 + size])
-                        ready = body.get("type") == "response" and (
-                            body.get("command") == "initialize"
-                            and body.get("success") is True
-                        )
+                    end = header_end + 4 + size
+                    if len(stdout) < end:
                         break
+                    body = json.loads(stdout[header_end + 4:end])
+                    del stdout[:end]
+                    # Events may precede the initialize response. Do not
+                    # mistake an event for a failed native adapter handshake.
+                    ready = body.get("type") == "response" and (
+                        body.get("request_seq") == 1
+                        and body.get("command") == "initialize"
+                        and body.get("success") is True
+                    )
                 except (ValueError, IndexError, json.JSONDecodeError):
                     break
     except (OSError, BrokenPipeError):
