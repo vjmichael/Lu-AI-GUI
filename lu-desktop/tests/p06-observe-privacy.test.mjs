@@ -130,3 +130,16 @@ test('P06 bounded region mask is not a shortcut around native OS source and priv
   assert.match(worker,/Lu-WGC-whole-frame-redacted-v2/);
   assert.doesNotMatch(worker,/mask_sensitive_bgra_regions\(width,height,row_pitch,buffer/);
 });
+
+test('P06 native UIA privacy probe is OS identity bound and cannot authorize image release',()=>{
+  const ps=read('../../scripts/probe-observe-sensitive-window-windows.ps1');
+  assert.match(ps,/GetWindowThreadProcessId/);
+  assert.match(ps,/GetAncestor\(\$hwnd,2\)/);
+  assert.match(ps,/DwmGetWindowAttribute/);
+  assert.match(ps,/ExpectedBirthFileTime/);
+  assert.match(ps,/IsPasswordProperty/);
+  assert.match(ps,/detectorCoverage='INCOMPLETE_UIA_ONLY'/);
+  assert.match(ps,/wgcFrameCoordinatesVerified=\$false/);
+  assert.match(ps,/pixelReleaseAllowed=\$false/);
+  assert.doesNotMatch(ps,/Current\.Name|Current\.Value|TextPattern|ValuePattern/);
+});

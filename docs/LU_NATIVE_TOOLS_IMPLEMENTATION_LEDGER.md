@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 limited OS/UIA sensitive-control inspection (2026-11-06):** Read-only Windows native probe validates exact root HWND/PID/creation FILETIME, queries bounded UIA password-control screen bounds without text values, then rechecks process identity. Output explicitly `INCOMPLETE_UIA_ONLY` and `pixelReleaseAllowed=false`; it does NOT cover all sensitive pixels or map to WGC. Dedicated source and PowerShell parser checks added; independent physical OS verification still open. [Details](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 native visible-source and relaunch gate (2026-11-06):** Explicit foreground-only WGC adds OS root/visibility/DWM-uncloaked window checks during selection and on both sides of D3D11 readback. No generic picker identity is inferred. Optional independently hash-reviewed installed Windows script now relaunches a second Lu OS process and checks UIA OFF state; not physical completion or durable backend replay proof. New head Windows/Linux CI and physical WGC/NSIS still pending. [Details](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 OS-origin GUI evidence hardening (2026-11-06):** Optional physical installed Windows script now compares UIA root process ID with the hash-reviewed launched Lu PID before and after actions, and verifies originally seen WGC child PIDs are gone after Stop (not just no matching image name remains). No simulated physical pass. [Details](LU_P06_OBSERVE_PRIVACY.md).

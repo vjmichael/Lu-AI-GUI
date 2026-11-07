@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b15784f14b336b9759668a383ec8c93d4ae16845",
-  "trackedFileCount": 506,
+  "sourceCommitBeforeLock": "a535b2445d93d7983e963712d88aea91672ad4bc",
+  "trackedFileCount": 507,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "641637633f73ce94ff81eb11d1bcbf895c26f6e6"
+      "blob": "4b1198ae917f28b4dd2578ffce58a3ff8f28b3de"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "6add77907b1a8aaaaba1e8a6f7952933c708c6f8"
+      "blob": "057aa554a4bfb7e93e397e71751b9f14ee4ac0a2"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "95f2fac9e9e888715ac543173fa2de492655e484"
+      "blob": "f9a396c1735f437cba21ac31f1be2494e87a70c2"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "46905da8073023689a0692101286fcbaa52c828b"
+      "blob": "b70f79a3a3d7ff7e834553d3ef3ea73be014e3ee"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -778,6 +778,10 @@
     {
       "path": "scripts/package-observe-capture-windows.ps1",
       "blob": "371a8d9da5a64fbebdb4fa91ee5c541d09581847"
+    },
+    {
+      "path": "scripts/probe-observe-sensitive-window-windows.ps1",
+      "blob": "88e3db4cf5fae4d0838e2adefa5efa5106510f77"
     },
     {
       "path": "scripts/source-identity.mjs",

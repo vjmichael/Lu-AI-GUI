@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 exact-source OS/UIA sensitive-surface diagnostic (2026-11-06)
+
+Added `scripts/probe-observe-sensitive-window-windows.ps1`: a read-only, independently queryable Windows accessibility adapter for one explicitly supplied HWND/PID/process creation FILETIME. Native Win32 verifies the HWND is root, visible and uncloaked and belongs to that same process instance; OS UI Automation returns a bounded set of `IsPassword` control rectangles, without accessing their names or values. It rechecks process lifetime after the query and refuses invalid bounds. The rectangles are in **desktop coordinates, not attested WGC image coordinates**. The receipt always states `INCOMPLETE_UIA_ONLY`, `wgcFrameCoordinatesVerified=false`, and `pixelReleaseAllowed=false`; custom-rendered secrets, images and inaccessible/protected controls remain undetected. This creates a real OS privacy signal, **not a certified selective redaction engine**. Live captured frames remain fully blanked.
+
 ## P06 native foreground visibility and installed relaunch (2026-11-06)
 
 - **OS source admission** now requires top-level root HWND, actual OS visibility and zero DWM cloak status, in addition to HWND/PID/process-creation FILETIME. The foreground worker checks this at human-focused selection and before/after D3D11 readback. Read failures are hard denials, never a fallback to generic monitor/unknown-item capture. This does **not** prove a unique HWND generation or visual content.
