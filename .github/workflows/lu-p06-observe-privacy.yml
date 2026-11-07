@@ -57,6 +57,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p06_ -- --nocapture
       - name: Test baseline chat-scoped durable note authority
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - name: Test native local WGC to admitted PNG image and non-network provenance
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_image_admission::tests -- --nocapture
       - name: Test local-only provenance and durable network quarantine
         run: |
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_egress::tests -- --nocapture

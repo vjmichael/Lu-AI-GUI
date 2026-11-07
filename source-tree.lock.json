@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f91c10b3fd6cc2f830aaa2bd3eed132d7653660d",
-  "trackedFileCount": 513,
+  "sourceCommitBeforeLock": "d019adb9d3c93d0e8007759690fb37b6d076a21c",
+  "trackedFileCount": 514,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "e339b1836390130d238009a0dc9bd7d20ce52f01"
+      "blob": "843ebb1935c0671cd758d5cf1189129028f8e437"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "0dda30abab0c18466e662191fbe9b739b6601623"
+      "blob": "990c952d9d202f0a5a4592d2a42febe5857f5994"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "73805aba6eaf1ff21dad94102ef024b3561abafd"
+      "blob": "b2990fa3ef8cf6be92c0e0e4221dffb571cbd600"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -641,7 +641,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "cbaffc6abe9bd78cca59c95798378df8c0f86edf"
+      "blob": "ed113cc9f6ac3c123839d8a4efb392af236770ef"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -1109,7 +1109,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "049a4820f229f0b0db3ab6edb9b84e9427cf80c6"
+      "blob": "1e5741395c6f4d1eb7275166d388b15eb320e2e2"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1318,6 +1318,10 @@
     {
       "path": "src-tauri/lu-core/src/native_observe_egress.rs",
       "blob": "1a346999f89ca02f79c010fa5ef74ba6ef5b14d2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_observe_image_admission.rs",
+      "blob": "4b7b53775d2c8a0bd292465489913fdbf1fbd343"
     },
     {
       "path": "src-tauri/lu-core/src/native_observe_learn.rs",

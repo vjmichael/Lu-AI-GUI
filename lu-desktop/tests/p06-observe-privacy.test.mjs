@@ -341,3 +341,20 @@ test('P06 native primary-monitor route is OS-identified and never inferred from 
   assert.match(desktop,/primary_display:Option<bool>/);
   assert.match(ui,/observeCaptureOneShot\(false,true\)/);
 });
+
+test('P06 native local WGC image adapter enforces consent, PNG bounds and tainted non-network origin',()=>{
+  const bridge=read('../../src-tauri/lu-core/src/native_observe_image_admission.rs');
+  const core=read('../../src-tauri/lu-core/src/lib.rs');
+  const workflow=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  assert.match(core,/pub mod native_observe_image_admission;/);
+  assert.match(bridge,/pub fn admit_wgc_frame_locally/);
+  assert.match(bridge,/consent_active_and_os_source_attested:bool/);
+  assert.match(bridge,/DataProvenance::OBSERVE_LEARN/);
+  assert.match(bridge,/Destination::LocalInference/);
+  assert.match(bridge,/Destination::RemoteModel/);
+  assert.match(bridge,/Destination::NetworkSocket/);
+  assert.match(bridge,/rgba\.fill\(0\)/);
+  assert.match(bridge,/admit_data_url\(&payload\)/);
+  assert.match(bridge,/MAX_VISUAL_HEIGHT:u32=720/);
+  assert.match(workflow,/native_observe_image_admission::tests/);
+});

@@ -167,3 +167,9 @@ P06 can be considered *privacy foundation source implemented* after these change
 ## Research structural CI assertion repair
 
 The network entrypoints became cancellation-aware while older RESEARCH-06/08 tests still asserted removed non-cancellable names. Source tests now require `fetch_admitted(&current,max_bytes,cancel)` and `search_openalex_cancellable(&fetcher,&query,page,cancel)`; production policy and cancellation remain intact. Exact-head broader acceptance still required.
+
+## P06 bounded in-memory local WGC image-admission adapter (source implemented)
+
+A new reusable Lu Core `native_observe_image_admission.rs` validates explicit active consent and OS-source attestation, bounded WGC BGRA width/height/pitch, resamples entirely in memory to at most 1280×720, safely skips D3D pitch padding, converts BGRA to admitted PNG with Lu Core's existing real image decoder/admission checks, and explicitly tags the admitted image `DataProvenance::OBSERVE_LEARN`. Remote-model/network socket destinations are forbidden; local inference is the only model destination permitted. Intermediate RGBA and encoded image buffers are cleared after encoding/admission. Rust tests validate pixel colors, pitch-padding independence, missing consent, bad dimensions and 1080p-to-720p bounds, with focused native Windows/Linux CI.
+
+**Scope:** This is a real local image conversion component, **not yet a wired transfer from the separate WGC worker into a locally loaded multimodal GGUF**. The worker still emits a wholly blank receipt and no raw image data to TaskStore, WebView, socket or cloud. An authenticated, process-supervised in-memory pixel transport and per-chat image lifetime binding remain OPEN. Neither source or UI tests imply live visual understanding or installed hardware proof.
