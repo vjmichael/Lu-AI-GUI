@@ -17,6 +17,14 @@ pub struct NativeCapabilityView{
     pub effect:String,
     pub input_type_url:String,
     pub output_type_url:String,
+    /// Exactly one of the owner-approved three classifications when reviewed.
+    /// None means this installed capability has not been classified yet.
+    pub meta_class:Option<String>,
+    /// A tool name and per-turn grant do not attest external prerequisites.
+    pub availability_claim:String,
+    pub external_dependencies_verified:bool,
+    /// Never infer successful execution from discovery or model confidence.
+    pub task_outcome_verified:bool,
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub enum CapabilityInventoryError{
@@ -32,6 +40,24 @@ fn effect_label(effect:ToolEffect)->&'static str{
         ToolEffect::NetworkWrite=>"network_write",
         ToolEffect::DeviceControl=>"device_control",
         ToolEffect::Elevated=>"elevated",
+    }
+}
+/// Classification is a reviewed host mapping, NOT model-controlled text.
+/// Unlisted native IDs are unclassified until reviewed; no fourth class exists.
+fn reviewed_meta_class(id:&str)->Option<&'static str>{
+    match id{
+        // Exact native tool identities reviewed against their current sources.
+        "lu.files.read_text"|"lu.files.list_directory"|
+        "lu.inspect.stat"|"lu.inspect.search_text"|
+        "lu.file_discovery.discover"|"lu.reader.read"|
+        "lu.artifact.inspect"|"lu.background.status"|
+        "lu.background_receipt.get"|"lu.web.browser.read"|
+        "lu.web.browser.interact"=>Some("foundational"),
+        "lu.archive.list"|"lu.git.status"|"lu.git.log"|
+        "lu.git.diff"=>Some("utility"),
+        // An unreviewed tool remains unclassified rather than being promoted
+        // by merely choosing a familiar module prefix.
+        _=>None
     }
 }
 /// Only exact, *currently permitted* native IDs with a matching installed
@@ -73,6 +99,10 @@ pub fn discover_turn_capabilities(
                 effect:effect_label(desc.effect).into(),
                 input_type_url:desc.input_type_url.clone(),
                 output_type_url:desc.output_type_url.clone(),
+                meta_class:reviewed_meta_class(&desc.id).map(str::to_owned),
+                availability_claim:"native_contract_registered_and_turn_granted_only".into(),
+                external_dependencies_verified:false,
+                task_outcome_verified:false,
             });
         }
     }
@@ -83,4 +113,18 @@ pub fn discover_turn_capabilities(
     }
     result.sort_by(|a,b|a.public_name.cmp(&b.public_name));
     Ok(result)
+}
+
+#[cfg(test)]
+mod classification_tests{
+    use super::*;
+    #[test]
+    fn capability_roles_are_reviewed_and_missing_app_is_not_misadvertised(){
+        assert_eq!(reviewed_meta_class("lu.files.read_text"),Some("foundational"));
+        assert_eq!(reviewed_meta_class("lu.artifact.inspect"),Some("foundational"));
+        assert_eq!(reviewed_meta_class("lu.git.diff"),Some("utility"));
+        assert_eq!(reviewed_meta_class("lu.archive.list"),Some("utility"));
+        assert_eq!(reviewed_meta_class("unreviewed.app.run"),None);
+        assert_eq!(reviewed_meta_class("lu.files.unreviewed_write"),None);
+    }
 }

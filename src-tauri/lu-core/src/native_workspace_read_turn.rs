@@ -18,6 +18,7 @@ use crate::{
     model::ModelToolCatalog,
     model_turn_journal::ModelTurnJournal,
     native_archive_inspect::register_archive_inspection_tool,
+    native_artifact_inspect::register_artifact_inspection,
     native_file_extra::register_inspection_tools,
     native_file_discovery::register_discovery_tool,
     native_files::register_bundled_file_tools,
@@ -120,6 +121,10 @@ impl WorkspaceReadTurnSession{
                 .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             register_archive_inspection_tool(&registry,&mut catalog,&root)
                 .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
+            // F: a completed file is not automatically a valid artifact.
+            // Inspect only the approved read-only workspace; never launch an app.
+            register_artifact_inspection(&registry,&mut catalog,&root)
+                .map_err(|e|{eprintln!("Workspace artifact registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             catalog
         };
         let descriptors=registry.tools().map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
