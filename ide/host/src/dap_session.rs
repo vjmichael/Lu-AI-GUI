@@ -171,7 +171,10 @@ impl DapSession {
         self.launch_sent
             && self.initialized_event
             && !self.configuration_done_sent
-            && matches!(self.phase, DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped)
+            && matches!(
+                self.phase,
+                DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
+            )
     }
 
     /// Complete ONLY the fixed debugger's empty configuration transaction.
@@ -647,8 +650,13 @@ mod tests {
             vec![DapEvent::ConfigurationRequested]
         );
         assert!(!session.configuration_needed());
-        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
-        session.launch_fixed_fixture("/ls/debuggee/wo6-selftest").unwrap();
+        assert_eq!(
+            session.configuration_done().unwrap_err(),
+            DapError::InvalidPhase
+        );
+        session
+            .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+            .unwrap();
         assert!(session.configuration_needed());
         session.configuration_done().unwrap();
         assert!(!session.configuration_needed());
@@ -659,9 +667,11 @@ mod tests {
         let mut session = DapSession::new();
         session.initialize().unwrap();
         assert_eq!(
-            session.receive(&framed(json!({
-                "seq":1,"type":"event","event":"initialized"
-            }))).unwrap_err(),
+            session
+                .receive(&framed(json!({
+                    "seq":1,"type":"event","event":"initialized"
+                })))
+                .unwrap_err(),
             DapError::InvalidMessage
         );
         assert_eq!(session.phase(), DapPhase::Quarantined);
