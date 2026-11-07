@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
+import time
 
 MAX_BYTES = 65536
 FRAME = {
@@ -93,26 +95,66 @@ def run():
     except OSError:
         print("PROTECTED_WO6_DAP_PREFLIGHT=adapter_spawn_denied")
         return 2
-    timed_out = False
+    # Do not use communicate(): it can buffer unlimited adapter output until
+    # timeout. Reader threads capture at most MAX_BYTES+1 for each OS pipe.
+    lock = threading.Lock()
+    oversized = threading.Event()
+    out = bytearray()
+    err = bytearray()
+
+    def drain(pipe, target):
+        while True:
+            try:
+                piece = os.read(pipe.fileno(), 4096)
+            except OSError:
+                return
+            if not piece:
+                return
+            with lock:
+                allowance = max(0, MAX_BYTES + 1 - len(target))
+                target.extend(piece[:allowance])
+                if len(target) > MAX_BYTES or len(piece) > allowance:
+                    oversized.set()
+
+    readers = [
+        threading.Thread(target=drain, args=(child.stdout, out), daemon=True),
+        threading.Thread(target=drain, args=(child.stderr, err), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
     try:
-        try:
-            stdout, stderr = child.communicate(input=request, timeout=8)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            child.kill()
-            stdout, stderr = child.communicate(timeout=3)
-    finally:
-        if child.poll() is None:
-            child.kill()
-            child.wait(timeout=3)
-    status = classify_exit(child.returncode)
-    # No output of adapter stderr or paths. The code is only a loader hint.
-    if status != "other":
+        child.stdin.write(request)
+        child.stdin.flush()
+    except OSError:
+        pass  # Early loader failure still requires a fixed exit classification.
+    deadline = time.monotonic() + 8
+    ready = False
+    while time.monotonic() < deadline and not oversized.is_set():
+        with lock:
+            observed = bytes(out)
+        if parse_initialize_response(observed):
+            ready = True
+            break
+        if child.poll() is not None:
+            break
+        time.sleep(0.05)
+    timed_out = not ready and child.poll() is None and not oversized.is_set()
+    actual_exit = child.poll()  # Before deliberate cleanup; keep loader status.
+    if child.poll() is None:
+        child.kill()
+    child.wait(timeout=3)
+    for reader in readers:
+        reader.join(timeout=1)
+    with lock:
+        stdout = bytes(out)
+    status = classify_exit(actual_exit)
+    # No raw stdout/stderr, absolute paths, user project data or file names.
+    if status not in ("other", "timeout_or_unreaped"):
         print("PROTECTED_WO6_DAP_PREFLIGHT_LOADER=" + status)
-    if len(stdout) > MAX_BYTES or len(stderr) > MAX_BYTES:
+    if oversized.is_set():
         print("PROTECTED_WO6_DAP_PREFLIGHT=denied_unbounded_output")
         return 2
-    if parse_initialize_response(stdout):
+    if ready and parse_initialize_response(stdout):
         print("PROTECTED_WO6_DAP_PREFLIGHT=initialize_pass_no_containment_claim")
         return 0
     print("PROTECTED_WO6_DAP_PREFLIGHT="
