@@ -1011,7 +1011,10 @@ pub fn start_windows_dap(
     native_lsp_trace("gateway_attached");
     Ok(WindowsDapSession {
         gateway,
-        fixed_debuggee: bundle.join("debuggee/wo6-selftest.exe").to_string_lossy().into_owned(),
+        fixed_debuggee: bundle
+            .join("debuggee/wo6-selftest.exe")
+            .to_string_lossy()
+            .into_owned(),
     })
 }
 
@@ -1031,7 +1034,9 @@ impl WindowsDapSession {
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()
     }
-    pub fn poll(&mut self) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
+    pub fn poll(
+        &mut self,
+    ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
         self.gateway.poll()
     }
     pub fn threads(&mut self) -> Result<(), SupervisorError> {
