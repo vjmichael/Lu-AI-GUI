@@ -15,6 +15,7 @@
 pub mod agent_tool_loop;
 pub mod ai_operations;
 pub mod ansf;
+pub mod ansf_goals;
 pub mod ansf_import;
 pub mod ansf_library;
 pub mod ansf_revisions;
