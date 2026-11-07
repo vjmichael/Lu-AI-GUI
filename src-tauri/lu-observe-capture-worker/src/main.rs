@@ -26,8 +26,12 @@ fn frame_geometry_valid(width:u32,height:u32,row_pitch:u32,buffer_len:usize)->bo
     let max_padded=MAX_FRAME_BYTES+(MAX_FRAME_HEIGHT as usize)*4096;
     mapped_len<=max_padded&&buffer_len>=useful_end&&buffer_len<=max_padded
 }
-/// Canonical capture receipt: includes geometry and nonce, never row-padding bytes.
-/// The mapped buffer is borrowed only; nothing is serialized to disk or IPC.
+/// Fail-closed FULL-FRAME redaction: no raw or selectively visible pixels
+/// contribute to the host receipt. The OS readback only establishes a
+/// geometrically valid WGC callback. No trusted sensitive-region classifier
+/// exists yet, so image evidence/pixel previews are categorically forbidden.
+/// The digest commits to nonce, geometry and a wholly blank output frame.
+/// Not suitable for visual comparison or as a screenshot fingerprint.
 fn frame_receipt(nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8])->Option<String> {
     use sha2::{Digest,Sha256};
     if nonce.len()!=32||!nonce.bytes().all(|b|b.is_ascii_hexdigit())
@@ -35,13 +39,20 @@ fn frame_receipt(nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8])->Op
     let pitch=row_pitch as usize;
     let active_bytes=(width as usize)*4;
     let mut hash=Sha256::new();
-    hash.update(b"Lu-WGC-one-shot-frame-v1");
+    hash.update(b"Lu-WGC-whole-frame-redacted-v2");
     hash.update(nonce.as_bytes());
     hash.update(width.to_le_bytes());
     hash.update(height.to_le_bytes());
-    for row in 0..height as usize {
-        let offset=row*pitch;
-        hash.update(&pixels[offset..offset+active_bytes]);
+    let _=pitch;
+    let _=pixels;
+    const BLANK:[u8;4096]=[0;4096];
+    for _ in 0..height as usize {
+        let mut remaining=active_bytes;
+        while remaining>0{
+            let n=remaining.min(BLANK.len());
+            hash.update(&BLANK[..n]);
+            remaining-=n;
+        }
     }
     Some(format!("{:x}",hash.finalize()))
 }
@@ -55,7 +66,7 @@ mod frame_geometry_tests {
         assert!(frame_geometry_valid(1919,1080,7680,7680*1080));
     }
     #[test]
-    fn receipt_ignores_pitch_padding_but_detects_changed_pixels_nonce_and_geometry(){
+    fn whole_frame_redacted_receipt_ignores_all_original_pixel_content(){
         let nonce="00112233445566778899aabbccddeeff";
         let mut padded=vec![0u8;24];
         // A 2x2 BGRA image: 8 active bytes per row, 4 pitch-padding bytes.
@@ -66,7 +77,10 @@ mod frame_geometry_tests {
         padded[20..24].fill(255);
         assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
         padded[12]^=1;
-        assert_ne!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
+        // All-sensitive screen content is fully suppressed in the receipt.
+        padded.fill(255);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
         assert_ne!(frame_receipt("ffeeddccbbaa99887766554433221100",2,2,12,&padded).unwrap(),receipt);
         assert!(frame_receipt(nonce,2,2,12,&padded[..19]).is_none());
         assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded).is_none());
@@ -110,14 +124,51 @@ mod windows_capture_worker {
 
     const MAX_CAPTURE_SECS:u64=20;
 
+    /// Win32 requires audited query-only API calls to distinguish a genuine
+    /// process INSTANCE from a PID recycled after window destruction.
+    /// Restricted to this module. Refusal to query does not downgrade to PID.
+    #[allow(unsafe_code)]
+    mod process_instance {
+        use windows::{
+            core::Owned,
+            Win32::Foundation::FILETIME,
+            Win32::System::Threading::{
+                OpenProcess,GetProcessTimes,PROCESS_QUERY_LIMITED_INFORMATION
+            }
+        };
+        pub(super) fn born_at(pid:u32)->Result<u64,&'static str>{
+            if pid==0{return Err("Missing native process identity")}
+            // SAFETY: PID originates from the actual OS window; no handles,
+            // buffers or pointers are supplied by model/user input. Owned
+            // closes the query-only handle on every path. The four pointers
+            // point at initialized FILETIME records in this call frame.
+            let handle=unsafe{
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,false,pid)
+            }.map_err(|_|"Cannot attest Windows process instance")?;
+            let process=unsafe{Owned::new(handle)};
+            let mut created=FILETIME::default();
+            let mut ended=FILETIME::default();
+            let mut kernel=FILETIME::default();
+            let mut user=FILETIME::default();
+            unsafe{
+                GetProcessTimes(*process,
+                    &mut created,&mut ended,&mut kernel,&mut user)
+            }.map_err(|_|"Process creation timestamp unavailable")?;
+            let instance=(u64::from(created.dwHighDateTime)<<32)
+                |u64::from(created.dwLowDateTime);
+            if instance==0{return Err("Invalid process creation timestamp")}
+            Ok(instance)
+        }
+    }
+
     struct OneFrame {
         started:Instant,
         captured:bool,
         nonce:String,
-        foreground_identity:Option<(usize,u32)>,
+        foreground_identity:Option<(usize,u32,u64)>,
     }
     impl GraphicsCaptureApiHandler for OneFrame {
-        type Flags=(String,Option<(usize,u32)>);
+        type Flags=(String,Option<(usize,u32,u64)>);
         type Error=Box<dyn Error+Send+Sync>;
         fn new(ctx:Context<Self::Flags>)->Result<Self,Self::Error>{
             Ok(Self{started:Instant::now(),captured:false,
@@ -131,15 +182,16 @@ mod windows_capture_worker {
                 control.stop();
                 return Ok(());
             }
-            // Unlike the generic WGC OS picker, this foreground-window
-            // mode binds to a native HWND + current owner PID, and fails
-            // closed if that exact window is closed or replaced before
-            // the only frame arrives. No window title is trusted.
-            if let Some((hwnd,pid))=self.foreground_identity{
+            // The foreground path is bound to a native HWND, PID *and*
+            // process creation FILETIME. A recycled PID or HWND is not proof
+            // of the originally selected window. The generic OS picker has
+            // no such identity and is always marked unverified by the host.
+            if let Some((hwnd,pid,born))=self.foreground_identity{
                 let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
-                if !window.is_valid()||window.process_id()?!=pid{
+                if !window.is_valid()||window.process_id()?!=pid
+                    ||process_instance::born_at(pid)?!=born{
                     control.stop();
-                    return Err("Foreground window identity changed".into());
+                    return Err("Foreground window instance changed".into());
                 }
             }
             let width=frame.width();
@@ -156,10 +208,10 @@ mod windows_capture_worker {
                 control.stop();
                 return Err("Invalid mapped D3D11 frame stride or frame size".into());
             }
-            // Read actual WGC/D3D11-mapped bytes. No screenshot file, video
-            // recording, user text, clipboard, window title or pixel IPC.
-            // This is a nonce-bound receipt, not visual understanding.
-            // Canonical hashing is tested independently of Windows capture.
+            // Read WGC/D3D11-mapped frame geometry, then redact the ENTIRE
+            // frame for its receipt: no private pixel values reach stdout,
+            // the host, a disk file or a model. No useful visual proof exists
+            // until separate trusted sensitive-region classification.
             let digest=super::frame_receipt(&self.nonce,width,height,row_pitch,buffer)
                 .ok_or("Invalid frame receipt geometry or host nonce")?;
             // FrameBuffer release unmaps staging surface when dropped.
@@ -206,7 +258,8 @@ mod windows_capture_worker {
                 ||width>MAX_FRAME_WIDTH as i32||height>MAX_FRAME_HEIGHT as i32{
                 return Err("Selected window exceeds Lu's size limit".into());
             }
-            let identity=(window.as_raw_hwnd() as usize,pid);
+            let born=process_instance::born_at(pid)?;
+            let identity=(window.as_raw_hwnd() as usize,pid,born);
             let settings=Settings::new(
                 window,
                 CursorCaptureSettings::WithoutCursor,
