@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][string]$InstallerSha256,
   [Parameter(Mandatory=$true)][string]$SignerThumbprint,
   [Parameter(Mandatory=$true)][string]$ServiceSha256,
+  [Parameter(Mandatory=$true)][string]$ServiceSignerThumbprint,
   [Parameter(Mandatory=$true)][string]$InstallRoot
 )
 Set-StrictMode -Version Latest
@@ -49,8 +50,10 @@ if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
   Deny 'administrator_required'
 }
 $root=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
-if ($root -ine (Join-Path $env:ProgramFiles 'Lu IDE') -and
-    $root -ine (Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Lu IDE')) {
+$fixedRoots=@((Join-Path $env:ProgramFiles 'Lu IDE'))
+$pfX86=[Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+if ($pfX86) { $fixedRoots+=Join-Path $pfX86 'Lu IDE' }
+if ($root -notin $fixedRoots) {
   Deny 'fixed_program_files_install_root_required'
 }
 if ((Test-Path -LiteralPath $root) -or (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
@@ -64,7 +67,7 @@ try {
   $installed=$true
   $app=Join-Path $root 'lu-ide-desktop.exe'
   $serviceExe=Join-Path $root 'resources\recovery\windows_recovery_service.exe'
-  SignaturePin $serviceExe $ServiceSha256 $SignerThumbprint
+  SignaturePin $serviceExe $ServiceSha256 $ServiceSignerThumbprint
   $service=ServiceIdentity $serviceExe
   if ($service.State -notin @('Stopped','Running')) { Deny 'unexpected_service_state' }
   if (!(Test-Path -LiteralPath $app -PathType Leaf)) { Deny 'installed_desktop_missing' }
