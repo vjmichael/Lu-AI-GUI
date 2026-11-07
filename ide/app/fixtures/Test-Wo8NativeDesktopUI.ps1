@@ -429,9 +429,9 @@ function Verify-DurableJobEvidence([string]$jobId) {
   if ($reconcile -and $reconcile.Current.IsEnabled) {
     Click 'Verify OS-only cleanup (no rerun)'
     Confirm-NativeOneUseDialog 'Reconcile interrupted protected job' 'Verify and clean up'
-    [void](Find-Control 'Recorded protected job' '' 45)
+    [void](Find-Control ('Durable protected job '+$jobId) '' 45)
   } else {
-    [void](Find-Control 'Recorded protected job' '' 25)
+    [void](Find-Control ('Durable protected job '+$jobId) '' 25)
   }
 }
 function Wait-WorkerReturnToBaseline([int]$before) {
