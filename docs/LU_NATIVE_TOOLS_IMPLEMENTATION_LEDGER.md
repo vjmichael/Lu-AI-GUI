@@ -1,3 +1,7 @@
+## P07 final source/UX review repair — 2026-11-07
+
+Rechecked the stacked React WGC disclosure while closing P07: fixed stale product copy that incorrectly said every Windows capture was blanked and nothing reached a model. The GUI and its independent UI source contract now explicitly distinguish the receipt-only redacted WGC modes from the separately double-approved one-shot local-GGUF image modes and deliberate second Attach action. This correction does **not** imply installed WGC or model-vision acceptance, which remains a separate open P06 gate.
+
 ## P07 latest report-composition implementation — 2026-11-07
 
 Added user-controlled combined evidence report + P07 bibliography export. A verified-research Markdown or JSON report may now include **only** the native sealed, per-conversation Crossref citation inventory and full SHA-256 manifest, without granting a network/model capability. Fail-closed on missing review or unsupported bibliography style; no invented SBL journal short form or Bible text. The existing native new-file export and content digest remain in place. A new Rust desktop test checks restart/offline bibliography rebuilding from SQLite, and the P07 Windows CI requests its native execution. Rust and Node source tests cover this new interface. Documentation and source lock are updated in this work order; native exact-head CI and installed acceptance are NOT reported complete merely from source changes.
