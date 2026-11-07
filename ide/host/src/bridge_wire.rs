@@ -185,9 +185,6 @@ mod tests {
             })),
         };
         assert!(encode(&base).is_ok());
-        if let Some(Body::ContextOffer(c)) = &mut base.clone().body {
-            c.source_revision = "not-a-sha".into();
-        }
         let mut invalid = base.clone();
         if let Some(Body::ContextOffer(c)) = &mut invalid.body {
             c.project_id = "../../etc".into();
