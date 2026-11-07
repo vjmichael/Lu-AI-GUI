@@ -44,6 +44,10 @@ jobs:
         run: |
           npm install --ignore-scripts --no-audit --no-fund
           npm run check
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          npm ci --ignore-scripts --no-audit --no-fund
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
           python ../packaging/verify_tauri_minor.py --repo-root ../..
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
           python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json

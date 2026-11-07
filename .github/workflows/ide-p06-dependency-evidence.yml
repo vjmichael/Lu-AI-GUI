@@ -11,6 +11,8 @@ on:
       - 'ide/host/LICENSE'
       - 'ide/app/src-tauri/LICENSE'
       - 'ide/packaging/p06-reviewed-lock-graphs.json'
+      - 'ide/packaging/verify_p06_candidate_lock.py'
+      - 'ide/packaging/test_p06_candidate_lock.py'
       - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
       - '.github/workflows/ide-p06-dependency-evidence.yml'
   workflow_dispatch:
@@ -91,6 +93,8 @@ jobs:
           python -m unittest discover -s ide/packaging -p 'test_p06_license_triage.py' -v
           python ide/packaging/p06_license_triage.py --inventory ide/app/src-tauri/p06-notices/inventory.json --output ide/app/src-tauri/p06-license-review-queue.json
           python -m unittest discover -s ide/packaging -p 'test_verify_p06_lock_parity.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_p06_candidate_lock.py' -v
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ${{ matrix.os }}
           python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-cross-os-parity-receipt.json
           echo 'P06_REVIEWED_LOCK_HASHES_ONLY_NOT_COMMITTED_LOCKS_OR_SIGNED_RELEASE'
       - name: Exercise locked npm and Cargo resolution without source mutation
