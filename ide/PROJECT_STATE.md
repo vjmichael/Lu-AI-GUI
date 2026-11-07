@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO8 started — native installed E2E acceptance (2026-11-07 UTC)
+
+**Stack:** `ide/wo8-installed-e2e-20261107` from WO7 PR #73. The next work order is **real installed application behavior**, separate from source-only protocols and WO7 signing. WO7 package, signing, service and evidence source exists but the released installed protected functionality is **not** accepted. WO6 Linux/Windows LLDB native acceptance and reviewed signing material remain OPEN.
+
+**New WO8-A/B source:** `ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md`, `ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1`, `.github/workflows/ide-wo8-installed-windows.yml`. The workflow builds actual unsigned NSIS, installs in runner-local disposable directory, drives real native Windows UI Automation against the installed Tauri WebView, navigates Projects/Capabilities/Language services/Job requests, exercises native directory picker, attempts fixture registration/source open, audits no auto-started workers, checks original source SHA, and uninstalls. It does NOT claim signed release or protected Run/Test/Debug. **Native evidence not yet accepted** until latest exact-head Windows workflow passes.
+
+**WO8 pending:** GUI editor save/review, external drift and restart persistence; actual Linux .deb installed GUI; signed installed protected Cargo and LLDB stop/threads/stack/cancel, service/host crash/reconciliation; independent complete native acceptance provenance. Local physical Windows is NOT INSPECTED. No user-owned app or source files modified.
+
+
 ### WO7-B/C/D/E implementation checkpoint — 2026-11-07 UTC
 
 **Branch:** `ide/wo7-signed-nsis-release-20261106`; draft [PR #73](https://github.com/vjmichael/Lu-AI-GUI/pull/73) stacked on WO6 PR #70. The planned **source** for B–E is now present: reviewed, SHA-pinned staged payload/notice tree; PE regular+delay import closure scan; exact Tauri resource handoff; protected per-machine NSIS install/uninstall hooks and bounded LocalService lifecycle; explicitly pinned real signing utility and signed NSIS assembler; Windows-only signed candidate preflight; a real NSIS/SCM installed smoke harness triggered only from a reviewed artifact run; and exact-head per-native-gate evidence consistency checks. **No certificate is supplied; no installer is signed or installed by this code commit; release and protected Run/Test/Debug still not accepted.**
