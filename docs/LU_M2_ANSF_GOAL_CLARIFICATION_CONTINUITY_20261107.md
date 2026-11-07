@@ -1,3 +1,5 @@
+> **Follow-on source-only refinement — Nov 7, 2026:** [ANSF stable direct source IDs and external artifact links](LU_ANSF_DIRECT_IDS_EXTERNAL_ARTIFACTS_20261107.md) are implemented in a stacked draft branch. This **does not** alter M2's release status or settle the still-open canonical JSONL→ANSF conversation migration. Known IDs should require one authorized read operation, while human book/chapter/page navigation remains intact; artifact bytes remain outside SQLite.
+
 # Lu M2 — ANSF/SQLite goal and clarification continuity
 
 **Owner-approved development:** November 7, 2026.  
