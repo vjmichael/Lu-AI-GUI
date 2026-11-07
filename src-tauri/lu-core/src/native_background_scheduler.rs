@@ -83,6 +83,14 @@ impl ResourceClaim{
         Self{workers:1,cpu:1,ram_mib:512,gpu:0,
             vram_mib:0,disk:0,network:0}
     }
+    /// P06 WGC OS picker plus one bounded BGRA D3D11 readback. Uses one
+    /// ordinary worker, CPU and RAM slot. GPU/VRAM remain ZERO because WGC
+    /// has no validated GPU accounting here; this is *not* a GPU limit or
+    /// evidence that the worker uses no GPU resources.
+    pub fn capture_one_shot()->Self{
+        Self{workers:1,cpu:1,ram_mib:512,gpu:0,
+            vram_mib:0,disk:0,network:0}
+    }
     fn add(self,b:Self)->Self{
         Self{
             workers:self.workers.saturating_add(b.workers),
@@ -739,6 +747,17 @@ mod tests{
         opts.priority=Priority::Interactive;
         assert_eq!(queue.enqueue_host_plan(plan("scan-01"),opts),
             Err(SchedulerError::Duplicate));
+    }
+    #[test]
+    fn p06_guardian_capture_reserves_cpu_ram_without_unverified_gpu_entitlement(){
+        let (queue,_)=fixture();
+        let claim=ResourceClaim::capture_one_shot();
+        assert_eq!((claim.workers,claim.cpu,claim.ram_mib),(1,1,512));
+        assert_eq!((claim.gpu,claim.vram_mib,claim.network),(0,0,0));
+        let lease=queue.admit_host_worker("c-one","obs-frame-1",claim).unwrap();
+        assert!(queue.admit_host_worker("c-one","obs-frame-1",claim).is_err());
+        drop(lease);
+        assert!(queue.admit_host_worker("c-one","obs-frame-1",claim).is_ok());
     }
     #[test]
     fn priority_and_resource_admission_reject_gpu_without_verified_budget(){
