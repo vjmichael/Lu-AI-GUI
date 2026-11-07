@@ -1,0 +1,48 @@
+name: Lu IDE Windows Alpha R3.5 — Proposal Inbox
+
+on:
+  push:
+    branches: [ide/workspace-development]
+    paths:
+      - ".github/workflows/ide-alpha-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-standalone-exe:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: ide/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install standalone Rust 1.90
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup default 1.90.0
+      - name: Build frontend and run checks
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Build standalone Windows desktop executable
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Validate executable exists
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/lu-ide-desktop.exe"
+          if (!(Test-Path $exe)) { throw "Lu IDE alpha exe missing" }
+          Get-Item $exe | Select-Object FullName, Length
+      - name: Upload unsigned Windows alpha executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-windows-alpha-r3-5-proposal-inbox
+          path: ide/app/src-tauri/target/release/lu-ide-desktop.exe
+          if-no-files-found: error
+          retention-days: 7

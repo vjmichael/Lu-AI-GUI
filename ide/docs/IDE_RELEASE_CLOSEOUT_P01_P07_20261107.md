@@ -1,0 +1,87 @@
+# Lu IDE — Release Closeout Phase Ledger (P01–P07)
+
+**Established:** 2026-11-07 · **Owning project:** standalone `ide/` in `vjmichael/Lu-AI-GUI`.  
+**Policy:** A source commit, unit test, or CI start is not installed-app/native OS acceptance. Exact SHA, OS evidence, and independent verification are required. Do not quietly promote unknown, skipped or failed evidence.
+
+**Authoritative source before P01 consolidation:** `ide/wo9-advanced-workflows-20261107` @ `0d271606c8bcaeabe799cb970e0b6d4aefd25089` (draft [WO9 PR #75](https://github.com/vjmichael/Lu-AI-GUI/pull/75)).  
+**Current core main at planning:** `88ab1f10e1b1a4d6c6187bfb5ad7c5d8a1606e39` (must recheck before changes).  
+**WO10 exclusion:** `ide/wo10-optional-lu-bridge-20261107` and draft [PR #76](https://github.com/vjmichael/Lu-AI-GUI/pull/76) are **DEFERRED until after Lu Core v1.0**; no Lu bridge, peer pairing, AI model sharing, or coding chat integration in the release-candidate baseline.
+
+## Phase ownership and gates
+
+| Phase | Goal | Current state | Acceptance / exit gate |
+| --- | --- | --- | --- |
+| **P01 — Authoritative baseline** | Reconcile current `main` and the WO9 standalone IDE source, establish *one* release-candidate branch, review historical draft PR dependencies and possible unported files; explicitly exclude WO10 | **ACTIVE** | Candidate branch and draft review PR exist; main Lu Core untouched; source provenance and divergence inventory recorded; candidate not promoted or merged before source/integration validation |
+| **P02 — Deterministic native build and test repair** | Resolve frontend/icon ordering, JavaScript allowlists, Linux AT-SPI helper arguments, Windows accessibility/selector mismatch; exact-head Win/Linux CI | NOT STARTED | Repeatable locked source build; native tests and OS GUI automation scripts pass at the candidate exact SHA, with real failure logs reviewed |
+| **P03 — WO4–WO6 native security acceptance** | Linux cgroup/Bubblewrap, Windows AppContainer/Job/SCM, protected clangd, native LLDB-DAP, protected cancellation and durable host/service crash recovery | NOT STARTED | Independent actual OS denial, normal operation, process-tree kill, kernel containment and reopened durable receipts; no weaker fallback |
+| **P04 — WO7–WO9 installed acceptance** | Signed Windows NSIS and Linux Debian package, authentic release dependencies/notices, native install/edit/Git/ZIP/build/test/debug/restart/uninstall/upgrade/rollback | NOT STARTED | Installed signed artifact hashes, reviewed licenses/dependencies, native per-OS fixtures with exact receipts; release manifests independently accepted |
+| **P05 — GitHub operations reduction** | Review older stacked and parallel IDE PRs; preserve all unique code; close/retarget only after verified consolidation; remove redundant CI without losing required security gates | NOT STARTED | Account for every IDE PR and corresponding source/evidence, document why superseded or retained; no history loss or premature mass closure |
+| **P06 — Governance and reproducibility** | Lockfiles, dependency review, rulesets and required checks, artifact provenance/retention, single machine-readable native acceptance matrix | NOT STARTED | Reproducible exact-head packages; trusted release evidence; documented mandatory branch checks; no unreviewed promotion |
+| **P07 — Lu ↔ DLC interface (post-v1.0)** | Reevaluate shared Lu Core, Cognitum, NVP and all CE/Workspace interfaces, IPC/AF_UNIX/Protobuf/native logic placement, then reopen WO10 if instructed | **DEFERRED** | **Lu Core v1.0 complete + cross-DLC architecture review + explicit user restart authorization**; no integration now |
+
+**Stop rule:** Work on phases sequentially. Report what changed, which subtasks remain, and whether the next phase is safe. Do **not** begin the next phase automatically after closing the current one.
+
+## P01 — Work checklist
+
+- [ ] **P01-A** — Pin `main` and WO9 exact source heads; compare root trees and preserve current Lu Core/Desktop, Lu documentation, GitHub governance files and Lu CI.
+- [ ] **P01-B** — Create one clearly named `ide/` release-candidate branch based on the current `main`; import the last nondeferred IDE source tree without WO10. Keep `main` untouched.
+- [ ] **P01-C** — Preserve original Lu `.github/workflows` plus the existing IDE workflows without overwriting either; commit traceable source identities and open a **draft** integration PR.
+- [ ] **P01-D** — Audit the complete IDE PR dependency chain; identify diverged, older independent work not yet included in the candidate. Do not mark them merged just because the newest stacked branch compiles.
+- [ ] **P01-E** — Verify the candidate tree’s source hashes and absence of WO10 bridge code; record unresolved source coverage and CI status honestly.
+- [ ] **P01-F** — Summarize remaining blockers. Treat P01 as complete only when unported material is explicitly reconciled or tracked for subsequent phase work with an approved disposition.
+
+### Source comparison findings at planning
+
+- `main` does not contain `ide/`. `main` and WO9 have matching `lu-desktop` and `src-tauri` tree hashes, so importing `ide/` must not replace Lu Core.
+- `main` has `AGENTS.md`, root `CHANGELOG.md`, `scripts/`, updated `docs/`, and `.github/pull_request_template.md` absent or older in WO9. **Preserve `main` versions**.
+- The `main` workflow set includes `lu-development-ledger.yml`; WO9 includes 32 `ide-*.yml` workflows and no filename collision. Preserve both until P05 assesses reduction.
+- Independent early PRs include [#43 — buffer identity](https://github.com/vjmichael/Lu-AI-GUI/pull/43), [#45 — installed buffer test](https://github.com/vjmichael/Lu-AI-GUI/pull/45), [#46 — Find in Project](https://github.com/vjmichael/Lu-AI-GUI/pull/46). They **diverged** from WO9 (respectively 30, 35, 32 unique commits reported by compare); `ide/app/web/buffer_identity.js`, `ide/docs/IDE_BUFFER_REFERENCES.md`, and `ide/host/src/project_search.rs` are **absent** in WO9. Do not silently declare these optional/parallel features carried forward. Investigate their relation to modern editor and source browser; preserve any unique accepted behavior before retiring PRs.
+- Some intermediate work branches diverged by one or two post-stack commits, e.g. C3, D3, D6, D7, WO6–WO8. Verify whether those are tests, documentation or missing code before historic PR closure.
+- The latest completed WO9-head CI `0d271606` ([native](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42350479148), [installed](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42350479273)) was **red**: Tauri asset-build ordering and JS allowlists, installed native GUI missing accessible controls. A release-candidate import does not erase those failures.
+
+## P02 — Deterministic repair checklist (not started)
+
+- [ ] Generate `icons/icon.ico` and web `dist/` before opt-in Windows/Linux Tauri feature checks; test default and `native-build`, `native-lsp`, `native-debug` separately.
+- [ ] Repair actual command allowlist/schema/feature declaration drift without relaxing permission scopes; run all React/Node checks.
+- [ ] Correct Linux AT-SPI `activate(timeout=...)` vs callers using `seconds=...`; install and click real Gtk/WebKit app.
+- [ ] Inspect Windows UI Automation tree for accessible `Job requests` / `Execution requests`, fix controls/harness, prove real interaction.
+- [ ] Freeze candidate exact SHA, run repeatable Windows/Linux checks; do not extrapolate from earlier heads.
+
+## P03 — Native security checklist (not started)
+
+- [ ] WO4 delegated cgroup-v2/Bubblewrap actual kernel OS admission and rejection; crash-safe cleanup.
+- [ ] WO5 protected Windows `clangd` stderr `permission_denied`; Linux `SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED`; real completion/hover/diagnostics.
+- [ ] WO6 Windows LLDB-DAP launch exit `3221225781` (likely dependency load failure; inspect actual DLLs), Linux `no_stdout_yet`/handshake timeout.
+- [ ] Actual protected Cargo/run/test/LSP/DAP normal flow, explicit authorization, cancellation, child reaping, service crash, restart, durable quarantine and no silent replay.
+
+## P04 — Installed release checklist (not started)
+
+- [ ] WO7 independently reviewed signer, signed desktop/service/installer, PE dependency audit and licenses; manifest currently `releaseApproved: false`.
+- [ ] WO8 genuine Windows NSIS UI native picker, editing/unsaved draft, external-file conflict, save/reopen/restart and clean uninstall; Linux Debian X11/GTK/AT-SPI equivalents.
+- [ ] WO9 reviewed local Git only, verified portable ZIP and fingerprinted multi-project DAG, per-step protected consent, cancel/crash and dependency block.
+- [ ] Reinstall/upgrade state migration and rollback, not just fresh install. No feature or release admission from source-only test harness.
+- [ ] Verified independent OS artifact chain and exact SHA before moving release evidence manifests out of default-deny.
+
+## P05 — GitHub PR/CI checklist (not started)
+
+- [ ] Inventory all 26 IDE-specific open PRs (among 65 open shared Lu PRs at audit); compare source blob hashes and unique file/behavior coverage against candidate.
+- [ ] Review branch bases and stacked parents; explicitly retarget, close or preserve individual PRs after their changes have been independently accounted for. Keep WO10 draft unmerged.
+- [ ] Limit CI triggers on superseded IDE draft branches only after P02–P04 gates have an accepted replacement; never disable vital containment or license checks to make a build green.
+
+## P06 — Governance checklist (not started)
+
+- [ ] Pin Rust and npm dependency graphs for all IDE crates/features, reproducibly build on both OSs and verify license notices.
+- [ ] Require CI checks and human approval before promotion; protect source/RC/release branches. Verify repository rulesets and permissions directly.
+- [ ] Exact head + OS + signed payload + installed process + kernel witness + durable receipt in machine-readable acceptance; never infer from source or skipped CI.
+- [ ] Retain trusted release artifacts, independently verify provenance and publish rollback/uninstall support.
+
+## P07 — Deferred until after Lu Core v1.0
+
+No implementation or PR merge permitted. Evaluate shared host/CE/Workspace contract with Cognitum and NVP and user approval after Lu Core v1.0, including native AF_UNIX where suitable and Windows parity, typed protocols, logic pathways and permission lifecycle. WO10 PR #76 remains explicitly **DO NOT MERGE**.
+
+## Operational notes
+
+- GitHub is a repository and CI evidence source, not an alternative development authority or automatic release signer.
+- Keep the standalone IDE independent of Lu Core until post-v1.0 review. No Docker dependency, no automatic code execution on project open.
+- Source hash and negative-test status are recorded separately from real installed acceptance. Lack of evidence is `PENDING`, not `PASS`.
+- The candidate branch is a *staging/integration source of truth*, not an approved signed release.

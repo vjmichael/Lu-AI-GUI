@@ -1,0 +1,118 @@
+name: IDE WO8 native installed Windows UI and project smoke
+on:
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
+      - '.github/workflows/ide-wo8-installed-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-unsigned-native-ui:
+    runs-on: windows-2022
+    timeout-minutes: 85
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Prove exact source checkout before installed build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: installed Windows source checkout is not exact pull-request head'
+          }
+      - name: Validate frontend and Rust host contract
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Build real default-disabled unsigned Windows NSIS
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Parse real Windows UI acceptance fixture without executing it
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: native acceptance fixture has invalid PowerShell: $($errors[0])" }
+      - name: Install and interact with actual native WebView and OS picker
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setup.Count -ne 1) { throw 'DENIED: exactly one native NSIS required' }
+          $root=Join-Path $env:RUNNER_TEMP ('lu-ide-wo8-ui-'+$env:GITHUB_RUN_ID)
+          $exe=Join-Path $root 'lu-ide-desktop.exe'
+          $installed=$false
+          $uninstalled=$false
+          $uninstaller=$null
+          if ((Test-Path -LiteralPath $root) -or (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
+            throw 'DENIED: native disposable runner already has Lu IDE/service'
+          }
+          try {
+            $setupProcess=Start-Process -FilePath $setup[0].FullName -ArgumentList @('/S',('/D='+$root)) -PassThru -Wait
+            if ($setupProcess.ExitCode -ne 0) { throw 'DENIED: native unsigned NSIS install failed' }
+            $installed=$true
+            if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'DENIED: installed desktop missing' }
+            $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Shell
+            if (!$?) { throw 'DENIED: OS UI Automation native shell failed' }
+            $fixture=Join-Path $env:RUNNER_TEMP ('lu-ide-wo8-fixture-'+$env:GITHUB_RUN_ID)
+            New-Item -ItemType Directory -Path $fixture | Out-Null
+            [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),"fn main() { println!(`"wo8`"); }`n")
+            $sourcePath=Join-Path $fixture 'main.rs'
+            $originalSourceHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario EditorPersistence -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: native UI editor review/save failed' }
+            $newSourceHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
+            if ($newSourceHash -eq $originalSourceHash) { throw 'DENIED: explicit save did not change fixture source' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario PersistedRestart -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: native project restart/persistence failed' }
+            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
+              throw 'DENIED: reopened fixture source unexpectedly mutated'
+            }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario ExternalConflict -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: real external-source collision did not preserve disk edits and local draft' }
+            $currentSource=[IO.File]::ReadAllText($sourcePath)
+            if (!$currentSource.Contains('WO8_CONFLICT_EXTERNAL_UPDATE') -or
+                $currentSource.Contains('WO8_UNSAVED_LOCAL_DRAFT')) {
+              throw 'DENIED: external conflict incorrectly saved IDE draft or lost external edit'
+            }
+            $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
+            if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
+            $uninstaller=$uninstallers[0].FullName
+            $removal=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+            if ($removal.ExitCode -ne 0 -or (Test-Path $exe)) { throw 'DENIED: uninstall did not remove installed IDE' }
+            $uninstalled=$true
+            Write-Host 'WO8_NATIVE_INSTALLED_UI_AND_PROJECT=PASS'
+            Write-Host 'WO8_NATIVE_PROTECTED_FEATURES=NOT_ACCEPTED'
+          } finally {
+            if ($installed -and !$uninstalled) {
+              Write-Warning 'WO8 native installed test incomplete; cleanup attempted and acceptance not granted'
+              if ($uninstaller -and (Test-Path $uninstaller)) {
+                try { Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait | Out-Null } catch {}
+              }
+            }
+          }
+      - name: Bound result meaning
+        shell: pwsh
+        run: |
+          Write-Host 'Only real unsigned installed desktop/UI/folder and source read accepted.'
+          Write-Host 'No signed release, protected tool execution or cross-crash recovery claim.'
