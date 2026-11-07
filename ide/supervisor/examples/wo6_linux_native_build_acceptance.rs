@@ -79,6 +79,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         worker.join().map_err(|_| "DENIED: cancel thread panicked")?;
     }
     let expected = if cancel { JobPhase::Cancelled } else { JobPhase::Completed };
+    eprintln!(
+        "WO6_NATIVE_CARGO_FIXED_RESULT phase={:?} exit={:?} stderr_class={} timed_out={} output_limit={} truncated={}",
+        actual.summary.phase, actual.exit_code, actual.stderr_category,
+        actual.timed_out, actual.output_limit_hit, actual.output_truncated,
+    );
     if actual.summary.phase != expected || actual.summary.requires_reconciliation {
         return Err("DENIED: real native Cargo OS worker did not finish with expected terminal phase".into());
     }
