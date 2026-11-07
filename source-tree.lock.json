@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ed01694f55d15435a163ef0f8b726e14610d8ed2",
-  "trackedFileCount": 514,
+  "sourceCommitBeforeLock": "730600a9e88628c4794564009fb58020e0c80c2c",
+  "trackedFileCount": 518,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -18,6 +18,10 @@
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
       "blob": "8454a1d5a8de10a63f3dd495e138a3318d38457b"
+    },
+    {
+      "path": ".github/workflows/lu-p07-research-citation-styles.yml",
+      "blob": "cd24a35d4fa0be386551dcb0ad711271379f6f17"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -121,7 +125,7 @@
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "3ee09f326ebb833020139c0c6eb3714921609c2e"
+      "blob": "7a6c5bab59a1398c9fb1230e0b277bf601dfa96c"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -129,7 +133,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "301a5e185da078a056947d406d160b6a460d944d"
+      "blob": "d4ea6c4618cc57fd0863df0fa3101a136893a3c9"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -146,6 +150,10 @@
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
       "blob": "4a6e045e0ad38ad620899f76f2b6f19215ea14f0"
+    },
+    {
+      "path": "docs/LU_P07_RESEARCH_STYLES.md",
+      "blob": "c8b4d6b4051be3ed643c753c7dc820334f02bbb8"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -644,6 +652,10 @@
       "blob": "ea7746e84db53b6228afc319fb417ad0ab1a9098"
     },
     {
+      "path": "lu-desktop/tests/p07-research-styles.test.mjs",
+      "blob": "05edd38e005f4701cd3f10babe7ed17c55bdbfca"
+    },
+    {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
       "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
     },
@@ -1109,7 +1121,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "1e5741395c6f4d1eb7275166d388b15eb320e2e2"
+      "blob": "1dda4bf0110de07e6dff4da8ec2f9e6124f9b437"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1550,6 +1562,10 @@
     {
       "path": "src-tauri/lu-core/src/web_research_report.rs",
       "blob": "b97e1bacb92c502b7095cbf3426c47a743e00ee9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_research_styles.rs",
+      "blob": "ab6d841e522efdae67f46e39ea40748f37478229"
     },
     {
       "path": "src-tauri/lu-core/src/web_research_sufficiency.rs",

@@ -1,3 +1,5 @@
+**P07 RESEARCH-STYLE-01 started (2026-11-06):** Native host-only, edition-versioned scholarly citation formatting is now stacked on P06 branch in a new P07 draft. Initial scope: basic books/journal articles with typed APA7, MLA9, Chicago18, Turabian9, SBL2 profiles, native EvidenceLedger corroboration/metadata-source identity checks, refusal to invent pages, ancient works, abbreviations or missing dates. New two-OS Rust/Node source acceptance. **NOT** a full CSL renderer, installed app result or verified manuscript citation. Further trusted metadata adapter/report integration and specialist styles remain OPEN. [P07 details](LU_P07_RESEARCH_STYLES.md).
+
 # Lu Core native tools — implementation and acceptance ledger
 Updated: 2026-11-06
 Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #67, stacked above the earlier integrated tools branch; older notes remain historical, and their CI status does not grant native/installed acceptance)
