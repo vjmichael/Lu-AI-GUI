@@ -27,6 +27,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Parse actual Linux installed acceptance shell
         run: |
+          /usr/bin/python3 -m py_compile ide/app/fixtures/wo8_linux_editor_atspi.py
           bash -n ide/app/fixtures/Test-Wo8InstalledDeb.sh
           bash -n ide/app/fixtures/wo8_linux_window_acceptance.sh
           python3 -m json.tool ide/app/src-tauri/tauri.wo8.linux.conf.json >/dev/null
@@ -36,7 +37,7 @@ jobs:
         run: |
           grep -q 'xvfb-run' ide/app/fixtures/Test-Wo8InstalledDeb.sh
           grep -q 'xdotool search' ide/app/fixtures/wo8_linux_window_acceptance.sh
-          grep -q 'WO8_LINUX_INSTALLED_EDITOR_AND_PROTECTED_RUN=NOT_ACCEPTED' ide/app/fixtures/Test-Wo8InstalledDeb.sh
+          grep -q 'WO8_LINUX_PROTECTED_RUN_DEBUG=NOT_ACCEPTED' ide/app/fixtures/Test-Wo8InstalledDeb.sh
   windows-parse-real-native-gui-test:
     runs-on: windows-2022
     timeout-minutes: 10
