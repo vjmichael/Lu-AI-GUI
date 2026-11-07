@@ -55,6 +55,7 @@ async fn model_cannot_approve_or_fabricate_an_artifact(){
         r#"{"path":"empty.xlsx","format":"xlsx"}"#).unwrap();
     assert!(reg.dispatch(empty,&Allow).await.is_err());
     assert_eq!(fs::read(dir.join("record.json")).unwrap(),b"{\"written\":true}");
+    drop(cat);drop(reg); // Release cap-std directory handles before Win32 cleanup.
     fs::remove_dir_all(dir).unwrap();
 }
 #[cfg(unix)]
@@ -70,5 +71,6 @@ async fn symlink_to_outside_workspace_is_refused(){
     let call=cat.encode_call(&names,"lu_artifact_inspect","symlink-deny",None,
         r#"{"path":"alias.json","format":"json"}"#).unwrap();
     assert!(reg.dispatch(call,&Allow).await.is_err());
+    drop(cat);drop(reg);
     fs::remove_dir_all(dir).unwrap();fs::remove_dir_all(other).unwrap();
 }
