@@ -29,7 +29,7 @@ M2 introduces **working native goal/clarification memory** into the ordinary Lu 
 
 ### ANSF desktop service (`lu-desktop/src-tauri/src/memory_desktop.rs`)
 
-- Opens `lu-ansf.sqlite` only through the profile-owned native host, refusing existing symlinks or nonregular files. The existing `DesktopOwner` exclusive lease is held at startup.
+- Opens `lu-ansf.sqlite` only through the profile-owned native host, refusing existing symlinks or nonregular files. The existing `DesktopOwner` exclusive lease is held at startup. **Failure to initialize the optional ANSF memory does not prevent ordinary alpha chat from launching**; memory-specific commands return a clear error and the model receives no falsely claimed remembered goal.
 - On read/after an event, verifies the actual `ChatStore` conversation and reconciles every source event into the ANSF SQLite book. Partial publication can be retried after restart.
 - Compares the entire source event sequence against the ANSF result; unexpected, missing or conflicting records are refused, not silently promoted to memory.
 - Four Tauri commands: `lu_m2_goal_context`, `lu_m2_set_goal`, `lu_m2_open_question`, `lu_m2_answer_question`.
