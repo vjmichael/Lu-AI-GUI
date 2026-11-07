@@ -82,10 +82,10 @@ def validate(data: dict, source_sha: str) -> list[dict]:
             else destination.startswith("resources/language-servers/")
         ):
             raise Denied("unapproved_runtime_destination")
-        if role == "service":
+        if role in ("service", "desktop"):
             signer = row.get("signerThumbprint")
             if not isinstance(signer, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", signer):
-                raise Denied("protected_service_signer_pin_missing")
+                raise Denied("protected_binary_signer_pin_missing")
         if role in roles and role in REQUIRED:
             raise Denied("duplicate_required_binary")
         roles.add(role)
