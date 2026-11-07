@@ -5,6 +5,7 @@ on:
       - 'ide/packaging/verify_p06_*'
       - 'ide/packaging/test_verify_p06_*'
       - 'ide/packaging/p06-native-acceptance-matrix.json'
+      - 'ide/packaging/p06-reviewed-lock-graphs.json'
       - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
       - '.github/workflows/ide-p06-dependency-evidence.yml'
   workflow_dispatch:
@@ -81,7 +82,16 @@ jobs:
         run: |
           set -euo pipefail
           python ide/packaging/verify_p06_dependency_graph.py --repo-root . --source-sha "$EXACT_SHA" --license-root ide/app/src-tauri/p06-notices --output ide/app/src-tauri/p06-dependency-evidence.json
-          echo 'P06_SOURCE_EVIDENCE_ONLY_NOT_SIGNED_OR_INSTALLED_ACCEPTANCE'
+          python -m unittest discover -s ide/packaging -p 'test_verify_p06_lock_parity.py' -v
+          python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-cross-os-parity-receipt.json
+          echo 'P06_REVIEWED_LOCK_HASHES_ONLY_NOT_COMMITTED_LOCKS_OR_SIGNED_RELEASE'
+      - name: Exercise locked npm and Cargo resolution without source mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd ide/app && npm ci --ignore-scripts --no-audit --no-fund)
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-locked-rerun-receipt.json
       - name: Retain exact generated locks, upstream notices and evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,5 +103,7 @@ jobs:
             ide/app/src-tauri/p06-upstream-receipt.json
             ide/app/src-tauri/p06-notices/**
             ide/app/src-tauri/p06-dependency-evidence.json
+            ide/app/src-tauri/p06-cross-os-parity-receipt.json
+            ide/app/src-tauri/p06-locked-rerun-receipt.json
           if-no-files-found: warn
           retention-days: 30

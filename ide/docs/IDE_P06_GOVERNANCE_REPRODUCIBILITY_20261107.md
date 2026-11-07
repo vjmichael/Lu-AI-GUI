@@ -23,3 +23,9 @@ The connected GitHub repository returned an empty **repository rulesets** list. 
 - Repository rulesets/branch protection and human approval verification. P05 PR and original security checks remain intact.
 
 **Do not merge P06 ahead of P05, or merge P05/P04 ahead of native acceptance.** Signed identity intentionally deferred; no automatic release approval.
+
+## Dual OS lock parity evidence — P06 first native run
+
+P06 exact-head Windows 2022 and Ubuntu 24.04 [run 42417459140](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42417459140) **PASSED on both OSs** at commit `7310eb1465dfe26fc0aee6b9b450113d1463ad69`. Archived artifacts contain the full 500-entry Cargo.lock and 62 npm resolution package entries, plus all upstream license text and 48 unresolved package-specific legal-text entries. Comparison proved **Cargo.lock byte equality** (`d4312b60209f89181766b60c2982fb8b199e8ed9d6be1a9dcbdcb3dd07abf6b4`) and **npm JSON semantic equality**; npm raw bytes differ only due Windows CRLF vs Linux LF. The canonical sorted compact npm JSON SHA-256 is `9a61ac00a82c8f8ca57ce6e56b2e9eb355fd66a0d9af6081b199ddf0573e97de`.
+
+A reviewed-graph SHA witness and adversarial parity checks now require exact per-OS npm lock bytes + shared semantic JSON, shared Cargo bytes, upstream full notice receipts and no legal approval. CI also runs an actual `npm ci --ignore-scripts` and `cargo fetch --locked` after initial resolution and checks the graph again. This is a **reviewed hash pin**, NOT yet committed package-lock.json/Cargo.lock source files, and not a reproducible installed native binary. An independent immutable artifact and lockfile commit check is still required.
