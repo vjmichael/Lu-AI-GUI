@@ -138,6 +138,16 @@ for _protoc_name in PROTOC_UPSTREAM_FAMILY:
         "files":[PROTOC_ORIGINAL_LICENSE],
     }
 
+
+# MIT original for three exact Rust bindings; NOT Microsoft WebView2 runtime rights.
+WEBVIEW_ORIGINAL_LICENSE = {"checkedIn":"ide/packaging/upstream-crate-notices/webview2-rs-0.39.1-LICENSE.txt","originalName":"LICENSE","url":"https://raw.githubusercontent.com/wravery/webview2-rs/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE","blobSha":"de9a7e660e173136b351982a34f715af424ff812"}
+WEBVIEW_EXACT_CRATES = [["webview2-com","0.39.1"],["webview2-com-sys","0.39.1"],["webview2-com-macros","0.8.1"]]
+for _name,_version in WEBVIEW_EXACT_CRATES:
+    _key=_name+":"+_version
+    if _key in CURATED_MISSING_NOTICES:
+        raise Denied("duplicate_webview_original_notice")
+    CURATED_MISSING_NOTICES[_key]={"declaredLicense":"MIT","files":[WEBVIEW_ORIGINAL_LICENSE]}
+
 def verified_curated_notices(repo_root,manager,name,version,declared):
     if manager != "cargo":
         return []
