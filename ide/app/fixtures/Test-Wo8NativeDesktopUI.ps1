@@ -229,7 +229,7 @@ try {
       if ($Scenario -eq 'ProtectedTamperDenial') {
         $tamper=Join-Path $fixed 'src\\main.rs'
         if (!(Test-Path $tamper)) { Deny 'missing_cargo_source_tamper_fixture' }
-        [IO.File]::AppendAllText($tamper,"\`n// WO8_TAMPER_AFTER_PLAN_BEFORE_CONSENT\`n")
+        [IO.File]::AppendAllText($tamper,"`n// WO8_TAMPER_AFTER_PLAN_BEFORE_CONSENT`n")
         Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
         [void](Find-Control 'Protected build/test was denied or failed' '' 40)
         Wait-WorkerReturnToBaseline $initial
@@ -320,7 +320,7 @@ try {
       [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// WO8_UNSAVED_LOCAL_DRAFT')
       Start-Sleep -Milliseconds 650
       if ([IO.File]::ReadAllText($source) -ne $saved) { Deny 'unsaved_code_mutated_source' }
-      $outside=$saved+"\`n// WO8_CONFLICT_EXTERNAL_UPDATE\`n"
+      $outside=$saved+"`n// WO8_CONFLICT_EXTERNAL_UPDATE`n"
       [IO.File]::WriteAllText($source,$outside)
       $externalHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
       Click 'Save · Ctrl+S'
