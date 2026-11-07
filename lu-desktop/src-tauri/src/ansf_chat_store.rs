@@ -115,6 +115,13 @@ impl ChatStore {
                ON ansf_desktop_chats(updated_seq DESC);
              CREATE TABLE IF NOT EXISTS ansf_desktop_state(
                name TEXT PRIMARY KEY,value INTEGER NOT NULL);
+             CREATE TRIGGER IF NOT EXISTS ansf_desktop_chat_title_to_library
+               AFTER UPDATE OF title ON ansf_desktop_chats
+               WHEN NEW.title<>OLD.title
+               BEGIN
+                 UPDATE library_books SET title=NEW.title
+                 WHERE session_id=NEW.chat_id;
+               END;
              INSERT OR IGNORE INTO ansf_desktop_state(name,value) VALUES('sequence',0);
              INSERT OR IGNORE INTO ansf_desktop_state(name,value) VALUES('legacy_cutover',0);"
         ).map_err(to_err)?;
