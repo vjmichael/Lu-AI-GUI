@@ -625,14 +625,16 @@ pub fn start_linux_dap(
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(if cfg!(debug_assertions)
-            && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-                == Some(std::ffi::OsStr::new("1"))
-        {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        });
+        .stderr(
+            if cfg!(debug_assertions)
+                && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+            {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            },
+        );
     unsafe {
         command.pre_exec(move || attach_pid_in_pre_exec(descriptor));
     }
@@ -786,7 +788,8 @@ mod tests {
     use super::*;
     #[test]
     fn kernel_quota_witness_emits_only_bounded_boolean_or_unavailable() {
-        let file = std::env::temp_dir().join(format!("wo6-kernel-limit-{:032x}", rand::random::<u128>()));
+        let file =
+            std::env::temp_dir().join(format!("wo6-kernel-limit-{:032x}", rand::random::<u128>()));
         std::fs::write(&file, "max 0\nother 12\noom_kill 1\n").unwrap();
         assert_eq!(kernel_limit_hit(&file, "max"), "no");
         assert_eq!(kernel_limit_hit(&file, "oom_kill"), "yes");
