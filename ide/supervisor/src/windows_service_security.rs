@@ -529,6 +529,18 @@ pub fn authenticate_client(
     {
         return Err(denied());
     }
+    // The restricted LocalService principal must not receive a blanket
+    // process-open grant against arbitrary interactive applications. A
+    // request has already been read from THIS pipe before reaching here.
+    // Impersonate the kernel-attested connecting client with its negotiated
+    // SECURITY_IMPERSONATION SQOS, and open only that same client's PID.
+    // The resulting query/wait handle remains valid after RAII RevertToSelf.
+    // All subsequent protected Job and evidence effects execute again as
+    // restricted LocalService, never under the borrowed client identity.
+    if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
+        return Err(denied());
+    }
+    let _impersonation = Impersonation;
     let process = Handle::new(unsafe {
         OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
     })?;
@@ -554,12 +566,8 @@ pub fn authenticate_client(
         return Err(denied());
     }
     hash_executable(&installed, approved_host_sha256)?;
-    // The call must occur only after ReadFile on this connection.
-    // On impersonation failure, immediately deny; never continue as service.
-    if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
-        return Err(denied());
-    }
-    let _impersonation = Impersonation;
+    // Read the impersonated caller's token, not a caller-supplied account.
+    // Identity and on-disk executable hash are checked before any authority.
     let mut client_token = ptr::null_mut();
     if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut client_token) } == 0 {
         return Err(denied());
