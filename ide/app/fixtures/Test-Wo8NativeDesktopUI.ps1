@@ -79,7 +79,7 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
   $desktop=[System.Windows.Automation.AutomationElement]::RootElement
   while ((Get-Date) -lt $deadline) {
     $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
-      (New-Object System.Windows.Automation.PropertyCondition(
+      ([System.Windows.Automation.PropertyCondition]::new(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Window)))
     foreach($win in $windows) {
@@ -150,7 +150,7 @@ try {
       try {
         $desktop=[System.Windows.Automation.AutomationElement]::RootElement
         $buttons=$desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-          (New-Object System.Windows.Automation.PropertyCondition(
+          ([System.Windows.Automation.PropertyCondition]::new(
             [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
             [System.Windows.Automation.ControlType]::Button)))
         foreach($entry in $buttons) {
