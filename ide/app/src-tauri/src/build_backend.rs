@@ -158,6 +158,8 @@ pub struct BuildStatus {
     description: &'static str,
     current: Option<ActiveView>,
     recent: Vec<BuildRunView>,
+    // Persisted supervisor journal; unlike recent, survives a host restart.
+    journal: Vec<RecoveryView>,
     quarantined: Vec<RecoveryView>,
 }
 #[derive(Serialize)]
@@ -219,15 +221,31 @@ impl NativeBuildRuntime {
         let recent = locked.recent.values()
             .filter(|job| job.project_id == project_id).cloned().collect();
         drop(locked);
-        let quarantined = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .into_iter().filter(|job| job.project_id == project_id)
+        let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+        // Serialize only exact project-scoped immutable journal identifiers.
+        // Do not reconstruct a BuildRunView or invent a successful native exit
+        // code after restart: the original runtime receipt is authoritative.
+        let journal: Vec<RecoveryView> = durable.into_iter()
+            .filter(|job| job.project_id == project_id)
+            .take(32)
             .map(|job| RecoveryView {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
                 phase: format!("{:?}", job.phase).to_lowercase(),
                 requires_reconciliation: job.requires_reconciliation,
-            }).collect();
+            })
+            .collect();
+        let quarantined: Vec<RecoveryView> = journal.iter()
+            .filter(|job| job.requires_reconciliation)
+            .map(|job| RecoveryView {
+                project_id: job.project_id.clone(),
+                job_id: job.job_id.clone(),
+                plan_sha256: job.plan_sha256.clone(),
+                phase: job.phase.clone(),
+                requires_reconciliation: true,
+            })
+            .collect();
         Ok(BuildStatus {
             ready: availability.is_ok(),
             code: match availability {
@@ -238,6 +256,7 @@ impl NativeBuildRuntime {
                 admission, human approval and terminal OS cleanup are checked for each job.",
             current,
             recent,
+            journal,
             quarantined,
         })
     }
