@@ -2764,6 +2764,49 @@ async fn lu_research_export_report(
     }))
 }
 
+/// User-approved, source-bound P07 bibliography preview. The native
+/// Research host retrieves only the existing DOI's Crossref endpoint and
+/// refuses metadata and styles not corroborated by this conversation.
+#[tauri::command]
+async fn lu_research_citation_preview(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,source_id:String,style:String
+)->Result<research_desktop::ResearchCitationPreviewView,String>{
+    use lu_core::web_research_styles::Style;
+    let profile=match style.as_str(){
+        "apa7"=>Style::Apa7,"mla9"=>Style::Mla9,
+        "chicago18"=>Style::Chicago18,"turabian9"=>Style::Turabian9,
+        "sbl2"=>Style::Sbl2,
+        _=>return Err("Select a supported, versioned citation profile".into()),
+    };
+    state.observe.deny_observation_network_egress(&chat_id)?;
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
+        ||source_id.chars().any(char::is_control){
+        return Err("Select a previously corroborated Research source".into());
+    }
+    if !state.research.available(){
+        return Err("Pinned native Research HTTPS client unavailable".into());
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let source_id=source_id.clone();
+        let label=profile.label().to_owned();
+        move||app.dialog().message(format!(
+            "Retrieve the current independent Crossref metadata for ONE              previously corroborated source and preview its {label} citation?\n\n             Source: {source_id}\n\n             Only the DOI already saved for this chat is requested.              Missing dates, unsupported editions and ambiguous metadata              are refused; quotes, pages and interpretations are NOT verified."
+        )).title("Lu — Review scholarly citation")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Review citation".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Citation metadata review dialog unavailable")?;
+    if !approved{return Err("Citation review declined".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
+    let worker=Arc::clone(&state.research);
+    tauri::async_runtime::spawn_blocking(move||
+        worker.citation_preview(&chat_id,&source_id,profile)
+    ).await.map_err(|_|"Native citation preview worker unavailable".to_owned())?
+}
+
 /// Independently corroborate ONE already-discovered lead against Crossref.
 /// The trusted local evidence ledger supplies the DOI; the UI/model can
 /// only select its previously discovered OpenAlex source ID.
@@ -6327,6 +6370,7 @@ pub fn run() {
             lu_research_verify_quote,
             lu_research_openalex,
             lu_research_crossref,
+            lu_research_citation_preview,
             lu_research_retrieve_document,
             lu_research_cancel_document,
             lu_research_verify_document_passage,
