@@ -9,12 +9,12 @@
 //! never executable authorizations.
 // Unsafe is restricted to the Linux worker's pre-exec cgroup admission.
 // The portable supervisor state machine itself performs no unsafe operations.
+#[cfg(feature = "dap-transport")]
+mod dap_transport;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
-#[cfg(feature = "dap-transport")]
-mod dap_transport;
 pub mod snapshot;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
@@ -123,8 +123,8 @@ fn validate_plan(value: &JobPlan) -> bool {
             && matches!(
                 value.recipe_id.as_str(),
                 "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
-            )) || (cfg!(feature = "dap-transport")
-            && value.recipe_id == "dap_lldb_fixed"))
+            ))
+            || (cfg!(feature = "dap-transport") && value.recipe_id == "dap_lldb_fixed"))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
         && hex_sha(&value.manifest_sha256, 64)
