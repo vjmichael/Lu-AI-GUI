@@ -116,7 +116,7 @@ test('Reader desktop exposes source-checked continuation and section selection',
   assert.match(host,/expected_source_sha256:Option<String>/);
   assert.match(host,/read_selected_bytes\(/);
   assert.match(host,/read_plain_text_window\(/);
-  assert.match(ui,/readerContinuation\.sourceSha256/);
+  assert.match(ui,/sourceSha256:document\.sourceSha256/);
   assert.match(ui,/expectedSourceSha256:continuation\?\.sourceSha256/);
   assert.match(ui,/Reader section/);
   assert.match(ui,/Continue Reader at/);
