@@ -18,6 +18,16 @@ The expression is a **design function**, not a computed formula, literal sum or 
 
 **Knowledge ≠ execution.** An offline GGUF model may know enough to construct an XLSX package or GitHub REST request; it does not thereby gain filesystem, process or network access. The **Lu host executes** an authorized plan and returns the actual result. Offline model inference can coexist with explicitly authorized online operations.
 
+## 1A. User-governed purpose, clarification and memory-first priority — November 7, 2026
+
+**Binding owner refinement:** The user was missing from the first K/I/A/F model. The user defines the legitimate goal, desired value, preferences and corrections; the model supplies learned knowledge and reasoning; Lu supplies memory, interfaces, authority-bound execution and verified feedback. **Lu should reduce the expertise required to accomplish a user-defined goal, rather than reduce the user's intelligence.** A knowledgeable user can probe the model more deeply; a less experienced user should receive helpful guidance without being excluded from expert capabilities. See the [full human-centered philosophy and memory-first roadmap](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md).
+
+The original **Practical AI Capability = f(K,I,A,F)** remains the concise execution model. Expanded notation is **C_Lu(U,T,E)=f(K_eff,t,I_t,A_U,F_t;G_U,E_t)** with **K_eff,t = g(K_model,M_t,O_<=t)**. U supplies goals and value, M is selectively retrieved source-backed operational/contextual memory, and E is the current environment. All equations are conceptual decision/design models, not measured formulas. Model knowledge is not automatically effectual knowledge, memory is not training weights, and neither tool discovery nor past approval is authority.
+
+**Clarification is part of the closed-loop reasoning/action policy:** interpret the goal, identify missing information, decide whether a current observation or one concise question is most useful, integrate the answer into durable task context, execute authorized actions, verify and update the model's situation. Ask where the answer materially affects user intent, risk or the decision; do not repeat answered questions or interrupt reflexively.
+
+**Implementation priority:** make ANSF-backed memory and conversation/task clarification continuity *usable end-to-end* before new broad effectful general-purpose app/process execution. Existing proven I/O, tools and supervisor remain available and subject to their independently tracked release gates. This is a design/sequencing update **only**, not an implementation authorization.
+
 ## 2. Exactly three meta-classifications
 
 These are the authoritative **classification vocabulary for the AI Execution Layer**. They describe a **capability's role**, not one repository directory or one entire Pxx phase. Mixed domains must be decomposed into functions before classification.
