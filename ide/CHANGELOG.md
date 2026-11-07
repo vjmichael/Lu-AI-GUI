@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE 07 / WO3 (2026-11-06): fail-closed retry on subsequent unverified named-pipe instances preserves already authenticated kernel Job-holder threads; initial instance ACL verification remains a hard startup gate. CI-only MIC classification added for access-denied triage, without changing service/host authority. Exact-head native acceptance is still pending.
+
+
 - IDE 07 / WO2 native security hardening (2026-11-06): serialized service-process NUL DACL transactions across concurrent protected Job leases; exact-mask attestation before revocation and fail-closed collision behavior; Windows lock contention regression test. Existing LocalService-owned per-job intent/grant/revoke and restart reconciliation are source-implemented, NOT exact-head accepted. Historical disposable-CI contained Cargo/cancellation run `1090800` passed; protected-service pipe admission and owner/service crash proofs still open. See `docs/IDE_WORK_BATCH_02_20261106.md`.
 
 
