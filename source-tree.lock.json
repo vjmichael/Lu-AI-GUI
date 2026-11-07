@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5de96473fa2491f6e2311c7fbf873b49dcbb2719",
-  "trackedFileCount": 509,
+  "sourceCommitBeforeLock": "1e6fbe7710eb005d464cbda4c09f84eb454c7e1c",
+  "trackedFileCount": 512,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "f7437f67790cab98cf02eb31229ac5fd18e30299"
+      "blob": "e921ae778933a760a9978f39e86040cb57f68b81"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "2db7eebbe51cdc9d8a4cfba3a253aa6cf185f3c0"
+      "blob": "bc9cdb9c415fd0c48e7f408c6e77ad4f35ec0400"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -141,11 +141,11 @@
     },
     {
       "path": "docs/LU_OBSERVE_LEARN_V1.md",
-      "blob": "6fb88774d83c7ae668eb8a61908c76ec7e039cbf"
+      "blob": "35331ccfb90200616794aa7f2adb877ae28b183d"
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "158fe011eed1d7695aad329db034bc3012237207"
+      "blob": "5330be51df43a225014518ac655bf5778b960cee"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -397,7 +397,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/browser_model_desktop.rs",
-      "blob": "00ddc09c25fa4f6e6b5530ed91abb40a887a7a8a"
+      "blob": "12b6a9a0cea452387074685f9de5cf0ca3bf7c39"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -437,7 +437,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "8af0219a1f0670b54bc36fb19e455f93f0c5d1a4"
+      "blob": "bb7827d2ed087b5a853489eda016538a27fbb9d0"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -469,7 +469,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "6bf0b75b3345ccb8df23d58b630a8083cec369ce"
+      "blob": "5a0305d91779e6df3136fedeb3b722ff886f6f2a"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/observe_linux_auth.rs",
+      "blob": "8dfbf7a2be9beef2d54e4dff33b2ebc880929ba8"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -633,7 +637,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "15db842ee1b7ebb5d72845ddb3bdb15b660355e9"
+      "blob": "032d926cbec0f69f87b72d02aaf0707d02d9ca53"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -753,7 +757,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "d46f269b106bdeff27df70876e5f0d37c0e49c8a"
+      "blob": "a42c0ded225f6e8dc752113b62f0d25cae789e37"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -770,6 +774,10 @@
     {
       "path": "lu-desktop/web/styles.css",
       "blob": "3da1a1115154807ea7a484452640f4828097b702"
+    },
+    {
+      "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
+      "blob": "48bc8661a6f547471ac3c9899eca258e5ad4c5fa"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",
@@ -1097,7 +1105,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "e3a501c19bf80dd210e1a859835bb698a206c546"
+      "blob": "049a4820f229f0b0db3ab6edb9b84e9427cf80c6"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1301,7 +1309,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_observe_ansf.rs",
-      "blob": "a4520481e2969eb0b1d6053ce0fc8b2f65791aba"
+      "blob": "78953ddd4b8be00278ed887afdb3734a5b7cadd6"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_observe_egress.rs",
+      "blob": "1a346999f89ca02f79c010fa5ef74ba6ef5b14d2"
     },
     {
       "path": "src-tauri/lu-core/src/native_observe_learn.rs",
@@ -1485,7 +1497,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "cdca8d2c5296d865aee966d2255b79deaff550a1"
+      "blob": "150ab4d43a49537851345d7a86fc402efe123e19"
     },
     {
       "path": "src-tauri/lu-core/src/vision_routing.rs",

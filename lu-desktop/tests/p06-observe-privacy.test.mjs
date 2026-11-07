@@ -178,10 +178,10 @@ test('P06 independently hash-reviewed native NSIS install/uninstall is a real op
   assert.match(script,/Match-Sha \$installer \$InstallerSha256/);
   assert.match(script,/Lu-Registrations/);
   assert.match(script,/Get-Process -Name Lu/);
-  assert.match(script,/Start-Process -FilePath \$installer/);
+  assert.match(script,/Invoke-BoundedReviewedExe \$installer/);
   assert.match(script,/Match-Sha \$app \$LuSha256/);
   assert.match(script,/Match-Sha \$worker \$WorkerSha256/);
-  assert.match(script,/Start-Process -FilePath \$uninstaller/);
+  assert.match(script,/Invoke-BoundedReviewedExe \$uninstaller/);
   assert.match(script,/uninstallRegistration='PASS'/);
   assert.match(script,/wgcPicker='NOT_TESTED'/);
   assert.match(script,/gpuHardwareQuota='NOT_TESTED'/);
@@ -267,4 +267,40 @@ test('P06 actual NSIS process run is time-bounded and never auto-cleans uncertai
   assert.match(script,/installationStateUncertain=\(\$stage -ne 'preflight'\)/);
   assert.match(script,/reviewedStageProcessExit='BOTH_REVIEWED_STAGE_PROCESSES_EXITED'/);
   assert.doesNotMatch(script,/Remove-Item -Recurse/);
+});
+
+test('P06 actual two native dialogs and Linux administrator OS agent keep activation off by default',()=>{
+  const auth=read('../src-tauri/src/observe_linux_auth.rs');
+  const polkit=read('../../scripts/linux/org.lu.desktop.observe-learn.policy');
+  assert.match(desktop,/EXPERIMENTAL Observe & Learn warning/);
+  assert.match(desktop,/Explicit local observation permission/);
+  assert.match(desktop,/if !experimental\{return false;\}/);
+  assert.match(desktop,/if !approved\{return observer\.status\(&chat_id\);\}/);
+  assert.match(desktop,/observe_linux_auth::require_admin_for_observation\(\)\?/);
+  assert.match(desktop,/active_research_network_tasks/);
+  assert.match(auth,/--allow-user-interaction/);
+  assert.match(auth,/--process/);
+  assert.match(auth,/rsplit_once\("\) "\)/);
+  assert.match(auth,/Duration::from_secs\(90\)/);
+  assert.match(polkit,/<allow_active>auth_admin<\/allow_active>/);
+  assert.match(polkit,/<allow_any>no<\/allow_any>/);
+  assert.match(ui,/Enable experimental Observe & Learn/);
+});
+test('P06 tagged local-only observations cannot be declassified into network sinks or research/browser tools',()=>{
+  const policy=read('../../src-tauri/lu-core/src/native_observe_egress.rs');
+  const browser=read('../src-tauri/src/browser_model_desktop.rs');
+  const memory=read('../../src-tauri/lu-core/src/native_observe_ansf.rs');
+  assert.match(policy,/pub const OBSERVE_LEARN/);
+  assert.match(policy,/Destination::NetworkSocket/);
+  assert.match(policy,/Destination::RemoteModel/);
+  assert.match(policy,/fn joined/);
+  assert.match(tasks,/pub fn has_observe_provenance/);
+  assert.match(tasks,/observe_session_provenance_is_durable_after_stop_and_note_forget/);
+  assert.match(host,/DataProvenance::OBSERVE_LEARN/);
+  assert.match(host,/network_egress_allowed:false/);
+  assert.match(desktop,/deny_observation_network_egress\(&chat_id\)/);
+  assert.match(desktop,/deny_unscoped_network_while_observing\(\)/);
+  assert.match(browser,/deny_observation_network_egress\(chat_id\)/);
+  assert.match(memory,/network_egress=deny/);
+  assert.match(ui,/LOCAL ONLY/);
 });

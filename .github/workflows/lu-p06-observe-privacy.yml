@@ -37,6 +37,11 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p06_ -- --nocapture
       - name: Test baseline chat-scoped durable note authority
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - name: Test local-only provenance and durable network quarantine
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_egress::tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib observe_session_provenance_is_durable_after_stop_and_note_forget -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib existing_active_research_is_reported_before_observe_consent -- --nocapture
       - name: Test scope cannot silently widen to another window or monitor
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
       - name: Test new Observe privacy desktop contracts

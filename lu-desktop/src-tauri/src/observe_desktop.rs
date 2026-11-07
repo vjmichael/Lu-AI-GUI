@@ -32,6 +32,8 @@ pub(crate) struct ObserveView {
     pub inference_recommendations:u64,
     pub inference_performed:u64,
     pub notes_logged:u64,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -41,6 +43,8 @@ pub(crate) struct ObserveNoteView{
     pub source:String,
     pub priority:String,
     pub created_at:String,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -56,6 +60,8 @@ pub(crate) struct ObserveCaptureReceiptView{
     pub fully_redacted_receipt:bool,
     pub visual_interpretation_verified:bool,
     pub message:&'static str,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -71,6 +77,8 @@ pub(crate) struct ObserveHandoffView{
     pub review_draft:String,
     pub review_sha256:String,
     pub source_note_count:usize,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 
 struct Session {
@@ -100,6 +108,31 @@ fn verified_reaped_frame_receipt(worker_reaped:bool,terminal:bool,digest_valid:b
 }
 fn format_error(e:ObserveError)->String{format!("Observe session refused: {e:?}")}
 impl ObserveHost {
+    /// Host-owned internet egress gate; never accept a model/WebView
+    /// declaration that observation content is ordinary untagged text.
+    /// Durable obs-* task provenance persists after OFF, Pause and Forget.
+    pub(crate) fn deny_observation_network_egress(&self,chat_id:&str)->Result<(),String>{
+        if self.task_store.has_observe_provenance(chat_id)
+            .map_err(|_|"Observation provenance lookup unavailable: network refused")?{
+            lu_core::native_observe_egress::DataProvenance::OBSERVE_LEARN
+                .gate(lu_core::native_observe_egress::Destination::NetworkSocket)
+                .map_err(|e|e.to_owned())?;
+            return Err("Observe & Learn is local-only. Network tools are disabled for this conversation; use a separate clean conversation for unrelated web work.".into());
+        }
+        Ok(())
+    }
+
+    /// Unscoped model-provider network operations cannot run while Observe
+    /// is enabled, since they lack a chat provenance slot.
+    pub(crate) fn deny_unscoped_network_while_observing(&self)->Result<(),String>{
+        let mut session=self.inner.lock().map_err(|_|"Observe consent state unavailable: network refused")?;
+        self.refresh_expiry(&mut session)?;
+        if session.controller.mode()!=Mode::Off{
+            return Err("Observe & Learn is active; unscoped network access is blocked".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(task_store:Arc<TaskStore>,capture_processes:Arc<BackgroundProcessSupervisor>)->Self{
         Self{
             task_store,capture_processes,
@@ -128,6 +161,8 @@ impl ObserveHost {
             inference_recommendations:s.recommendations,
             inference_performed:0,
             notes_logged:s.notes_logged,
+            data_origin:"observe_learn",
+            network_egress_allowed:false,
         }
     }
     /// Called only after the separate native dialog explicitly confirmed a
@@ -440,6 +475,7 @@ impl ObserveHost {
             fully_redacted_receipt:receipt_ready,
             visual_interpretation_verified:false,
             message:"Native one-shot receipt: foreground OS window identity is checked by the pinned worker; generic picker source identity remains unverified. No raw pixels are returned, and no GUI or model-vision verdict is inferred.",
+            data_origin:"observe_learn",network_egress_allowed:false,
         }))
     }
     /// P06 operator-approved privacy erase for a locally authenticated
@@ -474,6 +510,7 @@ impl ObserveHost {
             .into_iter().map(|n|Ok(ObserveNoteView{
                 sequence:n.sequence,kind:n.code,source:n.source,
                 priority:n.priority,created_at:n.created_at,
+                data_origin:"observe_learn",network_egress_allowed:false,
             })).collect()
     }
     /// Produces a content-minimized main-model review handoff. No model run,
@@ -498,7 +535,8 @@ impl ObserveHost {
             .map_err(|_|"Observation provenance notes unavailable")?;
         let count=notes.len();
         let mut brief=String::from(
-            "Lu self-observation — REVIEW REQUEST (NOT A VERIFIED GUI TEST).\n\
+            "data_origin=observe_learn; network_egress=deny; local_only=true.\n\
+             Lu self-observation — REVIEW REQUEST (NOT A VERIFIED GUI TEST).\n\
              Investigate whether actual Lu application behavior differs from \
              its intended design. This note is a user-selected prompt draft, \
              NOT an autonomous model command or a filesystem/tool grant.\n\
@@ -545,6 +583,7 @@ impl ObserveHost {
             main_model_may_treat_as_verified_failure:
                 h.main_model_may_treat_as_verified_failure,
             review_draft:brief,review_sha256:digest,source_note_count:count,
+            data_origin:"observe_learn",network_egress_allowed:false,
         }))
     }
 

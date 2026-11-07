@@ -639,6 +639,33 @@ impl TaskStore {
         Ok(result)
     }
 
+    /// Durable provenance latch: an Observe session itself marks its
+    /// conversation LOCAL_ONLY even after Stop/Forget and across restart.
+    /// Ordinary user content in another conversation is not auto-tainted.
+    /// A DB error at any host egress caller must DENY rather than allow.
+    pub fn has_observe_provenance(&self,workspace_id:&str)->Result<bool,TaskStoreError>{
+        if !workspace_id.starts_with("c-")||workspace_id.len()>128||
+           !workspace_id.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'-'||c==b'_'){
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let found:i64=connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM lu_tasks WHERE workspace_id=?1 AND substr(task_id,1,4)='obs-')",
+            params![workspace_id],|row|row.get(0))?;
+        Ok(found!=0)
+    }
+
+    /// Deny Observation activation when an existing research worker is
+    /// already alive. Network authorization can never overlap the moment
+    /// local-only provenance begins without review of the in-flight task.
+    pub fn active_research_network_tasks(&self)->Result<bool,TaskStoreError>{
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let count:i64=connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM lu_tasks WHERE substr(task_id,1,9)='research-' AND state IN ('PENDING','RUNNING','PAUSED'))",
+            [],|row|row.get(0))?;
+        Ok(count!=0)
+    }
+
     /// Persist enum-only notation in the EXISTING task SQLite database.
     /// Trusted ObserveHost owns task ID/sequence; no raw UI text, pixels,
     /// model output, commands, file paths or prompt bodies enter this table.
@@ -1016,6 +1043,30 @@ mod dashboard_tests{
         assert_eq!(store.dashboard_for_workspace("c-other",2).unwrap().len(),2);
         assert!(store.dashboard_for_workspace("local-media",2).is_err());
         assert!(store.dashboard_for_workspace("c-owner",0).is_err());
+    }
+    #[test]
+    fn existing_active_research_is_reported_before_observe_consent(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        assert!(!store.active_research_network_tasks().unwrap());
+        store.create("research-fetch",Some("c-work"),None).unwrap();
+        assert!(store.active_research_network_tasks().unwrap());
+        store.start("research-fetch").unwrap();
+        store.cancelled("research-fetch").unwrap();
+        assert!(!store.active_research_network_tasks().unwrap());
+    }
+    #[test]
+    fn observe_session_provenance_is_durable_after_stop_and_note_forget(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("job-ordinary",Some("c-clean"),None).unwrap();
+        assert!(!store.has_observe_provenance("c-clean").unwrap());
+        store.create("obs-privacy",Some("c-marked"),None).unwrap();
+        store.start("obs-privacy").unwrap();
+        store.cancelled("obs-privacy").unwrap();
+        assert!(store.has_observe_provenance("c-marked").unwrap());
+        assert!(!store.has_observe_provenance("c-clean").unwrap());
+        store.delete_awareness_notes_for_workspace("c-marked").unwrap();
+        assert!(store.has_observe_provenance("c-marked").unwrap());
+        assert!(store.has_observe_provenance("c-other/../../").is_err());
     }
     #[test]
     fn awareness_notes_are_durable_chat_scoped_and_not_training_data(){

@@ -2737,12 +2737,15 @@ function App() {
                observeView.mode==='paused'?'Paused':'Off'}
             </span>
           </div>
+          <small>Experimental · OFF by default · two native confirmations to enable · Linux administrator authentication.
+            Observe & Learn data is marked LOCAL ONLY; Lu's network tools must never transmit it.
+            You choose what the screen exposes. No remote viewing interface.</small>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
             An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
             the general picker can select a monitor but cannot independently identify the selected OS source. Both paths fully blank the captured frame; neither sends pixels to the model.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
-              <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}
+              <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
             {observeView.mode==='active' &&
               <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
             {observeView.mode==='paused' &&

@@ -1,3 +1,7 @@
+## 2026-11-06 — Experimental two-consent, Linux admin, strict local-only provenance
+
+The product-level opt-in is double-confirmed: experimental exposure warning first, native activation permission second, with automatic OFF when either fails. Linux also requests administrator authorization through the OS polkit authentication agent and refuses ON if the required system policy is missing. No password is solicited or stored by Lu. The observer has no network interface; each derived record carries local-only origin metadata, with a durable per-conversation network egress restriction enforced in the native Browser, Research and provider routes rather than relying on a model instruction. A local-only model may review it without being granted network tools. Other programs, a user manually copying data elsewhere, and untagged external app processes remain outside Lu's control. Privacy detection is not a substitute for informed user consent; full image-to-local-model transfer is separate and remains OPEN. See [P06 policy](LU_P06_OBSERVE_PRIVACY.md).
+
 # Lu v1.0 — OBSERVE & LEARN
 Date: 2026-11-06
 Status: REQUIRED FOR V1.0; FIRST POLICY-KERNEL SOURCE COMMITTED; native desktop capture, memory write, and installed acceptance OPEN.

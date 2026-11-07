@@ -9,6 +9,8 @@ mod background_context;
 mod environment_context;
 mod vision_context;
 mod observe_desktop;
+#[cfg(target_os="linux")]
+mod observe_linux_auth;
 mod native_browser_host;
 mod browser_model_desktop;
 mod research_desktop;
@@ -280,6 +282,7 @@ fn lu_model_backend_options()->Vec<BackendOptionView>{
 async fn lu_model_provider_search(
     state:State<'_,Arc<DesktopState>>,query:String
 )->Result<Vec<lu_core::model_provider_catalog::ModelLead>,String>{
+    state.observe.deny_unscoped_network_while_observing()?;
     let host=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||
         host.research.model_provider_search(&query)
@@ -289,6 +292,7 @@ async fn lu_model_provider_search(
 async fn lu_model_provider_review(
     state:State<'_,Arc<DesktopState>>,repo_id:String,revision:String
 )->Result<lu_core::model_provider_catalog::ModelRepoReview,String>{
+    state.observe.deny_unscoped_network_while_observing()?;
     let host=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||
         host.research.model_provider_review(&repo_id,&revision)
@@ -303,6 +307,7 @@ async fn lu_model_prepare_transfer(
     repo_id:String,revision:String,filename:String,
     sha256:String,bytes:u64,
 )->Result<Option<lu_core::ai_operations::ReviewedModelTransferIntent>,String>{
+    state.observe.deny_unscoped_network_while_observing()?;
     let host=Arc::clone(state.inner());
     let review_repo=repo_id.clone();
     let review_revision=revision.clone();
@@ -2032,6 +2037,7 @@ async fn start_browser_for_exact_turn(
         contracts::ToolEffect,
         browser_authorized_execution::BROWSER_READ_TOOL,
     };
+    owner.observe.deny_observation_network_egress(&chat_id)?;
     let allowed=browser_origin_list(&origins)?;
     owner.browser_runtime.require_launch_ready()?;
     if owner.chats.trusted_user_turn_text(&chat_id,&turn_id).is_none(){
@@ -2056,6 +2062,7 @@ async fn start_browser_for_exact_turn(
             )).blocking_show()
     }).await.map_err(|_|"Browser approval dialog failed")?;
     if !approved{return Err("Browser grant cancelled".into());}
+    owner.observe.deny_observation_network_egress(&chat_id)?;
     let task_id=next_id("browser-task-");
     let scope_id=next_id("browser-scope-");
     owner.browser_authority.open_user_task(TaskAuthority{
@@ -2081,6 +2088,7 @@ async fn start_browser_for_exact_turn(
     }
     let launch_owner=Arc::clone(&owner);
     let result=tauri::async_runtime::spawn_blocking(move||
+        launch_owner.observe.deny_observation_network_egress(&chat_id)?;
         launch_owner.browser_runtime.launch_for_native_grant(
             allowed,&launch_owner.browser_preferences
         )
@@ -2216,6 +2224,7 @@ async fn lu_research_openalex(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,query:String,page:Option<u32>
 )->Result<research_desktop::ResearchSearchView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let page=page.unwrap_or(1);
     if !(1..=5).contains(&page){return Err("Invalid research page".into());}
     if query.trim().is_empty()||query.len()>512
@@ -2241,6 +2250,7 @@ async fn lu_research_openalex(
          )).blocking_show()
     }).await.map_err(|_|"Native research approval unavailable")?;
     if !approved{return Err("Research search cancelled".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -2273,6 +2283,7 @@ async fn lu_research_retrieve_document(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,source_id:String
 )->Result<research_desktop::ResearchDocumentView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
         ||source_id.chars().any(char::is_control){
         return Err("Select an existing Crossref-corroborated source".into());
@@ -2297,6 +2308,7 @@ async fn lu_research_retrieve_document(
         )).blocking_show()
     }).await.map_err(|_|"Native document approval unavailable")?;
     if !approved{return Err("Research document retrieval cancelled".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-document-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -2352,6 +2364,7 @@ async fn lu_research_campaign_start(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,query:String,candidate_ceiling:u32
 )->Result<research_desktop::ResearchCampaignView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if query.trim().is_empty()||query.len()>512||query.chars().any(char::is_control)
         ||!(1..=120).contains(&candidate_ceiling){
         return Err("Research campaign query or ceiling invalid".into());
@@ -2377,6 +2390,7 @@ async fn lu_research_campaign_start(
           )).blocking_show()
     }).await.map_err(|_|"Research campaign approval unavailable")?;
     if !approved{return Err("Research campaign cancelled by user".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let id=next_id("research-campaign-");
     let worker=Arc::clone(&owner.research);
@@ -2441,6 +2455,7 @@ async fn lu_research_campaign_resume(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,campaign_id:String
 )->Result<research_desktop::ResearchCampaignView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     state.chats.history(&chat_id)
         .map_err(|_|"Select a trusted Research conversation")?;
     if !state.research.available(){
@@ -2463,6 +2478,7 @@ async fn lu_research_campaign_resume(
          )).blocking_show()
     }).await.map_err(|_|"Research resume approval unavailable")?;
     if !approved{return Err("Research resume cancelled by user".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let worker=Arc::clone(&owner.research);
     let _=worker.resume_campaign(&chat_id,&campaign_id)?;
@@ -2505,6 +2521,7 @@ async fn lu_research_campaign_review(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,campaign_id:String,limit:u32
 )->Result<research_desktop::ResearchCampaignReviewView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if !(1..=10).contains(&limit){
         return Err("Research review is limited to ten candidates per approval".into());
     }
@@ -2533,6 +2550,7 @@ async fn lu_research_campaign_review(
         )).blocking_show()
     }).await.map_err(|_|"Research source approval unavailable")?;
     if !approved{return Err("Research review cancelled by user".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-review-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -2712,6 +2730,7 @@ async fn lu_research_crossref(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,source_id:String
 )->Result<research_desktop::ResearchCorroborationView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
        ||source_id.chars().any(char::is_control){
         return Err("Select an existing OpenAlex research lead".into());
@@ -2735,6 +2754,7 @@ async fn lu_research_crossref(
         )).blocking_show()
     }).await.map_err(|_|"Native research metadata approval unavailable")?;
     if !approved{return Err("Research metadata check cancelled".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-metadata-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -5900,20 +5920,63 @@ async fn lu_observe_start(
     state.chats.history(&chat_id)
         .map_err(|_|"Select an existing conversation first")?;
     let observer=Arc::clone(&state.observe);
-    let dialog=tauri::async_runtime::spawn_blocking(move||{
-        app.dialog().message(
-            "Start Observe & Learn for Lu's OWN UI events for up to 30 minutes?\n\n\
-             This first release candidate reads only Lu application status \
-             changes and error indicators. It cannot see other desktop \
-             windows, screenshots, keyboard input, audio, or clipboard. \
-             It will NOT run AI inference, control your mouse, or remember \
-             anything automatically. You can pause or stop at any time."
-        ).title("Lu — Observe own UI only")
+    if state.background_tasks.active_research_network_tasks()
+        .map_err(|_|"Cannot attest network task state: Observe remains OFF")?{
+        return Err("Stop in-flight Research network tasks before enabling local-only Observe & Learn".into());
+    }
+    // Never silently acquire Observe while a Browser network task is live.
+    {
+        let browser=state.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable during Observe authorization")?;
+        if browser.is_some(){
+            return Err("Stop the existing network Browser task before enabling local-only Observe & Learn".into());
+        }
+    }
+    // BOTH dialogs are native host UI, never WebView/model-provided consent.
+    // Decline either one => zero grant, OFF; restart never resumes it.
+    let approved=tauri::async_runtime::spawn_blocking(move||{
+        let experimental=app.dialog().message(
+            "EXPERIMENTAL FEATURE — Observe & Learn.\n\n\
+             Lu can watch approved local application UI events, optionally \
+             inspect a separately approved screen/window, record local diagnostic \
+             observations and suggest learning or repairs. A screen may expose \
+             personal, financial or confidential information. You decide what \
+             you show it. This is NOT remote viewing software.\n\n\
+             Observation data and derived notes are LOCAL ONLY and Lu's native \
+             network tools will refuse to transmit them. Lu cannot control \
+             other programs or guarantee another app won't expose information.\n\n\
+             Continue to a separate activation permission dialog?"
+        ).title("Lu — EXPERIMENTAL Observe & Learn warning")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-             "Start Lu UI observation".into(),"Do not observe".into(),
+             "I understand — continue".into(),"Cancel — keep OFF".into()
+         )).blocking_show();
+        if !experimental{return false;}
+        app.dialog().message(
+            "Explicitly ENABLE Observe & Learn for this conversation for \
+             at most 30 minutes?\n\n\
+             Local observation remains OFF until you approve this second \
+             request. A separate OS screen picker/foreground confirmation is \
+             required for each capture. Stop/Pause revokes active observation. \
+             No automatically sent network data, no automatic model training, \
+             and no automatic computer-control grant."
+        ).title("Lu — Explicit local observation permission")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Enable Observe & Learn".into(),"Keep OFF".into()
          )).blocking_show()
-    }).await.map_err(|_|"Native observation consent unavailable")?;
-    if !dialog{return observer.status(&chat_id);}
+    }).await.map_err(|_|"Native two-step observation consent unavailable")?;
+    if !approved{return observer.status(&chat_id);}
+    #[cfg(target_os="linux")]
+    observe_linux_auth::require_admin_for_observation()?;
+    // Recheck the browser grant after the dialogs/OS administrator approval.
+    // No partial grant is issued if a network task became active meanwhile.
+    if state.browser_grant.lock()
+        .map_err(|_|"Browser authority unavailable")?.is_some(){
+        return Err("Browser network task became active: observation remains OFF".into());
+    }
+    if state.background_tasks.active_research_network_tasks()
+        .map_err(|_|"Network task status unavailable: observation remains OFF")?{
+        return Err("Research network task became active: observation remains OFF".into());
+    }
     observer.start(&chat_id,next_id("obs-"))
 }
 #[tauri::command]
