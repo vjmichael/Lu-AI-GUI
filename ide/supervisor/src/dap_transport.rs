@@ -5,8 +5,8 @@
 //! an owned kernel-bound pipe implementation. This is NOT an adapter launcher.
 //! A WebView, AI tool, project or D1 intent cannot construct this gateway.
 use crate::{
-    lsp_transport::RestrictedLspProcess, JobPhase, NativeTreeTerminator,
-    OsContainmentProof, Supervisor, SupervisorError,
+    lsp_transport::RestrictedLspProcess, JobPhase, NativeTreeTerminator, OsContainmentProof,
+    Supervisor, SupervisorError,
 };
 use lu_ide_workspace::dap_session::{DapEvent, DapPhase, DapSession};
 use std::{
@@ -41,10 +41,14 @@ impl DapGateway {
         kernel_proof: &OsContainmentProof,
         process: Box<dyn RestrictedLspProcess>,
     ) -> Result<Self, SupervisorError> {
-        let summary = supervisor.inspect()?.into_iter()
-            .find(|job| job.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?;
+        let summary = supervisor
+            .inspect()?
+            .into_iter()
+            .find(|job| job.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
         if summary.plan_sha256 != expected_plan_sha256
-            || summary.phase != JobPhase::Running || summary.requires_reconciliation
+            || summary.phase != JobPhase::Running
+            || summary.requires_reconciliation
             || !kernel_proof.complete()
             || !matches!(kernel_proof.platform.as_str(), "windows" | "linux")
         {
@@ -65,15 +69,20 @@ impl DapGateway {
         self.session.phase()
     }
     fn send(&mut self, bytes: &[u8]) -> Result<(), SupervisorError> {
-        if bytes.is_empty() || bytes.len() > MAX_WRITE
+        if bytes.is_empty()
+            || bytes.len() > MAX_WRITE
             || self.transferred.saturating_add(bytes.len()) > MAX_TOTAL_IO
             || self.started.elapsed() > MAX_LIFETIME
         {
             return self.quarantine();
         }
         self.transferred += bytes.len();
-        if self.process.as_mut().ok_or(SupervisorError::Quarantined)?
-            .write_bounded(bytes).is_err()
+        if self
+            .process
+            .as_mut()
+            .ok_or(SupervisorError::Quarantined)?
+            .write_bounded(bytes)
+            .is_err()
         {
             return self.quarantine();
         }
@@ -86,7 +95,10 @@ impl DapGateway {
     /// The native OS worker provides a single immutable bundled self-test
     /// executable path. The WebView cannot choose or modify this target.
     pub(crate) fn launch_fixed_fixture(&mut self, target: &str) -> Result<(), SupervisorError> {
-        let frame = self.session.launch_fixed_fixture(target).map_err(protocol_denied)?;
+        let frame = self
+            .session
+            .launch_fixed_fixture(target)
+            .map_err(protocol_denied)?;
         self.send(&frame)
     }
     pub(crate) fn threads(&mut self) -> Result<(), SupervisorError> {
@@ -94,23 +106,26 @@ impl DapGateway {
         self.send(&frame)
     }
     pub(crate) fn stack_trace(&mut self, thread_id: u64) -> Result<(), SupervisorError> {
-        let frame = self.session.stack_trace(thread_id).map_err(protocol_denied)?;
+        let frame = self
+            .session
+            .stack_trace(thread_id)
+            .map_err(protocol_denied)?;
         self.send(&frame)
     }
     pub(crate) fn poll(&mut self) -> Result<Vec<DapEvent>, SupervisorError> {
         if self.started.elapsed() > MAX_LIFETIME {
             return self.quarantine();
         }
-        let bytes = match self.process.as_mut()
+        let bytes = match self
+            .process
+            .as_mut()
             .ok_or(SupervisorError::Quarantined)?
             .read_bounded(MAX_READ, READ_WAIT)
         {
             Ok(bytes) => bytes,
             Err(_) => return self.quarantine(),
         };
-        if bytes.len() > MAX_READ
-            || self.transferred.saturating_add(bytes.len()) > MAX_TOTAL_IO
-        {
+        if bytes.len() > MAX_READ || self.transferred.saturating_add(bytes.len()) > MAX_TOTAL_IO {
             return self.quarantine();
         }
         self.transferred += bytes.len();
@@ -140,16 +155,21 @@ impl DapGateway {
                 let _ = self.send(&frame);
             }
         }
-        if !self.process.as_mut()
+        if !self
+            .process
+            .as_mut()
             .ok_or(SupervisorError::Quarantined)?
             .terminate_tree_and_verify()?
         {
             return self.quarantine();
         }
         self.supervisor.native_mark_release_pending(&self.job_id)?;
-        self.process.as_mut().ok_or(SupervisorError::Quarantined)?
+        self.process
+            .as_mut()
+            .ok_or(SupervisorError::Quarantined)?
             .release_after_verified_terminal()?;
-        self.supervisor.native_finish(&self.job_id, true, true, true)?;
+        self.supervisor
+            .native_finish(&self.job_id, true, true, true)?;
         self.finished = true;
         Ok(())
     }
@@ -163,9 +183,11 @@ struct DapTerminator<'a> {
     plan: &'a str,
 }
 impl NativeTreeTerminator for DapTerminator<'_> {
-    fn terminate_and_verify_tree(&mut self, job: &str, hash: &str)
-        -> Result<bool, SupervisorError>
-    {
+    fn terminate_and_verify_tree(
+        &mut self,
+        job: &str,
+        hash: &str,
+    ) -> Result<bool, SupervisorError> {
         if job != self.id || hash != self.plan {
             return Err(SupervisorError::WrongProjectOrSource);
         }
@@ -185,7 +207,11 @@ impl Drop for DapGateway {
             };
             // Record CancelRequested BEFORE OS termination; a failed
             // descendant kill leaves Uncertain and blocks later admissions.
-            if self.supervisor.cancel_running_with(&self.job_id, &mut broker).is_ok() {
+            if self
+                .supervisor
+                .cancel_running_with(&self.job_id, &mut broker)
+                .is_ok()
+            {
                 if process.release_after_verified_terminal().is_err() {
                     let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
                 }
@@ -200,9 +226,9 @@ impl Drop for DapGateway {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{collections::VecDeque, io, sync::Mutex};
-    use serde_json::{json, Value};
     use crate::JobPlan;
+    use serde_json::{json, Value};
+    use std::{collections::VecDeque, io, sync::Mutex};
     fn frame(value: Value) -> Vec<u8> {
         let bytes = serde_json::to_vec(&value).unwrap();
         let mut message = format!("Content-Length: {}\r\n\r\n", bytes.len()).into_bytes();
@@ -227,10 +253,15 @@ mod tests {
     fn proof() -> OsContainmentProof {
         OsContainmentProof {
             platform: "linux".into(),
-            restricted_identity: true, filesystem_access_limited: true,
-            network_access_limited: true, child_contained_before_resume: true,
-            process_tree_kill_verified: true, memory_quota: true, cpu_quota: true,
-            pid_quota: true, protected_journal_broker: true,
+            restricted_identity: true,
+            filesystem_access_limited: true,
+            network_access_limited: true,
+            child_contained_before_resume: true,
+            process_tree_kill_verified: true,
+            memory_quota: true,
+            cpu_quota: true,
+            pid_quota: true,
+            protected_journal_broker: true,
         }
     }
     #[derive(Default)]
@@ -249,7 +280,13 @@ mod tests {
             Ok(())
         }
         fn read_bounded(&mut self, _: usize, _: Duration) -> io::Result<Vec<u8>> {
-            Ok(self.shared.pending.lock().unwrap().pop_front().unwrap_or_default())
+            Ok(self
+                .shared
+                .pending
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_default())
         }
         fn terminate_tree_and_verify(&mut self) -> Result<bool, SupervisorError> {
             *self.shared.terminated.lock().unwrap() += 1;
@@ -268,9 +305,14 @@ mod tests {
         let job = supervisor.prepare(plan()).unwrap();
         assert_eq!(
             DapGateway::attach_native(
-                Arc::clone(&supervisor), &job.job_id, &job.plan_sha256, &proof(),
+                Arc::clone(&supervisor),
+                &job.job_id,
+                &job.plan_sha256,
+                &proof(),
                 Box::new(Mock { shared }),
-            ).err().unwrap(),
+            )
+            .err()
+            .unwrap(),
             SupervisorError::NoContainment
         );
         drop(supervisor);
@@ -282,16 +324,24 @@ mod tests {
         let supervisor = Arc::new(Supervisor::open(journal.clone()).unwrap());
         let plan = plan();
         let job = supervisor.prepare(plan.clone()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &plan.source_head, true,
-        ).unwrap();
-        supervisor.consume_grant_after_attestation(&job.job_id, &plan, &proof()).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &plan.source_head, true)
+            .unwrap();
+        supervisor
+            .consume_grant_after_attestation(&job.job_id, &plan, &proof())
+            .unwrap();
         supervisor.native_mark_running(&job.job_id).unwrap();
         let shared = Arc::new(Fixture::default());
         let mut gateway = DapGateway::attach_native(
-            Arc::clone(&supervisor), &job.job_id, &job.plan_sha256, &proof(),
-            Box::new(Mock { shared: Arc::clone(&shared) }),
-        ).unwrap();
+            Arc::clone(&supervisor),
+            &job.job_id,
+            &job.plan_sha256,
+            &proof(),
+            Box::new(Mock {
+                shared: Arc::clone(&shared),
+            }),
+        )
+        .unwrap();
         gateway.initialize().unwrap();
         shared.pending.lock().unwrap().push_back(frame(json!({
             "seq":1,"type":"event","event":"initialized"
