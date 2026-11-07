@@ -221,18 +221,21 @@ function App() {
       try {
         const debug = await invoke('ide_debug_status', { projectId });
         if (alive && activeProjectIdRef.current === projectId &&
-            debug && typeof debug.ready === 'boolean')
+            debug && typeof debug.ready === 'boolean' &&
+            Array.isArray(debug.journal) && Array.isArray(debug.quarantined))
           setDebugStatus(debug);
       } catch {
         if (alive && activeProjectIdRef.current === projectId)
           setDebugStatus({ ready:false, code:'DEBUG_HOST_UNAVAILABLE',
-            description:'Protected debugger status unavailable', current:null, last:null });
+            description:'Protected debugger status unavailable', current:null, last:null,
+            journal: [], quarantined: [] });
       }
       try {
         const value = await invoke('ide_build_status', { projectId });
         if (!alive || activeProjectIdRef.current !== projectId) return;
         if (value && typeof value.ready === 'boolean' &&
-            Array.isArray(value.recent) && Array.isArray(value.quarantined))
+            Array.isArray(value.recent) && Array.isArray(value.journal) &&
+            Array.isArray(value.quarantined))
           setBuildStatus(value);
       } catch {
         if (alive && activeProjectIdRef.current === projectId)
@@ -1568,6 +1571,19 @@ function App() {
                     Verify protected debugger cleanup (no execution)
                   </button>
                 </div>)}
+              {Array.isArray(debugStatus?.journal) && debugStatus.journal.length > 0 &&
+                <section className="continuityDocument" aria-label="Durable protected debugger journal">
+                  <h3>Durable debugger jobs (survive restart)</h3>
+                  {debugStatus.journal.slice(-16).map(item =>
+                    <article className="continuityEvent" key={item.jobId}>
+                      <strong>Durable debugger job <code>{item.jobId}</code></strong>
+                      <p>Journal phase: {item.phase} ·
+                        OS reconciliation: {item.requiresReconciliation ?
+                          'required' : 'not indicated'}</p>
+                      <p>Frozen plan digest: <code>{item.planSha256}</code></p>
+                    </article>)}
+                  <p>Journal entries are not simulated debugger results or release acceptance.</p>
+                </section>}
               {debugResult?.projectId === activeProject?.projectId && <div role="status">
                 <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
                 <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
