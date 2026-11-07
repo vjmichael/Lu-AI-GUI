@@ -4,6 +4,16 @@ Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
 
+## P03 implementation checkpoint and owner continuation (2026-11-06)
+
+**Exact reference:** P03 draft [PR #71](https://github.com/vjmichael/Lu-AI-GUI/pull/71), source `1b4bbaa9219787ad4680fea4662f3898d31e9019`, stacked on P02 draft PR #67. **Owner order now:** document the previous P03 implementation first, then finish the outstanding P03 work; do not start P04. Earlier P02 physical NSIS and AMD Vulkan/MMProj/GPU/VRAM gates were explicitly **deferred, not passed**. Security constraints remain mandatory.
+
+**Previously implemented in code:** authorized per-turn read-only tool preference with unchanged Protobuf execution permission; 64-entry bounded SHA/epoch/context metadata reuse primitive (not yet applied to actual Reader/Workspace outputs); native GGUF/MMProj pre-load identity checks; bounded GGUF KV architecture/tokenizer/context hints; searchable local Settings model catalog; immutable provider candidate/consent validator (no online transfer); Windows/Linux P03 tests and CI workflow; 501-entry source lock.
+
+**Verification:** P03 [native CI for the above SHA](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42334772830) was queued at this checkpoint, **not accepted as PASS**. P02's separate earlier [dual-OS pass](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42332513239) does not establish P03 acceptance.
+
+**P03 outstanding plan, in order:** (A) bind verified, bounded Reader/Workspace source identity and freshness to actual native result lifecycle, never assuming a cache hit authorizes read; (B) build explicit provider search/selection and a review-only download/transfer plan with immutable revision, digest, license/access, authority, cancellation and eventual P05 integration, without mislabeling an inert stub as working download; (C) improve backend/model compatibility and tested fallback policy with no fabricated GPU evidence; (D) repair observed CI failures on the exact final source. Full details: [P03 work record](LU_AI_OPERATIONS_P03.md).
+
 ## P03 AI-OPS-01 — authorized source development, verified scope boundary (2026-11-06)
 
 Owner explicitly deferred P02's last two *physical release* obligations (NSIS installed-app and AMD GPU/VRAM/MMProj offload), not their security invariants. Work advanced to **P03** in a new branch stacked on PR #67.
