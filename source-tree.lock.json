@@ -161,7 +161,7 @@
     },
     {
       "path": "docs/LU_P08_ARCHIVE_SPLIT.md",
-      "blob": "efe7cd1849e00ea689e10e356db9d339949cc59a"
+      "blob": "ef3fcfa8ae523a2d85029f8f8434c82dc741836a"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -577,11 +577,11 @@
     },
     {
       "path": "lu-desktop/tests/browser-ci-candidate.test.mjs",
-      "blob": "5b1babd2fb3f8009c71c16dc4cb535ef67587040"
+      "blob": "47ba485cd426360ff6274b909e07b88bc158fe2b"
     },
     {
       "path": "lu-desktop/tests/browser-ci-executable.test.mjs",
-      "blob": "f098556060bfa66ca04be60f18384d8df81743e8"
+      "blob": "76fed6b45b59ee05d2b1c8a7dc04847ec5ac9269"
     },
     {
       "path": "lu-desktop/tests/browser-model-read.test.mjs",
@@ -601,7 +601,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-visibility-settings.test.mjs",
-      "blob": "467220addf4184fc64f94d41974c02efb943264b"
+      "blob": "364bc8f0b28e03d503c784ad9720b5b83260af52"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -661,7 +661,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "8c203461655606a6062a6851d529d3ed1479c6ef"
+      "blob": "641af0d674d7ff38b52f819502436b36826f0cc1"
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
