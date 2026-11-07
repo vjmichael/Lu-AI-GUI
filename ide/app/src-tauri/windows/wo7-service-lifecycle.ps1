@@ -136,7 +136,9 @@ try {
     }
     'Remove' {
       Confirm-OurService $existing $serviceExe
-      Sc @('stop',$Name) | Out-Null
+      if ($existing.State -ne 'Stopped') {
+        Sc @('stop',$Name) | Out-Null
+      }
       $deadline=(Get-Date).AddSeconds(25)
       do {
         Start-Sleep -Milliseconds 400
