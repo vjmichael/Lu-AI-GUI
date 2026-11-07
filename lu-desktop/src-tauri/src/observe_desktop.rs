@@ -131,10 +131,13 @@ impl ObserveHost {
             return Err("Invalid conversation for observation".into());
         }
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        // No restart/grant while an earlier OFF session still owns a
+        // cancelled or uncertain native worker or pending task receipt.
+        self.reconcile_revoked(&mut session)?;
         if session.controller.mode()!=Mode::Off{
             return Err("Stop the existing observation first".into());
         }
-        if session.capture_guardian.is_some(){
+        if session.capture_guardian.is_some()||session.session_id.is_some(){
             return Err("Prior supervised capture has not finished cleanup".into());
         }
         let now=self.now();
@@ -203,33 +206,40 @@ impl ObserveHost {
         session.capture_guardian.take();
         Ok(())
     }
-    /// Revoke the entire permission before calling potentially blocking
-    /// process cancellation. No failure can leave an active observation grant.
-    /// Existing process supervision retains the hard timeout on kill errors.
+    /// Completes an already revoked lease. On an uncertain OS exit or
+    /// database write, KEEP task/session ownership so the watchdog can retry
+    /// without re-enabling Observe, reusing an old screenshot or leaking a
+    /// Guardian worker slot.
+    fn reconcile_revoked(&self,session:&mut Session)->Result<(),String>{
+        if session.controller.mode()!=Mode::Off{return Ok(());}
+        let Some(task_id)=session.session_id.clone() else{return Ok(())};
+        self.reap_capture(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref())?;
+        // The WGC worker is now OS-reaped. An independently stored
+        // observation CANCELLED receipt is required before forgetting its
+        // ownership; never conflate worker task and observation task.
+        let current=self.task_store.get(&task_id)
+            .map_err(|_|"Observation task reconciliation unavailable")?
+            .ok_or("Observation task receipt missing")?;
+        if current.state!=lu_core::tasks::TaskState::Cancelled{
+            self.task_store.cancelled(&task_id)
+                .map_err(|e|format!("Observation is OFF; durable cancellation pending: {e:?}"))?;
+        }
+        session.capture_guardian.take();
+        session.capture_task_id=None;
+        session.capture_foreground=false;
+        session.session_id=None;
+        session.chat_id=None;
+        Ok(())
+    }
+    /// Revoke consent first. The OS process and durable note cleanup may
+    /// subsequently fail, but cannot restore the observation authorization.
     fn revoke(&self,session:&mut Session)->Result<(),String>{
-        let capture_id=session.capture_task_id.take();
-        let chat_id=session.chat_id.take();
-        let task_id=session.session_id.take();
         session.controller.stop();
         if let Some(mut lane)=session.awareness.take(){lane.stop();}
         session.scope=None;
         session.sequence=0;
-        // Never write a CANCELLED receipt when a child is not confirmed
-        // reaped. The existing process supervisor still owns its timeout.
-        // Consent is already OFF no matter which result follows.
-        if let Err(error)=self.reap_capture(capture_id.as_deref(),chat_id.as_deref()){
-            // Scope is OFF; keep only native cleanup/Guardian custody.
-            session.capture_task_id=capture_id;
-            session.chat_id=chat_id;
-            return Err(error)
-        }
-        session.capture_guardian.take();
-        session.capture_foreground=false;
-        if let Some(task_id)=task_id{
-            self.task_store.cancelled(&task_id)
-                .map_err(|e|format!("Observation revoked; task receipt pending: {e:?}"))?;
-        }
-        Ok(())
+        self.reconcile_revoked(session)
     }
     fn release_guardian_when_reaped(&self,s:&mut Session){
         if s.capture_guardian.is_none(){return;}
@@ -249,7 +259,11 @@ impl ObserveHost {
     pub(crate) fn status(&self,chat_id:&str)->Result<ObserveView,String>{
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut session)?;
-        self.release_guardian_when_reaped(&mut session);
+        if session.controller.mode()==Mode::Off{
+            self.reconcile_revoked(&mut session)?;
+        }else{
+            self.release_guardian_when_reaped(&mut session);
+        }
         if session.chat_id.as_deref()!=Some(chat_id){
             // Observation must not remain silently active when the user
             // leaves the consenting conversation (including a new chat).
@@ -269,11 +283,11 @@ impl ObserveHost {
     pub(crate) fn tick(&self){
         if let Ok(mut session)=self.inner.lock(){
             let _=self.refresh_expiry(&mut session);
-            // Reclaim after terminal receipt even when no UI is polling.
-            self.release_guardian_when_reaped(&mut session);
-            if session.controller.mode()==Mode::Off && session.capture_guardian.is_some(){
-                let _=self.reap_capture(session.capture_task_id.as_deref(),
-                    session.chat_id.as_deref());
+            if session.controller.mode()==Mode::Off{
+                // Reconcile even when process cleanup succeeded but the
+                // separate observation-task receipt previously failed.
+                let _=self.reconcile_revoked(&mut session);
+            }else{
                 self.release_guardian_when_reaped(&mut session);
             }
         }
@@ -644,6 +658,33 @@ mod tests{
         assert_eq!(store.get("obs-one").unwrap().unwrap().state,TaskState::Cancelled);
         assert_eq!(host.status("c-main").unwrap().mode,"off");
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
+    }
+    #[test]
+    fn p06_revoked_consent_task_receipt_reconciles_after_native_cleanup(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-recovery".into()).unwrap();
+        {
+            // Simulate a process-cleanup error after consent was already
+            // switched OFF, but before the durable observation task receipt.
+            let mut state=host.inner.lock().unwrap();
+            state.controller.stop();
+            state.scope=None;
+            state.sequence=0;
+            assert_eq!(state.session_id.as_deref(),Some("obs-recovery"));
+        }
+        assert_eq!(store.get("obs-recovery").unwrap().unwrap().state,
+            TaskState::Running);
+        host.tick();
+        assert_eq!(store.get("obs-recovery").unwrap().unwrap().state,
+            TaskState::Cancelled);
+        assert_eq!(host.status("c-main").unwrap().mode,"off");
+        assert!(host.inner.lock().unwrap().session_id.is_none());
+        // The old session never resumes and the restart must request fresh
+        // OS user consent through the same native dialog as any new Observe.
+        host.start("c-main","obs-after-recovery".into()).unwrap();
+        host.stop("c-main").unwrap();
     }
     #[test]
     fn p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker(){
