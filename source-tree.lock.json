@@ -489,7 +489,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "9f6236f4e000bdf0ef115292b2a3fbc32d8cf651"
+      "blob": "b7e2225959540dc8032c860e40231738edc88972"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1061,7 +1061,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_live_chat.rs",
-      "blob": "28f6bf4aa485ca7e5f4b9c419cd6f441f105ea81"
+      "blob": "9bad0b7b1b3fd90bf327dd33d466043158cddaa1"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_revisions.rs",
