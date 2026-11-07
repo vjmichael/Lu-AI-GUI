@@ -98,14 +98,33 @@ impl WorkflowCoordinator {
             return Err("WO9_GRAPH_UNSUPPORTED_VERSION");
         }
         let mut recovered = false;
-        for run in store.runs.values_mut() {
-            if run.release_approved || run.automatic_execution {
+        for (id, run) in store.runs.iter_mut() {
+            if run.release_approved || run.automatic_execution
+                || run.workflow_id != *id
+                || run.project_ids.is_empty() || run.project_ids.len() > 8
+                || run.source_fingerprint.len() != 64
+                || !run.source_fingerprint.bytes().all(|b| b.is_ascii_hexdigit())
+                || allowed_spec(&run.tasks.iter().map(|t| t.spec.clone())
+                    .collect::<Vec<_>>(), &run.project_ids).is_err() {
                 return Err("WO9_GRAPH_UNTRUSTED_STATE");
             }
             for task in &mut run.tasks {
+                if !matches!(task.state.as_str(),
+                    "pending" | "running" | "interrupted" | "failed"
+                    | "passed" | "cancelled" | "native_receipt_unverified") {
+                    return Err("WO9_GRAPH_UNKNOWN_TASK_STATE");
+                }
                 if task.state == "running" {
                     task.state = "interrupted".into();
                     task.error_code = Some("WO9_HOST_CRASH_RECONCILIATION_REQUIRED".into());
+                    recovered = true;
+                } else if task.state == "passed" {
+                    // User-modifiable profile state is never proof that the
+                    // protected supervisor really completed a native job.
+                    // On every host restart, independently re-check its
+                    // fsynced OS journal before unlocking any dependent step.
+                    task.state = "native_receipt_unverified".into();
+                    task.error_code = Some("WO9_RESTART_NATIVE_RECEIPT_REQUIRED".into());
                     recovered = true;
                 }
             }
@@ -162,6 +181,43 @@ impl WorkflowCoordinator {
         guard.runs = next;
         Ok(current.spec)
     }
+    pub fn pending_native_recheck(&self, workflow_id: &str, step: usize)
+        -> Result<WorkflowTask, &'static str> {
+        let guard = self.inner.lock().map_err(|_| "WO9_GRAPH_MUTEX_UNAVAILABLE")?;
+        let run = guard.runs.get(workflow_id).ok_or("WO9_GRAPH_UNKNOWN_RUN")?;
+        let task = run.tasks.get(step).ok_or("WO9_GRAPH_UNKNOWN_STEP")?;
+        if task.state != "native_receipt_unverified"
+            || task.native_job_id.is_none()
+            || task.native_plan_sha256.is_none()
+            || task.native_output_sha256.is_none() {
+            return Err("WO9_NATIVE_RECEIPT_NOT_REVALIDATABLE");
+        }
+        Ok(task.clone())
+    }
+
+    /// The caller must first independently validate exact project/job/plan
+    /// against the existing WO6 host-owned protected supervisor journal.
+    /// No WebView-supplied phase, OS exit code or success is accepted.
+    pub fn accept_rechecked_native_pass(
+        &self, workflow_id: &str, step: usize, job_id: &str, plan_sha: &str,
+    ) -> Result<WorkflowRun, &'static str> {
+        let mut guard = self.inner.lock().map_err(|_| "WO9_GRAPH_MUTEX_UNAVAILABLE")?;
+        let mut next = guard.runs.clone();
+        let run = next.get_mut(workflow_id).ok_or("WO9_GRAPH_UNKNOWN_RUN")?;
+        let task = run.tasks.get_mut(step).ok_or("WO9_GRAPH_UNKNOWN_STEP")?;
+        if task.state != "native_receipt_unverified"
+            || task.native_job_id.as_deref() != Some(job_id)
+            || task.native_plan_sha256.as_deref() != Some(plan_sha) {
+            return Err("WO9_NATIVE_RECEIPT_STALE_OR_WRONG_JOB");
+        }
+        task.state = "passed".into();
+        task.error_code = None;
+        let accepted = run.clone();
+        save(&self.file, &Store { version: 1, runs: next.clone() })?;
+        guard.runs = next;
+        Ok(accepted)
+    }
+
     /// Called ONLY by native Tauri host after WO6 supervisor returns its own
     /// authoritative receipt. No WebView command accepts outcome fields.
     pub fn finish_step(&self, workflow_id: &str, step: usize,
@@ -285,6 +341,38 @@ mod tests {
         assert_eq!(coordinator.begin_step(&registry,&run.workflow_id,1).unwrap_err(),
             "WO9_GRAPH_RUNNING_OR_QUARANTINED");
     }
+    #[test]
+    fn restart_invalidates_previous_pass_until_native_journal_rechecked() {
+        let (temp, registry, project_id, digest) = native_fixture();
+        let file = temp.0.join("safe-restart.json");
+        let coordinator = WorkflowCoordinator::new(file.clone()).unwrap();
+        let run = coordinator.create(&registry,&[project_id.clone()],&digest,
+            vec![spec(&project_id,&[]),spec(&project_id,&[0])]).unwrap();
+        coordinator.begin_step(&registry,&run.workflow_id,0).unwrap();
+        coordinator.finish_step(&run.workflow_id,0,
+            Some("native-job-identity".into()),Some("b".repeat(64)),
+            Some("c".repeat(64)),"completed",Some(0),false,None).unwrap();
+        drop(coordinator);
+        let rebooted = WorkflowCoordinator::new(file.clone()).unwrap();
+        assert_eq!(rebooted.list().unwrap()[0].tasks[0].state,
+            "native_receipt_unverified");
+        assert_eq!(rebooted.begin_step(&registry,&run.workflow_id,1).unwrap_err(),
+            "WO9_GRAPH_DEPENDENCY_NOT_PASSED");
+        let task = rebooted.pending_native_recheck(&run.workflow_id,0).unwrap();
+        assert_eq!(task.native_job_id.as_deref(),Some("native-job-identity"));
+        assert_eq!(rebooted.accept_rechecked_native_pass(&run.workflow_id,0,
+            "wrong-native-job",&"b".repeat(64)).unwrap_err(),
+            "WO9_NATIVE_RECEIPT_STALE_OR_WRONG_JOB");
+        rebooted.accept_rechecked_native_pass(&run.workflow_id,0,
+            "native-job-identity",&"b".repeat(64)).unwrap();
+        assert_eq!(rebooted.begin_step(&registry,&run.workflow_id,1).unwrap().recipe_id,
+            "rust_tests");
+        drop(rebooted);
+        let rebooted_again = WorkflowCoordinator::new(file).unwrap();
+        assert_eq!(rebooted_again.list().unwrap()[0].tasks[0].state,
+            "native_receipt_unverified");
+    }
+
     #[test]
     fn cycle_and_unknown_recipe_fail() {
         assert!(allowed_spec(&[spec("a",&[0])], &["a".into()]).is_err());
