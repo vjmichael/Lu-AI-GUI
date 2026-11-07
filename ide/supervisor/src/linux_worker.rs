@@ -761,7 +761,7 @@ mod tests {
 
     #[test]
     fn cgroup_empty_evidence_rejects_missing_or_conflicting_values() {
-        assert!(parse_empty_cgroup_events("populated 0\\nfrozen 0\\n".replace("\\n", "\n").as_str()));
+        assert!(parse_empty_cgroup_events("populated 0\nfrozen 0\n"));
         assert!(!parse_empty_cgroup_events("populated 1\nfrozen 0\n"));
         assert!(!parse_empty_cgroup_events("frozen 0\n"));
         assert!(!parse_empty_cgroup_events("populated 0\npopulated 1\n"));
