@@ -214,6 +214,77 @@ mod tests {
         WorkflowStep { project_id: project.into(), recipe_id:"rust_tests".into(),
             depends_on:deps.to_vec() }
     }
+    struct Temp(std::path::PathBuf);
+    impl Drop for Temp { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+    struct NativePick(std::path::PathBuf);
+    impl crate::NativeDirectoryPicker for NativePick {
+        fn choose_project_directory(&mut self) -> Result<Option<std::path::PathBuf>, crate::IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    fn native_fixture() -> (Temp, IdeWorkspaceRegistry, String, String) {
+        use git2::{Repository, Signature};
+        let root = std::env::temp_dir().join(format!("wo9-dag-{}",rand::random::<u64>()));
+        let project = root.join("picked-project");
+        fs::create_dir_all(project.join("dist")).unwrap();
+        fs::write(project.join("dist/data.tar"),b"fixed data").unwrap();
+        let repo = Repository::init(&project).unwrap();
+        let mut idx = repo.index().unwrap();
+        idx.add_path(std::path::Path::new("dist/data.tar")).unwrap();
+        idx.write().unwrap();
+        let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
+        let who = Signature::now("WO9", "wo9@localhost.invalid").unwrap();
+        repo.commit(Some("HEAD"), &who, &who, "fixed", &tree, &[]).unwrap();
+        drop(tree); drop(idx); drop(repo);
+        let registry = IdeWorkspaceRegistry::open(root.join("projects.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut NativePick(project))
+            .unwrap().unwrap().project_id;
+        let inspection = registry.inspect_multi_project_workflow(&[id.clone()]).unwrap();
+        assert!(inspection.ready_for_review);
+        (Temp(root), registry, id, inspection.fingerprint)
+    }
+    #[test]
+    fn dependency_requires_native_completed_receipt_and_new_user_turn_per_step() {
+        let (temp, registry, id, fingerprint) = native_fixture();
+        let coordinator = WorkflowCoordinator::new(temp.0.join("workflow.json")).unwrap();
+        let one = spec(&id, &[]);
+        let two = spec(&id, &[0]);
+        let run = coordinator.create(&registry,&[id.clone()],&fingerprint,
+            vec![one,two]).unwrap();
+        assert!(!run.automatic_execution && !run.release_approved);
+        assert_eq!(coordinator.begin_step(&registry,&run.workflow_id,1).unwrap_err(),
+            "WO9_GRAPH_DEPENDENCY_NOT_PASSED");
+        assert!(coordinator.begin_step(&registry,&run.workflow_id,0).is_ok());
+        assert_eq!(coordinator.begin_step(&registry,&run.workflow_id,0).unwrap_err(),
+            "WO9_GRAPH_RUNNING_OR_QUARANTINED");
+        let first = coordinator.finish_step(&run.workflow_id,0,
+            Some("native-job-a".into()),Some("a".repeat(64)),
+            Some("b".repeat(64)),"completed",Some(0),false,None).unwrap();
+        assert_eq!(first.tasks[0].state,"passed");
+        assert!(coordinator.begin_step(&registry,&run.workflow_id,1).is_ok());
+        let second = coordinator.finish_step(&run.workflow_id,1,
+            Some("native-job-b".into()),None,None,"failed",Some(1),false,
+            Some("WO9_NATIVE_FAILED".into())).unwrap();
+        assert_eq!(second.tasks[1].state,"failed");
+        assert!(second.tasks.iter().all(|t| t.state != "running"));
+        assert!(!second.release_approved);
+        let reloaded = WorkflowCoordinator::new(temp.0.join("workflow.json")).unwrap();
+        assert_eq!(reloaded.list().unwrap()[0].tasks[0].native_job_id.as_deref(),
+            Some("native-job-a"));
+    }
+    #[test]
+    fn denied_native_receipt_does_not_unblock_dependents_or_replay() {
+        let (temp, registry, id, fingerprint) = native_fixture();
+        let coordinator = WorkflowCoordinator::new(temp.0.join("workflow.json")).unwrap();
+        let run = coordinator.create(&registry,&[id.clone()],&fingerprint,
+            vec![spec(&id,&[]),spec(&id,&[0])]).unwrap();
+        coordinator.begin_step(&registry,&run.workflow_id,0).unwrap();
+        let uncertain = coordinator.finish_step(&run.workflow_id,0,None,None,None,
+            "uncertain",None,true,Some("BUILD_ADMISSION_DENIED".into())).unwrap();
+        assert_eq!(uncertain.tasks[0].state,"interrupted");
+        assert_eq!(coordinator.begin_step(&registry,&run.workflow_id,1).unwrap_err(),
+            "WO9_GRAPH_RUNNING_OR_QUARANTINED");
+    }
     #[test]
     fn cycle_and_unknown_recipe_fail() {
         assert!(allowed_spec(&[spec("a",&[0])], &["a".into()]).is_err());
