@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fd012e3a0e623cbc0c1fca20e6748d54d0469c68",
+  "sourceCommitBeforeLock": "b2cee2084ecd4f0cb625ed6fb2b26f6c0744109d",
   "trackedFileCount": 514,
   "files": [
     {
@@ -641,7 +641,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "6c0ef39ecaca24a3411a31b6f75ea16fa25651be"
+      "blob": "92e5de282a52d9501836312a859f18d3ef38a52f"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
