@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c954d7164e10d53ed2ee82d731ff6d0292e0fee7",
+  "sourceCommitBeforeLock": "d68f51aaed78e82d0aebb94c0e7851ad11241b29",
   "trackedFileCount": 506,
   "files": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "b386ed76c4cde151f7c5af725b49fd8fe4895717"
+      "blob": "0094f83874c2cc544346ee483bf9cfbc913232f2"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "1d5946ba97bfe743904fb1f443275261ff5de214"
+      "blob": "94cb308d19ddf7f907364cb256d254a1e650dba5"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "1c4e06b8605534d2427770acd3d3f1342c778b91"
+      "blob": "305559130a8cb658ac2dd7a0e321add38a30dba2"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -193,7 +193,7 @@
     },
     {
       "path": "docs/LU_WINDOWS_GRAPHICS_CAPTURE_WORKER.md",
-      "blob": "ad9f58b64581af703e037d2eca9951b6dfd54881"
+      "blob": "f4397ec2be5ddc4a609075fc3ec9a8ba21b21553"
     },
     {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
@@ -777,7 +777,7 @@
     },
     {
       "path": "scripts/package-observe-capture-windows.ps1",
-      "blob": "8ed09672cdb31cb47941aa26f60e7fbe67d53c00"
+      "blob": "371a8d9da5a64fbebdb4fa91ee5c541d09581847"
     },
     {
       "path": "scripts/source-identity.mjs",
