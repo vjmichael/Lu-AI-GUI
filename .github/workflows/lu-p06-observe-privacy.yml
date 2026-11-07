@@ -1,0 +1,149 @@
+name: Lu P06 Observe Privacy Native
+on:
+  push:
+    branches: ['lu/p06-observe-privacy-*']
+  # Push already tests the same PR branch head; no duplicate CI matrix.
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-p06-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-p06:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked source snapshot
+        run: node scripts/verify-source-tree.mjs
+      - name: Compile real Linux polkit process identity subject and validate package policy
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          rustc --edition=2021 --test lu-desktop/src-tauri/src/observe_linux_auth.rs -o "$RUNNER_TEMP/lu-observe-linux-auth"
+          "$RUNNER_TEMP/lu-observe-linux-auth" --nocapture
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET, json
+          policy='scripts/linux/org.lu.desktop.observe-learn.policy'
+          action=ET.parse(policy).getroot().find('action')
+          assert action.attrib['id']=='org.lu.desktop.observe-learn'
+          assert action.findtext('./defaults/allow_any')=='no'
+          assert action.findtext('./defaults/allow_inactive')=='no'
+          assert action.findtext('./defaults/allow_active')=='auth_admin'
+          cfg=json.load(open('lu-desktop/src-tauri/tauri.linux.conf.json'))
+          for packaging in ('deb','rpm'):
+            files=cfg['bundle']['linux'][packaging]['files']
+            assert files['/usr/share/polkit-1/actions/org.lu.desktop.observe-learn.policy']=='../../scripts/linux/org.lu.desktop.observe-learn.policy'
+          print('Linux polkit policy and package manifest accepted')
+          PY
+      - name: Test native Lu Observe consent and revocation
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
+      - name: Test independent evidence and awareness replay protections
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
+      - name: Test independently pinned GUI outcome comparison
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
+      - name: Test seven-day retention and migration preserving legacy note rows
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p06_ -- --nocapture
+      - name: Test baseline chat-scoped durable note authority
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - name: Test end-to-end in-memory WGC protocol to admitted local GGUF image
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib os_owned_image_pipe_enters_real_png_admission_and_remains_off_network -- --nocapture
+      - name: Reject corrupt or truncated local WGC binary frames
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib malformed_or_truncated_observed_pixels_never_produce_image_proof -- --nocapture
+      - name: Test private in-memory binary WGC worker transport
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite -- --nocapture
+      - name: Test native local WGC to admitted PNG image and non-network provenance
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_image_admission::tests -- --nocapture
+      - name: Test local-only provenance and durable network quarantine
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_egress::tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib observe_session_provenance_is_durable_after_stop_and_note_forget -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib existing_active_research_is_reported_before_observe_consent -- --nocapture
+      - name: Test scope cannot silently widen to another window or monitor
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - name: Test new Observe privacy desktop contracts
+        run: node --test lu-desktop/tests/p06-observe-privacy.test.mjs
+      - name: Build actual React Observe frontend before Tauri macro compilation
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: |
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm run check
+      - name: Compile and test actual Windows WGC worker identity and full-frame redaction
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture
+          cargo build --release --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml
+      - name: Reject malformed native WGC invocation without OS picker
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $worker='src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
+          if(!(Test-Path -LiteralPath $worker)){throw 'WGC worker was not built'}
+          & $worker '--bad-operation' '00112233445566778899aabbccddeeff' 2>$null
+          if($LASTEXITCODE -ne 1){throw 'Native WGC worker failed closedness check'}
+          # Child denial is an expected exit 1; only after asserting it is
+          # safe to clear pwsh's inherited negative-test exit status.
+          exit 0
+      - name: Refuse untrusted native HWND privacy probe without accessibility scan
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $exe=(Get-Command pwsh -ErrorAction Stop).Source
+          $script=Join-Path $env:GITHUB_WORKSPACE 'scripts/probe-observe-sensitive-window-windows.ps1'
+          $child=Start-Process -FilePath $exe -PassThru -Wait -NoNewWindow -ArgumentList @(
+            '-NoProfile','-NonInteractive','-File',$script,
+            '-WindowHandle','0','-ExpectedPid','1','-ExpectedBirthFileTime','1'
+          )
+          if($child.ExitCode -eq 0){throw 'Invalid OS HWND incorrectly accepted by privacy probe'}
+          Write-Output 'P06 native UIA probe rejected invalid OS HWND without opening capture'
+      - name: Syntax-check independent installed-Windows GUI smoke harness
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $parseErrors=$null
+          foreach($script in @(
+            'scripts/verify-observe-installed-windows.ps1',
+            'scripts/probe-observe-sensitive-window-windows.ps1',
+            'scripts/verify-observe-nsis-cycle-windows.ps1',
+            'scripts/verify-observe-ui-contract-windows.ps1',
+            'scripts/package-observe-capture-windows.ps1'
+          )){
+            $tokens=$null
+            $parseErrors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $script,[ref]$tokens,[ref]$parseErrors) | Out-Null
+            if($parseErrors.Count -ne 0){
+              throw "P06 Windows native installer/smoke script has syntax errors: $script"
+            }
+          }
+          if(!(Select-String -LiteralPath 'scripts/verify-observe-installed-windows.ps1' -Pattern "wgcPickerAndCancellation='NOT_TESTED'" -Quiet)){
+            throw "Installed smoke must not claim WGC acceptance"
+          }
+      - name: Test real native ObserveHost on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content $path -Raw | ConvertFrom-Json
+          # Code-only compilation never pretends to stage a working llama engine.
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib observe_desktop::tests -- --nocapture
+      - name: No installed WGC, NSIS or second-model GPU acceptance inferred
+        if: matrix.os == 'windows-latest'
+        run: echo "Native policy and desktop compile only; physical WGC/installed NSIS/AMD MMProj and resident small-model acceptance remain separately deferred"

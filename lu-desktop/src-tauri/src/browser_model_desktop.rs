@@ -80,6 +80,7 @@ impl Drop for ProbeLease {
 fn grant_current(
     owner:&DesktopState,task_id:&str,chat_id:&str,user_turn_id:&str
 )->bool{
+    owner.observe.deny_observation_network_egress(chat_id).is_ok()&&
     owner.browser_grant.lock().ok()
         .and_then(|g|g.as_ref().map(|g|
             !g.starting&&g.task_id==task_id&&g.chat_id==chat_id
@@ -94,6 +95,7 @@ pub(crate) async fn lu_browser_model_read(
     session_id:String,chat_id:String
 )->Result<BrowserModelReadView,String>{
     let owner=Arc::clone(state.inner());
+    owner.observe.deny_observation_network_egress(&chat_id)?;
     let (task_id,user_turn_id,origins)={
         let granted=owner.browser_grant.lock()
             .map_err(|_|"Browser grant unavailable")?;

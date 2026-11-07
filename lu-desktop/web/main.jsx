@@ -37,9 +37,12 @@ function App() {
   const [chats, setChats] = useState([]);
   const [folders, setFolders] = useState([]);
   const [chatId, setChatId] = useState(null);
+  const activeChatRef=useRef(null);
+  activeChatRef.current=chatId;
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
+  const [captureLocalTaskId,setCaptureLocalTaskId]=useState(null);
   const [imageViewer,setImageViewer] = useState(null);
   const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:'',blockSize:'12',stroke:'3',color:'#ff5500',amount:'0',sigma:'2',threshold:'3'});
   const [imagePlan,setImagePlan]=useState({chatId:null,imageRef:null,steps:[],redo:[]});
@@ -972,12 +975,35 @@ function App() {
     }catch(e){setError(String(e));}
     finally{setImageExportBusy(false);}
   }
-  async function observeCaptureOneShot(foregroundOnly=false){
+  async function observeCaptureOneShot(foregroundOnly=false,primaryDisplay=false,localImage=false){
     if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
     setCaptureStarting(true);
     try{
-      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly});
-      if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
+      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay,localImage});
+      if(id){
+        setCaptureTaskId(id);
+        setCaptureLocalTaskId(localImage?id:null);
+        setCaptureReceipt(null);
+        setBackgroundPaneOpen(true);
+      }
+    }catch(e){setError(String(e));}
+    finally{setCaptureStarting(false);}
+  }
+  async function attachLocalObservedFrame(){
+    if(!chatId||!captureTaskId||captureLocalTaskId!==captureTaskId
+       ||observeView.mode!=='active'||captureStarting)return;
+    const activeChat=chatId;
+    setCaptureStarting(true);
+    try{
+      const image=await invoke('lu_observe_capture_local_image',{chatId:activeChat});
+      if(!image)throw new Error('No completed local frame available; inspect the native receipt first.');
+      if(activeChatRef.current!==activeChat){
+        await invoke('lu_release_image',{imageRef:image.imageRef});
+        return;
+      }
+      setImages(prev=>prev.some(p=>p.imageRef===image.imageRef)?prev:[...prev,image]);
+      setCaptureLocalTaskId(null);
+      setActivity('Approved observed frame attached locally. Use the current multimodal GGUF to ask about its visible content.');
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
   }
@@ -986,6 +1012,21 @@ function App() {
     try{
       const receipt=await invoke('lu_observe_capture_receipt',{chatId});
       setCaptureReceipt(receipt?{chatId,...receipt}:null);
+    }catch(e){setError(String(e));}
+  }
+  async function forgetObserveNotes(){
+    if(!chatId)return;
+    const selectedChat=chatId;
+    try{
+      const removed=await invoke('lu_observe_forget_notes',{chatId:selectedChat});
+      // null is a denied native confirmation, not a successful empty purge.
+      if(removed===null||removed===undefined)return;
+      if(selectedChat===chatId){
+        setObserveNotes([]);
+        setObserveHandoff(null);
+        setObserveView(v=>({...v,notesLogged:0}));
+        setActivity('Forgot '+removed+' local observation note'+(removed===1?'':'s')+'. No prior observation is reused.');
+      }
     }catch(e){setError(String(e));}
   }
   async function reviewObserveHandoff(){
@@ -1001,7 +1042,7 @@ function App() {
       .then(v=>{
         setObserveView(v);
         if(action==='pause'||action==='stop'){
-          setCaptureTaskId(null);setCaptureReceipt(null);
+          setCaptureTaskId(null);setCaptureReceipt(null);setCaptureLocalTaskId(null);
         }
         setError('');
       })
@@ -2722,12 +2763,15 @@ function App() {
                observeView.mode==='paused'?'Paused':'Off'}
             </span>
           </div>
+          <small>Experimental · OFF by default · two native confirmations to enable · Linux administrator authentication.
+            Observe & Learn data is marked LOCAL ONLY; Lu's network tools must never transmit it.
+            You choose what the screen exposes. No remote viewing interface.</small>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
-            An additionally approved Windows foreground-window capture rechecks HWND and PID;
-            the general picker can select a monitor. Neither gives the model its pixels.</small>
+            An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
+            the general picker can select a monitor but cannot independently identify the selected OS source. Both paths fully blank the captured frame; neither sends pixels to the model.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
-              <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}
+              <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
             {observeView.mode==='active' &&
               <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
             {observeView.mode==='paused' &&
@@ -2739,28 +2783,65 @@ function App() {
                   {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
                 </button>
                 <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false,true)}>
+                  Capture primary display (OS-identified, full screen)
+                </button>
+                <button type="button" disabled={captureStarting}
                   onClick={()=>observeCaptureOneShot(false)}>
                   Select window/display · capture one frame
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(true,false,true)}>
+                  Capture foreground app for local GGUF image
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false,true,true)}>
+                  Capture primary display for local GGUF image
                 </button>
               </>}
             {observeView.mode!=='off' &&
               <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
           </div>
+          {observeView.mode==='off' &&
+            <button type="button" className="subtleButton"
+              onClick={()=>void forgetObserveNotes()}>
+              Forget saved observation notes for this chat
+            </button>}
           {observeView.mode==='active' && !captureWorkerReady &&
             <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
           {captureTaskId && <div aria-label="Native one-shot capture evidence">
             <small role="status">One-shot WGC task: {captureTaskId}.
-              Raw pixels are neither retained nor supplied to the model.</small>
+              Receipts are fully redacted. An explicitly approved local-image
+              capture can temporarily hold one bounded frame in native RAM;
+              it has no network destination and requires a second action to attach.</small>
             <button type="button" onClick={()=>void reviewCaptureReceipt()}>
               Inspect native frame receipt
             </button>
+            {captureLocalTaskId===captureTaskId
+              &&captureReceipt?.chatId===chatId
+              &&captureReceipt.frameObserved
+              &&captureReceipt.sourceIdentityAttested
+              &&observeView.mode==='active' &&
+              <button type="button" disabled={captureStarting}
+                onClick={()=>void attachLocalObservedFrame()}>
+                Attach approved frame to this local multimodal chat
+              </button>}
             {captureReceipt?.chatId===chatId&&
               <small>Capture state: {captureReceipt.state}.
+                {captureReceipt.frameObserved?' WGC frame observed; receipt is fully blanked.':''}
+                {captureReceipt.pixelsRetained
+                  ?' A private local-only frame is temporarily held in native RAM pending Attach or cancellation.'
+                  :''}
                 {captureReceipt.frameSha256
-                  ?' Frame SHA-256: '+captureReceipt.frameSha256
+                  ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
                   :' No completed frame digest.'}
-                The receipt does not establish source identity,
-                GUI correctness, or visual understanding.</small>}
+                {captureReceipt.sourceIdentityAttested
+                  ?' Native foreground HWND or primary display identity checked.'
+                  :' Selected source identity is not attested.'}
+                {captureReceipt.fullyRedactedReceipt
+                  ?' Entire captured frame was blanked before receipt output.'
+                  :' No verified redacted frame receipt.'}
+                This is not an image preview, GUI test verdict or model visual understanding.</small>}
           </div>}
           {observeView.mode!=='off'&&
             <small>Observed state-change hints: {observeView.nativeEventCount||0}.
@@ -2781,6 +2862,14 @@ function App() {
                 )}</ul>}
               <button type="button" disabled={observeNotes.length===0}
                 onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
+              <button type="button" className="subtleButton"
+                onClick={()=>void forgetObserveNotes()}>
+                Forget observation notes for this chat
+              </button>
+              <small>Diagnostic codes expire after seven days. Forgetting clears Lu's
+                stored notes and current review summary, not existing chat messages,
+                exported text, or durable task-operation receipts. No observation data
+                is automatically promoted to memory or model training.</small>
               {observeHandoff?.sessionId===observeView.sessionId&&
                 <div role="status" className="observeHandoff">
                   <strong>Observed evidence prepared for human review</strong>

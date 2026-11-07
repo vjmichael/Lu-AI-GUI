@@ -1,5 +1,27 @@
 # OBSERVE-WIN-CAPTURE-05 — Windows native picker and one-frame capture
 
+## P06 real NSIS installer/uninstaller cycle source
+
+Optional disposable Windows test script now executes the real hash-reviewed NSIS installer/uninstaller and independently checks installed and removed Lu/worker binaries and uninstall registrations. It is not yet run on physical Windows and does not claim WGC or GPU acceptance. [P06 privacy](LU_P06_OBSERVE_PRIVACY.md).
+
+## P06 OS visible foreground and installed restart follow-up
+
+Foreground-only native capture now checks that the OS window is top-level, visible and not DWM-cloaked, with a readback-before/after identity check. Generic picker remains identity-unverified and wholly blanked. The independent physical installed script optionally tests second-process restart and UIA OFF; **no physical acceptance is claimed**.
+
+## P06 WIN-IDENTITY / FULL-REDACTION / GUARDIAN follow-up (latest)
+
+**Current source changes supersede the earlier frame-hash/no-redaction paragraphs below.**
+
+- **Foreground identity:** The chosen foreground window supplies a native HWND and OS PID; the pinned worker queries the process creation FILETIME using minimal `PROCESS_QUERY_LIMITED_INFORMATION`, and rechecks HWND, PID and creation time inside the D3D11 frame callback. Failed query, changed/recycled PID or an invalid window terminates without a success receipt. This is a concrete OS-process-instance recheck, **not an independent proof of the visible UI contents, screen origin, or a permanent window-instance ID**. Generic `GraphicsCapturePicker::pick_item` does not expose equivalent identity in the adapter: all generic picker source claims stay **UNVERIFIED**.
+- **Full-frame redaction:** Rather than pretending to have a trusted OCR/UIA secret detector, the current callback hashes a *wholly blank* BGRA frame of the same geometry with a host-generated nonce. No original pixel contributes to stdout, the TaskStore receipt or model context. A valid receipt means the pinned WGC worker saw a geometrically valid mapped frame **and generated a redacted receipt**, not that the image is recognizable or GUI tests passed. Original D3D11/GPU staging buffers remain OS-owned; this does not imply physical GPU memory zeroization.
+- **Guardian:** A new `ResourceClaim::capture_one_shot` requests one worker, one CPU unit and 512 MiB RAM from the existing BackgroundScheduler. The desktop host acquires the reservation **before** starting the pinned worker; ObserveHost retains it through terminal completion, cancellation and OS process cleanup. It is released only after supervisor reaping. The zero GPU/VRAM claim is **unverified accounting**, not a claim that Windows Graphics Capture consumes no GPU resources or a real GPU quota.
+- **Installer repair:** The older `scripts/package-observe-capture-windows.ps1` contained duplicated build blocks and a broken SHA-validation string; it could not reliably run. P06 replaces it with one fail-closed code path: reviewed worker build → source SHA → staged SHA → React build → compiled Lu host or actual NSIS bundle with optional distinct Research-resource overlay. Separate `-VerifyInstalledDirectory` is read-only and requires exact reviewer-provided Lu.exe + WGC worker SHA-256 (optional Research curl) and explicitly refuses to label WGC or installed GUI verified. The exact true NSIS install/uninstall interaction is **not performed by this build**.
+- **Installed native smoke:** `scripts/verify-observe-installed-windows.ps1` requires an actual installed `Lu.exe`, independently provided reviewed SHA-256 digests for Lu and the sibling WGC worker, and a physical Windows GUI session; optionally tests the initial OFF state through Windows UI Automation. It writes a local evidence record, **never marks picker, redaction, NSIS install/uninstall or visual understanding PASS**, and makes no network install or third-party browser substitution. Run it on a physical Windows machine after the exact reviewed packaged build is available.
+- **Native acceptance:** P06 CI now compiles/tests the actual Windows WGC crate including redacted frame fixtures and creates the real React frontend *before* compiling the Tauri host (repair of earlier `frontendDist` macro panic). Source tests and successful Rust compilation alone do not prove an interactive WGC selection, installed NSIS, UIA app identity or sensitive region-specific redaction.
+
+**Still open for meaningful visual GUI observation:** true selective masking backed by independent trusted Windows UIA/sensitive-region evidence; explicit per-frame screenshot grant, scoped pixel transfer and zeroization; OS picker identity for an arbitrary window/monitor; actual operator-driven WGC capture/restart, installed NSIS/reboot/uninstall and independent GUI test receipts. Full-frame suppression is the safe interim state.
+
+
 Date: 2026-11-06
 State: **source implemented; Windows compilation, installer packaging, and physical picker/frame acceptance pending**.
 

@@ -122,6 +122,8 @@ pub struct AwarenessNoteRow{
     pub source:String,
     pub priority:String,
     pub created_at:String,
+    pub data_origin:String,
+    pub network_egress_allowed:bool,
 }
 /// Verified non-file output returned from the first-party bounded SHA-256 scanner.
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -182,7 +184,7 @@ impl TaskStore {
                code TEXT NOT NULL CHECK(code IN
                  ('error_indicator','unexpected_ui_state','verified_test_failure','stalled_progress')),
                source TEXT NOT NULL CHECK(source IN
-                 ('renderer_hint','native_accessibility','native_test_receipt')),
+                 ('renderer_hint','native_accessibility','native_runtime','native_test_receipt')),
                priority TEXT NOT NULL CHECK(priority IN ('observe','investigate')),
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                PRIMARY KEY(task_id,sequence)
@@ -222,6 +224,57 @@ impl TaskStore {
             )?;
             tx.commit()?;
         }
+        // P06: previous Observe schema omitted native_runtime despite the
+        // trusted host producing it. Preserve existing rows exactly, in one
+        // transaction, before allowing verified host-only runtime notes.
+        let awareness_schema:String=connection.query_row(
+            "SELECT sql FROM sqlite_master
+             WHERE type='table' AND name='lu_awareness_notes'",
+            [],|row|row.get(0)
+        )?;
+        if !awareness_schema.contains("'native_runtime'"){
+            let tx=connection.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE lu_awareness_notes_p06 (
+                    task_id TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL CHECK(sequence > 0),
+                    code TEXT NOT NULL CHECK(code IN
+                      ('error_indicator','unexpected_ui_state','verified_test_failure','stalled_progress')),
+                    source TEXT NOT NULL CHECK(source IN
+                      ('renderer_hint','native_accessibility','native_runtime','native_test_receipt')),
+                    priority TEXT NOT NULL CHECK(priority IN ('observe','investigate')),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(task_id,sequence)
+                 );
+                 INSERT INTO lu_awareness_notes_p06
+                  (task_id,workspace_id,sequence,code,source,priority,created_at)
+                 SELECT task_id,workspace_id,sequence,code,source,priority,created_at
+                 FROM lu_awareness_notes;
+                 DROP TABLE lu_awareness_notes;
+                 ALTER TABLE lu_awareness_notes_p06 RENAME TO lu_awareness_notes;
+                 CREATE INDEX lu_awareness_notes_workspace
+                   ON lu_awareness_notes(workspace_id,task_id,sequence);"
+            )?;
+            tx.commit()?;
+        }
+        // Upgrade legacy and fresh note tables. Defaults label existing
+        // rows and SQLite CHECK clauses prohibit observation declassification.
+        for (name,ddl) in [
+            ("data_origin","ALTER TABLE lu_awareness_notes ADD COLUMN data_origin TEXT NOT NULL DEFAULT 'observe_learn' CHECK(data_origin='observe_learn')"),
+            ("network_egress_allowed","ALTER TABLE lu_awareness_notes ADD COLUMN network_egress_allowed INTEGER NOT NULL DEFAULT 0 CHECK(network_egress_allowed=0)")
+        ]{
+            let count:i64=connection.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('lu_awareness_notes') WHERE name=?1",
+                params![name],|row|row.get(0))?;
+            if count==0{connection.execute_batch(ddl)?;}
+        }
+        // Native enum-only notes are bounded to seven days. This is a
+        // logical SQLite retention limit, not secure erasure of WAL backups.
+        connection.execute(
+            "DELETE FROM lu_awareness_notes
+             WHERE created_at < datetime('now','-7 days')",[]
+        )?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -599,6 +652,33 @@ impl TaskStore {
         Ok(result)
     }
 
+    /// Durable provenance latch: an Observe session itself marks its
+    /// conversation LOCAL_ONLY even after Stop/Forget and across restart.
+    /// Ordinary user content in another conversation is not auto-tainted.
+    /// A DB error at any host egress caller must DENY rather than allow.
+    pub fn has_observe_provenance(&self,workspace_id:&str)->Result<bool,TaskStoreError>{
+        if !workspace_id.starts_with("c-")||workspace_id.len()>128||
+           !workspace_id.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'-'||c==b'_'){
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let found:i64=connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM lu_tasks WHERE workspace_id=?1 AND substr(task_id,1,4)='obs-')",
+            params![workspace_id],|row|row.get(0))?;
+        Ok(found!=0)
+    }
+
+    /// Deny Observation activation when an existing research worker is
+    /// already alive. Network authorization can never overlap the moment
+    /// local-only provenance begins without review of the in-flight task.
+    pub fn active_research_network_tasks(&self)->Result<bool,TaskStoreError>{
+        let connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let count:i64=connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM lu_tasks WHERE substr(task_id,1,9)='research-' AND state IN ('PENDING','RUNNING','PAUSED'))",
+            [],|row|row.get(0))?;
+        Ok(count!=0)
+    }
+
     /// Persist enum-only notation in the EXISTING task SQLite database.
     /// Trusted ObserveHost owns task ID/sequence; no raw UI text, pixels,
     /// model output, commands, file paths or prompt bodies enter this table.
@@ -625,6 +705,36 @@ impl TaskStore {
         if changed!=1{return Err(TaskStoreError::InvalidTransition);}
         Ok(())
     }
+    /// P06 consented operator privacy control: forget ALL historical
+    /// enum-only Observe notes for one locally owned conversation. Task
+    /// execution receipts remain separate and are never erased here.
+    /// No model, tool, file, capture or ANSF record is modified.
+    pub fn delete_awareness_notes_for_workspace(
+        &self,workspace_id:&str
+    )->Result<usize,TaskStoreError>{
+        if !workspace_id.starts_with("c-")||workspace_id.len()>128
+            ||!workspace_id.bytes().all(|b|
+                b.is_ascii_alphanumeric()||b==b'-'||b==b'_'){
+            return Err(TaskStoreError::InvalidTaskId);
+        }
+        let connection=self.connection.lock()
+            .map_err(|_|TaskStoreError::Poisoned)?;
+        Ok(connection.execute(
+            "DELETE FROM lu_awareness_notes
+             WHERE workspace_id=?1 AND task_id LIKE 'obs-%'",
+            params![workspace_id]
+        )?)
+    }
+    /// Host-selected retention sweep is independent of the current renderer
+    /// and cannot be asked to retain data indefinitely by model text.
+    pub fn prune_expired_awareness_notes(&self)->Result<usize,TaskStoreError>{
+        let connection=self.connection.lock()
+            .map_err(|_|TaskStoreError::Poisoned)?;
+        Ok(connection.execute(
+            "DELETE FROM lu_awareness_notes
+             WHERE created_at < datetime('now','-7 days')",[]
+        )?)
+    }
     /// Read only the exact conversation/task's native notations. No status
     /// query may expose another chat or an arbitrary path or checkpoint.
     pub fn awareness_notes(
@@ -640,7 +750,8 @@ impl TaskStore {
         let connection=self.connection.lock()
             .map_err(|_|TaskStoreError::Poisoned)?;
         let mut stmt=connection.prepare(
-            "SELECT task_id,workspace_id,sequence,code,source,priority,created_at
+            "SELECT task_id,workspace_id,sequence,code,source,priority,created_at,
+                    data_origin,network_egress_allowed
              FROM lu_awareness_notes
              WHERE task_id=?1 AND workspace_id=?2
              ORDER BY sequence DESC LIMIT ?3"
@@ -651,6 +762,8 @@ impl TaskStore {
                 sequence:row.get::<_,i64>(2)? as u64,
                 code:row.get(3)?,source:row.get(4)?,
                 priority:row.get(5)?,created_at:row.get(6)?,
+                data_origin:row.get(7)?,
+                network_egress_allowed:row.get::<_,i64>(8)?!=0,
             })
         })?;
         let mut notes=Vec::new();
@@ -948,6 +1061,30 @@ mod dashboard_tests{
         assert!(store.dashboard_for_workspace("c-owner",0).is_err());
     }
     #[test]
+    fn existing_active_research_is_reported_before_observe_consent(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        assert!(!store.active_research_network_tasks().unwrap());
+        store.create("research-fetch",Some("c-work"),None).unwrap();
+        assert!(store.active_research_network_tasks().unwrap());
+        store.start("research-fetch").unwrap();
+        store.cancelled("research-fetch").unwrap();
+        assert!(!store.active_research_network_tasks().unwrap());
+    }
+    #[test]
+    fn observe_session_provenance_is_durable_after_stop_and_note_forget(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("job-ordinary",Some("c-clean"),None).unwrap();
+        assert!(!store.has_observe_provenance("c-clean").unwrap());
+        store.create("obs-privacy",Some("c-marked"),None).unwrap();
+        store.start("obs-privacy").unwrap();
+        store.cancelled("obs-privacy").unwrap();
+        assert!(store.has_observe_provenance("c-marked").unwrap());
+        assert!(!store.has_observe_provenance("c-clean").unwrap());
+        store.delete_awareness_notes_for_workspace("c-marked").unwrap();
+        assert!(store.has_observe_provenance("c-marked").unwrap());
+        assert!(store.has_observe_provenance("c-other/../../").is_err());
+    }
+    #[test]
     fn awareness_notes_are_durable_chat_scoped_and_not_training_data(){
         use crate::native_awareness_lane::{Note,NoteKind,Source,Priority};
         let store=TaskStore::open(Path::new(":memory:")).unwrap();
@@ -974,6 +1111,76 @@ mod dashboard_tests{
             sequence:2,..note
         }),Err(TaskStoreError::InvalidTransition));
         // No ANSF write is performed by this note API.
+    }
+    #[test]
+    fn p06_native_runtime_notes_migrate_and_private_deletion_is_chat_scoped(){
+        use crate::native_awareness_lane::{Note,NoteKind,Source,Priority};
+        let tmp=std::env::temp_dir().join(format!(
+            "lu-p06-note-migration-{}-{:?}.db",std::process::id(),
+            std::thread::current().id()
+        ));
+        let _=std::fs::remove_file(&tmp);
+        {
+            let old=Connection::open(&tmp).unwrap();
+            old.execute_batch("CREATE TABLE lu_awareness_notes(
+              task_id TEXT NOT NULL,workspace_id TEXT NOT NULL,
+              sequence INTEGER NOT NULL CHECK(sequence>0),
+              code TEXT NOT NULL CHECK(code IN
+               ('error_indicator','unexpected_ui_state','verified_test_failure','stalled_progress')),
+              source TEXT NOT NULL CHECK(source IN
+               ('renderer_hint','native_accessibility','native_test_receipt')),
+              priority TEXT NOT NULL CHECK(priority IN ('observe','investigate')),
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY(task_id,sequence));
+              INSERT INTO lu_awareness_notes(task_id,workspace_id,sequence,code,source,priority)
+              VALUES ('obs-legacy','c-one',1,'error_indicator','renderer_hint','observe');"
+            ).unwrap();
+        }
+        let store=TaskStore::open(&tmp).unwrap();
+        assert_eq!(store.awareness_notes("obs-legacy","c-one",8).unwrap().len(),1);
+        store.create("obs-now",Some("c-one"),None).unwrap();
+        store.create("obs-other",Some("c-two"),None).unwrap();
+        store.start("obs-now").unwrap();
+        store.start("obs-other").unwrap();
+        let note=Note{sequence:1,kind:NoteKind::ErrorIndicator,
+            source:Source::NativeRuntime,priority:Priority::Observe,
+            verified_failure:false};
+        store.append_awareness_note("obs-now","c-one",&note).unwrap();
+        store.append_awareness_note("obs-other","c-two",&note).unwrap();
+        let migrated=store.awareness_notes("obs-legacy","c-one",8).unwrap();
+        assert_eq!(migrated[0].data_origin,"observe_learn");
+        assert!(!migrated[0].network_egress_allowed);
+        assert_eq!(store.awareness_notes("obs-now","c-one",8).unwrap()[0].source,
+            "native_runtime");
+        assert_eq!(store.delete_awareness_notes_for_workspace("c-one").unwrap(),2);
+        assert!(store.awareness_notes("obs-now","c-one",8).unwrap().is_empty());
+        assert_eq!(store.awareness_notes("obs-other","c-two",8).unwrap().len(),1);
+        assert_eq!(store.delete_awareness_notes_for_workspace("c-one/../c-two"),
+            Err(TaskStoreError::InvalidTaskId));
+        drop(store);
+        let _=std::fs::remove_file(tmp);
+    }
+    #[test]
+    fn p06_note_retention_prunes_stale_only(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("obs-expired",Some("c-note"),None).unwrap();
+        store.start("obs-expired").unwrap();
+        {
+            let db=store.connection.lock().unwrap();
+            db.execute(
+                "INSERT INTO lu_awareness_notes
+                 (task_id,workspace_id,sequence,code,source,priority,created_at)
+                 VALUES ('obs-expired','c-note',1,'error_indicator','renderer_hint','observe',
+                         datetime('now','-9 days'))",[]
+            ).unwrap();
+            db.execute(
+                "INSERT INTO lu_awareness_notes
+                 (task_id,workspace_id,sequence,code,source,priority)
+                 VALUES ('obs-expired','c-note',2,'error_indicator','native_runtime','observe')",[]
+            ).unwrap();
+        }
+        assert_eq!(store.prune_expired_awareness_notes().unwrap(),1);
+        assert_eq!(store.awareness_notes("obs-expired","c-note",8).unwrap().len(),1);
     }
     #[test]
     fn startup_dashboard_never_presents_orphan_running_process_as_live(){

@@ -9,6 +9,8 @@ mod background_context;
 mod environment_context;
 mod vision_context;
 mod observe_desktop;
+#[cfg(target_os="linux")]
+mod observe_linux_auth;
 mod native_browser_host;
 mod browser_model_desktop;
 mod research_desktop;
@@ -280,6 +282,7 @@ fn lu_model_backend_options()->Vec<BackendOptionView>{
 async fn lu_model_provider_search(
     state:State<'_,Arc<DesktopState>>,query:String
 )->Result<Vec<lu_core::model_provider_catalog::ModelLead>,String>{
+    state.observe.deny_unscoped_network_while_observing()?;
     let host=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||
         host.research.model_provider_search(&query)
@@ -289,6 +292,7 @@ async fn lu_model_provider_search(
 async fn lu_model_provider_review(
     state:State<'_,Arc<DesktopState>>,repo_id:String,revision:String
 )->Result<lu_core::model_provider_catalog::ModelRepoReview,String>{
+    state.observe.deny_unscoped_network_while_observing()?;
     let host=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||
         host.research.model_provider_review(&repo_id,&revision)
@@ -303,6 +307,7 @@ async fn lu_model_prepare_transfer(
     repo_id:String,revision:String,filename:String,
     sha256:String,bytes:u64,
 )->Result<Option<lu_core::ai_operations::ReviewedModelTransferIntent>,String>{
+    state.observe.deny_unscoped_network_while_observing()?;
     let host=Arc::clone(state.inner());
     let review_repo=repo_id.clone();
     let review_revision=revision.clone();
@@ -438,6 +443,9 @@ struct DesktopState {
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
     catalog: Mutex<Vec<StoredModel>>,
     images: Mutex<HashMap<String, PinnedImage>>,
+    /// Opaque image refs derived from user-approved OS observation are
+    /// permanently tainted while registered, and remain chat-bound.
+    observed_image_owners: Mutex<HashMap<String,String>>,
     generation_queue: Arc<GenerationQueue>,
     load_trace: Arc<Mutex<LoadTrace>>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
@@ -883,6 +891,7 @@ impl DesktopState {
             read_approval_ledger: approvals,
             catalog: Mutex::new(models),
             images: Mutex::new(HashMap::new()),
+            observed_image_owners: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
             load_trace,
             supervisor: Arc::new(supervisor),
@@ -1120,6 +1129,41 @@ fn lu_ingest_image_data_url(
     register_image(state.inner(), pinned)
 }
 
+/// Atomically register one admitted OBSERVE_LEARN PNG with the same locks as
+/// ordinary image refs, so no consumer can see it before its taint is bound.
+fn register_observed_local_image(
+    state:&Arc<DesktopState>,chat_id:&str,
+    observed:lu_core::native_observe_image_admission::LocalObservedImage
+)->Result<ImageView,String>{
+    use lu_core::native_observe_egress::{DataProvenance,Destination};
+    if observed.provenance!=DataProvenance::OBSERVE_LEARN||
+        observed.provenance.gate(Destination::LocalInference).is_err()||
+        observed.provenance.gate(Destination::RemoteModel).is_ok(){
+        return Err("Native observed image cannot be declassified".into());
+    }
+    let pinned=observed.pinned;
+    let mut images=state.images.lock().map_err(|_|"Image registry unavailable")?;
+    if images.len()>=4&&!images.contains_key(&pinned.image_ref){
+        return Err("four image limit".into());
+    }
+    let total=images.values().map(|image|image.bytes.len()).sum::<usize>();
+    if !images.contains_key(&pinned.image_ref)
+        &&total.saturating_add(pinned.bytes.len())>MAX_TOTAL_IMAGE_BYTES{
+        return Err("total image size limit".into());
+    }
+    let mut owners=state.observed_image_owners.lock()
+        .map_err(|_|"Observed image ownership unavailable")?;
+    if owners.get(&pinned.image_ref).is_some_and(|owner|owner!=chat_id){
+        return Err("Observed image belongs to another conversation".into());
+    }
+    let view=ImageView{
+        image_ref:pinned.image_ref.clone(),
+        mime_type:pinned.mime_type.into(),
+    };
+    owners.insert(pinned.image_ref.clone(),chat_id.to_owned());
+    images.insert(pinned.image_ref.clone(),pinned);
+    Ok(view)
+}
 fn register_image(state: &Arc<DesktopState>, pinned: PinnedImage) -> Result<ImageView, String> {
     let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
     if images.len() >= 4 && !images.contains_key(&pinned.image_ref) {
@@ -1196,6 +1240,9 @@ fn lu_release_image(
         return Err("invalid image reference".into());
     }
     let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
+    let mut owners=state.observed_image_owners.lock()
+        .map_err(|_|"Observed image ownership unavailable")?;
+    owners.remove(&image_ref);
     Ok(images.remove(&image_ref).is_some())
 }
 
@@ -2032,6 +2079,7 @@ async fn start_browser_for_exact_turn(
         contracts::ToolEffect,
         browser_authorized_execution::BROWSER_READ_TOOL,
     };
+    owner.observe.deny_observation_network_egress(&chat_id)?;
     let allowed=browser_origin_list(&origins)?;
     owner.browser_runtime.require_launch_ready()?;
     if owner.chats.trusted_user_turn_text(&chat_id,&turn_id).is_none(){
@@ -2056,6 +2104,7 @@ async fn start_browser_for_exact_turn(
             )).blocking_show()
     }).await.map_err(|_|"Browser approval dialog failed")?;
     if !approved{return Err("Browser grant cancelled".into());}
+    owner.observe.deny_observation_network_egress(&chat_id)?;
     let task_id=next_id("browser-task-");
     let scope_id=next_id("browser-scope-");
     owner.browser_authority.open_user_task(TaskAuthority{
@@ -2080,11 +2129,12 @@ async fn start_browser_for_exact_turn(
         });
     }
     let launch_owner=Arc::clone(&owner);
-    let result=tauri::async_runtime::spawn_blocking(move||
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        launch_owner.observe.deny_observation_network_egress(&chat_id)?;
         launch_owner.browser_runtime.launch_for_native_grant(
             allowed,&launch_owner.browser_preferences
         )
-    ).await.map_err(|_|"Browser launch worker unavailable".to_owned())
+    }).await.map_err(|_|"Browser launch worker unavailable".to_owned())
         .and_then(|x|x);
     if let Err(err)=result{
         let _=owner.browser_runtime.stop();
@@ -2216,6 +2266,7 @@ async fn lu_research_openalex(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,query:String,page:Option<u32>
 )->Result<research_desktop::ResearchSearchView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let page=page.unwrap_or(1);
     if !(1..=5).contains(&page){return Err("Invalid research page".into());}
     if query.trim().is_empty()||query.len()>512
@@ -2241,6 +2292,7 @@ async fn lu_research_openalex(
          )).blocking_show()
     }).await.map_err(|_|"Native research approval unavailable")?;
     if !approved{return Err("Research search cancelled".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -2273,6 +2325,7 @@ async fn lu_research_retrieve_document(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,source_id:String
 )->Result<research_desktop::ResearchDocumentView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
         ||source_id.chars().any(char::is_control){
         return Err("Select an existing Crossref-corroborated source".into());
@@ -2297,6 +2350,7 @@ async fn lu_research_retrieve_document(
         )).blocking_show()
     }).await.map_err(|_|"Native document approval unavailable")?;
     if !approved{return Err("Research document retrieval cancelled".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-document-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -2352,6 +2406,7 @@ async fn lu_research_campaign_start(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,query:String,candidate_ceiling:u32
 )->Result<research_desktop::ResearchCampaignView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if query.trim().is_empty()||query.len()>512||query.chars().any(char::is_control)
         ||!(1..=120).contains(&candidate_ceiling){
         return Err("Research campaign query or ceiling invalid".into());
@@ -2377,6 +2432,7 @@ async fn lu_research_campaign_start(
           )).blocking_show()
     }).await.map_err(|_|"Research campaign approval unavailable")?;
     if !approved{return Err("Research campaign cancelled by user".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let id=next_id("research-campaign-");
     let worker=Arc::clone(&owner.research);
@@ -2441,6 +2497,7 @@ async fn lu_research_campaign_resume(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,campaign_id:String
 )->Result<research_desktop::ResearchCampaignView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     state.chats.history(&chat_id)
         .map_err(|_|"Select a trusted Research conversation")?;
     if !state.research.available(){
@@ -2463,6 +2520,7 @@ async fn lu_research_campaign_resume(
          )).blocking_show()
     }).await.map_err(|_|"Research resume approval unavailable")?;
     if !approved{return Err("Research resume cancelled by user".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let worker=Arc::clone(&owner.research);
     let _=worker.resume_campaign(&chat_id,&campaign_id)?;
@@ -2505,6 +2563,7 @@ async fn lu_research_campaign_review(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,campaign_id:String,limit:u32
 )->Result<research_desktop::ResearchCampaignReviewView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if !(1..=10).contains(&limit){
         return Err("Research review is limited to ten candidates per approval".into());
     }
@@ -2533,6 +2592,7 @@ async fn lu_research_campaign_review(
         )).blocking_show()
     }).await.map_err(|_|"Research source approval unavailable")?;
     if !approved{return Err("Research review cancelled by user".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-review-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -2712,6 +2772,7 @@ async fn lu_research_crossref(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     chat_id:String,source_id:String
 )->Result<research_desktop::ResearchCorroborationView,String>{
+    state.observe.deny_observation_network_egress(&chat_id)?;
     if source_id.len()>128||!source_id.starts_with("https://openalex.org/")
        ||source_id.chars().any(char::is_control){
         return Err("Select an existing OpenAlex research lead".into());
@@ -2735,6 +2796,7 @@ async fn lu_research_crossref(
         )).blocking_show()
     }).await.map_err(|_|"Native research metadata approval unavailable")?;
     if !approved{return Err("Research metadata check cancelled".into());}
+    state.observe.deny_observation_network_egress(&chat_id)?;
     let owner=Arc::clone(state.inner());
     let task_id=next_id("research-metadata-");
     owner.background_tasks.create(&task_id,Some(&chat_id),None)
@@ -3165,11 +3227,21 @@ async fn generate_internal(
 )->Result<String,String>{
     let images: Vec<PinnedImage> = {
         let registered = state.images.lock().map_err(|_| "image registry poisoned")?;
+        let observed=state.observed_image_owners.lock()
+            .map_err(|_|"Observed image provenance unavailable")?;
         let mut resolved = Vec::new();
         let mut seen = HashSet::new();
         for id in &image_refs {
             if !seen.insert(id) {
                 return Err("duplicate image reference".into());
+            }
+            if let Some(owner)=observed.get(id){
+                if owner!=&chat_id{
+                    return Err("Observed image cannot cross conversation boundary".into());
+                }
+                lu_core::native_observe_egress::DataProvenance::OBSERVE_LEARN
+                    .gate(lu_core::native_observe_egress::Destination::LocalInference)
+                    .map_err(str::to_owned)?;
             }
             resolved.push(registered.get(id).ok_or("unknown image reference")?.clone());
         }
@@ -5900,20 +5972,63 @@ async fn lu_observe_start(
     state.chats.history(&chat_id)
         .map_err(|_|"Select an existing conversation first")?;
     let observer=Arc::clone(&state.observe);
-    let dialog=tauri::async_runtime::spawn_blocking(move||{
-        app.dialog().message(
-            "Start Observe & Learn for Lu's OWN UI events for up to 30 minutes?\n\n\
-             This first release candidate reads only Lu application status \
-             changes and error indicators. It cannot see other desktop \
-             windows, screenshots, keyboard input, audio, or clipboard. \
-             It will NOT run AI inference, control your mouse, or remember \
-             anything automatically. You can pause or stop at any time."
-        ).title("Lu — Observe own UI only")
+    if state.background_tasks.active_research_network_tasks()
+        .map_err(|_|"Cannot attest network task state: Observe remains OFF")?{
+        return Err("Stop in-flight Research network tasks before enabling local-only Observe & Learn".into());
+    }
+    // Never silently acquire Observe while a Browser network task is live.
+    {
+        let browser=state.browser_grant.lock()
+            .map_err(|_|"Browser grant unavailable during Observe authorization")?;
+        if browser.is_some(){
+            return Err("Stop the existing network Browser task before enabling local-only Observe & Learn".into());
+        }
+    }
+    // BOTH dialogs are native host UI, never WebView/model-provided consent.
+    // Decline either one => zero grant, OFF; restart never resumes it.
+    let approved=tauri::async_runtime::spawn_blocking(move||{
+        let experimental=app.dialog().message(
+            "EXPERIMENTAL FEATURE — Observe & Learn.\n\n\
+             Lu can watch approved local application UI events, optionally \
+             inspect a separately approved screen/window, record local diagnostic \
+             observations and suggest learning or repairs. A screen may expose \
+             personal, financial or confidential information. You decide what \
+             you show it. This is NOT remote viewing software.\n\n\
+             Observation data and derived notes are LOCAL ONLY and Lu's native \
+             network tools will refuse to transmit them. Lu cannot control \
+             other programs or guarantee another app won't expose information.\n\n\
+             Continue to a separate activation permission dialog?"
+        ).title("Lu — EXPERIMENTAL Observe & Learn warning")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-             "Start Lu UI observation".into(),"Do not observe".into(),
+             "I understand — continue".into(),"Cancel — keep OFF".into()
+         )).blocking_show();
+        if !experimental{return false;}
+        app.dialog().message(
+            "Explicitly ENABLE Observe & Learn for this conversation for \
+             at most 30 minutes?\n\n\
+             Local observation remains OFF until you approve this second \
+             request. A separate OS screen picker/foreground confirmation is \
+             required for each capture. Stop/Pause revokes active observation. \
+             No automatically sent network data, no automatic model training, \
+             and no automatic computer-control grant."
+        ).title("Lu — Explicit local observation permission")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Enable Observe & Learn".into(),"Keep OFF".into()
          )).blocking_show()
-    }).await.map_err(|_|"Native observation consent unavailable")?;
-    if !dialog{return observer.status(&chat_id);}
+    }).await.map_err(|_|"Native two-step observation consent unavailable")?;
+    if !approved{return observer.status(&chat_id);}
+    #[cfg(target_os="linux")]
+    observe_linux_auth::require_admin_for_observation()?;
+    // Recheck the browser grant after the dialogs/OS administrator approval.
+    // No partial grant is issued if a network task became active meanwhile.
+    if state.browser_grant.lock()
+        .map_err(|_|"Browser authority unavailable")?.is_some(){
+        return Err("Browser network task became active: observation remains OFF".into());
+    }
+    if state.background_tasks.active_research_network_tasks()
+        .map_err(|_|"Network task status unavailable: observation remains OFF")?{
+        return Err("Research network task became active: observation remains OFF".into());
+    }
     observer.start(&chat_id,next_id("obs-"))
 }
 #[tauri::command]
@@ -5939,6 +6054,34 @@ fn lu_observe_stop(
     state:State<'_,Arc<DesktopState>>,chat_id:String
 )->Result<observe_desktop::ObserveView,String>{
     state.observe.stop(&chat_id)
+}
+/// P06 explicit native confirmation to forget enum-only awareness notes for
+/// this chat, including prior observation sessions. This does not delete
+/// chat messages or the independent TaskStore operation receipts. It cannot
+/// delete another chat through a model tool or clear a running capture grant.
+#[tauri::command]
+async fn lu_observe_forget_notes(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<usize>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing conversation before forgetting notes")?;
+    let confirmed=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(
+            "Delete all Observe & Learn diagnostic notes for the selected chat, \
+             including notes from earlier observation sessions?\n\n\
+             These are only small diagnostic codes, not pixels or recordings. \
+             This revokes the current observation review draft; it will NOT \
+             delete ordinary chat messages, exported text, or separate native \
+             task audit receipts. The notes cannot be restored from Lu's UI."
+        ).title("Lu — Forget observation notes")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Forget diagnostic notes".into(),"Keep notes".into()
+        )).blocking_show()
+    ).await.map_err(|_|"Observation note deletion approval unavailable")?;
+    if !confirmed{return Ok(None)}
+    state.chats.history(&chat_id)
+        .map_err(|_|"The selected conversation is no longer available")?;
+    state.observe.forget_notes(&chat_id).map(Some)
 }
 /// Renderer event hints are NOT trusted test outcomes. Only two enumerated
 /// low-information signals are admitted, and no screenshot/text is accepted.
@@ -5985,15 +6128,24 @@ fn lu_observe_self_signal(
 #[tauri::command]
 async fn lu_observe_capture_one_shot(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,
-    foreground_only:bool
+    foreground_only:bool,primary_display:Option<bool>,local_image:Option<bool>
 )->Result<Option<String>,String>{
     #[cfg(not(windows))]
     {
-        let _=app;let _=state;let _=chat_id;let _=foreground_only;
+        let _=app;let _=state;let _=chat_id;
+        let _=foreground_only;let _=primary_display;let _=local_image;
         return Err("Windows Graphics Capture requires interactive Windows".into());
     }
     #[cfg(windows)]
     {
+        let primary_display=primary_display.unwrap_or(false);
+        let local_image=local_image.unwrap_or(false);
+        if primary_display&&foreground_only{
+            return Err("Choose exactly one capture source mode".into());
+        }
+        if local_image&&!primary_display&&!foreground_only{
+            return Err("The unverified generic picker cannot send images to Lu".into());
+        }
         state.chats.history(&chat_id)
             .map_err(|_|"Choose an existing conversation")?;
         let running=state.observe.status(&chat_id)?;
@@ -6010,31 +6162,45 @@ async fn lu_observe_capture_one_shot(
             return Err("Installed capture worker signature is invalid".into());
         }
         let approved=tauri::async_runtime::spawn_blocking(move||{
-            let warning=if foreground_only{
+            let warning=if local_image&&primary_display{
+                "Share ONE 720p-or-smaller frame from the ENTIRE primary display                  with the LOCAL loaded Lu model?\n\n                 This may reveal sensitive information. Explicitly accepting                  allows an in-memory, local-only image to be attached to this                  conversation after capture. No cloud provider or network                  research operation may receive it. Cancel to keep observation OFF."
+            }else if local_image&&foreground_only{
+                "Share ONE 720p-or-smaller foreground application window frame                  with the LOCAL loaded Lu model after a four-second focus delay?\n\n                 You control what is displayed. The pixels are carried only                  through a bounded native memory pipe and marked local-only.                  They cannot be sent to internet, research or remote models.                  Cancel if this exposure is not approved."
+            }else if primary_display{
+                "Capture the ENTIRE PRIMARY Windows display for ONE frame?\n\n\
+                 This can expose sensitive unrelated windows. You decide \
+                 what your screen shows. Lu independently checks the real \
+                 OS primary HMONITOR and display dimensions around readback. \
+                 The frame is fully blanked and not shared with the model. \
+                 Cancel if you do not approve the entire primary display."
+            }else if foreground_only{
                 "Capture ONE foreground application window after a four-second \
                  countdown?\n\n\
                  Confirm, then click or focus the desired window within \
                  four seconds. The worker independently checks its Windows \
-                 HWND and owning process ID again before reading one frame. \
+                 HWND, owning PID and process creation time again before reading one frame. \
                  It will not capture a whole monitor in this mode. The \
-                 temporary pixels are discarded; only a non-reversible \
+                 temporary pixels are wholly redacted before a content-free \
                  capture digest is recorded. No model receives the pixels."
             }else{
                 "Use Windows' picker to select ONE window or ONE entire display \
                  for a single frame? A monitor may contain unrelated private \
                  windows. The selected source is not app-identity attested. \
-                 Pixels are discarded and a digest receipt is recorded only. \
+                 Pixels are wholly redacted; the digest describes no readable image. \
                  No AI model receives the pixels."
             };
             app.dialog().message(warning)
               .title("Lu — approve one-shot Windows capture")
               .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                  if foreground_only{"Capture foreground window"}else{"Open Windows picker"}.into(),
+                  (if primary_display{"Capture primary display"}
+                    else if foreground_only{"Capture foreground window"}
+                    else{"Open Windows picker"}).into(),
                   "Cancel".into()
               )).blocking_show()
         }).await.map_err(|_|"Windows capture confirmation unavailable")?;
         if !approved{return Ok(None);}
         let observer=Arc::clone(&state.observe);
+        let guardian=Arc::clone(&state.background_scheduler);
         tauri::async_runtime::spawn_blocking(move||{
             // The installed worker lives alongside Lu. Its exact hash was
             // compiled into this host; native supervisor checks again at
@@ -6045,21 +6211,50 @@ async fn lu_observe_capture_one_shot(
             let task_id=next_id("obs-frame-");
             let nonce=next_id("");
             let plan=lu_core::native_background_process::TrustedWorkerPlan{
-                task_id,
+                task_id:task_id.clone(),
                 workspace_id:chat_id.clone(),
                 executable,
                 expected_sha256:expected,
-                args:vec![if foreground_only{
+                args:vec![if primary_display&&local_image{
+                    "--lu-observe-primary-monitor-local-image-one-shot"
+                }else if foreground_only&&local_image{
+                    "--lu-observe-foreground-local-image-one-shot"
+                }else if primary_display{
+                    "--lu-observe-primary-monitor-one-shot"
+                }else if foreground_only{
                     "--lu-observe-foreground-one-shot"
                 }else{"--lu-observe-one-shot"}.into(),nonce.into()],
                 progress_protocol:true,
                 max_runtime_seconds:Some(90),
             };
-            observer.launch_one_shot(&chat_id,plan).map(Some)
+            // A Guardian lease must survive the async Tauri command and
+            // remain owned by ObserveHost until OS process reaping completes.
+            // Its CPU/RAM reservation is NOT a validated GPU/VRAM limit.
+            let lease=guardian.admit_host_worker(
+                &chat_id,&task_id,lu_core::native_background_scheduler::ResourceClaim::capture_one_shot()
+            ).map_err(|e|format!("Capture Guardian admission denied: {e:?}"))?;
+            observer.launch_one_shot(&chat_id,plan,lease).map(Some)
         }).await.map_err(|_|"Native Windows picker worker unavailable")?
     }
 }
 
+/// A second deliberate user action: take the already OS-reaped, chat-owned
+/// native WGC frame and attach only its locally admitted PNG image-ref.
+#[tauri::command]
+async fn lu_observe_capture_local_image(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<ImageView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.history(&chat_id)
+            .map_err(|_|"Choose an existing conversation")?;
+        let Some(observed)=state.observe.capture_local_image(&chat_id)? else {
+            return Ok(None);
+        };
+        let image=register_observed_local_image(&state,&chat_id,observed)?;
+        Ok(Some(image))
+    }).await.map_err(|_|"Native local image admission unavailable")?
+}
 #[tauri::command]
 fn lu_observe_capture_available()->bool{
     #[cfg(windows)]
@@ -6119,9 +6314,11 @@ pub fn run() {
             lu_observe_stop,
             lu_observe_self_signal,
             lu_observe_notes,
+            lu_observe_forget_notes,
             lu_observe_handoff,
             lu_observe_capture_receipt,
             lu_observe_capture_one_shot,
+            lu_observe_capture_local_image,
             lu_observe_capture_available,
             lu_browser_visibility,
             lu_browser_runtime_status,

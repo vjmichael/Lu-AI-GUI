@@ -13,6 +13,7 @@ use lu_core::{
         Signal as AwarenessKind,Source as AwarenessSource,HostReadiness},
     tasks::TaskStore,
     native_background_process::{BackgroundProcessSupervisor,TrustedWorkerPlan},
+    native_background_scheduler::GuardianLease,
 };
 
 const LEASE_MS:u64=30*60*1000;
@@ -31,6 +32,8 @@ pub(crate) struct ObserveView {
     pub inference_recommendations:u64,
     pub inference_performed:u64,
     pub notes_logged:u64,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -40,6 +43,8 @@ pub(crate) struct ObserveNoteView{
     pub source:String,
     pub priority:String,
     pub created_at:String,
+    pub data_origin:String,
+    pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -47,11 +52,16 @@ pub(crate) struct ObserveCaptureReceiptView{
     pub capture_task_id:String,
     pub state:String,
     pub image_received:bool,
+    /// Native OS frame observed; no raw/model-usable image is received.
+    pub frame_observed:bool,
     pub frame_sha256:Option<String>,
     pub source_identity_attested:bool,
     pub pixels_retained:bool,
+    pub fully_redacted_receipt:bool,
     pub visual_interpretation_verified:bool,
     pub message:&'static str,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -67,6 +77,8 @@ pub(crate) struct ObserveHandoffView{
     pub review_draft:String,
     pub review_sha256:String,
     pub source_note_count:usize,
+    pub data_origin:&'static str,
+    pub network_egress_allowed:bool,
 }
 
 struct Session {
@@ -75,6 +87,9 @@ struct Session {
     notes_logged:u64,
     scope:Option<ScopedObservationGrant>,
     capture_task_id:Option<String>,
+    capture_foreground:bool,
+    capture_local_image_mode:bool,
+    capture_guardian:Option<GuardianLease>,
     session_id:Option<String>,
     chat_id:Option<String>,
     sequence:u64,
@@ -87,8 +102,38 @@ pub(crate) struct ObserveHost {
     capture_processes:Arc<BackgroundProcessSupervisor>,
     epoch:Instant,
 }
+/// Even a terminal task row with a matching digest must not be published as
+/// capture evidence until the OS supervisor has reaped its native worker.
+fn verified_reaped_frame_receipt(worker_reaped:bool,terminal:bool,digest_valid:bool)->bool{
+    worker_reaped&&terminal&&digest_valid
+}
 fn format_error(e:ObserveError)->String{format!("Observe session refused: {e:?}")}
 impl ObserveHost {
+    /// Host-owned internet egress gate; never accept a model/WebView
+    /// declaration that observation content is ordinary untagged text.
+    /// Durable obs-* task provenance persists after OFF, Pause and Forget.
+    pub(crate) fn deny_observation_network_egress(&self,chat_id:&str)->Result<(),String>{
+        if self.task_store.has_observe_provenance(chat_id)
+            .map_err(|_|"Observation provenance lookup unavailable: network refused")?{
+            lu_core::native_observe_egress::DataProvenance::OBSERVE_LEARN
+                .gate(lu_core::native_observe_egress::Destination::NetworkSocket)
+                .map_err(|e|e.to_owned())?;
+            return Err("Observe & Learn is local-only. Network tools are disabled for this conversation; use a separate clean conversation for unrelated web work.".into());
+        }
+        Ok(())
+    }
+
+    /// Unscoped model-provider network operations cannot run while Observe
+    /// is enabled, since they lack a chat provenance slot.
+    pub(crate) fn deny_unscoped_network_while_observing(&self)->Result<(),String>{
+        let mut session=self.inner.lock().map_err(|_|"Observe consent state unavailable: network refused")?;
+        self.refresh_expiry(&mut session)?;
+        if session.controller.mode()!=Mode::Off{
+            return Err("Observe & Learn is active; unscoped network access is blocked".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(task_store:Arc<TaskStore>,capture_processes:Arc<BackgroundProcessSupervisor>)->Self{
         Self{
             task_store,capture_processes,
@@ -96,6 +141,7 @@ impl ObserveHost {
             inner:Mutex::new(Session{
                 controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
+                capture_foreground:false,capture_local_image_mode:false,capture_guardian:None,
                 session_id:None,chat_id:None,sequence:0,
                 event_count:0,recommendations:0,
             }),
@@ -116,6 +162,8 @@ impl ObserveHost {
             inference_recommendations:s.recommendations,
             inference_performed:0,
             notes_logged:s.notes_logged,
+            data_origin:"observe_learn",
+            network_egress_allowed:false,
         }
     }
     /// Called only after the separate native dialog explicitly confirmed a
@@ -126,8 +174,14 @@ impl ObserveHost {
             return Err("Invalid conversation for observation".into());
         }
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        // No restart/grant while an earlier OFF session still owns a
+        // cancelled or uncertain native worker or pending task receipt.
+        self.reconcile_revoked(&mut session)?;
         if session.controller.mode()!=Mode::Off{
             return Err("Stop the existing observation first".into());
+        }
+        if session.capture_guardian.is_some()||session.session_id.is_some(){
+            return Err("Prior supervised capture has not finished cleanup".into());
         }
         let now=self.now();
         // The pilot has exactly one *host-selected* target, Lu itself.
@@ -163,6 +217,8 @@ impl ObserveHost {
         session.notes_logged=0;
         session.scope=Some(bound_scope);
         session.capture_task_id=None;
+        session.capture_foreground=false;
+        session.capture_local_image_mode=false;
         session.session_id=Some(session_id);
         session.chat_id=Some(chat_id.to_owned());
         session.sequence=0;session.event_count=0;session.recommendations=0;
@@ -174,7 +230,10 @@ impl ObserveHost {
     fn reap_capture(&self,capture_id:Option<&str>,chat:Option<&str>)
         ->Result<(),String>{
         if let Some(capture_id)=capture_id{
-            let _=self.capture_processes.poll();
+            // A failed OS poll cannot mean "nothing left to terminate".
+            // Keep Guardian custody and revoke the grant on uncertainty.
+            self.capture_processes.poll()
+                .map_err(|_|"Native capture process reconciliation is uncertain")?;
             if self.capture_processes.can_cancel(capture_id){
                 let chat=chat.ok_or("Missing owned capture workspace")?;
                 self.capture_processes.cancel_owned(capture_id,chat)
@@ -186,29 +245,70 @@ impl ObserveHost {
     fn stop_capture(&self,session:&mut Session)->Result<(),String>{
         self.reap_capture(session.capture_task_id.as_deref(),
             session.chat_id.as_deref())?;
+        if let (Some(id),Some(chat))=(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref()){
+            self.capture_processes.discard_local_observe_frame(id,chat)
+                .map_err(|_|"Native local WGC frame cleanup uncertain")?;
+        }
         session.capture_task_id=None;
+        session.capture_foreground=false;
+        session.capture_local_image_mode=false;
+        session.capture_guardian.take();
         Ok(())
     }
-    /// Revoke the entire permission before calling potentially blocking
-    /// process cancellation. No failure can leave an active observation grant.
-    /// Existing process supervision retains the hard timeout on kill errors.
+    /// Completes an already revoked lease. On an uncertain OS exit or
+    /// database write, KEEP task/session ownership so the watchdog can retry
+    /// without re-enabling Observe, reusing an old screenshot or leaking a
+    /// Guardian worker slot.
+    fn reconcile_revoked(&self,session:&mut Session)->Result<(),String>{
+        if session.controller.mode()!=Mode::Off{return Ok(());}
+        // A restart/retry must also shred any remaining volatile awareness,
+        // even when the original revoke was interrupted mid-cleanup.
+        session.scope=None;
+        session.sequence=0;
+        if let Some(mut lane)=session.awareness.take(){lane.stop();}
+        let Some(task_id)=session.session_id.clone() else{return Ok(())};
+        self.reap_capture(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref())?;
+        if let (Some(id),Some(chat))=(session.capture_task_id.as_deref(),
+            session.chat_id.as_deref()){
+            self.capture_processes.discard_local_observe_frame(id,chat)
+                .map_err(|_|"Revoked local WGC frame cleanup uncertain")?;
+        }
+        // The WGC worker is now OS-reaped. An independently stored
+        // observation CANCELLED receipt is required before forgetting its
+        // ownership; never conflate worker task and observation task.
+        let current=self.task_store.get(&task_id)
+            .map_err(|_|"Observation task reconciliation unavailable")?
+            .ok_or("Observation task receipt missing")?;
+        if current.state!=lu_core::tasks::TaskState::Cancelled{
+            self.task_store.cancelled(&task_id)
+                .map_err(|e|format!("Observation is OFF; durable cancellation pending: {e:?}"))?;
+        }
+        session.capture_guardian.take();
+        session.capture_task_id=None;
+        session.capture_foreground=false;
+        session.capture_local_image_mode=false;
+        session.session_id=None;
+        session.chat_id=None;
+        Ok(())
+    }
+    /// Revoke consent first. The OS process and durable note cleanup may
+    /// subsequently fail, but cannot restore the observation authorization.
     fn revoke(&self,session:&mut Session)->Result<(),String>{
-        let capture_id=session.capture_task_id.take();
-        let chat_id=session.chat_id.take();
-        let task_id=session.session_id.take();
         session.controller.stop();
         if let Some(mut lane)=session.awareness.take(){lane.stop();}
         session.scope=None;
         session.sequence=0;
-        // Never write a CANCELLED receipt when a child is not confirmed
-        // reaped. The existing process supervisor still owns its timeout.
-        // Consent is already OFF no matter which result follows.
-        self.reap_capture(capture_id.as_deref(),chat_id.as_deref())?;
-        if let Some(task_id)=task_id{
-            self.task_store.cancelled(&task_id)
-                .map_err(|e|format!("Observation revoked; task receipt pending: {e:?}"))?;
+        self.reconcile_revoked(session)
+    }
+    fn release_guardian_when_reaped(&self,s:&mut Session){
+        if s.capture_guardian.is_none(){return;}
+        if self.capture_processes.poll().is_ok()
+            &&s.capture_task_id.as_deref().is_some_and(|id|
+                !self.capture_processes.can_cancel(id)){
+            s.capture_guardian.take();
         }
-        Ok(())
     }
     fn refresh_expiry(&self,s:&mut Session)->Result<(),String>{
         if s.controller.mode()!=Mode::Off
@@ -220,6 +320,11 @@ impl ObserveHost {
     pub(crate) fn status(&self,chat_id:&str)->Result<ObserveView,String>{
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut session)?;
+        if session.controller.mode()==Mode::Off{
+            self.reconcile_revoked(&mut session)?;
+        }else{
+            self.release_guardian_when_reaped(&mut session);
+        }
         if session.chat_id.as_deref()!=Some(chat_id){
             // Observation must not remain silently active when the user
             // leaves the consenting conversation (including a new chat).
@@ -229,6 +334,7 @@ impl ObserveHost {
             return Ok(Self::view(&Session{
                 controller:Controller::default(),awareness:None,notes_logged:0,
                 scope:None,capture_task_id:None,
+                capture_foreground:false,capture_local_image_mode:false,capture_guardian:None,
                 session_id:None,chat_id:None,
                 sequence:0,event_count:0,recommendations:0,
             }));
@@ -238,6 +344,13 @@ impl ObserveHost {
     pub(crate) fn tick(&self){
         if let Ok(mut session)=self.inner.lock(){
             let _=self.refresh_expiry(&mut session);
+            if session.controller.mode()==Mode::Off{
+                // Reconcile even when process cleanup succeeded but the
+                // separate observation-task receipt previously failed.
+                let _=self.reconcile_revoked(&mut session);
+            }else{
+                self.release_guardian_when_reaped(&mut session);
+            }
         }
     }
     fn owned<'a>(s:&'a mut Session,chat_id:&str)->Result<&'a mut Session,String>{
@@ -292,13 +405,16 @@ impl ObserveHost {
     /// automatically within the Lu-only semantic observation app scope.
     /// No image bytes are returned to the model or WebView.
     pub(crate) fn launch_one_shot(
-        &self,chat_id:&str,plan:TrustedWorkerPlan
+        &self,chat_id:&str,plan:TrustedWorkerPlan,guardian:GuardianLease
     )->Result<String,String>{
         if !plan.task_id.starts_with("obs-frame-")
           ||plan.workspace_id!=chat_id
           ||plan.args.len()!=2
           ||!(plan.args[0]=="--lu-observe-one-shot"
-            ||plan.args[0]=="--lu-observe-foreground-one-shot")
+            ||plan.args[0]=="--lu-observe-foreground-one-shot"
+            ||plan.args[0]=="--lu-observe-primary-monitor-one-shot"
+            ||plan.args[0]=="--lu-observe-foreground-local-image-one-shot"
+            ||plan.args[0]=="--lu-observe-primary-monitor-local-image-one-shot")
           ||plan.args[1].to_string_lossy().len()!=32
           ||!plan.args[1].to_string_lossy().bytes().all(|b|b.is_ascii_hexdigit())
           ||!plan.progress_protocol
@@ -315,10 +431,25 @@ impl ObserveHost {
             self.capture_processes.can_cancel(task)){
             return Err("An approved capture picker is already running".into());
         }
+        if let Some(previous)=s.capture_task_id.as_deref(){
+            self.capture_processes.discard_local_observe_frame(previous,chat_id)
+                .map_err(|_|"Old private WGC frame cleanup uncertain")?;
+        }
         let id=plan.task_id.clone();
+        let foreground=matches!(plan.args[0].to_str(),
+            Some("--lu-observe-foreground-one-shot")
+            |Some("--lu-observe-primary-monitor-one-shot")
+            |Some("--lu-observe-foreground-local-image-one-shot")
+            |Some("--lu-observe-primary-monitor-local-image-one-shot"));
+        let local_image=matches!(plan.args[0].to_str(),
+            Some("--lu-observe-foreground-local-image-one-shot")
+            |Some("--lu-observe-primary-monitor-local-image-one-shot"));
         self.capture_processes.start_host_approved(plan)
             .map_err(|e|format!("Trusted capture worker could not start: {e:?}"))?;
         s.capture_task_id=Some(id.clone());
+        s.capture_foreground=foreground;
+        s.capture_local_image_mode=local_image;
+        s.capture_guardian=Some(guardian);
         Ok(id)
     }
 
@@ -332,11 +463,12 @@ impl ObserveHost {
         let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut s)?;
         let current=Self::owned(&mut s,chat_id)?;
-        let Some(task_id)=current.capture_task_id.as_deref() else{
+        let Some(task_id)=current.capture_task_id.clone() else{
             return Ok(None);
         };
-        let _=self.capture_processes.poll();
-        let row=self.task_store.get(task_id)
+        self.capture_processes.poll()
+            .map_err(|_|"Native capture receipt cannot prove process exit")?;
+        let row=self.task_store.get(&task_id)
             .map_err(|_|"Native capture task receipt unavailable")?
             .ok_or("Capture task receipt no longer exists")?;
         if row.workspace_id.as_deref()!=Some(chat_id){
@@ -347,16 +479,90 @@ impl ObserveHost {
             .filter(|value|value.len()==64
                 &&value.bytes().all(|b|b.is_ascii_hexdigit()))
             .map(str::to_owned);
+        // Evaluate receipt flags before moving sha into the returned view.
+        // Completed capture + validated receipt, not visible image evidence.
+        // A task row alone cannot establish receipt provenance: a process
+        // still owned by the supervisor might not have terminated or
+        // released its OS capture resources. Fail closed until reaped.
+        let worker_reaped=!self.capture_processes.can_cancel(&task_id);
+        let receipt_ready=verified_reaped_frame_receipt(
+            worker_reaped,terminal,sha.is_some());
+        let source_attested=receipt_ready&&current.capture_foreground;
+        let retained=self.capture_processes
+            .has_local_observe_frame(&task_id,chat_id)
+            .map_err(|_|"Native private image retention uncertain")?;
+        if worker_reaped{
+            current.capture_guardian.take();
+        }
         Ok(Some(ObserveCaptureReceiptView{
             capture_task_id:task_id.into(),
             state:row.state.as_str().into(),
-            image_received:terminal&&sha.is_some(),
-            frame_sha256:if terminal{sha}else{None},
-            source_identity_attested:false,
-            pixels_retained:false,
+            image_received:false,
+            frame_observed:receipt_ready,
+            frame_sha256:if receipt_ready{sha}else{None},
+            source_identity_attested:source_attested,
+            pixels_retained:retained,
+            // The pinned P06 worker suppresses the entire BGRA frame in
+            // its receipt before emitting any stdout; NOT a visual preview.
+            fully_redacted_receipt:receipt_ready,
             visual_interpretation_verified:false,
-            message:"Native WGC frame receipt only: no raw pixels or window title retained. This does not prove app identity, GUI correctness, or model visual understanding.",
+            message:"Native one-shot receipt: OS-confirmed foreground HWND or primary monitor identity is checked; generic picker remains unverified. No raw pixels, screenshot or GUI/model-vision verdict is returned.",
+            data_origin:"observe_learn",network_egress_allowed:false,
         }))
+    }
+    /// One-use, consent-gated local-only WGC image returned only to the Lu
+    /// native host. No screenshot file, WebView data URL or socket is created.
+    pub(crate) fn capture_local_image(
+        &self,chat_id:&str
+    )->Result<Option<lu_core::native_observe_image_admission::LocalObservedImage>,String>{
+        let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        self.refresh_expiry(&mut session)?;
+        let s=Self::owned(&mut session,chat_id)?;
+        if s.controller.mode()!=Mode::Active ||!s.capture_local_image_mode
+            ||!s.capture_foreground{
+            return Err("No active authorized native local-image capture".into());
+        }
+        let id=s.capture_task_id.clone().ok_or("No owned native capture task")?;
+        self.capture_processes.poll()
+            .map_err(|_|"Native local-image process reaping unverified")?;
+        if self.capture_processes.can_cancel(&id){
+            return Err("Native image capture still running; inspect receipt after completion".into());
+        }
+        let row=self.task_store.get(&id)
+            .map_err(|_|"Native frame task unavailable")?
+            .ok_or("Native capture task missing")?;
+        if row.workspace_id.as_deref()!=Some(chat_id)
+            ||row.state!=lu_core::tasks::TaskState::Completed
+            ||row.detail.strip_prefix("SHA-256: ").is_none_or(|sha|
+                sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit())){
+            return Err("Native WGC image receipt not independently completed".into());
+        }
+        let frame=self.capture_processes.take_local_observe_frame(&id,chat_id)
+            .map_err(|_|"Native in-memory frame ownership refused")?
+            .ok_or("No one-use authorized local frame remains")?;
+        let admitted=lu_core::native_observe_image_admission::admit_wgc_frame_locally(
+            &frame.bytes,frame.width,frame.height,frame.row_pitch,true
+        ).map_err(|e|format!("Native local image admission rejected: {e:?}"))?;
+        // The sensitive raw BGRA frame is dropped and scrubbed right after
+        // PNG admission. The returned image retains the no-network label.
+        s.capture_guardian.take();
+        Ok(Some(admitted))
+    }
+    /// P06 operator-approved privacy erase for a locally authenticated
+    /// conversation. This is not a model tool or new observation grant.
+    pub(crate) fn forget_notes(&self,chat_id:&str)->Result<usize,String>{
+        // Forget must remain available even if a separate capture worker is
+        // temporarily unresponsive during expiry/reaping.
+        let mut s=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
+        let removed=self.task_store.delete_awareness_notes_for_workspace(chat_id)
+            .map_err(|_|"Could not erase scoped observation notes")?;
+        if s.chat_id.as_deref()==Some(chat_id){
+            if let Some(awareness)=s.awareness.as_mut(){
+                awareness.discard_observations();
+            }
+            s.notes_logged=0;
+        }
+        Ok(removed)
     }
     /// Only the trusted task session's enum-only annotations can be seen;
     /// no cross-conversation note retrieval or unapproved ANSF write.
@@ -367,11 +573,14 @@ impl ObserveHost {
         self.refresh_expiry(&mut s)?;
         let owner=Self::owned(&mut s,chat_id)?;
         let task=owner.session_id.as_deref().ok_or("Missing observe session")?;
+        self.task_store.prune_expired_awareness_notes()
+            .map_err(|_|"Observation note retention sweep failed")?;
         self.task_store.awareness_notes(task,chat_id,24)
             .map_err(|_|"Observation notations unavailable")?
             .into_iter().map(|n|Ok(ObserveNoteView{
                 sequence:n.sequence,kind:n.code,source:n.source,
                 priority:n.priority,created_at:n.created_at,
+                data_origin:n.data_origin,network_egress_allowed:n.network_egress_allowed,
             })).collect()
     }
     /// Produces a content-minimized main-model review handoff. No model run,
@@ -390,11 +599,14 @@ impl ObserveHost {
         // Retrieve only this consented chat's enum-only native notes. Raw
         // screenshots, user text, paths, window titles and keystrokes are
         // never collected into this handoff.
+        self.task_store.prune_expired_awareness_notes()
+            .map_err(|_|"Observation note retention sweep failed")?;
         let notes=self.task_store.awareness_notes(task,chat_id,24)
             .map_err(|_|"Observation provenance notes unavailable")?;
         let count=notes.len();
         let mut brief=String::from(
-            "Lu self-observation — REVIEW REQUEST (NOT A VERIFIED GUI TEST).\n\
+            "data_origin=observe_learn; network_egress=deny; local_only=true.\n\
+             Lu self-observation — REVIEW REQUEST (NOT A VERIFIED GUI TEST).\n\
              Investigate whether actual Lu application behavior differs from \
              its intended design. This note is a user-selected prompt draft, \
              NOT an autonomous model command or a filesystem/tool grant.\n\
@@ -441,6 +653,7 @@ impl ObserveHost {
             main_model_may_treat_as_verified_failure:
                 h.main_model_may_treat_as_verified_failure,
             review_draft:brief,review_sha256:digest,source_note_count:count,
+            data_origin:"observe_learn",network_egress_allowed:false,
         }))
     }
 
@@ -575,6 +788,107 @@ mod tests{
         assert_eq!(store.get("obs-one").unwrap().unwrap().state,TaskState::Cancelled);
         assert_eq!(host.status("c-main").unwrap().mode,"off");
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
+    }
+    #[test]
+    fn p06_revoked_consent_task_receipt_reconciles_after_native_cleanup(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-recovery".into()).unwrap();
+        {
+            // Simulate a process-cleanup error after consent was already
+            // switched OFF, but before the durable observation task receipt.
+            let mut state=host.inner.lock().unwrap();
+            state.controller.stop();
+            state.scope=None;
+            state.sequence=0;
+            assert_eq!(state.session_id.as_deref(),Some("obs-recovery"));
+        }
+        assert_eq!(store.get("obs-recovery").unwrap().unwrap().state,
+            TaskState::Running);
+        host.tick();
+        assert_eq!(store.get("obs-recovery").unwrap().unwrap().state,
+            TaskState::Cancelled);
+        assert_eq!(host.status("c-main").unwrap().mode,"off");
+        assert!(host.inner.lock().unwrap().session_id.is_none());
+        // The old session never resumes and the restart must request fresh
+        // OS user consent through the same native dialog as any new Observe.
+        host.start("c-main","obs-after-recovery".into()).unwrap();
+        host.stop("c-main").unwrap();
+    }
+    #[test]
+    fn p06_capture_receipt_requires_supervised_os_reap_before_evidence(){
+        assert!(!verified_reaped_frame_receipt(false,true,true));
+        assert!(!verified_reaped_frame_receipt(true,false,true));
+        assert!(!verified_reaped_frame_receipt(true,true,false));
+        assert!(!verified_reaped_frame_receipt(false,false,false));
+        assert!(verified_reaped_frame_receipt(true,true,true));
+    }
+    #[test]
+    fn p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker(){
+        use lu_core::native_background_scheduler::{
+            BackgroundScheduler,ResourceBudget,ResourceClaim
+        };
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let guardian=Arc::new(BackgroundScheduler::open(Path::new(":memory:"),
+            Arc::clone(&store),Arc::clone(&processes),ResourceBudget{
+                workers:1,cpu:1,ram_mib:512,gpu:0,vram_mib:0,disk:0,network:0
+            }).unwrap());
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-plan-denied".into()).unwrap();
+        let lease=guardian.admit_host_worker("c-main","obs-frame-rejected",
+            ResourceClaim::capture_one_shot()).unwrap();
+        assert_eq!(guardian.guardian_snapshot("c-main").unwrap().used.workers,1);
+        let plan=TrustedWorkerPlan{
+            task_id:"obs-frame-rejected".into(),workspace_id:"c-main".into(),
+            executable:std::env::current_exe().unwrap(),
+            expected_sha256:"0".repeat(64),
+            // No untrusted launcher can substitute a changed operation.
+            args:vec!["--arbitrary-capture".into(),"0".repeat(32).into()],
+            progress_protocol:true,max_runtime_seconds:Some(90),
+        };
+        assert!(host.launch_one_shot("c-main",plan,lease).is_err());
+        assert_eq!(guardian.guardian_snapshot("c-main").unwrap().used.workers,0);
+        assert!(host.inner.lock().unwrap().capture_task_id.is_none());
+        assert_eq!(host.status("c-main").unwrap().mode,"active");
+        host.stop("c-main").unwrap();
+    }
+    #[test]
+    fn p06_trusted_runtime_error_persists_but_cannot_claim_verified_gui_failure(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-runtime".into()).unwrap();
+        host.host_model_failure("c-main").unwrap();
+        let rows=host.notes("c-main").unwrap();
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0].source,"native_runtime");
+        assert_eq!(rows[0].kind,"error_indicator");
+        let summary=host.handoff("c-main").unwrap().unwrap();
+        assert_eq!(summary.verified_failures,0);
+        assert!(!summary.main_model_may_treat_as_verified_failure);
+        assert_eq!(host.forget_notes("c-main").unwrap(),1);
+        assert!(host.handoff("c-main").unwrap().is_none());
+    }
+    #[test]
+    fn p06_forget_notes_erases_current_chat_and_invalidates_handoff(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-privacy".into()).unwrap();
+        host.self_signal("c-main","error_indicator",false).unwrap();
+        assert!(host.handoff("c-main").unwrap().is_some());
+        assert_eq!(host.forget_notes("c-other").unwrap(),0);
+        assert_eq!(host.notes("c-main").unwrap().len(),1);
+        assert_eq!(host.forget_notes("c-main").unwrap(),1);
+        assert_eq!(host.notes("c-main").unwrap().len(),0);
+        assert!(host.handoff("c-main").unwrap().is_none());
+        assert_eq!(host.status("c-main").unwrap().notes_logged,0);
+        assert_eq!(host.status("c-main").unwrap().mode,"active");
+        assert!(!host.status("c-main").unwrap().can_see_desktop);
+        host.stop("c-main").unwrap();
+        assert_eq!(host.forget_notes("c-main").unwrap(),0);
     }
     #[test]
     fn another_conversation_cannot_steal_session_and_no_restart_grant(){

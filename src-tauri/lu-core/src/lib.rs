@@ -49,6 +49,8 @@ pub mod web_research_maturity;
 pub mod web_research_planner;
 pub mod native_capability_inventory;
 pub mod native_observe_learn;
+pub mod native_observe_egress;
+pub mod native_observe_image_admission;
 pub mod native_image_revision;
 pub mod native_image_revision_history;
 pub mod native_awareness_lane;

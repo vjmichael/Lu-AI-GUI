@@ -66,7 +66,7 @@ pub(crate) fn publish_reviewed_test(
     }
     ansf.start_chapter(&session_id,"Reviewed GUI test")?;
     let mut content=String::from(
-        "Host-reviewed observation evidence only; not a screenshot, \
+        "data_origin=observe_learn; network_egress=deny; local_only=true.\nHost-reviewed observation evidence only; not a screenshot, \
          UI automation grant, transcript or model training record.\n");
     for e in &proposal.evidence{
         let kind=match e.signal{

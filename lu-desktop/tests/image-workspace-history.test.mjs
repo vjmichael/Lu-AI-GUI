@@ -8,7 +8,12 @@ const screen=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 
 test('native image export records intent before original-safe immutable creation',()=>{
   assert.match(desktop,/journal\.prepare\(&chat_id,&intended\)/);
-  assert.match(desktop,/write_new_revision\(&source,edit,&destination\)/);
+  // A single immutable write OR the reviewed multi-step plan uses the same
+  // PREPARED -> APPLIED/UNCERTAIN ledger; both must stay source-pinned.
+  assert.match(desktop,/image_workspace_desktop::write_new_revision\(/);
+  assert.match(desktop,/&source,edit,&destination/);
+  assert.match(desktop,/image_workspace_desktop::write_new_revision_plan\(/);
+  assert.match(desktop,/&source,steps,&destination/);
   assert.match(desktop,/journal\.applied\(&chat_id,&revision_id,/);
   assert.match(desktop,/journal\.uncertain\(&chat_id,&revision_id\)/);
   assert.match(desktop,/image_history\.reconcile_interrupted\(\)/);

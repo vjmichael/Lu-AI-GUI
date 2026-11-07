@@ -39,25 +39,32 @@ const tests = [
     host.includes('lu_observe_notes,') &&
     ui.includes("invoke('lu_observe_notes',{chatId})") &&
     ui.includes('Prepare large-model review handoff') &&
-    ui.includes('Main-model handoff prepared · not executed') &&
+    ui.includes('Observation briefing added to chat draft. Review and press Send when ready.') &&
     css.includes('.observeNotations')],
   ['Observe WGC one-shot is explicit, pinned, supervised, user-selected and does not claim visual understanding',
     host.includes('async fn lu_observe_capture_one_shot(') &&
     host.includes('LU_OBSERVE_CAPTURE_WORKER_SHA256') &&
-    host.includes('observer.launch_one_shot(&chat_id,plan)') &&
+    host.includes('observer.launch_one_shot(&chat_id,plan,lease)') &&
+    host.includes('guardian.admit_host_worker(') &&
     host.includes('lu_observe_capture_available,') &&
-    ui.includes("invoke('lu_observe_capture_one_shot',{chatId})") &&
+    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay,localImage})") &&
     ui.includes('Select window/display · capture one frame') &&
     ui.includes('Capture selected foreground app (4s)') &&
+    ui.includes('Capture primary display (OS-identified, full screen)') &&
+    ui.includes('Capture foreground app for local GGUF image') &&
+    host.includes('async fn lu_observe_capture_local_image(') &&
     host.includes('--lu-observe-foreground-one-shot') &&
-    ui.includes("if(action==='pause'||action==='stop')setCaptureTaskId(null)") &&
-    ui.includes('No image pixels are retained or sent to the model')],
+    ui.includes("if(action==='pause'||action==='stop'){") &&
+    ui.includes('setCaptureTaskId(null);setCaptureReceipt(null)') &&
+    ui.includes('Both paths fully blank the captured frame; neither sends pixels to the model.') &&
+    ui.includes('WGC frame observed and blanked.') &&
+    ui.includes('fullyRedactedReceipt')],
   ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
     host.includes('fn lu_observe_self_signal(') &&
     host.includes('fn lu_observe_status(') &&
     host.includes('lu_observe_start,') &&
     ui.includes('Observe & Learn · Lu UI only') &&
-    ui.includes('Can see desktop: No') &&
+    ui.includes('An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time') &&
     ui.includes("observeAction('stop')") &&
     host.includes('notice.task_id.starts_with("obs-")') &&
     css.includes('.observePilot')],
@@ -71,10 +78,13 @@ const tests = [
     host.includes('vision_context::image_preflight(') &&
     ui.includes("invoke('lu_vision_capability')") &&
     ui.includes('Vision: {visionCapability.status}')],
-  ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
-    ui.includes('Image Workspace · read-only preview') &&
+  ['Image Workspace keeps immutable original and native-reviewed revision export separate from AI edits',
+    ui.includes('Image Workspace · original and immutable revision export') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
-    ui.includes('Crop, resize, annotations and AI edits are not enabled') &&
+    ui.includes('Original stays unchanged. Native approval and a NEW PNG destination are required') &&
+    ui.includes('AI-generated editing and automatic source overwrite remain disabled') &&
+    ui.includes('async function exportImageRevision()') &&
+    host.includes('fn lu_image_workspace_export(') &&
     css.includes('.imageViewerDialog')],
   ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
     host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&
