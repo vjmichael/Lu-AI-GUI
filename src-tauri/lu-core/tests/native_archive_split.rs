@@ -1,6 +1,7 @@
 use cap_std::{ambient_authority,fs::Dir};
 use lu_core::native_archive_split::{
     plan_split,split,inspect,reassemble,read_plan,folder,SplitError,MANIFEST,
+    reconcile_publication,PublicationReview,
 };
 use std::{fs,io::Write,path::PathBuf,sync::atomic::{AtomicU64,Ordering}};
 static SEQUENCE:AtomicU64=AtomicU64::new(1);
@@ -115,5 +116,31 @@ fn p08_refuses_source_and_part_symlink_aliases(){
     fs::remove_file(&p).unwrap();
     symlink("../sample.zip",&p).unwrap();
     assert!(inspect(&root,"sample.zip.lu-parts").is_err());
+    drop(root);fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn p08_recovery_inspects_partial_publication_without_replaying_or_deleting(){
+    let (path,root)=temp();archive(&path);
+    let plan=plan_split(&root,"sample.zip",65_536).unwrap();
+    assert_eq!(reconcile_publication(&root,&plan).unwrap(),PublicationReview::Absent);
+    let name=folder("sample.zip").unwrap();
+    fs::create_dir(path.join(&name)).unwrap();
+    fs::write(path.join(&name).join("part-0001.lup"),
+        &fs::read(path.join("sample.zip")).unwrap()[..65_536]).unwrap();
+    assert_eq!(reconcile_publication(&root,&plan).unwrap(),
+        PublicationReview::Incomplete{verified_parts:1,expected_parts:4});
+    assert!(path.join(&name).join("part-0001.lup").exists());
+    // The manifest is a completion marker. A partial group that falsely
+    // contains it must NOT be accepted or silently reconstructed.
+    let mut manifest=serde_json::to_vec_pretty(&plan).unwrap();manifest.push(b'\n');
+    fs::write(path.join(&name).join(MANIFEST),&manifest).unwrap();
+    assert!(matches!(reconcile_publication(&root,&plan),
+        Err(SplitError::IncompletePublication)));
+    fs::remove_file(path.join(&name).join(MANIFEST)).unwrap();
+    fs::write(path.join(&name).join("unexpected.txt"),b"untrusted").unwrap();
+    assert!(matches!(reconcile_publication(&root,&plan),
+        Err(SplitError::StageConflict)));
+    assert!(path.join(&name).join("unexpected.txt").exists());
     drop(root);fs::remove_dir_all(path).unwrap();
 }
