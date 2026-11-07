@@ -85,6 +85,12 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe_id: &str) -> Result<String, 
     {
         return Err(denied());
     }
+    #[cfg(feature = "dap-transport")]
+    if recipe_id == "dap_lldb_fixed"
+        && !clean_meta(&root.join("debuggee/wo6-selftest.exe"))?.is_file()
+    {
+        return Err(denied());
+    }
     digest_tree(root, None, MAX_LSP_BUNDLE_FILES, MAX_LSP_BUNDLE_BYTES)
 }
 fn stage_bundle(
@@ -1003,17 +1009,24 @@ pub fn start_windows_dap(
         Box::new(actor),
     )?;
     native_lsp_trace("gateway_attached");
-    Ok(WindowsDapSession { gateway })
+    Ok(WindowsDapSession {
+        gateway,
+        fixed_debuggee: bundle.join("debuggee/wo6-selftest.exe").to_string_lossy().into_owned(),
+    })
 }
 
 #[cfg(feature = "dap-transport")]
 pub struct WindowsDapSession {
     gateway: crate::dap_transport::DapGateway,
+    fixed_debuggee: String,
 }
 #[cfg(feature = "dap-transport")]
 impl WindowsDapSession {
     pub fn initialize(&mut self) -> Result<(), SupervisorError> {
         self.gateway.initialize()
+    }
+    pub fn launch_fixed_fixture(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.launch_fixed_fixture(&self.fixed_debuggee)
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()
