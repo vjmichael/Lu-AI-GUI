@@ -35,7 +35,9 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github', 'ide_read_exact_head_ci', 'ide_record_task_update', 'ide_observe_task_ci', 'ide_prepare_execution_intent', 'ide_decide_execution_intent', 'ide_list_execution_intents', 'ide_read_git_diff', 'ide_read_git_history', 'ide_probe_project_resource',
     'ide_list_language_servers', 'ide_lsp_worker_status',
     'ide_lsp_start_session', 'ide_lsp_change_document',
-    'ide_lsp_read_diagnostics', 'ide_lsp_stop_session'
+    'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
+    // WO6 native-only build/test controls are never a Lu capability grant.
+    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -296,8 +298,21 @@ test('Wave A2 registry advertises actual host operations without granting execut
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_lsp_')).sort(),
     nativeLspCommands.slice().sort());
+  const nativeBuildCommands = [
+    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile'
+  ];
+  assert.deepEqual(registered.filter(value => value.startsWith('ide_build_')).sort(),
+    nativeBuildCommands.slice().sort());
+  // Build/test execution is privileged and intentionally NOT a generic Lu
+  // capability. These commands are gated by reviewed OS release features.
+  const buildBackend = read('../src-tauri/src/build_backend.rs');
+  assert.match(buildBackend, /execute_windows_worker_after_staging_approval/);
+  assert.match(buildBackend, /execute_linux_worker/);
+  assert.match(buildBackend, /MessageDialogButtons::OkCancelCustom/);
+  assert.match(buildBackend, /BUILD_RELEASE_PINS_ABSENT/);
   const declared = registered.filter(value =>
-    value !== 'ide_list_capabilities' && !nativeLspCommands.includes(value));
+    value !== 'ide_list_capabilities' &&
+    !nativeLspCommands.includes(value) && !nativeBuildCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);
