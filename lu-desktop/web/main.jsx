@@ -24,6 +24,8 @@ const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
 function App() {
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [modelSearch, setModelSearch] = useState('');
+  const [modelInspection, setModelInspection] = useState(null);
   const [runtime, setRuntime] = useState({ phase: 'Idle', modelRef: null, sessionId: null });
   const [chats, setChats] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -1006,6 +1008,19 @@ function App() {
       .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
     return()=>{active=false;};
   },[settingsOpen]);
+
+  useEffect(()=>{
+    if (!settingsOpen || !selectedModel) { setModelInspection(null); return; }
+    let alive=true;
+    setModelInspection(null);
+    invoke('lu_model_preflight',{modelRef:selectedModel})
+      .then(view=>{if(alive)setModelInspection(view);})
+      .catch(()=>{if(alive)setModelInspection({
+        modelRef:selectedModel,status:'inspection_unavailable',loadAllowed:false,
+        detail:'Native model compatibility inspection failed. No model was loaded.'
+      });});
+    return()=>{alive=false;};
+  },[settingsOpen,selectedModel,models]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -4561,17 +4576,32 @@ function App() {
             Original file was not overwritten.
           </small>}
         </section>
-        <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
+        <h3>Models</h3><p>GGUF models are discovered only from Lu's existing model store, never loaded automatically. Searching below is local and read-only.</p>
+        <label className="modelSearchLabel">Search registered local models
+          <input type="search" value={modelSearch} maxLength={100} autoComplete="off"
+            placeholder="Filename…" onChange={event=>setModelSearch(event.target.value)}/>
+        </label>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
         <button className="subtleButton full" onClick={importModel} disabled={busy}>Import GGUF from another location</button>
-        <div className="settingsModelList">{models.map(m => <button key={m.modelRef} className={'settingsModel '+(selectedModel === m.modelRef ? 'selected' : '')}
+        <div className="settingsModelList">{models.filter(m=>m.filename.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase()))
+          .map(m => <button key={m.modelRef} className={'settingsModel '+(selectedModel === m.modelRef ? 'selected' : '')}
           onClick={() => setSelectedModel(m.modelRef)} disabled={busy}>
           <strong>{m.filename}</strong><small>{m.projectorAttached ? 'GGUF + MMProj' : 'GGUF only'} · {m.available ? 'Available' : 'Missing file'}</small></button>)}</div>
+        {modelInspection?.modelRef===selectedModel&&<section className="modelInspection" aria-label="Local model compatibility inspection">
+          <strong>Pre-load compatibility: {modelInspection.status.replaceAll('_',' ')}</strong>
+          <small>{modelInspection.detail}</small>
+          {modelInspection.fileBytes!=null&&<small>
+            GGUF v{modelInspection.ggufVersion} · {(modelInspection.fileBytes/1048576).toFixed(1)} MiB on disk ·
+            {modelInspection.tensorCount} header tensors ·
+            MMProj {modelInspection.projectorAttached?(modelInspection.projectorChecked?'header checked':'unavailable'):'not paired'}
+          </small>}
+          <small>Backend: {modelInspection.backendRequested}. Actual architecture, license and GPU/VRAM compatibility are not certified by a header.</small>
+        </section>}
         <button className="subtleButton full" disabled={busy || loaded || !selected || selected.projectorAttached} onClick={attachProjector}>Attach MMProj to selected model</button>
-        <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected model</button>
+        <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available || !modelInspection?.loadAllowed || modelInspection.modelRef!==selectedModel} onClick={loadModel}>Load inspected model</button>
           <button className="subtleButton" disabled={busy || !loaded} onClick={unloadModel}>Unload current model</button></div>
         <div className="settingsStatus"><span className="statusDot" data-ready={loaded}></span>{activity || (loaded ? 'Ready' : 'No model loaded')}</div>
-        <p className="settingsNotice">Vulkan acceleration is requested; device offload requires verification from the engine logs. Model selection never activates weights.</p>
+        <p className="settingsNotice">Remote provider search/download is not enabled. A future reviewed transfer needs an explicit source, immutable revision, SHA-256, license/access approval and user-chosen destination. No URL or network permission is inferred from a model name. The pinned engine currently requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
       </div>
     </div>}
   </div>;
