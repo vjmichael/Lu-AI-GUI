@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 target-specific third-party license prioritization (Nov 7):** Added exact native filtered Cargo dependency graph + notice inventory SHA-bound scope on Windows/Linux, with no legal exemption for absent platform targets or vendored binaries. Latest Windows archive has 45 unresolved entries after three source notice repairs; all remain open until reviewed. Added hostile regression tests and original metadata artifacts for CI review.
+
 - **P05/P06 native persisted project lifecycle (Nov 7):** Real Windows installed source/save passed then reopening failed because the project was closed; added genuine UIA/AT-SPI Reopen → Open status → Edit flow and source regression tests. Native acceptance pending.
 
 - **P06 source lockfiles committed (Nov 7):** Added exact real Windows/Linux reviewed Cargo.lock (500 crates) and package-lock.json (62 npm packages) to Git source, LF-pinned with .gitattributes; removed temporary read-only lockfile log exporter; enforced npm ci/Cargo --locked source graph and hash checks. No signed/installed release approval.

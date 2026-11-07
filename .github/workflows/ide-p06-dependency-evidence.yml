@@ -8,6 +8,8 @@ on:
       - 'ide/packaging/p06_license_triage.py'
       - 'ide/packaging/p06-known-license-risk.json'
       - 'ide/packaging/test_p06_license_triage.py'
+      - 'ide/packaging/p06_target_license_scope.py'
+      - 'ide/packaging/test_p06_target_license_scope.py'
       - 'ide/packaging/test_p06_source_notice_recovery.py'
       - 'ide/packaging/test_p06_license_provenance.py'
       - 'ide/host/LICENSE'
@@ -112,6 +114,21 @@ jobs:
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ${{ matrix.os }}
           python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-cross-os-parity-receipt.json
           echo 'P06_LOCKFILES_REVIEWED_AND_SOURCE_COMMITTED_NO_SIGNED_RELEASE_APPROVAL'
+      - name: Independently scope unresolved notices to native Cargo target graph (no exemptions)
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            target=x86_64-pc-windows-msvc
+          else
+            target=x86_64-unknown-linux-gnu
+          fi
+          cargo metadata --offline --locked --format-version 1 --manifest-path ide/app/src-tauri/Cargo.toml --filter-platform "$target" > ide/app/src-tauri/p06-filtered-native-metadata.json
+          python -m unittest discover -s ide/packaging -p 'test_p06_target_license_scope.py' -v
+          python ide/packaging/p06_target_license_scope.py --inventory ide/app/src-tauri/p06-notices/inventory.json --metadata ide/app/src-tauri/p06-filtered-native-metadata.json --source-sha "$EXACT_SHA" --platform ${{ matrix.os }} --target-triple "$target" --output ide/app/src-tauri/p06-native-license-scope.json
+          echo 'P06_NATIVE_RESOLVE_SCOPE_ONLY_LICENSE_REVIEW_REMAINS_OPEN'
       - name: Exercise locked npm and Cargo resolution without source mutation
         shell: bash
         run: |
@@ -131,6 +148,8 @@ jobs:
             ide/app/src-tauri/p06-notices/**
             ide/app/src-tauri/p06-dependency-evidence.json
             ide/app/src-tauri/p06-license-review-queue.json
+            ide/app/src-tauri/p06-filtered-native-metadata.json
+            ide/app/src-tauri/p06-native-license-scope.json
             ide/app/src-tauri/p06-cross-os-parity-receipt.json
             ide/app/src-tauri/p06-locked-rerun-receipt.json
           if-no-files-found: warn
