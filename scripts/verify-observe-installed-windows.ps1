@@ -64,10 +64,10 @@ try {
     $scope=[System.Windows.Automation.TreeScope]::Descendants
     $name=[System.Windows.Automation.AutomationElement]::NameProperty
     $start=$root.FindFirst($scope,
-      (New-Object System.Windows.Automation.PropertyCondition(
+      ([System.Windows.Automation.PropertyCondition]::new(
         $name,'Start observing Lu')))
     $off=$root.FindFirst($scope,
-      (New-Object System.Windows.Automation.PropertyCondition($name,'Off')))
+      ([System.Windows.Automation.PropertyCondition]::new($name,'Off')))
     # UI controls exist only after selecting an existing conversation.
     # No browser event or app-provided boolean substitutes for Windows UIA.
     if($null -ne $start -and $null -ne $off){
