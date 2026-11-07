@@ -97,3 +97,19 @@ test('P07 only the user-approved native Research host can preview citations from
   assert.match(ui,/Crossref-backed citation preview/);
   assert.match(ui,/REVIEW REQUIRED/);
 });
+
+test('P07 native Crossref citation preview includes provenance-preserving CSL JSON and completed task custody',()=>{
+  const host=read('../src-tauri/src/research_desktop.rs');
+  const desktop=read('../src-tauri/src/lib.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(host,/pub csl_json:serde_json::Value/);
+  assert.match(host,/let csl_json=export_csl_json\(&ledger,&record\)/);
+  assert.match(host,/catalog_response_sha256:catalog_sha/);
+  assert.match(desktop,/owner\.background_tasks\.complete\(&task_id\)/);
+  assert.match(desktop,/owner\.background_tasks\.fail\(&task_id\)/);
+  assert.match(ui,/Copy reviewed CSL JSON/);
+  assert.match(ui,/publication particulars, quotations,/);
+  assert.match(ui,/JSON\.stringify\(researchCitationsByChat/);
+  assert.match(wf,/Compile actual P07 React and native Research\/Tauri host on Windows/);
+  assert.match(wf,/cargo check --locked --manifest-path lu-desktop\/src-tauri\/Cargo.toml/);
+});
