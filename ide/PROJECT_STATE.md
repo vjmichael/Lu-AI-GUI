@@ -1,5 +1,8 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**IDE 07 / WO3 latest native repair:** restricted SCM listener no longer terminates an existing protected-Job holder solely because a *later* named pipe instance fails ACL readback; first-instance failure still blocks service startup. CI-only host token integrity classification added for exact-user pipe denial, without a fallback IPC channel or broader ACL. Protected SCM handshake and hostile recovery remain unaccepted. See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md).
+
+
 **IDE 07 / WO2–WO3 active (2026-11-06):** In draft [PR #65](https://github.com/vjmichael/Lu-AI-GUI/pull/65), protected LocalService now has source for per-job OS-derived NUL SID grants, fsynced intent, verified revocation and service-start reconciliation. **New:** concurrent NUL ACL transactions are serialized, and an unexpectedly changed exact-SID ACE cannot be silently revoked; a lock regression test is committed. This is unverified latest-source code, not installed worker acceptance. Real D7B contained Cargo + cancellation already passed at historical `1090800` with disposable CI-only NUL permissions. D7D exact-user SCM named-pipe open remains denied; authenticated crash/restart/service-loss proofs remain open. No release worker, LSP process or installed NSIS feature is enabled. [Detailed WO2/WO3 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
 
 
