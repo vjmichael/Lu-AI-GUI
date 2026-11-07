@@ -309,8 +309,12 @@ fn persist_null_intent(root: &Path, request: &Admission) -> Result<(), Superviso
     intent.sync_all().map_err(|_| denied())
 }
 fn clear_null_intent(root: &Path, request: &Admission) -> Result<(), SupervisorError> {
-    fs::remove_file(null_intent_path(root, &request.job_id, &request.plan_sha256)?)
-        .map_err(|_| denied())
+    fs::remove_file(null_intent_path(
+        root,
+        &request.job_id,
+        &request.plan_sha256,
+    )?)
+    .map_err(|_| denied())
 }
 fn parse_null_intent_name(name: &str) -> Result<(String, String), SupervisorError> {
     let stem = name.strip_suffix(".nul-intent").ok_or_else(denied)?;
@@ -332,14 +336,18 @@ fn reconcile_pending_null_intents(root: &Path) -> Result<(), SupervisorError> {
     for entry in fs::read_dir(root).map_err(|_| denied())? {
         let entry = entry.map_err(|_| denied())?;
         let name = entry.file_name().into_string().map_err(|_| denied())?;
-        if !name.ends_with(".nul-intent") { continue; }
+        if !name.ends_with(".nul-intent") {
+            continue;
+        }
         let (id, plan) = parse_null_intent_name(&name)?;
         let metadata = fs::symlink_metadata(entry.path()).map_err(|_| denied())?;
         if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 || metadata.len() > 120 {
             return Err(denied());
         }
         let body = fs::read(entry.path()).map_err(|_| denied())?;
-        if body != format!("{id}\n{plan}\n").as_bytes() { return Err(denied()); }
+        if body != format!("{id}\n{plan}\n").as_bytes() {
+            return Err(denied());
+        }
         crate::windows_null_device::reconcile_service_null_intent(&id)?;
         // If revocation succeeded but the service crashes before deleting,
         // the next boot's check is idempotent (SID ACE absent = success).
@@ -378,8 +386,14 @@ fn terminate_and_hold_after_denial(
     // revokes the exact package SID and enters the recovery hold.
     witness.record("kill_requested")?;
     let killed = kill_and_verify(job);
-    witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
-    if !killed { return Err(denied()); }
+    witness.record(if killed {
+        "tree_empty"
+    } else {
+        "kill_unverified"
+    })?;
+    if !killed {
+        return Err(denied());
+    }
     revoke_null_before_ack(nul, witness, config, request)?;
     hold_for_recovery(owner, job, witness, active, owner_already_exited)
 }
@@ -689,8 +703,14 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
             WAIT_OBJECT_0 => {
                 witness.record("owner_exited")?;
                 return terminate_and_hold_after_denial(
-                    owner.process_handle(), job.0, &mut witness, &active,
-                    &mut nul, config, &request, true,
+                    owner.process_handle(),
+                    job.0,
+                    &mut witness,
+                    &active,
+                    &mut nul,
+                    config,
+                    &request,
+                    true,
                 );
             }
             WAIT_TIMEOUT => {}
@@ -712,8 +732,14 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         {
             witness.record("pipe_lost")?;
             return terminate_and_hold_after_denial(
-                owner.process_handle(), job.0, &mut witness, &active,
-                &mut nul, config, &request, false,
+                owner.process_handle(),
+                job.0,
+                &mut witness,
+                &active,
+                &mut nul,
+                config,
+                &request,
+                false,
             );
         }
         if available > 0 {
@@ -732,8 +758,14 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
                 Ok(value) => value,
                 Err(_) => {
                     return terminate_and_hold_after_denial(
-                        owner.process_handle(), job.0, &mut witness, &active,
-                        &mut nul, config, &request, false,
+                        owner.process_handle(),
+                        job.0,
+                        &mut witness,
+                        &active,
+                        &mut nul,
+                        config,
+                        &request,
+                        false,
                     );
                 }
             };
@@ -749,9 +781,7 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
                 // machine-global permission to the disposed AppContainer.
                 witness.record("nul_intent")?;
                 persist_null_intent(&config.evidence_root, &request)?;
-                let lease = crate::windows_null_device::ServiceNullLease::grant(
-                    &request.job_id,
-                )?;
+                let lease = crate::windows_null_device::ServiceNullLease::grant(&request.job_id)?;
                 nul = Some(lease);
                 witness.record("nul_granted")?;
                 send(pipe, &request.nonce, "nul_granted")?;
@@ -763,8 +793,14 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
                 || !matches!(job_empty(job.0), Ok(true))
             {
                 return terminate_and_hold_after_denial(
-                    owner.process_handle(), job.0, &mut witness, &active,
-                    &mut nul, config, &request, false,
+                    owner.process_handle(),
+                    job.0,
+                    &mut witness,
+                    &active,
+                    &mut nul,
+                    config,
+                    &request,
+                    false,
                 );
             }
             // Normal completion or cancellation is not a successful service
