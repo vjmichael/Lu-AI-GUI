@@ -28,6 +28,7 @@ function App() {
   const [providerQuery,setProviderQuery] = useState('');
   const [providerHits,setProviderHits] = useState([]);
   const [providerReview,setProviderReview] = useState(null);
+  const [providerTransferIntent,setProviderTransferIntent] = useState(null);
   const [providerBusy,setProviderBusy] = useState(false);
   const [providerFailure,setProviderFailure] = useState('');
   const [modelInspection, setModelInspection] = useState(null);
@@ -1355,7 +1356,7 @@ function App() {
   }
   async function searchPublicModels(){
     if(providerBusy || !providerQuery.trim()) return;
-    setProviderBusy(true);setProviderFailure('');setProviderHits([]);setProviderReview(null);
+    setProviderBusy(true);setProviderFailure('');setProviderHits([]);setProviderReview(null);setProviderTransferIntent(null);
     try{
       const hits=await invoke('lu_model_provider_search',{query:providerQuery.trim()});
       setProviderHits(hits);
@@ -1364,7 +1365,7 @@ function App() {
   }
   async function inspectPublicModel(lead){
     if(providerBusy)return;
-    setProviderBusy(true);setProviderFailure('');setProviderReview(null);
+    setProviderBusy(true);setProviderFailure('');setProviderReview(null);setProviderTransferIntent(null);
     try{
       const detail=await invoke('lu_model_provider_review',{
         repoId:lead.repoId,revision:lead.revision
@@ -1374,6 +1375,23 @@ function App() {
         throw Error('Native provider review returned an invalid or changed catalog result');
       }
       setProviderReview(detail);
+    }catch(error){setProviderFailure(String(error));}
+    finally{setProviderBusy(false);}
+  }
+  async function preparePinnedTransfer(file){
+    if(providerBusy||!providerReview)return;
+    setProviderBusy(true);setProviderFailure('');setProviderTransferIntent(null);
+    try{
+      const reviewed=await invoke('lu_model_prepare_transfer',{
+        repoId:providerReview.repoId,revision:providerReview.revision,
+        filename:file.name,sha256:file.sha256,bytes:file.bytes
+      });
+      if(reviewed){
+        if(reviewed.downloaded!==false||reviewed.state!=='awaiting_p05_transfer'){
+          throw Error('Native model review returned an invalid state');
+        }
+        setProviderTransferIntent(reviewed);
+      }
     }catch(error){setProviderFailure(String(error));}
     finally{setProviderBusy(false);}
   }
@@ -4666,7 +4684,15 @@ function App() {
             {providerReview.files.map(file=><div key={file.name}>
               <strong>{file.name}</strong>
               <small>{(file.bytes/1048576).toFixed(1)} MiB · SHA-256 {file.sha256}</small>
+              <button type="button" className="subtleButton" disabled={providerBusy}
+                onClick={()=>void preparePinnedTransfer(file)}>
+                Review immutable future download plan (does not download)
+              </button>
             </div>)}
+            {providerTransferIntent&&<small role="status">
+              Metadata reviewed for {providerTransferIntent.filename} · expected SHA-256 {providerTransferIntent.sha256}.
+              Transfer state: awaiting P05; no file has been downloaded or installed.
+            </small>}
             <small>Read-only preview. The license and model architecture require your review. In-app downloads are blocked until the P05 native Transfer Manager can validate HTTPS redirects, bytes, cancellation, resumable identity and separate approval.</small>
             <a href={providerReview.sourceUrl} rel="noopener noreferrer" target="_blank">View pinned repository externally</a>
           </div>}
