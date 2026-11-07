@@ -164,15 +164,21 @@ impl DapSession {
         Ok(frame)
     }
 
+    /// Read-only pending signal for adapters that emit initialized immediately
+    /// after the response (even before the fixed launch is sent). The trusted
+    /// native host may examine this after launch; no DAP instruction is sent.
+    pub fn configuration_needed(&self) -> bool {
+        self.launch_sent
+            && self.initialized_event
+            && !self.configuration_done_sent
+            && matches!(self.phase, DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped)
+    }
+
     /// Complete ONLY the fixed debugger's empty configuration transaction.
     /// This cannot launch a target, run a terminal, evaluate code or select a
     /// path. It is legal only after a pinned launch and the adapter's event.
     pub fn configuration_done(&mut self) -> Result<Vec<u8>, DapError> {
-        if !self.launch_sent
-            || !self.initialized_event
-            || self.configuration_done_sent
-            || !matches!(self.phase, DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped)
-        {
+        if !self.configuration_needed() {
             return Err(DapError::InvalidPhase);
         }
         let frame = self.request("configurationDone", json!({}))?;
@@ -624,6 +630,28 @@ mod tests {
             DapError::InvalidMessage
         );
         assert_eq!(session.phase(), DapPhase::Quarantined);
+    }
+
+    #[test]
+    fn early_valid_initialized_event_is_deferred_until_fixed_launch() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        session.receive(&framed(json!({
+            "seq": 1, "type": "response", "request_seq": 1,
+            "command": "initialize", "success": true
+        }))).unwrap();
+        assert_eq!(
+            session.receive(&framed(json!({
+                "seq": 2, "type": "event", "event": "initialized"
+            }))).unwrap(),
+            vec![DapEvent::ConfigurationRequested]
+        );
+        assert!(!session.configuration_needed());
+        assert_eq!(session.configuration_done().unwrap_err(), DapError::InvalidPhase);
+        session.launch_fixed_fixture("/ls/debuggee/wo6-selftest").unwrap();
+        assert!(session.configuration_needed());
+        session.configuration_done().unwrap();
+        assert!(!session.configuration_needed());
     }
 
     #[test]
