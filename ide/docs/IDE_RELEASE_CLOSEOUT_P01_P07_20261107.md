@@ -64,7 +64,7 @@
 - [ ] Reinstall/upgrade state migration and rollback, not just fresh install. No feature or release admission from source-only test harness.
 - [ ] Verified independent OS artifact chain and exact SHA before moving release evidence manifests out of default-deny.
 
-**P04 implementation checkpoint:** Signed-only native Windows reinstall and registered-project catalog preservation witness, source-only native PowerShell parser/negative migration checks, cross-version rollback evidence gate, and corrected WO7 desktop signer+hash inputs are committed on the P04 branch. Real WO8/WO9 installed Windows WebView UIA and Linux AT-SPI tests are failing as documented in the P04 closeout report. No signed candidate/signer, actual upgrade/rollback or release acceptance. P03 remains open independently. P05 has not started.
+**P04 implementation checkpoint:** Signed-only Windows NSIS clean reinstall, separate two-version sequential replacement/injected recovery, and independently GPG-signed Linux Debian two-version native GUI acceptance workflows are committed **as test infrastructure**. Release dependencies now require exact reviewed DLL hashes and notice inventory; actual Windows Job requests no-project React render crash repaired with tests, and Linux GTK folder chooser must finish real native dialog confirmation. Native installed Win/Linux tests still require exact-head passes; no signing keys, signed candidates, true broken-installer rollback or release acceptance have been supplied. P03 remains open; P05 has not started. See the P04 closeout report.
 
 ## P05 — GitHub PR/CI checklist (not started)
 

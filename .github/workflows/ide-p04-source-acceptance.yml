@@ -4,6 +4,9 @@ on:
     paths:
       - 'ide/packaging/**'
       - 'ide/app/fixtures/Test-P04SignedReinstall.ps1'
+      - 'ide/app/fixtures/Test-P04SignedVersionTransition.ps1'
+      - 'ide/app/fixtures/Test-P04SignedDebTransition.sh'
+      - 'ide/app/fixtures/wo8_linux_editor_atspi.py'
       - 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1'
       - '.github/workflows/ide-p04-*'
       - '.github/workflows/ide-wo7-installed-acceptance.yml'
@@ -54,5 +57,12 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)
             if ($errors.Count) { throw "DENIED: P04 native PowerShell syntax: $($errors[0])" }
           }
+      - name: Verify signed Linux Debian test-only shell syntax
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ide/app/fixtures/Test-P04SignedDebTransition.sh
+          python3 -m py_compile ide/app/fixtures/wo8_linux_editor_atspi.py
       - name: Scope
-        run: echo "P04_SOURCE_CHECK_ONLY_SIGNED_NATIVE_REINSTALL_AND_TWO_VERSION_ROLLBACK_STILL_UNPROVEN"
+        run: echo "P04_SOURCE_ONLY_NO_SIGNING_KEYS_SIGNED_INSTALL_OR_BROKEN_UPGRADE_ROLLBACK_ACCEPTED"
