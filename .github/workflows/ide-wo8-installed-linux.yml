@@ -80,7 +80,7 @@ jobs:
           shopt -s nullglob
           packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
           [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: unexpected Linux .deb count'; exit 2; }
-          if ! dpkg-deb --contents "${packages[0]}" | grep -Fq '/THIRD_PARTY_LICENSES/inventory.json'; then
+          if ! dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null; then
             echo 'DENIED: actual Debian package omitted third-party license inventory' >&2
             exit 2
           fi
