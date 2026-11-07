@@ -2697,7 +2697,8 @@ fn lu_research_claims(
 #[tauri::command]
 async fn lu_research_export_report(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
-    chat_id:String,title:String,format:String
+    chat_id:String,title:String,format:String,
+    include_bibliography:Option<bool>,citation_style:Option<String>
 )->Result<Option<research_desktop::ResearchReportExportView>,String>{
     if !matches!(format.as_str(),"markdown"|"json")
         ||title.trim().is_empty()||title.len()>180
@@ -2734,7 +2735,40 @@ async fn lu_research_export_report(
         return Err("Research report destination exists; choose a new filename".into());
     }
     let report=state.research.verified_report(&chat_id,&title)?;
-    let body=if format=="markdown"{&report.markdown}else{&report.json};
+    // Opt-in P07 integration. Reuse exactly the sealed local bibliography;
+    // malformed/unreviewed sources fail the whole report instead of
+    // generating a partial or fabricated source list.
+    let bibliography=if include_bibliography.unwrap_or(false){
+        let profile=p07_citation_style(
+            citation_style.as_deref().ok_or("Select an explicit citation profile")?
+        )?;
+        Some(state.research.bibliography_preview(&chat_id,profile)?)
+    }else{None};
+    let body=match (format.as_str(),bibliography.as_ref()){
+        ("markdown",Some(bib))=>format!(
+            "{}\\n\\n{}\\n",report.markdown,bib.markdown
+        ),
+        ("markdown",None)=>report.markdown.clone(),
+        ("json",Some(bib))=>{
+            let mut record:serde_json::Value=serde_json::from_str(&report.json)
+                .map_err(|_|"Verified research report was not valid JSON")?;
+            let object=record.as_object_mut()
+                .ok_or("Research evidence report was not a JSON object")?;
+            object.insert("lu_reviewed_bibliography".into(),serde_json::json!({
+                "style":bib.style,
+                "source_count":bib.source_count,
+                "catalog_manifest_sha256":bib.catalog_manifest_sha256,
+                "csl_json":bib.csl_json,
+                "publication_details_verified":false,
+                "quotation_or_page_verified":false,
+                "factual_claim_verified":false
+            }));
+            serde_json::to_string_pretty(&record)
+                .map_err(|_|"Bibliography report JSON encoding refused")?
+        },
+        ("json",None)=>report.json.clone(),
+        _=>return Err("Unsupported research report export format".into()),
+    };
     if body.len()>2*1024*1024{
         return Err("Research report exceeds native export budget".into());
     }
@@ -2759,8 +2793,13 @@ async fn lu_research_export_report(
         format, saved_sha256,
         distinct_sources:report.distinct_sources,
         checked_passages:report.checked_passages,
+        bibliography_sources:bibliography.as_ref().map(|bib|bib.source_count).unwrap_or(0),
         interpretation_verified:false,
-        message:"Derived report saved from rehashed document evidence; factual interpretations remain unverified.",
+        message:if bibliography.is_some(){
+            "Saved local evidence report and appended DOI-attested bibliography. Publication details, quotations and interpretations remain unverified."
+        }else{
+            "Derived report saved from rehashed document evidence; factual interpretations remain unverified."
+        },
     }))
 }
 
