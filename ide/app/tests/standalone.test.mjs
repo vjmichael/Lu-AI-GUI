@@ -426,7 +426,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'inbox', 'ledger', 'snapshots', 'intents'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
