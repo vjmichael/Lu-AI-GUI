@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **Release Closeout P01–P07 tracking (2026-11-07):** Created canonical [phase ledger](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md) with P01 authoritative branch/source reconciliation and historical PR coverage, P02 deterministic native build/test repair, P03 WO4–6 kernel/LSP/DAP security, P04 WO7–9 signed installed acceptance, P05 GitHub PR/CI reduction, P06 reproducibility/governance, and **P07 deferred until after Lu Core v1.0**. User requested one-phase-at-a-time stop and concise completion/outstanding report. WO9 still native-red; older B2/B3 parallel PR source not assumed incorporated.
+
+
 - WO9-D/E/F native repairs and restart revalidation (Nov 7 UTC): fixed installed Linux Tauri Rust E0277 by deriving strict `Deserialize` on native one-file Git staged receipt; excluded injected coordinator State from frontend IPC request-schema test; added real Windows/Linux `native-build` feature compilation. Hardened durable DAG reload: previously passed steps require exact native supervisor journal revalidation and human-triggered no-rerun verification before subsequent protected job authorization; crash quarantine stays fail-closed. Expanded signed Windows installed WO9 harness with real slow Cargo cancellation, OS worker reap, host crash/restart and no-auto-replay tests. Host Win/Linux + frontend previously green on `16fb0ad`; latest exact-head native install and signed tests **not accepted**. See [WO9 ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
 
 
