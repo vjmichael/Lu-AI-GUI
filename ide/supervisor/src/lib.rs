@@ -11,19 +11,26 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
+#[cfg(feature = "lsp-transport")]
+mod lsp_transport;
+pub mod snapshot;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
-pub mod windows_service_security;
+mod windows_cap_tree;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
+mod windows_null_device;
+// The SCM-only recovery service must never compile into a plain D7C
+// windows-worker build: its per-job NUL lease requires a separately
+// installed and authenticated protected service identity.
+#[cfg(all(target_os = "windows", feature = "protected-recovery-service"))]
 pub mod windows_recovery_service;
 #[cfg(all(target_os = "windows", feature = "protected-recovery-service"))]
 pub mod windows_service_client;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
-mod windows_cap_tree;
+pub mod windows_service_security;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_worker;
-pub mod snapshot;
 
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -105,10 +112,14 @@ fn validate_plan(value: &JobPlan) -> bool {
     value.project_id.starts_with("ide-")
         && value.project_id.len() == 36
         && hex_sha(&value.project_id[4..], 32)
-        && matches!(
+        && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_tests" | "lu_ide_host_tests"
-        )
+        ) || (cfg!(feature = "lsp-transport")
+            && matches!(
+                value.recipe_id.as_str(),
+                "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
+            )))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
         && hex_sha(&value.manifest_sha256, 64)
@@ -121,7 +132,15 @@ fn validate_plan(value: &JobPlan) -> bool {
         && value.process_limit <= MAX_PIDS
         && value.log_limit_bytes > 0
         && value.log_limit_bytes <= MAX_LOG_BYTES
-        && value.effect_class == "test_build_isolated"
+        && if value.recipe_id.starts_with("lsp_") {
+            cfg!(feature = "lsp-transport")
+                && value.effect_class == "language_analysis_isolated"
+                && value.runtime_limit_ms <= 5 * 60_000
+                && value.process_limit <= 4
+                && value.log_limit_bytes <= 64 * 1024
+        } else {
+            value.effect_class == "test_build_isolated"
+        }
 }
 fn fingerprint(value: &JobPlan) -> Result<String, SupervisorError> {
     let bytes = serde_json::to_vec(value).map_err(|_| SupervisorError::InvalidPlan)?;
@@ -150,6 +169,7 @@ pub enum JobPhase {
     Authorized,
     AdmissionPending,
     Running,
+    ReleasePending,
     CancelRequested,
     Cancelled,
     Completed,
@@ -170,6 +190,10 @@ fn valid_change(previous: Option<JobPhase>, next: JobPhase) -> bool {
             | (Some(JobPhase::AdmissionPending), JobPhase::Denied)
             | (Some(JobPhase::AdmissionPending), JobPhase::RecoveryRequired)
             | (Some(JobPhase::Running), JobPhase::CancelRequested)
+            | (Some(JobPhase::Running), JobPhase::ReleasePending)
+            | (Some(JobPhase::ReleasePending), JobPhase::Completed)
+            | (Some(JobPhase::ReleasePending), JobPhase::Failed)
+            | (Some(JobPhase::ReleasePending), JobPhase::RecoveryRequired)
             | (Some(JobPhase::Running), JobPhase::Completed)
             | (Some(JobPhase::Running), JobPhase::Failed)
             | (Some(JobPhase::Running), JobPhase::RecoveryRequired)
@@ -308,6 +332,7 @@ impl Store {
                 job.phase,
                 JobPhase::AdmissionPending
                     | JobPhase::Running
+                    | JobPhase::ReleasePending
                     | JobPhase::CancelRequested
                     | JobPhase::RecoveryRequired
                     | JobPhase::Uncertain
@@ -644,10 +669,17 @@ impl Supervisor {
             .state
             .lock()
             .map_err(|_| SupervisorError::JournalUnavailable)?;
-        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+            JobPhase::AdmissionPending
+                | JobPhase::Running
+                | JobPhase::ReleasePending
+                | JobPhase::CancelRequested
         ) {
             return Err(SupervisorError::InvalidTransition);
         }
@@ -667,6 +699,36 @@ impl Supervisor {
         result
     }
 
+    /// E2 protected two-phase session termination: after the native kernel
+    /// Job is empty, fsync intent to release the independent SCM service
+    /// BEFORE relinquishing its retained Job handle. A host crash or failed
+    /// service ACK at this phase remains quarantined on journal replay.
+    fn native_mark_release_pending(&self, job_id: &str) -> Result<(), SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
+        if job.phase != JobPhase::Running {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::ReleasePending,
+            "native_tree_empty_release_pending",
+            "independent_service_ack_required",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::ReleasePending;
+        Ok(())
+    }
+
     /// Final outcome requires the OS process tree to have fully exited
     /// and the output broker to have verified bounded captured artifacts.
     fn native_finish(
@@ -676,9 +738,7 @@ impl Supervisor {
         tree_reaped: bool,
         outputs_bounded: bool,
     ) -> Result<JobSummary, SupervisorError> {
-        self.native_finish_with_output(
-            job_id, succeeded, tree_reaped, outputs_bounded, None
-        )
+        self.native_finish_with_output(job_id, succeeded, tree_reaped, outputs_bounded, None)
     }
 
     /// The native broker may bind a published, immutable output seal to the
@@ -706,7 +766,7 @@ impl Supervisor {
             .get(job_id)
             .ok_or(SupervisorError::NoSuchJob)?
             .clone();
-        if job.phase != JobPhase::Running {
+        if !matches!(job.phase, JobPhase::Running | JobPhase::ReleasePending) {
             return Err(SupervisorError::InvalidTransition);
         }
         if !tree_reaped || !outputs_bounded {
@@ -847,28 +907,39 @@ impl Supervisor {
         })
     }
 
-
     /// D7D protected recovery phase 1: write durable RecoveryRequired BEFORE
     /// asking the service to relinquish its independently-held Job handle.
     /// This never clears quarantine and never authorizes further execution.
     #[cfg(all(windows, feature = "protected-recovery-service"))]
-    fn mark_protected_recovery_pending(&self, job_id: &str)
-        -> Result<(), SupervisorError> {
-        let mut state = self.state.lock()
+    fn mark_protected_recovery_pending(&self, job_id: &str) -> Result<(), SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
             .map_err(|_| SupervisorError::JournalUnavailable)?;
         if !state.quarantine.contains(job_id) {
             return Err(SupervisorError::Quarantined);
         }
-        let job = state.jobs.get(job_id)
-            .ok_or(SupervisorError::NoSuchJob)?.clone();
-        if job.phase == JobPhase::RecoveryRequired { return Ok(()); }
-        if !matches!(job.phase, JobPhase::AdmissionPending | JobPhase::Running |
-            JobPhase::CancelRequested) {
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
+        if job.phase == JobPhase::RecoveryRequired {
+            return Ok(());
+        }
+        if !matches!(
+            job.phase,
+            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+        ) {
             return Err(SupervisorError::InvalidTransition);
         }
         self.append(
-            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            JobPhase::RecoveryRequired, "protected_recovery_preflight",
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::RecoveryRequired,
+            "protected_recovery_preflight",
             "original_kernel_job_open_and_empty_but_service_ack_pending",
         )?;
         state.jobs.get_mut(job_id).unwrap().phase = JobPhase::RecoveryRequired;
@@ -1187,19 +1258,36 @@ mod tests {
         let p = path();
         let sup = Supervisor::open(p.clone()).unwrap();
         let task = sup.prepare(plan()).unwrap();
-        sup.record_human_approval(
-            &task.job_id, &task.plan_sha256, &"b".repeat(40), true,
-        ).unwrap();
+        sup.record_human_approval(&task.job_id, &task.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&sup, &task);
-        sup.mark_protected_recovery_pending(&task.job_id).unwrap();
-        assert_eq!(sup.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
-        assert!(sup.inspect().unwrap()[0].requires_reconciliation);
-        assert_eq!(sup.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        // Only interrupted, journal-reopened jobs may enter protected
+        // recovery. A live job cannot forge a service cleanup receipt.
         drop(sup);
+        let interrupted = Supervisor::open(p.clone()).unwrap();
+        interrupted
+            .mark_protected_recovery_pending(&task.job_id)
+            .unwrap();
+        assert_eq!(
+            interrupted.inspect().unwrap()[0].phase,
+            JobPhase::RecoveryRequired
+        );
+        assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(
+            interrupted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        drop(interrupted);
         let restarted = Supervisor::open(p.clone()).unwrap();
-        assert_eq!(restarted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert_eq!(
+            restarted.inspect().unwrap()[0].phase,
+            JobPhase::RecoveryRequired
+        );
         assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
-        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            restarted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
         // Without a separately authenticated native service confirmation,
         // this fixture never reaches the terminal Cancelled phase.
         drop(restarted);
@@ -1292,21 +1380,24 @@ mod tests {
         let filename = path();
         let sup = Supervisor::open(filename.clone()).unwrap();
         let job = sup.prepare(plan()).unwrap();
-        sup.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        sup.record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&sup, &job);
         let sha = "a".repeat(64);
-        let completed = sup.native_finish_with_output(
-            &job.job_id, true, true, true, Some(&sha)
-        ).unwrap();
+        let completed = sup
+            .native_finish_with_output(&job.job_id, true, true, true, Some(&sha))
+            .unwrap();
         assert_eq!(completed.phase, JobPhase::Completed);
         let last = sup.receipt_history(&job.job_id).unwrap().pop().unwrap();
         assert_eq!(last.body.phase, JobPhase::Completed);
         assert!(last.body.evidence_code.contains(&sha));
         drop(sup);
         let reopened = Supervisor::open(filename.clone()).unwrap();
-        let last = reopened.receipt_history(&job.job_id).unwrap().pop().unwrap();
+        let last = reopened
+            .receipt_history(&job.job_id)
+            .unwrap()
+            .pop()
+            .unwrap();
         assert!(last.body.evidence_code.contains(&sha));
         drop(reopened);
         fs::remove_file(filename).unwrap();
@@ -1317,16 +1408,15 @@ mod tests {
         let filename = path();
         let sup = Supervisor::open(filename.clone()).unwrap();
         let job = sup.prepare(plan()).unwrap();
-        sup.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        sup.record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&sup, &job);
-        assert_eq!(sup.native_finish_with_output(
-            &job.job_id, true, true, true, Some("not-a-sha")
-        ).unwrap_err(), SupervisorError::InvalidPlan);
-        let _ = sup.native_finish_with_output(
-            &job.job_id, false, false, false, None
+        assert_eq!(
+            sup.native_finish_with_output(&job.job_id, true, true, true, Some("not-a-sha"))
+                .unwrap_err(),
+            SupervisorError::InvalidPlan
         );
+        let _ = sup.native_finish_with_output(&job.job_id, false, false, false, None);
         assert!(sup.inspect().unwrap()[0].requires_reconciliation);
         drop(sup);
         fs::remove_file(filename).unwrap();

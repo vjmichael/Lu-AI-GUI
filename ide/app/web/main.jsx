@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
+import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 
 const sections = [
@@ -12,6 +13,7 @@ const sections = [
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
+  { id: 'languages', title: 'Language services', glyph: '⌁' },
   { id: 'packages', title: 'Packages', glyph: '⬡', pending: true },
   { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Job requests', glyph: '▶' },
@@ -56,6 +58,20 @@ function App() {
   const [proposalDetail, setProposalDetail] = useState(null);
   const [inboxBusy, setInboxBusy] = useState(false);
   const [capabilityCatalog, setCapabilityCatalog] = useState(null);
+  const [languageServers, setLanguageServers] = useState([]);
+  const [lspSession, setLspSession] = useState(null);
+  const [lspBusy, setLspBusy] = useState(false);
+  const [lspWorker, setLspWorker] = useState({
+    ready: false, code: 'LSP_PROTECTED_WORKER_UNVERIFIED',
+    detail: 'Protected language-server admission has not been accepted.'
+  });
+  const [lspNativeDiagnostics, setLspNativeDiagnostics] = useState({});
+  const [lspCompletions, setLspCompletions] = useState(null);
+  const [lspHover, setLspHover] = useState(null);
+  const [lspJumpRequest, setLspJumpRequest] = useState(null);
+  const [lspCompletionApplyRequest, setLspCompletionApplyRequest] = useState(null);
+  const [cursorPositions, setCursorPositions] = useState({});
+
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [projectContext, setProjectContext] = useState(null);
   const [intentList, setIntentList] = useState(null);
@@ -94,6 +110,22 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  useEffect(() => {
+    // Read-only, project-independent inventory. No provider lookup executes.
+    Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
+      .then(([servers, worker]) => {
+        setLanguageServers(Array.isArray(servers) ? servers.slice(0, 16) : []);
+        setLspWorker(worker && typeof worker.ready === 'boolean' ? worker : {
+          ready: false, code: 'LSP_HOST_UNAVAILABLE',
+          detail: 'Native language-service status is not a trusted response.'
+        });
+      })
+      .catch(() => setLspWorker({
+        ready: false, code: 'LSP_HOST_UNAVAILABLE',
+        detail: 'Native language-service status could not be verified.'
+      }));
+  }, []);
+
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
 
@@ -126,14 +158,43 @@ function App() {
     setTaskStateInput('in_progress');
     setTaskNextActionInput('');
     setTaskRequiredGates(['source_review', 'exact_head_ci']);
+    // Invalidate any provider data from the previous workspace. No cross-
+    // project response may be shown or applied to the newly selected editor.
+    setLspNativeDiagnostics({});
+    setLspCompletions(null);
+    setLspHover(null);
+    setLspJumpRequest(null);
+    setLspCompletionApplyRequest(null);
   }, [activeProject?.projectId]);
 
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
+  const currentLanguageId = languageForPath(activeTab?.relativePath);
+  const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
+    !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
+    lspWorker.supportedLanguages.includes(currentLanguageId);
+  const lspProviderForTab = currentLanguageId === 'rust' ? 'rust-analyzer' :
+    currentLanguageId === 'python' ? 'Ruff' : 'clangd';
+  const lspSupportsNavigation = currentLanguageId !== 'python';
+  const lspRunningForTab = !!lspSession && !!activeTab &&
+    lspSession.projectId === activeTab.projectId &&
+    lspSession.relativePath === activeTab.relativePath;
+
+  const activeLspDiagnostics = useMemo(() => activeTab
+    ? visibleDiagnostics(activeTab, lspNativeDiagnostics[activeTab.key]) : [],
+    [activeTab, lspNativeDiagnostics]);
+  const activeLspCompletions = useMemo(() => activeTab && lspCompletions?.tabKey === activeTab.key
+    ? visibleCompletions(activeTab, lspCompletions.response) : [],
+    [activeTab, lspCompletions]);
+  const activeLspHover = useMemo(() => activeTab && lspHover?.tabKey === activeTab.key
+    ? visibleHover(activeTab, lspHover.response) : '',
+    [activeTab, lspHover]);
+
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
+  const isLanguages = section === 'languages';
   const isContinuity = section === 'continuity';
   const isJobs = section === 'tasks';
   // Advisory only: derives labels from two existing, separately observed native responses.
@@ -700,6 +761,7 @@ function App() {
           draft: edit.proposedText,
           dirty: edit.proposedText !== originals[index].text,
           generation: (previous?.generation ?? 0) + 1,
+          bufferRevision: (previous?.bufferRevision ?? 0) + 1,
         };
       });
       const stagedKeys = new Set(stagedTabs.map(tab => tab.key));
@@ -805,11 +867,136 @@ function App() {
     finally { setExplorerPending(false); }
   }
 
+  async function startLspSession() {
+    const tab = activeTab;
+    if (!tab || !lspAvailableForTab || lspSession || lspBusy) return;
+    setLspBusy(true);
+    setProblem('');
+    try {
+      const response = await invoke('ide_lsp_start_session',{request:{
+        projectId:tab.projectId,relativePath:tab.relativePath,
+        expectedRevision:tab.revision,bufferRevision:tab.bufferRevision ?? 0,
+        languageId:languageForPath(tab.relativePath),text:tab.draft,
+        kind:null,position:null,
+      }});
+      if (!matchesSource(tab,response)) {
+        await invoke('ide_lsp_stop_session');
+        throw new Error('Source changed during language-server admission');
+      }
+      setLspSession({projectId:tab.projectId,relativePath:tab.relativePath});
+      setLspNativeDiagnostics(previous=>({...previous,[tab.key]:response}));
+      setHint('Protected '+lspProviderForTab+' session started for '+tab.relativePath+'.');
+    } catch (error) {
+      setProblem('Language server was not started: '+String(error));
+    } finally {setLspBusy(false);}
+  }
+  async function stopLspSession() {
+    if (!lspSession || lspBusy) return;
+    setLspBusy(true);
+    try {
+      await invoke('ide_lsp_stop_session');
+      setHint('Language-server session stopped and native worker released.');
+    } catch(error) {
+      setProblem('Language-server cleanup must be verified: '+String(error));
+    } finally {
+      setLspSession(null);
+      setLspNativeDiagnostics({});
+      setLspCompletions(null);
+      setLspHover(null);
+      setLspBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (lspSession && (!activeTab ||
+        lspSession.projectId!==activeTab.projectId ||
+        lspSession.relativePath!==activeTab.relativePath)) {
+      void stopLspSession();
+    }
+  },[lspSession,activeTabKey,activeProject?.projectId]);
+  useEffect(() => {
+    if (!lspSession || !activeTab ||
+        lspSession.projectId!==activeTab.projectId ||
+        lspSession.relativePath!==activeTab.relativePath) return;
+    const tab = activeTab;
+    const timer=setTimeout(() => {
+      const request={
+        projectId:tab.projectId,relativePath:tab.relativePath,
+        expectedRevision:tab.revision,bufferRevision:tab.bufferRevision ?? 0,
+        languageId:languageForPath(tab.relativePath),text:tab.draft,
+        kind:null,position:null,
+      };
+      void invoke('ide_lsp_change_document',{request}).then(changed=>{
+        if (!matchesSource(tab,changed)) return;
+        return invoke('ide_lsp_read_diagnostics',{request});
+      }).then(result=>{
+        if (!result || !matchesSource(tab,result)) return;
+        setLspNativeDiagnostics(previous=>({...previous,[tab.key]:result}));
+      }).catch(error=>{
+        if (String(error).includes('LSP_STALE') ||
+            String(error).includes('LSP_BUFFER_REVISION')) return;
+        setProblem('Language service could not synchronize this draft: '+String(error));
+      });
+    },400);
+    return ()=>clearTimeout(timer);
+  },[lspSession,activeTab?.key,activeTab?.bufferRevision,activeTab?.revision]);
+
+  async function requestLspFeature(kind) {
+    const tab = activeTab;
+    if (!tab || !lspRunningForTab || !lspAvailableForTab) return;
+    if (!['completion', 'hover', 'definition', 'diagnostics'].includes(kind)) return;
+    if (kind !== 'diagnostics' && !lspSupportsNavigation) return;
+    // The native host must independently revalidate this current project,
+    // saved disk hash, exact unsaved editor buffer revision, worker scope,
+    // peer identity and user approval before forwarding an LSP message.
+    const position = cursorPositions[tab.key] || {line: 0, character: 0};
+    try {
+      const command = kind === 'diagnostics' ? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature';
+      const response = await invoke(command, {request: {
+        projectId: tab.projectId, relativePath: tab.relativePath,
+        expectedRevision: tab.revision, bufferRevision: tab.bufferRevision ?? 0,
+        languageId: languageForPath(tab.relativePath), text: tab.draft,
+        kind, position: {line:position.line, character:position.character}
+      }});
+      if (!matchesSource(tab,response)) return;
+      if (kind === 'diagnostics') {
+        setLspNativeDiagnostics(previous => ({...previous, [tab.key]: response}));
+      } else if (kind === 'completion') {
+        setLspCompletions({tabKey:tab.key,response});
+      } else if (kind === 'hover') {
+        setLspHover({tabKey:tab.key,response});
+      } else if (kind === 'definition') {
+        const target=visibleDefinition(tab,response);
+        if (target) setLspJumpRequest({...target,
+          tabIdentity:tab.key + ':' + tab.generation, nonce:Date.now()});
+      }
+    } catch (error) {
+      // No automatic external interpreter, shell, installer or unsupervised
+      // fallback. The human can keep editing normally.
+      setProblem('Language service unavailable: ' + String(error));
+    }
+  }
+
+  function applyLspCompletion(item) {
+    if (!activeTab || !lspRunningForTab ||
+        !activeLspCompletions.some(choice => choice === item)) return;
+    setLspCompletionApplyRequest({
+      tabIdentity: activeTab.key + ':' + activeTab.generation,
+      expectedDraft: activeTab.draft,
+      insertText: item.insertText,
+      replaceFrom: item.replaceFrom, replaceTo: item.replaceTo,
+      nonce: Date.now(),
+    });
+    setLspCompletions(null);
+  }
+
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
     setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
-      tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText } : tab));
+      tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText,
+        bufferRevision: (tab.bufferRevision ?? 0) + 1 } : tab));
+    setLspCompletions(null);
+    setLspHover(null);
   }
 
   async function selectEntry(entry) {
@@ -833,7 +1020,7 @@ function App() {
           key, projectId: opened.projectId,
           relativePath: opened.relativePath, revision: opened.revision,
           savedText: opened.text, draft: opened.text,
-          dirty: false, generation: 0,
+          dirty: false, generation: 0, bufferRevision: 0,
         };
         editorStates.current.set(key, createEditorState(
           opened.text, opened.relativePath,
@@ -852,6 +1039,10 @@ function App() {
     if (savingKey === key) return;
     if (selected.dirty && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
+    if (lspSession?.projectId === selected.projectId &&
+        lspSession.relativePath === selected.relativePath) {
+      void stopLspSession();
+    }
     editorStates.current.delete(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
@@ -866,6 +1057,10 @@ function App() {
     if (!tab || savingKey || reviewPending) return;
     setReview(null);
     if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
+    if (lspSession?.projectId === tab.projectId &&
+        lspSession.relativePath === tab.relativePath) {
+      await stopLspSession();
+    }
     setExplorerPending(true);
     setProblem('');
     try {
@@ -879,6 +1074,7 @@ function App() {
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
         draft: opened.text, dirty: false, generation: item.generation + 1,
+        bufferRevision: (item.bufferRevision ?? 0) + 1,
       } : item));
       setHint('Reloaded ' + tab.relativePath + ' from disk.');
     } catch (error) { setProblem(String(error)); }
@@ -904,6 +1100,10 @@ function App() {
         ...item, revision: saved.revision, savedText: content,
         dirty: item.draft !== content,
       } : item));
+      if (lspSession?.projectId === tab.projectId &&
+          lspSession.relativePath === tab.relativePath) {
+        await stopLspSession();
+      }
       setHint('Saved ' + tab.relativePath + ' to disk.');
       return true;
     } catch (error) {
@@ -1000,7 +1200,7 @@ function App() {
           disabled={item.pending || (item.id === 'explorer' && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -1015,11 +1215,12 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isJobs ? 'Review non-executable plans · No worker enabled · No grants' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
+            isLanguages ? 'Open-source LSP engines · Protected worker status · No auto-install' :
             isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
             isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
             'Choose projects without executing their code.'}</p>
@@ -1028,7 +1229,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? refreshIntents() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? refreshIntents() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -1585,6 +1786,39 @@ function App() {
                 </article>)}
             </div>}
           </section>
+        : isLanguages
+        ? <section className="workspaceContent capabilityWorkspace" aria-label="Language services">
+            <div className="sectionHeading">
+              <h2>Language server providers</h2>
+              <span>{languageServers.length} catalogued · {lspWorker?.ready ? 'Pinned binaries verified · OS admission on start' : 'Execution gated'}</span>
+            </div>
+            <p className="capabilityNotice" role="status">
+              <strong>{lspWorker?.ready ? 'Reviewed local server assets available; none auto-started.' : 'Language servers are not running.'}</strong>
+              {' '}{lspWorker?.detail || 'Worker state unavailable.'}
+              {' '}Server discovery does not grant execution or install packages.
+            </p>
+            <div className="capabilityGrid">
+              {languageServers.map(server => <article className="capabilityCard" key={server.id}>
+                <div className="capabilityHeading">
+                  <h3>{server.label}</h3><span className="capabilityEffect">{server.transport}</span>
+                </div>
+                <p>{server.languageIds?.join(', ') || 'Unknown language'}</p>
+                <dl>
+                  <dt>License</dt><dd>{server.license}</dd>
+                  <dt>Launcher hint</dt><dd><code>{server.executableBasename}</code></dd>
+                  <dt>Availability</dt><dd>{server.lifecycle === 'catalog_only'
+                    ? 'Catalogued only · Installed binary not verified' : server.lifecycle}</dd>
+                  <dt>Source</dt><dd><a href={server.upstream} target="_blank"
+                    rel="noreferrer">Publisher documentation</a></dd>
+                </dl>
+              </article>)}
+            </div>
+            <p className="capabilityNotice">
+              Installer candidates: native rust-analyzer, clangd and Ruff;
+              Node-dependent Pyright and TypeScript are separate license and dependency
+              reviews. No binary is packaged or downloaded by the current alpha.
+            </p>
+          </section>
         : !isExplorer
         ? <section aria-label="Projects" className="workspaceContent">
           <div className="sectionHeading"><h2>Registered projects</h2>
@@ -1683,6 +1917,29 @@ function App() {
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
                   </button>
+                  {lspAvailableForTab && !lspSession && <button type="button"
+                    className="ghostBtn editorToolButton" disabled={lspBusy}
+                    title={'Require native human consent, then start isolated '+lspProviderForTab}
+                    onClick={() => void startLspSession()}>
+                    {lspBusy ? 'Starting…' : 'Start '+lspProviderForTab}</button>}
+                  {lspRunningForTab && <button type="button"
+                    className="ghostBtn editorToolButton" disabled={lspBusy}
+                    onClick={() => void stopLspSession()}>
+                    {lspBusy ? 'Stopping…' : 'Stop '+lspProviderForTab}</button>}
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
+                    title={lspRunningForTab ? 'Ask protected '+lspProviderForTab+' for completions' :
+                      'Start a consented protected clangd session first'}
+                    onClick={() => void requestLspFeature('completion')}>Complete</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
+                    onClick={() => void requestLspFeature('hover')}>Hover</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
+                    onClick={() => void requestLspFeature('definition')}>Definition</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={!lspRunningForTab || lspBusy}
+                    onClick={() => void requestLspFeature('diagnostics')}>Problems</button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
@@ -1740,6 +1997,18 @@ function App() {
                 </div>}
               </div>}
               <CodeEditor
+                diagnostics={activeLspDiagnostics}
+                jumpRequest={lspJumpRequest}
+                completionApplyRequest={lspCompletionApplyRequest}
+                onCompletionApplied={(nonce, applied) => {
+                  setLspCompletionApplyRequest(previous => previous?.nonce === nonce ? null : previous);
+                  if (!applied) setProblem('Source changed before completion could be inserted.');
+                }}
+                onCursorPosition={position => setCursorPositions(previous => {
+                  const prior = previous[activeTab.key];
+                  if (prior?.line === position.line && prior?.character === position.character) return previous;
+                  return {...previous, [activeTab.key]:position};
+                })}
                 findRequest={findRequest?.tabKey === activeTab.key ? findRequest : null}
                 replaceRequest={replaceRequest?.tabKey === activeTab.key ? replaceRequest : null}
                 onReplaceApplied={(nonce, applied) => {
@@ -1753,7 +2022,39 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
-              <div className="editorInfoBar">Edits stay in memory until Save.
+              {activeLspDiagnostics.length > 0 && <section className="lspResultPanel"
+                aria-label="Language server problems">
+                <strong>Problems · {activeLspDiagnostics.length}</strong>
+                {activeLspDiagnostics.map((diagnostic, index) =>
+                  <button key={index} className="lspDiagnostic" type="button"
+                    onClick={() => setLspJumpRequest({
+                      from:diagnostic.from, to:diagnostic.to,
+                      tabIdentity:activeTab.key + ':' + activeTab.generation,
+                      nonce:Date.now()
+                    })}>
+                    <span>{diagnostic.severity === 1 ? 'Error' :
+                      diagnostic.severity === 2 ? 'Warning' : 'Info'} · {diagnostic.line}</span>
+                    <span>{diagnostic.message}</span>
+                  </button>)}
+              </section>}
+              {activeLspCompletions.length > 0 && <section className="lspResultPanel"
+                aria-label="Language server completions">
+                <strong>Suggestions</strong>
+                {activeLspCompletions.slice(0, 20).map((item, index) =>
+                  <button type="button" key={index} className="lspSuggestion"
+                    onClick={() => applyLspCompletion(item)}>
+                    <code>{item.label}</code> <span>{item.detail}</span>
+                  </button>)}
+              </section>}
+              {activeLspHover && <section className="lspResultPanel"
+                aria-label="Language server hover information">
+                <strong>Symbol information</strong>
+                <pre>{activeLspHover}</pre>
+              </section>}
+              <div className="editorInfoBar">
+                {lspRunningForTab ? 'Protected '+lspProviderForTab+' running · approved session · ' :
+                  'Language intelligence requires protected worker and native consent · '}
+                Edits stay in memory until Save.
                 External changes cause a conflict instead of silently overwriting them.
               </div>
             </> : <div className="sourcePreviewEmpty">

@@ -19,6 +19,7 @@ $service=(Resolve-Path -LiteralPath $ServiceExecutable).Path
 $root=Join-Path $env:RUNNER_TEMP ('d7d-service-loss-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
 $marker=Join-Path $root 'owner.marker'
+$ownerTrace=Join-Path $root 'owner-stages.stderr'
 $watchdog=[IO.Path]::ChangeExtension($marker,'.watchdog')
 Add-Type -TypeDefinition @'
 using System;
@@ -38,10 +39,18 @@ $owner=$null
 $child=[IntPtr]::Zero
 try {
   $args=@('--owner-watch',('"' + $service + '"'),$ExpectedServiceSha256,('"' + $marker + '"'))
-  $owner=Start-Process -FilePath $fixture -ArgumentList $args -PassThru -WindowStyle Hidden
+  $owner=Start-Process -FilePath $fixture -ArgumentList $args -PassThru -WindowStyle Hidden -RedirectStandardError $ownerTrace
   $deadline=[DateTime]::UtcNow.AddSeconds(25)
   while (!(Test-Path -LiteralPath $marker) -and [DateTime]::UtcNow -lt $deadline) {
-    if ($owner.HasExited) { throw "DENIED: admission failed before service crash: $($owner.ExitCode)" }
+    if ($owner.HasExited) {
+      # Print only whitelisted native stage IDs, not raw stderr.
+      foreach ($stage in @(Get-Content -LiteralPath $ownerTrace -ErrorAction SilentlyContinue)) {
+        if ($stage -cmatch '^PROTECTED_SERVICE_ADMISSION_STAGE=[a-z0-9_]{1,80}$') {
+          Write-Host $stage
+        }
+      }
+      throw "DENIED: admission failed before service crash: $($owner.ExitCode)"
+    }
     Start-Sleep -Milliseconds 50
   }
   if (!(Test-Path -LiteralPath $marker)) { throw 'DENIED: owner marker absent' }
@@ -103,3 +112,8 @@ try {
     Stop-Process -Id $owner.Id -Force -ErrorAction SilentlyContinue
   }
 }
+# The fixture itself completed all positive OS checks. Any earlier
+# deliberately denied --recover child exited nonzero by design; prevent
+# that expected negative probe from escaping as this script's final result.
+# A throw before this point still fails the workflow and cannot be masked.
+$global:LASTEXITCODE=0

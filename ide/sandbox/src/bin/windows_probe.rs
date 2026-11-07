@@ -358,8 +358,7 @@ mod windows {
     fn external_crash_fixture() -> io::Result<()> {
         let owner = std::process::id();
         let descendant_marker = marker_path(owner);
-        let witness_marker =
-            std::env::temp_dir().join(format!("lu-ide-d7b-crash-{owner}.txt"));
+        let witness_marker = std::env::temp_dir().join(format!("lu-ide-d7b-crash-{owner}.txt"));
         let _ = std::fs::remove_file(&descendant_marker);
         let _ = std::fs::remove_file(&witness_marker);
         let tree = Contained::launch(FixedMode::SpawnGrandchild {
@@ -386,16 +385,22 @@ mod windows {
         // The observer is required to terminate this process externally.
         // The owner never calls TerminateJobObject in this scenario.
         thread::sleep(Duration::from_secs(120));
-        Err(io::Error::other("independent crash observer did not terminate owner"))
+        Err(io::Error::other(
+            "independent crash observer did not terminate owner",
+        ))
     }
 
     pub fn main_impl() -> io::Result<()> {
         let args: Vec<String> = std::env::args().skip(1).collect();
-        if child_mode(&args)? {
-            return Ok(());
-        }
+        // This fixed parent-only hostile mode is not a child mode. Dispatch
+        // it before rejecting unknown child arguments; the independent
+        // PowerShell observer must see two live descendant handles before
+        // killing this owner, not a false early-exit failure.
         if args.len() == 1 && args[0] == "--fixture-external-crash" {
             return external_crash_fixture();
+        }
+        if child_mode(&args)? {
+            return Ok(());
         }
         if !args.is_empty() {
             return Err(io::Error::other("no caller-selected actions supported"));

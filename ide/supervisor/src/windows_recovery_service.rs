@@ -16,28 +16,43 @@ use std::{
     os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     ptr,
-    sync::{Arc, Mutex, OnceLock, atomic::{AtomicU8, Ordering}},
+    sync::{
+        atomic::{AtomicU32, AtomicU8, AtomicUsize, Ordering},
+        Arc, Mutex, OnceLock,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, HANDLE, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
-                 WAIT_OBJECT_0, WAIT_TIMEOUT},
+    Foundation::{
+        CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE,
+        WAIT_OBJECT_0, WAIT_TIMEOUT,
+    },
     Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
     System::{
-        JobObjects::{OpenJobObjectW, QueryInformationJobObject, TerminateJobObject,
-            JobObjectBasicAccountingInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION},
-        Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PeekNamedPipe,
-            PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
-            PIPE_REJECT_REMOTE_CLIENTS},
-        Services::{RegisterServiceCtrlHandlerExW, SetServiceStatus,
-            StartServiceCtrlDispatcherW, SERVICE_RUNNING, SERVICE_START_PENDING,
-            SERVICE_STOPPED, SERVICE_STATUS, SERVICE_STATUS_HANDLE,
-            SERVICE_TABLE_ENTRYW, SERVICE_WIN32_OWN_PROCESS},
+        JobObjects::{
+            JobObjectBasicAccountingInformation, OpenJobObjectW, QueryInformationJobObject,
+            TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        },
+        Pipes::{
+            ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PeekNamedPipe,
+            PIPE_READMODE_MESSAGE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_MESSAGE, PIPE_WAIT,
+        },
+        Services::{
+            RegisterServiceCtrlHandlerExW, SetServiceStatus, StartServiceCtrlDispatcherW,
+            SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_STATUS, SERVICE_STATUS_HANDLE,
+            SERVICE_STOPPED, SERVICE_TABLE_ENTRYW, SERVICE_WIN32_OWN_PROCESS,
+        },
         Threading::WaitForSingleObject,
     },
 };
 const NAME: &str = "LuIdeRecoveryBroker";
+// Non-sensitive SCM exit classification, not an authentication claim.
+// 10=restricted LocalService identity, 20=exact installed config/ACL,
+// 30=protected pipe ACL, 40=SERVICE_RUNNING, 50=named pipe created.
+// It is reported only on service failure, to diagnose genuine OS failures.
+static STARTUP_STAGE: AtomicU32 = AtomicU32::new(0);
+const SERVICE_SPECIFIC_ERROR: u32 = 1066;
 const JOB_QUERY: u32 = 0x0004;
 const JOB_TERMINATE: u32 = 0x0008;
 const SYNCHRONIZE: u32 = 0x00100000;
@@ -45,19 +60,36 @@ const PIPE_FIRST_INSTANCE: u32 = 0x00080000;
 const MAX_MESSAGE: usize = 2048;
 const MAX_EVIDENCE: u64 = 128 * 1024;
 const HOLD: Duration = Duration::from_secs(15 * 60);
+// Bounded retry of an already-fsynced recovery ACK if a legitimate restarted
+// host lost the first pipe response. Keep the original named Job handle live.
+const RECOVERY_ACK_RETRY: Duration = Duration::from_secs(60);
 const TICK: Duration = Duration::from_millis(100);
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
+// Bound authenticated and unauthenticated service connection threads.
+// Invalid/idle IPC clients cannot exhaust the process with unbounded
+// threads or force a 17th CreateNamedPipe failure to terminate the service.
+const MAX_ACTIVE_PIPE_SESSIONS: usize = 12;
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
 
 struct Handle(HANDLE);
 // Transferred exactly once to a connection worker; never shared concurrently.
 unsafe impl Send for Handle {}
 impl Handle {
     fn new(raw: HANDLE) -> Result<Self, SupervisorError> {
-        if raw.is_null() || raw == INVALID_HANDLE_VALUE { Err(denied()) } else { Ok(Self(raw)) }
+        if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+            Err(denied())
+        } else {
+            Ok(Self(raw))
+        }
     }
 }
 impl Drop for Handle {
-    fn drop(&mut self) { unsafe { CloseHandle(self.0); } }
+    fn drop(&mut self) {
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -68,6 +100,7 @@ struct InstalledConfig {
     expected_service_sha256: String,
     expected_host_sha256: String,
     expected_host_executable: PathBuf,
+    approved_host_user_sid: String,
     evidence_root: PathBuf,
     endpoint: String,
     acceptance_unsigned: bool,
@@ -76,25 +109,39 @@ impl InstalledConfig {
     fn read() -> Result<Self, SupervisorError> {
         let root = PathBuf::from(std::env::var_os("ProgramData").ok_or_else(denied)?)
             .join("LuIDERecoveryBroker");
-        if !root.is_absolute() || fs::symlink_metadata(&root).map_err(|_| denied())?
-            .file_attributes() & 0x400 != 0 { return Err(denied()); }
+        if !root.is_absolute()
+            || fs::symlink_metadata(&root)
+                .map_err(|_| denied())?
+                .file_attributes()
+                & 0x400
+                != 0
+        {
+            return Err(denied());
+        }
         let path = root.join("service.json");
         let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
         if !meta.is_file() || meta.file_attributes() & 0x400 != 0 || meta.len() > 8192 {
             return Err(denied());
         }
         let mut bytes = Vec::new();
-        File::open(&path).map_err(|_| denied())?.take(8193)
-            .read_to_end(&mut bytes).map_err(|_| denied())?;
-        if bytes.len() > 8192 { return Err(denied()); }
+        File::open(&path)
+            .map_err(|_| denied())?
+            .take(8193)
+            .read_to_end(&mut bytes)
+            .map_err(|_| denied())?;
+        if bytes.len() > 8192 {
+            return Err(denied());
+        }
         let config: Self = serde_json::from_slice(&bytes).map_err(|_| denied())?;
-        if config.schema != "lu.ide.windows.recovery-service.v1"
+        if config.schema != "lu.ide.windows.recovery-service.v2"
             || config.service_name != NAME
             || config.endpoint != security::SERVICE_ENDPOINT
             || !config.evidence_root.is_absolute()
             || fs::canonicalize(&config.evidence_root).map_err(|_| denied())?
                 != fs::canonicalize(&root).map_err(|_| denied())?
-            || !config.expected_host_executable.is_absolute() {
+            || !config.expected_host_executable.is_absolute()
+            || security::validate_approved_host_user_sid(&config.approved_host_user_sid).is_err()
+        {
             return Err(denied());
         }
         // acceptance_unsigned is a deployment audit label, never a runtime bypass.
@@ -104,7 +151,8 @@ impl InstalledConfig {
             &config.expected_service_sha256,
         )?;
         security::hash_executable(
-            &config.expected_host_executable, &config.expected_host_sha256,
+            &config.expected_host_executable,
+            &config.expected_host_sha256,
         )?;
         security::verify_private_evidence_root(&root)?;
         Ok(config)
@@ -124,7 +172,11 @@ struct Admission {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Response<'a> { schema: &'static str, state: &'a str, nonce: &'a str }
+struct Response<'a> {
+    schema: &'static str,
+    state: &'a str,
+    nonce: &'a str,
+}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Evidence<'a> {
@@ -141,7 +193,10 @@ struct Evidence<'a> {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EvidenceLine<'a> { evidence: Evidence<'a>, entry_sha256: String }
+struct EvidenceLine<'a> {
+    evidence: Evidence<'a>,
+    entry_sha256: String,
+}
 struct Witness {
     file: File,
     sequence: u64,
@@ -154,38 +209,71 @@ struct Witness {
 }
 impl Witness {
     fn new(root: &Path, request: &Admission) -> Result<Self, SupervisorError> {
-        let path = root.join(format!("{}-{}.protected.jsonl",
-            request.job_id, request.plan_sha256));
-        let file = OpenOptions::new().write(true).create_new(true)
-            .open(path).map_err(|_| denied())?;
+        let path = root.join(format!(
+            "{}-{}.protected.jsonl",
+            request.job_id, request.plan_sha256
+        ));
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|_| denied())?;
         file.sync_all().map_err(|_| denied())?;
         Ok(Self {
-            file, sequence: 0, previous: "0".repeat(64),
-            job_id: request.job_id.clone(), plan_sha256: request.plan_sha256.clone(),
-            pid: request.owner_pid, creation: request.owner_creation,
+            file,
+            sequence: 0,
+            previous: "0".repeat(64),
+            job_id: request.job_id.clone(),
+            plan_sha256: request.plan_sha256.clone(),
+            pid: request.owner_pid,
+            creation: request.owner_creation,
             nonce_sha256: format!("{:x}", Sha256::digest(request.nonce.as_bytes())),
         })
     }
     fn record(&mut self, state: &str) -> Result<(), SupervisorError> {
-        if !matches!(state, "ready" | "owner_exited" | "kill_requested"
-            | "tree_empty" | "kill_unverified" | "released_empty" | "hold_expired"
-            | "pipe_lost" | "recovered_release") {
+        if !matches!(
+            state,
+            "ready"
+                | "owner_exited"
+                | "kill_requested"
+                | "tree_empty"
+                | "kill_unverified"
+                | "released_empty"
+                | "hold_expired"
+                | "pipe_lost"
+                | "recovered_release"
+                | "nul_intent"
+                | "nul_granted"
+                | "nul_revoke_intent"
+                | "nul_revoked"
+        ) {
             return Err(denied());
         }
-        let when = SystemTime::now().duration_since(UNIX_EPOCH)
-            .map_err(|_| denied())?.as_millis();
+        let when = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| denied())?
+            .as_millis();
         let body = Evidence {
-            schema: "lu.ide.d7d.protected-service.v1", sequence: self.sequence,
-            previous_sha256: &self.previous, job_id: &self.job_id,
-            plan_sha256: &self.plan_sha256, owner_pid: self.pid,
-            owner_creation: self.creation, nonce_sha256: &self.nonce_sha256,
-            state, unix_ms: when,
+            schema: "lu.ide.d7d.protected-service.v1",
+            sequence: self.sequence,
+            previous_sha256: &self.previous,
+            job_id: &self.job_id,
+            plan_sha256: &self.plan_sha256,
+            owner_pid: self.pid,
+            owner_creation: self.creation,
+            nonce_sha256: &self.nonce_sha256,
+            state,
+            unix_ms: when,
         };
         let body_bytes = serde_json::to_vec(&body).map_err(|_| denied())?;
         let entry_sha256 = format!("{:x}", Sha256::digest(&body_bytes));
-        let line = serde_json::to_vec(&EvidenceLine { evidence: body, entry_sha256: entry_sha256.clone() })
-            .map_err(|_| denied())?;
-        if self.file.metadata().map_err(|_| denied())?.len() + line.len() as u64 + 1 > MAX_EVIDENCE {
+        let line = serde_json::to_vec(&EvidenceLine {
+            evidence: body,
+            entry_sha256: entry_sha256.clone(),
+        })
+        .map_err(|_| denied())?;
+        if self.file.metadata().map_err(|_| denied())?.len() + line.len() as u64 + 1 > MAX_EVIDENCE
+        {
             return Err(denied());
         }
         self.file.write_all(&line).map_err(|_| denied())?;
@@ -196,9 +284,122 @@ impl Witness {
         Ok(())
     }
 }
+
+// A separate, OS-protected *durable intent* survives unexpected service
+// termination while a job SID ACE is active. Never infer authority from this
+// file: after restart the service only revokes the exact derived package SID;
+// missing original kernel Job evidence remains quarantined.
+fn null_intent_path(root: &Path, job_id: &str, plan: &str) -> Result<PathBuf, SupervisorError> {
+    if !valid_id(job_id) || !valid_sha(plan) {
+        return Err(denied());
+    }
+    Ok(root.join(format!("{job_id}-{plan}.nul-intent")))
+}
+fn persist_null_intent(root: &Path, request: &Admission) -> Result<(), SupervisorError> {
+    security::verify_private_evidence_root(root)?;
+    let path = null_intent_path(root, &request.job_id, &request.plan_sha256)?;
+    let mut intent = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| denied())?;
+    intent
+        .write_all(format!("{}\n{}\n", request.job_id, request.plan_sha256).as_bytes())
+        .map_err(|_| denied())?;
+    intent.sync_all().map_err(|_| denied())
+}
+fn clear_null_intent(root: &Path, request: &Admission) -> Result<(), SupervisorError> {
+    fs::remove_file(null_intent_path(
+        root,
+        &request.job_id,
+        &request.plan_sha256,
+    )?)
+    .map_err(|_| denied())
+}
+fn parse_null_intent_name(name: &str) -> Result<(String, String), SupervisorError> {
+    let stem = name.strip_suffix(".nul-intent").ok_or_else(denied)?;
+    if stem.len() != 101 || stem.as_bytes().get(36) != Some(&b'-') {
+        return Err(denied());
+    }
+    let (id, rest) = stem.split_at(36);
+    let plan = &rest[1..];
+    if !valid_id(id) || !valid_sha(plan) {
+        return Err(denied());
+    }
+    Ok((id.to_string(), plan.to_string()))
+}
+/// Called before SCM announces running. Only files in the protected service
+/// root can trigger revocation, and each target SID is OS-derived from the
+/// fixed accepted job naming scheme. Never trust these files for execution.
+fn reconcile_pending_null_intents(root: &Path) -> Result<(), SupervisorError> {
+    security::verify_private_evidence_root(root)?;
+    for entry in fs::read_dir(root).map_err(|_| denied())? {
+        let entry = entry.map_err(|_| denied())?;
+        let name = entry.file_name().into_string().map_err(|_| denied())?;
+        if !name.ends_with(".nul-intent") {
+            continue;
+        }
+        let (id, plan) = parse_null_intent_name(&name)?;
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|_| denied())?;
+        if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 || metadata.len() > 120 {
+            return Err(denied());
+        }
+        let body = fs::read(entry.path()).map_err(|_| denied())?;
+        if body != format!("{id}\n{plan}\n").as_bytes() {
+            return Err(denied());
+        }
+        crate::windows_null_device::reconcile_service_null_intent(&id)?;
+        // If revocation succeeded but the service crashes before deleting,
+        // the next boot's check is idempotent (SID ACE absent = success).
+        fs::remove_file(entry.path()).map_err(|_| denied())?;
+    }
+    Ok(())
+}
+fn revoke_null_before_ack(
+    lease: &mut Option<crate::windows_null_device::ServiceNullLease>,
+    witness: &mut Witness,
+    config: &InstalledConfig,
+    request: &Admission,
+) -> Result<(), SupervisorError> {
+    if let Some(active) = lease.as_mut() {
+        witness.record("nul_revoke_intent")?;
+        active.finish()?;
+        witness.record("nul_revoked")?;
+        clear_null_intent(&config.evidence_root, request)?;
+        *lease = None;
+    }
+    Ok(())
+}
+
+fn terminate_and_hold_after_denial(
+    owner: HANDLE,
+    job: HANDLE,
+    witness: &mut Witness,
+    active: &Active,
+    nul: &mut Option<crate::windows_null_device::ServiceNullLease>,
+    config: &InstalledConfig,
+    request: &Admission,
+    owner_already_exited: bool,
+) -> Result<(), SupervisorError> {
+    // Preserve kill-intent in the protected journal before changing Job
+    // state. Every successful cleanup then verifies zero native processes,
+    // revokes the exact package SID and enters the recovery hold.
+    witness.record("kill_requested")?;
+    let killed = kill_and_verify(job);
+    witness.record(if killed {
+        "tree_empty"
+    } else {
+        "kill_unverified"
+    })?;
+    if !killed {
+        return Err(denied());
+    }
+    revoke_null_before_ack(nul, witness, config, request)?;
+    hold_for_recovery(owner, job, witness, active, owner_already_exited)
+}
+
 fn valid_id(id: &str) -> bool {
-    id.len() == 36 && id.starts_with("job-")
-        && id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+    id.len() == 36 && id.starts_with("job-") && id[4..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 fn valid_sha(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
@@ -206,9 +407,12 @@ fn valid_sha(value: &str) -> bool {
 fn validate_request(r: &Admission) -> bool {
     r.schema == "lu.ide.d7d.admission.v1"
         && matches!(r.operation.as_str(), "admit" | "recover")
-        && valid_id(&r.job_id) && valid_sha(&r.plan_sha256)
-        && r.owner_pid != 0 && r.owner_creation != 0
-        && r.nonce.len() == 48 && r.nonce.bytes().all(|b| b.is_ascii_hexdigit())
+        && valid_id(&r.job_id)
+        && valid_sha(&r.plan_sha256)
+        && r.owner_pid != 0
+        && r.owner_creation != 0
+        && r.nonce.len() == 48
+        && r.nonce.bytes().all(|b| b.is_ascii_hexdigit())
 }
 fn job_name(job_id: &str, hash: &str) -> Vec<u16> {
     security::ws(&format!("Global\\LuIdeD7-{job_id}-{}", &hash[..16]))
@@ -216,20 +420,30 @@ fn job_name(job_id: &str, hash: &str) -> Vec<u16> {
 fn job_empty(job: HANDLE) -> Result<bool, SupervisorError> {
     let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
     let mut returned = 0u32;
-    if unsafe { QueryInformationJobObject(
-        job, JobObjectBasicAccountingInformation,
-        (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-        size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32, &mut returned,
-    ) } == 0 || returned != size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32 {
+    if unsafe {
+        QueryInformationJobObject(
+            job,
+            JobObjectBasicAccountingInformation,
+            (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            &mut returned,
+        )
+    } == 0
+        || returned != size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32
+    {
         return Err(denied());
     }
     Ok(accounting.ActiveProcesses == 0)
 }
 fn kill_and_verify(job: HANDLE) -> bool {
-    if unsafe { TerminateJobObject(job, 1) } == 0 { return false; }
+    if unsafe { TerminateJobObject(job, 1) } == 0 {
+        return false;
+    }
     let began = Instant::now();
     while began.elapsed() < Duration::from_secs(8) {
-        if matches!(job_empty(job), Ok(true)) { return true; }
+        if matches!(job_empty(job), Ok(true)) {
+            return true;
+        }
         thread::sleep(TICK);
     }
     false
@@ -241,17 +455,37 @@ fn read_message(pipe: HANDLE) -> Result<Vec<u8>, SupervisorError> {
     let began = Instant::now();
     while began.elapsed() < Duration::from_secs(8) {
         let mut available = 0u32;
-        if unsafe { PeekNamedPipe(pipe, ptr::null_mut(), 0,
-            ptr::null_mut(), &mut available, ptr::null_mut()) } == 0 {
+        if unsafe {
+            PeekNamedPipe(
+                pipe,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                &mut available,
+                ptr::null_mut(),
+            )
+        } == 0
+        {
             return Err(denied());
         }
         if available > 0 {
-            if available as usize >= MAX_MESSAGE { return Err(denied()); }
+            if available as usize >= MAX_MESSAGE {
+                return Err(denied());
+            }
             let mut bytes = [0u8; MAX_MESSAGE];
             let mut size = 0u32;
-            if unsafe { ReadFile(pipe, bytes.as_mut_ptr(), MAX_MESSAGE as u32,
-                &mut size, ptr::null_mut()) } == 0 || size == 0
-                || size as usize >= MAX_MESSAGE {
+            if unsafe {
+                ReadFile(
+                    pipe,
+                    bytes.as_mut_ptr(),
+                    MAX_MESSAGE as u32,
+                    &mut size,
+                    ptr::null_mut(),
+                )
+            } == 0
+                || size == 0
+                || size as usize >= MAX_MESSAGE
+            {
                 return Err(denied());
             }
             return Ok(bytes[..size as usize].to_vec());
@@ -262,16 +496,30 @@ fn read_message(pipe: HANDLE) -> Result<Vec<u8>, SupervisorError> {
 }
 fn send(pipe: HANDLE, nonce: &str, state: &str) -> Result<(), SupervisorError> {
     let bytes = serde_json::to_vec(&Response {
-        schema: "lu.ide.d7d.response.v1", state, nonce,
-    }).map_err(|_| denied())?;
+        schema: "lu.ide.d7d.response.v1",
+        state,
+        nonce,
+    })
+    .map_err(|_| denied())?;
     let mut written = 0u32;
-    if unsafe { WriteFile(pipe, bytes.as_ptr(), bytes.len() as u32,
-        &mut written, ptr::null_mut()) } == 0 || written as usize != bytes.len() {
+    if unsafe {
+        WriteFile(
+            pipe,
+            bytes.as_ptr(),
+            bytes.len() as u32,
+            &mut written,
+            ptr::null_mut(),
+        )
+    } == 0
+        || written as usize != bytes.len()
+    {
         return Err(denied());
     }
     // Without flushing, the service could DisconnectNamedPipe immediately
     // after writing and discard an unread READY/recovery acknowledgement.
-    if unsafe { FlushFileBuffers(pipe) } == 0 { return Err(denied()); }
+    if unsafe { FlushFileBuffers(pipe) } == 0 {
+        return Err(denied());
+    }
     Ok(())
 }
 
@@ -284,7 +532,9 @@ static ACTIVE: OnceLock<Mutex<HashMap<String, Arc<AtomicU8>>>> = OnceLock::new()
 fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicU8>>> {
     ACTIVE.get_or_init(|| Mutex::new(HashMap::new()))
 }
-fn key(id: &str, hash: &str) -> String { format!("{id}-{hash}") }
+fn key(id: &str, hash: &str) -> String {
+    format!("{id}-{hash}")
+}
 struct Active {
     key: String,
     state: Arc<AtomicU8>,
@@ -292,7 +542,9 @@ struct Active {
 impl Active {
     fn admit(key: String) -> Result<Self, SupervisorError> {
         let mut entries = registry().lock().map_err(|_| denied())?;
-        if entries.contains_key(&key) { return Err(denied()); }
+        if entries.contains_key(&key) {
+            return Err(denied());
+        }
         let state = Arc::new(AtomicU8::new(0));
         entries.insert(key.clone(), Arc::clone(&state));
         Ok(Self { key, state })
@@ -306,7 +558,10 @@ impl Drop for Active {
     }
 }
 fn hold_for_recovery(
-    owner: HANDLE, job: HANDLE, witness: &mut Witness, active: &Active,
+    owner: HANDLE,
+    job: HANDLE,
+    witness: &mut Witness,
+    active: &Active,
     owner_already_exited: bool,
 ) -> Result<(), SupervisorError> {
     if !owner_already_exited {
@@ -326,15 +581,30 @@ fn hold_for_recovery(
             return Err(denied());
         }
     }
-    if !matches!(job_empty(job), Ok(true)) { return Err(denied()); }
+    if !matches!(job_empty(job), Ok(true)) {
+        return Err(denied());
+    }
     active.state.store(1, Ordering::Release);
     let began = Instant::now();
     while began.elapsed() < HOLD {
         if active.state.load(Ordering::Acquire) == 2 {
-            if !matches!(job_empty(job), Ok(true)) { return Err(denied()); }
+            if !matches!(job_empty(job), Ok(true)) {
+                return Err(denied());
+            }
             // Once this is fsynced, a restarted host can accept the ACK.
             witness.record("recovered_release")?;
             active.state.store(3, Ordering::Release);
+            // Retain the original kernel Job briefly, so a lost pipe ACK
+            // can be retried by the same installer-approved binary/TokenUser.
+            // A retry never trusts the JSON witness alone: the service
+            // independently reopens and verifies this still-live Job.
+            let retry_begin = Instant::now();
+            while retry_begin.elapsed() < RECOVERY_ACK_RETRY {
+                if !matches!(job_empty(job), Ok(true)) {
+                    return Err(denied());
+                }
+                thread::sleep(TICK);
+            }
             return Ok(());
         }
         thread::sleep(TICK);
@@ -342,21 +612,48 @@ fn hold_for_recovery(
     witness.record("hold_expired")?;
     Ok(())
 }
+fn recovery_state_allows_attempt(state: u8) -> bool {
+    // A recovery request may start only after tree_empty (1), or retry the
+    // already-fsynced protected reply (3). No execution or pending fsync.
+    matches!(state, 1 | 3)
+}
 fn recover(
-    pipe: HANDLE, request: &Admission, config: &InstalledConfig,
+    pipe: HANDLE,
+    request: &Admission,
+    config: &InstalledConfig,
 ) -> Result<(), SupervisorError> {
-    let active = registry().lock().map_err(|_| denied())?
+    let active = registry()
+        .lock()
+        .map_err(|_| denied())?
         .get(&key(&request.job_id, &request.plan_sha256))
-        .cloned().ok_or_else(denied)?;
-    if active.load(Ordering::Acquire) != 1 { return Err(denied()); }
+        .cloned()
+        .ok_or_else(denied)?;
+    let state = active.load(Ordering::Acquire);
+    if !recovery_state_allows_attempt(state) {
+        // 0=not reaped, 2=another request still waiting for fsync.
+        return Err(denied());
+    }
     // A recovery grant is never file-only evidence. Service itself reopens
     // the exact original named Job, and independently checks zero processes.
-    let job = Handle::new(unsafe { OpenJobObjectW(
-        JOB_QUERY, 0, job_name(&request.job_id, &request.plan_sha256).as_ptr(),
-    ) })?;
-    if !matches!(job_empty(job.0), Ok(true)) { return Err(denied()); }
+    let job = Handle::new(unsafe {
+        OpenJobObjectW(
+            JOB_QUERY,
+            0,
+            job_name(&request.job_id, &request.plan_sha256).as_ptr(),
+        )
+    })?;
+    if !matches!(job_empty(job.0), Ok(true)) {
+        return Err(denied());
+    }
     security::verify_private_evidence_root(&config.evidence_root)?;
-    active.compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
+    if state == 3 {
+        // Only the original holder sets 3, AFTER durable recovered_release
+        // and while retaining the exact empty kernel Job. The newly
+        // authenticated request has its own nonce and gets its own ACK.
+        return send(pipe, &request.nonce, "recovered_release");
+    }
+    active
+        .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
         .map_err(|_| denied())?;
     let began = Instant::now();
     while began.elapsed() < Duration::from_secs(8) {
@@ -369,37 +666,51 @@ fn recover(
     Err(denied()) // never invent an acknowledgement on timeout
 }
 fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> {
-    let request: Admission = serde_json::from_slice(&read_message(pipe)?)
-        .map_err(|_| denied())?;
-    if !validate_request(&request) { return Err(denied()); }
+    let request: Admission = serde_json::from_slice(&read_message(pipe)?).map_err(|_| denied())?;
+    if !validate_request(&request) {
+        return Err(denied());
+    }
     // The kernel client PID and creation time, token SID, and approved host
     // binary are always revalidated even on a recovered connection.
     let owner = security::authenticate_client(
-        pipe, request.owner_pid, request.owner_creation,
-        &config.expected_host_executable, &config.expected_host_sha256,
+        pipe,
+        request.owner_pid,
+        request.owner_creation,
+        &config.expected_host_executable,
+        &config.expected_host_sha256,
+        &config.approved_host_user_sid,
     )?;
     if request.operation == "recover" {
         return recover(pipe, &request, config);
     }
     let active = Active::admit(key(&request.job_id, &request.plan_sha256))?;
-    let job = Handle::new(unsafe { OpenJobObjectW(
-        JOB_QUERY | JOB_TERMINATE | SYNCHRONIZE, 0,
-        job_name(&request.job_id, &request.plan_sha256).as_ptr(),
-    ) })?;
-    if !matches!(job_empty(job.0), Ok(true)) { return Err(denied()); }
+    let job = Handle::new(unsafe {
+        OpenJobObjectW(
+            JOB_QUERY | JOB_TERMINATE | SYNCHRONIZE,
+            0,
+            job_name(&request.job_id, &request.plan_sha256).as_ptr(),
+        )
+    })?;
+    if !matches!(job_empty(job.0), Ok(true)) {
+        return Err(denied());
+    }
     let mut witness = Witness::new(&config.evidence_root, &request)?;
+    let mut nul: Option<crate::windows_null_device::ServiceNullLease> = None;
     witness.record("ready")?;
     send(pipe, &request.nonce, "ready")?;
     loop {
         match unsafe { WaitForSingleObject(owner.process_handle(), 0) } {
             WAIT_OBJECT_0 => {
                 witness.record("owner_exited")?;
-                witness.record("kill_requested")?;
-                let killed = kill_and_verify(job.0);
-                witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
-                if !killed { return Err(denied()); }
-                return hold_for_recovery(
-                    owner.process_handle(), job.0, &mut witness, &active, true,
+                return terminate_and_hold_after_denial(
+                    owner.process_handle(),
+                    job.0,
+                    &mut witness,
+                    &active,
+                    &mut nul,
+                    config,
+                    &request,
+                    true,
                 );
             }
             WAIT_TIMEOUT => {}
@@ -408,35 +719,94 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         // Pipe break is not a safe release: kill and retain the kernel Job
         // until the original OS process exits, then enter bounded hold.
         let mut available = 0u32;
-        if unsafe { PeekNamedPipe(pipe, ptr::null_mut(), 0, ptr::null_mut(),
-            &mut available, ptr::null_mut()) } == 0 {
+        if unsafe {
+            PeekNamedPipe(
+                pipe,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                &mut available,
+                ptr::null_mut(),
+            )
+        } == 0
+        {
             witness.record("pipe_lost")?;
-            witness.record("kill_requested")?;
-            let killed = kill_and_verify(job.0);
-            witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
-            if !killed { return Err(denied()); }
-            return hold_for_recovery(
-                owner.process_handle(), job.0, &mut witness, &active, false,
+            return terminate_and_hold_after_denial(
+                owner.process_handle(),
+                job.0,
+                &mut witness,
+                &active,
+                &mut nul,
+                config,
+                &request,
+                false,
             );
         }
         if available > 0 {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Release { schema: String, operation: String, nonce: String }
-            let message: Release = serde_json::from_slice(&read_message(pipe)?)
-                .map_err(|_| denied())?;
+            struct Command {
+                schema: String,
+                operation: String,
+                nonce: String,
+            }
+            // Unknown messages are not executable authority. Never let a
+            // client skip native Job reaping or the exact null-device revocation.
+            let message: Command = match read_message(pipe)
+                .and_then(|bytes| serde_json::from_slice(&bytes).map_err(|_| denied()))
+            {
+                Ok(value) => value,
+                Err(_) => {
+                    return terminate_and_hold_after_denial(
+                        owner.process_handle(),
+                        job.0,
+                        &mut witness,
+                        &active,
+                        &mut nul,
+                        config,
+                        &request,
+                        false,
+                    );
+                }
+            };
+            if message.schema == "lu.ide.d7d.nul-grant.v1"
+                && message.operation == "nul_grant"
+                && message.nonce == request.nonce
+                && nul.is_none()
+                && matches!(job_empty(job.0), Ok(true))
+            {
+                // LocalService-only action, with an OS-derived exact package
+                // SID. Persist a recoverable intent BEFORE touching NUL, so
+                // an unexpected service termination cannot leave an unknown
+                // machine-global permission to the disposed AppContainer.
+                witness.record("nul_intent")?;
+                persist_null_intent(&config.evidence_root, &request)?;
+                let lease = crate::windows_null_device::ServiceNullLease::grant(&request.job_id)?;
+                nul = Some(lease);
+                witness.record("nul_granted")?;
+                send(pipe, &request.nonce, "nul_granted")?;
+                continue;
+            }
             if message.schema != "lu.ide.d7d.release.v1"
                 || message.operation != "release"
                 || message.nonce != request.nonce
-                || !matches!(job_empty(job.0), Ok(true)) {
-                witness.record("kill_requested")?;
-                let killed = kill_and_verify(job.0);
-                witness.record(if killed { "tree_empty" } else { "kill_unverified" })?;
-                if !killed { return Err(denied()); }
-                return hold_for_recovery(
-                    owner.process_handle(), job.0, &mut witness, &active, false,
+                || !matches!(job_empty(job.0), Ok(true))
+            {
+                return terminate_and_hold_after_denial(
+                    owner.process_handle(),
+                    job.0,
+                    &mut witness,
+                    &active,
+                    &mut nul,
+                    config,
+                    &request,
+                    false,
                 );
             }
+            // Normal completion or cancellation is not a successful service
+            // release until the exact package SID permission is revoked,
+            // verified, and recorded under the protected service profile.
+            revoke_null_before_ack(&mut nul, &mut witness, config, &request)?;
             witness.record("released_empty")?;
             send(pipe, &request.nonce, "released_empty")?;
             return Ok(());
@@ -444,72 +814,186 @@ fn serve(pipe: HANDLE, config: &InstalledConfig) -> Result<(), SupervisorError> 
         thread::sleep(TICK);
     }
 }
+struct SessionSlot(Arc<AtomicUsize>);
+impl Drop for SessionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+}
 fn serve_one(pipe: Handle, config: &InstalledConfig) {
     let _ = serve(pipe.0, config);
-    unsafe { DisconnectNamedPipe(pipe.0); }
+    unsafe {
+        DisconnectNamedPipe(pipe.0);
+    }
 }
 fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorError> {
     security::assert_restricted_local_service()?;
+    STARTUP_STAGE.store(10, Ordering::Relaxed);
     let config = InstalledConfig::read()?;
-    let acl = security::PipeSecurity::new()?;
-    let mut running = SERVICE_STATUS {
-        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-        dwCurrentState: SERVICE_RUNNING,
-        dwControlsAccepted: 0,
-        dwWin32ExitCode: 0, dwServiceSpecificExitCode: 0,
-        dwCheckPoint: 0, dwWaitHint: 0,
-    };
-    if unsafe { SetServiceStatus(status_handle, &mut running) } == 0 {
-        return Err(denied());
-    }
+    // A crash may leave a temporary exact package SID ACE behind. Refuse all
+    // new work until the independently restricted service has reconciled and
+    // verified every protected intent against the current global NUL DACL.
+    reconcile_pending_null_intents(&config.evidence_root)?;
+    STARTUP_STAGE.store(20, Ordering::Relaxed);
+    let acl = security::PipeSecurity::new(&config.approved_host_user_sid)?;
+    STARTUP_STAGE.store(30, Ordering::Relaxed);
     let mut first = true;
+    let active_sessions = Arc::new(AtomicUsize::new(0));
     loop {
+        // Do not create more pipe instances than the bounded worker pool.
+        // With the prior unlimited spawn loop, a same-user client could
+        // hold 16 instances and make CreateNamedPipe terminate the service,
+        // dropping all independently retained Job Object handles.
+        while active_sessions.load(Ordering::Acquire) >= MAX_ACTIVE_PIPE_SESSIONS {
+            thread::sleep(TICK);
+        }
         // PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE prevent remote
         // callers or same-user prebinding from impersonating the service.
         let mode = PIPE_ACCESS_DUPLEX | if first { PIPE_FIRST_INSTANCE } else { 0 };
-        let pipe = Handle::new(unsafe { CreateNamedPipeW(
-            security::ws(security::SERVICE_ENDPOINT).as_ptr(),
-            mode,
-            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-            16, 4096, 4096, 0, &acl.attributes,
-        ) })?;
-        first = false;
+        let opened = unsafe {
+            CreateNamedPipeW(
+                security::ws(security::SERVICE_ENDPOINT).as_ptr(),
+                mode,
+                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                16,
+                4096,
+                4096,
+                0,
+                &acl.attributes,
+            )
+        };
+        let pipe = match Handle::new(opened) {
+            Ok(value) => value,
+            Err(reason) if first => return Err(reason),
+            Err(_) => {
+                // A transient endpoint-allocation error must not kill the
+                // entire SCM keeper while earlier authenticated Jobs are
+                // still held by its independent connection workers.
+                // No new job is admitted without a new verified pipe.
+                thread::sleep(TICK);
+                continue;
+            }
+        };
+        STARTUP_STAGE.store(50, Ordering::Relaxed);
+        // Refuse an SCM RUNNING state unless the actual kernel object has
+        // the exact protected DACL and excludes client pipe-instance rights.
+        if let Err(reason) =
+            security::verify_created_pipe_security(pipe.0, &config.approved_host_user_sid)
+        {
+            if first {
+                // No SCM-ready endpoint ever existed: fail startup closed.
+                return Err(reason);
+            }
+            // A later malformed/uninspectable pipe instance is NEVER
+            // admitted, but a transient OS metadata failure must not kill
+            // the separately held Jobs in previously authenticated worker
+            // threads. The bad instance closes when pipe goes out of scope.
+            thread::sleep(TICK);
+            continue;
+        }
+        STARTUP_STAGE.store(55, Ordering::Relaxed);
+        if first {
+            // SCM RUNNING must not precede actual protected pipe creation.
+            let running = SERVICE_STATUS {
+                dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+                dwCurrentState: SERVICE_RUNNING,
+                dwControlsAccepted: 0,
+                dwWin32ExitCode: 0,
+                dwServiceSpecificExitCode: 0,
+                dwCheckPoint: 0,
+                dwWaitHint: 0,
+            };
+            if unsafe { SetServiceStatus(status_handle, &running) } == 0 {
+                return Err(denied());
+            }
+            first = false;
+            STARTUP_STAGE.store(40, Ordering::Relaxed);
+        }
         if unsafe { ConnectNamedPipe(pipe.0, ptr::null_mut()) } == 0
-            && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
-            return Err(denied());
+            && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED
+        {
+            // A client can connect and immediately disconnect before this
+            // call completes. It is not permitted to force the independent
+            // recovery service to terminate and abandon retained Job handles.
+            // The disconnected instance is closed without any READY receipt.
+            thread::sleep(TICK);
+            continue;
         }
         // Copy only administrator-installed configuration; no request data
         // can change executable or evidence paths.
         let cloned = InstalledConfig {
-            schema: config.schema.clone(), service_name: config.service_name.clone(),
+            schema: config.schema.clone(),
+            service_name: config.service_name.clone(),
             expected_service_sha256: config.expected_service_sha256.clone(),
             expected_host_sha256: config.expected_host_sha256.clone(),
             expected_host_executable: config.expected_host_executable.clone(),
-            evidence_root: config.evidence_root.clone(), endpoint: config.endpoint.clone(),
+            approved_host_user_sid: config.approved_host_user_sid.clone(),
+            evidence_root: config.evidence_root.clone(),
+            endpoint: config.endpoint.clone(),
             acceptance_unsigned: config.acceptance_unsigned,
         };
-        thread::spawn(move || serve_one(pipe, &cloned));
+        active_sessions.fetch_add(1, Ordering::AcqRel);
+        let permit = SessionSlot(Arc::clone(&active_sessions));
+        // The permit is dropped even if a native thread cannot be created;
+        // never leave a stale saturated count or unbounded worker spawn.
+        if thread::Builder::new()
+            .name("lu-ide-protected-ipc".into())
+            .spawn(move || {
+                let _permit = permit;
+                serve_one(pipe, &cloned);
+            })
+            .is_err()
+        {
+            // The already-authenticated keeper threads must survive a
+            // temporary inability to allocate one more host thread. The
+            // moved connection is dropped, so this admission has no reply.
+            thread::sleep(TICK);
+            continue;
+        }
     }
 }
 unsafe extern "system" fn control(
-    _control: u32, _event_type: u32, _event_data: *mut c_void,
+    _control: u32,
+    _event_type: u32,
+    _event_data: *mut c_void,
     _context: *mut c_void,
-) -> u32 { 0 }
+) -> u32 {
+    0
+}
 unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
-    let handle = RegisterServiceCtrlHandlerExW(security::ws(NAME).as_ptr(),
-        Some(control), ptr::null());
-    if handle.is_null() { return; }
+    let handle =
+        RegisterServiceCtrlHandlerExW(security::ws(NAME).as_ptr(), Some(control), ptr::null());
+    if handle.is_null() {
+        return;
+    }
     let mut status = SERVICE_STATUS {
         dwServiceType: SERVICE_WIN32_OWN_PROCESS,
         dwCurrentState: SERVICE_START_PENDING,
         dwControlsAccepted: 0, // Do not drop a held Job on an ordinary STOP.
-        dwWin32ExitCode: 0, dwServiceSpecificExitCode: 0,
-        dwCheckPoint: 1, dwWaitHint: 20000,
+        dwWin32ExitCode: 0,
+        dwServiceSpecificExitCode: 0,
+        dwCheckPoint: 1,
+        dwWaitHint: 20000,
     };
-    if SetServiceStatus(handle, &status) == 0 { return; }
+    if SetServiceStatus(handle, &status) == 0 {
+        return;
+    }
     let result = std::panic::catch_unwind(|| run_service(handle));
     status.dwCurrentState = SERVICE_STOPPED;
-    status.dwWin32ExitCode = if matches!(result, Ok(Ok(()))) { 0 } else { 1 };
+    let ok = matches!(result, Ok(Ok(())));
+    status.dwWin32ExitCode = if ok { 0 } else { SERVICE_SPECIFIC_ERROR };
+    // Non-secret fixed stage number only; never report the raw error object,
+    // project data, policy token, executable path, or service credentials.
+    status.dwServiceSpecificExitCode = if ok {
+        0
+    } else if STARTUP_STAGE.load(Ordering::Relaxed) == 0 {
+        // An OS-token startup failure happens before stage 10. The
+        // low fixed substage 101..106 distinguishes Win32 token checks
+        // without disclosing the service or host identity.
+        100 + security::service_identity_stage()
+    } else {
+        100 + STARTUP_STAGE.load(Ordering::Relaxed)
+    };
     status.dwCheckPoint = 0;
     status.dwWaitHint = 0;
     let _ = SetServiceStatus(handle, &status);
@@ -523,21 +1007,50 @@ pub fn dispatch() -> Result<(), SupervisorError> {
             lpServiceName: name.as_ptr() as *mut u16,
             lpServiceProc: Some(service_main),
         },
-        SERVICE_TABLE_ENTRYW { lpServiceName: ptr::null_mut(), lpServiceProc: None },
+        SERVICE_TABLE_ENTRYW {
+            lpServiceName: ptr::null_mut(),
+            lpServiceProc: None,
+        },
     ];
     if unsafe { StartServiceCtrlDispatcherW(entries.as_ptr()) } == 0 {
         Err(denied())
-    } else { Ok(()) }
+    } else {
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    fn private_null_recovery_intent_filenames_are_exact_and_bounded() {
+        let id = format!("job-{}", "a".repeat(32));
+        let plan = "b".repeat(64);
+        let name = format!("{id}-{plan}.nul-intent");
+        let parsed = parse_null_intent_name(&name).unwrap();
+        assert_eq!(parsed, (id, plan));
+        assert!(parse_null_intent_name("..-fake.nul-intent").is_err());
+        assert!(parse_null_intent_name("job-unsafe-SYSTEM.nul-intent").is_err());
+        assert!(parse_null_intent_name(&(name + ".bak")).is_err());
+    }
+    #[test]
+    fn service_ipc_session_slot_releases_under_denied_or_failed_request() {
+        let sessions = Arc::new(AtomicUsize::new(1));
+        {
+            let _one = SessionSlot(Arc::clone(&sessions));
+            assert_eq!(sessions.load(Ordering::Acquire), 1);
+        }
+        assert_eq!(sessions.load(Ordering::Acquire), 0);
+        assert!(MAX_ACTIVE_PIPE_SESSIONS < 16);
+    }
+    #[test]
     fn admission_fails_on_bad_scope_or_replay_nonce() {
         let valid = Admission {
-            schema: "lu.ide.d7d.admission.v1".into(), operation: "admit".into(),
+            schema: "lu.ide.d7d.admission.v1".into(),
+            operation: "admit".into(),
             job_id: format!("job-{}", "a".repeat(32)),
-            plan_sha256: "b".repeat(64), owner_pid: 10, owner_creation: 100,
+            plan_sha256: "b".repeat(64),
+            owner_pid: 10,
+            owner_creation: 100,
             nonce: "c".repeat(48),
         };
         assert!(validate_request(&valid));
@@ -546,10 +1059,23 @@ mod tests {
         assert!(!validate_request(&bad));
     }
     #[test]
+    fn protected_recovery_ack_is_never_available_before_fsync() {
+        // Original owner running (0), fully reaped and ready (1), request
+        // racing with fsync (2), and protected fsynced reply (3). The actual
+        // response path additionally reopens the original kernel Job.
+        assert!(!recovery_state_allows_attempt(0));
+        assert!(recovery_state_allows_attempt(1));
+        assert!(!recovery_state_allows_attempt(2));
+        assert!(recovery_state_allows_attempt(3));
+        assert!(!recovery_state_allows_attempt(u8::MAX));
+    }
+    #[test]
     fn wire_denies_unknown_fields() {
         let request = format!(
             r#"{{"schema":"lu.ide.d7d.admission.v1","operation":"admit","jobId":"job-{}","planSha256":"{}","ownerPid":1,"ownerCreation":2,"nonce":"{}","shell":"powershell"}}"#,
-            "a".repeat(32), "b".repeat(64), "c".repeat(48)
+            "a".repeat(32),
+            "b".repeat(64),
+            "c".repeat(48)
         );
         assert!(serde_json::from_str::<Admission>(&request).is_err());
     }

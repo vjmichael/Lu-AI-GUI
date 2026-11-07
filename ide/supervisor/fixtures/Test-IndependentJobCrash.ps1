@@ -32,12 +32,21 @@ $probe=[IO.Path]::GetFullPath($ProbeExe)
 $process=$null
 $children=New-Object 'System.Collections.Generic.List[object]'
 $marker=$null
+$stderr=Join-Path ([IO.Path]::GetTempPath()) ('lu-d7b-native-crash-stderr-'+[guid]::NewGuid().ToString('N')+'.txt')
 try {
-  $process=Start-Process -FilePath $probe -ArgumentList '--fixture-external-crash' -PassThru -WindowStyle Hidden
+  # Keep the native reason if the fixed owner fails before its marker. A
+  # failing process is never interpreted as a successful kill-on-close proof.
+  $process=Start-Process -FilePath $probe -ArgumentList '--fixture-external-crash' -PassThru -WindowStyle Hidden -RedirectStandardError $stderr
   $marker=Join-Path ([IO.Path]::GetTempPath()) "lu-ide-d7b-crash-$($process.Id).txt"
   $deadline=[DateTime]::UtcNow.AddSeconds(20)
   while (!(Test-Path -LiteralPath $marker) -and [DateTime]::UtcNow -lt $deadline) {
-    if ($process.HasExited) { throw 'DENIED: Job owner exited before witness admission' }
+    if ($process.HasExited) {
+      $nativeError=if (Test-Path -LiteralPath $stderr) {
+        ((Get-Content -LiteralPath $stderr -Tail 6 -ErrorAction SilentlyContinue) -join ' ')
+      } else { 'stderr unavailable' }
+      if ($nativeError.Length -gt 1500) { $nativeError=$nativeError.Substring(0,1500) }
+      throw "DENIED: Job owner exited before witness admission; exit=$($process.ExitCode); native=$nativeError"
+    }
     Start-Sleep -Milliseconds 50
   }
   if (!(Test-Path -LiteralPath $marker)) { throw 'DENIED: witness did not observe live Job tree' }
@@ -52,14 +61,14 @@ try {
   }
   # SYNCHRONIZE: both native handles must open and be unsignaled while
   # the parent Job owner is alive. These are not PID-only postmortem checks.
-  foreach ($pid in @($child,$grandchild)) {
-    $handle=[LuD7KernelWitness]::OpenProcess(0x00100000,$false,$pid)
+  foreach ($observedChildPid in @($child,$grandchild)) {
+    $handle=[LuD7KernelWitness]::OpenProcess(0x00100000,$false,$observedChildPid)
     if ($handle -eq [IntPtr]::Zero) {
-      throw "DENIED: child $pid could not be independently opened"
+      throw "DENIED: child $observedChildPid could not be independently opened"
     }
-    $children.Add([pscustomobject]@{Pid=$pid;Handle=$handle})
+    $children.Add([pscustomobject]@{Pid=$observedChildPid;Handle=$handle})
     if ([LuD7KernelWitness]::WaitForSingleObject($handle,0) -ne 258) {
-      throw "DENIED: child $pid not live before owner crash"
+      throw "DENIED: child $observedChildPid not live before owner crash"
     }
   }
   $crashAt=[DateTime]::UtcNow
@@ -97,4 +106,5 @@ try {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
   }
   if ($marker) { Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue }
+  if ($stderr) { Remove-Item -LiteralPath $stderr -Force -ErrorAction SilentlyContinue }
 }

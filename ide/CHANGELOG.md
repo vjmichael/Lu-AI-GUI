@@ -1,5 +1,68 @@
 # Lu IDE — Development changelog
 
+- IDE 07 protected Windows acceptance and closeout (Nov 6–7): historical exact head `750638e` yielded native behavioral PASS for protected SCM handshake/READY, independent overlapping NUL grants + revoke, host-crash fsynced recovery and fresh-nonce retry, service-loss Job kill/refused false recovery, and real confined offline Cargo completion/published output/restart. Red workflow exit discovered to be missing SYSTEM/Admin SCM DELETE right and expected-negative-probe `$LASTEXITCODE`; corrected both, made privileged uninstall fail if `sc delete` fails. Fixed D7B Windows crash fixture's reserved `$PID` name. **New exact-head complete all-job green and protected Cargo cancellation remain open.** Ledger: `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- IDE 07 WO2/WO3 (Nov 6): native CI proved Windows exact-user pipe opened, then service image/kernel token authenticated under query-only restricted-SID check; service refused owner before READY. Implemented narrow, authenticated-client impersonation for verified process PID, creation, pinned executable and TokenUser checks, reverting to restricted LocalService before any privileged effect. Fixed D7B independent owner-crash fixture dispatch; applied six exact Rustfmt hunks. Latest exact-head native Cargo/SCM/crash acceptance pending. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- IDE WO2/WO3 acceptance extension (2026-11-06): added a disposable Windows protected-SCM two-Job overlapping NUL lease and independently verified release fixture, staged after the original authenticated pipe smoke test with fixed-service-only bootstrap and explicit revocation attempt. No blanket AppContainer rights or release enablement; exact-head native CI, SCM pipe admission and service/owner crash gates remain open.
+
+
+- IDE WO2/WO3 live CI continuation (2026-11-06): repaired Windows `E0433/E0425` by restricting SCM recovery module to `protected-recovery-service`; applied all 31 exact native Rustfmt hunks from Windows job 128235540208. Both latest observed D7D crash/service-loss native fixtures failed *before* owner admission, not inside cleanup; added secret-safe fixed-stage stderr collection so CI diagnoses the actual protected pipe denial. Native protected Cargo/service acceptance remains open.
+
+
+- IDE 07 / WO3 (2026-11-06): fail-closed retry on subsequent unverified named-pipe instances preserves already authenticated kernel Job-holder threads; initial instance ACL verification remains a hard startup gate. CI-only MIC classification added for access-denied triage, without changing service/host authority. Exact-head native acceptance is still pending.
+
+
+- IDE 07 / WO2 native security hardening (2026-11-06): serialized service-process NUL DACL transactions across concurrent protected Job leases; exact-mask attestation before revocation and fail-closed collision behavior; Windows lock contention regression test. Existing LocalService-owned per-job intent/grant/revoke and restart reconciliation are source-implemented, NOT exact-head accepted. Historical disposable-CI contained Cargo/cancellation run `1090800` passed; protected-service pipe admission and owner/service crash proofs still open. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- WO2 native Windows preparation: fixed-service, elevated-only NUL device DACL bootstrap (service SID only, exact rights, no AppContainer wildcard ACE), compiled but not invoked or release accepted; durable per-job service grant/revoke still pending (2026-11-06).
+
+- WO2/WO3 closeout: D7B native pinned Windows Cargo actual AppContainer build/output and cancellation tests PASS on 1090800 (CI-only NUL); production NUL broker remains open. WO3 protected service pipe denies all access even for matching approved user; added token-restriction diagnostic, bypass-resistant exact ACE verification and optional diagnostic fixture that does not suppress real SCM failure (2026-11-06).
+
+- WO2/WO3 code closeout continuation (2026-11-06): capability-rooted quota scanning replaces mutable 40-ms output hashing; final full hash/seal still post-Job. Corrected `cap_fs_ext::OsMetadataExt` native E0624; added bounded cancel-vs-walltime-vs-output traces. CI-only D7D exact-user DACL control and current TokenUser diagnostic isolate protected service access denial without weakening ACL. Protected recovery service handler concurrency capped at 12 with RAII session release, keeping held kernel Jobs from being dropped on client flooding. Applied native Rustfmt exact diffs. All actual pinned Cargo and SCM hostile acceptance remain open; see `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- IDE WO2/WO3 active native repairs (2026-11-06): separated mutable output live quota from post-reap immutable output seal; bounded scans at 250 ms and kept cancellation at 40 ms; fixed `cap_fs_ext::OsMetadataExt` native compiler `E0624`. D7C rooted rename acceptance now tests byte identity for either/both safe aliases; independent D7B crash witness captures native stderr on admission failure. D7D CI-only native client identity/pipe-rights probes and a disposable exact-ACL access self-check isolate genuine LocalService pipe admission denial without security bypass. Pinned Cargo, SCM recovery and release NUL remain OPEN; see `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- IDE WO2/WO3 continued closeout (2026-11-06): corrected native named-pipe DACL object type; kept the original kernel Job for a 60-second durable protected recovery ACK retry; added independent native host-crash repeat-ACK and eventual Job release test. Disposable NUL compatibility now refuses release compilation, while the native Cargo worker refuses unproven release NUL access before authority is consumed. Work orders remain OPEN until genuine protected SCM / pinned Cargo OS acceptance. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- WO3 protected-service IPC strengthening: `d65c202` verifies actual named-pipe kernel DACL before announcing SCM RUNNING; exact SYSTEM, restricted service SID and installer-approved host SID only, with client pipe-create permission forbidden. The prior native D7D host pipe open still denied despite user SID pinning; CI-only access-mask diagnostics (`3539186`) await new exact-head verification. No service acceptance falsely promoted.
+
+- WO2/WO3 native progress: real Windows D6 AppContainer isolation fixture passed behavioral checks at job `128199718599` (only Rustfmt failed; `6fc0b36` repaired); D7C/D7D crash-observer C# Job Object accounting fixed from 32-byte incomplete ABI to actual 48-byte Win32 ABI (`958609d`), eliminating `ERROR_BAD_LENGTH` cause. Protected SCM client still denied opening pipe at job `128199760472`; fixed-scope CI-only read/write/control probes added (`3539186`). Orders 2 and 3 remain open for real pinned Cargo, crash-safe production NUL and independently verified protected service cleanup/restart. Source: `ide/docs/IDE_WORK_BATCH_02_20261106.md`.
+
+- WO2/WO3 further source hardening: NUL CI compatibility requires explicit `ci-native-null-lease` **compile-time** feature plus disposable debug CI environment; D7C/D7D hostile observers now surface native Win32 Job query failures rather than ambiguous empty/denied evidence. Production capability provisioning and independent SCM crash recovery still open. Draft PR #65, no release enablement.
+
+
+- IDE WO2/WO3 resumed engineering (2026-11-06): AppContainer network timeout acceptance requires dual live host endpoint controls, no child connections, exact token capabilities and verified Job empty; temporary `NUL` permission confined to explicit disposable CI per-profile SID and revoked before success, not release accepted; D7D service pipe binds installer-approved individual host SID and versioned service config, confirms endpoint before SCM RUNNING, repairs privileged installer AST syntax, and tightens real kernel Job crash witness. Related supervisor core Windows/Linux unit CI passed on prior exact head, but current AppContainer Cargo, SCM crash recovery, and production NUL failover are not accepted. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
+- IDE first three-work-order batch (2026-11-06): repaired Windows E2 HANDLE writer thread ownership, feature-gated native example compilation, real Tauri frontend build and interrupted recovery test; added strict child token-capability verification and bounded protected SCM pipe-denial diagnostics. Source commits `2076532`, `0e941c7`, `3c38f5e`. Native CI and protected-service acceptance remain outstanding; see `docs/IDE_WORK_BATCH_01_20261106.md`.
+
+
+- E2 exact native Windows failure repair (2026-11-06): corrected hostile inside-root child-rename **test assumptions** without permitting a junction/secret escape; applied native Windows Rustfmt 1.99 formatting to service token, AppContainer network probe and crash witness. Recorded Cargo's still-blocking AppContainer `NUL` device denial (exit 101; compiler never launched), distinguishing it from a missing rustc or a successful native sandbox check. Also identified cancelled-checkout manifest errors as cancellation artifacts. Source-only commits `940d395`, `01950f1`, `ed7c038`, `5052622`; native exact-head results and installed-app security remain open.
+
+
+- Native CI repair closeout: inspected historical D7D/D7B/D7C/E1/AppContainer job logs; fixed Rust unsafe-block parsing and Win32 threading token imports, pinned offline VS 17.14 jobs to Windows 2022, installed Rustfmt in Rust 1.99.1 CI, applied native E1 rustfmt diffs, and classified a previously ambiguous AppContainer network timeout without granting acceptance. Added exact-head failure ledger `ide/docs/E2_NATIVE_CI_FAILURE_TRIAGE_20261106.md`.
+
+- Native E2 repair: reproduced CI `PermissionDenied` in the hostile LSP snapshot test (fixed test-only write permissions), applied formatter-provided host and supervisor Rustfmt changes, and added bounded exit/reporting for failing D7B Cargo plus debug-only authenticated SCM admission stages for failing D7D without changing kernel security decisions.
+- Added real unsigned standalone Windows NSIS install/launch/restart/uninstall smoke fixture and CI workflow, deliberately separate from signed E2 language-server release acceptance. Release remains disabled; hosted Linux cgroup delegation and Windows OS gates outstanding.
+
+## 2026-11-06 — Wave E2 protected language-service integration (source, native pending)
+- Extended protected Windows desktop source from clangd-only to fixed native rust-analyzer, clangd and Ruff language selection; only per-language verified installation hashes unlock buttons. Ruff is restricted to diagnostics by both UI and native host.
+- Added isolated supervisor tests for durable successful close, cancelled session and failed service release quarantine after restart; added native route rejection tests.
+- Added signed-service and license-verified NSIS staging, per-machine installer config overlay, malicious resource/no-overwrite tests and queue coalescing for E1/E2 GitHub CI. No server binary is shipped and OS acceptance remains open.
+
+- Exercised actual local clangd 17 LSP protocol for initialization, diagnostics, hover, definition and completion; committed sanitized JSON-RPC transcript and fixed bounded completion-prefix textEdit handling with explicit human insertion. No native protected-worker execution claim.
+- Introduced real LSP session wire processor: initialize, safe document sync, bounded diagnostics/completions/hover/same-file definition, strict pending/revision checks and rejection of server-initiated execution or edits.
+- Added optional internal supervisor transport endpoint requiring trusted running D3 job, same plan SHA, OS containment proof and verified tree cleanup; **no unrestricted process spawn or active native LSP child**.
+- Wired CodeMirror marker effects, problems/suggestions/hover panels, same-file jump and human-selected completion insertion, native read-only worker status, language server catalog page and UTF-16/stale result guards.
+- Added offline installer candidates and mandatory license notice, dependency, asset hash and release provenance audit; **all assets remain unbundled and unapproved**. New Rust/Node/Python tests and cross-platform E2 CI; real Windows/Linux LSP and D7D OS acceptance pending.
+
 ## 2026-11-06 — Wave E1 free language-server discovery and wire protocol (draft)
 - Added standalone host catalog of eight free open-source LSP providers across Rust, C/C++, Python, JS/TS, HTML, CSS and JSON, with fixed executable hints and license/upstream identity. Discovery cannot run a program.
 - Added bounded JSON-RPC stdio framing parser/encoder, strict length/JSON-RPC envelope checks and source-revision diagnostic contract; native Rust and frontend safety tests.

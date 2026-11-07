@@ -29,6 +29,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(feature = "lsp-transport")]
+#[path = "linux_lsp_worker.rs"]
+pub mod lsp_native;
 const BWRAP: &str = "/usr/bin/bwrap";
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";

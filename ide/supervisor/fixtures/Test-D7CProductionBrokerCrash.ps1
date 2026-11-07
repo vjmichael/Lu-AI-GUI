@@ -32,6 +32,8 @@ public static class D7CNativeWitness {
   public struct BasicAccounting {
     public long TotalUserTime;
     public long TotalKernelTime;
+    public long ThisPeriodTotalUserTime;
+    public long ThisPeriodTotalKernelTime;
     public uint TotalPageFaultCount;
     public uint TotalProcesses;
     public uint ActiveProcesses;
@@ -106,13 +108,28 @@ try {
   if ($jobHandle -eq [IntPtr]::Zero) {
     throw 'DENIED: named Job vanished; independent keeper not live'
   }
-  $accounting=New-Object 'D7CNativeWitness+BasicAccounting'
-  $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
-  if (![D7CNativeWitness]::QueryInformationJobObject(
-      $jobHandle,1,[ref]$accounting,$size,[IntPtr]::Zero) -or
-      $accounting.ActiveProcesses -ne 0) {
-    throw 'DENIED: retained kernel Job is not empty'
+  # A signaled child handle can precede the kernel Job's accounting
+  # update. Poll real kernel state for up to 8s; never infer empty from PID.
+  $empty=$false
+  $deadline=[DateTime]::UtcNow.AddSeconds(8)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $accounting=New-Object 'D7CNativeWitness+BasicAccounting'
+    $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
+    if ($size -ne 48) { throw "DENIED: Job accounting ABI size mismatch: $size" }
+    if (![D7CNativeWitness]::QueryInformationJobObject(
+        $jobHandle,1,[ref]$accounting,$size,[IntPtr]::Zero)) {
+      # The error code distinguishes stale/revoked original Job handle from
+      # malformed accounting fixture; never convert a query error to PASS.
+      $osCode=[Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      throw "DENIED: kernel Job accounting query failed (Win32=$osCode)"
+    }
+    if ($accounting.ActiveProcesses -eq 0) {
+      $empty=$true
+      break
+    }
+    Start-Sleep -Milliseconds 50
   }
+  if (!$empty) { throw 'DENIED: retained kernel Job is not empty' }
   $journal=Join-Path $brokerRoot "broker-$jobId-$($plan.Substring(0,16)).jsonl"
   $deadline=[DateTime]::UtcNow.AddSeconds(10)
   $states=@()

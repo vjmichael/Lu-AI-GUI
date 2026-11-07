@@ -26,6 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Compile native Windows worker
         run: cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --all-targets
       - name: Hostile filesystem and restart tests
@@ -56,13 +57,16 @@ jobs:
           if-no-files-found: ignore
 
   pinned-offline-cargo:
-    runs-on: windows-2025
+    env:
+      LU_IDE_D7_CI_ALLOW_EXACT_NUL: '1'
+    runs-on: windows-2022
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Construct a version-pinned offline Rust MSVC and SDK bundle
         shell: pwsh
         run: |
@@ -83,13 +87,15 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "LU_IDE_D7_BROKER_EXE=$broker"
       - name: Attempt genuine offline Cargo check within AppContainer supervisor
         shell: pwsh
+        env:
+          LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
         run: |
-          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer Cargo fixture denied or failed' }
       - name: Inject native cancellation and verify ordered durable receipts
         shell: pwsh
         run: |
-          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker -- --cancel-native-worker
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease -- --cancel-native-worker
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer cancellation acceptance failed' }
       - name: Save observed toolchain file lock outside worker
         if: always()

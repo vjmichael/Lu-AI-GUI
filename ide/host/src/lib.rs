@@ -19,6 +19,7 @@ pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
 pub mod lsp;
+pub mod lsp_session;
 pub mod proposal;
 pub mod resource_probe;
 pub mod review;
@@ -271,6 +272,13 @@ impl IdeWorkspaceRegistry {
             return Err(IdeError::InvalidSelection);
         }
         Ok(root)
+    }
+
+    /// Native-only consumer (trusted Tauri host, never a WebView reply).
+    /// Rechecks active registration and root aliasing before any OS-worker
+    /// admission. This is a directory locator, not a process permission.
+    pub fn trusted_native_worker_root(&self, project_id: &str) -> Result<PathBuf, IdeError> {
+        self.registered_git_root(project_id)
     }
 
     pub fn register_from_native_picker(

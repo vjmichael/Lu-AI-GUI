@@ -1,12 +1,40 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
+import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Decoration } from '@codemirror/view';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
+
+// Decorations are supplied only for the exact current source revision.
+// The editor keeps these as display-only marks. Diagnostics never write data.
+const setLspDiagnostics = StateEffect.define();
+const lspDiagnosticField = StateField.define({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    value = value.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (effect.is(setLspDiagnostics)) {
+        const spans = (Array.isArray(effect.value) ? effect.value : [])
+          .filter(item => Number.isInteger(item.from) && Number.isInteger(item.to) &&
+            item.from >= 0 && item.from < item.to &&
+            item.to <= transaction.state.doc.length)
+          .slice(0, 200)
+          .map(item => Decoration.mark({
+            class: item.severity === 1 ? 'cm-lsp-error' : item.severity === 2 ?
+              'cm-lsp-warning' : 'cm-lsp-note'
+          }).range(item.from, item.to));
+        return Decoration.set(spans, true);
+      }
+    }
+    return value;
+  },
+  provide: field => EditorView.decorations.from(field),
+});
+const EMPTY_DIAGNOSTICS = [];
 
 function languageExtension(filename) {
   const ext = filename.toLowerCase().split('.').pop();
@@ -51,6 +79,7 @@ export function createEditorState(text, filename, onChange) {
       basicSetup,
       ...(styleNonce ? [EditorView.cspNonce.of(styleNonce)] : []),
       oneDark,
+      lspDiagnosticField,
       EditorView.lineWrapping,
       EditorView.theme({
         '&': { height: '100%', fontSize: '13px' },
@@ -68,13 +97,19 @@ export function createEditorState(text, filename, onChange) {
   });
 }
 
-export function CodeEditor({ editorState, tabIdentity, findRequest, replaceRequest, onCursorLine, onReplaceApplied }) {
+export function CodeEditor({ editorState, tabIdentity, findRequest, replaceRequest,
+  diagnostics = EMPTY_DIAGNOSTICS, jumpRequest, completionApplyRequest,
+  onCursorLine, onCursorPosition, onReplaceApplied, onCompletionApplied }) {
   const container = useRef(null);
   const viewRef = useRef(null);
   const cursorCallback = useRef(onCursorLine);
   cursorCallback.current = onCursorLine;
   const replaceCallback = useRef(onReplaceApplied);
   replaceCallback.current = onReplaceApplied;
+  const cursorPositionCallback = useRef(onCursorPosition);
+  cursorPositionCallback.current = onCursorPosition;
+  const completionCallback = useRef(onCompletionApplied);
+  completionCallback.current = onCompletionApplied;
   useLayoutEffect(() => {
     if (!container.current) return;
     const view = new EditorView({
@@ -83,7 +118,11 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     });
     viewRef.current = view;
     const reportLine = () => {
-      cursorCallback.current?.(view.state.doc.lineAt(view.state.selection.main.head).number);
+      const head = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(head);
+      cursorCallback.current?.(line.number);
+      cursorPositionCallback.current?.({ line: line.number - 1,
+        character: head - line.from, offset: head });
     };
     view.dom.addEventListener('keyup', reportLine);
     view.dom.addEventListener('mouseup', reportLine);
@@ -123,6 +162,51 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     replaceCallback.current?.(replaceRequest.nonce, true);
     view.focus();
   }, [replaceRequest, tabIdentity]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setLspDiagnostics.of(diagnostics) });
+  }, [diagnostics, tabIdentity]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !jumpRequest || jumpRequest.tabIdentity !== tabIdentity) return;
+    if (!Number.isInteger(jumpRequest.from) || !Number.isInteger(jumpRequest.to) ||
+      jumpRequest.from < 0 || jumpRequest.to < jumpRequest.from ||
+      jumpRequest.to > view.state.doc.length) return;
+    view.dispatch({selection: {anchor: jumpRequest.from, head: jumpRequest.to},
+      scrollIntoView: true});
+    view.focus();
+  }, [jumpRequest, tabIdentity]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !completionApplyRequest ||
+        completionApplyRequest.tabIdentity !== tabIdentity) return;
+    const fail = () => completionCallback.current?.(completionApplyRequest.nonce, false);
+    // The server's insertText is a suggestion, never a command or auto-edit.
+    // Apply only after a direct human choice and exact unchanged draft.
+    const insert = completionApplyRequest.insertText;
+    if (typeof insert !== 'string' || insert.length > 512 ||
+        view.state.doc.toString() !== completionApplyRequest.expectedDraft) {
+      fail();
+      return;
+    }
+    const caret = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(caret);
+    const prefix = view.state.sliceDoc(line.from, caret).match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
+    const ranged = Number.isInteger(completionApplyRequest.replaceFrom) &&
+      Number.isInteger(completionApplyRequest.replaceTo);
+    const from = ranged ? completionApplyRequest.replaceFrom :
+      caret - (prefix?.[0]?.length || 0);
+    const to = ranged ? completionApplyRequest.replaceTo : caret;
+    if (from < line.from || from > to || to !== caret || to > view.state.doc.length) {
+      fail(); return;
+    }
+    view.dispatch({changes: {from, to, insert},
+      selection: {anchor: from + insert.length}, scrollIntoView: true});
+    completionCallback.current?.(completionApplyRequest.nonce, true);
+    view.focus();
+  }, [completionApplyRequest, tabIdentity]);
 
   return <div ref={container} className="codeEditorHost" aria-label="Source code editor" />;
 }

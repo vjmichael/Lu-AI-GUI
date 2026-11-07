@@ -11,6 +11,11 @@ on:
     branches: ['ide/wave-e1-lsp-catalog-transport-20261106']
   workflow_dispatch:
 
+# Coalesce superseded exact-head runs instead of filling the native CI queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

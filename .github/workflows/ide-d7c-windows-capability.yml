@@ -25,6 +25,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt
       - name: Compile feature-gated worker and capability traversal
         run: cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --all-targets
       - name: Test concurrent junction swaps, output publication, and journal denial

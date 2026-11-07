@@ -18,6 +18,7 @@ $service=(Resolve-Path -LiteralPath $ServiceExecutable).Path
 $root=Join-Path $env:RUNNER_TEMP ('d7d-crash-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 $marker=Join-Path $root 'owner.marker'
+$ownerTrace=Join-Path $root 'owner-stages.stderr'
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -37,6 +38,8 @@ public static class D7DProtectedObserver {
   public struct BasicAccounting {
     public long TotalUserTime;
     public long TotalKernelTime;
+    public long ThisPeriodTotalUserTime;
+    public long ThisPeriodTotalKernelTime;
     public uint TotalPageFaultCount;
     public uint TotalProcesses;
     public uint ActiveProcesses;
@@ -49,10 +52,18 @@ $child=[IntPtr]::Zero
 $job=[IntPtr]::Zero
 try {
   $args=@('--owner',('"' + $service + '"'),$ExpectedServiceSha256,('"' + $marker + '"'))
-  $owner=Start-Process -FilePath $fixture -ArgumentList $args -PassThru -WindowStyle Hidden
+  $owner=Start-Process -FilePath $fixture -ArgumentList $args -PassThru -WindowStyle Hidden -RedirectStandardError $ownerTrace
   $deadline=[DateTime]::UtcNow.AddSeconds(25)
   while (!(Test-Path -LiteralPath $marker) -and [DateTime]::UtcNow -lt $deadline) {
-    if ($owner.HasExited) { throw "DENIED: owner failed admission: $($owner.ExitCode)" }
+    if ($owner.HasExited) {
+      # Print only whitelisted native stage IDs, not raw stderr.
+      foreach ($stage in @(Get-Content -LiteralPath $ownerTrace -ErrorAction SilentlyContinue)) {
+        if ($stage -cmatch '^PROTECTED_SERVICE_ADMISSION_STAGE=[a-z0-9_]{1,80}$') {
+          Write-Host $stage
+        }
+      }
+      throw "DENIED: owner failed admission: $($owner.ExitCode)"
+    }
     Start-Sleep -Milliseconds 50
   }
   if (!(Test-Path -LiteralPath $marker)) { throw 'DENIED: service READY absent' }
@@ -91,26 +102,64 @@ try {
   if ($job -eq [IntPtr]::Zero) {
     throw 'DENIED: original named Job disappeared; service keeper not proven live'
   }
-  $accounting=New-Object 'D7DProtectedObserver+BasicAccounting'
-  $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
-  if (![D7DProtectedObserver]::QueryInformationJobObject(
-      $job,1,[ref]$accounting,$size,[IntPtr]::Zero) -or
-      $accounting.ActiveProcesses -ne 0) {
-    throw 'DENIED: retained Job is not empty'
+  # A signaled child handle can precede the kernel Job's accounting
+  # update. Poll real kernel state for up to 8s; never infer empty from PID.
+  $empty=$false
+  $deadline=[DateTime]::UtcNow.AddSeconds(8)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $accounting=New-Object 'D7DProtectedObserver+BasicAccounting'
+    $size=[Runtime.InteropServices.Marshal]::SizeOf($accounting)
+    if ($size -ne 48) { throw "DENIED: Job accounting ABI size mismatch: $size" }
+    if (![D7DProtectedObserver]::QueryInformationJobObject(
+        $job,1,[ref]$accounting,$size,[IntPtr]::Zero)) {
+      # The error code distinguishes stale/revoked original Job handle from
+      # malformed accounting fixture; never convert a query error to PASS.
+      $osCode=[Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      throw "DENIED: kernel Job accounting query failed (Win32=$osCode)"
+    }
+    if ($accounting.ActiveProcesses -eq 0) {
+      $empty=$true
+      break
+    }
+    Start-Sleep -Milliseconds 50
   }
+  if (!$empty) { throw 'DENIED: retained Job is not empty' }
   # A restarted native executable opens its own kernel handle and asks the
   # SCM service to fsync recovered_release before returning.
   & $fixture --recover $service $ExpectedServiceSha256 $jobId $plan
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected recovery ACK not durable' }
+  # The service intentionally keeps the exact named Job briefly after fsync
+  # so a legitimate restarted host can recover a lost reply with a fresh nonce.
   [void][D7DProtectedObserver]::CloseHandle($job)
   $job=[IntPtr]::Zero
-  Start-Sleep -Milliseconds 300
-  $unexpected=[D7DProtectedObserver]::OpenJobObjectW(0x0004,$false,$jobName)
-  if ($unexpected -ne [IntPtr]::Zero) {
-    [void][D7DProtectedObserver]::CloseHandle($unexpected)
-    throw 'DENIED: service did not release recovered original Job'
+  $retryHeld=[D7DProtectedObserver]::OpenJobObjectW(0x0004,$false,$jobName)
+  if ($retryHeld -eq [IntPtr]::Zero) {
+    throw 'DENIED: service dropped original kernel Job before ACK retry window'
   }
-  Write-Host 'PASS: host-crash -> separate service Job kill -> child exit -> retained empty original Job -> authenticated recovery ACK -> Job release'
+  [void][D7DProtectedObserver]::CloseHandle($retryHeld)
+  # This second process repeats kernel verification and performs a fresh,
+  # fully authenticated service round-trip; a file-only ACK cannot pass.
+  & $fixture --recover $service $ExpectedServiceSha256 $jobId $plan
+  if ($LASTEXITCODE -ne 0) {
+    throw 'DENIED: fsynced recovery ACK was not idempotently retryable'
+  }
+  # The observer MUST NOT hold an open kernel Job handle while checking
+  # the service's eventual release. Wait boundedly for retention expiry.
+  $released=$false
+  $deadline=[DateTime]::UtcNow.AddSeconds(75)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $stillHeld=[D7DProtectedObserver]::OpenJobObjectW(0x0004,$false,$jobName)
+    if ($stillHeld -eq [IntPtr]::Zero) {
+      $released=$true
+      break
+    }
+    [void][D7DProtectedObserver]::CloseHandle($stillHeld)
+    Start-Sleep -Milliseconds 100
+  }
+  if (!$released) {
+    throw 'DENIED: service did not release recovered original Job after bounded ACK retry'
+  }
+  Write-Host 'PASS: host crash -> separate service Job kill -> empty original kernel Job -> durable recovery ACK -> authenticated retry -> bounded Job release'
 } finally {
   if ($job -ne [IntPtr]::Zero) { [void][D7DProtectedObserver]::CloseHandle($job) }
   if ($child -ne [IntPtr]::Zero) { [void][D7DProtectedObserver]::CloseHandle($child) }
@@ -118,3 +167,8 @@ try {
     Stop-Process -Id $owner.Id -Force -ErrorAction SilentlyContinue
   }
 }
+# The fixture itself completed all positive OS checks. Any earlier
+# deliberately denied --recover child exited nonzero by design; prevent
+# that expected negative probe from escaping as this script's final result.
+# A throw before this point still fails the workflow and cannot be masked.
+$global:LASTEXITCODE=0

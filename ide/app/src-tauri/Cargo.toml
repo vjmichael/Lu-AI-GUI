@@ -7,6 +7,12 @@ publish = false
 license = "Apache-2.0"
 description = "Standalone desktop IDE, optionally interoperable with Lu"
 
+[features]
+default = []
+# Release-only native Windows LSP host. Never enabled by the default IDE build.
+# Requires reviewed compile-time executable digests and installed D7D SCM.
+native-lsp = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/lsp-transport", "lu-ide-execution-supervisor/protected-recovery-service"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -15,6 +21,11 @@ tauri = { version = "2.11.5", features = [] }
 tauri-plugin-dialog = "2.7.1"
 lu-ide-workspace = { path = "../../host" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+lu-ide-execution-supervisor = { path = "../../supervisor", optional = true }
 
 [profile.dev]
 debug = 0

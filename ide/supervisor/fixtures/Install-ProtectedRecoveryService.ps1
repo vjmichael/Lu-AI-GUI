@@ -11,6 +11,7 @@ param(
   [Parameter(Mandatory)][string]$ExpectedServiceSha256,
   [Parameter(Mandatory)][string]$ApprovedHostExecutable,
   [Parameter(Mandatory)][string]$ExpectedHostSha256,
+  [string]$ApprovedHostUserSid,
   [switch]$CiAcceptanceUnsigned,
   [switch]$Start
 )
@@ -36,6 +37,14 @@ foreach ($item in @($serviceExe,$hostExe)) {
 }
 $observedService=(Get-FileHash -LiteralPath $serviceExe -Algorithm SHA256).Hash
 $observedHost=(Get-FileHash -LiteralPath $hostExe -Algorithm SHA256).Hash
+if ([string]::IsNullOrWhiteSpace($ApprovedHostUserSid)) {
+  # Approve only the exact installing Windows user. An elevated deployment
+  # under another account must explicitly specify the intended IDE user SID.
+  $ApprovedHostUserSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+}
+if ($ApprovedHostUserSid -notmatch '^S-1-5-21-(\d+-){3}\d+$') {
+  throw 'DENIED: only an exact individual host account SID is permitted'
+}
 if ($observedService -ine $ExpectedServiceSha256 -or $observedHost -ine $ExpectedHostSha256) {
   throw 'DENIED: installed service/host executable did not match reviewed pin'
 }
@@ -43,6 +52,11 @@ $allowUnsigned=$CiAcceptanceUnsigned -and $env:GITHUB_ACTIONS -eq 'true' -and
     $env:CI -eq 'true' -and ![string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)
 if ($CiAcceptanceUnsigned -and !$allowUnsigned) {
   throw 'DENIED: unsigned acceptance only on disposable GitHub Actions runner'
+}
+if ($allowUnsigned) {
+  # This ephemeral variable is a diagnostic correlation only. The SCM service
+  # will still reject a wrong actual TokenUser, PID or executable hash.
+  $env:LU_IDE_D7_DIAGNOSTIC_HOST_SID=$ApprovedHostUserSid
 }
 if (!$allowUnsigned) {
   foreach ($item in @($serviceExe,$hostExe)) {
@@ -68,11 +82,26 @@ $created=$false
 try {
   # The account is NOT LocalSystem. The restricted service SID protects
   # its private evidence; interactive Users have no ACL grants.
-  $args=@('create',$serviceName,'type=','own','start=','demand',
-    'obj=','NT AUTHORITY\LocalService','binPath=','"'+$serviceExe+'"',
-    'DisplayName=','Lu IDE Recovery Broker')
-  & sc.exe @args | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'DENIED: SCM service creation failed' }
+  # PowerShell's automatic $args must never be used for native command
+  # splatting. In the Windows 2022 CI run, sc.exe saw malformed arguments
+  # (1639) rather than a CreateServiceW denial.
+  # Supply each sc option name and value as separate native argv entries.
+  # For Program Files paths, preserve the quotes in the service registry
+  # ImagePath; on CI's no-space path, avoid unneeded literal quote layers.
+  $binaryPathArgument=if ($serviceExe.Contains(' ')) {
+    '"' + $serviceExe + '"'
+  } else { $serviceExe }
+  $scArgs=@('create',$serviceName,'binPath=',$binaryPathArgument,
+    'type=','own','start=','demand','obj=','NT AUTHORITY\LocalService')
+  # Preserve the native SCM error code and Win32 message. Hiding this
+  # output previously reduced a real Windows 2022 failure to an opaque
+  # "SCM service creation failed" even though the pinned build succeeded.
+  $scOutput=@(& sc.exe @scArgs 2>&1 | ForEach-Object { [string]$_ })
+  $scExit=$LASTEXITCODE
+  if ($scExit -ne 0) {
+    throw ("DENIED: SCM service creation failed (exit={0}): {1}" -f
+      $scExit, ($scOutput -join ' | '))
+  }
   $created=$true
   & sc.exe sidtype $serviceName restricted | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted service SID installation failed' }
@@ -82,11 +111,12 @@ try {
   # Create and protect config before removing interactive write rights
   # from the parent directory; do not rely on owner privilege to write data.
   $settings=[ordered]@{
-    schema='lu.ide.windows.recovery-service.v1'
+    schema='lu.ide.windows.recovery-service.v2'
     serviceName=$serviceName
     expectedServiceSha256=$ExpectedServiceSha256.ToLowerInvariant()
     expectedHostSha256=$ExpectedHostSha256.ToLowerInvariant()
     expectedHostExecutable=$hostExe
+    approvedHostUserSid=$ApprovedHostUserSid
     evidenceRoot=$root
     endpoint='\\.\pipe\LuIdeRecoveryBroker.v1'
     acceptanceUnsigned=[bool]$allowUnsigned
@@ -95,9 +125,12 @@ try {
   $settings|ConvertTo-Json -Depth 4|Set-Content -LiteralPath $config -Encoding utf8 -NoNewline
   & icacls.exe $config /inheritance:r /grant:r ($system+':F') ($serviceSid+':M') | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected config ACL failed' }
+  $allowed=@($system,$serviceSid)
   $configAcl=Get-Acl -LiteralPath $config
   if (!$configAcl.AreAccessRulesProtected -or
-      @($configAcl.Access|Where-Object {$_.IdentityReference.Value -notin $allowed}).Count) {
+      @($configAcl.Access|Where-Object {
+        $_.AccessControlType -ne 'Allow' -or $_.IdentityReference.Value -notin $allowed
+      }).Count) {
     throw 'DENIED: service configuration ACL not private'
   }
   & icacls.exe $root /inheritance:r /grant:r (
@@ -105,7 +138,6 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: private evidence DACL provisioning failed' }
   $acl=Get-Acl -LiteralPath $root
   if (!$acl.AreAccessRulesProtected) { throw 'DENIED: evidence directory inherits parent ACL' }
-  $allowed=@($system,$serviceSid)
   foreach ($entry in $acl.Access) {
     if ($entry.AccessControlType -ne 'Allow' -or $entry.IdentityReference.Value -notin $allowed) {
       throw "DENIED: unexpected evidence ACE: $($entry.IdentityReference.Value)"
@@ -118,12 +150,30 @@ try {
   }
   # Restrict service management to SYSTEM and Administrators. This changes
   # the service object DACL, not the named pipe or evidence directory DACLs.
-  $scmSddl='D:P(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWRPWPDTLOCRRC;;;BA)'
+  # SYSTEM and elevated Administrators need DELETE (SD) for explicit
+  # uninstallation/CI teardown. This is the SCM *service object*, never
+  # the protected named-pipe, Job, NUL device or evidence DACL.
+  $scmSddl='D:P(A;;CCLCSWRPWPDTLOCRRCSD;;;SY)(A;;CCLCSWRPWPDTLOCRRCSD;;;BA)'
   & sc.exe sdset $serviceName $scmSddl | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: service management DACL failed' }
   if ($Start) {
-    & sc.exe start $serviceName | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted recovery service failed to start' }
+    $startResult=@(& sc.exe start $serviceName 2>&1 | ForEach-Object { [string]$_ })
+    $startExit=$LASTEXITCODE
+    if ($startExit -ne 0) {
+      throw ("DENIED: restricted recovery service failed to start (SCM={0}): {1}" -f
+        $startExit, ($startResult -join ' | '))
+    }
+    # SCM accepts StartService before service_main has necessarily finished
+    # validating LocalService token, protected installed config and pipe ACL.
+    # Reject a service that immediately exits; do not stage a 4-minute
+    # toolchain against a non-running broker and misreport its missing pipe.
+    Start-Sleep -Seconds 2
+    $observed=Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    if (!$observed -or $observed.State -ne 'Running') {
+      $code=if ($observed) { [string]$observed.ExitCode } else { 'unknown' }
+      $specific=if ($observed) { [string]$observed.ServiceSpecificExitCode } else { 'unknown' }
+      throw "DENIED: independent restricted service did not remain running (SCM=$code stage=$specific)"
+    }
   }
   Write-Host "SERVICE=$serviceName"
   Write-Host "EVIDENCE_ROOT=$root"
