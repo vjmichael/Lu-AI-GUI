@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P05 native WO9 upstream receipt verification repair (Nov 7):** Inspected exact-head Win/Linux failure receipts: WO9 Windows repeated upstream source fetch; WO9 Linux omitted it. Corrected both actual packaging jobs, added complete CI wiring regressions across six E2/WO8/WO9 jobs; real installed UI acceptance remains open.
+
 - **P05 complete unsigned verification artifact license reach (Nov 7):** Extended exact upstream full-text fetch+hashed receipt/actual-package hash to both E2 Windows, WO8 Win/Linux and WO9 Win/Linux package builds. Repaired all corresponding CLI 2.12 pins; preserved exact older workflow blob identities, native installed tests and no-release policy.
 
 - **P05 version and upstream license closeout (Nov 7):** Pinned full Rust/JS/CLI Tauri 2.12 family after actual cross-platform `tauri 2.11.5` vs `tauri-runtime` 2.12 compiler failures. Added fail-closed Cargo.lock drift tests. E2 native NSIS now retrieves, hashes, compares and bundles all six canonical upstream original license texts with per-source exact SHA provenance, plus npm/Cargo notices. Missing/mismatched upstream receipts denied; transitive legal review and real installed OS gates remain open.
