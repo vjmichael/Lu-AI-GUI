@@ -77,6 +77,9 @@
 
 **P05 status:** Source and review work completed with 30 PR decisions, 38 workflow decisions and explicit blocking of unsafe operations. Exact-head Windows/Linux source integrity CI remains pending; actual PR closures and CI reduction remain blocked by prior native phase gates. Draft branch `ide/release-closeout-p05-20261107` is stacked on P04 draft #84. P03/P04 remain draft/unmerged; P06 unstarted; P07 still deferred. No PR closed, retargeted, merged or security CI disabled.
 
+
+**P05 exact-head follow-up (Nov 7, 2026):** Windows and Linux source/semantic/retention audit passed for commit `85cf29180cf14cc33178429c4e9699966e5b4051` in [run 42414577131](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42414577131). Two independent Windows E2 unsigned installed runs on that SHA then failed **before NSIS compilation**: Cargo's loose `tauri = 2.11.5` selected Rust `2.12.5`, conflicting with pinned JS API `2.11.1`. Changed native Cargo declaration to exact `=2.11.5` and introduced eight negative/positive Tauri alignment regression cases, preserving full installed smoke steps. This newer source head requires new actual Windows/Linux verification; neither installer run is accepted yet. Release still default-deny.
+
 ## P06 — Governance checklist (not started)
 
 - [ ] Pin Rust and npm dependency graphs for all IDE crates/features, reproducibly build on both OSs and verify license notices.

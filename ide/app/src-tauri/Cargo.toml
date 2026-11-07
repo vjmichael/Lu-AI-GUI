@@ -25,7 +25,7 @@ native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "=2.11.5", features = [] }
 tauri-plugin-dialog = "2.7.1"
 lu-ide-workspace = { path = "../../host" }
 serde = { version = "1", features = ["derive"] }
