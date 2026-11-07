@@ -75,6 +75,12 @@ fn authors(style:Style,xs:&[Author])->String{
             else if xs.len()==2{format!("{} and {}",inverted(first),full(&xs[1]))}
             else{inverted(first)}
         },
+        Style::Chicago18 if xs.len()>6=>{
+            let names=xs.iter().take(3).enumerate()
+                .map(|(i,a)|if i==0{inverted(a)}else{full(a)})
+                .collect::<Vec<_>>();
+            format!("{} et al.",names.join(", "))
+        },
         _=>{
             if xs.len()>6{format!("{} et al.",inverted(first))}
             else if xs.len()==1{inverted(first)}
@@ -85,6 +91,19 @@ fn authors(style:Style,xs:&[Author])->String{
                 format!("{} and {last}",names.join(", "))
             }
         }
+    }
+}
+/// Small, explicitly reviewed SBL2 secondary-journal identity map.
+    /// Exact full title only; neither Crossref short-container-title nor
+    /// a model-generated string may extend this list automatically.
+pub fn sbl_known_journal_abbreviation(title:&str)->Option<&'static str>{
+    match title{
+        "Journal of Biblical Literature"=>Some("JBL"),
+        "Catholic Biblical Quarterly"=>Some("CBQ"),
+        "New Testament Studies"=>Some("NTS"),
+        "Journal for the Study of the New Testament"=>Some("JSNT"),
+        "Journal for the Study of the Old Testament"=>Some("JSOT"),
+        _=>None,
     }
 }
 fn note_author(xs:&[Author])->String{
@@ -289,9 +308,11 @@ pub fn catalog_work_from_crossref(
         source_id:source_id.to_owned(),title:title.to_owned(),record_url,
         kind,authors,year:years.iter().next().copied(),
         publisher,publication_place,journal,
-        // Crossref short-container-title is NOT a verified SBL
-        // abbreviation and cannot populate this field automatically.
-        journal_abbreviation:None,volume,issue,
+        // Only a fixed reviewed title-to-SBL abbreviation map can
+        // populate this field. Crossref short-container-title is ignored.
+        journal_abbreviation:journal.as_deref()
+            .and_then(sbl_known_journal_abbreviation).map(str::to_owned),
+        volume,issue,
     };
     // Enforce the exact original author identity and required book/journal
     // metadata before any partial citation can leave this native adapter.
@@ -513,6 +534,24 @@ mod tests{
             publication_place:Some("Chicago".into()),journal:None,
             journal_abbreviation:None,volume:None,issue:None,
         }
+    }
+    #[test]
+    fn p07_chicago18_many_authors_preserves_first_three_before_et_al(){
+        let xs=(0..7).map(|n|Author{
+            family:format!("Family{n}"),given:format!("Given{n}"),
+        }).collect::<Vec<_>>();
+        let formatted=authors(Style::Chicago18,&xs);
+        assert!(formatted.contains("Family0, Given0"));
+        assert!(formatted.contains("Given1 Family1"));
+        assert!(formatted.contains("Given2 Family2"));
+        assert!(!formatted.contains("Family3"));
+        assert!(formatted.ends_with("et al."));
+    }
+    #[test]
+    fn sbl_small_reviewed_journal_map_never_uses_unreviewed_short_title(){
+        assert_eq!(sbl_known_journal_abbreviation("Journal of Biblical Literature"),Some("JBL"));
+        assert_eq!(sbl_known_journal_abbreviation("Catholic Biblical Quarterly"),Some("CBQ"));
+        assert_eq!(sbl_known_journal_abbreviation("Journal of History"),None);
     }
     #[test]
     fn sbl_scripture_locator_formats_only_user_supplied_book_verse_translation(){
