@@ -101,6 +101,8 @@ function App() {
   const [sblScriptureFirstVerse,setSblScriptureFirstVerse]=useState('1');
   const [sblScriptureLastVerse,setSblScriptureLastVerse]=useState('');
   const [sblScripturePreview,setSblScripturePreview]=useState(null);
+  const [sblEditionId,setSblEditionId]=useState('NA28');
+  const [sblEditionPreview,setSblEditionPreview]=useState(null);
 
 
   const [researchCitationsByChat,setResearchCitationsByChat]=useState({});
@@ -337,6 +339,19 @@ function App() {
       setResearchResult({...result,chatId:sourceChat});
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function previewSblCriticalEdition(){
+    if(!chatId)return;
+    setSblEditionPreview(null);setResearchError('');
+    try{
+      const receipt=await invoke('lu_research_sbl_critical_edition_locator',{
+        chatId,editionId:sblEditionId,book:sblScriptureBook,
+        chapter:Number(sblScriptureChapter),
+        firstVerse:Number(sblScriptureFirstVerse),
+        lastVerse:sblScriptureLastVerse.trim()?Number(sblScriptureLastVerse):null
+      });
+      setSblEditionPreview(receipt);
+    }catch(e){setResearchError(String(e));}
   }
   async function previewSblScriptureLocator(){
     if(!chatId)return;
@@ -4878,6 +4893,31 @@ function App() {
                   onClick={()=>void navigator.clipboard.writeText(sblScripturePreview.reference)
                     .catch(e=>setResearchError(String(e)))}>
                   Copy Scripture reference
+                </button>
+              </div>}
+            <label>Critical-edition reference (not a manuscript-witness check)
+              <select aria-label="SBL critical edition" value={sblEditionId}
+                onChange={e=>{setSblEditionId(e.target.value);setSblEditionPreview(null);}}>
+                <option value="NA28">Novum Testamentum Graece, 28th rev. edition (Greek NT)</option>
+                <option value="RAHLFS-HANHART-2006">Rahlfs–Hanhart, Septuaginta, 2006 (Greek OT)</option>
+              </select>
+            </label>
+            <button type="button" disabled={!chatId}
+              onClick={()=>void previewSblCriticalEdition()}>
+              Format selected critical-edition reference
+            </button>
+            {sblEditionPreview&&
+              <div className="researchResults" aria-label="Critical edition identification only">
+                <strong>{sblEditionPreview.reference}</strong>
+                <small>{sblEditionPreview.editionTitle} · {sblEditionPreview.publisher} · {
+                  sblEditionPreview.publicationYear} · ISBN {sblEditionPreview.isbn}</small>
+                <small>Edition catalog: {sblEditionPreview.catalogUrl}</small>
+                <small>Text readings, verse-numbering equivalences, variant witnesses,
+                  translations and any specific manuscript remain UNVERIFIED.</small>
+                <button type="button" onClick={()=>void navigator.clipboard.writeText(
+                  sblEditionPreview.reference
+                ).catch(e=>setResearchError(String(e)))}>
+                  Copy critical-edition reference
                 </button>
               </div>}
           </div>
