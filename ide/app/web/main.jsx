@@ -1405,7 +1405,14 @@ function App() {
                   {buildResult.requiresReconciliation ? 'required' : 'not indicated'}</p>
                 <p>Source: <code>{buildResult.inputSnapshotSha256}</code></p>
                 <p>Toolchain: <code>{buildResult.toolchainSha256}</code></p>
-                <p>Output seal: {buildResult.outputSha256 || 'not independently published'}</p>
+                <p>Worker output seal: {buildResult.outputSha256 || 'not independently published'}</p>
+                <p>Read-only artifact witness: {buildResult.artifactEvidenceState || 'unavailable'} ·
+                  {buildResult.artifactCount ?? 0} files · {buildResult.artifactTruncated ? 'display truncated' : 'bounded listing'}</p>
+                <p>Artifact manifest SHA-256: <code>{buildResult.artifactManifestSha256 || 'unavailable'}</code></p>
+                {Array.isArray(buildResult.artifactFiles) && buildResult.artifactFiles.length > 0 &&
+                  <ul>{buildResult.artifactFiles.map(item =>
+                    <li key={item.relativePath}><code>{item.relativePath}</code> ({item.bytes} bytes)
+                      · SHA-256 <code>{item.sha256}</code></li>)}</ul>}
                 <p>Installed-app acceptance: <strong>Not established by this result</strong>.</p>
               </div>}
               {buildStatus?.quarantined?.filter(item => item.requiresReconciliation).map(job =>
