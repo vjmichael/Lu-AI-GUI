@@ -1,3 +1,11 @@
+## P07 report-assembly continuation — 2026-11-07
+
+Added an **opt-in** bibliography attachment to the existing Lu Research `lu_research_export_report` command. When the human checks "Include reviewed P07 bibliography," Lu reopens the same local citation snapshot inventory, requires an explicitly selected style, and either appends the full Markdown reference list or inserts a `lu_reviewed_bibliography` object into the existing JSON evidence report. Any unreviewed, missing, changed or style-unsupported catalog record aborts the whole export; no source is silently dropped and no network fetch is performed by this composition step. The exported record carries the exact per-source Crossref SHA-256 manifest plus source-only uncertainty flags; it cannot assert that quotations, page locators, Bible translations or conclusions were verified.
+
+Added a portable Rust offline/restart regression that persists a DOI-correlated Crossref catalog receipt in the chat SQLite, drops the original ledger, constructs a fresh host without a working HTTP client and reconstructs the bibliography from the sealed catalog alone. CI now requests a real native Windows Tauri-host test in addition to the earlier Rust/Node/React compilation checks. **These are requested checks, not automatically a PASS** until real exact-head results are inspected.
+
+The P07 source work is broadly functional for *basic* books/journal metadata and the independently labeled narrow SBL helpers. The remaining non-implemented product promises are still full CSL citeproc semantics, editor-reviewed ancient primary-source witnesses, language transliteration, complete specialist journal dictionaries, reviewable catalog revision migration, all-format report styling, and installed Windows/Linux GUI acceptance.
+
 ## P07 current work ledger — 2026-11-07 (supersedes earlier open-item snapshots)
 
 **Source implementation now present:**
