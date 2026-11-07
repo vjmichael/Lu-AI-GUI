@@ -49,6 +49,9 @@ test('P06 capture receipts never imply verified visual interpretation or retaine
   assert.match(host,/capture_guardian:Option<GuardianLease>/);
   assert.match(host,/session\.capture_guardian\.take\(\)/);
   assert.match(host,/release_guardian_when_reaped/);
+  assert.match(host,/fn reconcile_revoked\(&self,session:&mut Session\)/);
+  assert.match(host,/p06_revoked_consent_task_receipt_reconciles_after_native_cleanup/);
+  assert.match(host,/p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker/);  assert.match(host,/release_guardian_when_reaped/);
   assert.match(host,/capture_processes\.poll\(\)\s*\.map_err\(/);
   assert.doesNotMatch(host,/let _=self\.capture_processes\.poll\(\)/);
   assert.match(host,/fully_redacted_receipt:terminal&&sha\.is_some\(\)/);
