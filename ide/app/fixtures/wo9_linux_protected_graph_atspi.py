@@ -36,10 +36,10 @@ def main():
         ui.activate("Record exact dependency workflow")
         wait("Durable dependent build/test workflow")
         for step in (1, 2):
-            ui.activate("Request separately approved protected step", seconds=30)
+            ui.activate("Request separately approved protected step", timeout=30)
             # This must be a genuine Tauri/GTK one-use confirmation, produced by
             # protected worker runtime after source and OS resource verification.
-            ui.activate("Run this exact job", seconds=60)
+            ui.activate("Run this exact job", timeout=60)
             wait("Native step returned", 360)
             wait("passed", 35)
             print("WO9_LINUX_NATIVE_SIGNED_PROTECTED_STEP_"+str(step)+"=PASS", flush=True)

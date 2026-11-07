@@ -61,6 +61,35 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
     }
     Start-Sleep -Milliseconds 450
   }
+  # P02: an actual Windows installed run failed here for Execution requests.
+  # Emit a bounded snapshot of the real native UIA tree before denying; this is
+  # diagnostic evidence only and NEVER converts a missing control into a pass.
+  try {
+    $nativeRoot=WindowRoot
+    if ($nativeRoot) {
+      $nodes=$nativeRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+      Write-Host ('P02_NATIVE_UIA_MISSING_CONTROL='+$query+'; tree_nodes='+$nodes.Count)
+      $printed=0
+      foreach($entry in $nodes) {
+        if ($printed -ge 100) { break }
+        try {
+          $n=[string]$entry.Current.Name
+          if (![string]::IsNullOrWhiteSpace($n)) {
+            $n=($n -replace '[\r\n\t]+',' ')
+            if ($n.Length -gt 128) { $n=$n.Substring(0,128) }
+            $t=[string]$entry.Current.ControlType.ProgrammaticName
+            Write-Host ('P02_NATIVE_UIA_NODE ['+$t+'] '+$n)
+            $printed++
+          }
+        } catch {}
+      }
+    } else {
+      Write-Host ('P02_NATIVE_UIA_NO_MAIN_WINDOW_FOR='+$query)
+    }
+  } catch {
+    Write-Host ('P02_NATIVE_UIA_SNAPSHOT_ERROR='+$_.Exception.GetType().Name)
+  }
   Deny ('ui_element_not_exposed_'+$query.Replace(' ','_'))
 }
 function Click([string]$label) {

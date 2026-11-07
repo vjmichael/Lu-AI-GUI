@@ -146,7 +146,7 @@ def select_native_folder():
     # GTK folder picker normally accepts via the Open/Select action.
     for button in ("Select", "Open", "Choose Folder"):
         try:
-            activate(button, seconds=2)
+            activate(button, timeout=2)
             break
         except RuntimeError:
             continue

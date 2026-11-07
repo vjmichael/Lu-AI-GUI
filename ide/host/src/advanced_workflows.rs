@@ -4,7 +4,12 @@
 use crate::IdeWorkspaceRegistry;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeSet, fs::{self, File, OpenOptions}, io::{Read, Write}, path::Path};
+use std::{
+    collections::BTreeSet,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
+    path::Path,
+};
 
 const MAX_WORKFLOW_PROJECTS: usize = 8;
 const MAX_ARTIFACTS_PER_PROJECT: usize = 20;
@@ -114,24 +119,31 @@ impl IdeWorkspaceRegistry {
             return Err("WORKFLOW_PROJECT_COUNT_DENIED");
         }
         let mut unique = BTreeSet::new();
-        let catalog = self.projects().map_err(|_| "WORKFLOW_CATALOG_UNAVAILABLE")?;
+        let catalog = self
+            .projects()
+            .map_err(|_| "WORKFLOW_CATALOG_UNAVAILABLE")?;
         let mut out = Vec::with_capacity(project_ids.len());
         for project_id in project_ids {
             if !unique.insert(project_id.clone()) {
                 return Err("WORKFLOW_DUPLICATE_PROJECT");
             }
-            let entry = catalog.iter().find(|p| &p.project_id == project_id)
+            let entry = catalog
+                .iter()
+                .find(|p| &p.project_id == project_id)
                 .ok_or("WORKFLOW_UNKNOWN_PROJECT")?;
             if !entry.active || !entry.available {
                 return Err("WORKFLOW_PROJECT_NOT_OPEN");
             }
             let git = self.inspect_git_worktree(project_id);
-            let inventory = self.inspect_project_evidence(project_id)
+            let inventory = self
+                .inspect_project_evidence(project_id)
                 .map_err(|_| "WORKFLOW_INVENTORY_UNAVAILABLE")?;
             let mut blockers = Vec::new();
             if git.state != "local_repository_inspected"
-                || git.local_head.as_deref().is_none_or(|h| h.len() != 40
-                    || !h.as_bytes().iter().all(u8::is_ascii_hexdigit)) {
+                || git.local_head.as_deref().is_none_or(|h| {
+                    h.len() != 40 || !h.as_bytes().iter().all(u8::is_ascii_hexdigit)
+                })
+            {
                 blockers.push("git_head_unverified".into());
             }
             if git.worktree != "clean" || git.truncated {
@@ -195,13 +207,14 @@ impl IdeWorkspaceRegistry {
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             return Err("WORKFLOW_EXPORT_FOLDER_UNTRUSTED");
         }
-        let folder = fs::canonicalize(selected_folder)
-            .map_err(|_| "WORKFLOW_EXPORT_FOLDER_UNAVAILABLE")?;
+        let folder =
+            fs::canonicalize(selected_folder).map_err(|_| "WORKFLOW_EXPORT_FOLDER_UNAVAILABLE")?;
         if !folder.is_dir() {
             return Err("WORKFLOW_EXPORT_FOLDER_UNAVAILABLE");
         }
         for id in project_ids {
-            let root = self.registered_git_root(id)
+            let root = self
+                .registered_git_root(id)
                 .map_err(|_| "WORKFLOW_PROJECT_NOT_OPEN")?;
             if folder.starts_with(&root) {
                 return Err("WORKFLOW_EXPORT_INSIDE_SOURCE_PROJECT");
@@ -209,13 +222,16 @@ impl IdeWorkspaceRegistry {
         }
         let file_name = format!("lu-ide-workflow-{}.json", &current.fingerprint[..20]);
         let output = folder.join(&file_name);
-        let bytes = serde_json::to_vec_pretty(&current)
-            .map_err(|_| "WORKFLOW_EXPORT_SERIALIZE_FAILED")?;
+        let bytes =
+            serde_json::to_vec_pretty(&current).map_err(|_| "WORKFLOW_EXPORT_SERIALIZE_FAILED")?;
         if bytes.len() > 256 * 1024 {
             return Err("WORKFLOW_EXPORT_TOO_LARGE");
         }
         // A preexisting file, including a symlink/reparse point, always denies.
-        let mut file = OpenOptions::new().write(true).create_new(true).open(&output)
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&output)
             .map_err(|_| "WORKFLOW_EXPORT_ALREADY_EXISTS_OR_DENIED")?;
         let result = (|| {
             file.write_all(&bytes)
@@ -226,7 +242,8 @@ impl IdeWorkspaceRegistry {
             // manifest was being saved cannot silently become accepted.
             self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
             #[cfg(unix)]
-            File::open(&folder).and_then(|dir| dir.sync_all())
+            File::open(&folder)
+                .and_then(|dir| dir.sync_all())
                 .map_err(|_| "WORKFLOW_EXPORT_DIRECTORY_SYNC_FAILED")?;
             Ok::<(), &'static str>(())
         })();
@@ -269,10 +286,11 @@ impl IdeWorkspaceRegistry {
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("WORKFLOW_BUNDLE_DEST_UNTRUSTED");
         }
-        let folder = fs::canonicalize(selected_folder)
-            .map_err(|_| "WORKFLOW_BUNDLE_DEST_UNAVAILABLE")?;
+        let folder =
+            fs::canonicalize(selected_folder).map_err(|_| "WORKFLOW_BUNDLE_DEST_UNAVAILABLE")?;
         for id in project_ids {
-            let root = self.registered_git_root(id)
+            let root = self
+                .registered_git_root(id)
                 .map_err(|_| "WORKFLOW_PROJECT_NOT_OPEN")?;
             if folder.starts_with(root) {
                 return Err("WORKFLOW_BUNDLE_MUST_NOT_DIRTY_SOURCE");
@@ -284,7 +302,8 @@ impl IdeWorkspaceRegistry {
         // At most 128 MiB of independently hashed project files is retained.
         let mut staged = Vec::new();
         for project in &current.projects {
-            let root = self.source_capability(&project.project_id)
+            let root = self
+                .source_capability(&project.project_id)
                 .map_err(|_| "WORKFLOW_SOURCE_CAPABILITY_UNAVAILABLE")?;
             for item in &project.artifacts {
                 if item.byte_length > MAX_SINGLE_BYTES
@@ -298,27 +317,40 @@ impl IdeWorkspaceRegistry {
                     return Err("WORKFLOW_ARTIFACT_NAME_UNSAFE");
                 }
                 let leaf = parts.pop().ok_or("WORKFLOW_ARTIFACT_PATH_DENIED")?;
-                let parent = descend(root.try_clone().map_err(|_| "WORKFLOW_SOURCE_UNAVAILABLE")?, &parts)
-                    .map_err(|_| "WORKFLOW_ARTIFACT_PARENT_UNAVAILABLE")?;
-                let before = parent.symlink_metadata(&leaf)
+                let parent = descend(
+                    root.try_clone()
+                        .map_err(|_| "WORKFLOW_SOURCE_UNAVAILABLE")?,
+                    &parts,
+                )
+                .map_err(|_| "WORKFLOW_ARTIFACT_PARENT_UNAVAILABLE")?;
+                let before = parent
+                    .symlink_metadata(&leaf)
                     .map_err(|_| "WORKFLOW_ARTIFACT_DISAPPEARED")?;
-                if !before.is_file() || before.file_type().is_symlink()
+                if !before.is_file()
+                    || before.file_type().is_symlink()
                     || before.len() != item.byte_length
                 {
                     return Err("WORKFLOW_ARTIFACT_CHANGED");
                 }
-                let mut input = parent.open(&leaf)
+                let mut input = parent
+                    .open(&leaf)
                     .map_err(|_| "WORKFLOW_ARTIFACT_OPEN_DENIED")?;
-                let opened = input.metadata().map_err(|_| "WORKFLOW_ARTIFACT_OPEN_DENIED")?;
+                let opened = input
+                    .metadata()
+                    .map_err(|_| "WORKFLOW_ARTIFACT_OPEN_DENIED")?;
                 if !opened.is_file() || opened.len() != before.len() {
                     return Err("WORKFLOW_ARTIFACT_CHANGED");
                 }
                 let mut bytes = Vec::new();
-                input.take(MAX_SINGLE_BYTES + 1).read_to_end(&mut bytes)
+                input
+                    .take(MAX_SINGLE_BYTES + 1)
+                    .read_to_end(&mut bytes)
                     .map_err(|_| "WORKFLOW_ARTIFACT_READ_FAILED")?;
-                let after = parent.symlink_metadata(&leaf)
+                let after = parent
+                    .symlink_metadata(&leaf)
                     .map_err(|_| "WORKFLOW_ARTIFACT_CHANGED")?;
-                if after.file_type().is_symlink() || after.len() != before.len()
+                if after.file_type().is_symlink()
+                    || after.len() != before.len()
                     || bytes.len() as u64 != item.byte_length
                     || format!("{:x}", Sha256::digest(&bytes)) != item.sha256
                 {
@@ -340,29 +372,37 @@ impl IdeWorkspaceRegistry {
         self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
         let name = format!("lu-ide-workflow-{}.zip", &current.fingerprint[..20]);
         let path = folder.join(&name);
-        let output = OpenOptions::new().write(true).create_new(true).open(&path)
+        let output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
             .map_err(|_| "WORKFLOW_BUNDLE_ALREADY_EXISTS_OR_DENIED")?;
         let packaged = (|| -> Result<(), &'static str> {
             let mut zip = ZipWriter::new(output);
-            let opts = || SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Stored)
-                .unix_permissions(0o644);
+            let opts = || {
+                SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Stored)
+                    .unix_permissions(0o644)
+            };
             zip.start_file("workflow-manifest.json", opts())
                 .map_err(|_| "WORKFLOW_ZIP_HEADER_FAILED")?;
-            let manifest = serde_json::to_vec_pretty(&current)
-                .map_err(|_| "WORKFLOW_ZIP_MANIFEST_FAILED")?;
-            zip.write_all(&manifest).map_err(|_| "WORKFLOW_ZIP_WRITE_FAILED")?;
+            let manifest =
+                serde_json::to_vec_pretty(&current).map_err(|_| "WORKFLOW_ZIP_MANIFEST_FAILED")?;
+            zip.write_all(&manifest)
+                .map_err(|_| "WORKFLOW_ZIP_WRITE_FAILED")?;
             for (name, bytes) in &staged {
                 zip.start_file(name, opts())
                     .map_err(|_| "WORKFLOW_ZIP_HEADER_FAILED")?;
-                zip.write_all(bytes).map_err(|_| "WORKFLOW_ZIP_WRITE_FAILED")?;
+                zip.write_all(bytes)
+                    .map_err(|_| "WORKFLOW_ZIP_WRITE_FAILED")?;
             }
             let output = zip.finish().map_err(|_| "WORKFLOW_ZIP_FINALIZE_FAILED")?;
             output.sync_all().map_err(|_| "WORKFLOW_ZIP_SYNC_FAILED")?;
             // Late Git/artifact change during ZIP assembly invalidates output.
             self.verify_multi_project_workflow(project_ids, expected_fingerprint)?;
             #[cfg(unix)]
-            File::open(&folder).and_then(|dir| dir.sync_all())
+            File::open(&folder)
+                .and_then(|dir| dir.sync_all())
                 .map_err(|_| "WORKFLOW_ZIP_DIRECTORY_SYNC_FAILED")?;
             Ok(())
         })();
@@ -371,12 +411,19 @@ impl IdeWorkspaceRegistry {
             return Err(code);
         }
         let mut reader = File::open(&path).map_err(|_| "WORKFLOW_ZIP_REOPEN_FAILED")?;
-        let size = reader.metadata().map_err(|_| "WORKFLOW_ZIP_STAT_FAILED")?.len();
+        let size = reader
+            .metadata()
+            .map_err(|_| "WORKFLOW_ZIP_STAT_FAILED")?
+            .len();
         let mut hasher = Sha256::new();
         let mut chunk = [0u8; 64 * 1024];
         loop {
-            let n = reader.read(&mut chunk).map_err(|_| "WORKFLOW_ZIP_DIGEST_FAILED")?;
-            if n == 0 { break; }
+            let n = reader
+                .read(&mut chunk)
+                .map_err(|_| "WORKFLOW_ZIP_DIGEST_FAILED")?;
+            if n == 0 {
+                break;
+            }
             hasher.update(&chunk[..n]);
         }
         Ok(WorkflowBundleExport {
@@ -401,12 +448,18 @@ impl IdeWorkspaceRegistry {
         expected_fingerprint: &str,
     ) -> Result<WorkflowInspection, &'static str> {
         if expected_fingerprint.len() != 64
-            || !expected_fingerprint.as_bytes().iter().all(u8::is_ascii_hexdigit)
+            || !expected_fingerprint
+                .as_bytes()
+                .iter()
+                .all(u8::is_ascii_hexdigit)
         {
             return Err("WORKFLOW_INVALID_FINGERPRINT");
         }
         let current = self.inspect_multi_project_workflow(project_ids)?;
-        if !current.fingerprint.eq_ignore_ascii_case(expected_fingerprint) {
+        if !current
+            .fingerprint
+            .eq_ignore_ascii_case(expected_fingerprint)
+        {
             return Err("WORKFLOW_SOURCE_OR_ARTIFACT_DRIFT");
         }
         if !current.ready_for_review {
@@ -437,38 +490,50 @@ mod tests {
     }
     struct FakePicker(std::path::PathBuf);
     impl crate::NativeDirectoryPicker for FakePicker {
-        fn choose_project_directory(&mut self) -> Result<Option<std::path::PathBuf>, crate::IdeError> {
+        fn choose_project_directory(
+            &mut self,
+        ) -> Result<Option<std::path::PathBuf>, crate::IdeError> {
             Ok(Some(self.0.clone()))
         }
     }
 
     struct Fixture(std::path::PathBuf);
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     fn native_fixture() -> (Fixture, IdeWorkspaceRegistry, String) {
         use git2::{Repository, Signature};
-        let root = std::env::temp_dir().join(format!(
-            "wo9-native-workflow-{}", rand::random::<u64>()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("wo9-native-workflow-{}", rand::random::<u64>()));
         std::fs::create_dir_all(&root).unwrap();
         let project = root.join("picked-by-native-dialog");
         std::fs::create_dir_all(project.join("dist")).unwrap();
-        std::fs::write(project.join("dist").join("verified.tar"), b"frozen archive data").unwrap();
+        std::fs::write(
+            project.join("dist").join("verified.tar"),
+            b"frozen archive data",
+        )
+        .unwrap();
         let repo = Repository::init(&project).unwrap();
         let mut idx = repo.index().unwrap();
-        idx.add_path(std::path::Path::new("dist/verified.tar")).unwrap();
+        idx.add_path(std::path::Path::new("dist/verified.tar"))
+            .unwrap();
         idx.write().unwrap();
         let tree_id = idx.write_tree().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
         let who = Signature::now("WO9 test", "test@localhost.invalid").unwrap();
-        repo.commit(Some("HEAD"), &who, &who, "fixed fixture", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &who, &who, "fixed fixture", &tree, &[])
+            .unwrap();
         drop(tree);
         drop(repo);
         let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-        let project_id = registry.register_from_native_picker(&mut FakePicker(project))
-            .unwrap().unwrap().project_id;
+        let project_id = registry
+            .register_from_native_picker(&mut FakePicker(project))
+            .unwrap()
+            .unwrap()
+            .project_id;
         (Fixture(root), registry, project_id)
     }
 
@@ -480,10 +545,12 @@ mod tests {
         assert!(plan.ready_for_review, "{:?}", plan.projects[0].blockers);
         assert_eq!(plan.projects[0].artifacts.len(), 1);
         assert_eq!(plan.projects[0].head.as_deref().map(str::len), Some(40));
-        assert!(registry.verify_multi_project_workflow(&selected, &plan.fingerprint).is_ok());
-        assert!(registry.inspect_multi_project_workflow(
-            &[project_id.clone(), project_id],
-        ).is_err());
+        assert!(registry
+            .verify_multi_project_workflow(&selected, &plan.fingerprint)
+            .is_ok());
+        assert!(registry
+            .inspect_multi_project_workflow(&[project_id.clone(), project_id],)
+            .is_err());
         assert!(!plan.ready_for_release);
         assert!(!plan.execution_performed);
     }
@@ -496,7 +563,9 @@ mod tests {
         let plan = registry.inspect_multi_project_workflow(&selected).unwrap();
         let folder = temp.0.join("native-export-zip");
         std::fs::create_dir_all(&folder).unwrap();
-        let result = registry.export_workflow_bundle(&selected, &plan.fingerprint, &folder).unwrap();
+        let result = registry
+            .export_workflow_bundle(&selected, &plan.fingerprint, &folder)
+            .unwrap();
         assert_eq!(result.artifact_count, 1);
         assert!(!result.release_approved);
         assert!(!result.executed_project_code);
@@ -507,18 +576,29 @@ mod tests {
         let mut zip = zip::ZipArchive::new(file).unwrap();
         assert_eq!(zip.len(), 2);
         let mut manifest = String::new();
-        zip.by_name("workflow-manifest.json").unwrap().read_to_string(&mut manifest).unwrap();
+        zip.by_name("workflow-manifest.json")
+            .unwrap()
+            .read_to_string(&mut manifest)
+            .unwrap();
         assert!(manifest.contains(&plan.fingerprint));
         let mut artifact = Vec::new();
         zip.by_name(&format!("projects/{project_id}/dist/verified.tar"))
-            .unwrap().read_to_end(&mut artifact).unwrap();
+            .unwrap()
+            .read_to_end(&mut artifact)
+            .unwrap();
         assert_eq!(artifact, b"frozen archive data");
-        assert!(registry.export_workflow_bundle(&selected, &plan.fingerprint, &folder).is_err());
+        assert!(registry
+            .export_workflow_bundle(&selected, &plan.fingerprint, &folder)
+            .is_err());
         let source = registry.trusted_native_worker_root(&project_id).unwrap();
-        assert!(registry.export_workflow_bundle(&selected, &plan.fingerprint, &source).is_err());
+        assert!(registry
+            .export_workflow_bundle(&selected, &plan.fingerprint, &source)
+            .is_err());
         std::fs::write(source.join("dist/verified.tar"), b"swapped").unwrap();
         assert_eq!(
-            registry.export_workflow_bundle(&selected, &plan.fingerprint, &folder).unwrap_err(),
+            registry
+                .export_workflow_bundle(&selected, &plan.fingerprint, &folder)
+                .unwrap_err(),
             "WORKFLOW_SOURCE_OR_ARTIFACT_DRIFT"
         );
     }
@@ -530,28 +610,39 @@ mod tests {
         let plan = registry.inspect_multi_project_workflow(&selected).unwrap();
         let destination = temp.0.join("exported-by-native-picker");
         std::fs::create_dir_all(&destination).unwrap();
-        let report = registry.export_workflow_manifest(
-            &selected, &plan.fingerprint, &destination,
-        ).unwrap();
+        let report = registry
+            .export_workflow_manifest(&selected, &plan.fingerprint, &destination)
+            .unwrap();
         assert!(destination.join(&report.file_name).exists());
         assert!(!report.project_files_exported);
         assert!(!report.release_approved);
-        assert!(registry.export_workflow_manifest(
-            &selected, &plan.fingerprint, &destination,
-        ).is_err(), "overwrite of a reviewed plan must be denied");
+        assert!(
+            registry
+                .export_workflow_manifest(&selected, &plan.fingerprint, &destination,)
+                .is_err(),
+            "overwrite of a reviewed plan must be denied"
+        );
         let registered_root = registry.trusted_native_worker_root(&project_id).unwrap();
-        assert!(registry.export_workflow_manifest(
-            &selected, &plan.fingerprint, &registered_root,
-        ).is_err(), "export must not silently dirty a project root");
-        std::fs::write(registered_root.join("dist/verified.tar"), b"changed externally").unwrap();
+        assert!(
+            registry
+                .export_workflow_manifest(&selected, &plan.fingerprint, &registered_root,)
+                .is_err(),
+            "export must not silently dirty a project root"
+        );
+        std::fs::write(
+            registered_root.join("dist/verified.tar"),
+            b"changed externally",
+        )
+        .unwrap();
         assert_eq!(
-            registry.verify_multi_project_workflow(&selected, &plan.fingerprint)
+            registry
+                .verify_multi_project_workflow(&selected, &plan.fingerprint)
                 .unwrap_err(),
             "WORKFLOW_SOURCE_OR_ARTIFACT_DRIFT",
         );
-        assert!(registry.export_workflow_manifest(
-            &selected, &plan.fingerprint, &destination,
-        ).is_err());
+        assert!(registry
+            .export_workflow_manifest(&selected, &plan.fingerprint, &destination,)
+            .is_err());
     }
 
     #[test]
@@ -570,10 +661,16 @@ mod tests {
         let a = workflow_status(vec![project("a")]).unwrap();
         let mut drift = project("a");
         drift.artifacts[0].sha256 = "c".repeat(64);
-        assert_ne!(a.fingerprint, workflow_status(vec![drift.clone()]).unwrap().fingerprint);
+        assert_ne!(
+            a.fingerprint,
+            workflow_status(vec![drift.clone()]).unwrap().fingerprint
+        );
         drift.artifacts[0].sha256 = "b".repeat(64);
         drift.head = Some("d".repeat(40));
-        assert_ne!(a.fingerprint, workflow_status(vec![drift]).unwrap().fingerprint);
+        assert_ne!(
+            a.fingerprint,
+            workflow_status(vec![drift]).unwrap().fingerprint
+        );
     }
     #[test]
     fn block_unreviewable_state_without_fabricating_release_acceptance() {

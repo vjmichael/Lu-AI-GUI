@@ -47,7 +47,7 @@ def main():
         time.sleep(1)
         for caption in ("Select", "Open", "Choose Folder"):
             try:
-                ui.activate(caption, seconds=2)
+                ui.activate(caption, timeout=2)
                 break
             except RuntimeError:
                 continue

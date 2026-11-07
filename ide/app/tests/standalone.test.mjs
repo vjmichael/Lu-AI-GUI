@@ -43,7 +43,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_workflow_export_manifest', 'ide_workflow_export_bundle',
     'ide_git_review_file', 'ide_git_stage_reviewed', 'ide_git_commit_reviewed',
     'ide_workflow_create', 'ide_workflow_list_runs', 'ide_workflow_cancel_pending',
-    'ide_workflow_run_step'
+    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -329,8 +329,11 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.match(debugBackend, /reconcile_windows_interrupted_via_service/);
   assert.match(debugBackend, /reconcile_linux_interrupted/);
   assert.match(debugBackend, /DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN/);
+  // OS-backed native receipt verification is a reviewed host route, not a
+  // general-purpose Lu capability with permission to execute project code.
   const declared = registered.filter(value =>
     value !== 'ide_list_capabilities' && value !== 'ide_workflow_run_step' &&
+    value !== 'ide_workflow_verify_native_receipt' &&
     !nativeLspCommands.includes(value) &&
     !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
