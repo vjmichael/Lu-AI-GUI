@@ -90,8 +90,8 @@ fn type_event(record:LegacyEvent,event_id:String)->Result<Option<LiveEvent>,Stri
         user_turn_id:None,legacy_turn_id:None,generation_id:None,call_id:None,tool_id:None,
     };
     match record{
-        LegacyEvent::User{text,user_turn_id:_}=>{
-            e.kind=LiveKind::User;e.text=text;
+        LegacyEvent::User{text,user_turn_id}=>{
+            e.kind=LiveKind::User;e.text=text;e.legacy_turn_id=user_turn_id;
             // The imported g-* is historical metadata in the untouched
             // legacy file, never a new host-authenticated human grant.
         }
