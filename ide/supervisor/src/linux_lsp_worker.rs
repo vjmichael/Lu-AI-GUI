@@ -46,7 +46,7 @@ fn fixed_server(
         "lsp_clangd" => Ok((
             "clangd",
             "clangd",
-            &["--log=error", "--background-index=false"],
+            &["--log=error", "--background-index=false", "-j=1"],
         )),
         "lsp_ruff" => Ok(("ruff", "ruff", &["server"])),
         _ => Err(SupervisorError::InvalidPlan),
