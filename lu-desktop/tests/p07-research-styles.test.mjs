@@ -113,3 +113,39 @@ test('P07 native Crossref citation preview includes provenance-preserving CSL JS
   assert.match(wf,/Compile actual P07 React and native Research\/Tauri host on Windows/);
   assert.match(wf,/cargo check --locked --manifest-path lu-desktop\/src-tauri\/Cargo.toml/);
 });
+
+test('P07 immutable DOI-checked Crossref catalog snapshots never silently rewrite metadata',()=>{
+  const evidence=read('../../src-tauri/lu-core/src/web_research_evidence.rs');
+  const host=read('../src-tauri/src/research_desktop.rs');
+  assert.match(evidence,/CREATE TABLE IF NOT EXISTS research_citation_catalog_snapshots/);
+  assert.match(evidence,/pub fn pin_citation_catalog\(/);
+  assert.match(evidence,/INSERT OR IGNORE INTO research_citation_catalog_snapshots/);
+  assert.match(evidence,/saved\.response_sha256!=hash\|\|saved\.response_json!=response/);
+  assert.match(evidence,/digest\(&value\.response_json\)!=value\.response_sha256/);
+  assert.match(evidence,/citation_catalog_source_ids\(/);
+  assert.match(evidence,/p07_citation_catalog_snapshot_is_chat_scoped_immutable_and_hash_checked/);
+  assert.match(host,/ledger\.pin_citation_catalog\(source_id,&page\.bytes\)/);
+});
+test('P07 bibliography previews all reviewed sources offline, exports with trusted OS picker',()=>{
+  const host=read('../src-tauri/src/research_desktop.rs');
+  const desktop=read('../src-tauri/src/lib.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(host,/pub\(crate\) fn bibliography_preview\(/);
+  assert.match(host,/citation_catalog_source_ids\(121\)/);
+  assert.match(host,/if ids\.len\(\)>120/);
+  assert.match(host,/ledger\.citation_catalog\(&id\)/);
+  assert.match(host,/render_bibliography\(&ledger,&works,style\)/);
+  assert.match(host,/crossref_response_sha256/);
+  assert.match(desktop,/async fn lu_research_bibliography_preview\(/);
+  assert.match(desktop,/async fn lu_research_bibliography_export\(/);
+  assert.match(desktop,/lu_research_bibliography_preview,/);
+  assert.match(desktop,/lu_research_bibliography_export,/);
+  assert.match(desktop,/File::create_new\(&temp\)/);
+  assert.match(desktop,/std::fs::hard_link\(&temp,&destination\)/);
+  assert.match(desktop,/if reread\.catalog_manifest_sha256!=reviewed\.catalog_manifest_sha256/);
+  assert.match(ui,/Compile reviewed bibliography offline/);
+  assert.match(ui,/Save new bibliography Markdown/);
+  assert.match(ui,/Save new bibliography CSL-JSON/);
+  assert.match(ui,/researchBibliographiesByChat\[chatId\]/);
+  assert.match(ui,/publication details remain unverified/i);
+});
