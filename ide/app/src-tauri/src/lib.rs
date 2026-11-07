@@ -79,7 +79,7 @@ fn stable_error(error: &IdeError) -> &'static str {
 /// WO10: report truthful opt-in bridge status without auto-starting a
 /// listener, discovering a local Lu process, or exposing project content.
 #[tauri::command]
-fn ide_bridge_status() -> lu_ide_workspace::bridge_policy::BridgeStatus {
+async fn ide_bridge_status() -> lu_ide_workspace::bridge_policy::BridgeStatus {
     lu_ide_workspace::bridge_policy::disconnected_status()
 }
 
