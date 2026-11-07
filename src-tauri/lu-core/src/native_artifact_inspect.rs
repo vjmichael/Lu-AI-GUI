@@ -221,7 +221,7 @@ impl ModelToolCodec for Codec{
     fn input_type_url(&self)->&'static str{INPUT}
     fn output_type_url(&self)->&'static str{OUTPUT}
     fn encode(&self,args:&Map<String,Value>)->Result<ProtoPayload,ModelToolError>{
-        expect_fields(args,&["path","format"],&["expected_sha256"])?;
+        expect_fields(args,&["path","format","expected_sha256"],&["path","format"])?;
         let path=args.get("path").and_then(Value::as_str)
             .ok_or_else(||ModelToolError::InvalidArguments("path required".into()))?;
         let format=args.get("format").and_then(Value::as_str)
@@ -284,7 +284,7 @@ mod tests{
         let mut cursor=Cursor::new(Vec::new());
         {
             let mut zip=ZipWriter::new(&mut cursor);
-            for (name,body) in [("[Content_Types].xml",b"<Types/>".as_slice()),
+            for (name,body) in [("[Content_Types].xml",&b"<Types/>"[..]),
                 ("xl/workbook.xml",b"<workbook/>"),
                 ("xl/worksheets/sheet1.xml",b"<worksheet/>")]{
                 if !include_sheet&&name=="xl/workbook.xml"{continue;}
