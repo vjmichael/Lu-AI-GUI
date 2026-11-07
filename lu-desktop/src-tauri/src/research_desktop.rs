@@ -109,6 +109,17 @@ pub(crate) struct ResearchBibliographyView {
     pub factual_claim_verified:bool,
     pub message:&'static str,
 }
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchBibliographyExportView {
+    pub saved_path:String,
+    pub format:String,
+    pub saved_sha256:String,
+    pub catalog_manifest_sha256:String,
+    pub source_count:usize,
+    pub publication_details_verified:bool,
+    pub message:&'static str,
+}
 /// Percent-encode a host-selected, ledger-stored DOI as a Crossref path
 /// segment. Model/UI input never supplies a network URL or a replacement DOI.
 fn encode_doi_component(doi:&str)->String{
