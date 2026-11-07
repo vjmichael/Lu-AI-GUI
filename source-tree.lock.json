@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "81255d511ec29c5f9fc5223aa9a14d7e4d34588b",
+  "sourceCommitBeforeLock": "0eca5524d3217679a07a881ed18f78cce4451f2c",
   "trackedFileCount": 518,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-p07-research-citation-styles.yml",
-      "blob": "67bd662acc28234012e17fce025e12b33cfa5938"
+      "blob": "c933118635e006bed58aa32486721f0863102d2d"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -133,7 +133,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "9e413013030a41a2b50e387b0b78a4d12e8ebc41"
+      "blob": "17d3b4fbd6af1853baf0cbd6f36402a18228e137"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/LU_P07_RESEARCH_STYLES.md",
-      "blob": "59bcfd92a3beb9448a6b5541614fcacd27c8b8d4"
+      "blob": "0bf77a928a0a0df15fe2950f4c95823fc94a3b44"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -445,7 +445,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "d417eabb837545f7456c8535b715db3095e3be8a"
+      "blob": "4bece7178c10d4f5d189e2d89019faf5c2dbb523"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -505,7 +505,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
-      "blob": "91a10268112521cd8a25632aa7ae07f069f1d1db"
+      "blob": "b5c90abadf3c078eae5ec59ae36aaba5bfbdc5ef"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -653,7 +653,7 @@
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
-      "blob": "a637e8160380f5f1f1b36481c0a111615d9e565e"
+      "blob": "59f889808def20182b7ca143ee170ae65566c2a6"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -773,7 +773,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "4c6b0aa1bbbb1b93ae0b1750016a783ada31e853"
+      "blob": "8754752834583cd5468d3613fc47b9c28cd5d404"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
