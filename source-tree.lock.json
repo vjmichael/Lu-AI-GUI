@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7fa630ccb4ac23470c5144ffbcdebad073d7aab0",
+  "sourceCommitBeforeLock": "e4d577033051b0bb41c8bc7979cb79920ec2989a",
   "trackedFileCount": 518,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-p07-research-citation-styles.yml",
-      "blob": "c933118635e006bed58aa32486721f0863102d2d"
+      "blob": "f7126fd08d3a644c9ade2680032324472fcbdf53"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -133,7 +133,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "6bd7c7eb68b1cdccccf4c35dd083783fd9eb42a8"
+      "blob": "e005b68fe0fcdd81f3df88be5607c68327ca6c5d"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +153,7 @@
     },
     {
       "path": "docs/LU_P07_RESEARCH_STYLES.md",
-      "blob": "39db82c1eda893b5d310d41d6bfeac1e6287ca94"
+      "blob": "3836a4161feeb20b77a298283f5fe1cec830ae2b"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -505,7 +505,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
-      "blob": "5dd83760319f0136f6ef19ed230d345df1a0fd8b"
+      "blob": "11fc438c0e54260d62f187fc988c24bb00f366bb"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -653,7 +653,7 @@
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
-      "blob": "922561e5360d12bbc576a856366f3c42dde42a24"
+      "blob": "385c646a0d30e7c29372641f4aa4933c8d00b4c6"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
