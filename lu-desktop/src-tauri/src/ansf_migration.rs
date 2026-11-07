@@ -154,7 +154,7 @@ fn import_one(root:&Path,library:&AnsfLibrary,book_root:&Path,chat:&LegacyChat)
             .map_err(|e|format!("Legacy chat {} line {}: {e}",chat.chat_id,line_no+1))?;
         match parsed{
             LegacyEvent::GoalMemory{entry}=>{
-                book.mirror_goal_event(&chat.chat_id,&entry)
+                book.import_observed_goal_record(&chat.chat_id,&entry)
                     .map_err(|e|format!("Legacy goal transition invalid: {e:?}"))?;
                 goals+=1;
             }
