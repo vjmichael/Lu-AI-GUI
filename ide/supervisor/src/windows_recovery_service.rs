@@ -242,6 +242,10 @@ impl Witness {
                 | "hold_expired"
                 | "pipe_lost"
                 | "recovered_release"
+                | "nul_intent"
+                | "nul_granted"
+                | "nul_revoke_intent"
+                | "nul_revoked"
         ) {
             return Err(denied());
         }
@@ -280,6 +284,85 @@ impl Witness {
         Ok(())
     }
 }
+
+// A separate, OS-protected *durable intent* survives unexpected service
+// termination while a job SID ACE is active. Never infer authority from this
+// file: after restart the service only revokes the exact derived package SID;
+// missing original kernel Job evidence remains quarantined.
+fn null_intent_path(root: &Path, job_id: &str, plan: &str) -> Result<PathBuf, SupervisorError> {
+    if !valid_id(job_id) || !valid_sha(plan) {
+        return Err(denied());
+    }
+    Ok(root.join(format!("{job_id}-{plan}.nul-intent")))
+}
+fn persist_null_intent(root: &Path, request: &Admission) -> Result<(), SupervisorError> {
+    security::verify_private_evidence_root(root)?;
+    let path = null_intent_path(root, &request.job_id, &request.plan_sha256)?;
+    let mut intent = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| denied())?;
+    intent
+        .write_all(format!("{}\n{}\n", request.job_id, request.plan_sha256).as_bytes())
+        .map_err(|_| denied())?;
+    intent.sync_all().map_err(|_| denied())
+}
+fn clear_null_intent(root: &Path, request: &Admission) -> Result<(), SupervisorError> {
+    fs::remove_file(null_intent_path(root, &request.job_id, &request.plan_sha256)?)
+        .map_err(|_| denied())
+}
+fn parse_null_intent_name(name: &str) -> Result<(String, String), SupervisorError> {
+    let stem = name.strip_suffix(".nul-intent").ok_or_else(denied)?;
+    if stem.len() != 101 || stem.as_bytes().get(36) != Some(&b'-') {
+        return Err(denied());
+    }
+    let (id, rest) = stem.split_at(36);
+    let plan = &rest[1..];
+    if !valid_id(id) || !valid_sha(plan) {
+        return Err(denied());
+    }
+    Ok((id.to_string(), plan.to_string()))
+}
+/// Called before SCM announces running. Only files in the protected service
+/// root can trigger revocation, and each target SID is OS-derived from the
+/// fixed accepted job naming scheme. Never trust these files for execution.
+fn reconcile_pending_null_intents(root: &Path) -> Result<(), SupervisorError> {
+    security::verify_private_evidence_root(root)?;
+    for entry in fs::read_dir(root).map_err(|_| denied())? {
+        let entry = entry.map_err(|_| denied())?;
+        let name = entry.file_name().into_string().map_err(|_| denied())?;
+        if !name.ends_with(".nul-intent") { continue; }
+        let (id, plan) = parse_null_intent_name(&name)?;
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|_| denied())?;
+        if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 || metadata.len() > 120 {
+            return Err(denied());
+        }
+        let body = fs::read(entry.path()).map_err(|_| denied())?;
+        if body != format!("{id}\n{plan}\n").as_bytes() { return Err(denied()); }
+        crate::windows_null_device::reconcile_service_null_intent(&id)?;
+        // If revocation succeeded but the service crashes before deleting,
+        // the next boot's check is idempotent (SID ACE absent = success).
+        fs::remove_file(entry.path()).map_err(|_| denied())?;
+    }
+    Ok(())
+}
+fn revoke_null_before_ack(
+    lease: &mut Option<crate::windows_null_device::ServiceNullLease>,
+    witness: &mut Witness,
+    config: &InstalledConfig,
+    request: &Admission,
+) -> Result<(), SupervisorError> {
+    if let Some(active) = lease.as_mut() {
+        witness.record("nul_revoke_intent")?;
+        active.finish()?;
+        witness.record("nul_revoked")?;
+        clear_null_intent(&config.evidence_root, request)?;
+        *lease = None;
+    }
+    Ok(())
+}
+
 fn valid_id(id: &str) -> bool {
     id.len() == 36 && id.starts_with("job-") && id[4..].bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -687,6 +770,10 @@ fn run_service(status_handle: SERVICE_STATUS_HANDLE) -> Result<(), SupervisorErr
     security::assert_restricted_local_service()?;
     STARTUP_STAGE.store(10, Ordering::Relaxed);
     let config = InstalledConfig::read()?;
+    // A crash may leave a temporary exact package SID ACE behind. Refuse all
+    // new work until the independently restricted service has reconciled and
+    // verified every protected intent against the current global NUL DACL.
+    reconcile_pending_null_intents(&config.evidence_root)?;
     STARTUP_STAGE.store(20, Ordering::Relaxed);
     let acl = security::PipeSecurity::new(&config.approved_host_user_sid)?;
     STARTUP_STAGE.store(30, Ordering::Relaxed);
@@ -861,6 +948,17 @@ pub fn dispatch() -> Result<(), SupervisorError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn private_null_recovery_intent_filenames_are_exact_and_bounded() {
+        let id = format!("job-{}", "a".repeat(32));
+        let plan = "b".repeat(64);
+        let name = format!("{id}-{plan}.nul-intent");
+        let parsed = parse_null_intent_name(&name).unwrap();
+        assert_eq!(parsed, (id, plan));
+        assert!(parse_null_intent_name("..-fake.nul-intent").is_err());
+        assert!(parse_null_intent_name("job-unsafe-SYSTEM.nul-intent").is_err());
+        assert!(parse_null_intent_name(&(name + ".bak")).is_err());
+    }
     #[test]
     fn service_ipc_session_slot_releases_under_denied_or_failed_request() {
         let sessions = Arc::new(AtomicUsize::new(1));
