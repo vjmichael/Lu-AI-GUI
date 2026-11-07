@@ -46,10 +46,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: transitive Tauri runtime mismatch' }
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual upstream notice retrieval failed' }
-          python ../packaging/verify_tauri_minor.py --repo-root ../..
-          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
-          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json --upstream-receipt src-tauri/upstream-notice-receipt.json
-          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows native package legal notices missing' }
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
           npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native NSIS build failed' }
       - name: Bind actual Windows WO9 package to resolved third-party notices
@@ -152,7 +149,9 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund
           npm run check
           cargo fetch --manifest-path src-tauri/Cargo.toml
-          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}'
+          python ../packaging/verify_tauri_minor.py --repo-root ../..
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
           npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
       - name: Bind actual WO9 Debian package to resolved license evidence
         env:
