@@ -112,3 +112,8 @@ try {
     Stop-Process -Id $owner.Id -Force -ErrorAction SilentlyContinue
   }
 }
+# The fixture itself completed all positive OS checks. Any earlier
+# deliberately denied --recover child exited nonzero by design; prevent
+# that expected negative probe from escaping as this script's final result.
+# A throw before this point still fails the workflow and cannot be masked.
+$global:LASTEXITCODE=0
