@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P05/P06 native persisted project lifecycle (Nov 7):** Real Windows installed source/save passed then reopening failed because the project was closed; added genuine UIA/AT-SPI Reopen → Open status → Edit flow and source regression tests. Native acceptance pending.
+
 - **P06 source lockfiles committed (Nov 7):** Added exact real Windows/Linux reviewed Cargo.lock (500 crates) and package-lock.json (62 npm packages) to Git source, LF-pinned with .gitattributes; removed temporary read-only lockfile log exporter; enforced npm ci/Cargo --locked source graph and hash checks. No signed/installed release approval.
 
 - **P06 commercial-license obligations audit (Nov 7):** Recorded five actual MPL-2.0 crates and two multi-licensed `r-efi` versions, requiring explicit legal/notice review without incorrectly treating an LGPL `OR` choice as mandatory. Exact-name/version metadata frozen into hostile review gate; no license or release approval inferred.
