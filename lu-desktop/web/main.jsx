@@ -1302,6 +1302,8 @@ function App() {
     let alive=true;
     setM2Context(null);
     setM2Comments({});
+    setM2GoalDraft('');
+    setM2QuestionDraft('');
     if(!chatId)return ()=>{alive=false;};
     invoke('lu_m2_goal_context',{chatId}).then(view=>{
       if(!alive||activeChatRef.current!==chatId)return;
