@@ -1913,7 +1913,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_artifact_inspect.rs",
-      "blob": "6336e90da865198de84d084db6bfafd8a1465b43"
+      "blob": "99baa71adf77284c1f1c3583d15aa92b9ab08996"
     },
     {
       "path": "src-tauri/lu-core/tests/native_atomic_write.rs",
