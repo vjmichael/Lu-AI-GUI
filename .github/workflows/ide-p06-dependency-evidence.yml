@@ -102,11 +102,11 @@ jobs:
           python ide/packaging/verify_p06_lock_parity.py --review ide/packaging/p06-reviewed-lock-graphs.json --evidence ide/app/src-tauri/p06-dependency-evidence.json --npm-lock ide/app/package-lock.json --cargo-lock ide/app/src-tauri/Cargo.lock --platform ${{ matrix.os }} --receipt ide/app/src-tauri/p06-cross-os-parity-receipt.json
           echo 'P06_REVIEWED_LOCK_HASHES_ONLY_NOT_COMMITTED_LOCKS_OR_SIGNED_RELEASE'
       - name: One-time export of reviewed public lock text for a GitHub source commit
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'windows-2022'
         shell: bash
         run: |
           set -euo pipefail
-          python ide/packaging/p06_emit_pinned_lock_b64.py --repo-root . --platform ubuntu-24.04
+          python ide/packaging/p06_emit_pinned_lock_b64.py --repo-root . --platform windows-2022
       - name: Exercise locked npm and Cargo resolution without source mutation
         shell: bash
         run: |

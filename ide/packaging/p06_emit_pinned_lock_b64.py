@@ -7,6 +7,7 @@ import argparse
 import base64
 from pathlib import Path
 import hashlib
+import json
 from verify_p06_candidate_lock import check
 
 def emit(root, platform):
@@ -19,6 +20,14 @@ def emit(root, platform):
         data=(root/rel).read_bytes()
         if hashlib.sha256(data).hexdigest()!=expected:
             raise ValueError("lockfile_changed_between_review_and_export")
+        # Windows npm uses CRLF. Export exactly the reviewed Linux LF
+        # source representation, but only after hash-verifying BOTH forms.
+        if kind=="npm" and platform=="windows-2022":
+            review=json.loads((root/"ide/packaging/p06-reviewed-lock-graphs.json").read_text(encoding="utf-8"))
+            data=data.replace(b"\r\n",b"\n")
+            expected=review["npmPlatformRawSha256"]["ubuntu-24.04"]
+            if hashlib.sha256(data).hexdigest()!=expected:
+                raise ValueError("unreviewed_windows_to_linux_npm_lock_conversion")
         payload=base64.b64encode(data).decode("ascii")
         print("P06_LOCK_BEGIN|"+kind+"|"+expected)
         for n in range(0,len(payload),120):
