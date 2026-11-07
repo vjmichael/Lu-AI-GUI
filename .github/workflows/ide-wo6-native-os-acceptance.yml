@@ -129,6 +129,14 @@ jobs:
           sudo install -o root -g root -m 755 "$adapter" /opt/lu-ide-wo6-dap-test/bin/lldb-dap
           sudo install -o root -g root -m 755 "$RUNNER_TEMP/wo6-selftest" /opt/lu-ide-wo6-dap-test/debuggee/wo6-selftest
           test "$(stat -c %u /opt/lu-ide-wo6-dap-test/bin/lldb-dap)" = 0
+      - name: Classify native LLDB adapter distribution and copied-bundle initialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fixed protocol request, no project execution. Distinguishes broken
+          # distro resource lookup from genuine kernel/stdio/DAP failures.
+          # Only fixed categories are shown; raw stderr and paths are hidden.
+          python3 ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py
       - name: Compile trusted fixed delegated OS host and native DAP fixture
         shell: bash
         run: |
