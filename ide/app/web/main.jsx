@@ -1499,8 +1499,24 @@ function App() {
                     disabled={buildBusy || !!buildStatus.current}
                     onClick={() => reconcileProtectedBuild(job)}>Verify OS-only cleanup (no rerun)</button>
                 </div>)}
-              {buildStatus?.recent?.length > 0 && <p>Recent native worker receipts:
-                {buildStatus.recent.length}. These results do not substitute for installed-app tests.</p>}
+              {buildStatus?.recent?.length > 0 && <section aria-label="Recent native worker receipts">
+                <p>Recent native worker receipts: {buildStatus.recent.length}.
+                  These results do not substitute for installed-app tests.</p>
+                <div className="continuityEvents">
+                  {buildStatus.recent.slice(-8).map(item =>
+                    <article className="continuityEvent" key={item.jobId}>
+                      <strong>Recorded protected job <code>{item.jobId}</code></strong>
+                      <p>Recipe: {item.recipeId} · Phase: {item.phase} ·
+                        Reconciliation: {item.requiresReconciliation ? 'required' : 'not indicated'}</p>
+                      <p>Source HEAD: <code>{item.sourceHead}</code></p>
+                      <p>Frozen input: <code>{item.inputSnapshotSha256}</code></p>
+                      <p>Native result: {String(item.nativeExitCode ?? 'not reported')} ·
+                        OS error: {item.nativeErrorCategory || 'not reported'}</p>
+                      <p>Kernel cleanup must be independently verified; an IDE receipt alone
+                        is not installed-app release acceptance.</p>
+                    </article>)}
+                </div>
+              </section>}
             </div>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native debugger self-test">
               <h3>Protected debugger (LLDB-DAP)</h3>
