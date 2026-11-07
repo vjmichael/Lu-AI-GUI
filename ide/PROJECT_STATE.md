@@ -1,5 +1,8 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**WO2/WO3 native repair continuation:** plain `windows-worker` no longer compiles protected SCM-only recovery symbols (fix for observed Windows E0433/E0425). Applied 31 native Rustfmt 1.99 hunks across NUL bootstrap, device lease, recovery service and client. D7D crash/service-loss CI both stopped at pre-child service admission; CI observers now emit whitelisted native denial stages for precise diagnosis. Corrected source is committed, exact-head OS acceptance pending; release worker and live LSP remain disabled. [Batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
+
+
 **IDE 07 / WO3 latest native repair:** restricted SCM listener no longer terminates an existing protected-Job holder solely because a *later* named pipe instance fails ACL readback; first-instance failure still blocks service startup. CI-only host token integrity classification added for exact-user pipe denial, without a fallback IPC channel or broader ACL. Protected SCM handshake and hostile recovery remain unaccepted. See [batch 02](docs/IDE_WORK_BATCH_02_20261106.md).
 
 
