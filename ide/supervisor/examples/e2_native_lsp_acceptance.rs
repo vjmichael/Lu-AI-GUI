@@ -244,6 +244,14 @@ mod enabled {
         session
             .changed(&previous, source.clone(), changed)
             .map_err(|e| e.code())?;
+        // Native test must observe actual revision-scoped diagnostics from
+        // clangd, not just protocol compilation or a fabricated diagnostic.
+        // The intentionally undeclared 'addi' identifier produces at least
+        // one diagnostic on both clangd 17 (Debian direct protocol witness)
+        // and supported contemporary clangd releases.
+        wait_event(&mut session, "changed-source diagnostics", |x| {
+            matches!(x, LspEvent::Diagnostics(items) if !items.is_empty())
+        })?;
         session
             .query(
                 "completion",
