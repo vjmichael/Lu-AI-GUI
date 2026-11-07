@@ -56,7 +56,7 @@ pub fn validate(message: &proto::BridgeEnvelope) -> Result<(), BridgeWireError> 
                 || !matches!(hello.client_surface.as_str(), "lu.ide" | "lu.core")
                 || hello.minimum_version != BRIDGE_VERSION
                 || hello.maximum_version != BRIDGE_VERSION
-                || hello.challenge_nonce.len() != 32
+                || hello.challenge_nonce.len() != 32 || hello.client_proof.len() != 32
                 || !caps(&hello.advertised_capabilities) {
                 return Err(BridgeWireError::Invalid("hello"));
             }
@@ -65,7 +65,7 @@ pub fn validate(message: &proto::BridgeEnvelope) -> Result<(), BridgeWireError> 
             if !valid_session(&message.session_id) || message.sequence != 0
                 || ack.selected_version != BRIDGE_VERSION
                 || ack.echoed_challenge_nonce.len() != 32
-                || ack.responder_nonce.len() != 32
+                || ack.responder_nonce.len() != 32 || ack.responder_proof.len() != 32
                 || !caps(&ack.advertised_capabilities) {
                 return Err(BridgeWireError::Invalid("hello ack"));
             }
@@ -166,6 +166,7 @@ mod tests {
             body: Some(Body::Hello(BridgeHello {
                 client_surface: "lu.core".into(), minimum_version: 1, maximum_version: 1,
                 challenge_nonce: vec![23; 32],
+                client_proof: vec![2; 32],
                 advertised_capabilities: vec![1, 2, 3],
             })),
         }
@@ -199,6 +200,7 @@ mod tests {
                 selected_version: 1,
                 echoed_challenge_nonce: vec![1; 32],
                 responder_nonce: vec![2; 32],
+                responder_proof: vec![3; 32],
                 advertised_capabilities: vec![2, 3],
             })),
         };
