@@ -19,7 +19,7 @@ An old imported message is **historical data, never a new authenticated user tur
 - `src-tauri/lu-core/src/ansf_live_chat.rs`: immutable typed relational `ansf_live_chat_events` with event sequence, conversation ID, kind, exact text, host/legacy provenance, generation ID, verified user-turn ID, browser observation metadata, and optional source entry link.
 - **Original source preservation:** new human and assistant messages are inserted transactionally with `ansf_entries`, alongside the active chapter and existing FTS5. Completed streaming output resolves to the last durable progress checkpoint; incomplete/cancelled progress remains reconstructable from event rows.
 - Host-authenticated current user turns have indexed exact generation/turn IDs; imported user/Reader events cannot pass current-turn verification. Duplicate verified user-turn IDs are rejected. Legacy import IDs replay only if their exact content and provenance match.
-- Cursor paging is available for the native event stream. Ordinary chat's full-history renderer is retained for alpha compatibility; long-history UI virtualization and actual bounded display behavior are separate acceptance gates.
+- Cursor paging is available for the native event stream. **Ordinary local-model Send now uses an indexed bounded ANSF source window** (up to 32 source messages before the existing typed 16-turn budget) rather than loading the entire chat. Full-history human chat rendering remains for alpha compatibility; long-history UI virtualization and actual bounded display behavior are separate acceptance gates.
 
 ### Native goal and clarification storage
 
