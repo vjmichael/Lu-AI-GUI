@@ -16,6 +16,9 @@ message BridgeEnvelope {
     ProposedChangeOffer proposal_offer = 13;
     BridgeFailure failure = 14;
     BridgeGoodbye goodbye = 15;
+    CodingChatRequest chat_request = 16;
+    CodingChatReply chat_reply = 17;
+    CodingChatCancel chat_cancel = 18;
   }
 }
 enum BridgeCapability {
@@ -57,3 +60,33 @@ message ProposedChangeOffer {
 }
 message BridgeFailure { string code = 1; }
 message BridgeGoodbye { string reason_code = 1; }
+
+// Requests use the existing Lu-owned GGUF supervisor only after independent
+// IDE turn consent + kernel peer inspection + session scope admission.
+// Never permit a caller to name a model path, shell command, tool grant,
+// native Lu conversation, or arbitrary project path.
+message CodingChatRequest {
+  string project_id = 1;
+  string thread_id = 2;              // IDE-owned thread, not Lu native chat.
+  string generation_id = 3;          // One active generation per connection.
+  string prompt = 4;                 // <= 8192 UTF-8 bytes.
+  repeated CodingChatTurn history = 5;
+  uint32 max_new_tokens = 6;         // 1..2048.
+}
+message CodingChatTurn {
+  string role = 1;                   // user or assistant only.
+  string text = 2;                   // <= 8192 UTF-8 bytes.
+}
+message CodingChatReply {
+  string project_id = 1;
+  string thread_id = 2;
+  string generation_id = 3;
+  string text = 4;                   // <= 16384 bytes.
+  string finish_code = 5;            // completed, cancelled, failed.
+  string model_session_id = 6;       // Opaque; no paths.
+}
+message CodingChatCancel {
+  string project_id = 1;
+  string thread_id = 2;
+  string generation_id = 3;
+}
