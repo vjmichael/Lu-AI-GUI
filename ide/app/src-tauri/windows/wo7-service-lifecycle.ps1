@@ -56,6 +56,7 @@ function Get-TrustedPolicy([string]$root) {
   $policyFile=Join-Path $root $PolicyRel
   if (!(Test-Path -LiteralPath $policyFile -PathType Leaf)) { Deny 'release_policy_missing' }
   Assert-Immutable $policyFile
+  Check-ProtectedAcl $policyFile
   $policy=Get-Content -LiteralPath $policyFile -Raw | ConvertFrom-Json
   if ($policy.schema -ne 'lu.ide.wo7.service-policy.v1' -or $policy.releaseApproved -ne $true) {
     Deny 'release_policy_unapproved'
@@ -108,6 +109,11 @@ try {
     Deny 'only_fixed_program_files_lu_ide_installation_allowed'
   }
   Assert-Immutable $root
+  $expectedHelper=Join-Path $root 'resources\\installer\\wo7-service-lifecycle.ps1'
+  if ([IO.Path]::GetFullPath($PSCommandPath) -ine [IO.Path]::GetFullPath($expectedHelper)) {
+    Deny 'untrusted_lifecycle_script_location'
+  }
+  Check-ProtectedAcl $expectedHelper
   $policy=Get-TrustedPolicy $root
   $serviceExe=Confirm-TrustedService $root $policy
   $existing=CurrentService
