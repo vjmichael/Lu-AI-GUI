@@ -125,6 +125,14 @@ pub struct ResearchCampaignStatus {
     pub completed_pages:u32,
     pub blocked_reason:Option<String>,
 }
+/// Immutable local snapshot of the exact, independently fetched Crossref
+/// bytes that survived a separate title/DOI/author citation review.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct StoredCitationCatalog {
+    pub source_id:String,
+    pub response_sha256:String,
+    pub response_json:Vec<u8>,
+}
 pub struct EvidenceLedger { connection: Connection }
 fn bounded(value: &str, cap: usize) -> bool {
     !value.trim().is_empty() && value.len() <= cap && !value.chars().any(char::is_control)
@@ -216,6 +224,12 @@ impl EvidenceLedger {
              publisher_url TEXT NOT NULL,
              catalog_response_sha256 TEXT NOT NULL
            );
+           CREATE TABLE IF NOT EXISTS research_citation_catalog_snapshots(
+             source_id TEXT PRIMARY KEY NOT NULL REFERENCES research_sources(id),
+             response_sha256 TEXT NOT NULL,
+             response_json BLOB NOT NULL,
+             captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+           );
            CREATE TABLE IF NOT EXISTS research_browser_passage_proofs(
              generation_id TEXT NOT NULL,
              call_id TEXT NOT NULL,
@@ -261,6 +275,73 @@ impl EvidenceLedger {
             })
         ).optional()?.ok_or(EvidenceError::Missing)
     }
+    /// Pin one already host-validated DOI-corroborated catalog response.
+    /// Each source gets one immutable snapshot; a changed Crossref response
+    /// requires a new separately reviewed revision workflow, never an
+    /// automatic overwrite during bibliography/export.
+    pub fn pin_citation_catalog(
+        &mut self,id:&str,response:&[u8]
+    )->Result<StoredCitationCatalog,EvidenceError>{
+        if !bounded(id,128)||response.is_empty()||response.len()>1024*1024
+            ||serde_json::from_slice::<serde_json::Value>(response).is_err(){
+            return Err(EvidenceError::Invalid);
+        }
+        if !matches!(self.status(id)?,SourceStatus::MetadataCorroborated
+            |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified){
+            return Err(EvidenceError::NotCorroborated);
+        }
+        let hash=digest(response);
+        self.connection.execute(
+            "INSERT OR IGNORE INTO research_citation_catalog_snapshots
+               (source_id,response_sha256,response_json) VALUES (?1,?2,?3)",
+            params![id,hash,response],
+        )?;
+        let saved=self.citation_catalog(id)?
+            .ok_or(EvidenceError::Missing)?;
+        if saved.response_sha256!=hash||saved.response_json!=response{
+            return Err(EvidenceError::MetadataMismatch);
+        }
+        Ok(saved)
+    }
+    /// Re-read the exact local catalog snapshot and rehash before use.
+    pub fn citation_catalog(
+        &self,id:&str
+    )->Result<Option<StoredCitationCatalog>,EvidenceError>{
+        if !bounded(id,128){return Err(EvidenceError::Invalid);}
+        let row=self.connection.query_row(
+            "SELECT response_sha256,response_json FROM research_citation_catalog_snapshots
+             WHERE source_id=?1",[id],|r|Ok(StoredCitationCatalog{
+                source_id:id.into(),response_sha256:r.get(0)?,response_json:r.get(1)?,
+            })
+        ).optional()?;
+        if let Some(value)=&row{
+            if !matches!(self.status(id)?,SourceStatus::MetadataCorroborated
+                |SourceStatus::DocumentAccessed|SourceStatus::PassageVerified)
+                ||value.response_json.is_empty()||value.response_json.len()>1024*1024
+                ||digest(&value.response_json)!=value.response_sha256{
+                return Err(EvidenceError::MetadataMismatch);
+            }
+        }
+        Ok(row)
+    }
+    /// Inventory is derived only from persisted, corroborated sources;
+    /// renderer text cannot add a source to the native bibliography.
+    pub fn citation_catalog_source_ids(
+        &self,limit:usize
+    )->Result<Vec<String>,EvidenceError>{
+        if !(1..=120).contains(&limit){return Err(EvidenceError::Invalid);}
+        let mut stmt=self.connection.prepare(
+            "SELECT c.source_id FROM research_citation_catalog_snapshots c
+             INNER JOIN research_sources s ON s.id=c.source_id
+             WHERE s.status IN ('METADATA_CORROBORATED','DOCUMENT_ACCESSED',
+                                'PASSAGE_VERIFIED')
+             ORDER BY c.source_id LIMIT ?1"
+        )?;
+        let ids=stmt.query_map([limit as i64],|r|r.get::<_,String>(0))?
+            .collect::<Result<Vec<_>,_>>()?;
+        Ok(ids)
+    }
+
     pub fn status(&self, id: &str) -> Result<SourceStatus, EvidenceError> {
         let raw: Option<String> = self.connection.query_row(
             "SELECT status FROM research_sources WHERE id=?1", [id], |row| row.get(0)
@@ -1298,4 +1379,33 @@ mod browser_evidence_tests {
         assert_eq!(saved.observed_text_bytes,9000);
         assert!(!ledger.has_browser_excerpt("g-2","browser-call-2","Not present").unwrap());
     }
+    #[test]
+    fn p07_citation_catalog_snapshot_is_chat_scoped_immutable_and_hash_checked(){
+        let mut ledger=EvidenceLedger::open(Path::new(":memory:")).unwrap();
+        ledger.discover(&Candidate{
+            id:"source-1".into(),title:"Study".into(),
+            author:"Jane Doe".into(),identifier:"doi:10.1000/example".into(),
+        }).unwrap();
+        let bytes=br#"{"message":{"DOI":"10.1000/example"}}"#;
+        assert!(matches!(ledger.pin_citation_catalog("source-1",bytes),
+            Err(EvidenceError::NotCorroborated)));
+        ledger.corroborate("source-1",&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let stored=ledger.pin_citation_catalog("source-1",bytes).unwrap();
+        assert_eq!(stored.response_json,bytes);
+        assert_eq!(ledger.citation_catalog_source_ids(120).unwrap(),vec!["source-1"]);
+        assert_eq!(ledger.pin_citation_catalog("source-1",bytes).unwrap(),stored);
+        assert!(matches!(ledger.pin_citation_catalog(
+            "source-1",br#"{"message":{"DOI":"10.1000/changed"}}"#),
+            Err(EvidenceError::MetadataMismatch)));
+        ledger.connection.execute(
+            "UPDATE research_citation_catalog_snapshots SET response_json=?1
+             WHERE source_id='source-1'",[b"corrupted".as_slice()]).unwrap();
+        assert!(matches!(ledger.citation_catalog("source-1"),
+            Err(EvidenceError::MetadataMismatch)));
+    }
+
 }
