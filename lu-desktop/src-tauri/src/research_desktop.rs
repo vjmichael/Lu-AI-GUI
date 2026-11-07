@@ -14,7 +14,7 @@ use lu_core::{
     web_research_planner::canonical_doi,
     web_research_analysis::{AnalysisStore,Interpretation,Stance},
     web_research_report::{render_verified_report,VerifiedResearchReport},
-    web_research_styles::{catalog_work_from_crossref,render_correlated,export_csl_json,Style},
+    web_research_styles::{catalog_work_from_crossref,render_correlated,render_bibliography,export_csl_json,Style},
 
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::{search_openalex,search_openalex_cancellable},
@@ -92,6 +92,21 @@ pub(crate) struct ResearchCitationPreviewView {
     pub quotation_or_page_verified:bool,
     pub factual_claim_verified:bool,
     pub coverage:String,
+    pub message:&'static str,
+}
+/// Offline, chat-scoped output built only from sealed Crossref responses.
+/// No model-authored source list or new network request can enter this view.
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ResearchBibliographyView {
+    pub style:String,
+    pub source_count:usize,
+    pub markdown:String,
+    pub csl_json:serde_json::Value,
+    pub catalog_manifest_sha256:String,
+    pub publication_details_verified:bool,
+    pub quotation_or_page_verified:bool,
+    pub factual_claim_verified:bool,
     pub message:&'static str,
 }
 /// Percent-encode a host-selected, ledger-stored DOI as a Crossref path
@@ -1175,7 +1190,7 @@ impl ResearchDesktop{
         if !file.file_type().is_file()||file.file_type().is_symlink(){
             return Err("Research evidence ledger untrusted".into());
         }
-        let ledger=EvidenceLedger::open(&db)
+        let mut ledger=EvidenceLedger::open(&db)
             .map_err(|_|"Research evidence ledger unavailable")?;
         if !matches!(ledger.status(source_id).map_err(|_|"Unknown research source")?,
             SourceStatus::MetadataCorroborated|
@@ -1201,6 +1216,11 @@ impl ResearchDesktop{
             .map_err(|e|format!("Citation style cannot safely render this record: {e:?}"))?;
         let csl_json=export_csl_json(&ledger,&record)
             .map_err(|e|format!("CSL-compatible evidence export refused: {e:?}"))?;
+        // Store exactly these already reviewed, DOI-correlated response bytes.
+        // A changed Crossref payload cannot silently rewrite the sealed
+        // citation edition/author/date used by an earlier local bibliography.
+        ledger.pin_citation_catalog(source_id,&page.bytes)
+            .map_err(|_|"Citation catalog changed, cannot overwrite reviewed snapshot")?;
         Ok(ResearchCitationPreviewView{
             source_id:rendered.source_id,
             style:rendered.style.into(),
@@ -1215,6 +1235,86 @@ impl ResearchDesktop{
             factual_claim_verified:rendered.factual_claim_verified,
             coverage:rendered.coverage.into(),
             message:"Crossref DOI/title/author metadata matched the existing corroborated Research source. Publication particulars, page locators, quotations and historical/factual interpretations still require manual review.",
+        })
+    }
+
+    /// Build a complete local bibliography only from the immutable,
+    /// per-conversation reviewed DOI catalog snapshots. No network access,
+    /// model-authored metadata or guessed missing bibliography fields.
+    pub(crate) fn bibliography_preview(
+        &self,chat_id:&str,style:Style
+    )->Result<ResearchBibliographyView,String>{
+        if !safe_id(chat_id){return Err("Select a trusted Research conversation".into());}
+        let root=fs::symlink_metadata(&self.root)
+            .map_err(|_|"Research evidence directory unavailable")?;
+        if !root.file_type().is_dir()||root.file_type().is_symlink(){
+            return Err("Research evidence directory untrusted".into());
+        }
+        let db=self.root.join(format!("{chat_id}.sqlite"));
+        let file=fs::symlink_metadata(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        if !file.file_type().is_file()||file.file_type().is_symlink(){
+            return Err("Research evidence ledger untrusted".into());
+        }
+        let ledger=EvidenceLedger::open(&db)
+            .map_err(|_|"Research evidence ledger unavailable")?;
+        let ids=ledger.citation_catalog_source_ids(121)
+            .map_err(|_|"Reviewed citation inventory unavailable")?;
+        if ids.is_empty(){return Err("No human-reviewed citation snapshots in this conversation".into());}
+        if ids.len()>120{return Err("Bibliography exceeds 120 reviewed catalog sources".into());}
+        let mut works=Vec::with_capacity(ids.len());
+        let mut provenance=HashMap::new();
+        for id in ids{
+            let pinned=ledger.citation_catalog(&id)
+                .map_err(|_|"Citation snapshot digest or source status changed")?
+                .ok_or("Citation snapshot no longer exists")?;
+            let work=catalog_work_from_crossref(&ledger,&id,&pinned.response_json)
+                .map_err(|e|format!("Stored citation no longer passes DOI checks: {e:?}"))?;
+            provenance.insert(id,pinned.response_sha256);
+            works.push(work);
+        }
+        let rendered=render_bibliography(&ledger,&works,style)
+            .map_err(|e|format!("Citation bibliography refused an unsupported entry: {e:?}"))?;
+        let by_id=works.iter().map(|work|(&work.source_id,work))
+            .collect::<HashMap<_,_>>();
+        let mut csl=Vec::with_capacity(rendered.len());
+        let mut body=format!(
+            "# Research bibliography — {}\\n\\n**Human review required.**              Corroborated source identity only; publication details, direct              quotations, pages and factual claims are not independently              verified. No ancient texts or guessed SBL abbreviations.\\n\\n",
+             style.label()
+        );
+        let mut manifest=Sha256::new();
+        for item in &rendered{
+            let work=by_id.get(&item.source_id)
+                .ok_or("Reviewed source identity lost during bibliography assembly")?;
+            let sha=provenance.get(&item.source_id)
+                .ok_or("Citation source response hash unavailable")?;
+            let mut record=export_csl_json(&ledger,work)
+                .map_err(|_|"Citation structured export rejected corroborated source")?;
+            record["_lu_evidence"]["crossref_response_sha256"]=
+                serde_json::json!(sha);
+            csl.push(record);
+            body.push_str("- ");
+            body.push_str(&item.bibliography);
+            body.push_str("\\n");
+            manifest.update(item.source_id.as_bytes());
+            manifest.update([0]);
+            manifest.update(sha.as_bytes());
+            manifest.update([0]);
+        }
+        body.push_str("\\n## Crossref catalog response SHA-256 inventory\\n\\n");
+        for item in &rendered{
+            let sha=provenance.get(&item.source_id)
+                .ok_or("Citation inventory digest unavailable")?;
+            body.push_str(&format!("- {}: {}\\n",item.source_id,sha));
+        }
+        if body.len()>2*1024*1024{return Err("Bibliography exceeds native export limit".into());}
+        Ok(ResearchBibliographyView{
+            style:style.label().into(),source_count:rendered.len(),
+            markdown:body,csl_json:serde_json::Value::Array(csl),
+            catalog_manifest_sha256:format!("{:x}",manifest.finalize()),
+            publication_details_verified:false,
+            quotation_or_page_verified:false,factual_claim_verified:false,
+            message:"All entries came from sealed chat-owned DOI/author-attested Crossref snapshots. No source, translation, page, quote or factual interpretation is automatically verified.",
         })
     }
 
