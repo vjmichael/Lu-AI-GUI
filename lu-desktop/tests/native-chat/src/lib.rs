@@ -31,6 +31,10 @@ pub mod ansf_migration;
 #[path = "../../../../src-tauri/lu-core/src/ansf_source_ids.rs"]
 pub mod ansf_source_ids;
 
+// M3-S1/S2: compile the real semantic projection and hybrid ranker.
+#[path = "../../../../src-tauri/lu-core/src/ansf_semantic.rs"]
+pub mod ansf_semantic;
+
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;

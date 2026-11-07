@@ -18,6 +18,7 @@ pub mod ansf;
 pub mod ansf_live_chat;
 pub mod ansf_goal_records;
 pub mod ansf_source_ids;
+pub mod ansf_semantic;
 pub mod ansf_artifact_links;
 pub mod ansf_goals;
 pub mod ansf_import;

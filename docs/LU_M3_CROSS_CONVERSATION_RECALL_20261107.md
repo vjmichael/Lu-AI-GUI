@@ -24,3 +24,7 @@ The production portable native chat harness tests cross-chat retrieval, stable I
 - Revision/conflict semantics and externally linked media broker, independently verified.
 
 No M2 release gate is reclassified as passed by implementing M3.
+
+## M3-S semantic retrieval enhancement (November 7, 2026)
+
+S1 versioned source-bound embeddings and S2 bounded FTS+vector reciprocal-rank fusion are implemented as native **opt-in interfaces** with synthetic-vector tests; original source/authorization remains unchanged. See [M3 S1–S4 work plan](LU_M3_SEMANTIC_S1_S4_20261107.md). There is **no bundled embedding model, live semantic inference, installed acceptance or real-model baseline advantage yet**. Default automatic Lu Send continues M3's lexical recall; S3 embedding workers and S4 three-arm real-GGUF evidence remain open. No ANN extension is bundled. All retrieved entries still go through original ANSF source validation.

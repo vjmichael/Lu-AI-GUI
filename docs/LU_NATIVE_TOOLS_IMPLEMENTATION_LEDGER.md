@@ -1,3 +1,7 @@
+## M3-S1 / M3-S2 semantic original-book index and hybrid retrieval — November 7, 2026 (SOURCE CANDIDATE; CI PENDING)
+
+Added a rebuildable per-original-ANSF-book vector projection with model-version and source hash checks; bounded exact cosine candidate retrieval; canonical source-ID RRF lexical/semantic fusion; a host-only ChatStore hybrid seam; native synthetic fixture and restart/authority regressions, and Windows/Linux CI jobs. **Not yet** an operational embedding engine or a passed three-arm benchmark. S3 actual local model integration and S4 baseline experiments are still open. See [M3 S1–S4 work ledger](LU_M3_SEMANTIC_S1_S4_20261107.md).
+
 ## M3 original ANSF cross-conversation recall — November 7, 2026 (SOURCE CANDIDATE; NATIVE/INSTALLED PENDING)
 
 Stacked on unmerged M2 PR #94 exact `4cfc7ddb0344bff594b1decbfaa88d62e7c52441`. Bounded per-book lexical FTS retrieval, direct host-authenticated canonical source IDs, local GGUF prompt historical-data injection, human Recall UI, and native cross-chat/restart/authority tests are submitted. Real Windows/Linux exact-head and installed runtime proof are open; long-history virtualization, relevance benchmarking and external artifact broker remain open. See [M3 gate ledger](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md). Do not merge ahead of M2 acceptance.

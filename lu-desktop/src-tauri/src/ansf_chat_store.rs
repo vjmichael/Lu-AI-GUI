@@ -10,6 +10,7 @@ use lu_core::{
     ansf_goals::{GoalEvent,GoalSnapshot,project_goal_events},
     ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent},
     ansf_source_ids::AnsfSourceId,
+    ansf_semantic::fuse_source_ranks,
 };
 use rand::{rngs::OsRng,RngCore};
 use rusqlite::{params,Connection,OptionalExtension};
@@ -601,6 +602,47 @@ impl ChatStore {
         Ok(hit)
     }
 
+    /// M3-S2 hybrid seam. A trusted LOCAL embedding engine supplies query
+    /// vectors; this API does not accept model-generated file paths or grants.
+    /// It is NOT wired to automatic Send until a real pinned embedding engine
+    /// and comparative relevance benchmarks are accepted.
+    pub fn hybrid_recall_with_embedding(
+        &self,active_chat:&str,query:&str,model_id:&str,embedding:&[f32]
+    )->Result<Vec<RecallHit>,String>{
+        self.require(active_chat)?;
+        if query.trim().is_empty()||query.len()>2048{
+            return Err("Invalid bounded hybrid recall query".into())
+        }
+        let lexical=self.recall_for_turn(active_chat,query)?;
+        let lexical_ids:Vec<_>=lexical.iter().map(|h|h.source_id.clone()).collect();
+        let candidates:Vec<String>={
+            let conn=self.catalog.lock().map_err(to_err)?;
+            let mut stmt=conn.prepare(
+                "SELECT chat_id FROM ansf_desktop_chats WHERE chat_id<>?1
+                 ORDER BY updated_seq DESC,chat_id LIMIT 24"
+            ).map_err(to_err)?;
+            let rows=stmt.query_map([active_chat],|r|r.get::<_,String>(0))
+                .map_err(to_err)?;
+            rows.collect::<Result<Vec<_>,_>>().map_err(to_err)?
+        };
+        let mut semantic:Vec<(f32,String)>=Vec::new();
+        for source in candidates{
+            let book=self.require(&source)?;
+            let hits=book.semantic_candidates(&source,model_id,embedding,3)
+                .map_err(to_err)?;
+            for hit in hits{
+                semantic.push((hit.similarity,hit.entry.stable_source_id().map_err(to_err)?));
+            }
+        }
+        semantic.sort_by(|a,b|b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        let semantic_ids:Vec<_>=semantic.into_iter().take(24)
+            .map(|(_,id)|id).collect();
+        let ranked=fuse_source_ranks(&lexical_ids,&semantic_ids,3).map_err(to_err)?;
+        ranked.iter().map(|source|
+            self.known_source_for_turn(active_chat,&source.source_id)
+        ).collect()
+    }
+
     /// Host-formatted unprivileged memory data for one normal local GGUF Send.
     /// Never prepend a system message or synthesize a USER turn from history.
     pub fn memory_context_for_turn(&self,active_chat:&str,prompt:&str)
@@ -823,6 +865,39 @@ mod tests{
         assert_eq!(store.history(&chat.chat_id).unwrap().len(),129);
         assert!(store.recent_model_history(&chat.chat_id,129).is_err());
         drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn m3_hybrid_retrieves_source_across_restart_without_grants(){
+        let root=tmp();
+        let source;
+        let active;
+        let source_turn=format!("g-{:032x}",411);
+        {
+            let store=ChatStore::open(&root).unwrap();
+            source=store.create_chat().unwrap().chat_id;
+            active=store.create_chat().unwrap().chat_id;
+            store.append_user_with_turn_id(&source,&source_turn,
+                "Cancellation checkpoints retain native worker recovery state").unwrap();
+            let book=store.require(&source).unwrap();
+            let originals=book.recent_context_entries(&source,5).unwrap();
+            assert_eq!(originals.len(),1);
+            book.index_semantic_passage(&source,originals[0].id,0,
+                "fixture-v1",&[1.0,0.0,0.0]).unwrap();
+            let hits=store.hybrid_recall_with_embedding(&active,
+                "What happens if the process dies?","fixture-v1",&[0.95,0.05,0.0]).unwrap();
+            assert_eq!(hits.len(),1);
+            assert_eq!(hits[0].source_chat_id,source);
+            assert!(hits[0].excerpt.contains("Cancellation checkpoints"));
+            assert_eq!(store.known_source_for_turn(&active,&hits[0].source_id).unwrap(),hits[0]);
+            assert!(store.trusted_user_turn_text(&active,&source_turn).is_none());
+        }
+        {
+            let store=ChatStore::open(&root).unwrap();
+            assert_eq!(store.hybrid_recall_with_embedding(&active,
+                "How do tasks resume?","fixture-v1",&[1.0,0.0,0.0]).unwrap().len(),1);
+            assert!(store.trusted_user_turn_text(&active,&source_turn).is_none());
+        }
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
