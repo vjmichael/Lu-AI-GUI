@@ -2746,7 +2746,7 @@ async fn lu_research_export_report(
     }else{None};
     let body=match (format.as_str(),bibliography.as_ref()){
         ("markdown",Some(bib))=>format!(
-            "{}\\n\\n{}\\n",report.markdown,bib.markdown
+            "{}\n\n{}\n",report.markdown,bib.markdown
         ),
         ("markdown",None)=>report.markdown.clone(),
         ("json",Some(bib))=>{
