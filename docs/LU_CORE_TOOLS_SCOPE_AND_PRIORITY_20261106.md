@@ -1,3 +1,7 @@
+## P09 owner-directed transition — November 7, 2026
+
+P09 OFFICE-BOUNDARY-01 is now the active Lu Core tool development phase after P08. Maintain bounded DOCX/PPTX/XLSX reading and non-destructive ordinary revisions; disclose that unchanged OOXML parts do not guarantee rich visual fidelity. **Do not build a full Office suite, chart editor, formula calculation engine or advanced layout tool.** P09 source and acceptance ledger: [LU_P09_OFFICE_BOUNDARY.md](LU_P09_OFFICE_BOUNDARY.md). P08's exact-head and installed-app acceptance remains independently OPEN. P04/P05 remain deferred.
+
 ## Owner's P07→P08 scope transition — November 7, 2026
 
 P07 general-purpose Research/citation capability is sufficiently implemented to move forward. **The owner explicitly does NOT require comprehensive SBL, independent verification of publication details, or specialist scholarly editing in Lu Core.** Such work is delegated to specialist software/DLC instead of expanding Lu. P07 exact-head CI and installed acceptance remain recorded separately as engineering gates; not misreported as passed. Current active work: **P08 ARCHIVE-SPLIT-01 — Archive byte splitting, approved staged resume and checksum-verified no-overwrite reassembly.** P08 implements a format-agnostic Lu byte-part container, *not* native spanned ZIP/RAR/7z. See [P08 ledger](LU_P08_ARCHIVE_SPLIT.md). Complex ISO/UDF extraction and niche repairs are optional specialist territory. P04/P05 remain deferred.

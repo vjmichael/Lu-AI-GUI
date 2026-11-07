@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
-  "trackedFileCount": 524,
+  "trackedFileCount": 527,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -26,6 +26,10 @@
     {
       "path": ".github/workflows/lu-p08-archive-split.yml",
       "blob": "8a351a5b7ce2dde74ee33c2d0133b113373a5718"
+    },
+    {
+      "path": ".github/workflows/lu-p09-office-boundary.yml",
+      "blob": "b2be376619352f3e60d13858b488f8cd15703f6f"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +133,7 @@
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "7f2f5e0ca61b7646c0435046db21268d662c1a5e"
+      "blob": "5e06284ee5f09779848cb9e72db3cbc50c13c24e"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -137,7 +141,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "de2eb78aaed7b571c7fd7e5c46479e7d941b66f0"
+      "blob": "4893f260495aaeb2aef68ea826f6c745cbdd647e"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -162,6 +166,10 @@
     {
       "path": "docs/LU_P08_ARCHIVE_SPLIT.md",
       "blob": "88e368c6e57cc5caaaa30b4f95a5ad9e388c93f4"
+    },
+    {
+      "path": "docs/LU_P09_OFFICE_BOUNDARY.md",
+      "blob": "750100265d77f1e14c8e8140927b0a1630118d61"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -672,6 +680,10 @@
       "blob": "48966eecfb51b1752a40d5a5a4d3304211426663"
     },
     {
+      "path": "lu-desktop/tests/p09-office-boundary.test.mjs",
+      "blob": "5d1041c4e8229365e11b0d273203bddfd8493c9f"
+    },
+    {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
       "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
     },
@@ -789,7 +801,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "19533a89febd4b5bb70b3962789ecf0aca51c939"
+      "blob": "03124d58b93bf15eea6b69f9065187cd97f22102"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
