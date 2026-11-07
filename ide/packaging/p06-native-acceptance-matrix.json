@@ -1,0 +1,43 @@
+{
+  "schema": "lu.ide.p06.acceptance-matrix.v1",
+  "sourceBaseline": "49c04a7a13770207acfbf553fc79cbaafa1f1dfe",
+  "releaseApproved": false,
+  "signingIdentityReviewed": false,
+  "licenseLegalReviewApproved": false,
+  "protectedExecutionAccepted": false,
+  "phases": [
+    {
+      "id": "P02",
+      "state": "pending_exact_head_installed_os",
+      "receipt": null
+    },
+    {
+      "id": "P03",
+      "state": "pending_protected_native_os",
+      "receipt": null
+    },
+    {
+      "id": "P04",
+      "state": "pending_signed_upgrade_rollback",
+      "receipt": null
+    },
+    {
+      "id": "P05",
+      "state": "source_only_pass",
+      "receipt": {
+        "headSha": "49c04a7a13770207acfbf553fc79cbaafa1f1dfe",
+        "runId": 42416663576
+      }
+    },
+    {
+      "id": "P06",
+      "state": "source_under_development",
+      "receipt": null
+    },
+    {
+      "id": "P07",
+      "state": "deferred_until_post_lu_v1",
+      "receipt": null
+    }
+  ]
+}
