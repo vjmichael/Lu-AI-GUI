@@ -30,6 +30,7 @@ GATES = {
     "signed-protected-cargo": ("ide-wo8-signed-protected-e2e.yml","windows-2022"),
     "signed-protected-debug": ("ide-wo8-signed-protected-e2e.yml","windows-2022"),
     "signed-protected-cancellation": ("ide-wo8-protected-recovery.yml","windows-2022"),
+    "signed-debugger-cancellation": ("ide-wo8-protected-recovery.yml","windows-2022"),
     "signed-host-crash-recovery": ("ide-wo8-protected-recovery.yml","windows-2022"),
     "signed-service-crash-recovery": ("ide-wo8-protected-recovery.yml","windows-2022"),
     "signed-source-tamper-denial": ("ide-wo8-protected-recovery.yml","windows-2022"),
