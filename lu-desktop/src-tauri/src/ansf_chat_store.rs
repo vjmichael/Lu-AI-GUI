@@ -446,6 +446,18 @@ impl ChatStore {
         self.require(chat_id)?.append_native_goal_record(chat_id,&event)
             .map_err(to_err).map(|_|())
     }
+    /// Model-only bounded original window; do not materialize the full
+    /// human-auditable history to form a 16-turn typed inference context.
+    /// Incomplete/cancelled assistant streams have no finalized ANSF entry.
+    pub fn recent_model_history(&self,chat_id:&str,limit:usize)
+        ->Result<Vec<ChatMessage>,String>{
+        let source=self.require(chat_id)?.recent_context_entries(chat_id,limit)
+            .map_err(to_err)?;
+        Ok(source.into_iter().map(|entry|ChatMessage{
+            role:entry.role,text:entry.content,
+            interrupted:false,cancelled:false,
+        }).collect())
+    }
     pub fn history(&self,chat_id:&str)->Result<Vec<ChatMessage>,String>{
         let book=self.require(chat_id)?;
         let mut last=0i64;
