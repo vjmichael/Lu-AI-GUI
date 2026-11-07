@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "972f351454d27b3abcfc23d4febc965cf646a8d5",
+  "sourceCommitBeforeLock": "74ad88d75299304c6621522babe700c912704dde",
   "trackedFileCount": 495,
   "files": [
     {
@@ -1961,7 +1961,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "445930a6ec7c85a614e7dc6016b44d6b14b7dae2"
+      "blob": "4ae1d73f644c58b4c78a1511f8317c9cd996e2c9"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
