@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 seven native library/SDK notice restorations (Nov 7):** Pinned full upstream MIT and Apache sources for libappindicator-sys, jni-sys-macros, three Android NDK packages and two winapi GNU import libraries. Seven independent native library binary redistribution reviews remain open.
+
 - **P06 Apple SDK policy source audit (Nov 7):** Pinned original objc2 upstream policy across 19 exact packages and source tags; independent Apple SDK derivative/copyright/full linked terms review remains open. No commercial clearance inferred.
 
 - **P06 WebView2 Rust binding original MIT notices (Nov 7):** Three exact native crate tuples pinned to immutable upstream MIT blob; the Microsoft runtime is separately reviewed and release remains denied.

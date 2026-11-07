@@ -1,7 +1,7 @@
 """P06 category hints never waive any missing upstream license evidence."""
 import copy
 import unittest
-from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY,enforce_apple_sdk_review,OBJC2_UPSTREAM_POLICY
+from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY,enforce_apple_sdk_review,OBJC2_UPSTREAM_POLICY,enforce_external_native_review,EXTERNAL_NATIVE_SDK_SOURCE_RULES
 class TriageTests(unittest.TestCase):
     def setUp(self):
         self.data={"schema":"lu.ide.p04.verification-licenses.v1",
@@ -68,6 +68,20 @@ class TriageTests(unittest.TestCase):
         policy["expectedAppleSdkPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"missing_apple_sdk_review_policy"):
             enforce_apple_sdk_review(result,policy)
+    def test_seven_native_external_binary_reviews_open_despite_notices(self):
+        for rule in EXTERNAL_NATIVE_SDK_SOURCE_RULES:
+            self.data["resolvedPackages"].append({"manager":"cargo","name":rule["name"],
+                "version":rule["version"],"declaredLicense":rule["declared"],"notices":[{"path":"original"}]})
+        result=triage(self.data,b"fixture")
+        self.assertEqual(result["externalNativeReviewCount"],7)
+        self.assertTrue(all(x["disposition"]=="open" and x["legalReviewApproved"] is False
+                            for x in result["externalNativeReviews"]))
+        policy={"expectedExternalNativePackages":[{"name":r["name"],"version":r["version"],
+            "tag":r["tag"],"declared":r["declared"]} for r in EXTERNAL_NATIVE_SDK_SOURCE_RULES]}
+        self.assertTrue(enforce_external_native_review(result,policy))
+        policy["expectedExternalNativePackages"].pop()
+        with self.assertRaisesRegex(TriageDenied,"missing_external_native_policy"):
+            enforce_external_native_review(result,policy)
     def test_missing_package_denied(self):
         self.data["resolvedPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"unresolved_without_resolved_package"):

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from collect_verification_licenses import (
-    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,WEBVIEW_EXACT_CRATES,OBJC2_UPSTREAM_POLICY,verified_curated_notices,git_blob_sha,Denied
+    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,WEBVIEW_EXACT_CRATES,OBJC2_UPSTREAM_POLICY,EXTERNAL_NATIVE_SDK_SOURCE_RULES,verified_curated_notices,git_blob_sha,Denied
 )
 ROOT=Path(__file__).resolve().parents[2]
 class CuratedOriginalNotices(unittest.TestCase):
@@ -23,7 +23,8 @@ class CuratedOriginalNotices(unittest.TestCase):
                          {"alloc-stdlib:0.3.0","tauri-plugin:2.7.2"} |
                          {name+":3.3.0" for name in PROTOC_UPSTREAM_FAMILY} |
                          {name+":"+version for name,version in WEBVIEW_EXACT_CRATES} |
-                         {r["name"]+":"+r["version"] for r in OBJC2_UPSTREAM_POLICY})
+                         {r["name"]+":"+r["version"] for r in OBJC2_UPSTREAM_POLICY} |
+                         {r["name"]+":"+r["version"] for r in EXTERNAL_NATIVE_SDK_SOURCE_RULES})
         for name_version,rule in CURATED_MISSING_NOTICES.items():
             with self.subTest(name_version=name_version):
                 self.load(rule)
@@ -70,6 +71,17 @@ class CuratedOriginalNotices(unittest.TestCase):
             self.assertIn(b"Apple SDKs",actual)
             self.assertIn(b"unclear whether distributing derived works",actual)
             self.assertEqual(git_blob_sha(actual),rows[0][1]["blobSha"])
+    def test_native_external_seven_exact_license_pairs_and_source_proof(self):
+        self.assertEqual(len(EXTERNAL_NATIVE_SDK_SOURCE_RULES),7)
+        for r in EXTERNAL_NATIVE_SDK_SOURCE_RULES:
+            rule=CURATED_MISSING_NOTICES[r["name"]+":"+r["version"]]
+            self.assertEqual(len(rule["files"]),2)
+            self.load(rule)
+            rows=verified_curated_notices(self.repo,"cargo",r["name"],r["version"],r["declared"])
+            self.assertEqual(len(rows),2)
+            for original,source in rows:
+                self.assertEqual(git_blob_sha(original.read_bytes()),source["blobSha"])
+                self.assertNotIn(b"\r",original.read_bytes())
     def test_mutated_notice_fails_closed(self):
         rule=CURATED_MISSING_NOTICES["alloc-stdlib:0.3.0"]
         self.load(rule)

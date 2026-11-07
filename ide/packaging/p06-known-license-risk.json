@@ -209,5 +209,49 @@
       "tag": "frameworks-0.3.2",
       "declared": "Zlib OR Apache-2.0 OR MIT"
     }
+  ],
+  "expectedExternalNativePackages": [
+    {
+      "name": "libappindicator-sys",
+      "version": "0.9.0",
+      "tag": "libappindicator-sys-v0.9.0",
+      "declared": "Apache-2.0 OR MIT"
+    },
+    {
+      "name": "jni-sys-macros",
+      "version": "0.4.1",
+      "tag": "v0.4.1-macros",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "ndk-context",
+      "version": "0.1.1",
+      "tag": "ndk-context-0.1.1",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "ndk-sys",
+      "version": "0.6.0+11769913",
+      "tag": "ndk-sys-0.6.0",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "ndk",
+      "version": "0.9.0",
+      "tag": "ndk-0.9.0",
+      "declared": "MIT OR Apache-2.0"
+    },
+    {
+      "name": "winapi-i686-pc-windows-gnu",
+      "version": "0.4.0",
+      "tag": "0.3.9",
+      "declared": "MIT/Apache-2.0"
+    },
+    {
+      "name": "winapi-x86_64-pc-windows-gnu",
+      "version": "0.4.0",
+      "tag": "0.3.9",
+      "declared": "MIT/Apache-2.0"
+    }
   ]
 }
