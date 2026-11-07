@@ -164,7 +164,8 @@ fn require_delegated_limits(parent: &Path) -> Result<(), SupervisorError> {
     // "controllers" is availability, not activation: the kernel creates
     // writable child quota files only when subtree_control enables them.
     let available = fs::read_to_string(parent.join("cgroup.controllers")).map_err(|_| denied())?;
-    let enabled = fs::read_to_string(parent.join("cgroup.subtree_control")).map_err(|_| denied())?;
+    let enabled =
+        fs::read_to_string(parent.join("cgroup.subtree_control")).map_err(|_| denied())?;
     if !has_controllers(&available) || !has_controllers(&enabled) {
         return Err(denied());
     }
@@ -748,7 +749,9 @@ mod tests {
         assert!(select_delegated_parent(root, &root.join("user.slice")).is_err());
         assert!(select_delegated_parent(root, &base.join("other-host")).is_err());
         assert!(select_delegated_parent(root, &root.join("lu-ide-host")).is_err());
-        assert!(select_delegated_parent(root, Path::new("/tmp/lu-ide-delegated/lu-ide-host")).is_err());
+        assert!(
+            select_delegated_parent(root, Path::new("/tmp/lu-ide-delegated/lu-ide-host")).is_err()
+        );
     }
 
     #[test]
