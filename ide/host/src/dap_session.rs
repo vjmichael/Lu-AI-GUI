@@ -207,7 +207,10 @@ impl DapSession {
     }
     fn accept(&mut self, value: &Value) -> Result<Option<DapEvent>, DapError> {
         let obj = value.as_object().ok_or(DapError::InvalidMessage)?;
-        let seq = obj.get("seq").and_then(Value::as_u64).ok_or(DapError::InvalidMessage)?;
+        let seq = obj
+            .get("seq")
+            .and_then(Value::as_u64)
+            .ok_or(DapError::InvalidMessage)?;
         if seq == 0 || seq > MAX_SEQ {
             return Err(DapError::InvalidMessage);
         }
@@ -219,7 +222,10 @@ impl DapSession {
                     .and_then(Value::as_u64)
                     .ok_or(DapError::InvalidMessage)?;
                 let command = obj.get("command").and_then(Value::as_str);
-                let expected = self.pending.remove(&request_seq).ok_or(DapError::UnexpectedResponse)?;
+                let expected = self
+                    .pending
+                    .remove(&request_seq)
+                    .ok_or(DapError::UnexpectedResponse)?;
                 if command != Some(expected) || obj.get("success") != Some(&Value::Bool(true)) {
                     return Err(DapError::AdapterFailed);
                 }
@@ -233,25 +239,35 @@ impl DapSession {
                         Ok(Some(DapEvent::Initialized))
                     }
                     "threads" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
-                        let body = obj.get("body").and_then(Value::as_object)
+                        let body = obj
+                            .get("body")
+                            .and_then(Value::as_object)
                             .ok_or(DapError::InvalidMessage)?;
-                        let threads = body.get("threads").and_then(Value::as_array)
+                        let threads = body
+                            .get("threads")
+                            .and_then(Value::as_array)
                             .ok_or(DapError::InvalidMessage)?;
-                        if threads.len() > 64 || threads.iter().any(|t| {
-                            t.get("id").and_then(Value::as_u64).is_none()
-                        }) {
+                        if threads.len() > 64
+                            || threads
+                                .iter()
+                                .any(|t| t.get("id").and_then(Value::as_u64).is_none())
+                        {
                             return Err(DapError::ExcessiveData);
                         }
                         Ok(Some(DapEvent::ThreadsReceived))
                     }
                     "stackTrace" if self.phase == DapPhase::Stopped => {
-                        let frames = obj.get("body")
+                        let frames = obj
+                            .get("body")
                             .and_then(|body| body.get("stackFrames"))
-                            .and_then(Value::as_array).ok_or(DapError::InvalidMessage)?;
-                        if frames.len() > 16 || frames.iter().any(|f| {
-                            f.get("id").and_then(Value::as_u64).is_none()
-                                || f.get("line").and_then(Value::as_u64).is_none()
-                        }) {
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if frames.len() > 16
+                            || frames.iter().any(|f| {
+                                f.get("id").and_then(Value::as_u64).is_none()
+                                    || f.get("line").and_then(Value::as_u64).is_none()
+                            })
+                        {
                             return Err(DapError::ExcessiveData);
                         }
                         Ok(Some(DapEvent::StackTraceReceived))
@@ -264,12 +280,17 @@ impl DapSession {
                 }
             }
             Some("event") => {
-                let event = obj.get("event").and_then(Value::as_str)
+                let event = obj
+                    .get("event")
+                    .and_then(Value::as_str)
                     .ok_or(DapError::InvalidMessage)?;
                 match event {
-                    "initialized" if matches!(
-                        self.phase, DapPhase::Initializing | DapPhase::AwaitingInitializedEvent
-                    ) => {
+                    "initialized"
+                        if matches!(
+                            self.phase,
+                            DapPhase::Initializing | DapPhase::AwaitingInitializedEvent
+                        ) =>
+                    {
                         self.initialized_event = true;
                         if self.phase == DapPhase::AwaitingInitializedEvent {
                             self.phase = DapPhase::Ready;
@@ -277,7 +298,8 @@ impl DapSession {
                         Ok(None)
                     }
                     "stopped" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
-                        let thread_id = obj.get("body")
+                        let thread_id = obj
+                            .get("body")
                             .and_then(|b| b.get("threadId"))
                             .and_then(Value::as_u64)
                             .filter(|v| *v > 0 && *v <= MAX_SEQ)
@@ -289,9 +311,9 @@ impl DapSession {
                         self.phase = DapPhase::Ready;
                         Ok(Some(DapEvent::Continued))
                     }
-                    "terminated" | "exited" if !matches!(
-                        self.phase, DapPhase::Detached | DapPhase::Initializing
-                    ) => {
+                    "terminated" | "exited"
+                        if !matches!(self.phase, DapPhase::Detached | DapPhase::Initializing) =>
+                    {
                         self.phase = DapPhase::Terminated;
                         self.pending.clear();
                         Ok(Some(DapEvent::Terminated))
@@ -299,7 +321,10 @@ impl DapSession {
                     // Outputs and capabilities can contain hostile text/paths.
                     // Do not forward them to WebView or execute adapter commands.
                     "output" | "thread" | "module" | "loadedSource" | "process" | "breakpoint"
-                        if !matches!(self.phase, DapPhase::Detached) => Ok(None),
+                        if !matches!(self.phase, DapPhase::Detached) =>
+                    {
+                        Ok(None)
+                    }
                     _ => Err(DapError::InvalidMessage),
                 }
             }
@@ -314,8 +339,11 @@ fn frame_length(header: &[u8]) -> Result<usize, DapError> {
         let Some(raw) = line.strip_prefix("Content-Length: ") else {
             return Err(DapError::InvalidFrame);
         };
-        if length.is_some() || raw.is_empty() || raw.len() > 5
-            || !raw.bytes().all(|c| c.is_ascii_digit()) {
+        if length.is_some()
+            || raw.is_empty()
+            || raw.len() > 5
+            || !raw.bytes().all(|c| c.is_ascii_digit())
+        {
             return Err(DapError::InvalidFrame);
         }
         let value = raw.parse::<usize>().map_err(|_| DapError::InvalidFrame)?;
@@ -341,7 +369,9 @@ mod tests {
     fn fragmented_initialize_and_correlated_read_only_queries() {
         let mut s = DapSession::new();
         let wire = s.initialize().unwrap();
-        assert!(std::str::from_utf8(&wire).unwrap().contains("supportsRunInTerminalRequest"));
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains("supportsRunInTerminalRequest"));
         assert_eq!(s.initialize().unwrap_err(), DapError::InvalidPhase);
         let evt = framed(json!({"seq": 10, "type":"event","event":"initialized"}));
         assert!(s.receive(&evt[..8]).unwrap().is_empty());
@@ -357,30 +387,37 @@ mod tests {
             s.receive(&framed(json!({
                 "seq":12,"type":"response","request_seq":2,"command":"threads","success":true,
                 "body":{"threads":[{"id":1,"name":"main"}]}
-            }))).unwrap(),
+            })))
+            .unwrap(),
             vec![DapEvent::ThreadsReceived]
         );
         assert_eq!(
             s.receive(&framed(json!({
                 "seq":13,"type":"event","event":"stopped",
                 "body":{"reason":"breakpoint","threadId":1}
-            }))).unwrap(),
-            vec![DapEvent::Stopped {thread_id:1}]
+            })))
+            .unwrap(),
+            vec![DapEvent::Stopped { thread_id: 1 }]
         );
         s.stack_trace(1).unwrap();
         assert_eq!(
             s.receive(&framed(json!({
                 "seq":14,"type":"response","request_seq":3,"command":"stackTrace",
                 "success":true,"body":{"stackFrames":[{"id":9,"name":"main","line":3}]}
-            }))).unwrap(),
+            })))
+            .unwrap(),
             vec![DapEvent::StackTraceReceived]
         );
         let disc = s.disconnect().unwrap();
-        assert!(std::str::from_utf8(&disc).unwrap().contains("terminateDebuggee"));
+        assert!(std::str::from_utf8(&disc)
+            .unwrap()
+            .contains("terminateDebuggee"));
         assert_eq!(
             s.receive(&framed(json!({
                 "seq":15,"type":"response","request_seq":4,"command":"disconnect","success":true
-            }))).unwrap(), vec![DapEvent::Disconnected]
+            })))
+            .unwrap(),
+            vec![DapEvent::Disconnected]
         );
         assert_eq!(s.phase(), DapPhase::Terminated);
     }
@@ -392,7 +429,9 @@ mod tests {
             s.receive(&framed(json!({
                 "seq": 2, "type":"request","command":"runInTerminal",
                 "arguments":{"kind":"integrated","args":["bash","-c","evil"]}
-            }))).unwrap_err(), DapError::AdapterRequestDenied
+            })))
+            .unwrap_err(),
+            DapError::AdapterRequestDenied
         );
         assert_eq!(s.phase(), DapPhase::Quarantined);
         assert_eq!(s.receive(b"").unwrap_err(), DapError::InvalidPhase);
@@ -413,7 +452,9 @@ mod tests {
             s.receive(&framed(json!({
                 "seq": 2,"type":"response","request_seq":50,
                 "command":"initialize","success":true
-            }))).unwrap_err(), DapError::UnexpectedResponse
+            })))
+            .unwrap_err(),
+            DapError::UnexpectedResponse
         );
         assert_eq!(s.phase(), DapPhase::Quarantined);
     }
