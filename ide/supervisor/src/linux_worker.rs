@@ -43,6 +43,15 @@ fn native_linux_cgroup_trace(stage: &'static str) {
 const BWRAP: &str = "/usr/bin/bwrap";
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";
+ // Linker is an explicit, root-owned toolchain component. On Debian/Ubuntu,
+ // `/usr/bin/cc` may point into /etc/alternatives which is not mounted in
+ // our readonly Bubblewrap worker. Never mount all of /etc or use PATH cc.
+ #[cfg(target_arch = "x86_64")]
+ const GNU_LINKER: &str = "/usr/bin/x86_64-linux-gnu-gcc";
+ #[cfg(target_arch = "aarch64")]
+ const GNU_LINKER: &str = "/usr/bin/aarch64-linux-gnu-gcc";
+ #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+ const GNU_LINKER: &str = "/usr/bin/lu-ide-unsupported-linux-linker";
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
@@ -136,8 +145,9 @@ pub fn installed_toolchain_digest() -> Result<String, SupervisorError> {
     ensure_root_owned_tool(Path::new(BWRAP))?;
     ensure_root_owned_tool(Path::new(CARGO))?;
     ensure_root_owned_tool(Path::new(RUSTC))?;
+    ensure_root_owned_tool(Path::new(GNU_LINKER))?;
     let mut digest = Sha256::new();
-    for path in [BWRAP, CARGO, RUSTC] {
+    for path in [BWRAP, CARGO, RUSTC, GNU_LINKER] {
         let sha = hash_file(Path::new(path))?;
         digest.update(path.as_bytes());
         digest.update([0]);
@@ -494,6 +504,15 @@ fn command_for(
         .arg("CARGO_NET_OFFLINE")
         .arg("true")
         .arg("--setenv")
+        .arg("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER")
+        .arg(GNU_LINKER)
+        .arg("--setenv")
+        .arg("CARGO_BUILD_JOBS")
+        .arg("1")
+        .arg("--setenv")
+        .arg("RUST_TEST_THREADS")
+        .arg("1")
+        .arg("--setenv")
         .arg("PATH")
         .arg("/usr/bin:/bin")
         .arg("--setenv")
@@ -678,7 +697,7 @@ pub fn execute_linux_worker(
     }
     // Verify fixed launcher and binary paths BEFORE issuing an admission
     // receipt or creating any process. No caller-specified executable.
-    for tool in [BWRAP, CARGO, RUSTC] {
+    for tool in [BWRAP, CARGO, RUSTC, GNU_LINKER] {
         ensure_root_owned_tool(Path::new(tool))?;
     }
     let group = make_cgroup(job_id, plan)?;
