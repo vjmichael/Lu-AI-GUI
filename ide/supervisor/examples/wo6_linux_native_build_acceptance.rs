@@ -8,12 +8,17 @@ fn main() {
 }
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use std::{env, fs, path::PathBuf, thread, time::{SystemTime, UNIX_EPOCH, Duration}};
-    use std::os::unix::fs::PermissionsExt;
     use lu_ide_execution_supervisor::{
-        snapshot::publish_input,
         linux_worker::{execute_linux_worker, installed_toolchain_digest, RunCancellation},
+        snapshot::publish_input,
         JobPhase, JobPlan, Supervisor,
+    };
+    use std::os::unix::fs::PermissionsExt;
+    use std::{
+        env, fs,
+        path::PathBuf,
+        thread,
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
     let args: Vec<String> = env::args().skip(1).collect();
     let mode = args.as_slice();
@@ -25,7 +30,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let root = env::temp_dir().join(format!(
         "lu-ide-wo6-cargo-{}-{}",
-        std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
     ));
     let source = root.join("source");
     let stage = root.join("stage");
@@ -35,14 +41,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&output)?;
     fs::set_permissions(&stage, fs::Permissions::from_mode(0o700))?;
     fs::set_permissions(&output, fs::Permissions::from_mode(0o700))?;
-    fs::write(source.join("Cargo.toml"),
-        "[package]\nname=\"wo6_native_acceptance\"\nversion=\"0.1.0\"\nedition=\"2021\"\n")?;
+    fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname=\"wo6_native_acceptance\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )?;
     // v3 lock remains compatible with independently installed OS Cargo.
-    fs::write(source.join("Cargo.lock"),
-        "version = 3\n\n[[package]]\nname = \"wo6_native_acceptance\"\nversion = \"0.1.0\"\n")?;
-    fs::write(source.join("src/lib.rs"),
-        "#[cfg(test)] mod tests { #[test] fn fixed_pass() { assert_eq!(2+2,4); } }\n")?;
-    fs::write(source.join("src/main.rs"), "fn main(){ println!(\"fixed WO6 isolated job\"); }\n")?;
+    fs::write(
+        source.join("Cargo.lock"),
+        "version = 3\n\n[[package]]\nname = \"wo6_native_acceptance\"\nversion = \"0.1.0\"\n",
+    )?;
+    fs::write(
+        source.join("src/lib.rs"),
+        "#[cfg(test)] mod tests { #[test] fn fixed_pass() { assert_eq!(2+2,4); } }\n",
+    )?;
+    fs::write(
+        source.join("src/main.rs"),
+        "fn main(){ println!(\"fixed WO6 isolated job\"); }\n",
+    )?;
     let input = publish_input(&source, &stage, recipe).map_err(|e| e.code())?;
     let digest = installed_toolchain_digest().map_err(|e| e.code())?;
     let plan = JobPlan {
@@ -61,9 +76,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let journal = root.join("receipts.jsonl");
     let supervisor = Supervisor::open(journal.clone()).map_err(|e| e.code())?;
     let prepared = supervisor.prepare(plan.clone()).map_err(|e| e.code())?;
-    supervisor.record_human_approval(
-        &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true
-    ).map_err(|e| e.code())?;
+    supervisor
+        .record_human_approval(
+            &prepared.job_id,
+            &prepared.plan_sha256,
+            &plan.source_head,
+            true,
+        )
+        .map_err(|e| e.code())?;
     let cancellation = RunCancellation::default();
     let cancel_thread = if cancel {
         let cloned = cancellation.clone_handle();
@@ -71,21 +91,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             thread::sleep(Duration::from_millis(300));
             cloned.request_cancel();
         }))
-    } else { None };
+    } else {
+        None
+    };
     let actual = execute_linux_worker(
-        &supervisor, &prepared.job_id, &plan, &input, &output, &cancellation,
-    ).map_err(|e| e.code())?;
+        &supervisor,
+        &prepared.job_id,
+        &plan,
+        &input,
+        &output,
+        &cancellation,
+    )
+    .map_err(|e| e.code())?;
     if let Some(worker) = cancel_thread {
-        worker.join().map_err(|_| "DENIED: cancel thread panicked")?;
+        worker
+            .join()
+            .map_err(|_| "DENIED: cancel thread panicked")?;
     }
-    let expected = if cancel { JobPhase::Cancelled } else { JobPhase::Completed };
+    let expected = if cancel {
+        JobPhase::Cancelled
+    } else {
+        JobPhase::Completed
+    };
     eprintln!(
         "WO6_NATIVE_CARGO_FIXED_RESULT phase={:?} exit={:?} stderr_class={} timed_out={} output_limit={} truncated={}",
         actual.summary.phase, actual.exit_code, actual.stderr_category,
         actual.timed_out, actual.output_limit_hit, actual.output_truncated,
     );
     if actual.summary.phase != expected || actual.summary.requires_reconciliation {
-        return Err("DENIED: real native Cargo OS worker did not finish with expected terminal phase".into());
+        return Err(
+            "DENIED: real native Cargo OS worker did not finish with expected terminal phase"
+                .into(),
+        );
     }
     if !cancel && actual.exit_code != Some(0) {
         return Err("DENIED: native contained Cargo recipe returned failed result".into());
@@ -93,11 +130,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cancel && actual.summary.phase != JobPhase::Cancelled {
         return Err("DENIED: requested native process-tree kill missing".into());
     }
-    let history = supervisor.receipt_history(&prepared.job_id).map_err(|e| e.code())?;
-    if cancel && !history.windows(2).any(|pair|
-        pair[0].body.phase == JobPhase::CancelRequested
-            && pair[1].body.phase == JobPhase::Cancelled
-    ) {
+    let history = supervisor
+        .receipt_history(&prepared.job_id)
+        .map_err(|e| e.code())?;
+    if cancel
+        && !history.windows(2).any(|pair| {
+            pair[0].body.phase == JobPhase::CancelRequested
+                && pair[1].body.phase == JobPhase::Cancelled
+        })
+    {
         return Err("DENIED: cancellation receipt not durable before kernel kill".into());
     }
     drop(supervisor);
