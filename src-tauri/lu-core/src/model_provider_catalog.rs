@@ -81,7 +81,7 @@ pub fn search_url(query:&str)->Result<String,ProviderCatalogError>{
         return Err(ProviderCatalogError::InvalidQuery)
     }
     let encoded=q.split_whitespace().collect::<Vec<_>>().join("%20");
-    Ok(format!("{PROVIDER_ROOT}/api/models?search={encoded}&limit=12&full=true"))
+    Ok(format!("{PROVIDER_ROOT}/api/models?search={encoded}&limit=12&full=true&cardData=true"))
 }
 pub fn parse_search(raw:&[u8])->Result<Vec<ModelLead>,ProviderCatalogError>{
     if raw.len()>MAX_METADATA{return Err(ProviderCatalogError::InvalidResponse)}
@@ -105,12 +105,12 @@ pub fn parse_search(raw:&[u8])->Result<Vec<ModelLead>,ProviderCatalogError>{
 pub fn model_info_url(repo_id:&str,sha:&str)->Result<String,ProviderCatalogError>{
     if !valid_repo(repo_id){return Err(ProviderCatalogError::InvalidRepository)}
     if !valid_sha40(sha){return Err(ProviderCatalogError::InvalidRevision)}
-    Ok(format!("{PROVIDER_ROOT}/api/models/{repo_id}/revision/{sha}"))
+    Ok(format!("{PROVIDER_ROOT}/api/models/{repo_id}/revision/{sha}?cardData=true"))
 }
 pub fn tree_url(repo_id:&str,sha:&str)->Result<String,ProviderCatalogError>{
     if !valid_repo(repo_id){return Err(ProviderCatalogError::InvalidRepository)}
     if !valid_sha40(sha){return Err(ProviderCatalogError::InvalidRevision)}
-    Ok(format!("{PROVIDER_ROOT}/api/models/{repo_id}/tree/{sha}?recursive=false&expand=true"))
+    Ok(format!("{PROVIDER_ROOT}/api/models/{repo_id}/tree/{sha}?recursive=false"))
 }
 pub fn parse_repo_license(
     raw:&[u8],repo_id:&str,revision:&str
@@ -166,7 +166,7 @@ mod tests{
     use super::*;
     #[test] fn denies_query_injection_and_unsafe_repo(){
         assert_eq!(search_url("qwen 3").unwrap(),
-            "https://huggingface.co/api/models?search=qwen%203&limit=12&full=true");
+            "https://huggingface.co/api/models?search=qwen%203&limit=12&full=true&cardData=true&cardData=true");
         for q in ["","x&private=true","../secret","x#fragment","üñicode"]{
             assert!(search_url(q).is_err());
         }
