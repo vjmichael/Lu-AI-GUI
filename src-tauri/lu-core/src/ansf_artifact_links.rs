@@ -55,7 +55,7 @@ fn validate(link:&ArtifactLink)->bool{
     !link.display_name.chars().any(|c|matches!(c,'\0'|'\n'|'\r'|'/'|'\\')) &&
     !link.media_type.trim().is_empty() &&
     link.media_type.len()<=MAX_KIND &&
-    !link.media_type.contains(['\0','\n','\r']) &&
+    !link.media_type.chars().any(|c|matches!(c,'\0'|'\n'|'\r')) &&
     link.expected_bytes.is_none_or(|n|n<=i64::MAX as u64) &&
     link.expected_sha256.as_deref().is_none_or(valid_hash)
 }
