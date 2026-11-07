@@ -140,8 +140,14 @@ jobs:
           sudo apt-get install -y bubblewrap clangd
       - name: Create root-owned, self-measured clangd acceptance bundle
         run: |
-          sudo install -d -m 755 /opt/lu-ide-e2-test/bin
-          sudo install -o root -g root -m 755 "$(command -v clangd)" /opt/lu-ide-e2-test/bin/clangd
+          # The root itself must be immutable and root-owned, not merely
+          # its bin/ child. The native worker checks the actual root inode.
+          sudo install -d -o root -g root -m 0755 /opt/lu-ide-e2-test
+          sudo install -d -o root -g root -m 0755 /opt/lu-ide-e2-test/bin
+          sudo install -o root -g root -m 0755 "$(command -v clangd)" /opt/lu-ide-e2-test/bin/clangd
+          test ! -L /opt/lu-ide-e2-test
+          test "$(stat -c '%u:%g:%a' /opt/lu-ide-e2-test)" = '0:0:755'
+          test "$(stat -c '%u:%g:%a' /opt/lu-ide-e2-test/bin)" = '0:0:755'
           echo LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test >> "$GITHUB_ENV"
       - name: Check genuine systemd delegation support (not root cgroup write access)
         shell: bash
