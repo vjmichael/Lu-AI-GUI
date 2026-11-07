@@ -133,6 +133,8 @@ pub mod native_pptx_tool;
 pub mod native_docx_tool;
 pub mod native_spreadsheet_tool;
 pub mod native_reader_odf;
+pub mod native_reader_rtf;
+pub mod native_reader_epub;
 pub mod native_reader_turn;
 pub mod native_workspace_read_turn;
 pub mod native_reader_tool;

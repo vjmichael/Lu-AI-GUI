@@ -25,6 +25,8 @@ pub enum ReaderFormat{
     Ods,
     Odp,
     Odt,
+    Rtf,
+    Epub,
     Image,
     Unknown,
 }
@@ -49,6 +51,7 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
     // Content signature overrides potentially misleading extensions for
     // container formats. Everything is still checked by its parser.
     if header.starts_with(b"%PDF-"){return ReaderFormat::Pdf;}
+    if header.starts_with(b"{\\rtf"){return ReaderFormat::Rtf;}
     if header.starts_with(b"PK\x03\x04"){
         return match filename.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(){
             "docx"=>ReaderFormat::Docx,
@@ -57,6 +60,7 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
             "ods"=>ReaderFormat::Ods,
             "odp"=>ReaderFormat::Odp,
             "odt"=>ReaderFormat::Odt,
+            "epub"=>ReaderFormat::Epub,
             _=>ReaderFormat::Unknown,
         };
     }
@@ -83,6 +87,8 @@ pub fn classify(filename:&str,header:&[u8])->ReaderFormat{
         "ods"=>ReaderFormat::Ods,
         "odp"=>ReaderFormat::Odp,
         "odt"=>ReaderFormat::Odt,
+        "rtf"=>ReaderFormat::Rtf,
+        "epub"=>ReaderFormat::Epub,
         "png"|"jpg"|"jpeg"|"webp"|"tif"|"tiff"|"bmp"=>ReaderFormat::Image,
         _=>ReaderFormat::Unknown
     }
@@ -173,6 +179,12 @@ pub fn read_text_bytes(
     if format==ReaderFormat::Odt{
         return crate::native_reader_odf::read_odt(bytes,max_chars);
     }
+    if format==ReaderFormat::Rtf{
+        return crate::native_reader_rtf::read_rtf(bytes,max_chars);
+    }
+    if format==ReaderFormat::Epub{
+        return crate::native_reader_epub::read_epub(bytes,max_chars,None);
+    }
     if matches!(format,ReaderFormat::Image
         |ReaderFormat::Unknown){
         return Err(ReaderFailure::UnsupportedAdapter(format));
@@ -246,6 +258,13 @@ pub fn read_selected_bytes(
             }else{
                 crate::native_reader_odf::read_odp(bytes,max_chars,Some(slide))
             }
+        },
+        ReaderFormat::Epub=>{
+            let chapter=selector.strip_prefix("chapter:")
+                .and_then(|s|s.parse::<usize>().ok())
+                .filter(|n|*n>0&&*n<=128)
+                .ok_or(ReaderFailure::SelectorNotFound)?;
+            crate::native_reader_epub::read_epub(bytes,max_chars,Some(chapter))
         },
         ReaderFormat::Pdf=>{
             let page=selector.strip_prefix("page:")

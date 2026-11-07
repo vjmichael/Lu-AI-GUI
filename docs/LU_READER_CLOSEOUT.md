@@ -21,6 +21,12 @@ The new native-attached-region command crops only the **original** host-admitted
 
 **Open:** authentic license-reviewed PDF renderer distribution, Linux OCR package staging, installed multi-page OCR usability and real-file accuracy, rigorous OS worker sandbox beyond process containment, malicious PDF resource limits and truly progressive large corpus. Testing artifacts are authored but not executed in this work order.
 
+## Reader source continuation — RTF and EPUB (2026-11-06)
+
+**Work order READER-CLOSE-02 — source implemented, independent acceptance deferred.** Reused the same model-visible `lu.reader.read`, native picker, immutable source SHA-256, caller-supplied `expected_source_sha256` paging and capability/policy checks. Added conservative read-only **RTF Windows-1252/RTF Unicode** extraction with nested group and control parsing, object/font-table suppression, bounded expansion and explicit unsupported encoding. Added **EPUB text spine** with the existing ZIP central-directory admission (12 MiB max total expansion), validated EPUB MIME/container, package-root scoped paths, encrypted-book rejection, chapter ordering and `chapter:N` selection. XHTML body text is extracted without script execution, resource loading or CSS interpretation. Standard Reader selectors for PDF pages, sheet ranges and slide notes are unchanged. The desktop Reader picker now admits ODT, RTF and EPUB extensions.
+
+**Not done:** no rich RTF formatting fidelity, multimedia EPUB presentation, DRM bypass, PDF font CMaps/xref object streams, arbitrary 200K+ whole-Office text extraction, large corpus/parser sandboxing or external office compatibility guarantees. Do not treat a conservative adapter as 100% fidelity.
+
 ## 2026-11-06 source continuation (not native acceptance)
 
 This is an updated implementation checkpoint on `lu/reader-ocr-image-closeout-20261106`, stacked on the IMAGE-WS-PREVIEW branch. The older status matrix below is retained as historical design context. The **existing** pinned Tesseract offline OCR worker is now reusable from the already-admitted original image in Image Workspace, with explicit native review, exact digest and chat/image scoped display. Reader adds ODT text, ODS A1 sheet ranges, and selected PPTX/ODP speaker notes (`notes:2`). Native PNG/JPEG decoding preflights OCR source dimensions. All extracted OCR words remain unverified human-review data; screenshots and PDF image pages are not silently treated as textual truth.

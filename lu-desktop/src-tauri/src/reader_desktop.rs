@@ -49,7 +49,7 @@ pub(crate) fn pick_reader_bytes(
             "properties","env","py","rs","js","jsx","ts","tsx","sql",
             "yaml","yml","toml","go","c","h","cpp","hpp","cs","java",
             "sh","ps1","css","rb","php","swift","kt","lua",
-            "docx","xlsx","pptx","ods","odp","pdf",
+            "docx","xlsx","pptx","ods","odp","odt","rtf","epub","pdf",
         ]).blocking_pick_file();
     let Some(selection)=selection else{return Ok(None)};
     let path=selection.into_path().map_err(|_|"Invalid file picker result")?;

@@ -11,6 +11,12 @@
 | E — Observe & Learn | Minimized event-driven observation, safe redaction and independently reviewable handoff to larger model | OFF by default; explicit chat/session/target scope; no silent surveillance or fabricated GUI pass |
 | F — Unified host lifecycle | Process and cancellation receipt hardening, consistent return/timeout bounds and Development Ledger integration | Native and installed test gates remain OPEN pending real GH CI and physical Windows |
 
+## Reader source continuation — RTF and EPUB (2026-11-06)
+
+**Work order READER-CLOSE-02 — source implemented, independent acceptance deferred.** Reused the same model-visible `lu.reader.read`, native picker, immutable source SHA-256, caller-supplied `expected_source_sha256` paging and capability/policy checks. Added conservative read-only **RTF Windows-1252/RTF Unicode** extraction with nested group and control parsing, object/font-table suppression, bounded expansion and explicit unsupported encoding. Added **EPUB text spine** with the existing ZIP central-directory admission (12 MiB max total expansion), validated EPUB MIME/container, package-root scoped paths, encrypted-book rejection, chapter ordering and `chapter:N` selection. XHTML body text is extracted without script execution, resource loading or CSS interpretation. Standard Reader selectors for PDF pages, sheet ranges and slide notes are unchanged. The desktop Reader picker now admits ODT, RTF and EPUB extensions.
+
+**Not done:** no rich RTF formatting fidelity, multimedia EPUB presentation, DRM bypass, PDF font CMaps/xref object streams, arbitrary 200K+ whole-Office text extraction, large corpus/parser sandboxing or external office compatibility guarantees. Do not treat a conservative adapter as 100% fidelity.
+
 ## Reader/OCR and Image Workspace bounded continuation (2026-11-06)
 
 Branch: `lu/reader-ocr-image-closeout-20261106` stacked on the previous preview source branch. Implemented real bounded **ODS range**, **ODT text**, **PPTX/ODP notes** Reader adapters; extended existing digest-pinned offline OCR to current admitted attachments with native consent and image decode preflight; added native ellipse/line deterministic annotations; corrected staged-edit coordinate validation and inferred same-chat revision parent links from exact SHA-256 history. No new model-facing filesystem or browser authority. Original files remain unchanged.

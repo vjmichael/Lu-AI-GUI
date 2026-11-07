@@ -104,3 +104,9 @@ test('optional scanned-PDF page OCR stays user-selected and fail-closed',()=>{
   assert.match(ui,/OCR page \{ocrObservation.page\}/);
   assert.match(ui,/renderer SHA-256/);
 });
+
+test('Reader picker and one trusted model tool reuse new RTF/EPUB format adapters',()=>{
+  assert.match(readerHost,/"odt","rtf","epub","pdf"/);
+  assert.match(ui,/lu_reader_pick_document/);
+  assert.match(host,/lu_reader_ask_document/);
+});

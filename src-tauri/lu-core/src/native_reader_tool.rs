@@ -335,14 +335,14 @@ fn register_reader_source(
     let mut catalog=ModelToolCatalog::new();
     catalog.insert(registry,ModelToolDefinition{
         name:"lu_reader_read".into(),native_tool_id:TOOL_ID.into(),
-        description:"Read authorized text, PDF text layers, DOCX/ODT text, XLSX/ODS sheet or A1 cell ranges, PPTX/ODP slides and explicitly selected speaker notes, JSON, CSV and source files. Scanned PDFs and image OCR require separate explicit offline review.".into(),
+        description:"Read authorized text, PDF text layers, DOCX/ODT/RTF/EPUB text, XLSX/ODS sheet or A1 cell ranges, PPTX/ODP slides and explicitly selected speaker notes, JSON, CSV and source files. Scanned PDFs and image OCR require separate explicit offline review.".into(),
         parameters:json!({"type":"object","properties":{
             "path":{"type":"string","description":"Authorized workspace-relative file path"},
             "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_BYTES},
             "max_chars":{"type":"integer","minimum":1,"maximum":MAX_CHARS},
             "offset_chars":{"type":"integer","minimum":0,"maximum":MAX_OFFSET_CHARS},
             "inspect_only":{"type":"boolean","description":"Return bounded document format and extraction size without text; then page with offset_chars"},
-            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, range:Revenue!A1:D50, slide:2 or page:3; limits extraction to the chosen section"},
+            "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, range:Revenue!A1:D50, slide:2, notes:2, page:3 or chapter:4; limits extraction to the chosen section"},
             "expected_source_sha256":{"type":"string","description":"Optional digest from prior Reader response; refuses changed files between paged reads"}
         },"required":["path"],"additionalProperties":false}),
         codec:Arc::new(ReaderCodec),

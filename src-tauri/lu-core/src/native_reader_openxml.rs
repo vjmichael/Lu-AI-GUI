@@ -74,12 +74,19 @@ fn reject_external_relationships(xml:&[u8])->Result<(),ReaderFailure>{
 }
 impl OpenXmlPackage{
     pub fn new(bytes:&[u8])->Result<Self,ReaderFailure>{
-        Self::new_inner(bytes,true)
+        Self::new_inner(bytes,true,false)
     }
     pub fn new_odf(bytes:&[u8])->Result<Self,ReaderFailure>{
-        Self::new_inner(bytes,false)
+        Self::new_inner(bytes,false,false)
     }
-    fn new_inner(bytes:&[u8],ooxml:bool)->Result<Self,ReaderFailure>{
+    /// EPUB uses the same bounded ZIP admission and XML safety checks as
+    /// existing OpenDocument. It has its own strict MIME/container validation.
+    pub fn new_epub(bytes:&[u8])->Result<Self,ReaderFailure>{
+        Self::new_inner(bytes,false,true)
+    }
+    fn new_inner(
+        bytes:&[u8],ooxml:bool,epub:bool
+    )->Result<Self,ReaderFailure>{
         if bytes.len()<22||bytes.len()>MAX_ARCHIVE_BYTES||
            !bytes.starts_with(b"PK\x03\x04"){return Err(malformed())}
         let start=bytes.len().saturating_sub(65_535+22);
@@ -180,12 +187,18 @@ impl OpenXmlPackage{
         if ooxml&&!parts.contains_key("[Content_Types].xml"){
             return Err(malformed())
         }
-        if !ooxml&&(!parts.contains_key("mimetype")||!parts.contains_key("content.xml")){
+        if !ooxml&&!epub&&(!parts.contains_key("mimetype")||
+             !parts.contains_key("content.xml")){
+            return Err(malformed())
+        }
+        if epub&&(!parts.contains_key("mimetype")||
+            !parts.contains_key("META-INF/container.xml")){
             return Err(malformed())
         }
         // Reject DTDs in all XML parts, and external relationship targets.
         for (name,content) in &parts{
-            if name.ends_with(".xml")||name.ends_with(".rels"){
+            if name.ends_with(".xml")||name.ends_with(".rels")
+                ||name.ends_with(".xhtml"){
                 if content.windows(9).any(|w|w.eq_ignore_ascii_case(b"<!DOCTYPE"))
                    ||content.windows(8).any(|w|w.eq_ignore_ascii_case(b"<!ENTITY")){
                     return Err(malformed())

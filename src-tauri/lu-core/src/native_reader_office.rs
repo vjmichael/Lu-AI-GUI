@@ -7,7 +7,7 @@ use quick_xml::{events::{BytesStart,Event},Reader};
 use std::collections::BTreeMap;
 
 fn bad()->ReaderFailure{ReaderFailure::InvalidDocument}
-fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
+pub(crate) fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
     tag.attributes().with_checks(true).filter_map(Result::ok)
         .find(|a|a.key.as_ref()==name)
         .and_then(|a|{
@@ -15,7 +15,7 @@ fn attr(tag:&BytesStart<'_>,name:&[u8])->Option<String>{
             quick_xml::escape::unescape(value).ok().map(|s|s.into_owned())
         })
 }
-fn xml_value(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
+pub(crate) fn xml_value(e:&Event<'_>)->Result<Option<String>,ReaderFailure>{
     match e{
         Event::Text(t)=>Ok(Some(t.decode().map_err(|_|bad())?.into_owned())),
         Event::CData(t)=>Ok(Some(t.decode().map_err(|_|bad())?.into_owned())),
