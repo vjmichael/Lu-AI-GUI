@@ -11,6 +11,8 @@ on:
       - 'ide/packaging/test_p05_ci_retention.py'
       - 'ide/packaging/verify_tauri_minor.py'
       - 'ide/packaging/test_verify_tauri_minor.py'
+      - 'ide/packaging/test_p05_upstream_bundle_integration.py'
+      - 'ide/packaging/test_p05_wo7_signed_bundle_source.py'
       - 'ide/app/src-tauri/Cargo.toml'
       - 'ide/app/package.json'
       - 'ide/docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md'
@@ -63,5 +65,9 @@ jobs:
           python ide/packaging/verify_tauri_minor.py --repo-root .
       - name: Verify upstream license retrieval is mandatory for submitted verification artifacts
         run: python -m unittest discover -s ide/packaging -p 'test_upstream_notice_receipt.py' -v
+      - name: Exercise full source-pinned upstream retrieval to installer bytes
+        run: python -m unittest discover -s ide/packaging -p 'test_p05_upstream_bundle_integration.py' -v
+      - name: Deny signed WO7 without source license receipt or coherent Tauri
+        run: python -m unittest discover -s ide/packaging -p 'test_p05_wo7_signed_bundle_source.py' -v
       - name: Audit result scope
         run: echo "P05_SOURCE_PROVENANCE_ONLY_0_PR_CLOSURES_0_NATIVE_GATE_REPLACEMENTS_NO_RELEASE_APPROVAL"
