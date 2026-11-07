@@ -2,6 +2,12 @@
 Date: 2026-11-06
 Status: REQUIRED FOR V1.0; FIRST POLICY-KERNEL SOURCE COMMITTED; native desktop capture, memory write, and installed acceptance OPEN.
 
+## P06 privacy, retention and explicit forget — new source implementation (2026-11-06)
+
+The updated Lu ObserveHost and shared TaskStore now migrate legacy `lu_awareness_notes` source constraints to include trusted `native_runtime` events while preserving existing rows. Such events remain error indicators, not independent GUI-test verdicts. Native enum notes are retained for at most seven days and automatically pruned on startup and review. A native-confirmed Forget control erases note rows scoped to the selected chat (including prior observation sessions), invalidates current volatile handoff evidence, and preserves monotonic event sequence. Deleting notes does not delete ordinary chat messages, separate durable task receipts or ANSF memory. Screen capture remains an independently consented, volatile OS worker, not part of a review note. No raw screenshot, user input or credentials are retained by the note database.
+
+See [P06 OBSERVE-PRIVACY-01](LU_P06_OBSERVE_PRIVACY.md) for new Windows/Linux native test gates, limitations and deferred physical WGC/GUI/installed acceptance. Existing policy-kernel status below is historical.
+
 ## Purpose
 Enable Lu to witness the user's permitted desktop interactions and app-test workflows without repeated prompts or continuous LLM inference. The host observes structured UI events, selectively requests sensitive-data-redacted screenshots when separately authorized, correlates GUI state with application/test logs, and proposes explanations or teachable workflows.
 
