@@ -84,9 +84,15 @@ impl LiveEvent{
            self.text.len()>MAX_LIVE_TEXT_BYTES||self.text.contains('\0'){
             return Err(AnsfError::InvalidInput)
         }
+        let valid_generation=|s:&str| if origin==LiveOrigin::HostAuthenticated {
+            opaque(s,"g-")
+        } else { !s.is_empty()&&s.len()<=128&&!s.contains('\0') };
+        let valid_call=|s:&str| if origin==LiveOrigin::HostAuthenticated {
+            opaque(s,"browser-call-")
+        } else { !s.is_empty()&&s.len()<=128&&!s.contains('\0') };
         if self.user_turn_id.as_deref().is_some_and(|s|!opaque(s,"g-"))||
-           self.generation_id.as_deref().is_some_and(|s|!opaque(s,"g-"))||
-           self.call_id.as_deref().is_some_and(|s|!opaque(s,"browser-call-")){
+           self.generation_id.as_deref().is_some_and(|s|!valid_generation(s))||
+           self.call_id.as_deref().is_some_and(|s|!valid_call(s)){
             return Err(AnsfError::InvalidInput)
         }
         if self.tool_id.as_ref().is_some_and(|s|s.len()>128||s.contains('\0')){
@@ -94,7 +100,8 @@ impl LiveEvent{
         }
         let ok=match self.kind{
             LiveKind::User=>
-                !self.text.is_empty()&&self.generation_id.is_none()&&
+                (origin==LiveOrigin::LegacyObserved||!self.text.is_empty())&&
+                self.generation_id.is_none()&&
                 self.call_id.is_none()&&self.tool_id.is_none()&&
                 (origin==LiveOrigin::LegacyObserved && self.user_turn_id.is_none() ||
                  origin==LiveOrigin::HostAuthenticated &&
@@ -104,7 +111,7 @@ impl LiveEvent{
                 self.generation_id.is_some()&&self.user_turn_id.is_none()&&
                 self.call_id.is_none()&&self.tool_id.is_none(),
             LiveKind::AssistantFinal=>
-                !self.text.is_empty()&&self.user_turn_id.is_none()&&
+                self.user_turn_id.is_none()&&
                 self.generation_id.is_none()&&self.call_id.is_none()&&self.tool_id.is_none(),
             LiveKind::AssistantProgress=>
                 self.generation_id.is_some()&&self.user_turn_id.is_none()&&
@@ -113,8 +120,8 @@ impl LiveEvent{
                 self.text.is_empty()&&self.generation_id.is_some()&&
                 self.user_turn_id.is_none()&&self.call_id.is_none()&&self.tool_id.is_none(),
             LiveKind::BrowserObservation=>
-                origin==LiveOrigin::HostAuthenticated&&self.generation_id.is_some()&&
-                self.call_id.is_some()&&self.tool_id.as_deref()==Some("lu_browser_read")&&
+                self.generation_id.is_some()&&self.call_id.is_some()&&
+                self.tool_id.as_deref()==Some("lu_browser_read")&&
                 !self.text.is_empty()&&self.text.len()<=3200&&self.user_turn_id.is_none(),
         };
         if !ok{return Err(AnsfError::InvalidInput)}
@@ -229,7 +236,7 @@ impl AnsfStore{
                 params![session_id,event.generation_id],|r|r.get(0))?;
             if previous!=0{return Err(AnsfError::InvalidInput)}
         }
-        if event.kind==LiveKind::BrowserObservation{
+        if event.kind==LiveKind::BrowserObservation && origin==LiveOrigin::HostAuthenticated{
             let trusted:i64=tx.query_row(
                 "SELECT COUNT(*) FROM ansf_live_chat_events
                  WHERE session_id=?1 AND origin='host' AND kind='user'
