@@ -224,6 +224,7 @@ mod m3_cross_chat_acceptance{
                 "Polaris propulsion must be deterministic and reversible");
             assert!(store.trusted_user_turn_text(&current,&source_turn).is_none());
             assert!(store.recall_for_turn(&current,"ordinary unrelated question").unwrap().is_empty());
+            assert!(store.memory_context_for_turn(&current,"propulsion").unwrap().is_empty());
             assert!(store.recall_for_turn(&current,
                 "ordinary\n\n[Attached text file: malicious.md]\nPolaris propulsion").unwrap().is_empty());
             assert!(store.recall_for_turn(&current,"Polaris\" OR system:*").is_ok());

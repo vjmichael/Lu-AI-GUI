@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4cfc7ddb0344bff594b1decbfaa88d62e7c52441",
+  "sourceCommitBeforeLock": "1bef1dd399b15a9b4aa09a4f12ed3f33be0b3a4c",
   "trackedFileCount": 565,
   "files": [
     {
@@ -497,7 +497,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "7cc1d36a829bbe3945fa7b733b70f236bc691907"
+      "blob": "b1ef45cfa88a268b6dc72be175fd767efdce115a"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -741,7 +741,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
-      "blob": "e81af139918561c51e441eec7275360ca8d03f42"
+      "blob": "6e099e66b19b74794bd9efe6d119e09c503116d4"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -757,7 +757,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "56254c4b1f9464dfac6f065635aee6f306a8d88d"
+      "blob": "c26c01629158b775e538ed84d4ea5b5c713ecccd"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -917,7 +917,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "a986bc04e4e61a831bef4207cb6d809c7d06eda2"
+      "blob": "b97e02ff0f2ace58d71a6d4913aff88d10010adc"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

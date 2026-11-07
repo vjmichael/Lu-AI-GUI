@@ -31,5 +31,6 @@ test('M3 human recall and direct source navigation render',()=>{
   assert.match(ui,/invoke\('lu_m3_read_source'/);
   assert.match(ui,/hit\.sourceId/);
   assert.match(ui,/Read original source/);
+  assert.match(ui,/needle\.startsWith\(\x27ansf:v1:\x27\)/);
 });
 

@@ -1369,8 +1369,14 @@ function App() {
     if(!chatId||m3Busy||!m3Query.trim())return;
     const sourceChat=chatId;setM3Busy(true);
     try{
-      const hits=await invoke('lu_m3_recall',{chatId:sourceChat,query:m3Query});
-      if(activeChatRef.current===sourceChat){setM3Matches(hits);setM3Reading(null);}
+      const needle=m3Query.trim();
+      if(needle.startsWith('ansf:v1:')){
+        const data=await invoke('lu_m3_read_source',{chatId:sourceChat,sourceId:needle});
+        if(activeChatRef.current===sourceChat){setM3Matches([]);setM3Reading(data);}
+      }else{
+        const hits=await invoke('lu_m3_recall',{chatId:sourceChat,query:needle});
+        if(activeChatRef.current===sourceChat){setM3Matches(hits);setM3Reading(null);}
+      }
     }catch(e){if(activeChatRef.current===sourceChat)setError('ANSF recall unavailable: '+String(e));}
     finally{setM3Busy(false);}
   }
@@ -2955,7 +2961,7 @@ function App() {
           <label>Recall earlier Lu conversations
             <input type="search" maxLength={256} value={m3Query}
               onChange={e=>setM3Query(e.target.value)}
-              placeholder="Search historical words" aria-label="Search ANSF memory"/>
+              placeholder="Keywords or ansf:v1: source ID" aria-label="Search ANSF memory"/>
           </label>
           <button type="submit" disabled={m3Busy||!m3Query.trim()}>
             {m3Busy?'Searching…':'Recall'}</button>
