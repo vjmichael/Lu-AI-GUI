@@ -43,3 +43,13 @@ These are current native failures, not simply pending CI. The installed Windows 
 - [ ] Verify actual authenticated GitHub run/job evidence, independent OS receipts and exact installed package signatures, then reassess fail-closed release manifests. Do not promote releaseApproved without all gates.
 
 P04 must remain draft/open while these items are outstanding. Stop at this phase; do not move to P05 without further instruction.
+
+## Native accessibility repair checkpoint (November 7)
+
+The actual Windows CI tree had only 20 native descendants and three named nodes even though the installed WebView2 process remained alive. Research into Tauri/wry WebView2 UIA orphaned fragment roots (tauri-apps/tauri issue 15624) describes a native renderer HWND whose provider can remain reachable directly while the host top-level traversal dead-ends. The P04 installed UI witness now uses the real Win32 EnumChildWindows API scoped to the exact installed desktop window to enumerate at most eight Chrome_RenderWidgetHostHWND children, then inspects their actual OS UI Automation provider trees. It does NOT inject JavaScript, control the WebView through a debug port, issue Tauri commands or declare a missing control successful. This is an acceptance-harness workaround, not a claimed upstream accessibility fix. Actual OS retest must prove it works.
+
+The Linux installed AT-SPI fixture previously tried the first globally accessible button named Select/Open/Choose Folder, which could incorrectly match an unrelated application control. It now requires a real AT-SPI native dialog/file-chooser ancestor before clicking an OS dialog confirmation; missing controls remain denied with only fixed-vocabulary role counts. Real OS confirmation, project catalog registration and source editor operations still require an exact native rerun.
+
+The earlier P04 source/negative matrix run 42396238371 passed on SHA a34812cf. WO7 signed source/negative preflight also passed on that SHA. Neither result is installed UI, signed artifact or new native handler acceptance.
+
+**Current P04 result:** implementation/review continued; native installed Windows/Linux retests and independently signed release evidence remain OPEN.
