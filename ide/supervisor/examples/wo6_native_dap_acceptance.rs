@@ -143,7 +143,9 @@ mod protected {
         );
         if !cfg!(debug_assertions)
             || root.parent() != Some(env::temp_dir().as_path())
-            || !root.file_name().and_then(|x| x.to_str())
+            || !root
+                .file_name()
+                .and_then(|x| x.to_str())
                 .is_some_and(|x| x.starts_with("lu-ide-p03-crash-"))
             || !root.is_dir()
         {
@@ -162,15 +164,16 @@ mod protected {
         {
             return Err("DENIED: invalid native crash journal identity".into());
         }
-        let replay = Supervisor::open(root.join("receipts.jsonl"))
-            .map_err(|e| e.code())?;
+        let replay = Supervisor::open(root.join("receipts.jsonl")).map_err(|e| e.code())?;
         let observed = replay.inspect().map_err(|e| e.code())?;
         if observed.len() != 1
             || observed[0].job_id != id
             || !observed[0].requires_reconciliation
             || matches!(observed[0].phase, JobPhase::Completed | JobPhase::Cancelled)
         {
-            return Err("DENIED: host crash did not quarantine unfinished OS work on restart".into());
+            return Err(
+                "DENIED: host crash did not quarantine unfinished OS work on restart".into(),
+            );
         }
         // A cgroup witness must use actual kernel populated evidence, not
         // assumptions from journal flags or a mocked process table.
@@ -179,12 +182,13 @@ mod protected {
             .lines()
             .find_map(|line| line.strip_prefix("0::"))
             .ok_or("DENIED: host has no real cgroup v2 membership")?;
-        let leaf = PathBuf::from("/sys/fs/cgroup")
-            .join(relative.trim_start_matches('/'));
+        let leaf = PathBuf::from("/sys/fs/cgroup").join(relative.trim_start_matches('/'));
         if leaf.file_name().and_then(|x| x.to_str()) != Some("lu-ide-host") {
             return Err("DENIED: crash verifier was not independently delegated".into());
         }
-        let parent = leaf.parent().ok_or("DENIED: delegated parent unavailable")?;
+        let parent = leaf
+            .parent()
+            .ok_or("DENIED: delegated parent unavailable")?;
         if !matches!(
             parent.file_name().and_then(|x| x.to_str()),
             Some("lu-ide-delegated" | "lu-ide-delegated.service")
@@ -196,7 +200,9 @@ mod protected {
         let empty = loop {
             let events = fs::read_to_string(group.join("cgroup.events"))?;
             let clean = events.lines().any(|line| line == "populated 0")
-                && fs::read_to_string(group.join("cgroup.procs"))?.trim().is_empty();
+                && fs::read_to_string(group.join("cgroup.procs"))?
+                    .trim()
+                    .is_empty();
             if clean || began.elapsed() >= Duration::from_secs(8) {
                 break clean;
             }
@@ -205,7 +211,9 @@ mod protected {
         if !empty {
             return Err("DENIED: real kernel cgroup retained child after supervisor crash".into());
         }
-        println!("PASS: real host crash -> kernel empty worker cgroup -> durable replay quarantined");
+        println!(
+            "PASS: real host crash -> kernel empty worker cgroup -> durable replay quarantined"
+        );
         Ok(())
     }
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {

@@ -20,6 +20,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned upstream Windows Python used only for OS test DLL closure.
+          python-version: '3.10.11'
       - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
         shell: pwsh
         run: |
@@ -41,6 +45,17 @@ jobs:
           New-Item -Force -ItemType Directory (Join-Path $bundle 'debuggee') | Out-Null
           Copy-Item -LiteralPath $lldb -Destination (Join-Path $bundle 'bin\lldb-dap.exe')
           Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File | Copy-Item -Destination (Join-Path $bundle 'bin')
+          # Actual PE audit on run 42391111210 identified precisely this DLL.
+          # No unpinned PATH search, arbitrary binary or general OS rights grant.
+          $python=(Get-Command python.exe -ErrorAction Stop).Source
+          $runtime=Join-Path (Split-Path $python -Parent) 'python310.dll'
+          if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) {
+            throw 'DENIED: pinned Python 3.10 DLL unavailable'
+          }
+          $copied=Join-Path $bundle 'bin\python310.dll'
+          Copy-Item -LiteralPath $runtime -Destination $copied
+          Write-Host "P03_LLDB_PYTHON310_CI_DLL_SHA256=$((Get-FileHash $copied -Algorithm SHA256).Hash)"
+          Write-Host 'P03_LLDB_PYTHON310_SCOPE=CI_ONLY_NOT_RELEASE_APPROVED'
           & $clang -g -O0 -o (Join-Path $bundle 'debuggee\wo6-selftest.exe') 'ide/supervisor/fixtures/debug/wo6_selftest.c'
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party debuggee build failed' }
           $adapter=Join-Path $bundle 'bin\lldb-dap.exe'

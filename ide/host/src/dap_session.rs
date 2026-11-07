@@ -470,10 +470,7 @@ fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &
         || text.contains("could not launch")
     {
         "target_launch_failed"
-    } else if text.contains("python")
-        || text.contains("resource")
-        || text.contains("platform")
-    {
+    } else if text.contains("python") || text.contains("resource") || text.contains("platform") {
         "debugger_resource_not_ready"
     } else if text.contains("invalid argument")
         || text.contains("unsupported")
@@ -799,10 +796,7 @@ mod tests {
             classify_native_adapter_error(&response),
             "target_launch_failed"
         );
-        response.insert(
-            "message".into(),
-            Value::String("error".into()),
-        );
+        response.insert("message".into(), Value::String("error".into()));
         response.insert(
             "body".into(),
             serde_json::json!({"error":{"format":"personality set failed: Operation not permitted"}}),
