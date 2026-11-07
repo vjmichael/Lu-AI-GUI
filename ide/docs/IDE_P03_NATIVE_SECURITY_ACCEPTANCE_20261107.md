@@ -84,3 +84,7 @@
 - **Linux WO4 real cgroup and hostile Bwrap** were positive on [P03 run 42387150080](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42387150080) and repeat native cgroup on [42391111159](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42391111159). **Windows D7D** real protected service crash and recovery, protected Cargo normal/cancel were positive on [42387149941](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42387149941). Final exact-head CI remains mandatory.
 
 **P03 remains OPEN**: Windows clangd, Windows LLDB-DAP dependency-repaired AppContainer runtime, Linux native LLDB-DAP launch/stop/thread/stack/cancel, exact-head source formatting and OS recovery. P04 not started.
+
+### Fixed LLDB-DAP headless launch refinement (latest P03 source, native verification required)
+
+The LLVM 18 LLDB-DAP launch handler explicitly accepts `disableSTDIO` and otherwise defaults to debuggee standard-I/O/pseudo-terminal setup. This first-party, stop/thread/stack-only debuggee requires no terminal I/O. The fixed request now sets `disableSTDIO=true` as well as `disableASLR=false`; neither adds capabilities, unpins a target, permits reverse terminal requests, nor relaxes Bwrap/cgroups/AppContainer. This is a bounded repair hypothesis for the protected Linux launch failure, **not yet real native acceptance**. LLVM source: https://llvm.googlesource.com/llvm-project/+/refs/tags/llvmorg-18.1.2/lldb/tools/lldb-dap/lldb-dap.cpp .

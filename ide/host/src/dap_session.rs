@@ -160,6 +160,11 @@ impl DapSession {
                 // Bwrap/AppArmor namespace that tries forbidden personality(2)
                 // ASLR disabling. Leave kernel ASLR ON; do not widen privileges.
                 "disableASLR": false,
+                // Test-only, headless fixed fixture never needs terminal IO.
+                // LLVM 18 otherwise allocates a pseudo-terminal, which can
+                // be denied under the kernel Bwrap/AppArmor namespace.
+                // Disabling target stdio reduces exposed I/O; no shell.
+                "disableSTDIO": true,
                 "args": [], "env": {}, "runInTerminal": false
             }),
         )?;
@@ -609,6 +614,9 @@ mod tests {
         assert!(std::str::from_utf8(&wire)
             .unwrap()
             .contains(r#""disableASLR":false"#));
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""disableSTDIO":true"#));
         assert_eq!(session.phase(), DapPhase::Launching);
         let observed = session
             .receive(&framed(json!({
