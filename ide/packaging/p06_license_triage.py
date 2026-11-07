@@ -25,6 +25,10 @@ def classify(manager,name):
         return "candidate_linux_target", "Verify GTK/Linux package closure and exact upstream notice."
     return "missing_or_ambiguous_package_notice", "Retrieve and review exact upstream copyright text and relevant binary/linkage scope."
 
+# Embedded prebuilt protoc executables require a distinct upstream
+# redistribution/binary provenance review, separate from the Rust wrapper MIT.
+PROTOC_EMBEDDED_BINARY_FAMILY = ["protoc-bin-vendored","protoc-bin-vendored-linux-aarch_64","protoc-bin-vendored-linux-ppcle_64","protoc-bin-vendored-linux-s390_64","protoc-bin-vendored-linux-x86_32","protoc-bin-vendored-linux-x86_64","protoc-bin-vendored-macos-aarch_64","protoc-bin-vendored-macos-x86_64","protoc-bin-vendored-win32"]
+
 def triage(data, source_bytes):
     if (not isinstance(data,dict) or data.get("schema")!="lu.ide.p04.verification-licenses.v1"
             or data.get("releaseApproved") is not False
@@ -88,12 +92,27 @@ def triage(data, source_bytes):
                       "requiredReview":explanation,"disposition":"open",
                       "selectedLicenseOption":None,"reviewedBy":None})
     flags.sort(key=lambda x:(x["manager"],x["name"],x["version"]))
+    embedded=[]
+    for name in PROTOC_EMBEDDED_BINARY_FAMILY:
+        row=pkgs.get(("cargo",name,"3.3.0"))
+        if row is not None:
+            embedded.append({
+                "manager":"cargo","name":name,"version":"3.3.0",
+                "rustWrapperDeclaredLicense":row.get("declaredLicense"),
+                "binaryOrigin":"Google-built protoc executable",
+                "reviewRequired":"Verify embedded upstream protoc binary version, Google copyright and license, redistribution obligations, actual shipped binary closure, and target architecture.",
+                "targetSelectionIsNotShipmentProof":True,
+                "disposition":"open","legalReviewApproved":False,
+                "reviewedBy":None})
     return {"schema":"lu.ide.p06.license-triage.v1","sourceSha":data["sourceSha"],
             "inventorySha256":hashlib.sha256(source_bytes).hexdigest(),
             "totalResolvedPackages":len(pkgs),"unresolvedCount":len(tasks),
             "allUnresolvedRemainOpen":True,"upstreamReceiptPresent":True,
             "legalReviewApproved":False,"releaseApproved":False,"tasks":tasks,
-            "specialLicenseReviewCount":len(flags),"specialLicenseReviews":flags}
+            "specialLicenseReviewCount":len(flags),"specialLicenseReviews":flags,
+            "embeddedCompilerReviewCount":len(embedded),
+            "embeddedCompilerReviews":embedded,
+            "embeddedCompilerLegalReviewApproved":False}
 
 def enforce_known_risk_set(report, policy):
     if (not isinstance(policy,dict) or policy.get("schema")!="lu.ide.p06.known-license-risk.v1"
@@ -109,6 +128,20 @@ def enforce_known_risk_set(report, policy):
         raise TriageDenied("new_or_missing_copyleft_or_multi_license_review")
     return True
 
+def enforce_embedded_binary_review(report,policy):
+    required=policy.get("expectedEmbeddedCompilerPackages")
+    if (not isinstance(required,list) or not all(isinstance(x,dict) for x in required)):
+        raise TriageDenied("missing_embedded_compiler_review_policy")
+    expected={(item.get("manager"),item.get("name"),item.get("version")) for item in required}
+    observed={(item["manager"],item["name"],item["version"]) for item in report["embeddedCompilerReviews"]}
+    known={("cargo",name,"3.3.0") for name in PROTOC_EMBEDDED_BINARY_FAMILY}
+    if expected!=known or observed!=expected or len(expected)!=len(required):
+        raise TriageDenied("unreviewed_embedded_protoc_binary_family")
+    if any(x.get("disposition")!="open" or x.get("legalReviewApproved") is not False
+           for x in report["embeddedCompilerReviews"]):
+        raise TriageDenied("invalid_embedded_binary_clearance")
+    return True
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--inventory",type=Path,required=True)
@@ -120,14 +153,16 @@ def main():
         if a.inventory.is_symlink() or a.inventory.stat().st_size>5_000_000:raise TriageDenied("unsafe_inventory")
         raw=a.inventory.read_bytes()
         result=triage(json.loads(raw),raw)
-        enforce_known_risk_set(result,json.loads(a.known_risk_policy.read_text(encoding="utf-8")))
+        policy=json.loads(a.known_risk_policy.read_text(encoding="utf-8"))
+        enforce_known_risk_set(result,policy)
+        enforce_embedded_binary_review(result,policy)
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     except (OSError,ValueError,TypeError,KeyError) as e:
         print("DENIED: "+str(e),file=sys.stderr)
         return 2
     print(json.dumps({"unresolvedCount":result["unresolvedCount"],
-                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
+                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"embeddedCompilerReviewCount":result["embeddedCompilerReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
     return 0
 if __name__=="__main__":
     raise SystemExit(main())

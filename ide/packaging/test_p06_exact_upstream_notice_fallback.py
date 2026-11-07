@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from collect_verification_licenses import (
-    CURATED_MISSING_NOTICES,verified_curated_notices,git_blob_sha,Denied
+    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,verified_curated_notices,git_blob_sha,Denied
 )
 ROOT=Path(__file__).resolve().parents[2]
 class CuratedOriginalNotices(unittest.TestCase):
@@ -20,7 +20,8 @@ class CuratedOriginalNotices(unittest.TestCase):
             dest.write_bytes(source.read_bytes())
     def test_only_exact_immutable_upstream_full_license_texts(self):
         self.assertEqual(set(CURATED_MISSING_NOTICES),
-                         {"alloc-stdlib:0.3.0","tauri-plugin:2.7.2"})
+                         {"alloc-stdlib:0.3.0","tauri-plugin:2.7.2"} |
+                         {name+":3.3.0" for name in PROTOC_UPSTREAM_FAMILY})
         for name_version,rule in CURATED_MISSING_NOTICES.items():
             with self.subTest(name_version=name_version):
                 self.load(rule)
@@ -32,6 +33,15 @@ class CuratedOriginalNotices(unittest.TestCase):
                     self.assertEqual(git_blob_sha(filename.read_bytes()),source["blobSha"])
                     self.assertNotIn(b"\r",filename.read_bytes())
                     self.assertTrue(source["url"].startswith("https://raw.githubusercontent.com/"))
+    def test_entire_exact_vendored_protoc_family_has_complete_original_mit(self):
+        for name in PROTOC_UPSTREAM_FAMILY:
+            rule=CURATED_MISSING_NOTICES[name+":3.3.0"]
+            self.assertEqual(rule["declaredLicense"],"MIT")
+            self.load(rule)
+            result=verified_curated_notices(self.repo,"cargo",name,"3.3.0","MIT")
+            self.assertEqual(len(result),1)
+            self.assertEqual(git_blob_sha(result[0][0].read_bytes()),
+                             result[0][1]["blobSha"])
     def test_mutated_notice_fails_closed(self):
         rule=CURATED_MISSING_NOTICES["alloc-stdlib:0.3.0"]
         self.load(rule)

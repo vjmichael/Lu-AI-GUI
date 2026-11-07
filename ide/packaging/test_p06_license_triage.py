@@ -1,7 +1,7 @@
 """P06 category hints never waive any missing upstream license evidence."""
 import copy
 import unittest
-from p06_license_triage import triage,TriageDenied,enforce_known_risk_set
+from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY
 class TriageTests(unittest.TestCase):
     def setUp(self):
         self.data={"schema":"lu.ide.p04.verification-licenses.v1",
@@ -39,6 +39,20 @@ class TriageTests(unittest.TestCase):
                     "name":"unreviewed","version":"1.0","declaredLicense":"GPL-3.0"}]}
         with self.assertRaisesRegex(TriageDenied,"new_or_missing_copyleft_or_multi_license_review"):
             enforce_known_risk_set(report,policy)
+    def test_compiler_rust_mit_does_not_clear_embedded_google_binary(self):
+        for name in PROTOC_EMBEDDED_BINARY_FAMILY:
+            self.data["resolvedPackages"].append({"manager":"cargo","name":name,
+                "version":"3.3.0","declaredLicense":"MIT","notices":[{"path":"original"}]})
+        result=triage(self.data,b"fixture")
+        self.assertEqual(result["embeddedCompilerReviewCount"],9)
+        self.assertTrue(all(row["disposition"]=="open" and row["legalReviewApproved"] is False
+                            for row in result["embeddedCompilerReviews"]))
+        policy={"expectedEmbeddedCompilerPackages":[{"manager":"cargo","name":name,"version":"3.3.0"}
+                  for name in PROTOC_EMBEDDED_BINARY_FAMILY]}
+        self.assertTrue(enforce_embedded_binary_review(result,policy))
+        policy["expectedEmbeddedCompilerPackages"].pop()
+        with self.assertRaisesRegex(TriageDenied,"unreviewed_embedded_protoc_binary_family"):
+            enforce_embedded_binary_review(result,policy)
     def test_missing_package_denied(self):
         self.data["resolvedPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"unresolved_without_resolved_package"):

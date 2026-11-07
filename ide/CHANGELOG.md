@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 Protobuf wrapper vs Google binary legal provenance (Nov 7):** Retrieved original MIT license from upstream protoc-bin-vendored v3.3.0, pinned to nine exact resolved Rust crates with fail-closed source hashes. Added separate nine-entry required embedded Google-built protoc binary redistribution review; MIT wrapper recovery never grants distribution clearance. Tests and CI pending.
+
 - **P06 exact upstream alloc-stdlib/Tauri plugin notices (Nov 7):** Pinned upstream release tags/manifests and complete original BSD-3-Clause, MIT, Apache-2.0 legal texts, staged only on exact missing-notice packages and audited all dual-license originals with immutable Git hashes. No legal signoff; CI evidence pending.
 
 - **P06 actual original r-efi license notices (Nov 7):** Version-tagged 5.3.0 and 6.0.0 `AUTHORS` original MIT/Apache/LGPL option and copyright statements retrieved from upstream, preserved in tree and verified against exact Cargo registry crate bytes via pinned Git blob, with fail-closed modified/wrong-version/symlink tests. Dual-option human review stays open; new OS unresolved count pending.

@@ -125,6 +125,19 @@ CURATED_MISSING_NOTICES = {
     }
 }
 
+# MIT applies to the Rust crates; it is NOT evidence of legal status of
+# the bundled Google-built protoc executable. A separate binary review stays
+# required even if the complete original crate LICENSE.txt is recovered.
+PROTOC_UPSTREAM_FAMILY = (["protoc-bin-vendored","protoc-bin-vendored-linux-aarch_64","protoc-bin-vendored-linux-ppcle_64","protoc-bin-vendored-linux-s390_64","protoc-bin-vendored-linux-x86_32","protoc-bin-vendored-linux-x86_64","protoc-bin-vendored-macos-aarch_64","protoc-bin-vendored-macos-x86_64","protoc-bin-vendored-win32"])
+PROTOC_ORIGINAL_LICENSE = {"checkedIn":"ide/packaging/upstream-crate-notices/protoc-bin-vendored-3.3.0-LICENSE.txt","originalName":"LICENSE.txt","url":"https://raw.githubusercontent.com/stepancheg/rust-protoc-bin-vendored/v3.3.0/LICENSE.txt","blobSha":"acce6396f3cd1990471e8415ddf190780fa255b5"}
+for _protoc_name in PROTOC_UPSTREAM_FAMILY:
+    if _protoc_name+":3.3.0" in CURATED_MISSING_NOTICES:
+        raise Denied("duplicate_protoc_notice_rule")
+    CURATED_MISSING_NOTICES[_protoc_name+":3.3.0"] = {
+        "declaredLicense":"MIT",
+        "files":[PROTOC_ORIGINAL_LICENSE],
+    }
+
 def verified_curated_notices(repo_root,manager,name,version,declared):
     if manager != "cargo":
         return []

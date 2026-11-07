@@ -46,5 +46,52 @@
       "version": "0.38.0",
       "declaredLicense": "MPL-2.0"
     }
+  ],
+  "expectedEmbeddedCompilerPackages": [
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-aarch_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-ppcle_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-s390_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-x86_32",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-linux-x86_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-macos-aarch_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-macos-x86_64",
+      "version": "3.3.0"
+    },
+    {
+      "manager": "cargo",
+      "name": "protoc-bin-vendored-win32",
+      "version": "3.3.0"
+    }
   ]
 }

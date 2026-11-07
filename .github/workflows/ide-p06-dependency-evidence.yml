@@ -7,6 +7,7 @@ on:
       - 'ide/packaging/p06-native-acceptance-matrix.json'
       - 'ide/packaging/p06_license_triage.py'
       - 'ide/packaging/p06-known-license-risk.json'
+      - 'ide/packaging/upstream-crate-notices/**'
       - 'ide/packaging/test_p06_license_triage.py'
       - 'ide/packaging/p06_target_license_scope.py'
       - 'ide/packaging/test_p06_target_license_scope.py'
