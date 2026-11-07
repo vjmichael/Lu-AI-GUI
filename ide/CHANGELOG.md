@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO9-D/E/F (Nov 7 UTC): implemented reviewed one-file local Git stage/commit with SHA-pinned buffered Git blob, conditional old-HEAD branch ref, native OS stage/commit confirmations and hostile drift/hook/submodule/symlink controls; durable fsynced multi-project dependency DAG with manual existing WO6 protected OS worker requests and crash-quarantine/no replay; actual installed Windows NSIS UIA Git/portfolio and Linux Debian Openbox/AT-SPI ZIP-readback/uninstall suites; manual independently signed Windows/Linux OS-protected two-step DAG acceptance; default-deny release metadata and negative tests. Repaired inherited WO8 native test executable-basename and Linux missing-window-manager bugs on WO8/WO9. **Source implemented; exact native OS and genuine signed installed acceptance remain open; WO10 bridge disabled.** [WO9 ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
+
+
 - WO9 advanced packaging/multi-project implementation started (Nov 7 UTC): new project-scoped Git/verified-artifact workflow planner (up to eight native-picker registered projects), deterministic per-project fingerprint, drift/fail-closed verification, explicit native-folder fsynced no-overwrite JSON manifest export, portable ZIP of bounded independently rehashed artifact files with postwrite revision check and no Git/script execution. Enabled Packages & Workflows GUI and Tauri IPC for named host operations, added Git2 real fixture, ZIP readback and negative tests plus Win/Linux CI workflow. Git writes, dependent protected execution and installed package/release acceptance remain open; WO8 and WO7 OS gates unchanged. [WO9 ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
 
 
