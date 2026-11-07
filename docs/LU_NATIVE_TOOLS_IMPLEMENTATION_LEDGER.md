@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 real Windows React check repair (2026-11-06):** Focused Windows P06 job on `c56a74f` reached React build and failed only a stale `check-ui.mjs` literal asserting old pixel-delivery wording. Updated the test to require current fully blanked frame explanation plus explicit WGC frame-observed indicator; not a relaxation of no-pixel/visual-proof requirements. Exact-head CI rerun pending. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 independent accessibility test plan usability (2026-11-06):** The pinned OS UIA runner now requires sourceCommit + matching Lu.exe artifact SHA, supports either a stable AutomationId or exactly one reviewed UIA Button Name, rejects ambiguous/wrong-type controls, and never enumerates arbitrary text/values or clicks. Native Windows syntax/source checks added; physical installed accessibility test remains OPEN. [P06](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 actual independent OS GUI accessibility checker (2026-11-06):** Source-built read-only Windows UIA checker for a hash-reviewed installed Lu.exe and separately hash-reviewed bounded test plan, exact runtime PID/path/birth and AutomationId visibility/enabled attributes. It emits graded PASS_ACCESSIBILITY_ONLY/FAIL_ACCESSIBILITY_CONTRACT/INCONCLUSIVE, without any image/text, click, native effect or model verdict. Windows syntax/source tests are added; physical installed independent acceptance still OPEN. [P06](LU_P06_OBSERVE_PRIVACY.md).

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c56a74fd9c3466c1914e480eab250e175369df10",
+  "sourceCommitBeforeLock": "56a7e90baa955e55ce8f928f20cbcf96a6c9fcfb",
   "trackedFileCount": 509,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "117d07828ecb13cddec89e0110b951f36812ea81"
+      "blob": "8fd7b7aab4d68818c689677606e79563e6de11f7"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "e9e43b45e8a1e7772f8e62bcb835cd917356123a"
+      "blob": "57cbd3de9aa4def55317111f65e1557a1dfa8dc8"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "f1013132e2fbad65f93428e91a3eedceba533f14"
+      "blob": "3e1f788b07cbb6db8584664bc41399a293f2a911"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",

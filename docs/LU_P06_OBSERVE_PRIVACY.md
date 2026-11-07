@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 actual Windows frontend check repair (2026-11-06)
+
+Focused Windows native CI at previous SHA `c56a74fd9c3466c1914e480eab250e175369df10` passed all Observe privacy/core/Node tests and reached the actual React frontend build, but `npm run check` failed the **legacy wording assertion** in `lu-desktop/scripts/check-ui.mjs`. The UI correctly had changed from ambiguous pixel-delivery language to “both paths fully blank the captured frame,” and now distinguishes a WGC frame observed from a model image received. Repaired the source contract to assert these **current** safety statements, not merely delete the check. New exact-head Windows CI and installed-app acceptance remain OPEN.
+
 ## P06 practical independent UIA button check and source-commit binding
 
 The native UIA test plan now **must** identify a 40-character source commit and an installed-artifact SHA-256 matching the reviewed Lu.exe. Each check selects exactly one bounded *AutomationId* or one literal, pre-reviewed *buttonName*; the latter is restricted to unique native UIA Button controls and never reads arbitrary field values or dynamic text. Missing/duplicate/wrong-type controls remain INCONCLUSIVE. A plan that changes source or binary is rejected before OS access. This provides a usable path to check Lu's existing accessible React buttons independently, while remaining no-click, no-pixel, and without native-effect or model-verdict authority. Actual installed execution is still OPEN.

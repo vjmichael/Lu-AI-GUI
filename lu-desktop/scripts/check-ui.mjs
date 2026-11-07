@@ -53,7 +53,8 @@ const tests = [
     host.includes('--lu-observe-foreground-one-shot') &&
     ui.includes("if(action==='pause'||action==='stop'){") &&
     ui.includes('setCaptureTaskId(null);setCaptureReceipt(null)') &&
-    ui.includes('Neither gives the model its pixels') &&
+    ui.includes('Both paths fully blank the captured frame; neither sends pixels to the model.') &&
+    ui.includes('WGC frame observed and blanked.') &&
     ui.includes('fullyRedactedReceipt')],
   ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
     host.includes('fn lu_observe_self_signal(') &&
