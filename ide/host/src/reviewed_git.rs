@@ -28,8 +28,8 @@ pub struct ReviewedGitFile {
     pub remote_updated: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewedStageReceipt {
     pub project_id: String,
     pub relative_path: String,
