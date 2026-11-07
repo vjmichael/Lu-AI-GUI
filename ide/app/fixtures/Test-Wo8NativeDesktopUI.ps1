@@ -288,8 +288,11 @@ try {
           try { $cancel=Find-Control 'Cancel and verify process-tree termination' 'Button' 5 } catch {}
           if ($cancel -and $cancel.Current.IsEnabled) { Click 'Cancel and verify process-tree termination' }
           Wait-WorkerReturnToBaseline $initial
-          & sc.exe start LuIdeRecoveryBroker | Out-Null
-          if ($LASTEXITCODE -ne 0) { Deny 'service_restart_denied_after_crash' }
+          $serviceState=Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'"
+          if ($serviceState.State -ne 'Running') {
+            & sc.exe start LuIdeRecoveryBroker | Out-Null
+            if ($LASTEXITCODE -ne 0) { Deny 'service_restart_denied_after_crash' }
+          }
           Start-Sleep -Seconds 2
           $restored=VerifiedInstalledService
           if ($restored.State -ne 'Running') { Deny 'service_restart_not_healthy' }
