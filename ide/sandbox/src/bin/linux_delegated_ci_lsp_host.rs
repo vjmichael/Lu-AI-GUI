@@ -63,6 +63,7 @@ fn run() -> Result<(), &'static str> {
     fixture_cmd
         .env_clear()
         .env("LU_IDE_E2_PINNED_LSP_BUNDLE", bundle)
+        .env("LU_IDE_E2_NATIVE_TRACE", "1")
         .env("HOME", "/tmp")
         .env("LANG", "C")
         .current_dir(root.parent().ok_or("fixture root unavailable")?);
