@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE WO2/WO3 acceptance extension (2026-11-06): added a disposable Windows protected-SCM two-Job overlapping NUL lease and independently verified release fixture, staged after the original authenticated pipe smoke test with fixed-service-only bootstrap and explicit revocation attempt. No blanket AppContainer rights or release enablement; exact-head native CI, SCM pipe admission and service/owner crash gates remain open.
+
+
 - IDE WO2/WO3 live CI continuation (2026-11-06): repaired Windows `E0433/E0425` by restricting SCM recovery module to `protected-recovery-service`; applied all 31 exact native Rustfmt hunks from Windows job 128235540208. Both latest observed D7D crash/service-loss native fixtures failed *before* owner admission, not inside cleanup; added secret-safe fixed-stage stderr collection so CI diagnoses the actual protected pipe denial. Native protected Cargo/service acceptance remains open.
 
 
