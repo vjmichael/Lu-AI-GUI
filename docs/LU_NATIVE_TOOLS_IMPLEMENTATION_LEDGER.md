@@ -1,3 +1,9 @@
+## P11 GIT-CORE-01 started — November 7, 2026
+
+P10 source CI and native Linux suite passed on P10 head `9ccb7e5`; Windows native was still running at the transition, while Windows/Linux physical installed desktop acceptance remains OPEN. Owner expressly authorized moving on to P11 if that could not be fully completed now. No claim of completed physical acceptance.
+
+**P11 source scope:** AI-first external application execution, not a dedicated Git app. Audit existing native read-only host-approved `lu_git_status`, `lu_git_log`, `lu_git_diff`, typed Protobuf, exact repository and trusted Git executable, per-turn ReadWorkspace grants; add a hostile `.git/config` fsmonitor/diff helper regression and dedicated Linux/Windows native tests. No generic shell, Git write operations, account/gh network integration or IDE-clone functionality. [P11 ledger](LU_P11_GIT_CORE.md). Exact-head CI and installed app acceptance remain OPEN.
+
 ## P10 IMAGE-BASICS-01 started — 2026-11-07
 
 **Owner decision:** Lu should operate common external applications effectively through supervised execution rather than reproduce those applications as native micro-apps. Model knowledge and planning remain model-side; Lu owns authorized scoped I/O, observation, reliable effects, policy/permissions versus authority distinction, resource supervision and recovery. Canonical policy: `docs/LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md`. P07 and P09 existing bounded functionality are suitable and retained, with **no feature expansion requested** for P09.

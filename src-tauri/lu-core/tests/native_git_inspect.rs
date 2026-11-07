@@ -318,3 +318,47 @@ fn wave4_git_session_only_advertises_three_host_authorized_read_tools(){
     drop(session);
     teardown(root);
 }
+
+#[tokio::test]
+async fn hostile_repository_helpers_are_not_executed_during_read_only_status(){
+    let (root,git)=fixture();
+    // A repository-local config can request helpers, but Lu must override it
+    // with its own trusted Git command policy and cleared process environment.
+    // Record a marker via an invalid helper path: any attempted helper spawn
+    // would cause the otherwise valid status inspection to fail.
+    fs::write(root.join(".git/config"),r#"[core]
+    bare = false
+    fsmonitor = lu-p11-forbidden-fsmonitor
+[diff "external"]
+    command = lu-p11-forbidden-diff-helper
+"#).unwrap();
+    fs::write(root.join(".gitattributes"),"notes.txt diff=external\n").unwrap();
+    let (registry,catalog)=register(&root,&git);
+    let (auth,origin)=scope();
+    let permitted=allowed();
+    let mut turn=NativeToolTurn::new_read_only(
+        &catalog,&registry,&auth,origin,"git-scope".into(),&permitted
+    ).unwrap();
+    let status=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_git_status","arguments":{"max_entries":10}}"#,
+        &catalog,&registry,&auth,&Allow,
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult{data,..}=status else{
+        panic!("Git status unavailable under malicious repository config");
+    };
+    assert_eq!(data["ok"],true);
+    assert!(data["result"]["entries"].as_array().unwrap().iter()
+        .any(|entry|entry["path"]=="notes.txt"));
+    let diff=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_git_diff","arguments":{"path":"notes.txt"}}"#,
+        &catalog,&registry,&auth,&Allow,
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult{data,..}=diff else{
+        panic!("Git diff unavailable under malicious repository config");
+    };
+    assert_eq!(data["ok"],true);
+    assert!(data["result"]["diff"].as_str().unwrap().contains("updated"));
+    assert!(!root.join(".git/index.lock").exists());
+    drop(turn);drop(auth);drop(catalog);drop(registry);
+    teardown(root);
+}

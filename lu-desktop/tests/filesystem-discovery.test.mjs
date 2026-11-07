@@ -17,7 +17,7 @@ test('P01 discovery is registered only inside a human-picked read-only turn',()=
   assert.match(bridge,/native_file_discovery::register_discovery_tool/);
   assert.match(bridge,/register_discovery_tool\(&registry,&mut catalog,&root\)/);
   assert.match(bridge,/AuthorizedCapability/);
-  assert.match(core,/pub const ID:&str="lu.files.discover"/);
+  assert.match(core,/pub const ID:&str="lu.file_discovery.discover"/);
   assert.match(core,/effect:ToolEffect::ReadWorkspace/);
   assert.match(core,/NativeToolRegistry/);
   assert.match(desktop,/blocking_pick_folder\(\)/);

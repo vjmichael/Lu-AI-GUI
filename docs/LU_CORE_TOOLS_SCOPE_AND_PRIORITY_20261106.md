@@ -1,3 +1,7 @@
+## Owner progression to P11 — November 7, 2026
+
+P10 basic image tool source and Linux native acceptance progressed; installed Windows/Linux image editing remains separately OPEN. P11 GIT-CORE-01 is now authorized as a bounded audit/hardening of host-selected, read-only Git executable inspection. Under the [AI-first external software policy](LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md), do **not** create a Git client, allow arbitrary model Git command execution, or duplicate Lu IDE. [P11 ledger](LU_P11_GIT_CORE.md).
+
 ## Owner's AI-first tool policy and P10 progression — November 7, 2026
 
 **Superseding tool design principle:** Lu is an AI execution environment; the AI model supplies general procedural knowledge and plans, and Lu supplies reliable, authorized filesystem I/O, browser/Reader observations, supervised external application/process interaction, policy, resource containment, results and recovery. **Do not reimplement common specialist productivity applications as Lu micro-apps.** OS permission to access resources is distinct from host-validated authority to act. Prefer existing applications/libraries and general reusable execution primitives; add native specialist capabilities only after objective safety/correctness/performance evidence. See [AI-first tool policy](LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md).
