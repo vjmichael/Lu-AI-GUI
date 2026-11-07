@@ -157,7 +157,7 @@ impl ChatStore {
         }
         // Prepare all original messages before publishing the new SQLite catalog.
         // The JSON/JSONL source remains untouched, recoverable and read-only.
-        prepare_legacy_ansf_books(&self.root)?;
+        let migration_receipts=prepare_legacy_ansf_books(&self.root)?;
         let index=self.root.join("conversation-index.json");
         let legacy:Option<LegacyCatalog>=if index.exists(){
             let metadata=fs::symlink_metadata(&index).map_err(to_err)?;
@@ -204,6 +204,23 @@ impl ChatStore {
                 "UPDATE ansf_desktop_state SET value=?1 WHERE name='sequence'",
                 [saved.sequence as i64]
             ).map_err(to_err)?;
+        }
+        if legacy.is_none() {
+            // Older R14 clients only had a flat chats.jsonl, not the
+            // conversation index. It was converted to an ANSF book above.
+            for receipt in &migration_receipts{
+                tx.execute(
+                    "INSERT OR IGNORE INTO ansf_desktop_chats
+                     (chat_id,title,folder_id,favorite,updated_seq)
+                     VALUES(?1,'Previous Lu conversation',NULL,0,1)",
+                    [&receipt.session_id]
+                ).map_err(to_err)?;
+            }
+            if !migration_receipts.is_empty(){
+                tx.execute(
+                    "UPDATE ansf_desktop_state SET value=1 WHERE name='sequence'",[]
+                ).map_err(to_err)?;
+            }
         }
         tx.execute(
             "UPDATE ansf_desktop_state SET value=1 WHERE name='legacy_cutover'",[]
