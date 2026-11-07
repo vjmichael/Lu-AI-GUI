@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'ide/packaging/**'
+      - 'ide/app/src-tauri/windows/wo7-*'
+      - 'ide/app/src-tauri/tauri.wo7.nsis.conf.json'
+      - 'ide/app/fixtures/Test-Wo7SignedInstalledNsis.ps1'
+      - '.github/workflows/ide-wo7-installed-acceptance.yml'
       - 'ide/docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md'
       - '.github/workflows/ide-wo7-signed-release-preflight.yml'
   workflow_dispatch:
