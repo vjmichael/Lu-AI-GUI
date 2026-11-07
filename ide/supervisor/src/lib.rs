@@ -147,7 +147,11 @@ fn validate_plan(value: &JobPlan) -> bool {
             cfg!(feature = "dap-transport")
                 && value.effect_class == "debug_inspection_isolated"
                 && value.runtime_limit_ms <= 3 * 60_000
-                && value.process_limit <= 4
+                // LLDB initializes its own kernel threads. Cgroup pids.max
+                // counts threads, not just child processes; 4 tasks was
+                // insufficient even for the fixed adapter initialize.
+                // Still bounded by MAX_PIDS=16 with exact OS cgroup/Job proof.
+                && value.process_limit <= 16
                 && value.log_limit_bytes <= 64 * 1024
         } else {
             value.effect_class == "test_build_isolated"
