@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## P06 governance and dependency reproducibility starts (November 7)
+
+A separate draft P06 branch stacked on P05 now adds dual-OS actual npm/Cargo lock resolution, hashing and saved CI receipts, mandatory original upstream license fetch and complete notice archive, security tests rejecting transitive Tauri drift and release approval substitution, and a default-deny native acceptance matrix. GitHub repository rulesets query yielded [], but main branch protection GET was forbidden to the connector (403); do not infer protection disabled. Exact-head P06 CI and actual lockfile review, native/Signed/upgrade rollback, and legal approval remain open. P07/WO10 still deferred.
+
 ## P05 continuation — exact upstream license retrieval and Tauri graph repair (November 7)
 
 Native package runs revealed incompatible old/new transitive Tauri APIs after the initial patch pin. Candidate now uses exact Tauri 2.12 core/API/CLI, validates resolved runtime versions, and runs real upstream text retrieval for all six canonical notices on each E2 verification submission. The source SHA, upstream URLs/revisions/text SHA-256 and npm/Cargo notice artifacts accompany each unsigned test package and the verified hash receipt. Actual OS/installed tests remain needed. All 38 original native/signed CI workflows and original PR branches are retained; P06 not started and P07/WO10 deferred.

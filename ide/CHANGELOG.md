@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P06 source governance begins (Nov 7):** New P06 branch stacked on P05 draft; independent Win/Linux actual resolved dependency graph CI with npm/Cargo lock hashes, original upstream license archive and source SHA receipts; default-deny six-phase OS/security/release acceptance matrix and hostile tests. No committed lockfile/independent signer/legal review or installed release approval claimed. GitHub rulesets returned empty but protection endpoint forbidden; repository permissions not inferred.
+
 - **P05 complete unsigned verification artifact license reach (Nov 7):** Extended exact upstream full-text fetch+hashed receipt/actual-package hash to both E2 Windows, WO8 Win/Linux and WO9 Win/Linux package builds. Repaired all corresponding CLI 2.12 pins; preserved exact older workflow blob identities, native installed tests and no-release policy.
 
 - **P05 version and upstream license closeout (Nov 7):** Pinned full Rust/JS/CLI Tauri 2.12 family after actual cross-platform `tauri 2.11.5` vs `tauri-runtime` 2.12 compiler failures. Added fail-closed Cargo.lock drift tests. E2 native NSIS now retrieves, hashes, compares and bundles all six canonical upstream original license texts with per-source exact SHA provenance, plus npm/Cargo notices. Missing/mismatched upstream receipts denied; transitive legal review and real installed OS gates remain open.
