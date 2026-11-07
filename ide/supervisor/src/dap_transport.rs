@@ -83,6 +83,12 @@ impl DapGateway {
         let message = self.session.initialize().map_err(protocol_denied)?;
         self.send(&message)
     }
+    /// The native OS worker provides a single immutable bundled self-test
+    /// executable path. The WebView cannot choose or modify this target.
+    pub(crate) fn launch_fixed_fixture(&mut self, target: &str) -> Result<(), SupervisorError> {
+        let frame = self.session.launch_fixed_fixture(target).map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     pub(crate) fn threads(&mut self) -> Result<(), SupervisorError> {
         let frame = self.session.threads().map_err(protocol_denied)?;
         self.send(&frame)
