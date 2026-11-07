@@ -274,6 +274,49 @@ pub mod unix_owned {
         }
         Ok(())
     }
+    /// Guard any trusted native worker *before exec* against a crash of
+    /// its Lu parent. PR_SET_PDEATHSIG is inherited by neither children nor
+    /// grandchildren, so our host also creates a process group and terminates
+    /// that group on orderly cancellation. Scanners additionally get a hard
+    /// Linux address-space quota. This wrapper is the only unsafe pre_exec
+    /// boundary; Lu Core remains #![deny(unsafe_code)].
+    #[cfg(target_os="linux")]
+    pub fn bind_owned_worker_pre_exec(
+        command:&mut std::process::Command,
+        expected_parent:u32,
+        address_space_limit:Option<u64>,
+    )->io::Result<()>{
+        use std::os::unix::process::CommandExt;
+        const PR_SET_PDEATHSIG:i32=1;
+        const RLIMIT_AS:u32=9;
+        let expected=i32::try_from(expected_parent)
+            .map_err(|_|io::Error::from_raw_os_error(22))?;
+        if expected<=1{return Err(io::Error::from_raw_os_error(22))}
+        if address_space_limit.is_some_and(|v|v<256*1024*1024||v>4*1024*1024*1024){
+            return Err(io::Error::from_raw_os_error(22))
+        }
+        // SAFETY: pre_exec executes in the forked child with only integer
+        // syscalls and POD buffers, no allocation, locks or async-signal-
+        // unsafe Rust work. Any failure aborts exec and the host fails closed.
+        unsafe{
+            command.pre_exec(move||{
+                if prctl(PR_SET_PDEATHSIG,SIGKILL as usize,0,0,0)!=0{
+                    return Err(io::Error::last_os_error())
+                }
+                if getppid()!=expected{
+                    return Err(io::Error::from_raw_os_error(10))
+                }
+                if let Some(bytes)=address_space_limit{
+                    let limit=Rlimit{soft:bytes,hard:bytes};
+                    if setrlimit(RLIMIT_AS,&limit)!=0{
+                        return Err(io::Error::last_os_error())
+                    }
+                }
+                Ok(())
+            })
+        }
+        Ok(())
+    }
     /// Linux native no-overwrite move using a pinned open directory FD.
     /// This is one atomic namespace transition; no hardlink/unlink gap.
     #[cfg(target_os="linux")]

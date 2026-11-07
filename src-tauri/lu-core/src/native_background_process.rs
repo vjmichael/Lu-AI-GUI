@@ -167,6 +167,19 @@ impl BackgroundProcessSupervisor {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        #[cfg(target_os="linux")]
+        {
+            let quota=if plan.args.first().and_then(|s|s.to_str())==
+                Some("--lu-file-scan-worker"){
+                Some(1024*1024*1024u64)
+            }else{None};
+            lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
+                &mut command,std::process::id(),quota,
+            ).map_err(|_|{
+                let _=self.store.fail_pending(&plan.task_id);
+                BackgroundProcessError::SpawnFailed
+            })?;
+        }
         #[cfg(windows)]
         let job=lu_win_worker_job::Job::new().map_err(|_|{
             let _=self.store.fail_pending(&plan.task_id);
