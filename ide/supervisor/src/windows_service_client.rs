@@ -135,14 +135,15 @@ fn ci_probe_denied_pipe_access() {
                         let index = unsafe { *count } as u32 - 1;
                         let rid = unsafe { GetSidSubAuthority(sid, index) };
                         if !rid.is_null() {
-                            match unsafe { *rid } {
-                                0x0000..=0x0fff => acceptance_trace("pipe_diag_host_integrity_untrusted"),
-                                0x1000..=0x1fff => acceptance_trace("pipe_diag_host_integrity_low"),
-                                0x2000..=0x2fff => acceptance_trace("pipe_diag_host_integrity_medium"),
-                                0x3000..=0x3fff => acceptance_trace("pipe_diag_host_integrity_high"),
-                                0x4000..=0x4fff => acceptance_trace("pipe_diag_host_integrity_system"),
-                                _ => acceptance_trace("pipe_diag_host_integrity_other"),
-                            }
+                            let stage = match unsafe { *rid } {
+                                0x0000..=0x0fff => "pipe_diag_host_integrity_untrusted",
+                                0x1000..=0x1fff => "pipe_diag_host_integrity_low",
+                                0x2000..=0x2fff => "pipe_diag_host_integrity_medium",
+                                0x3000..=0x3fff => "pipe_diag_host_integrity_high",
+                                0x4000..=0x4fff => "pipe_diag_host_integrity_system",
+                                _ => "pipe_diag_host_integrity_other",
+                            };
+                            acceptance_trace(stage);
                         }
                     }
                 }
