@@ -129,7 +129,19 @@ mod enabled {
     ) -> Result<NativeSession, Box<dyn std::error::Error>> {
         Ok(start_linux_lsp(supervisor, id, plan, head, input, bundle).map_err(|e| e.code())?)
     }
+    fn native_fixture_trace(stage: &'static str) {
+        #[cfg(target_os = "linux")]
+        if cfg!(debug_assertions)
+            && env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
+        {
+            eprintln!("PROTECTED_LINUX_FIXTURE_STAGE={stage}");
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = stage;
+    }
+
     pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+        native_fixture_trace("fixture_entry");
         let args: Vec<String> = env::args().skip(1).collect();
         let cancel = args.as_slice() == ["--cancel"];
         if !args.is_empty() && !cancel {
@@ -141,7 +153,9 @@ mod enabled {
         if !bundle.is_absolute() {
             return Err("DENIED: bundle must be absolute".into());
         }
+        native_fixture_trace("bundle_digest_begin");
         let bundle_sha = native_lsp_bundle_digest(&bundle, "lsp_clangd").map_err(|e| e.code())?;
+        native_fixture_trace("bundle_digest_verified");
         // A unique private acceptance project, never user-selected code.
         let id = format!(
             "e2-{}-{}",
@@ -162,10 +176,13 @@ mod enabled {
         }
         let text="int addition(int a, int b) { return a + b; }\nint main(void) { return addition(1,2); }\n";
         fs::write(project.join("main.c"), text)?;
+        native_fixture_trace("fixed_source_project_created");
         let input =
             publish_lsp_input(&project, &stage, "main.c", "clangd").map_err(|e| e.code())?;
+        native_fixture_trace("fixed_source_snapshot_published");
         let supervisor =
             Arc::new(Supervisor::open(root.join("receipts.jsonl")).map_err(|e| e.code())?);
+        native_fixture_trace("durable_supervisor_open");
         let head = "a".repeat(40);
         let plan = JobPlan {
             project_id: format!("ide-{}", "b".repeat(32)),
@@ -181,9 +198,12 @@ mod enabled {
             effect_class: "language_analysis_isolated".into(),
         };
         let prepared = supervisor.prepare(plan.clone()).map_err(|e| e.code())?;
+        native_fixture_trace("job_plan_prepared");
         supervisor
             .record_human_approval(&prepared.job_id, &prepared.plan_sha256, &head, true)
             .map_err(|e| e.code())?;
+        native_fixture_trace("one_use_approval_recorded");
+        native_fixture_trace("native_worker_start_requested");
         let mut session = start(
             Arc::clone(&supervisor),
             &prepared.job_id,
