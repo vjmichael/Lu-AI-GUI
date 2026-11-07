@@ -1,3 +1,7 @@
+## M3 original ANSF cross-conversation recall — November 7, 2026 (SOURCE CANDIDATE; NATIVE/INSTALLED PENDING)
+
+Stacked on unmerged M2 PR #94 exact `4cfc7ddb0344bff594b1decbfaa88d62e7c52441`. Bounded per-book lexical FTS retrieval, direct host-authenticated canonical source IDs, local GGUF prompt historical-data injection, human Recall UI, and native cross-chat/restart/authority tests are submitted. Real Windows/Linux exact-head and installed runtime proof are open; long-history virtualization, relevance benchmarking and external artifact broker remain open. See [M3 gate ledger](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md). Do not merge ahead of M2 acceptance.
+
 ## M2 ANSF SQLite-native conversation cutover — November 7, 2026 (CI PENDING)
 
 New [M2 canonical ANSF conversation cutover receipt](LU_M2_ANSF_CONVERSATION_CUTOVER_20261107.md) replaces the old provisional JSONL journal with source-coded per-book ANSF/SQLite live chat entries, indexed Library/SQLite chat metadata, host/legacy provenance and verified user-turn/Reader authority checks; adds native relational goal/clarification records (Yes/No/Not now), and imports old Lu JSONL/R14 history as observed and untrusted. **New runtime writes no JSONL event journal.** Pending native Linux/Windows and installed GGUF acceptance, migration interruption/reconciliation, bounded UI history and external artifact broker. Do not claim release acceptance before verification; the three-arm memory benchmark remains independent and does not block further M2 engineering.

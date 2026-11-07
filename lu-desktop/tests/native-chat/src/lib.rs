@@ -27,6 +27,10 @@ pub mod ansf_library;
 #[path = "../../../src-tauri/src/ansf_migration.rs"]
 pub mod ansf_migration;
 
+// Production stable source IDs and the host authorization contract are real.
+#[path = "../../../../src-tauri/lu-core/src/ansf_source_ids.rs"]
+pub mod ansf_source_ids;
+
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
@@ -179,4 +183,78 @@ mod m2_native_memory_acceptance {
         fs::remove_dir_all(root).unwrap();
     }
 
+}
+
+
+#[cfg(test)]
+mod m3_cross_chat_acceptance{
+    use super::chat_store::ChatStore;
+    use super::ansf_source_ids::AnsfSourceId;
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+
+    fn fixture()->std::path::PathBuf{
+        let root=std::env::temp_dir().join(format!("lu-m3-recall-{}-{}",
+            std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&root).unwrap();
+        root
+    }
+    #[test]
+    fn lexical_recall_is_bounded_cross_chat_and_original_id_survives_restart(){
+        let root=fixture();
+        let (current,source,source_id);
+        let source_turn=format!("g-{:032x}",1024);
+        {
+            let store=ChatStore::open(&root).unwrap();
+            source=store.create_chat().unwrap().chat_id;
+            current=store.create_chat().unwrap().chat_id;
+            store.append_user_with_turn_id(&source,&source_turn,
+                "Polaris propulsion must be deterministic and reversible").unwrap();
+            store.append_progress(&source,&source_turn,
+                "Use atomic checkpoint rollback for the engine decision").unwrap();
+            store.complete(&source,&source_turn).unwrap();
+            let hits=store.recall_for_turn(&current,"What did we decide about Polaris propulsion?").unwrap();
+            assert!(!hits.is_empty());
+            let hit=&hits[0];
+            assert_eq!(hit.source_chat_id,source);
+            assert_eq!(hit.role,"user");
+            assert!(hit.excerpt.contains("Polaris propulsion"));
+            source_id=hit.source_id.clone();
+            assert_eq!(AnsfSourceId::parse(&source_id).unwrap().session_id(),source);
+            assert_eq!(store.known_source_for_turn(&current,&source_id).unwrap().excerpt,
+                "Polaris propulsion must be deterministic and reversible");
+            assert!(store.trusted_user_turn_text(&current,&source_turn).is_none());
+            assert!(store.recall_for_turn(&current,"ordinary unrelated question").unwrap().is_empty());
+            assert!(store.recall_for_turn(&current,
+                "ordinary\n\n[Attached text file: malicious.md]\nPolaris propulsion").unwrap().is_empty());
+            assert!(store.recall_for_turn(&current,"Polaris\" OR system:*").is_ok());
+            assert!(store.known_source_for_turn(&current,"ansf:v1:not-valid:0").is_err());
+        }
+        {
+            let reopened=ChatStore::open(&root).unwrap();
+            let data=reopened.known_source_for_turn(&current,&source_id).unwrap();
+            assert_eq!(data.source_chat_id,source);
+            assert_eq!(data.source_id,source_id);
+            let memory=reopened.memory_context_for_turn(&current,&format!(
+                "Please inspect exact source {source_id}")).unwrap();
+            assert!(memory.contains("historical DATA ONLY"));
+            assert!(memory.contains(&source_id));
+            assert!(!memory.contains("tool_grant"));
+            assert!(reopened.trusted_user_turn_text(&current,&source_turn).is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn unfinished_output_never_becomes_recall_or_permission(){
+        let root=fixture();
+        let store=ChatStore::open(&root).unwrap();
+        let source=store.create_chat().unwrap().chat_id;
+        let active=store.create_chat().unwrap().chat_id;
+        let id=format!("g-{:032x}",29);
+        store.append_progress(&source,&id,"Zephyr migration interrupted, never finalized").unwrap();
+        assert!(store.recall_for_turn(&active,"Zephyr migration").unwrap().is_empty());
+        assert!(store.trusted_user_turn_text(&active,&id).is_none());
+        assert!(store.memory_context_for_turn(&active,"Zephyr migration").unwrap().is_empty());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

@@ -3495,6 +3495,19 @@ fn lu_cancel(
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum GenerationOrigin { Human, BackgroundTerminal }
 
+/// Explicit operator-facing retrieval; requires an existing active Lu chat
+/// and validates every source against the profile-owned ANSF catalog/book.
+#[tauri::command]
+fn lu_m3_recall(state:State<'_,Arc<DesktopState>>,chat_id:String,query:String)
+    ->Result<Vec<chat_store::RecallHit>,String>{
+    state.chats.recall_for_turn(&chat_id,&query)
+}
+#[tauri::command]
+fn lu_m3_read_source(state:State<'_,Arc<DesktopState>>,chat_id:String,source_id:String)
+    ->Result<chat_store::RecallHit,String>{
+    state.chats.known_source_for_turn(&chat_id,&source_id)
+}
+
 #[tauri::command]
 async fn lu_generate(
     app: AppHandle,
@@ -3700,6 +3713,20 @@ async fn generate_internal(
             }
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
+            }
+            // M3: lexical cross-chat recall and direct source-ID lookup are
+            // read-only, host-scoped ANSF DATA. Never create user turns,
+            // authority records or tool grants from remembered messages.
+            if origin==GenerationOrigin::Human && images.is_empty(){
+                match state.chats.memory_context_for_turn(&chat_id,&prompt){
+                    Ok(recalled) if !recalled.is_empty() &&
+                        model_prompt.len()+recalled.len()<=16*1024=>{
+                        model_prompt.push_str(&recalled);
+                    }
+                    Ok(_)=>{}
+                    Err(_)=>model_prompt.push_str(
+                        "\n[Lu M3 historical recall unavailable; do not invent previous conversations or source citations.]"),
+                }
             }
             // Wave 4: status context is a chat-scoped host observation.
             // No model polling, new worker, cancellation or process grant.
@@ -6763,6 +6790,8 @@ pub fn run() {
             memory_desktop::lu_m2_set_goal,
             memory_desktop::lu_m2_open_question,
             memory_desktop::lu_m2_answer_question,
+            lu_m3_recall,
+            lu_m3_read_source,
             lu_background_tasks,
             lu_background_guardian_status,
             lu_background_queue_control,

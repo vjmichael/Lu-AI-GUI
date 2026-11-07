@@ -45,6 +45,10 @@ function App() {
   const [m2PanelOpen,setM2PanelOpen]=useState(false);
   const [m2Busy,setM2Busy]=useState(false);
 
+  const [m3Query,setM3Query]=useState('');
+  const [m3Matches,setM3Matches]=useState([]);
+  const [m3Reading,setM3Reading]=useState(null);
+  const [m3Busy,setM3Busy]=useState(false);
   const activeChatRef=useRef(null);
   activeChatRef.current=chatId;
   const [history, setHistory] = useState([]);
@@ -1356,6 +1360,28 @@ function App() {
       }
     }catch(error){setError('Clarification not recorded: '+String(error));}
     finally{setM2Busy(false);}
+  }
+  useEffect(()=>{
+    setM3Matches([]);setM3Reading(null);setM3Query('');
+  },[chatId]);
+  async function m3Recall(event){
+    event.preventDefault();
+    if(!chatId||m3Busy||!m3Query.trim())return;
+    const sourceChat=chatId;setM3Busy(true);
+    try{
+      const hits=await invoke('lu_m3_recall',{chatId:sourceChat,query:m3Query});
+      if(activeChatRef.current===sourceChat){setM3Matches(hits);setM3Reading(null);}
+    }catch(e){if(activeChatRef.current===sourceChat)setError('ANSF recall unavailable: '+String(e));}
+    finally{setM3Busy(false);}
+  }
+  async function m3Read(sourceId){
+    if(!chatId||m3Busy)return;
+    const sourceChat=chatId;setM3Busy(true);
+    try{
+      const data=await invoke('lu_m3_read_source',{chatId:sourceChat,sourceId});
+      if(activeChatRef.current===sourceChat)setM3Reading(data);
+    }catch(e){if(activeChatRef.current===sourceChat)setError('Source could not be verified: '+String(e));}
+    finally{setM3Busy(false);}
   }
   async function refreshChats() {
     const list = await invoke('lu_chats');
@@ -2924,6 +2950,30 @@ function App() {
           <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
+      {chatId&&<section className="m2MemoryPane" aria-label="ANSF memory recall">
+        <form onSubmit={m3Recall} className="folderForm">
+          <label>Recall earlier Lu conversations
+            <input type="search" maxLength={256} value={m3Query}
+              onChange={e=>setM3Query(e.target.value)}
+              placeholder="Search historical words" aria-label="Search ANSF memory"/>
+          </label>
+          <button type="submit" disabled={m3Busy||!m3Query.trim()}>
+            {m3Busy?'Searching…':'Recall'}</button>
+        </form>
+        <small>Up to 24 earlier local books · original-source lexical matches only · no tool permissions</small>
+        {m3Matches.map(hit=><div className="modelInspection" key={hit.sourceId}>
+          <strong>{hit.chatTitle} · {hit.role}</strong>
+          <small>{hit.excerpt}{hit.truncated?' … [excerpt truncated]':''}</small>
+          <button type="button" className="subtleButton" disabled={m3Busy}
+            onClick={()=>void m3Read(hit.sourceId)}>Read original source</button>
+          <code>{hit.sourceId}</code>
+        </div>)}
+        {m3Reading&&<div className="modelInspection" aria-label="Verified ANSF original">
+          <strong>Verified original · {m3Reading.chatTitle}</strong>
+          <pre>{m3Reading.excerpt}</pre>
+          <code>{m3Reading.sourceId}</code>
+        </div>}
+      </section>}
       {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">
         <header className="m2MemoryHeader">
           <strong>Goal memory {m2Context?.goal?'· '+m2Context.goal.slice(0,75):'· not set'}</strong>
