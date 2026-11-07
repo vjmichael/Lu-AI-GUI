@@ -101,7 +101,17 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap clang-18 lldb-18
+          sudo apt-get install -y --no-install-recommends bubblewrap clang-18 lldb-18 apparmor-profiles apparmor-utils
+          # Ubuntu 24.04 AppArmor may reject unprivileged bwrap userns with
+          # EPERM. Provision ONLY the distribution-reviewed bwrap-userns-
+          # restrict profile; never disable AppArmor or global userns policy.
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile" || { echo 'DENIED: reviewed distro bwrap profile unavailable'; exit 1; }
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --proc /proc --dev /dev -- /usr/bin/true ||
+            { echo 'DENIED: unprivileged Bubblewrap namespace still forbidden under scoped AppArmor profile'; exit 1; }
           test -x /usr/bin/systemd-run
           test -f /sys/fs/cgroup/cgroup.controllers
       - name: Root-own immutable test-only adapter and fixed debuggee
@@ -166,7 +176,14 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo
+          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile" || { echo 'DENIED: reviewed distribution Bubblewrap profile unavailable'; exit 1; }
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --proc /proc --dev /dev -- /usr/bin/true ||
+            { echo 'DENIED: real unprivileged bwrap namespace creation denied; global restrictions unchanged'; exit 1; }
           for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do
             test -f "$file"
             test "$(stat -c %u "$file")" = 0
