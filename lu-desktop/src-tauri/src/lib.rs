@@ -161,6 +161,10 @@ struct ModelInspectionView{
     gguf_version:Option<u32>,
     tensor_count:Option<u64>,
     metadata_count:Option<u64>,
+    architecture:Option<String>,
+    tokenizer_model:Option<String>,
+    reported_context_length:Option<u64>,
+    gguf_file_type:Option<u32>,
     projector_attached:bool,
     projector_checked:bool,
     load_allowed:bool,
@@ -174,7 +178,9 @@ fn inspect_registered_model(root:&Path,record:&StoredModel)->ModelInspectionView
     let mut view=ModelInspectionView{
         model_ref:record.model_ref.clone(),filename:record.filename.clone(),
         file_bytes:None,gguf_version:None,tensor_count:None,
-        metadata_count:None,projector_attached:record.projector_attached,
+        metadata_count:None,architecture:None,tokenizer_model:None,
+        reported_context_length:None,gguf_file_type:None,
+        projector_attached:record.projector_attached,
         projector_checked:false,load_allowed:false,runtime_compatible:false,
         backend_requested:if cfg!(windows){"pinned llama.cpp Vulkan requested; not proven"}
             else{"pinned llama.cpp CPU baseline; not proven"},
@@ -208,6 +214,18 @@ fn inspect_registered_model(root:&Path,record:&StoredModel)->ModelInspectionView
     view.load_allowed=true;
     view.status="header_checked";
     view.detail="GGUF/MMProj basic headers and current files checked. Architecture, license, context capacity, GPU offload and real model inference remain unverified until trusted engine execution.";
+    // Metadata is untrusted, best-effort descriptive data: a malformed or
+    // unsupported KV never upgrades compatibility or bypasses header admission.
+    if let Ok(summary)=lu_core::gguf_metadata_summary::inspect_metadata(
+        &dir.join(&record.filename)
+    ){
+        view.architecture=summary.architecture;
+        view.tokenizer_model=summary.tokenizer_model;
+        view.reported_context_length=summary.reported_context_length;
+        view.gguf_file_type=summary.file_type;
+        view.status="metadata_checked";
+        view.detail="Bounded GGUF metadata parsed. Reported architecture/context/quantization are descriptive, NOT verified backend, license, tokenizer or GPU compatibility.";
+    }
     view
 }
 #[tauri::command]
