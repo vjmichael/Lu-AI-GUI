@@ -104,6 +104,25 @@ async fn ide_workflow_verify(
     }).await.map_err(|_| "WORKFLOW_REVALIDATE_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// Explicit human-triggered export of a non-executing, immutable manifest
+/// to a fresh OS-picker-selected folder, never a JavaScript-selected path.
+#[tauri::command]
+async fn ide_workflow_export_manifest(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowManifestExport, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let folder = NativePicker(app).choose_project_directory()
+            .map_err(|_| "WORKFLOW_EXPORT_PICKER_UNAVAILABLE")?
+            .ok_or("WORKFLOW_EXPORT_CANCELLED")?;
+        registry.export_workflow_manifest(&project_ids, &expected_fingerprint, &folder)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_EXPORT_HOST_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read file metadata and bounded SHA-256 under an active registered project.
 /// The result NEVER proves an executable is safe or operable.
 #[tauri::command]
@@ -1032,6 +1051,7 @@ pub fn run() {
             ide_compare_project_inventory,
             ide_workflow_preview,
             ide_workflow_verify,
+            ide_workflow_export_manifest,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
