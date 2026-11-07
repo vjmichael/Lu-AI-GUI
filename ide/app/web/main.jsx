@@ -563,6 +563,25 @@ function App() {
     } finally { setWorkflowRunBusy(false); }
   }
 
+  async function reverifyNativeStepAfterRestart(run, index) {
+    if (workflowRunBusy) return;
+    setWorkflowRunBusy(true);
+    setProblem('');
+    try {
+      const updated = await invoke('ide_workflow_verify_native_receipt', {
+        workflowId: run.workflowId, step: index,
+      });
+      setWorkflowRuns(prev => prev.map(item =>
+        item.workflowId === updated.workflowId ? updated : item));
+      setHint('Completed protected step confirmed against native supervisor journal; no code rerun.');
+    } catch (error) {
+      setProblem('WO9 native restart receipt remains unverified: ' + String(error));
+      await readWorkflowRuns();
+    } finally {
+      setWorkflowRunBusy(false);
+    }
+  }
+
   async function cancelDurableStep(run, index) {
     if (workflowRunBusy) return;
     setWorkflowRunBusy(true);
@@ -2136,6 +2155,17 @@ function App() {
                     {task.state === 'pending' && <button type="button" className="ghostBtn"
                       disabled={workflowRunBusy}
                       onClick={() => cancelDurableStep(run,index)}>Cancel pending step</button>}
+                    {task.state === 'native_receipt_unverified' &&
+                      <div role="status">
+                        <p>Host restarted. This completed step remains blocked until its
+                          exact WO6 protected supervisor job/plan is independently
+                          confirmed. No project code is rerun.</p>
+                        <button type="button" className="ghostBtn"
+                          disabled={workflowRunBusy}
+                          onClick={() => reverifyNativeStepAfterRestart(run,index)}>
+                          Verify stored native completion against OS journal
+                        </button>
+                      </div>}
                     {task.state === 'interrupted' &&
                       <p role="status">Native OS reconciliation required.
                         No automatic replay. Use Job requests to inspect exact kernel cleanup.</p>}
