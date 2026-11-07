@@ -9,15 +9,15 @@
 2. WO9 UI frontend job in the same run and WO8/WO6 frontend jobs: 65 of 67 Node tests passed. The two failures were `standalone.test.mjs` strict invoke/capability assertions not accounting for the already-implemented `ide_workflow_verify_native_receipt` command. That route is native evidence verification and **not** a general-purpose Lu capability; do not enlarge `capability_schemas.json`, IPC authority or tool grants to fix the test.
 3. [WO4 source workflow run 42355877379](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42355877379) and the E1/E2 jobs: rustfmt rejected inherited WO9 host files and delegated Linux test binaries. Exact old/new formatting hunks were extracted from failed native CI logs and applied to the tracked files, with no behavioral source changes intended.
 4. The actual Linux accessibility helper `wo8_linux_editor_atspi.py` declares `activate(..., timeout=...)`; two WO9 scripts called it with an invalid `seconds` argument. The helper's separate `accessible(..., seconds=...)` remains correct.
-5. Prior installed Windows UI Automation and Linux AT-SPI feature outcomes are **not yet proven at this P02 head**, including the accessibility selectors `Job requests` and `Execution requests`.
+5. [WO8 earlier installed Linux run 42348625773](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42348625773) really built and installed the Debian package; its GTK native test then failed at `activate() got an unexpected keyword argument 'seconds'`. The WO8 helper's *own* native picker caller was also repaired in P02. A dedicated AST regression now validates all three WO8/WO9 scripts' activation keywords, but only a fresh installed test can prove functionality. [WO8 earlier installed Windows run 42348625788](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42348625788) passed 67/67 Node tests and reached real UI Automation, then failed `WO8_NATIVE_UI_DENIED:ui_element_not_exposed_Execution_requests`. The P02 harness now emits up to 100 real UIA node names and types on missing-control failure **before still denying acceptance**. Do not assume static JSX label matches guarantee an accessible installed WebView2 control.
 
 ## Source changes on the P02 branch
 
 - WO9 native-feature CI generates the real first-party ICO/PNG and bundled frontend before Cargo, on Windows and Linux.
 - Strict UI command tests recognize the existing privileged receipt command while deliberately excluding it from the ordinary human/AI capability catalog.
-- The Linux WO9 accessibility calls use the declared `timeout` keyword.
+- The Linux WO8 native picker and WO9 accessibility calls use the declared `timeout` keyword, guarded by a Python AST signature contract.
 - Seven Rust host/native fixture files received exact rustfmt repairs from observed CI diffs.
-- New `.github/workflows/ide-p02-native-checks.yml` checks checked-out SHA, asset existence, Node tests, Rustfmt, native host tests, default Tauri and separately opted-in `native-build`, `native-debug`, `native-lsp` and their combined declaration on each OS. The Python and PowerShell harnesses receive syntax checks, **not simulated installed passes**.
+- New `.github/workflows/ide-p02-native-checks.yml` checks checked-out SHA, asset existence, Node tests, Rustfmt, native host tests, default Tauri and separately opted-in `native-build`, `native-debug`, `native-lsp` and their combined declaration on each OS. A Python AST helper signature check and Python/PowerShell syntax checks guard the GUI fixtures; **none is simulated installed acceptance**. Windows UIA now reports a bounded real accessibility tree on a missing-selector failure while remaining fail-closed.
 
 ## Verification and phase exit conditions
 
