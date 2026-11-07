@@ -1,0 +1,84 @@
+name: IDE P02 exact-head native build and source checks
+on:
+  pull_request:
+    paths:
+      - 'ide/**'
+      - '.github/workflows/ide-p02-native-checks.yml'
+      - '.github/workflows/ide-wo9-advanced-workflows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-head-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact checked-out SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Install native Linux WebKit GTK dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Generate icons and real bundled frontend; verify Node tests
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Assert generated assets exist before any Cargo feature check
+        shell: bash
+        run: |
+          test -s ide/app/src-tauri/icons/icon.ico
+          test -s ide/app/src-tauri/icons/icon.png
+          test -s ide/app/dist/index.html
+          test -s ide/app/dist/assets/app.js
+      - name: Check Rust formatting and core host tests
+        shell: bash
+        run: |
+          cargo fmt --manifest-path ide/host/Cargo.toml --all --check
+          cargo fmt --manifest-path ide/sandbox/Cargo.toml --all --check
+          cargo test --manifest-path ide/host/Cargo.toml --lib
+      - name: Check default-disabled Tauri desktop
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib
+      - name: Check native-build feature separately
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --lib
+      - name: Check native-debug feature separately
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-debug --lib
+      - name: Check native-lsp feature separately
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-lsp --lib
+      - name: Check combined opt-in native feature declarations
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build,native-debug,native-lsp --lib
+      - name: Validate GUI harness syntax, not installed results
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            python3 -m py_compile ide/app/fixtures/wo8_linux_editor_atspi.py ide/app/fixtures/wo9_linux_workflow_atspi.py ide/app/fixtures/wo9_linux_protected_graph_atspi.py
+          else
+            pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1).Path,[ref]$tokens,[ref]$errors); if($errors.Count) { throw $errors[0] }'
+          fi
+      - name: Evidence boundary
+        shell: bash
+        run: |
+          echo 'P02_EXACT_HEAD_NATIVE_BUILD=CHECKED_BY_PREVIOUS_STEPS'
+          echo 'P02_INSTALLED_OS_GUI_AND_SIGNED_RELEASE=NOT_INFERRED'
