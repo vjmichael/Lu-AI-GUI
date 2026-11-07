@@ -16,8 +16,7 @@ use std::{
 
 fn trace_dap(stage: &'static str) {
     if cfg!(debug_assertions)
-        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-            == Some(std::ffi::OsStr::new("1"))
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
     {
         eprintln!("PROTECTED_DAP_GATEWAY_STAGE={stage}");
     }
@@ -137,7 +136,7 @@ impl DapGateway {
             Err(_) => {
                 trace_dap("native_stdio_read_failed");
                 return self.quarantine();
-            },
+            }
         };
         if bytes.len() > MAX_READ || self.transferred.saturating_add(bytes.len()) > MAX_TOTAL_IO {
             return self.quarantine();
@@ -155,11 +154,21 @@ impl DapGateway {
             }
             Err(error) => {
                 match error {
-                    lu_ide_workspace::dap_session::DapError::InvalidFrame => trace_dap("invalid_frame"),
-                    lu_ide_workspace::dap_session::DapError::InvalidMessage => trace_dap("invalid_message"),
-                    lu_ide_workspace::dap_session::DapError::UnexpectedResponse => trace_dap("unmatched_response"),
-                    lu_ide_workspace::dap_session::DapError::AdapterRequestDenied => trace_dap("reverse_request_denied"),
-                    lu_ide_workspace::dap_session::DapError::AdapterFailed => trace_dap("adapter_error_response"),
+                    lu_ide_workspace::dap_session::DapError::InvalidFrame => {
+                        trace_dap("invalid_frame")
+                    }
+                    lu_ide_workspace::dap_session::DapError::InvalidMessage => {
+                        trace_dap("invalid_message")
+                    }
+                    lu_ide_workspace::dap_session::DapError::UnexpectedResponse => {
+                        trace_dap("unmatched_response")
+                    }
+                    lu_ide_workspace::dap_session::DapError::AdapterRequestDenied => {
+                        trace_dap("reverse_request_denied")
+                    }
+                    lu_ide_workspace::dap_session::DapError::AdapterFailed => {
+                        trace_dap("adapter_error_response")
+                    }
                     _ => trace_dap("dap_phase_or_limit_denied"),
                 }
                 self.quarantine()
