@@ -1,8 +1,29 @@
 # Lu Core native tools — implementation and acceptance ledger
 Updated: 2026-11-06
-Source integration branch: `lu/tool-completion-waves-20261106` (new source-development descendant of draft PR #61; older draft PRs are not release merges and their CI is not gating development)
+Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #67, stacked above the earlier integrated tools branch; older notes remain historical, and their CI status does not grant native/installed acceptance)
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
+
+## 2026-11-06 OWNER DECISION — ordered Lu Core tool scope
+
+**This is the current future-work priority order, superseding older feature-expansion recommendations; previous implementation receipts below remain historical evidence.** Full rationale, limits, cross-tool architecture and work-order identifiers: [Lu Core tools — scope and priority order](LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md). The owner explicitly requests **documentation only; do not start any further implementation until instructed**.
+
+| Priority | Tool area | Next scoped work order | Scope decision | Work-order state |
+| --- | --- | --- | --- | --- |
+| **P01** | AI-friendly filesystem discovery/search/effects | FS-DISCOVER-01 | Strong indexing/search, safe authorized read/write; highest-frequency native AI tool | **QUEUED — NOT STARTED** |
+| **P02** | Background Tasks + Resource Guardian | TASK-SCHED-01 | Scheduling/recurrence, multitasking, workload admission, result handoff and recovery | **QUEUED — NOT STARTED** |
+| **P03** | AI Operations Layer + model/provider manager | AI-OPS-01 | Efficient tool/context routing, GPUs, backend compatibility and native model discovery/download pane | **QUEUED — NOT STARTED** |
+| **P04** | Unified Reader/OCR | DOC-STREAM-01 | One user-facing Reader, streamed large books/pages, multilingual OCR, layout/forms, semantic/visual retrieval | **QUEUED — NOT STARTED** |
+| **P05** | Browser + shared Transfer Manager | BROWSER-TRANSFER-01 | Navigable interactive sessions, queued/rate-limited/recoverable downloads, guardian coordination | **QUEUED — NOT STARTED** |
+| **P06** | Observe & Learn | OBSERVE-PRIVACY-01 | Privacy-first, off-by-default, event-driven observation and verified handoff | **QUEUED — NOT STARTED** |
+| **P07** | Research + citation-style support | RESEARCH-STYLE-01 | Evidence/provenance, MLA/APA/Chicago/Turabian/SBL, specialist work bounded | **QUEUED — NOT STARTED** |
+| **P08** | Archives/packages | ARCHIVE-SPLIT-01 | Split/multivolume archives, optional complex ISO/UDF; specialized repairs deferred | **QUEUED — NOT STARTED** |
+| **P09** | Office/spreadsheets | OFFICE-BOUNDARY-01 | Reliable read/edit, original and layout protection; full Office suite not planned | **MAINTAIN / OPTIONAL** |
+| **P10** | Image editing/interface | IMAGE-BASICS-01 | Basic operations and usability only; no professional editor expansion | **SCOPE FROZEN TO BASICS** |
+| **P11** | Git for Lu Core | GIT-CORE-01 | Basic native inspection only; advanced Git belongs to Lu IDE | **MAINTAIN / OPTIONAL** |
+| **P12** | JSON/Protobuf boundary | BOUNDARY-MAINT-01 | Internal validation and bounded repair only, no standalone advanced JSON product | **MAINTAIN / OPTIONAL** |
+
+**Important:** Work-order state here describes *newly scoped future development*, **not** the status of functionality already committed in the integration branch. The current source has previously built components in nearly every domain; their runtime/CI/Windows installed acceptance is still tracked independently. The historic first-page priorities in [completion waves](LU_TOOL_COMPLETION_WAVES.md) are superseded **for future work only**, not deleted. The next implementable change requires a separate owner instruction; no next step is automatically active.
 
 ## Follow-on tools workflow pass — OCR, Reader, image interface (2026-11-06)
 

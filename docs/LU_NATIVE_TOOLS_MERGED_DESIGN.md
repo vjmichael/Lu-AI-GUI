@@ -22,6 +22,14 @@ mandatory Lu-wide sandbox, and DLC platform/runtime work postponed to v2.0.
 Changes to owner-specific decisions require an actual owner instruction,
 not an assistant-authored design appendix.
 
+## 0. Latest owner-specific scope decision and ordered implementation priority (2026-11-06)
+
+**Binding owner direction, not assistant-proposed source completion.** Lu Core's tools should make an AI effective at locating resources, choosing/using authorized capabilities, coordinating work and preserving continuity; avoid replicating entire specialist applications. See [priority and integration design](LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md) and [ordered implementation ledger](LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md).
+
+**Future work order:** P01 Filesystem Discovery; P02 Background Tasks + Resource Guardian; P03 AI Operations Layer + model/provider management; P04 unified Reader/OCR including EPUB, streaming and selective visual reading; P05 Browser and shared Transfer Manager; P06 Observe & Learn; P07 Research and MLA/APA/Chicago/Turabian/SBL styles; P08 split archives/optional ISO-UDF; P09 bounded Office/spreadsheet reading and editing; P10 basic image editing/interface only; P11 simple Lu Core Git (advanced operations in Lu IDE); P12 internal JSON/Protobuf validation and boundary repair.
+
+**Architectural reconciliation:** Keep the original first-party unified native toolkit, narrow model-facing schemas, Protobuf boundary, task-scoped permissions and durable effects. 'Unified Reader/OCR' means **one public reader capability with separate internal parsers/OCR/vision**, not a rewritten monolith. AI Operations Layer, indexing and the shared Task/Guardian/Transfer infrastructure should reuse existing registries and supervision rather than bypass authorization or create competing services. Priority does not automatically imply all features are v1.0 release blockers. This documentation request is explicitly **DOCUMENT AND STOP** until the owner instructs development.
+
 ## 1. Conflict handling — original design is the default, not a footnote
 
 For every native tool, use the following order:

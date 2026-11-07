@@ -2,6 +2,8 @@
 
 2026-11-06. This work is intentionally **source development first**; GitHub native/desktop/installed-app tests are independent downstream acceptance. Stacked on draft #61, not merged to the alpha. Older PR and CI cleanup is deferred pending a replacement integrated candidate. This plan **does not** authorize weakening security boundaries or adding unreviewed runtime dependencies.
 
+> **OWNER PRIORITY CHANGE (2026-11-06):** This original A–F wave table is retained as historical source-development evidence, **not** the priority order for future expansion. The owner explicitly re-ordered future tool work as P01 Filesystem Discovery, P02 Background Tasks + Resource Guardian, P03 AI Operations + Model/Provider Management, P04 Unified Reader/OCR, P05 Browser + Transfers, P06 Observe, P07 Research, P08 Split Archives/ISO-UDF, P09 Office, P10 Basic Image Editing, P11 Basic Core Git, P12 Internal JSON/Protobuf. Canonical scope: [tools priority decision](LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md); actionable status: [implementation ledger](LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md). No new work starts from this update; wait for the owner's next instruction.
+
 | Wave | Implementation target | Definition of source completion (separate from CI acceptance) |
 | --- | --- | --- |
 | A — Immutable Image Workspace | Deterministic image transforms, solid redaction, region mosaic, graphical annotations, revision history and safe operator UX | No source overwrite or model-selected path; canonical PNG output with precommitted receipt; return explicit unsupported for generative edits |
