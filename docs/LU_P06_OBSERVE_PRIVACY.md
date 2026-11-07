@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 independent installed GUI accessibility evidence (source only)
+
+Added `scripts/verify-observe-ui-contract-windows.ps1`: a read-only, externally run Windows UI Automation checker for one *already-running* Lu.exe. An independently hash-reviewed JSON plan (schema 1, appId `lu-desktop`, at most 32 unique checks with exact Automation IDs and expected enabled/offscreen booleans) and the hash-pinned Lu.exe must match before any OS observation. The checker binds OS PID, executable path and process creation time, uses UIA to inspect only bounded control attributes (no title, text, value, password, click or screenshot), rechecks process identity and emits **PASS_ACCESSIBILITY_ONLY**, **FAIL_ACCESSIBILITY_CONTRACT** or **INCONCLUSIVE**. It never claims pixel-visual proof, native side-effect proof, or model image receipt. This is an implemented independent OS accessibility testing procedure; the actual installed human-run evidence remains OPEN, and inaccessible/non-unique controls are INCONCLUSIVE.
+
 ## P06 honest redacted-frame receipt schema
 
 The native Observe receipt now distinguishes `frame_observed` (the supervised WGC worker saw a frame, published only a blanked digest, and was reaped) from `image_received`, which is always **false** until a separately reviewed/authorized real pixel bridge exists. React reports the observed-and-blanked frame without claiming Lu or its model received a screenshot. Source-contract regression added. This prevents a future consumer from misinterpreting a redacted digest as actual multimodal input.

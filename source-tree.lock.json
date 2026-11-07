@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7f1952dae5b608cc382285fcddbd8332dfb7bb87",
-  "trackedFileCount": 508,
+  "sourceCommitBeforeLock": "d53f294fbdb8ec28ccb7edc6e25c9c227934dd25",
+  "trackedFileCount": 509,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "0bb6e3414beff55157164d5483d227d7ddbcd243"
+      "blob": "bbcf9f3176317e7e5814b3f5fa7bbb2348c7d5df"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "4b418b226fd4fd3e92c2c0e230713d292088f8d5"
+      "blob": "f5a1455cdc871f5c7504c83141abf613b07786b7"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "7a17d9566a22b753895d022981f4cb06ec2d872f"
+      "blob": "2245b646c616f73e4c9b7d195a8d6640ec378609"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "083510574d5d5f26728fe02206202aad476bf46c"
+      "blob": "c4eb331e8ca9e4f74e28021cd6ac58eb5970b198"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -806,6 +806,10 @@
     {
       "path": "scripts/verify-observe-nsis-cycle-windows.ps1",
       "blob": "04d38f30a5bbebd74be8f02cf592c8230706eb23"
+    },
+    {
+      "path": "scripts/verify-observe-ui-contract-windows.ps1",
+      "blob": "cdb8f723e52f55088ef63ae1fd480d5c1b0a601a"
     },
     {
       "path": "scripts/verify-source-tree.mjs",

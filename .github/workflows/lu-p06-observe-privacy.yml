@@ -15,6 +15,7 @@ on:
       - 'scripts/verify-observe-installed-windows.ps1'
       - 'scripts/probe-observe-sensitive-window-windows.ps1'
       - 'scripts/verify-observe-nsis-cycle-windows.ps1'
+      - 'scripts/verify-observe-ui-contract-windows.ps1'
       - 'scripts/package-observe-capture-windows.ps1'
       - '.github/workflows/lu-p06-observe-privacy.yml'
   workflow_dispatch:
@@ -100,6 +101,7 @@ jobs:
             'scripts/verify-observe-installed-windows.ps1',
             'scripts/probe-observe-sensitive-window-windows.ps1',
             'scripts/verify-observe-nsis-cycle-windows.ps1',
+            'scripts/verify-observe-ui-contract-windows.ps1',
             'scripts/package-observe-capture-windows.ps1'
           )){
             $tokens=$null

@@ -206,3 +206,18 @@ test('P06 observed WGC frame is never presented as an image delivered to the mod
   assert.match(ui,/captureReceipt\.frameObserved/);
   assert.doesNotMatch(host,/image_received:receipt_ready/);
 });
+
+test('P06 independent UIA runner verifies reviewed native process and plan but cannot claim pixels or effects',()=>{
+  const script=read('../../scripts/verify-observe-ui-contract-windows.ps1');
+  assert.match(script,/Checked-File \$InstalledExe \$ArtifactSha256/);
+  assert.match(script,/Checked-File \$PlanPath \$PlanSha256/);
+  assert.match(script,/MainWindowHandle/);
+  assert.match(script,/AutomationIdProperty/);
+  assert.match(script,/Current\.IsEnabled/);
+  assert.match(script,/Current\.IsOffscreen/);
+  assert.match(script,/PASS_ACCESSIBILITY_ONLY/);
+  assert.match(script,/visualPixelProof=\$false/);
+  assert.match(script,/nativeEffectProof=\$false/);
+  assert.match(script,/modelImageReceived=\$false/);
+  assert.doesNotMatch(script,/ValuePattern|TextPattern|Current\.Name|InvokePattern/);
+});
