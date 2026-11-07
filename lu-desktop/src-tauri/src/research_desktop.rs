@@ -14,7 +14,7 @@ use lu_core::{
     web_research_planner::canonical_doi,
     web_research_analysis::{AnalysisStore,Interpretation,Stance},
     web_research_report::{render_verified_report,VerifiedResearchReport},
-    web_research_styles::{catalog_work_from_crossref,render_correlated,Style},
+    web_research_styles::{catalog_work_from_crossref,render_correlated,export_csl_json,Style},
 
     web_research_document::{extract_research_document,MAX_RESEARCH_DOCUMENT_BYTES},
     web_search_openalex::{search_openalex,search_openalex_cancellable},
@@ -85,6 +85,7 @@ pub(crate) struct ResearchCitationPreviewView {
     pub bibliography:String,
     pub first_note:Option<String>,
     pub catalog_response_sha256:String,
+    pub csl_json:serde_json::Value,
     pub bibliography_identity_corroborated:bool,
     pub author_identity_corroborated:bool,
     pub publication_details_verified:bool,
@@ -1198,12 +1199,15 @@ impl ResearchDesktop{
             .map_err(|e|format!("Citation metadata failed identity/quality check: {e:?}"))?;
         let rendered=render_correlated(&ledger,&record,style)
             .map_err(|e|format!("Citation style cannot safely render this record: {e:?}"))?;
+        let csl_json=export_csl_json(&ledger,&record)
+            .map_err(|e|format!("CSL-compatible evidence export refused: {e:?}"))?;
         Ok(ResearchCitationPreviewView{
             source_id:rendered.source_id,
             style:rendered.style.into(),
             bibliography:rendered.bibliography,
             first_note:rendered.first_note,
             catalog_response_sha256:catalog_sha,
+            csl_json,
             bibliography_identity_corroborated:rendered.bibliography_identity_corroborated,
             author_identity_corroborated:rendered.author_identity_corroborated,
             publication_details_verified:rendered.publication_details_verified,
