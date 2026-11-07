@@ -27,7 +27,7 @@ class DapPreflightBoundaries(unittest.TestCase):
         valid = {"seq": 2, "type": "response", "request_seq": 1,
                  "command": "initialize", "success": True}
         self.assertTrue(probe.parse_initialize_response(framed(valid)))
-        self.assertTrue(probe.parse_initialize_response(
+        self.assertFalse(probe.parse_initialize_response(
             framed({"seq": 1, "type": "event", "event": "initialized"}) + framed(valid)))
         for invalid in [
             {"seq": 1, "type": "request", "command": "runInTerminal"},
