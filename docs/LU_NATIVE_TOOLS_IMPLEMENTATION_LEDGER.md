@@ -1,3 +1,9 @@
+## Human-centered Lu and memory-first execution priority — November 7, 2026 (DOCUMENTATION ONLY)
+
+**Owner philosophy:** The user defines legitimate task goals, value and corrections; Lu should **reduce expertise required** to accomplish a goal while enabling advanced users to expose and use more model capability. [Source-of-truth human-centered K/I/A/F and clarification-loop document](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md) clarifies conceptual equations and records adaptive clarification as a valuable observation action, with confirmed answers preserved. Memory M and current environment E influence usable model knowledge, but retrieved content does not grant authority.
+
+**Revised sequence:** first make existing ANSF/SQLite/journals usable for task goals, short/long context and retrieval, verified experience and model loop continuity (planning milestones M1–M5); **then** extend broad effectful execution. Existing bounded filesystem, Reader, browser and utility implementations are retained; P01–P12 and PR #87 CI/release work remains independently tracked. This decision **does not** claim ANSF end-to-end acceptance and **does not authorize** runtime code, new tools, policies, permissions or a general OS executor. The next engineering work should be scoped and approved separately.
+
 ## AI Execution Layer P01–P12 targeted implementation — November 7, 2026
 
 **Owner authorized:** implement justified recommendations across P01–P12, skipping tool domains that do not require expansion under the canonical K/I/A/F and Foundational/Utility/Specialist policy. **Implementation ledger:** [AI Execution P01–P12 disposition](LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md).

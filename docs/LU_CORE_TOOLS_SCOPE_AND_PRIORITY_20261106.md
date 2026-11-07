@@ -1,3 +1,9 @@
+## Human-centered, memory-first priority — November 7, 2026
+
+Owner clarification: the AI model's latent intelligence matters in service of **human-defined goals**, not merely tool efficiency. Clarifying questions should operate as a cyclical information-gathering step; remembered answers and prior verified procedures should reduce rediscovery and user effort. Source-of-truth expansion: [human-centered K/I/A/F and memory-first sequence](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md), linked to [canonical K/I/A/F philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md).
+
+**Priority order:** M1–M5 memory and clarification/retrieval integration before **new broad model-directed effectful execution**. Keep existing tools and acceptance checks; don't reinterpret this conceptual update as proof memory is done, permission to run arbitrary code, or a command to implement new features.
+
 ## P01–P12 K/I/A/F implementation disposition — November 7, 2026
 
 Owner authorized applying the [canonical AI Execution Layer recommendations](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md) across **all** phases, with no redundant implementation in areas already adequate. Source progress is recorded in [the P01–P12 implementation ledger](LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md). New work is **cross-cutting foundational**: registered artifact inspection with byte/format checks, honest real tool inventory, and an inert/read-only host-approved app action adapter. This does **not** implement an effectful universal program runner, does **not** lift P04/P05 security/installed-app gates, and does **not** authorize a model to invoke arbitrary Python/GitHub/Office commands. Remaining effectful app execution requires a separately designed durable supervised containment and verification path.
