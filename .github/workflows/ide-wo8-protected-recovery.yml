@@ -84,7 +84,7 @@ jobs:
             & git -C $src add .
             & git -C $src -c user.name='WO8 native disposable fixture' -c user.email='wo8@localhost.invalid' commit -m 'fixed slow native recovery fixture' | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: clean fixed fixture Git commit failed' }
-            foreach ($scenario in @('ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial')) {
+            foreach ($scenario in @('ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedDebuggerCancellation','ProtectedTamperDenial')) {
               Write-Host "WO8_REAL_NATIVE_RECOVERY_SCENARIO=$scenario"
               & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $m.desktop.sha256 -FixtureRoot $src -Scenario $scenario
               if (!$?) { throw "DENIED: exact native recovery scenario failed: $scenario" }
@@ -97,7 +97,7 @@ jobs:
               throw 'DENIED: protected service/uninstall cleanup unverified'
             }
             $removed=$true
-            Write-Host 'WO8_NATIVE_PROTECTED_CANCEL_HOST_CRASH_SCM_CRASH_SOURCE_SWAP=PASS'
+            Write-Host 'WO8_NATIVE_PROTECTED_CARGO_AND_DAP_CANCEL_HOST_CRASH_SCM_CRASH_SOURCE_SWAP=PASS'
             Write-Host 'WO8_RELEASE_APPROVED=FALSE'
           } finally {
             if ($installed -and !$removed) {
