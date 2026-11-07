@@ -78,6 +78,7 @@ pub mod diagnostic_localization;
 pub mod durable;
 pub mod export_contract;
 pub mod gguf_preflight;
+pub mod gguf_metadata_summary;
 pub mod host_resource_authority;
 pub mod host_session;
 pub mod host_typed_evidence;
