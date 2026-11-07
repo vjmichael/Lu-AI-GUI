@@ -1,5 +1,7 @@
 # IDE Work Order 10 — Optional authenticated Lu Core bridge
 
+**USER DIRECTIVE — DEFERRED (November 7, 2026):** Suspend all Lu Core ↔ Lu IDE interface and integration work until explicitly resumed. This includes IPC/peer pairing, model sharing or inference handoff, coding chat, proposal delivery, and Lu-related connection UIs. Work already committed on this experimental branch is **incomplete and unverified**, must stay in a draft PR, and must **not** be merged, shipped, enabled, or treated as WO10 acceptance. Keep Lu IDE standalone. Resume other, non-interface work only on explicit instruction. WO9-F and earlier release/installed acceptance gates remain independent and open.
+
 **Started:** November 7, 2026 (UTC). **Branch:** `ide/wo10-optional-lu-bridge-20261107` stacked on WO9 draft PR #75.
 
 **Status:** Contract and offline security gates implemented for native CI. NO live connection, peer pairing, inference, coding chat, or automatic project access has been accepted. This is the tenth and final planned IDE work order. All WO4–WO9 independent OS acceptance remains open where not proven.
