@@ -366,8 +366,8 @@ test('P06 host-owned WGC stdout BGRA one-use pipe does not persist image bytes o
   const workflow=read('../../.github/workflows/lu-p06-observe-privacy.yml');
   assert.match(src,/pub struct CapturedBgra/);
   assert.match(src,/fn read_worker_progress\(/);
-  assert.match(src,/allow_local_image:bool/);
-  assert.match(src,/if !allow_local_image/);
+  assert.match(src,/expected_image_source:Option<&'static str>/);
+  assert.match(src,/if expected_image_source\.is_none\(\)/);
   assert.match(src,/input\.read_exact\(&mut pixels\)/);
   assert.match(src,/Sha256::digest\(&pixels\)/);
   assert.match(src,/pub fn take_local_observe_frame/);
@@ -389,7 +389,7 @@ test('P06 WGC worker only streams one bounded hashed BGRA image for attested OS 
   assert.match(w,/Unverified picker cannot emit local image/);
   assert.match(w,/output\.write_all\(&frame\.bytes\)/);
   assert.match(w,/native_1080p_frame_is_bounded_to_1280_by_720_for_private_transport/);
-  assert.match(host,/allow_local_image:bool/);
+  assert.match(host,/expected_image_source:Option<&'static str>/);
   assert.match(host,/native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite/);
 });
 

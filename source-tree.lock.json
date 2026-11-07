@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e4d577033051b0bb41c8bc7979cb79920ec2989a",
-  "trackedFileCount": 518,
+  "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
+  "trackedFileCount": 524,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -22,6 +22,10 @@
     {
       "path": ".github/workflows/lu-p07-research-citation-styles.yml",
       "blob": "f7126fd08d3a644c9ade2680032324472fcbdf53"
+    },
+    {
+      "path": ".github/workflows/lu-p08-archive-split.yml",
+      "blob": "8a351a5b7ce2dde74ee33c2d0133b113373a5718"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -125,7 +129,7 @@
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "122abd1492ffca3fee9281c60cb54b955584c0be"
+      "blob": "7f2f5e0ca61b7646c0435046db21268d662c1a5e"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -133,7 +137,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "e005b68fe0fcdd81f3df88be5607c68327ca6c5d"
+      "blob": "de2eb78aaed7b571c7fd7e5c46479e7d941b66f0"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -153,7 +157,11 @@
     },
     {
       "path": "docs/LU_P07_RESEARCH_STYLES.md",
-      "blob": "3836a4161feeb20b77a298283f5fe1cec830ae2b"
+      "blob": "1cf246b76e0ff9be5f76b0692e07859cbbb0fa37"
+    },
+    {
+      "path": "docs/LU_P08_ARCHIVE_SPLIT.md",
+      "blob": "88e368c6e57cc5caaaa30b4f95a5ad9e388c93f4"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -400,6 +408,10 @@
       "blob": "873e1b7408bbc105eeda03ee459eda918c5572f1"
     },
     {
+      "path": "lu-desktop/src-tauri/src/archive_split_desktop.rs",
+      "blob": "3193ab1f2b336e8db214fe40c2ee92e2cd31b622"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/background_context.rs",
       "blob": "39cb7350fa0a0f9f231dfedf18306d883d0922c8"
     },
@@ -445,7 +457,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "ad356926d9ffed01a1d25da4bf56d3bea63bf0b0"
+      "blob": "21c9b4ec4c540abcb02a008e03c4764ca4d02cb8"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -565,11 +577,11 @@
     },
     {
       "path": "lu-desktop/tests/browser-ci-candidate.test.mjs",
-      "blob": "5b1babd2fb3f8009c71c16dc4cb535ef67587040"
+      "blob": "47ba485cd426360ff6274b909e07b88bc158fe2b"
     },
     {
       "path": "lu-desktop/tests/browser-ci-executable.test.mjs",
-      "blob": "f098556060bfa66ca04be60f18384d8df81743e8"
+      "blob": "76fed6b45b59ee05d2b1c8a7dc04847ec5ac9269"
     },
     {
       "path": "lu-desktop/tests/browser-model-read.test.mjs",
@@ -589,7 +601,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-visibility-settings.test.mjs",
-      "blob": "467220addf4184fc64f94d41974c02efb943264b"
+      "blob": "364bc8f0b28e03d503c784ad9720b5b83260af52"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -649,11 +661,15 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "8c203461655606a6062a6851d529d3ed1479c6ef"
+      "blob": "641af0d674d7ff38b52f819502436b36826f0cc1"
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
-      "blob": "385c646a0d30e7c29372641f4aa4933c8d00b4c6"
+      "blob": "1dcffc7522f090881aa853effa2082a040972161"
+    },
+    {
+      "path": "lu-desktop/tests/p08-archive-split.test.mjs",
+      "blob": "48966eecfb51b1752a40d5a5a4d3304211426663"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -773,7 +789,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "5d9ee3d69a327fc3446c2c7f95f59f15c8339d8a"
+      "blob": "19533a89febd4b5bb70b3962789ecf0aca51c939"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1077,7 +1093,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/gguf_metadata_summary.rs",
-      "blob": "5e22978ecc50e1896997a3cdfd7737b1ad2da53c"
+      "blob": "95a2785608f1f4e96b45d3c4a5f342971a82a3b5"
     },
     {
       "path": "src-tauri/lu-core/src/gguf_preflight.rs",
@@ -1121,7 +1137,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "1dda4bf0110de07e6dff4da8ec2f9e6124f9b437"
+      "blob": "8797e7474a1eaac2c80c4282c00b684d511086ab"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1190,6 +1206,10 @@
     {
       "path": "src-tauri/lu-core/src/native_archive_process.rs",
       "blob": "069a9daa121fe7139a1162e844f123dd3e9e1697"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_archive_split.rs",
+      "blob": "f69021b59c4ed277ae597dbf96d21bd5b31915b6"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
@@ -1265,7 +1285,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_discovery.rs",
-      "blob": "3912b05b657d49e644dab9c7128b111c237ae291"
+      "blob": "7e4bb5331612979a90ff2f6424188998aecbe5f9"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
@@ -1445,7 +1465,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
-      "blob": "b220fccb7a10c37ca959e9bc6601d656620b0abd"
+      "blob": "4262b6a70f12ca7f2c4c7449cb8ecff8c2fc05b5"
     },
     {
       "path": "src-tauri/lu-core/src/native_zip_extract.rs",
@@ -1820,12 +1840,16 @@
       "blob": "dfe3e60e4824f49d90b9a3e6e98f322026ebd918"
     },
     {
+      "path": "src-tauri/lu-core/tests/native_archive_split.rs",
+      "blob": "2a6f093d184b7c0084d3e5903224f14b40955cf9"
+    },
+    {
       "path": "src-tauri/lu-core/tests/native_archive_tree.rs",
       "blob": "c1bb78731e590edb67bab0e2e38220dda067d931"
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_tree_authority.rs",
-      "blob": "0b688695d756855c4800ca65de3edeff307f8a0d"
+      "blob": "890b4160f631aa324ca8d21e8b052d90316579e4"
     },
     {
       "path": "src-tauri/lu-core/tests/native_atomic_write.rs",

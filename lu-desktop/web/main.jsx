@@ -192,6 +192,10 @@ function App() {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveCancelRequested, setArchiveCancelRequested] = useState(false);
   const [latestArchiveExtract, setLatestArchiveExtract] = useState(null);
+  const [p08PartMib,setP08PartMib]=useState(4);
+  const [p08Busy,setP08Busy]=useState(false);
+  const [p08ResultByChat,setP08ResultByChat]=useState({});
+
   const [documentComposerOpen, setDocumentComposerOpen] = useState(false);
   const [documentDraft, setDocumentDraft] = useState({format:'docx',title:'',content:''});
   const [documentCreateReview, setDocumentCreateReview] = useState(null);
@@ -1843,6 +1847,30 @@ function App() {
         default:throw Error('Unrecognized native operation review');
       }
     }catch(error){setError(String(error));}
+  }
+  async function runP08Multipart(mode){
+    if(!chatId||p08Busy||working||chatBusy)return;
+    const owner=chatId;
+    const names={
+      split:'lu_p08_split_archive',
+      resume:'lu_p08_resume_split',
+      join:'lu_p08_reassemble_archive',
+      review:'lu_p08_review_publication'
+    };
+    if(!names[mode])return;
+    setP08Busy(true);setError('');
+    try{
+      const receipt=await invoke(names[mode],
+        mode==='split'?{chatId:owner,partMib:p08PartMib}:{chatId:owner});
+      if(receipt){
+        setP08ResultByChat(old=>({...old,[owner]:receipt}));
+        setActivity(mode==='review'?'P08 read-only publication status: '+receipt.status:'P08 verified multipart operation published: '+receipt.destination);
+      }else{
+        setActivity('P08 native archive operation cancelled before publication.');
+      }
+    }catch(error){
+      setError('Multipart archive operation denied or uncertain. Inspect staging; no automatic retry: '+String(error));
+    }finally{setP08Busy(false);}
   }
   async function reviewArchiveBatch(){
     if(!chatId||working||chatBusy||archiveBusy||archiveBatchBusy
@@ -3913,6 +3941,49 @@ function App() {
               onClick={()=>void reviewArchiveBatch()}>
               {archiveBatchBusy?'Reviewing batch…':'Extract archive batch'}
             </button>
+            <label className="readerSectionSelector"
+              title="Lu archive byte-part size, not spanned ZIP/RAR/7z format">
+              Lu multipart size
+              <select aria-label="Lu multipart archive part size MiB"
+                value={p08PartMib} disabled={p08Busy}
+                onChange={e=>setP08PartMib(Number(e.target.value))}>
+                {[4,8,16,32].map(x=><option key={x} value={x}>{x} MiB</option>)}
+              </select>
+            </label>
+            <button type="button" className="subtleButton"
+              disabled={!chatId||working||chatBusy||p08Busy||archiveBusy||archiveBatchBusy}
+              title="OS-pick existing archive, review SHA-256, split to NEW Lu part folder"
+              onClick={()=>void runP08Multipart('split')}>
+              {p08Busy?'Multipart operation…':'Split archive into Lu parts'}
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId||working||chatBusy||p08Busy}
+              title="OS-pick interrupted Lu stage folder and rehash source and existing parts"
+              onClick={()=>void runP08Multipart('resume')}>Resume Lu split stage</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId||working||chatBusy||p08Busy}
+              title="OS-pick lu-parts.json plus destination; verify all SHA-256 and create only a NEW archive"
+              onClick={()=>void runP08Multipart('join')}>Reassemble Lu archive parts</button>
+            <button type="button" className="subtleButton"
+              disabled={!chatId||working||chatBusy||p08Busy}
+              title="OS-pick original Lu split stage; inspect partial output without writing, replaying or deleting"
+              onClick={()=>void runP08Multipart('review')}>Review interrupted Lu split (read-only)</button>
+            {p08ResultByChat[chatId]?.status&&
+              <div className="researchResults" role="status" aria-label="P08 recovery review">
+                <strong>{p08ResultByChat[chatId].status}: {p08ResultByChat[chatId].outputFolder}</strong>
+                <small>{p08ResultByChat[chatId].verifiedParts} / {p08ResultByChat[chatId].expectedParts} verified parts</small>
+                <small>{p08ResultByChat[chatId].note}</small>
+              </div>}
+            {p08ResultByChat[chatId]&&!p08ResultByChat[chatId].status&&
+              <div className="researchResults" role="status" aria-label="P08 multipart archive receipt">
+                <strong>{p08ResultByChat[chatId].destination}</strong>
+                <small>{p08ResultByChat[chatId].parts} parts · {p08ResultByChat[chatId].bytes} bytes
+                  · original SHA-256: {p08ResultByChat[chatId].sha256}</small>
+                <small>Manifest SHA-256: {p08ResultByChat[chatId].manifestSha256}</small>
+                <small>{p08ResultByChat[chatId].note}</small>
+                <small>Stages are retained for reconciliation. Lu parts are not natively
+                  spanned ZIP/RAR/7z; archives are not converted or repaired.</small>
+              </div>}
             {archiveBatchBusy&&!archiveBatchReview&&
               <button type="button" className="subtleButton"
                 disabled={archiveBatchCancelRequested}

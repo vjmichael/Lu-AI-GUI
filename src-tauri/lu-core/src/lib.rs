@@ -121,6 +121,7 @@ pub mod native_ar_deb;
 pub mod native_linux_archive_tool;
 pub mod native_iso_extract_tool;
 pub mod native_archive_create;
+pub mod native_archive_split;
 pub mod native_reader;
 pub mod native_ocr;
 pub mod native_reader_docx;

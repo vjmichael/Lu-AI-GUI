@@ -9,12 +9,15 @@ const out=resolve(import.meta.dirname,'../../out/lu-browser-candidate');
 const manifestPath=join(out,'manifest.json');
 const summaryPath=join(out,'candidate-summary.json');
 const digestPath=join(out,'manifest.sha256');
+// The dedicated browser-candidate workflow assembles the heavyweight bundle.
+// Universal UI tests must not require it; skip explicitly rather than fake it.
+const candidateTest=existsSync(manifestPath)?test:test.skip;
 async function digest(path){
   const hash=createHash('sha256');
   for await(const chunk of createReadStream(path))hash.update(chunk);
   return hash.digest('hex');
 }
-test('real CI candidate declares exact platform, headed browser and unapproved status',()=>{
+candidateTest('real CI candidate declares exact platform, headed browser and unapproved status',()=>{
   assert.ok(existsSync(manifestPath),'Candidate artifact not assembled');
   const m=JSON.parse(readFileSync(manifestPath,'utf8'));
   assert.equal(m.schema,1);
@@ -35,7 +38,7 @@ test('real CI candidate declares exact platform, headed browser and unapproved s
   assert.equal(new Set(m.files.map(x=>x.path)).size,m.files.length);
   assert.equal(JSON.parse(readFileSync(summaryPath,'utf8')).status,'candidate');
 });
-test('every candidate byte is covered by SHA256 and manifest has independent digest',async()=>{
+candidateTest('every candidate byte is covered by SHA256 and manifest has independent digest',async()=>{
   const m=JSON.parse(readFileSync(manifestPath,'utf8'));
   assert.equal(await digest(manifestPath),readFileSync(digestPath,'utf8').trim());
   const expected=new Set(['manifest.json','manifest.sha256','candidate-summary.json']);
