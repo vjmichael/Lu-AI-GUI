@@ -183,7 +183,7 @@ impl CiNullLease {
 impl Drop for CiNullLease {
     fn drop(&mut self) {
         if self.applied && self.revoke().is_err() {
-            eprintln!("DENIED: scoped CI NUL kernel ACE cleanup not verified");
+            eprintln!("DENIED: exact-profile NUL kernel ACE cleanup not verified");
         }
     }
 }
@@ -205,6 +205,11 @@ pub(crate) fn ci_scoped_nul_access(sid: PSID) -> Result<Option<CiNullLease>, Sup
     if !native_cargo_nul_compatibility_enabled() {
         return Ok(None);
     }
+    let lease = grant_exact_sid(sid)?;
+    eprintln!("NATIVE_CI_NUL_STAGE=exact_profile_access_verified");
+    Ok(Some(lease))
+}
+fn grant_exact_sid(sid: PSID) -> Result<CiNullLease, SupervisorError> {
     if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
         return Err(denied());
     }
@@ -245,6 +250,58 @@ pub(crate) fn ci_scoped_nul_access(sid: PSID) -> Result<Option<CiNullLease>, Sup
             Err(denied())
         }
     })?;
-    eprintln!("NATIVE_CI_NUL_STAGE=exact_profile_access_verified");
-    Ok(Some(lease))
+    Ok(lease)
+}
+
+
+// Production service-owned NUL lease. The elevated install-time bootstrap
+// grants only the fixed restricted service SID DACL-management rights;
+// the desktop and WebView never touch the machine-global NUL object.
+// The caller cannot choose a SID: it is OS-derived from the exact job ID.
+#[cfg(feature = "protected-recovery-service")]
+struct DerivedPackageSid(PSID);
+#[cfg(feature = "protected-recovery-service")]
+impl Drop for DerivedPackageSid {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { windows_sys::Win32::Security::FreeSid(self.0); }
+        }
+    }
+}
+#[cfg(feature = "protected-recovery-service")]
+pub(crate) struct ServiceNullLease {
+    // Field drop order: revoke the exact SID ACE before FreeSid.
+    lease: CiNullLease,
+    _sid: DerivedPackageSid,
+}
+#[cfg(feature = "protected-recovery-service")]
+impl ServiceNullLease {
+    pub(crate) fn grant(job_id: &str) -> Result<Self, SupervisorError> {
+        if job_id.len() != 36
+            || !job_id.starts_with("job-")
+            || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err(denied());
+        }
+        crate::windows_service_security::assert_restricted_local_service()?;
+        let name = format!("LuIdeD7{}", &job_id[4..]);
+        let mut sid = ptr::null_mut();
+        let result = unsafe {
+            windows_sys::Win32::Security::Isolation::DeriveAppContainerSidFromAppContainerName(
+                wide(&name).as_ptr(), &mut sid,
+            )
+        };
+        if result < 0 || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+            if !sid.is_null() {
+                unsafe { windows_sys::Win32::Security::FreeSid(sid); }
+            }
+            return Err(denied());
+        }
+        let owned = DerivedPackageSid(sid);
+        let lease = grant_exact_sid(owned.0)?;
+        Ok(Self { lease, _sid: owned })
+    }
+    pub(crate) fn finish(&mut self) -> Result<(), SupervisorError> {
+        self.lease.finish()
+    }
 }
