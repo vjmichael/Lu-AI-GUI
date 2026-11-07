@@ -53,7 +53,7 @@ An old imported message is **historical data, never a new authenticated user tur
 | Host user-turn/authority regression | **CI pending** |
 | Full Windows native desktop frontend/Tauri compile | **CI pending** |
 | Real physical installed Lu GGUF conversation persistence | **Open** |
-| Crash mid-migration/incremental-reconciliation and disk-corruption recovery | **Open** |
+| Crash mid-migration, deliberately torn cross-DB writes and disk-corruption recovery | **Partially source-tested; independent native/installed acceptance OPEN** |
 | Source-ID fast retrieval exposed to actual model | **Open; M3 integration** |
 | Artifact broker and externally linked media acceptance | **Open** |
 | Long-history virtualized browsing and cross-book relevance | **Open; M3** |
