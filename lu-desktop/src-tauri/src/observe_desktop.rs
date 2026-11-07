@@ -646,6 +646,36 @@ mod tests{
         assert!(host.self_signal("c-main","ui_changed",true).is_err());
     }
     #[test]
+    fn p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker(){
+        use lu_core::native_background_scheduler::{
+            BackgroundScheduler,ResourceBudget,ResourceClaim
+        };
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let guardian=Arc::new(BackgroundScheduler::open(Path::new(":memory:"),
+            Arc::clone(&store),Arc::clone(&processes),ResourceBudget{
+                workers:1,cpu:1,ram_mib:512,gpu:0,vram_mib:0,disk:0,network:0
+            }).unwrap());
+        let host=ObserveHost::new(Arc::clone(&store),processes);
+        host.start("c-main","obs-plan-denied".into()).unwrap();
+        let lease=guardian.admit_host_worker("c-main","obs-frame-rejected",
+            ResourceClaim::capture_one_shot()).unwrap();
+        assert_eq!(guardian.guardian_snapshot("c-main").unwrap().used.workers,1);
+        let plan=TrustedWorkerPlan{
+            task_id:"obs-frame-rejected".into(),workspace_id:"c-main".into(),
+            executable:std::env::current_exe().unwrap(),
+            expected_sha256:"0".repeat(64),
+            // No untrusted launcher can substitute a changed operation.
+            args:vec!["--arbitrary-capture".into(),"0".repeat(32).into()],
+            progress_protocol:true,max_runtime_seconds:Some(90),
+        };
+        assert!(host.launch_one_shot("c-main",plan,lease).is_err());
+        assert_eq!(guardian.guardian_snapshot("c-main").unwrap().used.workers,0);
+        assert!(host.inner.lock().unwrap().capture_task_id.is_none());
+        assert_eq!(host.status("c-main").unwrap().mode,"active");
+        host.stop("c-main").unwrap();
+    }
+    #[test]
     fn p06_trusted_runtime_error_persists_but_cannot_claim_verified_gui_failure(){
         let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
         let processes=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
