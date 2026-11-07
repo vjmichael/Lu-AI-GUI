@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 same-session UIA probes and one exact-head P06 CI matrix
+
+Read-only native Windows privacy/GUI probes now verify the target process shares the **same OS interactive logon session** as the independent reviewer script, before and after UIA inspection. This mirrors the foreground WGC worker's ProcessIdToSessionId gate and fails closed on cross-session substitution; it does not turn the opaque general capture picker into an identified source. The dedicated P06 Windows/Linux CI matrix now triggers on *branch push* (and manual dispatch) only, instead of duplicate push/PR runs that needlessly cancelled each other's exact-head Windows jobs. Broader repo tests remain independent. This is source plus CI coverage, not physical installed-app acceptance.
+
 ## P06 Windows logon/session-bound foreground capture admission
 
 The reviewed Windows foreground window path now checks the **actual Windows Remote Desktop Services process session ID** of the selected application against the supervised capture worker's own OS session, via `ProcessIdToSessionId`. Failed lookups, zero PID, or cross-session targets are refused before capture. The same-session check repeats before and after D3D11 readback, alongside HWND/PID/process-creation FILETIME and visible/uncloaked root-window tests. A native Windows unit test checks the worker's own real PID is accepted and PID zero refused; Linux source contracts remain unaffected. This is a further defense against cross-session misattribution, **not** proof that the standard system picker exposes a real selected HWND or monitor. Generic OS picker stays content-minimized and identity-unverified.

@@ -66,6 +66,10 @@ $receipt=[ordered]@{
 }
 try {
   $process=Get-Process -Id $ProcessId -ErrorAction Stop
+  $auditor=Get-Process -Id $PID -ErrorAction Stop
+  if($process.SessionId -ne $auditor.SessionId){
+    throw 'GUI source belongs to another Windows session'
+  }
   $birth=$process.StartTime.ToUniversalTime().ToFileTimeUtc()
   if([IO.Path]::GetFullPath([string]$process.Path) -ine [IO.Path]::GetFullPath($app)){
     throw 'Native process executable not the reviewed Lu artifact'
@@ -114,6 +118,9 @@ try {
     }
   }
   $after=Get-Process -Id $ProcessId -ErrorAction Stop
+  if($after.SessionId -ne $auditor.SessionId){
+    throw 'GUI source Windows session changed during UIA review'
+  }
   if($after.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $birth -or
      [IO.Path]::GetFullPath([string]$after.Path) -ine [IO.Path]::GetFullPath($app)){
     throw 'Native OS source instance changed during independent UIA verification'

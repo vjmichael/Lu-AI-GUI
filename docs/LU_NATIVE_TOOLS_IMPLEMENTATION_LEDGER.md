@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 UIA Windows-session guard and CI duplicate prevention (2026-11-06):** Native OS UIA password and independent GUI reviewers must verify their target's SessionId matches the reviewer tool both before and after scanning. The dedicated P06 CI matrix now runs on branch push plus manual dispatch only (not duplicate PR trigger) to reduce exact-head Windows job cancellation. Native/source tests preserved; physical installed/WGC acceptance remains open. [P06](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 same-session WGC source check (2026-11-06):** OS-attested foreground HWND additionally requires Windows `ProcessIdToSessionId` equality with the supervised worker (selection and both sides of frame readback), rejecting zero PID and query errors. Adds Windows native behavioral check and Node contract. Generic picker remains Unknown and no source attribution is fabricated. New exact-head Windows compile pending. [P06](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 real Windows React check repair (2026-11-06):** Focused Windows P06 job on `c56a74f` reached React build and failed only a stale `check-ui.mjs` literal asserting old pixel-delivery wording. Updated the test to require current fully blanked frame explanation plus explicit WGC frame-observed indicator; not a relaxation of no-pixel/visual-proof requirements. Exact-head CI rerun pending. [P06](LU_P06_OBSERVE_PRIVACY.md).

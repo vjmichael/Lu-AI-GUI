@@ -41,6 +41,10 @@ $cloaked=[uint32]0
 $hr=[LuP06WinIdentity]::DwmGetWindowAttribute($hwnd,14,[ref]$cloaked,4)
 if($hr -ne 0 -or $cloaked -ne 0){throw 'Compositor identity unavailable or window cloaked'}
 $proc=Get-Process -Id ([int]$ExpectedPid) -ErrorAction Stop
+$auditor=Get-Process -Id $PID -ErrorAction Stop
+if($proc.SessionId -ne $auditor.SessionId){
+  throw 'Native accessibility source is outside reviewer Windows session'
+}
 if($proc.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $ExpectedBirthFileTime){
   throw 'OS process instance changed'
 }
@@ -70,6 +74,9 @@ for($i=0;$i -lt $matches.Count;$i++){
   $rects+=@{left=$b.Left;top=$b.Top;width=$b.Width;height=$b.Height}
 }
 $after=Get-Process -Id ([int]$ExpectedPid) -ErrorAction Stop
+if($after.SessionId -ne $auditor.SessionId){
+  throw 'Native accessibility session changed during review'
+}
 if($after.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $ExpectedBirthFileTime){
   throw 'Source process changed while querying OS accessibility'
 }
