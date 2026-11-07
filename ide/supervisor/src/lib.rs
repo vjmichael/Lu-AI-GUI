@@ -1243,6 +1243,28 @@ mod tests {
         bad.effect_class = "write_anywhere".into();
         assert!(!validate_plan(&bad));
     }
+    #[cfg(feature = "lsp-transport")]
+    #[test]
+    fn clangd_thread_cap_does_not_broaden_other_lsp_recipes() {
+        let mut fixed = plan();
+        fixed.recipe_id = "lsp_clangd".into();
+        fixed.effect_class = "language_analysis_isolated".into();
+        fixed.process_limit = 16;
+        assert!(validate_plan(&fixed));
+        fixed.process_limit = 17;
+        assert!(!validate_plan(&fixed));
+        for recipe in ["lsp_ruff", "lsp_rust_analyzer"] {
+            fixed.recipe_id = recipe.into();
+            fixed.process_limit = 16;
+            assert!(!validate_plan(&fixed));
+            fixed.process_limit = 4;
+            assert!(validate_plan(&fixed));
+        }
+        fixed.recipe_id = "lsp_clangd".into();
+        fixed.process_limit = 16;
+        fixed.effect_class = "uncontained_analysis".into();
+        assert!(!validate_plan(&fixed));
+    }
     #[test]
     fn only_fresh_matching_human_grant_and_never_desktop_execution() {
         let p = path();
