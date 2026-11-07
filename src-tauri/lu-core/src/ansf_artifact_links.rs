@@ -52,7 +52,7 @@ fn validate(link:&ArtifactLink)->bool{
     link.entry_id>0 &&
     !link.display_name.trim().is_empty() &&
     link.display_name.len()<=MAX_NAME &&
-    !link.display_name.contains(['\0','\n','\r','/','\\']) &&
+    !link.display_name.chars().any(|c|matches!(c,'\0'|'\n'|'\r'|'/'|'\\')) &&
     !link.media_type.trim().is_empty() &&
     link.media_type.len()<=MAX_KIND &&
     !link.media_type.contains(['\0','\n','\r']) &&
