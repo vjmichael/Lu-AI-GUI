@@ -35,6 +35,10 @@ jobs:
           toolchain: '1.99.1'
       - name: Native Rust Git/artifact source and native export tests
         run: cargo test --manifest-path ide/host/Cargo.toml advanced_workflows -- --nocapture
+      - name: Reviewed one-file native Git mutation and conditional commit negative tests
+        run: cargo test --manifest-path ide/host/Cargo.toml reviewed_git -- --nocapture
+      - name: Durable multi-project dependency graph and crash recovery tests
+        run: cargo test --manifest-path ide/host/Cargo.toml workflow_orchestrator -- --nocapture
       - name: Source stage is NOT installed package signing/release
         shell: bash
         run: |
