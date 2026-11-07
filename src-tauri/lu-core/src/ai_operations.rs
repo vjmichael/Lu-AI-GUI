@@ -246,7 +246,9 @@ mod tests{
     fn view(name:&str,effect:&str)->NativeCapabilityView{
         NativeCapabilityView{native_tool_id:format!("id-{name}"),
             public_name:name.into(),display_name:name.into(),effect:effect.into(),
-            input_type_url:"type.test/input".into(),output_type_url:"type.test/out".into()}
+            input_type_url:"type.test/input".into(),output_type_url:"type.test/out".into(),
+            meta_class:None,availability_claim:"fixture_only".into(),
+            external_dependencies_verified:false,task_outcome_verified:false}
     }
     #[test] fn finder_uses_only_per_turn_read_grants(){
         let list=vec![view("lu_files_discover","read_workspace"),
