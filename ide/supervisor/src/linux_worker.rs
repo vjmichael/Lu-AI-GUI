@@ -34,8 +34,7 @@ use std::{
 pub mod lsp_native;
 fn native_linux_cgroup_trace(stage: &'static str) {
     if cfg!(debug_assertions)
-        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-            == Some(std::ffi::OsStr::new("1"))
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
     {
         eprintln!("PROTECTED_LINUX_CGROUP_STAGE={stage}");
     }
