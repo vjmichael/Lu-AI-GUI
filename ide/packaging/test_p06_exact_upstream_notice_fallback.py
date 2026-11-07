@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from collect_verification_licenses import (
-    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,WEBVIEW_EXACT_CRATES,verified_curated_notices,git_blob_sha,Denied
+    CURATED_MISSING_NOTICES,PROTOC_UPSTREAM_FAMILY,WEBVIEW_EXACT_CRATES,OBJC2_UPSTREAM_POLICY,verified_curated_notices,git_blob_sha,Denied
 )
 ROOT=Path(__file__).resolve().parents[2]
 class CuratedOriginalNotices(unittest.TestCase):
@@ -22,7 +22,8 @@ class CuratedOriginalNotices(unittest.TestCase):
         self.assertEqual(set(CURATED_MISSING_NOTICES),
                          {"alloc-stdlib:0.3.0","tauri-plugin:2.7.2"} |
                          {name+":3.3.0" for name in PROTOC_UPSTREAM_FAMILY} |
-                         {name+":"+version for name,version in WEBVIEW_EXACT_CRATES})
+                         {name+":"+version for name,version in WEBVIEW_EXACT_CRATES} |
+                         {r["name"]+":"+r["version"] for r in OBJC2_UPSTREAM_POLICY})
         for name_version,rule in CURATED_MISSING_NOTICES.items():
             with self.subTest(name_version=name_version):
                 self.load(rule)
@@ -51,6 +52,18 @@ class CuratedOriginalNotices(unittest.TestCase):
             rows=verified_curated_notices(self.repo,"cargo",name,version,"MIT")
             self.assertEqual(len(rows),1)
             self.assertEqual(git_blob_sha(rows[0][0].read_bytes()),rows[0][1]["blobSha"])
+    def test_tagged_objc2_original_policy_preserves_apple_warning(self):
+        self.assertEqual(len(OBJC2_UPSTREAM_POLICY),19)
+        for item in OBJC2_UPSTREAM_POLICY:
+            rule=CURATED_MISSING_NOTICES[item["name"]+":"+item["version"]]
+            self.load(rule)
+            rows=verified_curated_notices(self.repo,"cargo",item["name"],item["version"],
+                                           item["declared"])
+            self.assertEqual(len(rows),1)
+            actual=rows[0][0].read_bytes()
+            self.assertIn(b"Apple SDKs",actual)
+            self.assertIn(b"unclear whether distributing derived works",actual)
+            self.assertEqual(git_blob_sha(actual),rows[0][1]["blobSha"])
     def test_mutated_notice_fails_closed(self):
         rule=CURATED_MISSING_NOTICES["alloc-stdlib:0.3.0"]
         self.load(rule)

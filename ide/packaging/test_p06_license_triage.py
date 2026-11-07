@@ -1,7 +1,7 @@
 """P06 category hints never waive any missing upstream license evidence."""
 import copy
 import unittest
-from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY
+from p06_license_triage import triage,TriageDenied,enforce_known_risk_set,enforce_embedded_binary_review,PROTOC_EMBEDDED_BINARY_FAMILY,enforce_apple_sdk_review,OBJC2_UPSTREAM_POLICY
 class TriageTests(unittest.TestCase):
     def setUp(self):
         self.data={"schema":"lu.ide.p04.verification-licenses.v1",
@@ -53,6 +53,21 @@ class TriageTests(unittest.TestCase):
         policy["expectedEmbeddedCompilerPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"unreviewed_embedded_protoc_binary_family"):
             enforce_embedded_binary_review(result,policy)
+    def test_original_apple_sdk_policy_does_not_clear_derivative_terms(self):
+        for rule in OBJC2_UPSTREAM_POLICY:
+            self.data["resolvedPackages"].append({
+                "manager":"cargo","name":rule["name"],"version":rule["version"],
+                "declaredLicense":rule["declared"],"notices":[{"path":"original-policy"}]})
+        result=triage(self.data,b"source")
+        self.assertEqual(result["appleSdkReviewCount"],19)
+        self.assertTrue(all(x["disposition"]=="open" and x["legalReviewApproved"] is False
+                            for x in result["appleSdkReviews"]))
+        policy={"expectedAppleSdkPackages":[{"name":r["name"],"version":r["version"],
+                "tag":r["tag"],"declared":r["declared"]} for r in OBJC2_UPSTREAM_POLICY]}
+        self.assertTrue(enforce_apple_sdk_review(result,policy))
+        policy["expectedAppleSdkPackages"].pop()
+        with self.assertRaisesRegex(TriageDenied,"missing_apple_sdk_review_policy"):
+            enforce_apple_sdk_review(result,policy)
     def test_missing_package_denied(self):
         self.data["resolvedPackages"].pop()
         with self.assertRaisesRegex(TriageDenied,"unresolved_without_resolved_package"):

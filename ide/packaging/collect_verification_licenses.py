@@ -148,6 +148,21 @@ for _name,_version in WEBVIEW_EXACT_CRATES:
         raise Denied("duplicate_webview_original_notice")
     CURATED_MISSING_NOTICES[_key]={"declaredLicense":"MIT","files":[WEBVIEW_ORIGINAL_LICENSE]}
 
+# Original upstream licensing policy, NOT complete terms or Apple SDK rights.
+OBJC2_UPSTREAM_POLICY = [{"name":"block2","version":"0.6.2","declared":"MIT","tag":"block2-0.6.2"},{"name":"dispatch2","version":"0.3.1","declared":"Zlib OR Apache-2.0 OR MIT","tag":"dispatch2-0.3.1"},{"name":"objc2","version":"0.6.5","declared":"MIT","tag":"objc2-0.6.5"},{"name":"objc2-encode","version":"4.1.0","declared":"MIT","tag":"objc2-encode-4.1.0"},{"name":"objc2-exception-helper","version":"0.1.1","declared":"Zlib OR Apache-2.0 OR MIT","tag":"objc2-exception-helper-0.1.1"},{"name":"objc2-app-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-cloud-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-data","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-foundation","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-graphics","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-image","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-location","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-core-text","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-foundation","version":"0.3.2","declared":"MIT","tag":"frameworks-0.3.2"},{"name":"objc2-io-surface","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-quartz-core","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-ui-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-user-notifications","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"},{"name":"objc2-web-kit","version":"0.3.2","declared":"Zlib OR Apache-2.0 OR MIT","tag":"frameworks-0.3.2"}]
+for _rule in OBJC2_UPSTREAM_POLICY:
+    _key=_rule["name"]+":"+_rule["version"]
+    if _key in CURATED_MISSING_NOTICES:
+        raise Denied("duplicate_objc2_rule")
+    CURATED_MISSING_NOTICES[_key]={
+        "declaredLicense":_rule["declared"],
+        "files":[{
+            "checkedIn":"ide/packaging/upstream-crate-notices/objc2-family-LICENSE.md",
+            "originalName":"LICENSE.md",
+            "url":"https://raw.githubusercontent.com/madsmtm/objc2/"+_rule["tag"]+"/LICENSE.md",
+            "blobSha":"540ae4c81adb5f64a9f61e222b688880da24300e"}],
+    }
+
 def verified_curated_notices(repo_root,manager,name,version,declared):
     if manager != "cargo":
         return []
@@ -318,6 +333,9 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                     notice["originalName"]=origin["originalName"]
                     notice["upstreamSource"]=origin["url"]
                     notice["upstreamGitBlobSha"]=origin["blobSha"]
+                    if any(r["name"]==name and r["version"]==version for r in OBJC2_UPSTREAM_POLICY):
+                        notice["upstreamLegalTextCompleteness"]="policy_links_external_full_terms"
+                        notice["appleSdkDerivativeReviewRequired"]=True
                 if src.name=="AUTHORS" and manager=="cargo" and name=="r-efi" and version in R_EFI_AUTHOR_GIT_BLOBS:
                     notice["upstreamSource"]="https://raw.githubusercontent.com/r-efi/r-efi/v"+version+"/AUTHORS"
                     notice["upstreamGitBlobSha"]=R_EFI_AUTHOR_GIT_BLOBS[version]

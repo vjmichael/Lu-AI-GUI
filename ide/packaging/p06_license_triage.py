@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from collect_verification_licenses import OBJC2_UPSTREAM_POLICY
 import sys
 
 class TriageDenied(ValueError): pass
@@ -104,6 +105,16 @@ def triage(data, source_bytes):
                 "targetSelectionIsNotShipmentProof":True,
                 "disposition":"open","legalReviewApproved":False,
                 "reviewedBy":None})
+    apple=[]
+    for rule in OBJC2_UPSTREAM_POLICY:
+        row=pkgs.get(("cargo",rule["name"],rule["version"]))
+        if row is not None:
+            apple.append({
+                "manager":"cargo","name":rule["name"],"version":rule["version"],
+                "upstreamTag":rule["tag"],"declaredLicense":row.get("declaredLicense"),
+                "upstreamPolicyNotCompleteTerms":True,
+                "reviewRequired":"Apple Xcode SDK-derived work terms, full linked MIT/Apache/Zlib text and OS binary shipment require independent approval.",
+                "disposition":"open","legalReviewApproved":False,"reviewedBy":None})
     return {"schema":"lu.ide.p06.license-triage.v1","sourceSha":data["sourceSha"],
             "inventorySha256":hashlib.sha256(source_bytes).hexdigest(),
             "totalResolvedPackages":len(pkgs),"unresolvedCount":len(tasks),
@@ -112,7 +123,9 @@ def triage(data, source_bytes):
             "specialLicenseReviewCount":len(flags),"specialLicenseReviews":flags,
             "embeddedCompilerReviewCount":len(embedded),
             "embeddedCompilerReviews":embedded,
-            "embeddedCompilerLegalReviewApproved":False}
+            "embeddedCompilerLegalReviewApproved":False,
+            "appleSdkReviewCount":len(apple),"appleSdkReviews":apple,
+            "appleSdkLegalReviewApproved":False}
 
 def enforce_known_risk_set(report, policy):
     if (not isinstance(policy,dict) or policy.get("schema")!="lu.ide.p06.known-license-risk.v1"
@@ -142,6 +155,22 @@ def enforce_embedded_binary_review(report,policy):
         raise TriageDenied("invalid_embedded_binary_clearance")
     return True
 
+def enforce_apple_sdk_review(report,policy):
+    expected={(r["name"],r["version"],r["tag"],r["declared"]) for r in OBJC2_UPSTREAM_POLICY}
+    provided=policy.get("expectedAppleSdkPackages")
+    if not isinstance(provided,list) or len(provided)!=len(expected):
+        raise TriageDenied("missing_apple_sdk_review_policy")
+    records={(x.get("name"),x.get("version"),x.get("tag"),x.get("declared"))
+             for x in provided}
+    observed={(x["name"],x["version"],x["upstreamTag"],x["declaredLicense"])
+              for x in report["appleSdkReviews"]}
+    if records!=expected or observed!=expected:
+        raise TriageDenied("apple_sdk_review_obligation_drift")
+    if any(x.get("disposition")!="open" or x.get("legalReviewApproved") is not False
+           for x in report["appleSdkReviews"]):
+        raise TriageDenied("false_apple_sdk_legal_approval")
+    return True
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--inventory",type=Path,required=True)
@@ -156,13 +185,14 @@ def main():
         policy=json.loads(a.known_risk_policy.read_text(encoding="utf-8"))
         enforce_known_risk_set(result,policy)
         enforce_embedded_binary_review(result,policy)
+        enforce_apple_sdk_review(result,policy)
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     except (OSError,ValueError,TypeError,KeyError) as e:
         print("DENIED: "+str(e),file=sys.stderr)
         return 2
     print(json.dumps({"unresolvedCount":result["unresolvedCount"],
-                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"embeddedCompilerReviewCount":result["embeddedCompilerReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
+                       "legalReviewApproved":False,"specialLicenseReviewCount":result["specialLicenseReviewCount"],"embeddedCompilerReviewCount":result["embeddedCompilerReviewCount"],"appleSdkReviewCount":result["appleSdkReviewCount"],"categories":sorted(set(x["classification"] for x in result["tasks"]))}))
     return 0
 if __name__=="__main__":
     raise SystemExit(main())
