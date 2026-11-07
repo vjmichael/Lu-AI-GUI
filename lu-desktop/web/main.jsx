@@ -1854,7 +1854,8 @@ function App() {
     const names={
       split:'lu_p08_split_archive',
       resume:'lu_p08_resume_split',
-      join:'lu_p08_reassemble_archive'
+      join:'lu_p08_reassemble_archive',
+      review:'lu_p08_review_publication'
     };
     if(!names[mode])return;
     setP08Busy(true);setError('');
@@ -1863,7 +1864,7 @@ function App() {
         mode==='split'?{chatId:owner,partMib:p08PartMib}:{chatId:owner});
       if(receipt){
         setP08ResultByChat(old=>({...old,[owner]:receipt}));
-        setActivity('P08 verified multipart operation published: '+receipt.destination);
+        setActivity(mode==='review'?'P08 read-only publication status: '+receipt.status:'P08 verified multipart operation published: '+receipt.destination);
       }else{
         setActivity('P08 native archive operation cancelled before publication.');
       }
@@ -3963,7 +3964,17 @@ function App() {
               disabled={!chatId||working||chatBusy||p08Busy}
               title="OS-pick lu-parts.json plus destination; verify all SHA-256 and create only a NEW archive"
               onClick={()=>void runP08Multipart('join')}>Reassemble Lu archive parts</button>
-            {p08ResultByChat[chatId]&&
+            <button type="button" className="subtleButton"
+              disabled={!chatId||working||chatBusy||p08Busy}
+              title="OS-pick original Lu split stage; inspect partial output without writing, replaying or deleting"
+              onClick={()=>void runP08Multipart('review')}>Review interrupted Lu split (read-only)</button>
+            {p08ResultByChat[chatId]?.status&&
+              <div className="researchResults" role="status" aria-label="P08 recovery review">
+                <strong>{p08ResultByChat[chatId].status}: {p08ResultByChat[chatId].outputFolder}</strong>
+                <small>{p08ResultByChat[chatId].verifiedParts} / {p08ResultByChat[chatId].expectedParts} verified parts</small>
+                <small>{p08ResultByChat[chatId].note}</small>
+              </div>}
+            {p08ResultByChat[chatId]&&!p08ResultByChat[chatId].status&&
               <div className="researchResults" role="status" aria-label="P08 multipart archive receipt">
                 <strong>{p08ResultByChat[chatId].destination}</strong>
                 <small>{p08ResultByChat[chatId].parts} parts · {p08ResultByChat[chatId].bytes} bytes
