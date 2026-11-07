@@ -12,7 +12,7 @@
 | Phase | Goal | Current state | Acceptance / exit gate |
 | --- | --- | --- | --- |
 | **P01 — Authoritative baseline** | Reconcile current `main` and the WO9 standalone IDE source, establish *one* release-candidate branch, review historical draft PR dependencies and possible unported files; explicitly exclude WO10 | **SOURCE BASELINE COMPLETE** — [draft PR #78](https://github.com/vjmichael/Lu-AI-GUI/pull/78), with retained exceptions E01–E05 | Candidate branch and draft review PR exist; main Lu Core untouched; source provenance and divergence inventory recorded; candidate not promoted or merged before source/integration validation |
-| **P02 — Deterministic native build and test repair** | Resolve frontend/icon ordering, JavaScript allowlists, Linux AT-SPI helper arguments, Windows accessibility/selector mismatch; exact-head Win/Linux CI | NOT STARTED | Repeatable locked source build; native tests and OS GUI automation scripts pass at the candidate exact SHA, with real failure logs reviewed |
+| **P02 — Deterministic native build and test repair** | Resolve frontend/icon ordering, JavaScript allowlists, Linux AT-SPI helper arguments, Windows accessibility/selector mismatch; exact-head Win/Linux CI | **SOURCE REPAIR IN PROGRESS — exact-head CI/GUI pending** | Repeatable locked source build; native tests and OS GUI automation scripts pass at the candidate exact SHA, with real failure logs reviewed |
 | **P03 — WO4–WO6 native security acceptance** | Linux cgroup/Bubblewrap, Windows AppContainer/Job/SCM, protected clangd, native LLDB-DAP, protected cancellation and durable host/service crash recovery | NOT STARTED | Independent actual OS denial, normal operation, process-tree kill, kernel containment and reopened durable receipts; no weaker fallback |
 | **P04 — WO7–WO9 installed acceptance** | Signed Windows NSIS and Linux Debian package, authentic release dependencies/notices, native install/edit/Git/ZIP/build/test/debug/restart/uninstall/upgrade/rollback | NOT STARTED | Installed signed artifact hashes, reviewed licenses/dependencies, native per-OS fixtures with exact receipts; release manifests independently accepted |
 | **P05 — GitHub operations reduction** | Review older stacked and parallel IDE PRs; preserve all unique code; close/retarget only after verified consolidation; remove redundant CI without losing required security gates | NOT STARTED | Account for every IDE PR and corresponding source/evidence, document why superseded or retained; no history loss or premature mass closure |
@@ -41,13 +41,13 @@
 - Some intermediate work branches diverged by one or two post-stack commits, e.g. C3, D3, D6, D7, WO6–WO8. Verify whether those are tests, documentation or missing code before historic PR closure.
 - The latest completed WO9-head CI `0d271606` ([native](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42350479148), [installed](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42350479273)) was **red**: Tauri asset-build ordering and JS allowlists, installed native GUI missing accessible controls. A release-candidate import does not erase those failures.
 
-## P02 — Deterministic repair checklist (not started)
+## P02 — Deterministic repair checklist (source repairs committed; see [P02 repair record](IDE_P02_DETERMINISTIC_REPAIR_20261107.md))
 
-- [ ] Generate `icons/icon.ico` and web `dist/` before opt-in Windows/Linux Tauri feature checks; test default and `native-build`, `native-lsp`, `native-debug` separately.
-- [ ] Repair actual command allowlist/schema/feature declaration drift without relaxing permission scopes; run all React/Node checks.
-- [ ] Correct Linux AT-SPI `activate(timeout=...)` vs callers using `seconds=...`; install and click real Gtk/WebKit app.
+- [x] Repair WO9 asset-generation ordering; add exact-head Windows/Linux matrix for default, `native-build`, `native-lsp`, `native-debug` and combination. **CI verification pending.**
+- [x] Repair two strict frontend contract assertions for existing privileged native receipt verifier without expanding any capability or permission grant. **Node test verification pending.**
+- [x] Correct Linux WO9 AT-SPI `activate(timeout=...)` caller signatures. [ ] Run installed GTK/WebKit real interaction/AT-SPI verification.
 - [ ] Inspect Windows UI Automation tree for accessible `Job requests` / `Execution requests`, fix controls/harness, prove real interaction.
-- [ ] Freeze candidate exact SHA, run repeatable Windows/Linux checks; do not extrapolate from earlier heads.
+- [ ] Freeze P02 exact SHA, run all Windows/Linux native/installed checks, inspect real failures and repair them; do not extrapolate from prior heads.
 
 ## P03 — Native security checklist (not started)
 
