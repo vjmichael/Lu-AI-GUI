@@ -988,6 +988,21 @@ function App() {
       setCaptureReceipt(receipt?{chatId,...receipt}:null);
     }catch(e){setError(String(e));}
   }
+  async function forgetObserveNotes(){
+    if(!chatId)return;
+    const selectedChat=chatId;
+    try{
+      const removed=await invoke('lu_observe_forget_notes',{chatId:selectedChat});
+      // null is a denied native confirmation, not a successful empty purge.
+      if(removed===null||removed===undefined)return;
+      if(selectedChat===chatId){
+        setObserveNotes([]);
+        setObserveHandoff(null);
+        setObserveView(v=>({...v,notesLogged:0}));
+        setActivity('Forgot '+removed+' local observation note'+(removed===1?'':'s')+'. No prior observation is reused.');
+      }
+    }catch(e){setError(String(e));}
+  }
   async function reviewObserveHandoff(){
     if(!chatId||observeView.mode==='off')return;
     try{
@@ -2746,6 +2761,11 @@ function App() {
             {observeView.mode!=='off' &&
               <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
           </div>
+          {observeView.mode==='off' &&
+            <button type="button" className="subtleButton"
+              onClick={()=>void forgetObserveNotes()}>
+              Forget saved observation notes for this chat
+            </button>}
           {observeView.mode==='active' && !captureWorkerReady &&
             <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
           {captureTaskId && <div aria-label="Native one-shot capture evidence">
@@ -2781,6 +2801,14 @@ function App() {
                 )}</ul>}
               <button type="button" disabled={observeNotes.length===0}
                 onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
+              <button type="button" className="subtleButton"
+                onClick={()=>void forgetObserveNotes()}>
+                Forget observation notes for this chat
+              </button>
+              <small>Diagnostic codes expire after seven days. Forgetting clears Lu's
+                stored notes and current review summary, not existing chat messages,
+                exported text, or durable task-operation receipts. No observation data
+                is automatically promoted to memory or model training.</small>
               {observeHandoff?.sessionId===observeView.sessionId&&
                 <div role="status" className="observeHandoff">
                   <strong>Observed evidence prepared for human review</strong>
