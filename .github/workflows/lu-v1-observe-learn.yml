@@ -91,7 +91,7 @@ jobs:
           node-version: '22'
       - working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
           npm run build
           npm run check
           npm run test:ui
@@ -108,23 +108,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Stage inert compile-only engine placeholders
+      - name: Use engine-free code-only desktop host config
         shell: pwsh
         run: |
-          $root='lu-desktop/src-tauri/resources/lu-inference'
-          New-Item -ItemType Directory -Force -Path $root | Out-Null
-          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
-            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
-          }
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $path -Encoding utf8
+          Write-Output 'Code compilation only: no model engine, Vulkan, NSIS or installed GPU acceptance claimed'
       - working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
           npm run build
       - name: Native Windows capture frame geometry and privacy bounds tests
         run: cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture
-      - name: Foreground HWND PID recheck is part of native capture worker
+      - name: Foreground HWND and process-instance recheck is part of native worker
         shell: bash
-        run: grep -Fq -- '--lu-observe-foreground-one-shot' src-tauri/lu-observe-capture-worker/src/main.rs
+        run: |
+          grep -Fq -- '--lu-observe-foreground-one-shot' src-tauri/lu-observe-capture-worker/src/main.rs
+          grep -Fq 'process_instance::born_at(pid)?!=born' src-tauri/lu-observe-capture-worker/src/main.rs
+          grep -Fq 'Lu-WGC-whole-frame-redacted-v2' src-tauri/lu-observe-capture-worker/src/main.rs
       - name: Compile Windows.Graphics.Capture picker and D3D11 one-shot worker
         run: cargo build --release --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml
       - name: Reject unattended or forged capture worker invocations
