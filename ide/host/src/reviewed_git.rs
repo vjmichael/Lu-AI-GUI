@@ -4,7 +4,7 @@
 //! in an in-memory libgit2 blob; never stage ambient worktree paths by name.
 use crate::{browser::{descend, validate_relative}, IdeWorkspaceRegistry};
 use git2::{Index, IndexEntry, IndexTime, Oid, Repository};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::{Path, PathBuf}};
 
@@ -13,7 +13,7 @@ const MAX_INDEX_ENTRIES: usize = 8192;
 const MAX_IDENTITY: usize = 96;
 const MAX_COMMIT_MESSAGE: usize = 1200;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewedGitFile {
     pub project_id: String,
@@ -305,5 +305,92 @@ impl IdeWorkspaceRegistry {
             remote_updated: false,
             release_approved: false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeWorkspaceRegistry, NativeDirectoryPicker, IdeError};
+    use git2::Signature;
+    struct Pick(PathBuf);
+    impl NativeDirectoryPicker for Pick {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Temp(PathBuf);
+    impl Drop for Temp {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+    fn fixture() -> (Temp, IdeWorkspaceRegistry, String, PathBuf) {
+        let temp = std::env::temp_dir().join(format!("wo9-git-{}", rand::random::<u64>()));
+        let root = temp.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("code.rs"), b"old text\n").unwrap();
+        fs::write(root.join("other.txt"), b"unchanged\n").unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("code.rs")).unwrap();
+        index.add_path(Path::new("other.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(temp.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Pick(root.clone()))
+            .unwrap().unwrap().project_id;
+        (Temp(temp), registry, id, root)
+    }
+    #[test]
+    fn reviewed_stage_and_commit_one_exact_buffer_without_hooks_or_push() {
+        let (_t, registry, id, root) = fixture();
+        fs::write(root.join("code.rs"), b"reviewed text\n").unwrap();
+        let preview = registry.preview_reviewed_git_file(&id,"code.rs").unwrap();
+        assert_eq!(preview.file_size, b"reviewed text\n".len());
+        assert!(registry.stage_reviewed_git_file(&preview).is_ok());
+        // The same preview cannot be silently reused after index mutation.
+        assert_eq!(registry.stage_reviewed_git_file(&preview).unwrap_err(),
+            "WO9_GIT_EXISTING_STAGED_CHANGES_DENIED");
+        let (_t2, registry2, id2, root2) = fixture();
+        fs::write(root2.join("code.rs"), b"reviewed text\n").unwrap();
+        let preview2 = registry2.preview_reviewed_git_file(&id2,"code.rs").unwrap();
+        let stage = registry2.stage_reviewed_git_file(&preview2).unwrap();
+        let commit = registry2.commit_reviewed_git_file(&stage,
+            "one reviewed source change", "Tester", "tester@localhost.invalid").unwrap();
+        assert_ne!(commit.commit_sha, preview2.local_head);
+        assert!(!commit.remote_updated && !commit.git_hooks_executed);
+        assert!(!commit.release_approved);
+        let repo = Repository::open(root2).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), commit.commit_sha);
+        assert_eq!(repo.find_commit(Oid::from_str(&commit.commit_sha).unwrap())
+            .unwrap().parent_count(), 1);
+    }
+    #[test]
+    fn stage_denies_external_file_change_and_symlink_and_untracked_content() {
+        let (_t, registry, id, root) = fixture();
+        fs::write(root.join("code.rs"), b"new\n").unwrap();
+        let preview = registry.preview_reviewed_git_file(&id,"code.rs").unwrap();
+        fs::write(root.join("code.rs"), b"changed while reviewing\n").unwrap();
+        assert_eq!(registry.stage_reviewed_git_file(&preview).unwrap_err(),
+            "WO9_GIT_SOURCE_CHANGED_AFTER_REVIEW");
+        assert!(registry.preview_reviewed_git_file(&id,"../outside").is_err());
+        assert!(registry.preview_reviewed_git_file(&id,".git/config").is_err());
+        fs::write(root.join("untracked.txt"), b"new").unwrap();
+        assert_eq!(registry.preview_reviewed_git_file(&id,"untracked.txt").unwrap_err(),
+            "WO9_GIT_UNTRACKED_OR_UNAPPROVED_SOURCE");
+    }
+    #[test]
+    fn commit_denies_modified_staged_blob_and_secondary_stage() {
+        let (_t, registry, id, root) = fixture();
+        fs::write(root.join("code.rs"), b"approved\n").unwrap();
+        let preview = registry.preview_reviewed_git_file(&id,"code.rs").unwrap();
+        let stage = registry.stage_reviewed_git_file(&preview).unwrap();
+        fs::write(root.join("code.rs"), b"not approved\n").unwrap();
+        assert_eq!(registry.commit_reviewed_git_file(&stage, "reviewed", "X",
+            "x@localhost.invalid").unwrap_err(),"WO9_GIT_WORKTREE_CHANGED_AFTER_STAGE");
     }
 }
