@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- Started WO4 Linux delegated containment (Nov 6–7, 2026): new stacked draft PR #68 and [dedicated ledger](docs/IDE_WORK_ORDER_04_LINUX_DELEGATION_20261106.md). Linux worker requires a pre-provisioned empty cgroup-v2 parent with host in separate `lu-ide-host` leaf, enabled CPU/memory/PID controllers, exact empty kernel `populated 0` evidence, and fail-closed cleanup semantics. The standalone probe now tests the same delegation contract. Prior native Windows WO1–3 acceptance remains unchanged. **Seven work orders remain (WO4–WO10).** WO4 Linux native delegated execution acceptance pending.
+
+
 - IDE 07 protected Windows acceptance and closeout (Nov 6–7): historical exact head `750638e` yielded native behavioral PASS for protected SCM handshake/READY, independent overlapping NUL grants + revoke, host-crash fsynced recovery and fresh-nonce retry, service-loss Job kill/refused false recovery, and real confined offline Cargo completion/published output/restart. Red workflow exit discovered to be missing SYSTEM/Admin SCM DELETE right and expected-negative-probe `$LASTEXITCODE`; corrected both, made privileged uninstall fail if `sc delete` fails. Fixed D7B Windows crash fixture's reserved `$PID` name. **New exact-head complete all-job green and protected Cargo cancellation remain open.** Ledger: `docs/IDE_WORK_BATCH_02_20261106.md`.
 
 
