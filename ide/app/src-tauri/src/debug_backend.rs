@@ -28,6 +28,7 @@ use lu_ide_execution_supervisor::{
 #[cfg(windows)]
 use lu_ide_execution_supervisor::{
     windows_broker::TrustedBroker,
+    windows_worker::reconcile_windows_interrupted_via_service,
     windows_worker::lsp_native::{
         native_lsp_bundle_digest, start_windows_dap, WindowsDapSession as NativeDapSession,
     },
@@ -36,6 +37,8 @@ use lu_ide_execution_supervisor::{
 use lu_ide_execution_supervisor::linux_worker::lsp_native::{
     native_lsp_bundle_digest, start_linux_dap, LinuxDapSession as NativeDapSession,
 };
+#[cfg(target_os = "linux")]
+use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
 
 #[cfg(windows)]
 const BUNDLE_PIN: Option<&str> = option_env!("LU_IDE_WO6_WINDOWS_LLDB_DAP_SHA256");
@@ -138,7 +141,17 @@ pub struct DebugStatus {
     code: String,
     current: Option<DebugActive>,
     last: Option<DebugWitness>,
+    quarantined: Vec<DebugInterrupted>,
     description: &'static str,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugInterrupted {
+    project_id: String,
+    job_id: String,
+    plan_sha256: String,
+    phase: String,
+    requires_reconciliation: bool,
 }
 struct Active {
     project_id: String,
@@ -177,17 +190,71 @@ impl NativeDebugRuntime {
             });
         let last = self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
             .as_ref().filter(|v| v.project_id == project_id).cloned();
+        let quarantined: Vec<DebugInterrupted> = self.supervisor.inspect()
+            .map_err(|e| e.code().to_owned())?.into_iter()
+            .filter(|job| job.project_id == project_id && job.requires_reconciliation)
+            .map(|job| DebugInterrupted {
+                project_id: job.project_id,
+                job_id: job.job_id,
+                plan_sha256: job.plan_sha256,
+                phase: format!("{:?}", job.phase).to_lowercase(),
+                requires_reconciliation: true,
+            }).collect();
         Ok(DebugStatus {
-            ready: available.is_ok(),
+            ready: available.is_ok() && quarantined.is_empty(),
             code: match available {
                 Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
                 Err(code) => code,
             },
             current,
             last,
+            quarantined,
             description: "Only fixed LLDB-DAP self-test debuggee. Project debug launches remain disabled.",
         })
     }
+    /// A separately approved OS-only cleanup, never a debugger resume.
+    /// Missing/stale project receipts remain quarantined across restarts.
+    pub fn reconcile(
+        &self, app: &AppHandle, project_id: &str, job_id: &str,
+    ) -> Result<&'static str, String> {
+        if self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?.is_some() {
+            return Err("DEBUG_ACTIVE_SESSION_PREVENTS_RECOVERY".into());
+        }
+        let interrupted = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
+            .into_iter().find(|job| job.job_id == job_id)
+            .ok_or("DEBUG_RECOVERY_JOB_NOT_FOUND")?;
+        if interrupted.project_id != project_id || !interrupted.requires_reconciliation {
+            return Err("DEBUG_RECOVERY_SCOPE_DENIED".into());
+        }
+        let install = installation(app)?;
+        let confirmed = app.dialog()
+            .message(format!(
+                "Verify native OS-only termination of interrupted debugger job {job_id}?\n\n\
+                 No debugger or project executable will be restarted. The protected broker must \
+                 verify zero descendants and fsync its terminal receipt."
+            ))
+            .title("Reconcile interrupted protected debugger")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Verify OS cleanup".into(), "Leave quarantined".into(),
+            ))
+            .blocking_show();
+        if !confirmed { return Err("DEBUG_RECOVERY_NOT_APPROVED".into()); }
+        #[cfg(windows)]
+        let summary = reconcile_windows_interrupted_via_service(
+            &self.supervisor, job_id, &install.broker,
+        ).map_err(|e| e.code().to_owned())?;
+        #[cfg(target_os = "linux")]
+        let summary = {
+            let _ = install;
+            reconcile_linux_interrupted(&self.supervisor, job_id)
+                .map_err(|e| e.code().to_owned())?
+        };
+        if summary.phase != JobPhase::Cancelled || summary.requires_reconciliation {
+            return Err("DEBUG_RECOVERY_STILL_QUARANTINED".into());
+        }
+        Ok("DEBUG_OS_TREE_RECONCILED_NO_REEXECUTION")
+    }
+
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
         let active = locked.as_ref().ok_or("DEBUG_NO_ACTIVE_SESSION")?;
@@ -202,6 +269,11 @@ impl NativeDebugRuntime {
     pub fn run_fixture(
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry, project_id: &str,
     ) -> Result<DebugWitness, String> {
+        if self.supervisor.inspect().map_err(|e| e.code().to_owned())?
+            .iter().any(|job| job.requires_reconciliation)
+        {
+            return Err("DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN".into());
+        }
         let cancellation = Arc::new(AtomicBool::new(false));
         {
             let mut active = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
