@@ -249,9 +249,11 @@ mod enabled {
         // The intentionally undeclared 'addi' identifier produces at least
         // one diagnostic on both clangd 17 (Debian direct protocol witness)
         // and supported contemporary clangd releases.
-        wait_event(&mut session, "changed-source diagnostics", |x| {
-            matches!(x, LspEvent::Diagnostics(items) if !items.is_empty())
-        })?;
+        wait_event(
+            &mut session,
+            "changed-source diagnostics",
+            |x| matches!(x, LspEvent::Diagnostics(items) if !items.is_empty()),
+        )?;
         session
             .query(
                 "completion",
