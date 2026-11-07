@@ -127,7 +127,7 @@ impl IdeWorkspaceRegistry {
             // provided by JavaScript.
             let mut candidates = Vec::new();
             for item in inventory.files {
-                if item.state != "bytes_observed" || item.sha256.is_none() {
+                if item.digest_status != "sha256_observed" || item.sha256.is_none() {
                     blockers.push("unhashed_or_unverifiable_artifact".into());
                     continue;
                 }
