@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- IDE 07 WO2/WO3 (Nov 6): native CI proved Windows exact-user pipe opened, then service image/kernel token authenticated under query-only restricted-SID check; service refused owner before READY. Implemented narrow, authenticated-client impersonation for verified process PID, creation, pinned executable and TokenUser checks, reverting to restricted LocalService before any privileged effect. Fixed D7B independent owner-crash fixture dispatch; applied six exact Rustfmt hunks. Latest exact-head native Cargo/SCM/crash acceptance pending. See `docs/IDE_WORK_BATCH_02_20261106.md`.
+
+
 - IDE WO2/WO3 acceptance extension (2026-11-06): added a disposable Windows protected-SCM two-Job overlapping NUL lease and independently verified release fixture, staged after the original authenticated pipe smoke test with fixed-service-only bootstrap and explicit revocation attempt. No blanket AppContainer rights or release enablement; exact-head native CI, SCM pipe admission and service/owner crash gates remain open.
 
 
