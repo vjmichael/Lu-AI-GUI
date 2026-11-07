@@ -607,12 +607,15 @@ impl LinuxDapSession {
         self.gateway.initialize()
     }
     pub fn launch_fixed_fixture(&mut self) -> Result<(), SupervisorError> {
-        self.gateway.launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+        self.gateway
+            .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()
     }
-    pub fn poll(&mut self) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
+    pub fn poll(
+        &mut self,
+    ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
         self.gateway.poll()
     }
     pub fn threads(&mut self) -> Result<(), SupervisorError> {
