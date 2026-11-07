@@ -402,6 +402,28 @@ impl AnsfStore {
         .map_err(Into::into)
     }
 
+    /// Efficient model-context source window. Uses the existing ANSF
+    /// (session_id,id) index and never scans or materializes the full book.
+    /// Assistant progress/cancelled partial text is not an entry; only
+    /// completed assistant output and original user messages are eligible.
+    pub fn recent_context_entries(
+        &self,session_id:&str,limit:usize
+    )->Result<Vec<Entry>,AnsfError>{
+        if !valid_id(session_id)||limit==0||limit>128{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT id,session_id,chapter_id,message_id,role,summary,content
+             FROM ansf_entries WHERE session_id=?1
+               AND role IN ('user','assistant')
+             ORDER BY id DESC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![session_id,limit as i64],Self::map_entry)?;
+        let mut result=rows.collect::<Result<Vec<_>,_>>()?;
+        result.reverse();
+        Ok(result)
+    }
     /// Cursor pagination for virtual scrolling: older blocks remain on disk.
     /// Entry IDs are stable, not array offsets.
     pub fn page_after(
