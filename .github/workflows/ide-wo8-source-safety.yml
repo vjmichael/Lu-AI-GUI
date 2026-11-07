@@ -7,6 +7,9 @@ on:
       - 'ide/app/src-tauri/tauri.wo8.linux.conf.json'
       - 'ide/app/web/code_editor.jsx'
       - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
+      - 'ide/packaging/verify_wo8_installed_evidence.py'
+      - 'ide/packaging/test_verify_wo8_installed_evidence.py'
+      - 'ide/packaging/wo8-installed-evidence.json'
       - '.github/workflows/ide-wo8-*'
   workflow_dispatch:
 permissions:
@@ -25,6 +28,8 @@ jobs:
           bash -n ide/app/fixtures/Test-Wo8InstalledDeb.sh
           bash -n ide/app/fixtures/wo8_linux_window_acceptance.sh
           python3 -m json.tool ide/app/src-tauri/tauri.wo8.linux.conf.json >/dev/null
+      - name: Validate installed acceptance receipt refusal and provenance rules
+        run: python3 -m unittest discover -s ide/packaging -p 'test_verify_wo8_installed_evidence.py' -v
       - name: Ensure no fake accepted native result in source files
         run: |
           grep -q 'xvfb-run' ide/app/fixtures/Test-Wo8InstalledDeb.sh
