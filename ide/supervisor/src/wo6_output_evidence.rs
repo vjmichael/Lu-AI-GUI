@@ -11,7 +11,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use crate::SupervisorError;
 
-const MAX_ENTRIES: usize = 96;
+const MAX_ENTRIES: usize = 6_000;
+const MAX_VISIBLE: usize = 96;
 const MAX_TREE_DEPTH: usize = 24;
 const MAX_ONE_FILE: u64 = 64 * 1024 * 1024;
 const MAX_TREE_BYTES: u64 = 256 * 1024 * 1024;
@@ -160,12 +161,15 @@ pub fn audit_published_output(root: &Path) -> Result<OutputWitness, SupervisorEr
         hasher.update(file.sha256.as_bytes());
         hasher.update([0]);
     }
+    let count = files.len();
+    let truncated = count > MAX_VISIBLE;
+    files.truncate(MAX_VISIBLE);
     Ok(OutputWitness {
         tree_sha256: format!("{:x}", hasher.finalize()),
-        file_count: files.len(),
+        file_count: count,
         total_bytes: total,
         files,
-        truncated: false,
+        truncated,
         role: "advisory_post_termination_output_metadata_not_os_acceptance",
     })
 }
