@@ -119,3 +119,29 @@ jobs:
           echo 'PASS: actual native cgroup kernel witness on exact PR SHA, independent from Cargo and clangd'
       - name: Kernel evidence is not a release or installed application approval
         run: echo 'WO4_NATIVE_KERNEL_WITNESS_ONLY=ACTUAL_OS_PASS_IF_PREVIOUS_STEP_PASS'
+  linux-hostile-bwrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Provision only distribution-reviewed unprivileged Bwrap profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile" || { echo 'DENIED: reviewed Ubuntu Bwrap namespace profile unavailable'; exit 1; }
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+      - name: Real hostile Bwrap kernel PID and network separation and readonly workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/sandbox/fixtures/wo4_bwrap_hostile_native.py
+      - name: Scope label
+        run: echo 'P03_BWRAP_HOSTILE_OS_WITNESS_ONLY=no_worker_or_installer_release_claim'
