@@ -416,6 +416,7 @@ struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
     chats: ChatStore,
+    operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     // Failures of optional memory indexing do not prevent basic alpha chat.
     goal_memory: Result<memory_desktop::GoalMemoryDesktop,String>,
     read_proposals: read_proposal::ReadApprovalQueue,
@@ -859,6 +860,9 @@ impl DesktopState {
             models_dir,
             catalog_path,
             chats: ChatStore::open(&root)?,
+            operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
+                &root.join("lu-operational-assets.sqlite")
+            ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
             goal_memory: memory_desktop::GoalMemoryDesktop::open(&root),
             read_proposals: read_proposal::ReadApprovalQueue::default(),
             write_proposals: write_proposal::WriteProposalQueue::default(),
@@ -3517,6 +3521,90 @@ fn lu_m3_source_text_page(
     offset_chars:usize,limit_chars:usize
 )->Result<chat_store::OriginalTextPage,String>{
     state.chats.original_source_text_page(&chat_id,&source_id,offset_chars,limit_chars)
+}
+
+/// Host-only, local profile asset registry. No tool or model receives an
+/// execution grant by discovering a package; every current file is rehashed.
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct M3AssetView{
+    record_id:String,
+    project_id:String,
+    logical_name:String,
+    version:String,
+    source_id:String,
+    location:String,
+    sha256:String,
+    bytes:u64,
+    presence:String,
+}
+fn m3_asset_view(
+    store:&lu_core::operational_asset_ledger::OperationalAssetLedger,
+    record:lu_core::operational_asset_ledger::AssetRecord
+)->M3AssetView{
+    use lu_core::operational_asset_ledger::AssetPresence;
+    let presence=match store.revalidate(&record){
+        AssetPresence::PresentVerified=>"verified_present",
+        AssetPresence::Missing=>"missing",
+        AssetPresence::ChangedOrUnsafe=>"changed_or_unsafe"
+    }.to_owned();
+    M3AssetView{
+        record_id:record.record_id,project_id:record.project_id,
+        logical_name:record.logical_name,version:record.version,
+        source_id:record.source_id,
+        location:record.local_path.to_string_lossy().into_owned(),
+        sha256:record.sha256,bytes:record.bytes,presence
+    }
+}
+#[tauri::command]
+async fn lu_m3_operational_inventory(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,project_id:String
+)->Result<Vec<M3AssetView>,String>{
+    // Digest verification can read a multi-gigabyte SDK; never block the UI
+    // or the model's event loop while checking historical asset availability.
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.original_history_page(&chat_id,&chat_id,None,1)?;
+        let rows=state.operational_assets.recent_for_project(&project_id,32)
+            .map_err(|e|format!("Operational asset query unavailable: {e:?}"))?;
+        Ok(rows.into_iter().map(|r|m3_asset_view(&state.operational_assets,r)).collect())
+    }).await.map_err(|_|"Asset verification worker unavailable")?
+}
+#[tauri::command]
+async fn lu_m3_remember_asset(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,logical_name:String,
+    version:String,source_id:String
+)->Result<Option<M3AssetView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        // The source is verified against the same profile-owned ANSF books.
+        // Historical messages remain context and cannot authorize effects.
+        state.chats.original_source_text_page(&chat_id,&source_id,0,1)?;
+        let selected=app.dialog().file().blocking_pick_file();
+        let Some(selected)=selected else{return Ok(None)};
+        let path=selected.into_path().map_err(|_|"Invalid file selection")?;
+        let answer=app.dialog().message(format!(
+            "Remember this local file as a build asset for project '{}'?\n\
+             Label: {}\nVersion: {}\n\
+             Lu will record the file hash and original ANSF source reference.\n\
+             It will revalidate the bytes before any future reuse. \
+             This does not install or run the file.",
+            project_id,logical_name,version
+        )).title("Lu — Remember verified local asset")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Remember asset".into(),"Cancel".into()
+          )).blocking_show();
+        if !answer{return Ok(None)}
+        let proposal=lu_core::operational_asset_ledger::AssetProposal{
+            record_id:next_id("asset-"),project_id,logical_name,version,
+            source_id,local_path:path,expected_sha256:None
+        };
+        let saved=state.operational_assets.record_verified(&proposal,|source|
+            state.chats.original_source_text_page(&chat_id,source,0,1).is_ok()
+        ).map_err(|e|format!("Selected asset could not be verified: {e:?}"))?;
+        Ok(Some(m3_asset_view(&state.operational_assets,saved)))
+    }).await.map_err(|_|"Native asset picker worker unavailable")?
 }
 
 #[tauri::command]
@@ -6811,6 +6899,8 @@ pub fn run() {
             lu_m3_read_source,
             lu_m3_history_page,
             lu_m3_source_text_page,
+            lu_m3_operational_inventory,
+            lu_m3_remember_asset,
             lu_background_tasks,
             lu_background_guardian_status,
             lu_background_queue_control,

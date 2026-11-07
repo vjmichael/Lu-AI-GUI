@@ -343,3 +343,16 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .ansfOriginalReader header{display:flex;align-items:center;justify-content:space-between}
 .ansfOriginalReader pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto}
 .ansfHistoryError{color:#ff9a9a}
+
+
+/* M3 source-linked operational asset evidence, scoped to the history pane. */
+.ansfAssetsMemory{border:1px solid var(--border,#555);border-radius:8px;
+  padding:8px;max-height:33vh;overflow:auto}
+.ansfAssetsMemory summary{cursor:pointer;font-weight:600}
+.ansfAssetForm{display:flex;flex-direction:column;gap:7px;margin:8px 0}
+.ansfAssetForm label{display:flex;flex-direction:column;gap:3px}
+.ansfAssetForm input{width:100%;min-width:0;padding:7px}
+.ansfAssetRows{max-height:20vh;overflow:auto}
+.ansfAssetRows article{border-bottom:1px solid var(--border,#555);padding:5px 0;
+  display:flex;flex-direction:column;gap:3px}
+.ansfAssetRows code{overflow-wrap:anywhere}

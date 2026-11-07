@@ -12,7 +12,7 @@ on:
       - 'lu-desktop/tests/m3-ansf-recall.test.mjs'
       - '.github/workflows/lu-m3-ansf-recall.yml'
       - 'src-tauri/lu-core/src/ansf*.rs'
-      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs'
+      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs lu-desktop/tests/m3-operational-assets.test.mjs'
       - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
@@ -43,6 +43,8 @@ jobs:
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_independent_history_acceptance -- --nocapture
       - name: Test M2 restart/migration compatibility
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml -- --nocapture
+      - name: Test verified operational asset reuse across restart and mutation
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib operational_asset_ledger::tests -- --nocapture
       - name: Test canonical ANSF direct source IDs
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_source_ids::tests -- --nocapture
       - name: Test M3-S1 native SQLite vector index and S2 rank fusion

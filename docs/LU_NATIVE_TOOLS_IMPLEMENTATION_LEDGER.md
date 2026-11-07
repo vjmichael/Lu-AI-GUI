@@ -1,3 +1,7 @@
+## M3 asset-ledger foundation — 2026-11-07 (SOURCE/CI PENDING)
+
+Committed small immutable source-linked operational asset references outside ANSF; host-native picker + explicit confirm records SHA-256/size/version for SDK/NSIS/MSVC/LLVM packages. Reopening re-hashes and distinguishes present/missing/changed. Independent Library pane exposes manual register/verify. No automatic procedural reuse, build environment restoration, or user task authority added; physical installed acceptance open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
 ## M3 recovered original UX — independently browsable ANSF page history (2026-11-07; SOURCE/CI PENDING)
 
 Added original-entry stable-ID backward page queries, host-authenticated history-browser and bounded text-page commands; replaced embedded M3 Recall with independent floating Library inspector. Added native paging/restart/host-auth tests and cross-platform CI. *Not* yet virtualized main chat transcript; still source candidate, not installed acceptance. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).

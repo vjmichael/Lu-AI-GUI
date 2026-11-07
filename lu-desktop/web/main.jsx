@@ -37,6 +37,12 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [reading,setReading]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const [assetProject,setAssetProject]=useState('lu');
+  const [assetName,setAssetName]=useState('');
+  const [assetVersion,setAssetVersion]=useState('');
+  const [assetSource,setAssetSource]=useState('');
+  const [assetRows,setAssetRows]=useState([]);
+  const [assetBusy,setAssetBusy]=useState(false);
   const requests=useRef(0);
   const scrollRef=useRef(null);
   const prependHeight=useRef(null);
@@ -125,6 +131,36 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     catch(e){setError('Original source unavailable: '+String(e))}
     finally{setBusy(false)}
   }
+  async function inspectAssets(){
+    if(!activeChatId||!assetProject.trim()||assetBusy)return;
+    setAssetBusy(true);setError('');
+    try{
+      const rows=await invoke('lu_m3_operational_inventory',{
+        chatId:activeChatId,projectId:assetProject.trim()
+      });
+      setAssetRows(rows);
+    }catch(e){setError('Build asset inventory unavailable: '+String(e))}
+    finally{setAssetBusy(false)}
+  }
+  async function rememberAsset(e){
+    e.preventDefault();
+    const sourceId=assetSource.trim()||reading?.sourceId;
+    if(!activeChatId||!assetProject.trim()||!assetName.trim()||
+       !assetVersion.trim()||!sourceId||assetBusy)return;
+    setAssetBusy(true);setError('');
+    try{
+      const result=await invoke('lu_m3_remember_asset',{
+        chatId:activeChatId,projectId:assetProject.trim(),
+        logicalName:assetName.trim(),version:assetVersion.trim(),
+        sourceId
+      });
+      if(result){
+        setAssetRows(items=>[result,...items.filter(r=>r.recordId!==result.recordId)]);
+        setAssetSource(sourceId);
+      }
+    }catch(e){setError('Local package was not recorded: '+String(e))}
+    finally{setAssetBusy(false)}
+  }
   return <aside className="ansfHistoryPane" aria-label="Independent ANSF history browser">
     <header className="ansfHistoryHeader">
       <div><strong>ANSF Library</strong><small>Independent history · active chat unchanged</small></div>
@@ -146,6 +182,41 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     </form>
     {error&&<p role="alert" className="ansfHistoryError">{error}</p>}
     <small>Historical source text is read-only context, never a new tool permission.</small>
+    <details className="ansfAssetsMemory">
+      <summary>Operational memory · reusable build assets</summary>
+      <small>Host-verified file hashes and source IDs; a remembered path is not an execution permission.</small>
+      <form className="ansfAssetForm" onSubmit={rememberAsset}>
+        <label>Project ID
+          <input value={assetProject} maxLength={128}
+            onChange={e=>setAssetProject(e.target.value)} placeholder="lu"/>
+        </label>
+        <label>Asset label
+          <input value={assetName} maxLength={180}
+            onChange={e=>setAssetName(e.target.value)} placeholder="Windows SDK ZIP"/>
+        </label>
+        <label>Version or build identity
+          <input value={assetVersion} maxLength={180}
+            onChange={e=>setAssetVersion(e.target.value)} placeholder="10.0.x / SHA build"/>
+        </label>
+        <label>Original ANSF source ID
+          <input value={assetSource||reading?.sourceId||''} maxLength={224}
+            onChange={e=>setAssetSource(e.target.value)}
+            placeholder="First open an original source"/>
+        </label>
+        <button type="submit" disabled={assetBusy||!assetName.trim()||
+          !assetVersion.trim()||!(assetSource||reading?.sourceId)}>
+          Choose file and remember hash…</button>
+      </form>
+      <button type="button" disabled={assetBusy||!assetProject.trim()}
+        onClick={()=>void inspectAssets()}>{assetBusy?'Verifying…':'Recheck saved assets'}</button>
+      <div className="ansfAssetRows">
+        {assetRows.map(asset=><article key={asset.recordId}>
+          <strong>{asset.logicalName}</strong><small>{asset.version} · {asset.presence}</small>
+          <code>{asset.location}</code>
+          <small>{asset.bytes} bytes · SHA-256: {asset.sha256}</small>
+        </article>)}
+      </div>
+    </details>
     <div className="ansfHistoryScroll" ref={scrollRef}>
       {hasMore&&<button type="button" onClick={()=>void older()} disabled={busy}>
         {busy?'Loading…':'Load older page'}</button>}
