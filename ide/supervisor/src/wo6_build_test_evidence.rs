@@ -89,7 +89,9 @@ impl Supervisor {
                 JobPhase::Failed => BuildTestStage::Failed,
                 JobPhase::Denied => BuildTestStage::Denied,
                 JobPhase::Completed => BuildTestStage::CompletionRequiresNativeEvidence,
-                JobPhase::RecoveryRequired | JobPhase::Uncertain => BuildTestStage::RecoveryRequired,
+                JobPhase::RecoveryRequired | JobPhase::Uncertain => {
+                    BuildTestStage::RecoveryRequired
+                }
             }
         };
         let receipt = state
@@ -155,21 +157,29 @@ mod tests {
         let (sup, path) = fresh();
         let plan = plan();
         let job = sup.prepare(plan.clone()).unwrap();
-        let a = sup.review_build_test_evidence(
-            &job.job_id,
-            &plan.project_id,
-            &job.plan_sha256,
-            &plan.source_head,
-        ).unwrap();
+        let a = sup
+            .review_build_test_evidence(
+                &job.job_id,
+                &plan.project_id,
+                &job.plan_sha256,
+                &plan.source_head,
+            )
+            .unwrap();
         assert_eq!(a.stage, BuildTestStage::PreparedNoExecution);
         assert!(!a.os_execution_accepted);
         assert!(!a.installed_app_accepted);
         assert!(!a.desktop_run_authorized);
         assert_eq!(a.input_snapshot_sha256, plan.input_snapshot_sha256);
-        sup.record_human_approval(&job.job_id, &job.plan_sha256, &plan.source_head, true).unwrap();
-        let b = sup.review_build_test_evidence(
-            &job.job_id, &plan.project_id, &job.plan_sha256, &plan.source_head
-        ).unwrap();
+        sup.record_human_approval(&job.job_id, &job.plan_sha256, &plan.source_head, true)
+            .unwrap();
+        let b = sup
+            .review_build_test_evidence(
+                &job.job_id,
+                &plan.project_id,
+                &job.plan_sha256,
+                &plan.source_head,
+            )
+            .unwrap();
         assert_eq!(b.stage, BuildTestStage::ReviewedNoExecution);
         assert!(!b.desktop_run_authorized);
         assert_ne!(a.terminal_receipt_hash, b.terminal_receipt_hash);
@@ -179,9 +189,14 @@ mod tests {
         // reconstruct or trust a stale plan from the receipt chain, and do
         // not turn historical review into a post-restart run capability.
         assert_eq!(
-            reopened.review_build_test_evidence(
-                &job.job_id, &plan.project_id, &job.plan_sha256, &plan.source_head
-            ).unwrap_err(),
+            reopened
+                .review_build_test_evidence(
+                    &job.job_id,
+                    &plan.project_id,
+                    &job.plan_sha256,
+                    &plan.source_head
+                )
+                .unwrap_err(),
             SupervisorError::InvalidPlan
         );
         std::fs::remove_file(path).unwrap();
@@ -192,12 +207,17 @@ mod tests {
         let p = plan();
         let job = sup.prepare(p.clone()).unwrap();
         for (project, hash, source) in [
-            ("ide-anotherproject", job.plan_sha256.as_str(), p.source_head.as_str()),
+            (
+                "ide-anotherproject",
+                job.plan_sha256.as_str(),
+                p.source_head.as_str(),
+            ),
             (p.project_id.as_str(), "f", p.source_head.as_str()),
             (p.project_id.as_str(), job.plan_sha256.as_str(), "0"),
         ] {
             assert_eq!(
-                sup.review_build_test_evidence(&job.job_id, project, hash, source).unwrap_err(),
+                sup.review_build_test_evidence(&job.job_id, project, hash, source)
+                    .unwrap_err(),
                 SupervisorError::WrongProjectOrSource
             );
         }
