@@ -83,7 +83,7 @@ def audit(manifest, root, source_sha, signature=native_signature):
         raise Denied("wo6_debugger_not_release_approved")
     root = root.resolve(strict=True)
     evidence = []
-    for item_type in ("installer", "service"):
+    for item_type in ("installer", "service", "desktop"):
         entry = data.get(item_type)
         if not isinstance(entry, dict):
             raise Denied(item_type + "_record_missing")
