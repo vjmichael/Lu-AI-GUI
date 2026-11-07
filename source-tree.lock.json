@@ -209,7 +209,7 @@
     },
     {
       "path": "docs/LU_M2_ANSF_CONVERSATION_CUTOVER_20261107.md",
-      "blob": "4829136693cc91731e7e094ab6c8ff14b6eb3174"
+      "blob": "4815fff412b8ac07fa5405cdbc9e5a6e8fd2f8c3"
     },
     {
       "path": "docs/LU_M2_ANSF_GOAL_CLARIFICATION_CONTINUITY_20261107.md",
@@ -489,11 +489,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "b7e2225959540dc8032c860e40231738edc88972"
+      "blob": "2a1e9965fff3a4586c82d1c8fb6c22c193f00d62"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
-      "blob": "a379ac7507589b8369568f35adb1d878f0ae954e"
+      "blob": "6a129b5289ae58bad028fecf3f0f64cb05c3141d"
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_batch_desktop.rs",
@@ -557,7 +557,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "805edf5689b27450803664b8d38d990176b61870"
+      "blob": "c731435eafdc65afa7796e234768896a1a88e884"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1037,7 +1037,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "aed44abcf7efe610839270d517552ad6c18eeeed"
+      "blob": "7bc60a6338b6bc8320f36cf90df1a91aceb5ac27"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_artifact_links.rs",
@@ -1061,7 +1061,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_live_chat.rs",
-      "blob": "9bad0b7b1b3fd90bf327dd33d466043158cddaa1"
+      "blob": "a4e0cd46f281ac64f5e9eefd30278d720a2c19cd"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_revisions.rs",
