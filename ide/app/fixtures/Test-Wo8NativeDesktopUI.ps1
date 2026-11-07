@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -73,6 +73,48 @@ function Click([string]$label) {
 }
 function Require([string]$text) {
   [void](Find-Control $text '' 15)
+}
+function ProtectedWorkerCount {
+  $count=0
+  foreach($name in @('cargo.exe','rustc.exe','lldb-dap.exe','wo6-selftest.exe')) {
+    $count+=@(Get-CimInstance Win32_Process -Filter ("Name='"+$name+"'") -ErrorAction SilentlyContinue).Count
+  }
+  return $count
+}
+function Wait-WorkerReturnToBaseline([int]$before) {
+  $deadline=(Get-Date).AddSeconds(75)
+  do {
+    $count=ProtectedWorkerCount
+    if ($count -le $before) { return }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+  Deny 'protected_worker_processes_not_reaped'
+}
+function VerifiedInstalledService {
+  $service=Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'" -ErrorAction Stop
+  if ($null -eq $service) { Deny 'installed_protected_service_absent' }
+  $expected=Join-Path (Split-Path $exe) 'resources\recovery\windows_recovery_service.exe'
+  if ($service.PathName.Trim('"') -ine $expected -or
+      $service.StartName -notin @('NT AUTHORITY\LocalService','NT AUTHORITY\LOCAL SERVICE')) {
+    Deny 'service_identity_or_image_not_pinned'
+  }
+  if ((Get-AuthenticodeSignature -LiteralPath $expected).Status -ne 'Valid') {
+    Deny 'installed_service_signature_invalid'
+  }
+  return $service
+}
+function Start-ProtectedSlowTest {
+  Click 'Job requests'
+  Require 'Protected Run / Test'
+  $recipe=Find-Control 'Recipe' 'ComboBox' 20
+  if (!$recipe.Current.IsKeyboardFocusable) { Deny 'native_recipe_picker_not_focusable' }
+  $recipe.SetFocus()
+  [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{DOWN}{ENTER}')
+  $action=Find-Control 'Request protected Run / Test' 'Button' 30
+  if (!$action.Current.IsEnabled) { Deny 'protected_cargo_worker_not_ready' }
+  Click 'Request protected Run / Test'
+  Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+  [void](Find-Control 'Cancel and verify process-tree termination' 'Button' 30)
 }
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
   $deadline=(Get-Date).AddSeconds(35)
@@ -169,6 +211,73 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
+    if ($Scenario -in @('ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial')) {
+      $sign=Get-AuthenticodeSignature -LiteralPath $exe
+      if ($sign.Status -ne 'Valid' -or !$sign.SignerCertificate) {
+        Deny 'protected_recovery_requires_actual_signed_app'
+      }
+      $initial=ProtectedWorkerCount
+      $installedService=VerifiedInstalledService
+      Click 'Job requests'
+      Require 'Protected Run / Test'
+      $recipe=Find-Control 'Recipe' 'ComboBox' 25
+      $recipe.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{DOWN}{ENTER}')
+      $allow=Find-Control 'Request protected Run / Test' 'Button'
+      if (!$allow.Current.IsEnabled) { Deny 'native_protected_test_unavailable' }
+      Click 'Request protected Run / Test'
+      if ($Scenario -eq 'ProtectedTamperDenial') {
+        $tamper=Join-Path $fixed 'src\\main.rs'
+        if (!(Test-Path $tamper)) { Deny 'missing_cargo_source_tamper_fixture' }
+        [IO.File]::AppendAllText($tamper,"\`n// WO8_TAMPER_AFTER_PLAN_BEFORE_CONSENT\`n")
+        Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+        [void](Find-Control 'Protected build/test was denied or failed' '' 40)
+        Wait-WorkerReturnToBaseline $initial
+        Write-Host 'WO8_INSTALLED_CHANGED_SOURCE_DENIED_BEFORE_WORKER=PASS'
+      } else {
+        Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+        [void](Find-Control 'Cancel and verify process-tree termination' 'Button' 40)
+        if ($Scenario -eq 'ProtectedCancellation') {
+          Click 'Cancel and verify process-tree termination'
+          Wait-WorkerReturnToBaseline $initial
+          [void](Find-Control 'Protected' '' 25)
+          Write-Host 'WO8_INSTALLED_NATIVE_CANCEL_AND_PROCESS_TREE_REAP=PASS'
+        } elseif ($Scenario -eq 'ProtectedHostCrash') {
+          $previousId=$proc.Id
+          Stop-Process -Id $previousId -Force -ErrorAction Stop
+          $proc.WaitForExit(10000) | Out-Null
+          Wait-WorkerReturnToBaseline $initial
+          $proc=Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
+          Require 'Workspace projects'
+          Require (Split-Path $fixed -Leaf)
+          Click 'Job requests'
+          Require 'Protected Run / Test'
+          $inspected=VerifiedInstalledService
+          Write-Host 'WO8_INSTALLED_HOST_CRASH_NATIVE_REAP_AND_RESTART=PASS'
+        } elseif ($Scenario -eq 'ProtectedServiceCrash') {
+          $broker=VerifiedInstalledService
+          if ($broker.State -ne 'Running' -or $broker.ProcessId -le 0) {
+            Deny 'cannot_inject_real_running_protected_service_crash'
+          }
+          Stop-Process -Id $broker.ProcessId -Force -ErrorAction Stop
+          Start-Sleep -Seconds 2
+          if ((Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'").ProcessId -eq $broker.ProcessId) {
+            Deny 'real_service_crash_not_observed'
+          }
+          # The protected host must deny or quarantine further execution.
+          $cancel=$null
+          try { $cancel=Find-Control 'Cancel and verify process-tree termination' 'Button' 5 } catch {}
+          if ($cancel -and $cancel.Current.IsEnabled) { Click 'Cancel and verify process-tree termination' }
+          Wait-WorkerReturnToBaseline $initial
+          & sc.exe start LuIdeRecoveryBroker | Out-Null
+          if ($LASTEXITCODE -ne 0) { Deny 'service_restart_denied_after_crash' }
+          Start-Sleep -Seconds 2
+          $restored=VerifiedInstalledService
+          if ($restored.State -ne 'Running') { Deny 'service_restart_not_healthy' }
+          Write-Host 'WO8_INSTALLED_PROTECTED_SCM_CRASH_AND_WORKER_REAP=PASS'
+        }
+      }
+    }
     if ($Scenario -eq 'ProtectedBuildDebug') {
       # Only on explicitly selected real signed WO7 candidate on native Windows.
       # The true one-use Tauri OS confirmation is driven through UI Automation;
