@@ -161,7 +161,7 @@
     },
     {
       "path": "docs/LU_P08_ARCHIVE_SPLIT.md",
-      "blob": "7b35d40369962742513f4bc105bc40e8009a41b4"
+      "blob": "efe7cd1849e00ea689e10e356db9d339949cc59a"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -1209,7 +1209,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_split.rs",
-      "blob": "3605c33aadc0bef1941872a989025df831dfa4b4"
+      "blob": "f69021b59c4ed277ae597dbf96d21bd5b31915b6"
     },
     {
       "path": "src-tauri/lu-core/src/native_archive_tree.rs",
@@ -1841,7 +1841,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_split.rs",
-      "blob": "a8b8e959c0cbc30b06941bbf5498fd4f0b216a8d"
+      "blob": "2a6f093d184b7c0084d3e5903224f14b40955cf9"
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_tree.rs",
