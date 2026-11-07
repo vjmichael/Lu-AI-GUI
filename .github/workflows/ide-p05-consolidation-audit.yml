@@ -1,0 +1,49 @@
+name: IDE P05 immutable PR, source exception and CI preservation audit
+on:
+  pull_request:
+    paths:
+      - 'ide/packaging/p05-*'
+      - 'ide/packaging/verify_p05_pr_inventory.py'
+      - 'ide/packaging/test_verify_p05_pr_inventory.py'
+      - 'ide/docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md'
+      - 'ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md'
+      - 'ide/PROJECT_STATE.md'
+      - 'ide/CHANGELOG.md'
+      - '.github/workflows/ide-p05-consolidation-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  historical-source-and-critical-ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact reviewed PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Enforce 30 retained PR identities and 38 source-pinned IDE workflows
+        run: >-
+          python ide/packaging/verify_p05_pr_inventory.py
+          --repo-root .
+          --pr-inventory ide/packaging/p05-pr-source-audit.json
+          --workflow-inventory ide/packaging/p05-workflow-coverage.json
+      - name: Hostile closed-PR, missing-workflow, deferred bridge and false-native regression
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_p05_pr_inventory.py' -v
+      - name: Audit result scope
+        run: echo "P05_SOURCE_PROVENANCE_ONLY_0_PR_CLOSURES_0_NATIVE_GATE_REPLACEMENTS_NO_RELEASE_APPROVAL"
