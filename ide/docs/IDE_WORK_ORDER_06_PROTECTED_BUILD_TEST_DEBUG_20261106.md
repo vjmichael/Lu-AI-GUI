@@ -1,3 +1,29 @@
+## WO6 closeout evidence checkpoint — 2026-11-06 (CI running 2026-11-07 UTC)
+
+**WO6 remains OPEN and draft, not release enabled.** This section records actual kernel/installer evidence, not a future claim.
+
+### Native acceptance obtained
+
+- **Linux protected Cargo normal check:** completed with OS exit 0 inside a real systemd-delegated cgroup-v2 and Bubblewrap sandbox; process tree was verified empty and D3 journal was replayed.
+- **Linux protected Cargo tests:** completed with OS exit 0 under the same real controls and durable terminal receipt.
+- **Linux protected Cargo cancellation:** recorded `CancelRequested`, kernel process-tree kill and `Cancelled`; surviving D3 journal replay matched. [Native job run 42340446866](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42340446866) proved all three modes, reconfirmed by [42341239874](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42341239874).
+- Missing `/etc/alternatives/cc` inside the restricted namespace was resolved using a versioned, root-owned GNU linker chosen from a fixed allowlist, added to the native toolchain SHA fingerprint; no writable `/etc`, network, PATH search or unconfined fallback.
+- The default **unsigned** Windows NSIS installer was actually installed, launched twice and uninstalled in prior acceptance [42339662353](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42339662353). This does **not** demonstrate positive native debugger installation.
+
+### Native LLDB-DAP repair and verification still open
+
+- Linux three-way genuine LLDB-DAP `initialize` protocol probe passed from: (1) distro original, (2) root-owned copied bundle and (3) copied bundle within the real read-only Bubblewrap namespace. No project/debuggee execution was used for the preflight.
+- Under the original kernel `pids.max=4`, the actual contained debugger exited early. Cgroup PIDs count threads; `dap_lldb_fixed` was increased to **16 kernel tasks**, within the supervisor's existing maximum (no change to CPU/memory/network/FS controls or native cleanup). This resulted in actual protocol output from the kernel-contained LLDB-DAP, proving its launch and pipe boundary.
+- The strict DAP parser then rejected a native message; bounded adapter-assigned `seq=0` is now accepted while **positive, one-use, exact `request_seq` response correlation remains mandatory**, and only standard nonexecuting informational events are ignored without passing their contents to the editor. Reverse terminal, evaluate, path/target input, arbitrary launch and shell requests remain denied. Hostile unit cases cover server sequence zero and forged uncorrelated replies.
+- The current genuine Windows/Linux normal+cancel+restart retest is [42341808568](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42341808568), queued at this documentation checkpoint. No stopped thread, stackTrace, release receipt or Windows native acceptance is credited until it passes. Native Linux quota diagnostics expose only boolean kernel PID/OOM hits, not raw process data.
+
+### Release blockers and WO boundaries
+
+- **Not done:** exact-head Windows restricted SCM/AppContainer LLDB-DAP execution, real native Linux stopped-thread/stack and cancellation, installed debugger feature Run/Cancel/host-crash reconciliation, and hostile native OS probes involving the debugger.
+- **Not done:** independently reviewed signed LLDB-DAP distributions with transitive licenses, package identity/signatures and verifiable published SHA pins. The independent release manifest intentionally has `releaseApproved=false`; it must not be edited to fake an approval. Signed redistribution belongs to WO7, broader installed-app release acceptance to WO8, but native WO6 worker evidence is still this work order's gate.
+- **Never waive:** native one-use approval, exact source snapshot, cgroup/Job kernel confinement, strict resource limits, cancellation-before-kill receipt, process-tree verification and quarantine on failure.
+
+---
 # IDE WO6 — Protected Build/Test and Debugger Work Order
 
 **Current state: implementation complete for the planned guarded operations; independent native OS and release acceptance NOT fully closed.** Draft PR #70 stacks on WO5 PR #69. This document distinguishes code from independently observed execution; neither source CI nor fixture hashes are a release signature. WO4 delegated cgroup and WO5 native language-server admission remain separate open dependencies.
