@@ -13,6 +13,8 @@
 pub mod linux_worker;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
+#[cfg(feature = "dap-transport")]
+mod dap_transport;
 pub mod snapshot;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
@@ -120,7 +122,8 @@ fn validate_plan(value: &JobPlan) -> bool {
             && matches!(
                 value.recipe_id.as_str(),
                 "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
-            )))
+            )) || (cfg!(feature = "dap-transport")
+            && value.recipe_id == "dap_lldb_fixed"))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
         && hex_sha(&value.manifest_sha256, 64)
@@ -137,6 +140,12 @@ fn validate_plan(value: &JobPlan) -> bool {
             cfg!(feature = "lsp-transport")
                 && value.effect_class == "language_analysis_isolated"
                 && value.runtime_limit_ms <= 5 * 60_000
+                && value.process_limit <= 4
+                && value.log_limit_bytes <= 64 * 1024
+        } else if value.recipe_id == "dap_lldb_fixed" {
+            cfg!(feature = "dap-transport")
+                && value.effect_class == "debug_inspection_isolated"
+                && value.runtime_limit_ms <= 3 * 60_000
                 && value.process_limit <= 4
                 && value.log_limit_bytes <= 64 * 1024
         } else {
