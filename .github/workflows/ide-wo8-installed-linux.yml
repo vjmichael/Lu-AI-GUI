@@ -19,12 +19,17 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+      - name: Verify exact source checkout for native installed package
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - name: Install native Linux Tauri and graphical acceptance prerequisites
         run: |
           sudo apt-get update -qq
