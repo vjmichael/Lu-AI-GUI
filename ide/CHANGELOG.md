@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P05 E2 installed CI repair (Nov 7, 2026):** Investigated E2 Windows NSIS native CI failure: Tauri's P04 `verification-notices` resource was absent in two older smoke build workflows. Added prebuild actual resolved licenses and exact-package SHA/license receipts to both E2 variants, kept all installed UI test steps and strengthened missing-artifact denial. Audited original and replacement workflow Git blob SHAs; new native OS retest still required. P05 phase remains source audit complete / PR-ops reductions gated behind native acceptance.
+
+
 - **P05 — GitHub source and CI consolidation inventory (Nov 7, 2026):** Created separate P05 branch stacked on P04; audited all **30 currently open IDE PRs** (78 total open repository PRs) against P04 exact Git tree, pinning original heads and unique source SHA-1s. #43/#45 buffer identity, #46 Find in Project remain unported; #76 WO10 explicitly deferred. All 38 IDE workflows remain preserved and source-pinned; Windows/Linux P05 hostile inventory CI rejects premature PR closures, fake native evidence and dropped source/security gates. Semantic code/CI comparisons, native P02–P04 acceptance and resulting individual PR/CI reduction remain outstanding; **zero PRs closed and zero workflows disabled**. [P05 report](docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md).
 
 

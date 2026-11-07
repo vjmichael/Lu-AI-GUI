@@ -77,19 +77,23 @@
     },
     {
       "path": ".github/workflows/ide-e2-supervised-lsp.yml",
-      "blobSha": "6b922291b4bc8eab1d164f121cccc329c12a4f96",
+      "blobSha": "dded4b6d56240766153fd0039e0a906177b266ae",
       "disposition": "retain_until_verified_replacement",
-      "criticalNativeOrReleaseEvidence": false,
+      "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
-      "prTriggerPruningAuthorized": false
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "6b922291b4bc8eab1d164f121cccc329c12a4f96",
+      "reviewedRepair": "P04 resolved license resource preparation and exact unsigned installer/notice SHA receipt; no security/installed gate removed"
     },
     {
       "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
-      "blobSha": "02fae6f43669b03cb2bf96758a13ae366dd91ab1",
+      "blobSha": "9d86a31ae02234e148d3c768e326d31e84d51a6f",
       "disposition": "retain_until_verified_replacement",
-      "criticalNativeOrReleaseEvidence": false,
+      "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
-      "prTriggerPruningAuthorized": false
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "02fae6f43669b03cb2bf96758a13ae366dd91ab1",
+      "reviewedRepair": "P04 resolved license resource preparation and exact unsigned installer/notice SHA receipt; no security/installed gate removed"
     },
     {
       "path": ".github/workflows/ide-p02-native-checks.yml",
@@ -310,5 +314,14 @@
   ],
   "nativeReleaseSecurityClosure": "pending",
   "reason": "No P02–P04 exact-head independently accepted replacement; preserve all 38 workflow source blobs and their run histories.",
-  "releaseApproved": false
+  "releaseApproved": false,
+  "reviewedSourceRepair": {
+    "description": "Two E2 native installed-smoke build paths were red because P04 Tauri resources require verification-notices; added resolved licenses + strict artifact receipts and no deleted tests.",
+    "workflowPaths": [
+      ".github/workflows/ide-e2-supervised-lsp.yml",
+      ".github/workflows/ide-e2-unsigned-installed-smoke.yml"
+    ],
+    "originalBaseCandidateSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+    "nativeInstalledAcceptance": "pending"
+  }
 }

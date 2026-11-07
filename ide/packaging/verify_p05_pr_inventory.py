@@ -106,6 +106,18 @@ def check_snapshot(prs:dict,workflows:dict):
                 or type(item.get("criticalNativeOrReleaseEvidence")) is not bool):
             raise Denied("missing_or_prematurely_disabled_ci_gate")
         seen_paths.add(path)
+    original_e2_pins={
+        ".github/workflows/ide-e2-supervised-lsp.yml": "6b922291b4bc8eab1d164f121cccc329c12a4f96",
+        ".github/workflows/ide-e2-unsigned-installed-smoke.yml": "02fae6f43669b03cb2bf96758a13ae366dd91ab1",
+    }
+    for item in rows:
+        if item["path"] in original_e2_pins:
+            if (item.get("originalBlobSha")!=original_e2_pins[item["path"]]
+                    or item.get("reviewedRepair")!="P04 resolved license resource preparation and exact unsigned installer/notice SHA receipt; no security/installed gate removed"
+                    or item.get("criticalNativeOrReleaseEvidence") is not True):
+                raise Denied("reviewed_e2_ci_repair_provenance_missing")
+        elif "originalBlobSha" in item or "reviewedRepair" in item:
+            raise Denied("unreviewed_historical_ci_rewrite")
     for key in ("ide-p03-native-security-checks.yml","ide-wo6-native-os-acceptance.yml",
                 "ide-e2-native-lsp.yml","ide-wo7-signed-release-preflight.yml",
                 "ide-wo8-installed-windows.yml","ide-wo8-installed-linux.yml",

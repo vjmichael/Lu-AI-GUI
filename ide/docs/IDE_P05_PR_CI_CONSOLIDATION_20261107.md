@@ -88,3 +88,9 @@ P05 `verify_p05_pr_inventory.py` reads both pin sets, rejects forged PR closure/
 - [ ] Close P05 source audit when CI passes and final disposition/reduction is genuinely evidenced; otherwise mark P05 **OPEN**, not a forced green phase.
 
 **Stop at P05. P06 has not started. P07/WO10 remains deferred.**
+
+## E2 native installed workflow repair — no CI security reduction
+
+[P05 exact-head run 42411301514](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42411301514) found E2's two protocol/editor checks and Windows native Tauri host passed, but the installed Windows NSIS smoke failed with `resource path verification-notices doesn't exist`. P04 had introduced a required embedded legal notice resource; two older E2 workflows built their NSIS package without preparing it. Both now run the actual resolved dependency license collector before Tauri packaging, verify the exact package SHA and notice bytes after build, and upload installers **with** their notice bundles and SHA receipts. Missing files fail closed. No installed smoke, containment check, workflow, job or permission was deleted. The workflow source inventory records both previous Git blob SHAs, their revised Git blob SHAs and the precise bounded review reason. **Real installed E2 retest of this new head remains open.**
+
+P05 audit source CI passed on **both Windows and Linux** at `43bfbc9772b50db1d8b38aa554cccbaa15d421c2` with 12 hostile tests each. The updated E2 workflow audit and new 13th negative test require a new exact-head run; prior green evidence is not transferable.

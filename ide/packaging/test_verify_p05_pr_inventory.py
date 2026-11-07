@@ -47,6 +47,12 @@ class CloseoutInventoryTests(unittest.TestCase):
     def test_pending_native_ci_not_unilaterally_removed(self):
         self.denied(lambda a,b:b["requiredWorkflows"].pop(),
             "workflow_gate_coverage_incomplete")
+    def test_e2_installed_smoke_repair_keeps_original_blob_provenance(self):
+        def mutate(a,b):
+            for row in b["requiredWorkflows"]:
+                if row["path"]==".github/workflows/ide-e2-supervised-lsp.yml":
+                    row.pop("originalBlobSha")
+        self.denied(mutate,"reviewed_e2_ci_repair_provenance_missing")
     def test_cannot_falsely_assert_native_wo6_is_replaced(self):
         self.denied(lambda a,b:b["requiredWorkflows"][0].update(replacementAccepted=True),
             "missing_or_prematurely_disabled_ci_gate")

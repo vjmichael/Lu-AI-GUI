@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## P05 E2 native workflow compatibility repair — November 7, 2026
+
+Two older E2 unsigned installed Windows NSIS workflows were missing required P04 legal resource staging and failed before running installed GUI smoke. P05 now builds exact-source resolved license evidence, includes it in the installer, emits verified package/notice hashes and preserves native installed test steps. Original and reviewed replacement Git blob SHAs are tracked, not silently rewritten. P05's Windows/Linux source audit passed on prior head; native installed E2 revalidation is still outstanding. No security or installed test was disabled.
+
 ## P05 exact GitHub source and CI consolidation — November 7, 2026
 
 **P05 in progress, P03/P04 independently open.** A dedicated release-closeout P05 branch stacked on P04 exact head `bc4fd78685c342675e4a80556970e934125a0e20` has inventoried **30 open IDE PRs among 78 open repository PRs**, recording exact branch SHA, base, historical source path, different Git blobs and candidate omissions. Parallel #43/#45 buffer identity/installed proof and #46 Find in Project remain genuinely unported; #76 WO10 contract remains excluded until Lu Core v1.0. All **38 native/source/signed IDE workflows** at P04 source are Git-blob-pinned and retained. Windows/Linux P05 source audit CI refuses unsupported PR closures, dropped native workflow evidence, false signed acceptance and accidental WO10 import. Source checks are not native acceptance, and semantic comparison plus actual PR/CI reduction cannot be marked complete before prior P02–P04 gate acceptance. **No PR closed, retargeted or merged; no protected CI disabled.** [P05 full audit](docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md).
