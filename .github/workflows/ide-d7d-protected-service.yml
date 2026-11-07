@@ -41,6 +41,21 @@ jobs:
             (Resolve-Path 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1').Path,
             [ref]$tokens, [ref]$errors) | Out-Null
           if (@($errors).Count -ne 0) { throw 'DENIED: protected installer parse failed' }
+      - name: Parse native hostile observers before privileged service installation
+        shell: pwsh
+        run: |
+          foreach ($path in @(
+            'ide/supervisor/fixtures/Test-D7DProtectedServiceCrash.ps1',
+            'ide/supervisor/fixtures/Test-D7DProtectedServiceLoss.ps1'
+          )) {
+            $tokens=$null
+            $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if (@($errors).Count -ne 0) {
+              throw "DENIED: native hostile observer syntax invalid: $path"
+            }
+          }
       - name: Real SCM LocalService identity and IPC acceptance
         shell: pwsh
         run: |
