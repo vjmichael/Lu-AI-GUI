@@ -63,6 +63,8 @@ test('P06 native WGC process instance is verified, generic picker stays unverifi
   const scheduler=read('../../src-tauri/lu-core/src/native_background_scheduler.rs');
   assert.match(worker,/OpenProcess\(PROCESS_QUERY_LIMITED_INFORMATION,false,pid\)/);
   assert.match(worker,/GetProcessTimes/);
+  assert.match(worker,/struct ProcessQueryHandle\(HANDLE\)/);
+  assert.match(worker,/CloseHandle\(self\.0\)/);
   assert.match(worker,/process_instance::born_at\(pid\)\?!=born/);
   assert.match(worker,/foreground_identity:Option<\(usize,u32,u64\)>/);
   assert.match(worker,/\(nonce\.into_owned\(\),None\)/);
