@@ -65,6 +65,14 @@ jobs:
             ide/app/src-tauri/verification-package-receipt.json
           if-no-files-found: error
           retention-days: 7
+      - name: Prove actual native Debian installer failure and restore previous version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: native dpkg test requires one exact unsigned package'; exit 2; }
+          bash ide/app/fixtures/Test-P04UnsignedDebBrokenUpgrade.sh "${packages[0]}"
       - name: Real Debian installation GTK/X11 window and package removal
         shell: bash
         run: |

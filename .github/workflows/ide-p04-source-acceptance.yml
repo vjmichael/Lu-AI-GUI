@@ -69,6 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n ide/app/fixtures/Test-P04SignedDebTransition.sh
+          bash -n ide/app/fixtures/Test-P04UnsignedDebBrokenUpgrade.sh
           python3 -m py_compile ide/app/fixtures/wo8_linux_editor_atspi.py
       - name: Scope
         run: echo "P04_SOURCE_ONLY_NO_SIGNING_KEYS_SIGNED_INSTALL_OR_BROKEN_UPGRADE_ROLLBACK_ACCEPTED"
