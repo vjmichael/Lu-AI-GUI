@@ -9,6 +9,7 @@
 pub mod browser;
 pub mod capabilities;
 pub mod continuity;
+pub mod dap_session;
 pub mod editor;
 pub mod execution_intents;
 pub mod git_evidence;
