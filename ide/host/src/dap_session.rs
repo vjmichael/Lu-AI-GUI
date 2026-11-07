@@ -486,7 +486,7 @@ mod tests {
         assert_eq!(session.receive(&framed(json!({
             "seq":5,"type":"response","request_seq":2,
             "command":"launch","success":true
-        })).unwrap(), vec![DapEvent::LaunchAcknowledged]);
+        }))).unwrap(), vec![DapEvent::LaunchAcknowledged]);
     }
 
     #[test]
