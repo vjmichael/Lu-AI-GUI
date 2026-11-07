@@ -613,6 +613,26 @@ mod tests{
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn bounded_model_context_skips_old_entries_and_unfinished_assistant(){
+        let root=tmp();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        for i in 0..128{
+            store.append_user(&chat.chat_id,&format!("Turn {i}")).unwrap();
+        }
+        let gen=format!("g-{:032x}",42);
+        store.append_progress(&chat.chat_id,&gen,"Interrupted partial").unwrap();
+        let recent=store.recent_model_history(&chat.chat_id,16).unwrap();
+        assert_eq!(recent.len(),16);
+        assert_eq!(recent[0].text,"Turn 112");
+        assert_eq!(recent[15].text,"Turn 127");
+        assert!(!recent.iter().any(|m|m.interrupted||m.text.contains("partial")));
+        assert_eq!(store.history(&chat.chat_id).unwrap().len(),129);
+        assert!(store.recent_model_history(&chat.chat_id,129).is_err());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn flat_r14_no_index_is_visible_without_new_permission(){
         let root=tmp();
         fs::create_dir_all(&root).unwrap();
