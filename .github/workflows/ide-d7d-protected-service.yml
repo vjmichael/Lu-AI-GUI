@@ -64,9 +64,11 @@ jobs:
             # Only in disposable native CI, after baseline authenticated IPC
             # and no active workers: grant NUL DACL management exclusively to
             # the separately restricted fixed SCM service identity.
+            # Mark teardown required BEFORE the mutating call. A partial
+            # Win32 grant/readback failure can still have changed the DACL.
+            $nulBootstrapGranted=$true
             & $bootstrap --grant-fixed-service
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL bootstrap failed' }
-            $nulBootstrapGranted=$true
             & $bootstrap --verify-fixed-service
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: service-only NUL ACL not verified' }
             & $hostExe $service $serviceHash --nul-overlap
