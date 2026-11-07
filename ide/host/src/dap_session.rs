@@ -147,10 +147,13 @@ impl DapSession {
             return Err(DapError::InvalidMessage);
         }
         self.phase = DapPhase::Launching;
-        self.request("launch", json!({
-            "program": program, "stopOnEntry": true, "noDebug": false,
-            "args": [], "env": {}, "runInTerminal": false
-        }))
+        self.request(
+            "launch",
+            json!({
+                "program": program, "stopOnEntry": true, "noDebug": false,
+                "args": [], "env": {}, "runInTerminal": false
+            }),
+        )
     }
 
     /// Read-only inspection of a debugger whose target was separately approved.
@@ -327,9 +330,12 @@ impl DapSession {
                         }
                         Ok(None)
                     }
-                    "stopped" if matches!(
-                        self.phase, DapPhase::Ready | DapPhase::Launching | DapPhase::Stopped
-                    ) => {
+                    "stopped"
+                        if matches!(
+                            self.phase,
+                            DapPhase::Ready | DapPhase::Launching | DapPhase::Stopped
+                        ) =>
+                    {
                         let thread_id = obj
                             .get("body")
                             .and_then(|b| b.get("threadId"))
@@ -462,31 +468,44 @@ mod tests {
             "command":"initialize","success":true
         }));
         session.receive(&resp).unwrap();
-        session.receive(&framed(json!({
-            "seq":3,"type":"event","event":"initialized"
-        }))).unwrap();
+        session
+            .receive(&framed(json!({
+                "seq":3,"type":"event","event":"initialized"
+            })))
+            .unwrap();
         assert_eq!(session.phase(), DapPhase::Ready);
         assert_eq!(
             session.launch_fixed_fixture("/tmp/other").unwrap_err(),
             DapError::InvalidMessage
         );
         assert_eq!(
-            session.launch_fixed_fixture("/ls/debuggee/../secrets").unwrap_err(),
+            session
+                .launch_fixed_fixture("/ls/debuggee/../secrets")
+                .unwrap_err(),
             DapError::InvalidMessage
         );
-        let wire = session.launch_fixed_fixture("/ls/debuggee/wo6-selftest").unwrap();
+        let wire = session
+            .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+            .unwrap();
         assert!(std::str::from_utf8(&wire).unwrap().contains("stopOnEntry"));
         assert_eq!(session.phase(), DapPhase::Launching);
-        let observed = session.receive(&framed(json!({
-            "seq":4,"type":"event","event":"stopped",
-            "body":{"reason":"entry","threadId":1}
-        }))).unwrap();
-        assert_eq!(observed, vec![DapEvent::Stopped { thread_id:1 }]);
+        let observed = session
+            .receive(&framed(json!({
+                "seq":4,"type":"event","event":"stopped",
+                "body":{"reason":"entry","threadId":1}
+            })))
+            .unwrap();
+        assert_eq!(observed, vec![DapEvent::Stopped { thread_id: 1 }]);
         assert_eq!(session.phase(), DapPhase::Stopped);
-        assert_eq!(session.receive(&framed(json!({
-            "seq":5,"type":"response","request_seq":2,
-            "command":"launch","success":true
-        }))).unwrap(), vec![DapEvent::LaunchAcknowledged]);
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":5,"type":"response","request_seq":2,
+                    "command":"launch","success":true
+                })))
+                .unwrap(),
+            vec![DapEvent::LaunchAcknowledged]
+        );
     }
 
     #[test]
