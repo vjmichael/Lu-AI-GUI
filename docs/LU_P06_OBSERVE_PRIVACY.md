@@ -1,5 +1,14 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 future reviewed-region sanitization and independent evidence hardening
+
+- **Zero-default image compositor (source only):** New `approved_regions_only_bgra` copies pixels exclusively inside a bounded list of individually reviewed regions into a newly allocated, fully zeroed BGRA image. Missing/invalid/overflowing regions refuse to produce *any* output buffer; D3D row padding and all outside pixels stay zero. Existing region-mask algorithm still available. This is intentionally **not connected** to WGC receipt, UI preview or model media; no trusted user-reviewed region grant or source/coordinate attestation exists yet.
+- **GUI verifier:** The existing typed expected-vs-running independent comparator now refuses an extra observation/check ID outside the approved intended test plan rather than ignoring it. Rust tests and focused native Windows/Linux CI now cover this.
+- **GPU resource observation (physical harness option):** `verify-observe-installed-windows.ps1 -SampleGpuMemory` requires the manual worker lifecycle trial; when a real OS worker is seen, the harness queries Windows GPU Process Memory local-usage counters matching its PID. Missing driver counters are `UNAVAILABLE`, invalid measurements `INCONCLUSIVE`, and measurements are labeled **OS observed only**. `gpuQuotaVerified=false` always: no enforced VRAM admission, no absolute adapter memory claim and no GPU-free assertion.
+- **Restart correctness:** Native physical restart now checks the new process creation FILETIME rather than rejecting valid PID reuse.
+
+These changes improve defensive groundwork and verifiability but cannot be called complete sensitive-region detection, approved screenshot delivery, physical installed acceptance, or production GPU resource management.
+
 ## P06 real Windows OS source and privacy-denial test fixtures
 
 The focused Windows native P06 suite now queries the OS `GetProcessTimes` creation FILETIME for its **actual runner process** twice (stable positive identity) and rejects zero PID. A separate PowerShell subprocess invokes the read-only UIA password probe with invalid HWND zero and requires a nonzero native exit code without a WGC source or UI traversal. These are real native Windows OS/API and refusal tests, not physical interactive source/GUI acceptance. Generic picker, complete sensitive region coverage and installed NSIS remain OPEN.

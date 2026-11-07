@@ -86,6 +86,12 @@ pub fn compare_intended_to_running(
             !token(&c.check_id)||c.observed_value.len()>1024){
         return inconclusive("Ambiguous or invalid witness identity");
     }
+    // Ignore no extra "observations" just because every expected check
+    // happens to match. Unexpected IDs can hide a contradictory app-provided
+    // result and are never part of the user-approved test contract.
+    if actual.checks.iter().any(|c|!ids.contains(&c.check_id)){
+        return inconclusive("Evidence contains checks not in intended plan");
+    }
     if !actual.os_app_identity_attested{
         return inconclusive("Running application identity not OS-attested");
     }
@@ -191,6 +197,19 @@ mod tests{
         assert_eq!(compare_intended_to_running(&build(),&w).verdict,Verdict::Inconclusive);
         w=witness();w.os_app_identity_attested=false;
         assert_eq!(compare_intended_to_running(&build(),&w).verdict,Verdict::Inconclusive);
+    }
+    #[test]
+    fn extra_unplanned_or_model_supplied_evidence_cannot_pass(){
+        let mut evidence=witness();
+        evidence.checks.push(WitnessedCheck{
+            check_id:"unplanned-model-pass".into(),
+            proof:ProofKind::NativeOutcome,
+            observed_value:"PASS".into(),
+            independently_attested:true,
+        });
+        let report=compare_intended_to_running(&build(),&evidence);
+        assert_eq!(report.verdict,Verdict::Inconclusive);
+        assert_eq!(report.reason,"Evidence contains checks not in intended plan");
     }
     #[test]
     fn duplicate_or_model_claimed_evidence_never_passes(){

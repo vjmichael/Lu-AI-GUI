@@ -153,3 +153,21 @@ test('P06 real native OS birth and sensitive UIA refusal tests run on Windows',(
   assert.match(ci,/Refuse untrusted native HWND privacy probe without accessibility scan/);
   assert.match(ci,/if\(\$child\.ExitCode -eq 0\)\{throw 'Invalid OS HWND incorrectly accepted/);
 });
+
+test('P06 zero-default approved BGRA region extraction and external GPU counter do not bypass native privacy',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const script=read('../../scripts/verify-observe-installed-windows.ps1');
+  const gui=read('../../src-tauri/lu-core/src/native_gui_verification.rs');
+  const ci=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  assert.match(worker,/fn approved_regions_only_bgra/);
+  assert.match(worker,/approved\.is_empty\(\)\|\|approved\.len\(\)>MAX_APPROVED/);
+  assert.match(worker,/reviewed_region_export_defaults_to_black_and_never_copies_pitch_padding/);
+  assert.match(worker,/invalid_or_unreviewed_region_cannot_produce_any_pixel_buffer/);
+  assert.doesNotMatch(worker,/approved_regions_only_bgra\(width,height,row_pitch,buffer/);
+  assert.match(script,/\[switch\]\$SampleGpuMemory/);
+  assert.match(script,/Get-Counter '\\GPU Process Memory\(\*\)\\Local Usage'/);
+  assert.match(script,/gpuQuotaVerified=\$false/);
+  assert.match(script,/OS_GPU_PROCESS_COUNTER_OBSERVED_ONLY/);
+  assert.match(gui,/Evidence contains checks not in intended plan/);
+  assert.match(ci,/native_gui_verification::tests/);
+});

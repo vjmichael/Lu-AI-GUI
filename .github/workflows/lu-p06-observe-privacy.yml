@@ -44,6 +44,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
       - name: Test independent evidence and awareness replay protections
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
+      - name: Test independently pinned GUI outcome comparison
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
       - name: Test seven-day retention and migration preserving legacy note rows
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p06_ -- --nocapture
       - name: Test baseline chat-scoped durable note authority

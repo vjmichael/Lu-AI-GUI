@@ -66,6 +66,51 @@ fn mask_sensitive_bgra_regions(
     true
 }
 
+/// Zero-by-default extraction for a FUTURE separately consented,
+/// source-attested selected-region preview. The caller must obtain an
+/// independent native user review and exact WGC source/coordinate binding
+/// before authorizing ANY region. This primitive itself grants nothing;
+/// it is intentionally NOT called from the active WGC capture path.
+#[derive(Clone,Copy,Debug)]
+#[allow(dead_code)]
+struct ApprovedBgraRect{left:u32,top:u32,width:u32,height:u32}
+#[allow(dead_code)]
+fn approved_regions_only_bgra(
+    width:u32,height:u32,row_pitch:u32,src:&[u8],
+    approved:&[ApprovedBgraRect]
+)->Option<Vec<u8>>{
+    const MAX_APPROVED:usize=64;
+    if approved.is_empty()||approved.len()>MAX_APPROVED
+        ||!frame_geometry_valid(width,height,row_pitch,src.len()){
+        return None;
+    }
+    // Validate *every* region before touching raw pixels or allocating an
+    // output frame. Reject overflow and any inconsistent source geometry.
+    for rect in approved {
+        if rect.width==0||rect.height==0
+            ||rect.left.checked_add(rect.width).is_none_or(|v|v>width)
+            ||rect.top.checked_add(rect.height).is_none_or(|v|v>height){
+            return None;
+        }
+    }
+    let pitch=row_pitch as usize;
+    let size=pitch.checked_mul(height as usize)?;
+    let mut sanitized=vec![0u8;size];
+    // No implicit full-frame copy. BGRA outside the reviewed regions and
+    // every byte of D3D11 row-pitch padding stay zero, even when source
+    // padding contains driver bytes.
+    for rect in approved {
+        let left=rect.left as usize*4;
+        let right=(rect.left+rect.width) as usize*4;
+        for y in rect.top..rect.top+rect.height{
+            let offset=y as usize*pitch;
+            sanitized[offset+left..offset+right]
+                .copy_from_slice(&src[offset+left..offset+right]);
+        }
+    }
+    Some(sanitized)
+}
+
 /// Fail-closed FULL-FRAME redaction: no raw or selectively visible pixels
 /// contribute to the host receipt. The OS readback only establishes a
 /// geometrically valid WGC callback. No trusted sensitive-region classifier
@@ -136,6 +181,32 @@ mod frame_geometry_tests {
         assert_eq!(&frame[0..4],&[99;4]);
         assert_eq!(&frame[8..16],&[99;8]);
         assert_eq!(&frame[24..32],&[99;8]);
+    }
+    #[test]
+    fn reviewed_region_export_defaults_to_black_and_never_copies_pitch_padding(){
+        let input=vec![191u8;32]; // 3x2 BGRA, 16 byte pitch, 4 bytes pad
+        let region=[ApprovedBgraRect{left:1,top:0,width:1,height:2}];
+        let safe=approved_regions_only_bgra(3,2,16,&input,&region).unwrap();
+        assert_eq!(&safe[4..8],&[191;4]);
+        assert_eq!(&safe[20..24],&[191;4]);
+        assert_eq!(&safe[0..4],&[0;4]);
+        assert_eq!(&safe[8..20],&[0;12]);
+        assert_eq!(&safe[24..32],&[0;8]);
+    }
+    #[test]
+    fn invalid_or_unreviewed_region_cannot_produce_any_pixel_buffer(){
+        let input=vec![55u8;32];
+        let valid=ApprovedBgraRect{left:1,top:0,width:1,height:2};
+        assert!(approved_regions_only_bgra(3,2,16,&input,&[]).is_none());
+        for bad in [
+            ApprovedBgraRect{left:2,top:0,width:2,height:1},
+            ApprovedBgraRect{left:u32::MAX,top:0,width:1,height:1},
+            ApprovedBgraRect{left:0,top:0,width:0,height:1},
+            ApprovedBgraRect{left:0,top:2,width:1,height:1},
+        ]{
+            assert!(approved_regions_only_bgra(3,2,16,&input,&[valid,bad]).is_none());
+        }
+        assert!(approved_regions_only_bgra(3,2,16,&input,&vec![valid;65]).is_none());
     }
     #[test]
     fn invalid_or_untrusted_mask_never_partially_writes_raw_frame(){

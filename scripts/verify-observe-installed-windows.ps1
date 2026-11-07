@@ -10,6 +10,7 @@ param(
   [switch]$InspectObserveUi,
   [switch]$ExerciseObservationLifecycle,
   [switch]$ExerciseCaptureCancellation,
+  [switch]$SampleGpuMemory,
   [switch]$ExerciseRestart
 )
 $ErrorActionPreference='Stop'
@@ -18,6 +19,9 @@ if($ExerciseObservationLifecycle -and -not $InspectObserveUi){
 }
 if($ExerciseCaptureCancellation -and -not $ExerciseObservationLifecycle){
   throw 'Capture worker reap trial requires explicit -ExerciseObservationLifecycle and -InspectObserveUi'
+}
+if($SampleGpuMemory -and -not $ExerciseCaptureCancellation){
+  throw 'GPU memory sampling requires the separately approved native worker trial'
 }
 if($ExerciseRestart -and -not $InspectObserveUi){
   throw 'Restart observation scope test requires explicit -InspectObserveUi'
@@ -49,6 +53,9 @@ $record=[ordered]@{
   observeOffByDefault='NOT_TESTED'
   observeUiLifecycle='NOT_TESTED'
   captureWorkerOsReap='NOT_TESTED'
+  gpuMemoryCounter='NOT_TESTED'
+  gpuLocalMiB=$null
+  gpuQuotaVerified=$false
   restartOffByDefaultUi='NOT_TESTED'
   wgcPickerAndCancellation='NOT_TESTED'
   foregroundOsSourceInstance='NOT_TESTED'
@@ -144,6 +151,37 @@ try {
         }
         return $found
       }
+
+      function Get-ObservedWorkerGpuMemory([long[]]$pids){
+        # GPU Process Memory counters vary with GPU driver and Windows build.
+        # These are OS-reported samples only, NOT reservations, WGC attribution
+        # proof or a claim that a GPU is unused when counters are missing.
+        try {
+          $samples=(Get-Counter '\GPU Process Memory(*)\Local Usage' -ErrorAction Stop).CounterSamples
+        } catch {
+          return @{status='UNAVAILABLE_COUNTER';localMiB=$null}
+        }
+        $total=[double]0
+        $seen=0
+        foreach($sample in @($samples)){
+          if($sample.Path -match 'pid_(\d+)(?:_|$)'){
+            $samplePid=[long]$Matches[1]
+            if($pids -contains $samplePid){
+              $bytes=[double]$sample.CookedValue
+              if([double]::IsNaN($bytes) -or [double]::IsInfinity($bytes) -or $bytes -lt 0){
+                return @{status='INCONCLUSIVE_INVALID_COUNTER';localMiB=$null}
+              }
+              $total+=$bytes
+              $seen++
+            }
+          }
+        }
+        if($seen -eq 0){return @{status='UNAVAILABLE_PROCESS_COUNTER';localMiB=$null}}
+        return @{
+          status='OS_GPU_PROCESS_COUNTER_OBSERVED_ONLY'
+          localMiB=[Math]::Round($total/1MB,2)
+        }
+      }
       # Explicit interactive operator approval is still required in the
       # native Lu consent modal. The harness does NOT approve or dismiss it.
       if(-not (Press-ObservedButton 'Start observing Lu')){
@@ -183,6 +221,13 @@ try {
             $record.captureWorkerOsReap='INCONCLUSIVE_NO_NATIVE_CHILD_OBSERVED'
           }else{
             $record.captureWorkerOsReap='PENDING_NATIVE_STOP'
+            if($SampleGpuMemory){
+              $gpu=Get-ObservedWorkerGpuMemory $observedWorkerPids
+              $record.gpuMemoryCounter=$gpu.status
+              $record.gpuLocalMiB=$gpu.localMiB
+              # The OS counter must never be promoted to an enforced budget.
+              $record.gpuQuotaVerified=$false
+            }
           }
         }
         if(-not (Press-ObservedButton 'Stop observation') -or
@@ -233,7 +278,7 @@ try {
       Where-Object { [int64]$_.ParentProcessId -eq [int64]$child.Id }).Count -gt 0){
       throw 'Owned capture worker survived native Lu shutdown'
     }
-    $previousPid=$child.Id
+    $previousBirth=$child.StartTime.ToUniversalTime().ToFileTimeUtc()
     $child=Start-Process -FilePath $app -PassThru -ErrorAction Stop
     $restartDeadline=[DateTime]::UtcNow.AddSeconds(30)
     do {
@@ -242,7 +287,8 @@ try {
       if($child.HasExited){throw 'Installed Lu restart exited prematurely'}
       if($child.MainWindowHandle -ne [IntPtr]::Zero){break}
     } while([DateTime]::UtcNow -lt $restartDeadline)
-    if($child.Id -eq $previousPid -or $child.MainWindowHandle -eq [IntPtr]::Zero){
+    if($child.StartTime.ToUniversalTime().ToFileTimeUtc() -eq $previousBirth -or
+       $child.MainWindowHandle -eq [IntPtr]::Zero){
       throw 'Independent installed native Lu relaunch not established'
     }
     Add-Type -AssemblyName UIAutomationClient

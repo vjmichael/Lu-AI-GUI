@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7382461e270c372b9f71953ee3934adbb2781be6",
+  "sourceCommitBeforeLock": "11c31105f535011cc85e49adddc84873e755b603",
   "trackedFileCount": 507,
   "files": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "6d8262a47c2b8a566b2123a9551b7ad17dcbdad2"
+      "blob": "9a903a044f3806c753fd42274fd23d3e0d49765f"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "9665703723544ed3cebc197b6cbf0f80a452f7bb"
+      "blob": "fedf80fd8d6de5c72a5c6d5631d58df7400a0ffc"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "8ded643cbe73f5037e0c3641d66328d5436c1f6d"
+      "blob": "a9d230c175299c918fa14163a3a591342297f083"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "8dcad59fbe5f96a3eeef158f5d75cf5d960176c6"
+      "blob": "41d3e03f91de90dc570c66b3b201fb9d38491d6c"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -801,7 +801,7 @@
     },
     {
       "path": "scripts/verify-observe-installed-windows.ps1",
-      "blob": "af1daecc404d2c89efa17a39f8c803743daaf6b4"
+      "blob": "dbbe1a46dc7e89e7ecf109a77a4f79ce8181adc9"
     },
     {
       "path": "scripts/verify-source-tree.mjs",
@@ -1261,7 +1261,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_gui_verification.rs",
-      "blob": "80c74d3d118d8feaf02f75451fd169129e42c8ac"
+      "blob": "35308489f9327c110e5a631809ed2acda0ecdd7e"
     },
     {
       "path": "src-tauri/lu-core/src/native_image_revision.rs",
@@ -1993,7 +1993,7 @@
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
-      "blob": "671a1f1f608a58e64e0735674334fbba665be8a2"
+      "blob": "06ef017eae84665820d20e6e39abca62f3908631"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
