@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P01 source baseline consolidated (Nov 7, 2026):** [draft PR #78](https://github.com/vjmichael/Lu-AI-GUI/pull/78) on `main`, candidate imports latest nondeferred IDE source plus canonical P01–P07 ledger. Verified only `ide/` and 32 IDE workflows differ from main; all Lu Core/Desktop/docs/CI preserved; WO10 absent. Audited 26 IDE PRs, recorded unported B2/B3 branch features and other exceptions. **P01 source-stage done; P02 not started; native Win/Linux and release validation still red.** [Audit](docs/IDE_P01_INTEGRATION_AUDIT_20261107.md).
+
+
 - **Release Closeout P01–P07 tracking (2026-11-07):** Created canonical [phase ledger](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md) with P01 authoritative branch/source reconciliation and historical PR coverage, P02 deterministic native build/test repair, P03 WO4–6 kernel/LSP/DAP security, P04 WO7–9 signed installed acceptance, P05 GitHub PR/CI reduction, P06 reproducibility/governance, and **P07 deferred until after Lu Core v1.0**. User requested one-phase-at-a-time stop and concise completion/outstanding report. WO9 still native-red; older B2/B3 parallel PR source not assumed incorporated.
 
 
