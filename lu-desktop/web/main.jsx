@@ -90,6 +90,10 @@ function App() {
   const [researchBusy,setResearchBusy]=useState(false);
   const [researchResult,setResearchResult]=useState(null);
   const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
+  const [researchCitationStyle,setResearchCitationStyle]=useState('apa7');
+  const [researchCitationBusy,setResearchCitationBusy]=useState(false);
+  const [researchCitationsByChat,setResearchCitationsByChat]=useState({});
+
   const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
   const [researchDocumentActive,setResearchDocumentActive]=useState(null);
   const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
@@ -320,6 +324,21 @@ function App() {
       setResearchResult({...result,chatId:sourceChat});
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function previewResearchCitation(sourceId){
+    if(!chatId||!researchAvailable||researchBusy||researchCitationBusy||!sourceId)return;
+    const sourceChat=chatId;
+    const key=sourceChat+'|'+sourceId;
+    setResearchCitationBusy(true);setResearchError('');
+    // An older citation preview cannot survive a newly reviewed style.
+    setResearchCitationsByChat(old=>({...old,[key]:null}));
+    try{
+      const receipt=await invoke('lu_research_citation_preview',{
+        chatId:sourceChat,sourceId,style:researchCitationStyle
+      });
+      setResearchCitationsByChat(old=>({...old,[key]:receipt}));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchCitationBusy(false);}
   }
   async function checkResearchMetadata(sourceId){
     if(!chatId||!researchAvailable||researchBusy||!sourceId)return;
@@ -4617,6 +4636,23 @@ function App() {
                 {' '}· {researchReportSavedByChat[chatId].checkedPassages}
                 verified passages. Interpretations are not independently certified.</small>}
           </div>
+          <label>Review citation style
+            <select aria-label="Research citation style" value={researchCitationStyle}
+              disabled={researchCitationBusy}
+              onChange={e=>{
+                setResearchCitationStyle(e.target.value);
+                setResearchCitationsByChat({});
+              }}>
+              <option value="apa7">APA 7</option>
+              <option value="mla9">MLA 9</option>
+              <option value="chicago18">Chicago 18 (notes/bibliography)</option>
+              <option value="turabian9">Turabian 9 (notes/bibliography)</option>
+              <option value="sbl2">SBL Handbook 2</option>
+            </select>
+          </label>
+          <small>Academic citations require separately corroborated DOI and author identity.
+            Review Crossref publication metadata before using it; Lu never invents a
+            journal abbreviation, page reference, quotation, or ancient text edition.</small>
           {researchError&&<small role="alert">{researchError}</small>}
           {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
             <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
@@ -4638,6 +4674,24 @@ function App() {
                   onClick={()=>void retrieveResearchDocument(l.sourceId)}>
                   Retrieve bounded PDF/HTML document
                 </button>}
+              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
+                <button type="button" disabled={researchBusy||researchCitationBusy||!researchAvailable}
+                  onClick={()=>void previewResearchCitation(l.sourceId)}>
+                  {researchCitationBusy?'Reviewing catalog…':'Preview evidence-bound citation'}
+                </button>}
+              {researchCitationsByChat[chatId+'|'+l.sourceId]&&
+                <div className="researchResults" aria-label="Crossref-backed citation preview">
+                  <strong>{researchCitationsByChat[chatId+'|'+l.sourceId].style} · REVIEW REQUIRED</strong>
+                  <pre>{researchCitationsByChat[chatId+'|'+l.sourceId].bibliography}</pre>
+                  {researchCitationsByChat[chatId+'|'+l.sourceId].firstNote&&
+                    <small>First note: {researchCitationsByChat[chatId+'|'+l.sourceId].firstNote}</small>}
+                  <small>Crossref metadata response SHA-256:
+                    {' '}{researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}</small>
+                  <small>{researchCitationsByChat[chatId+'|'+l.sourceId].message}</small>
+                  <small>Bibliographic identity matched; publication particulars, quotations,
+                    pages, and interpretations remain unverified. This is a preview,
+                    not a final scholarly citation.</small>
+                </div>}
               {researchDocumentActive?.chatId===chatId
                 &&researchDocumentActive?.sourceId===l.sourceId&&
                 <button type="button" disabled={!researchBusy}
