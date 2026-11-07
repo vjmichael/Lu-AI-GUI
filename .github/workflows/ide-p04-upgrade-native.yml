@@ -1,0 +1,109 @@
+name: IDE P04 independent signed two-version Windows transition and injected recovery
+on:
+  workflow_dispatch:
+    inputs:
+      old_source_sha:
+        description: Independently reviewed old signed release source SHA
+        required: true
+        type: string
+      new_source_sha:
+        description: Independently reviewed new signed release source SHA
+        required: true
+        type: string
+      old_candidate_run_id:
+        description: Run containing signed old lu-ide-wo7-candidate
+        required: true
+        type: string
+      new_candidate_run_id:
+        description: Run containing signed new lu-ide-wo7-candidate
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-signed-two-version-os:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    environment: lu-ide-release-witness
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [Upgrade, InjectedRecovery]
+    steps:
+      - name: Validate independent source and candidate run identities
+        shell: pwsh
+        env:
+          OLD_SHA: ${{ inputs.old_source_sha }}
+          NEW_SHA: ${{ inputs.new_source_sha }}
+          OLD_RUN: ${{ inputs.old_candidate_run_id }}
+          NEW_RUN: ${{ inputs.new_candidate_run_id }}
+        run: |
+          if ($env:OLD_SHA -notmatch '^[a-fA-F0-9]{40}$' -or
+              $env:NEW_SHA -notmatch '^[a-fA-F0-9]{40}$' -or
+              $env:OLD_SHA -ieq $env:NEW_SHA -or
+              $env:OLD_RUN -notmatch '^[0-9]{1,20}$' -or
+              $env:NEW_RUN -notmatch '^[0-9]{1,20}$') {
+            throw 'DENIED: two independently reviewed signed source versions and run IDs required'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.new_source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-candidate
+          path: signed-old
+          run-id: ${{ inputs.old_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-candidate
+          path: signed-new
+          run-id: ${{ inputs.new_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify two genuinely signed releases, exact source and test syntax
+        shell: pwsh
+        env:
+          OLD_SHA: ${{ inputs.old_source_sha }}
+          NEW_SHA: ${{ inputs.new_source_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ine $env:NEW_SHA) { throw 'DENIED: wrong reviewed new source SHA' }
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ide/app/fixtures/Test-P04SignedVersionTransition.ps1).Path,
+            [ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw 'DENIED: new reviewed native transaction test invalid' }
+          foreach($case in @(@('signed-old',$env:OLD_SHA),@('signed-new',$env:NEW_SHA))) {
+            python ide/packaging/verify_wo7_candidate.py --manifest ($case[0]+'/wo7-release.manifest.json') --artifact-root $case[0] --source-sha $case[1]
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed distinct signed candidate not accepted' }
+          }
+      - name: Native signed OS transition and exact old-version recovery
+        shell: pwsh
+        env:
+          OLD_SHA: ${{ inputs.old_source_sha }}
+          NEW_SHA: ${{ inputs.new_source_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixture=Join-Path $env:RUNNER_TEMP ('ide-p04-two-version-'+$env:GITHUB_RUN_ID)
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),('fn main() { println!("p04"); }'+[Environment]::NewLine))
+          $inputs=@{
+            OldCandidate=(Resolve-Path signed-old).Path
+            NewCandidate=(Resolve-Path signed-new).Path
+            OldSourceSha=$env:OLD_SHA
+            NewSourceSha=$env:NEW_SHA
+            FixtureRoot=$fixture
+            Mode='${{ matrix.scenario }}'
+          }
+          & ide/app/fixtures/Test-P04SignedVersionTransition.ps1 @inputs
+          if (!$?) { throw 'DENIED: genuine two-version native transition rejected' }
+      - name: Do not confuse injected recovery with broken installer acceptance
+        run: |
+          echo 'P04_REVIEWED_TWO_VERSION_REPLACEMENT_IS_NOT_IN_PLACE_INSTALLER_UPGRADE'
+          echo 'P04_INJECTED_POSTINSTALL_RECOVERY_IS_NOT_FAILED_INSTALLER_ROLLBACK'
+          echo 'P04_RELEASE_ACCEPTANCE=NO'
