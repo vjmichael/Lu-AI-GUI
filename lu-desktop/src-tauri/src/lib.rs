@@ -3643,7 +3643,9 @@ async fn generate_internal(
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
-            let events = state.chats.history(&chat_id)?;
+            let events = state.chats.recent_model_history(&chat_id,32)?;
+            // ANSF performs one indexed bounded source read; it does not load
+            // the complete human-visible conversation into inference context.
             // With at most one turn per chat pending, the last user event is
             // this submission. Read history *after* waiting so later turns
             // use completed previous replies, but never duplicate ourselves.
