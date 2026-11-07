@@ -76,6 +76,13 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// WO10: report truthful opt-in bridge status without auto-starting a
+/// listener, discovering a local Lu process, or exposing project content.
+#[tauri::command]
+fn ide_bridge_status() -> lu_ide_workspace::bridge_policy::BridgeStatus {
+    lu_ide_workspace::bridge_policy::disconnected_status()
+}
+
 /// WO9-E durable workflow creation from a native Git/artifact fingerprint.
 #[tauri::command]
 async fn ide_workflow_create(
@@ -1250,6 +1257,7 @@ pub fn run() {
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
+            ide_bridge_status,
             ide_workflow_create,
             ide_workflow_list_runs,
             ide_workflow_run_step,
