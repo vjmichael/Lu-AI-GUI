@@ -287,6 +287,15 @@ impl AnsfStore{
         Ok(StoredLiveEvent{seq,session_id:session_id.to_owned(),
             event:event.clone(),origin,source_entry_id})
     }
+    /// Constant-time index repair probe for derived desktop activity.
+    pub fn latest_live_chat_seq(&self,session_id:&str)->Result<i64,AnsfError>{
+        if !valid_session(session_id){return Err(AnsfError::InvalidInput)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        conn.query_row(
+            "SELECT COALESCE(MAX(seq),0) FROM ansf_live_chat_events
+             WHERE session_id=?1",[session_id],|r|r.get(0)
+        ).map_err(Into::into)
+    }
     /// Indexed cursor paging. Caller must authenticate profile and conversation.
     pub fn live_chat_events_after(&self,session_id:&str,after_seq:i64,limit:usize)
         ->Result<Vec<StoredLiveEvent>,AnsfError>{
