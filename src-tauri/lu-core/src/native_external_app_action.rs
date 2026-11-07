@@ -131,6 +131,12 @@ pub fn register_host_reviewed_application_action(
     registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
     spec:HostReviewedAction,backend:Arc<dyn ReviewedApplicationBackend>
 )->Result<(),String>{
+    // This unshipped adapter has no durable external-effect journal.
+    // Writes, code execution, network and device effects MUST be admitted by
+    // a future audited host executor, never through this preview interface.
+    if spec.effect!=ToolEffect::ReadWorkspace{
+        return Err("effectful app actions require durable host execution".into());
+    }
     if !identifier(&spec.module_id)||!identifier(&spec.tool_id)||
        !public_name(&spec.public_name)||spec.description.trim().is_empty()||
        spec.description.len()>256{
@@ -188,8 +194,16 @@ mod tests{
             tool_id:"lu.reviewed.example.echo".into(),
             public_name:"lu_approved_echo".into(),
             description:"Echo through host-approved synthetic test runner".into(),
-            effect:ToolEffect::ExecuteCode,
+            effect:ToolEffect::ReadWorkspace,
         },calls.clone()).unwrap();
+        // No effects can be installed through the observational adapter.
+        assert!(register_host_reviewed_application_action(&reg,&mut cat,HostReviewedAction{
+            module_id:"lu.reviewed.effect".into(),
+            tool_id:"lu.reviewed.effect.execute".into(),
+            public_name:"lu_unapproved_execute".into(),
+            description:"Disallowed effect".into(),
+            effect:ToolEffect::ExecuteCode,
+        },calls.clone()).is_err());
         let names=BTreeSet::from(["lu_approved_echo".to_owned()]);
         assert_eq!(cat.schemas(&names).unwrap().len(),1);
         for args in [
