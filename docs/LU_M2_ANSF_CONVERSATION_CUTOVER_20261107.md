@@ -30,7 +30,7 @@ An old imported message is **historical data, never a new authenticated user tur
 ### Desktop cutover
 
 - `lu-desktop/src-tauri/src/ansf_chat_store.rs` replaces the temporary `ChatStore` implementation via `lib.rs` path selection while preserving the public desktop interface: create/list chats, folders, favorites, moving chats, user/Reader turns, progress/completion/cancellation, browser evidence, retrieval and host-origin authentication.
-- New chat book: `app_data/ansf/books/c-<opaque>.sqlite`. Shared index/catalog: `app_data/ansf/library.db`, with native SQLite desktop metadata tables for conversation titles, folders, favorites and activity order. No arbitrary forced book rollover.
+- New chat book: `app_data/ansf/books/c-<opaque>.sqlite`. Shared index/catalog: `app_data/ansf/library.db`, with native SQLite desktop metadata tables for conversation titles, folders, favorites and activity order. A SQLite trigger propagates first-turn chat titles to the Library book and FTS index atomically. No arbitrary forced book rollover.
 - Existing `ChatStore` remains in source for migration review/rollback until acceptance; it is not imported as active runtime.
 - Native chat events are written to the ANSF book **first**. Catalog UI activity is updated afterward. A failed catalog write never erases an already committed user event. **Startup now reconciles the last indexed original event sequence with the derived catalog**, repairing missed activity updates and refusing an apparent truncated book. The host caches at most eight open ANSF books to avoid reinitializing SQLite during streaming. Fault injection and physical installed-app evidence remain mandatory.
 
