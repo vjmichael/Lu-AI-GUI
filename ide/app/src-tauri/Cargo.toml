@@ -17,6 +17,9 @@ native-lsp = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/ls
 // Linux runs fixed root-owned Cargo under cgroup-v2/Bubblewrap; Windows runs
 // the same fixed Cargo recipes via restricted LocalService/AppContainer Job.
 native-build = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
+// WO6 opt-in native LLDB-DAP self-test. Reviewed adapter and fixed debuggee
+// must be embedded in an installer-pinned bundle; no PATH debugger allowed.
+native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/dap-transport", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
