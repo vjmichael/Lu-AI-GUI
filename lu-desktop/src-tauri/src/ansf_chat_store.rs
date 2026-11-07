@@ -194,13 +194,16 @@ impl ChatStore {
                    chat.updated_seq>saved.sequence{
                     return Err("invalid legacy chat".into())
                 }
-                // The per-chat migration has already checked exact source text.
+                // Preserve old conversation ordering. Do not mistake
+                // imported source events for new post-migration activity.
+                let source_seq=self.ansf_book(&chat.chat_id)?
+                    .latest_live_chat_seq(&chat.chat_id).map_err(to_err)?;
                 tx.execute(
                     "INSERT OR IGNORE INTO ansf_desktop_chats
-                     (chat_id,title,folder_id,favorite,updated_seq)
-                     VALUES(?1,?2,?3,?4,?5)",
+                     (chat_id,title,folder_id,favorite,updated_seq,last_event_seq)
+                     VALUES(?1,?2,?3,?4,?5,?6)",
                     params![chat.chat_id,chat.title,chat.folder_id,
-                        chat.favorite as i64,chat.updated_seq as i64]
+                        chat.favorite as i64,chat.updated_seq as i64,source_seq]
                 ).map_err(to_err)?;
             }
             tx.execute(
@@ -214,9 +217,10 @@ impl ChatStore {
             for receipt in &migration_receipts{
                 tx.execute(
                     "INSERT OR IGNORE INTO ansf_desktop_chats
-                     (chat_id,title,folder_id,favorite,updated_seq)
-                     VALUES(?1,'Previous Lu conversation',NULL,0,1)",
-                    [&receipt.session_id]
+                     (chat_id,title,folder_id,favorite,updated_seq,last_event_seq)
+                     VALUES(?1,'Previous Lu conversation',NULL,0,1,?2)",
+                    params![receipt.session_id,self.ansf_book(&receipt.session_id)?
+                        .latest_live_chat_seq(&receipt.session_id).map_err(to_err)?]
                 ).map_err(to_err)?;
             }
             if !migration_receipts.is_empty(){
