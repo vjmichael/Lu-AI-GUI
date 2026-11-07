@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -41,23 +41,105 @@ function WindowRoot {
   try { return [System.Windows.Automation.AutomationElement]::FromHandle($proc.MainWindowHandle) }
   catch { return $null }
 }
+# Real WebView2/Chromium UIA can expose its content through a child renderer
+# HWND even when the Tauri top-level UIA fragment walk is orphaned.
+# Native operating-system UI Automation ONLY; no JS, IPC or test shortcut.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class P04NativeWebViewWindows {
+  public delegate bool Enumeration(IntPtr hwnd, IntPtr state);
+  [DllImport("user32.dll", SetLastError=true)]
+  private static extern bool EnumChildWindows(IntPtr parent, Enumeration callback, IntPtr data);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+  private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int capacity);
+  [DllImport("user32.dll")]
+  public static extern bool SetForegroundWindow(IntPtr hwnd);
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+  public static IntPtr[] RendererHandles(IntPtr top) {
+    var results = new List<IntPtr>();
+    Enumeration callback = (hwnd, data) => {
+      var name = new StringBuilder(96);
+      if (GetClassName(hwnd, name, name.Capacity) > 0 &&
+          name.ToString() == "Chrome_RenderWidgetHostHWND") {
+        results.Add(hwnd);
+      }
+      return true;
+    };
+    EnumChildWindows(top, callback, IntPtr.Zero);
+    return results.ToArray();
+  }
+}
+'@
+function NativeAccessibilityRoots {
+  $parent=WindowRoot
+  if (!$parent) { return }
+  Write-Output $parent
+  $handles=@([P04NativeWebViewWindows]::RendererHandles($proc.MainWindowHandle))
+  if ($handles.Count -gt 8) { Deny 'unexpected_webview_renderer_hierarchy' }
+  foreach ($handle in $handles) {
+    if ($handle -eq [IntPtr]::Zero) { continue }
+    try {
+      $web=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
+      if ($web) { Write-Output $web }
+    } catch {}
+  }
+  # Chromium/wry may orphan the top-down UIA fragment on a background app.
+  # Inspect the real OS-focused element only when the foreground root is our
+  # exact installed Tauri desktop. No foreign windows, JS or backend bypass.
+  $top=$proc.MainWindowHandle
+  if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $top) {
+    [void][P04NativeWebViewWindows]::SetForegroundWindow($top)
+    Start-Sleep -Milliseconds 120
+  }
+  if ([P04NativeWebViewWindows]::GetForegroundWindow() -eq $top) {
+    try {
+      $node=[System.Windows.Automation.AutomationElement]::FocusedElement
+      $walker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+      $trace=@()
+      $owned=$false
+      for($count=0; $node -and $count -lt 14; $count++) {
+        $trace+=,$node
+        try {
+          $raw=$node.Current.NativeWindowHandle
+          if ($raw -ne 0) {
+            $ancestor=[P04NativeWebViewWindows]::GetAncestor([IntPtr]::new($raw),2)
+            if ($ancestor -eq $top) { $owned=$true }
+          }
+        } catch {}
+        $node=$walker.GetParent($node)
+      }
+      if ($owned) {
+        foreach ($candidate in $trace) { Write-Output $candidate }
+      }
+    } catch {}
+  }
+}
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
   $end=(Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $end) {
-    $window=WindowRoot
-    if ($window) {
-      $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.Condition]::TrueCondition)
-      foreach($item in $all) {
-        try {
-          $name=$item.Current.Name
-          $type=$item.Current.ControlType.ProgrammaticName
-          if ($name -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-              (!$kind -or $type -eq ('ControlType.'+$kind))) {
-            return $item
-          }
-        } catch {}
-      }
+    # Do not fake a WebView response. Every candidate is a real native UIA
+    # provider reached from this exact installed desktop's child HWND chain.
+    foreach ($window in @(NativeAccessibilityRoots)) {
+      try {
+        $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        foreach($item in $all) {
+          try {
+            $name=$item.Current.Name
+            $type=$item.Current.ControlType.ProgrammaticName
+            if ($name -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                (!$kind -or $type -eq ('ControlType.'+$kind))) {
+              return $item
+            }
+          } catch {}
+        }
+      } catch {}
     }
     Start-Sleep -Milliseconds 450
   }
@@ -70,6 +152,9 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
       $nodes=$nativeRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.Condition]::TrueCondition)
       Write-Host ('P02_NATIVE_UIA_MISSING_CONTROL='+$query+'; tree_nodes='+$nodes.Count)
+      Write-Host ('P04_NATIVE_WEBVIEW_RENDERER_HWND_COUNT='+@([P04NativeWebViewWindows]::RendererHandles($proc.MainWindowHandle)).Count)
+      $front=[P04NativeWebViewWindows]::GetForegroundWindow()
+      Write-Host ('P04_NATIVE_INSTALLED_WINDOW_FOREGROUND='+[string]($front -eq $proc.MainWindowHandle))
       $printed=0
       foreach($entry in $nodes) {
         if ($printed -ge 100) { break }
@@ -286,7 +371,7 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  if ($Scenario -ne 'PersistedRestart') {
+  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
     # Native folder chooser must be opened through UI, never by trusting input path.
     Click '+ Open folder'
     Start-Sleep -Seconds 2
@@ -301,12 +386,12 @@ try {
   } else {
     if (!$FixtureRoot) { Deny 'missing_fixture_root' }
     $fixed=[IO.Path]::GetFullPath($FixtureRoot)
-    $temporary=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\\')+'\\'
+    $temporary=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')+'\'
     if (!$fixed.StartsWith($temporary,[StringComparison]::OrdinalIgnoreCase) -or
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    if ($Scenario -ne 'PersistedRestart') {
+    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
       # Standard Windows folder dialog address navigation; real desktop input.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
@@ -651,6 +736,12 @@ try {
       if (!$current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { Deny 'explicit_save_not_persisted' }
       Require 'Saved main.rs'
       Write-Host 'WO8_INSTALLED_NATIVE_REVIEW_AND_EXPLICIT_SAVE=PASS'
+    } elseif ($Scenario -eq 'P04ReinstalledProject') {
+      # No new picker registration: verify persisted user catalog and source
+      # in the genuinely reinstalled desktop, without writing source bytes.
+      Require 'Source editor text'
+      Require 'main.rs'
+      Write-Host 'P04_INSTALLED_REINSTALL_PERSISTED_PROJECT_AND_EDITOR=PASS'
     } elseif ($Scenario -eq 'PersistedRestart') {
       if (![IO.File]::ReadAllText((Join-Path $fixed 'main.rs')).Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) {
         Deny 'previously_saved_file_missing_after_restart'

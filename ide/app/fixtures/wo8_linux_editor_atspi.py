@@ -136,22 +136,162 @@ def stop(proc):
             proc.wait(timeout=4)
 
 
+def _native_dialog_ancestor(node):
+    # Inspect an actual AT-SPI modal/file-chooser ancestry, not an unrelated
+    # app button named Open or Select. No web JS, IPC or synthetic picker.
+    current = node
+    for _ in range(10):
+        try:
+            current = current.parent
+            if current is None:
+                return False
+            role = (current.getRoleName() or "").casefold()
+            if "dialog" in role or "file chooser" in role:
+                return True
+        except Exception:
+            return False
+    return False
+
+
+def _native_picker_confirm():
+    candidates = ("select", "open", "choose folder")
+    checked = 0
+    for obj in elements():
+        try:
+            name = (obj.name or "").strip().casefold()
+            role = (obj.getRoleName() or "").casefold()
+            if name in candidates and ("button" in role) and _native_dialog_ancestor(obj):
+                checked += 1
+                action = obj.queryAction()
+                for i in range(action.nActions):
+                    if action.getName(i).casefold() in ("click", "press", "activate"):
+                        if action.doAction(i):
+                            print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=real_atspi_action", flush=True)
+                            return
+        except Exception:
+            continue
+    print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
+          "matching_dialog_buttons=" + str(checked), flush=True)
+    deny("native_dialog_confirmation_not_found")
+
+
+def _native_chooser_still_open():
+    # Only a *real* GTK file chooser under this disposable X11 session;
+    # missing OS acceptance never becomes a success.
+    for node in elements():
+        try:
+            if "file chooser" in (node.getRoleName() or "").casefold():
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _select_real_fixture_directory():
+    # SELECT_FOLDER accepts a *selected* directory, not necessarily the
+    # directory currently visible. Navigate to its parent via GTK's native
+    # location entry, then select the exact ephemeral fixture child.
+    exact=0
+    for node in elements():
+        try:
+            if (node.name or "").strip() != ROOT.name or not _native_dialog_ancestor(node):
+                continue
+            role=(node.getRoleName() or "").casefold()
+            if not any(kind in role for kind in ("row", "cell", "icon", "list item", "text", "label")):
+                continue
+            exact+=1
+            try:
+                if node.queryComponent().grabFocus():
+                    key("space")
+                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",flush=True)
+                    return
+            except Exception:
+                pass
+            try:
+                parent=node.parent
+                index=node.getIndexInParent()
+                if parent is not None and index>=0 and parent.querySelection().selectChild(index):
+                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",flush=True)
+                    return
+            except Exception:
+                pass
+        except Exception:
+            continue
+    print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES="+str(exact),flush=True)
+    deny("native_fixture_directory_not_selected")
+
+
 def select_native_folder():
     activate("+ Open folder")
     time.sleep(1)
     key("ctrl+l")
-    type_text(str(ROOT))
+    type_text(str(ROOT.parent))
     key("Return")
     time.sleep(1)
-    # GTK folder picker normally accepts via the Open/Select action.
-    for button in ("Select", "Open", "Choose Folder"):
-        try:
-            activate(button, timeout=2)
-            break
-        except RuntimeError:
-            continue
+    _select_real_fixture_directory()
+    # GTK SELECT_FOLDER may interpret the first accept as "navigate into
+    # selected directory" instead of closing. Native CI proved the real
+    # dialog remained open afterward. Confirm only while the authentic OS
+    # chooser remains; never issue a blind keypress on the main WebView.
+    attempts = 0
+    while _native_chooser_still_open() and attempts < 3:
+        _native_picker_confirm()
+        attempts += 1
+        time.sleep(0.7)
+    if _native_chooser_still_open():
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_still_open_after_three_real_actions",flush=True)
+        deny("native_folder_chooser_not_accepted")
+    print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
+          "confirmations=" + str(attempts),flush=True)
     accessible("Registered projects", seconds=15)
-    accessible(ROOT.name, seconds=15)
+    try:
+        accessible(ROOT.name, seconds=15)
+    except RuntimeError:
+        # Distinguish actual Tauri host catalog from stale UI/selection.
+        # Inspect only known OS app-data locations, never open arbitrary
+        # paths supplied by the WebView. Emit fixed categories, no filenames.
+        import json
+        candidates = (
+            Path.home() / ".local/share/org.lu.ide/projects.json",
+            Path.home() / ".config/org.lu.ide/projects.json",
+        )
+        catalog_state = "not_written"
+        for candidate in candidates:
+            if not candidate.is_file() or candidate.is_symlink():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                records = data.get("projects", [])
+                if not isinstance(records, list):
+                    catalog_state = "invalid_records"
+                elif any(isinstance(r, dict) and
+                         r.get("display_name") == ROOT.name for r in records):
+                    catalog_state = "expected_project_persisted"
+                elif any(isinstance(r, dict) and
+                         Path(str(r.get("root", "/"))).name == ROOT.parent.name
+                         for r in records):
+                    catalog_state = "wrong_parent_persisted"
+                elif records:
+                    catalog_state = "unexpected_project_persisted"
+                else:
+                    catalog_state = "catalog_without_projects"
+            except (ValueError, OSError, TypeError):
+                catalog_state = "unreadable_catalog"
+        print("P04_NATIVE_LINUX_PROJECT_CATALOG=" + catalog_state, flush=True)
+        # Only fixed-vocabulary native AT-SPI diagnostics. Never log a user
+        # project path, source text, arbitrary accessible names or credentials.
+        categories = {"dialog": 0, "file chooser": 0, "button": 0, "text": 0}
+        for obj in elements():
+            try:
+                role = (obj.getRoleName() or "").casefold()
+                for label in categories:
+                    if label in role:
+                        categories[label] += 1
+            except Exception:
+                pass
+        print("P04_NATIVE_LINUX_PICKER_ATSPI_ROLES=" +
+              ",".join(k + ":" + str(v) for k, v in sorted(categories.items())), flush=True)
+        raise
 
 
 def editor_project():
@@ -166,6 +306,20 @@ def main():
         deny("dedicated_native_x11_runner_required")
     if not ROOT.is_dir() or not str(ROOT).startswith(str(Path(os.environ["RUNNER_TEMP"]).resolve()) + os.sep):
         deny("non_disposable_fixture")
+    if os.environ.get("WO8_P04_REOPEN_ONLY") == "true":
+        # A separately installed, reviewed signed version must reopen the
+        # original project via the persisted native catalog, not pick it anew.
+        if not SOURCE.is_file():
+            deny("installed_upgrade_source_missing")
+        reopened = start()
+        try:
+            accessible(ROOT.name, seconds=18)
+            editor_project()
+            focus_editor()
+            print("P04_NATIVE_SIGNED_DEB_REGISTERED_PROJECT_REOPEN=PASS", flush=True)
+        finally:
+            stop(reopened)
+        return
     if not SOURCE.is_file() or SENTINEL in SOURCE.read_text(encoding="utf-8"):
         deny("fixture_not_pristine")
     original = digest()

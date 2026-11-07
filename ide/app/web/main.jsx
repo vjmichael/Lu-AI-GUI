@@ -6,6 +6,7 @@ import { locateMatches, planReplacement } from './find_replace.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
+import { belongsToSelectedProject } from './job_render_guard.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -1731,7 +1732,7 @@ function App() {
                 onClick={() => startProtectedBuild()}>
                 {buildBusy ? 'Protected job in progress…' : 'Request protected Run / Test'}
               </button>
-              {buildStatus?.current?.projectId === activeProject?.projectId && <>
+              {belongsToSelectedProject(activeProject, buildStatus?.current) && <>
                 <p role="status">Active protected job: {buildStatus.current.recipeId} ·
                   {buildStatus.current.jobId || 'Preparing frozen snapshot'}
                   {buildStatus.current.cancellationRequested ? ' · cancellation requested' : ''}</p>
@@ -1741,7 +1742,7 @@ function App() {
                   {buildCancelBusy ? 'Requesting cancellation…' : 'Cancel and verify process-tree termination'}
                 </button>
               </>}
-              {buildResult?.projectId === activeProject?.projectId && <div role="status">
+              {belongsToSelectedProject(activeProject, buildResult) && <div role="status">
                 <p>Last worker result: <strong>{buildResult.phase}</strong> · Job {buildResult.jobId}</p>
                 <p>Native exit: {String(buildResult.nativeExitCode ?? 'unknown')} ·
                   Fixed OS error category: {buildResult.nativeErrorCategory || 'not reported'} · Timed out:
@@ -1814,7 +1815,7 @@ function App() {
                 onClick={() => runProtectedDebuggerFixture()}>
                 {debugBusy ? 'Inspecting fixed native debuggee…' : 'Run protected debugger self-test'}
               </button>
-              {debugStatus?.current?.projectId === activeProject?.projectId && <>
+              {belongsToSelectedProject(activeProject, debugStatus?.current) && <>
                 <p role="status">Active debug session: {debugStatus.current.jobId || 'preflight'}
                   {debugStatus.current.cancellationRequested ? ' · cancelling' : ''}</p>
                 <button type="button" className="ghostBtn"
@@ -1848,7 +1849,7 @@ function App() {
                     </article>)}
                   <p>Journal entries are not simulated debugger results or release acceptance.</p>
                 </section>}
-              {debugResult?.projectId === activeProject?.projectId && <div role="status">
+              {belongsToSelectedProject(activeProject, debugResult) && <div role="status">
                 <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
                 <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
                   {debugResult.threadsResponseObserved ? 'observed' : 'not proven'} · Stack:

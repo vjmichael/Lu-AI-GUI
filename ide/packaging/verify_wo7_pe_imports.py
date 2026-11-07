@@ -6,8 +6,10 @@ NOT a complete audit of dynamic LoadLibrary calls, licenses or installed OS.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import re
 import struct
 import sys
 
@@ -119,32 +121,89 @@ def pe_imports(path: Path) -> set[str]:
     return found
 
 
+def _digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _reviewed_inventory(root: Path, rows: object) -> dict[str, tuple[Path, dict]]:
+    """Prevent a private DLL from bypassing the reviewed hash/license inventory."""
+    if not isinstance(rows, list) or not 4 <= len(rows) <= 100:
+        raise Denied("staged_binary_inventory_missing")
+    reviewed = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise Denied("unreviewed_package_record")
+        name = row.get("destination")
+        if not isinstance(name, str):
+            raise Denied("unreviewed_package_destination")
+        key = name.casefold()
+        if key in reviewed:
+            raise Denied("duplicate_windows_binary_destination")
+        if not name.lower().endswith((".exe", ".dll")):
+            raise Denied("unreviewed_binary_type")
+        binary = safe_asset(root, name)
+        pin = row.get("sha256")
+        if not isinstance(pin, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", pin):
+            raise Denied("unreviewed_package_digest")
+        if _digest(binary).lower() != pin.lower():
+            raise Denied("staged_binary_digest_drift")
+        if not isinstance(row.get("license"), str) or not row["license"].strip():
+            raise Denied("staged_binary_license_not_reviewed")
+        notices = row.get("notices")
+        if not isinstance(notices, list) or not 1 <= len(notices) <= 16:
+            raise Denied("staged_binary_notice_not_reviewed")
+        for notice in notices:
+            if not isinstance(notice, dict):
+                raise Denied("invalid_notice_record")
+            notice_path, notice_sha = notice.get("path"), notice.get("sha256")
+            if (not isinstance(notice_path, str)
+                    or not notice_path.startswith("resources/third-party-notices/")
+                    or not isinstance(notice_sha, str)
+                    or not re.fullmatch(r"[0-9a-fA-F]{64}", notice_sha)):
+                raise Denied("unreviewed_notice_path_or_digest")
+            notice_bytes = safe_asset(root, notice_path)
+            if notice_bytes.stat().st_size > 1024 * 1024:
+                raise Denied("oversized_license_notice")
+            if _digest(notice_bytes).lower() != notice_sha.lower():
+                raise Denied("license_notice_digest_drift")
+        reviewed[key] = (binary, row)
+    return reviewed
+
+
 def audit_staged_pe(root: Path) -> dict:
     root = root.resolve(strict=True)
     receipt = json.loads(safe_asset(root, "resources/wo7-staged-tree.json").read_text(encoding="utf-8"))
-    rows = receipt.get("files")
-    if not isinstance(rows, list) or len(rows) < 4:
-        raise Denied("staged_binary_inventory_missing")
+    if receipt.get("schema") != "lu.ide.wo7.staged-tree.v1":
+        raise Denied("staged_tree_schema_wrong")
+    reviewed = _reviewed_inventory(root, receipt.get("files"))
     inspected = {}
-    for row in rows:
-        filename = row["destination"]
-        binary = safe_asset(root, filename)
+    for name, (binary, row) in reviewed.items():
         imports = pe_imports(binary)
         for dll in imports:
             if dll.startswith(("api-ms-win-", "ext-ms-win-")) or dll in SYSTEM_DLLS:
                 continue
-            # The Windows loader must locate private DLLs beside the importer;
-            # a same-named DLL in some unrelated directory is not sufficient.
+            # The real Windows loader needs the private module immediately
+            # beside this importer, not merely in another bundle directory.
             sibling = binary.parent / dll
             if sibling.is_symlink() or not sibling.is_file():
                 raise Denied("unresolved_private_import:" + dll)
             if sibling.name.lower() != dll:
                 raise Denied("private_import_case_mismatch")
-        inspected[filename] = sorted(imports)
+            rel = sibling.relative_to(root).as_posix().casefold()
+            if rel not in reviewed:
+                raise Denied("unreviewed_private_import:" + dll)
+            reviewed_binary, _ = reviewed[rel]
+            if reviewed_binary != sibling or _digest(sibling) != reviewed[rel][1]["sha256"].lower():
+                raise Denied("private_import_reviewed_digest_mismatch")
+        inspected[row["destination"]] = sorted(imports)
     return {"schema": "lu.ide.wo7.pe-static-closure.v1",
-            "staticImportClosure": True, "dynamicImportAuditStillRequired": True,
+            "staticImportClosure": True, "fullReviewedPrivateDllChain": True,
+            "dynamicImportAuditStillRequired": True,
             "inspected": inspected, "releaseAccepted": False}
-
 
 def main() -> int:
     p = argparse.ArgumentParser()

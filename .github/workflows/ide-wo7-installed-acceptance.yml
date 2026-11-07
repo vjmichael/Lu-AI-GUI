@@ -64,6 +64,8 @@ jobs:
             -SignerThumbprint $manifest.installer.signerThumbprint `
             -ServiceSha256 $manifest.service.sha256 `
             -ServiceSignerThumbprint $manifest.service.signerThumbprint `
+            -DesktopSha256 $manifest.desktop.sha256 `
+            -DesktopSignerThumbprint $manifest.desktop.signerThumbprint `
             -InstallRoot (Join-Path $env:ProgramFiles 'Lu IDE')
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native installed signed NSIS smoke failed' }
       - name: Clearly limit the acceptance claim
