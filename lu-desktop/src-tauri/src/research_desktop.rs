@@ -1410,6 +1410,54 @@ impl ResearchDesktop{
 }
 #[cfg(test)]
 mod tests{
+    #[test]
+    fn p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-p07-offline-{}-{}",std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let db_root=root.join("lu-research-evidence");
+        fs::create_dir_all(&db_root).unwrap();
+        let db=db_root.join("c-research.sqlite");
+        let mut ledger=EvidenceLedger::open(&db).unwrap();
+        ledger.discover(&Candidate{
+            id:"https://openalex.org/W012345".into(),title:"Study".into(),
+            author:"Jane Doe".into(),identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        ledger.corroborate("https://openalex.org/W012345",&TrustedBibliography{
+            record_url:"https://api.crossref.org/works/10.1000/example".into(),
+            title:"Study".into(),author:"Jane Doe".into(),
+            identifier:"doi:10.1000/example".into()
+        }).unwrap();
+        let bytes=serde_json::json!({"message":{
+            "DOI":"10.1000/example","type":"book","title":["Study"],
+            "author":[{"given":"Jane","family":"Doe"}],
+            "issued":{"date-parts":[[2024]]},"publisher":"Academic Press"
+        }}).to_string();
+        let checked=catalog_work_from_crossref(
+            &ledger,"https://openalex.org/W012345",bytes.as_bytes()
+        ).unwrap();
+        assert_eq!(checked.year,Some(2024));
+        ledger.pin_citation_catalog(
+            "https://openalex.org/W012345",bytes.as_bytes()
+        ).unwrap();
+        drop(ledger);
+        // A brand-new host with no external HTTP client can rebuild the
+        // complete bibliography from only the sealed per-chat SQLite.
+        let research=ResearchDesktop::new(root.join("unused"),root.clone());
+        let view=research.bibliography_preview("c-research",Style::Chicago18).unwrap();
+        assert_eq!(view.source_count,1);
+        assert!(view.markdown.contains("Doe, Jane"));
+        assert!(view.markdown.contains("SHA-256 inventory"));
+        assert!(view.csl_json[0].get("_lu_evidence").is_some());
+        assert!(!view.publication_details_verified);
+        assert!(view.catalog_manifest_sha256.len()==64);
+        assert!(research.bibliography_preview("c-other",Style::Apa7).is_err());
+        drop(research);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     use super::*;
     #[test]
     fn native_browser_read_is_kept_in_research_ledger_not_promoted_to_citation(){
