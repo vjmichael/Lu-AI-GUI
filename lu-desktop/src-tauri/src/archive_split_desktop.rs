@@ -5,7 +5,7 @@ use tauri::{AppHandle,State};
 use tauri_plugin_dialog::DialogExt;
 use serde::Serialize;
 use lu_core::native_archive_split::{
-    self,Plan,Receipt,MANIFEST,
+    self,Plan,Receipt,PublicationReview,MANIFEST,
 };
 use crate::{DesktopState,next_id};
 use crate::archive_desktop::{physical_file,physical_folder};
@@ -223,4 +223,62 @@ pub(crate) async fn lu_p08_reassemble_archive(
         },
         Err(e)=>{let _=owner.background_tasks.fail(&task);Err(e)}
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct P08RecoveryView {
+    status:&'static str,
+    verified_parts:usize,
+    expected_parts:usize,
+    output_folder:String,
+    note:&'static str,
+}
+/// User-selected staging folder. This read-only inspection cannot authorize
+/// replay, cleanup, file creation or changes to any completed archive.
+#[tauri::command]
+pub(crate) async fn lu_p08_review_publication(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<P08RecoveryView>,String>{
+    state.chats.history(&chat_id)?;
+    let selected=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().file().blocking_pick_folder()
+            .map(|p|p.into_path().map_err(|_|"Stage folder is not local".to_string()))
+            .transpose()
+    ).await.map_err(|_|"Native recovery picker unavailable")??;
+    let Some(path)=selected else{return Ok(None)};
+    let stage=source_name(&path)?;
+    if !stage.starts_with(".lu-p08-split-"){
+        return Err("Select the original Lu P08 split staging folder".into());
+    }
+    let parent=path.parent().ok_or("Stage has no parent")?;
+    let root=physical_folder(parent)?;
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        let meta=root.symlink_metadata(&stage)
+            .map_err(|_|"Stage path unavailable".to_string())?;
+        if !meta.is_dir()||meta.file_type().is_symlink(){
+            return Err("Stage must be a real directory".into());
+        }
+        let staging=root.open_dir(&stage)
+            .map_err(|_|"Cannot open stage directory")?;
+        let plan=native_archive_split::read_plan(&staging)
+            .map_err(|_|"Stage manifest invalid")?;
+        let folder=native_archive_split::folder(&plan.source)
+            .map_err(|_|"Unsafe source name")?;
+        let reviewed=native_archive_split::reconcile_publication(&root,&plan)
+            .map_err(|e|format!("Publication requires manual review: {e:?}"))?;
+        let (status,verified_parts,note)=match reviewed{
+            PublicationReview::Absent=>("absent",0,
+                "No published output found. Stage remains untouched."),
+            PublicationReview::Incomplete{verified_parts,..}=>("incomplete",verified_parts,
+                "Incomplete output: no automatic retry, delete or publication."),
+            PublicationReview::Complete=>("complete",plan.chunks.len(),
+                "Published parts verified against original digest. Stage remains untouched."),
+        };
+        Ok::<_,String>(P08RecoveryView{
+            status,verified_parts,expected_parts:plan.chunks.len(),
+            output_folder:folder,note,
+        })
+    }).await.map_err(|_|"Native recovery inspection worker unavailable")??;
+    Ok(Some(result))
 }
