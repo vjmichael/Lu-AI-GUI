@@ -322,7 +322,8 @@ Size: {} bytes
 Expected SHA-256: {}
 Provider-reported license: {}
 
-You must independently review the model license and access conditions.
+Only confirm if you have reviewed and ACCEPT the provider's applicable
+license and access conditions. The license label is not the full legal text.
 Lu will NOT install, download or load anything.
 P05 must separately authorize the transfer and verify complete bytes."#,
         review.repo_id,review.revision,file.name,file.bytes,
@@ -332,7 +333,7 @@ P05 must separately authorize the transfer and verify complete bytes."#,
         app.dialog().message(summary)
             .title("Lu — Review immutable model transfer metadata")
             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                "Review metadata only".into(),"Cancel".into(),
+                "I accept terms; prepare plan only".into(),"Cancel".into(),
             )).blocking_show()
     ).await.map_err(|_|"Native model review unavailable")?;
     if !accepted{return Ok(None)}
