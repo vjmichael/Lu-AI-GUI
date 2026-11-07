@@ -183,7 +183,10 @@ impl ObserveHost {
     fn reap_capture(&self,capture_id:Option<&str>,chat:Option<&str>)
         ->Result<(),String>{
         if let Some(capture_id)=capture_id{
-            let _=self.capture_processes.poll();
+            // A failed OS poll cannot mean "nothing left to terminate".
+            // Keep Guardian custody and revoke the grant on uncertainty.
+            self.capture_processes.poll()
+                .map_err(|_|"Native capture process reconciliation is uncertain")?;
             if self.capture_processes.can_cancel(capture_id){
                 let chat=chat.ok_or("Missing owned capture workspace")?;
                 self.capture_processes.cancel_owned(capture_id,chat)
@@ -373,7 +376,8 @@ impl ObserveHost {
         let Some(task_id)=current.capture_task_id.clone() else{
             return Ok(None);
         };
-        let _=self.capture_processes.poll();
+        self.capture_processes.poll()
+            .map_err(|_|"Native capture receipt cannot prove process exit")?;
         let row=self.task_store.get(&task_id)
             .map_err(|_|"Native capture task receipt unavailable")?
             .ok_or("Capture task receipt no longer exists")?;
