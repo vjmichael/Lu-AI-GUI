@@ -46,8 +46,7 @@ pub(crate) fn trusted_staged_file_uri(path: &Path) -> Result<String, SupervisorE
 // source text, client data, paths, credentials or arbitrary error strings.
 fn trace_native_lsp_gateway(stage: &'static str) {
     if cfg!(debug_assertions)
-        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
-            == Some(std::ffi::OsStr::new("1"))
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
     {
         eprintln!("PROTECTED_LSP_GATEWAY_STAGE={stage}");
     }
