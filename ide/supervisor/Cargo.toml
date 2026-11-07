@@ -18,6 +18,9 @@ lu-ide-workspace = { path = "../host", optional = true }
 default = []
 # E2 pipe/protocol gateway only; actual OS LSP launch remains gated.
 lsp-transport = ["dep:lu-ide-workspace"]
+# DAP reads only OS-attested stdio owned by a protected native supervisor.
+# This does not enable arbitrary adapter launch or debugger-run terminal.
+dap-transport = ["lsp-transport"]
 # Both OS workers are opt-in and not linked into the installed IDE.
 # Neither feature registers a Tauri command or an unrestricted execution API.
 linux-worker = []

@@ -43,6 +43,30 @@ fn native_linux_cgroup_trace(stage: &'static str) {
 const BWRAP: &str = "/usr/bin/bwrap";
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";
+// The fixed compiler path must be a regular root-owned file, never the
+// /usr/bin/cc -> /etc/alternatives/cc symlink (which isn't mounted in bwrap).
+// Explicit allowlisted package versions retain reproducible toolchain SHA
+// provenance across Debian/Ubuntu, without PATH search or user input.
+#[cfg(target_arch = "x86_64")]
+const LINKER_CANDIDATES: &[&str] = &[
+    "/usr/bin/x86_64-linux-gnu-gcc-14",
+    "/usr/bin/x86_64-linux-gnu-gcc-13",
+    "/usr/bin/x86_64-linux-gnu-gcc-12",
+];
+#[cfg(target_arch = "aarch64")]
+const LINKER_CANDIDATES: &[&str] = &[
+    "/usr/bin/aarch64-linux-gnu-gcc-14",
+    "/usr/bin/aarch64-linux-gnu-gcc-13",
+    "/usr/bin/aarch64-linux-gnu-gcc-12",
+];
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+const LINKER_CANDIDATES: &[&str] = &[];
+#[cfg(target_arch = "x86_64")]
+const LINKER_ENV_KEY: &str = "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER";
+#[cfg(target_arch = "aarch64")]
+const LINKER_ENV_KEY: &str = "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER";
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+const LINKER_ENV_KEY: &str = "LU_IDE_UNSUPPORTED_LINKER";
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
@@ -80,6 +104,8 @@ pub struct ExecutionResult {
     pub exit_code: Option<i32>,
     pub stdout_sha256: String,
     pub stderr_sha256: String,
+    /// Fixed, information-minimal native error category. Never raw stderr.
+    pub stderr_category: &'static str,
     pub stdout_bytes_recorded: usize,
     pub stderr_bytes_recorded: usize,
     pub output_truncated: bool,
@@ -130,12 +156,21 @@ fn hash_file(path: &Path) -> Result<String, SupervisorError> {
 
 /// The trusted native host can record this digest in JobPlan. It covers
 /// the two executable files, NOT their dynamic libraries or external crates.
+fn trusted_gnu_linker() -> Result<&'static str, SupervisorError> {
+    LINKER_CANDIDATES
+        .iter()
+        .copied()
+        .find(|candidate| ensure_root_owned_tool(Path::new(candidate)).is_ok())
+        .ok_or_else(denied)
+}
+
 pub fn installed_toolchain_digest() -> Result<String, SupervisorError> {
     ensure_root_owned_tool(Path::new(BWRAP))?;
     ensure_root_owned_tool(Path::new(CARGO))?;
     ensure_root_owned_tool(Path::new(RUSTC))?;
+    let linker = trusted_gnu_linker()?;
     let mut digest = Sha256::new();
-    for path in [BWRAP, CARGO, RUSTC] {
+    for path in [BWRAP, CARGO, RUSTC, linker] {
         let sha = hash_file(Path::new(path))?;
         digest.update(path.as_bytes());
         digest.update([0]);
@@ -444,6 +479,7 @@ fn command_for(
     {
         return Err(SupervisorError::WrongProjectOrSource);
     }
+    let linker = trusted_gnu_linker()?;
     let proc_file = OpenOptions::new()
         .write(true)
         .open(group.dir.join("cgroup.procs"))
@@ -492,6 +528,15 @@ fn command_for(
         .arg("CARGO_NET_OFFLINE")
         .arg("true")
         .arg("--setenv")
+        .arg(LINKER_ENV_KEY)
+        .arg(linker)
+        .arg("--setenv")
+        .arg("CARGO_BUILD_JOBS")
+        .arg("1")
+        .arg("--setenv")
+        .arg("RUST_TEST_THREADS")
+        .arg("1")
+        .arg("--setenv")
         .arg("PATH")
         .arg("/usr/bin:/bin")
         .arg("--setenv")
@@ -530,6 +575,36 @@ struct Captured {
     sha256: String,
     bytes: usize,
     truncated: bool,
+    category: &'static str,
+}
+fn classify_native_output(first: &[u8]) -> &'static str {
+    let lower = String::from_utf8_lossy(first).to_ascii_lowercase();
+    if lower.contains("creating new namespace failed")
+        || lower.contains("unshare failed")
+        || lower.contains("user namespaces are not enabled")
+    {
+        "bubblewrap_namespace_denied"
+    } else if lower.contains("operation not permitted") || lower.contains("permission denied") {
+        "native_permission_denied"
+    } else if lower.contains("failed to download") || lower.contains("network is unreachable") {
+        "unexpected_network_request"
+    } else if lower.contains("lock file needs to be updated")
+        || lower.contains("lockfile needs to be updated")
+    {
+        "offline_lockfile_incompatible"
+    } else if lower.contains("could not execute process") || lower.contains("couldn't execute") {
+        "compiler_exec_failed"
+    } else if lower.contains("no such file or directory") {
+        "required_file_missing"
+    } else if lower.contains("failed to parse manifest") {
+        "manifest_denied"
+    } else if lower.contains("error:") {
+        "native_reported_error"
+    } else if first.is_empty() {
+        "empty"
+    } else {
+        "unclassified_nonempty"
+    }
 }
 fn collect_limited<R: Read + Send + 'static>(
     mut source: R,
@@ -540,11 +615,14 @@ fn collect_limited<R: Read + Send + 'static>(
         let mut buffer = [0_u8; TOTAL_LOG_BUFFER];
         let mut kept = 0_usize;
         let mut truncated = false;
+        let mut diagnostic_prefix = Vec::with_capacity(2048);
         loop {
             let n = source.read(&mut buffer)?;
             if n == 0 {
                 break;
             }
+            let prefix_left = 2048_usize.saturating_sub(diagnostic_prefix.len());
+            diagnostic_prefix.extend_from_slice(&buffer[..n.min(prefix_left)]);
             let len = n.min(max.saturating_sub(kept));
             digest.update(&buffer[..len]);
             kept += len;
@@ -556,6 +634,7 @@ fn collect_limited<R: Read + Send + 'static>(
             sha256: format!("{:x}", digest.finalize()),
             bytes: kept,
             truncated,
+            category: classify_native_output(&diagnostic_prefix),
         })
     })
 }
@@ -642,7 +721,7 @@ pub fn execute_linux_worker(
     }
     // Verify fixed launcher and binary paths BEFORE issuing an admission
     // receipt or creating any process. No caller-specified executable.
-    for tool in [BWRAP, CARGO, RUSTC] {
+    for tool in [BWRAP, CARGO, RUSTC, trusted_gnu_linker()?] {
         ensure_root_owned_tool(Path::new(tool))?;
     }
     let group = make_cgroup(job_id, plan)?;
@@ -752,6 +831,7 @@ pub fn execute_linux_worker(
         exit_code: status.code(),
         stdout_sha256: out.sha256,
         stderr_sha256: err.sha256,
+        stderr_category: err.category,
         stdout_bytes_recorded: out.bytes,
         stderr_bytes_recorded: err.bytes,
         output_truncated: out.truncated || err.truncated,

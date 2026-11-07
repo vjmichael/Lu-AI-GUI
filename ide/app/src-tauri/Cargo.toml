@@ -12,6 +12,14 @@ default = []
 # Release-only native Windows LSP host. Never enabled by the default IDE build.
 # Requires reviewed compile-time executable digests and installed D7D SCM.
 native-lsp = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/lsp-transport", "lu-ide-execution-supervisor/protected-recovery-service"]
+# WO6 opt-in protected build/test. Both native OS workers are linked only
+# behind this explicit feature and still require exact installed release pins.
+# Linux runs fixed root-owned Cargo under cgroup-v2/Bubblewrap; Windows runs
+# the same fixed Cargo recipes via restricted LocalService/AppContainer Job.
+native-build = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
+# WO6 opt-in native LLDB-DAP self-test. Reviewed adapter and fixed debuggee
+# must be embedded in an installer-pinned bundle; no PATH debugger allowed.
+native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/dap-transport", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
@@ -25,6 +33,9 @@ serde_json = "1"
 sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
+lu-ide-execution-supervisor = { path = "../../supervisor", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 lu-ide-execution-supervisor = { path = "../../supervisor", optional = true }
 
 [profile.dev]

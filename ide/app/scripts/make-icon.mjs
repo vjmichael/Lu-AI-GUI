@@ -4,6 +4,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { deflateSync } from 'node:zlib';
 const root=resolve(import.meta.dirname,'..');
 const w=64,h=64,row=w*4,maskStride=Math.ceil(w/32)*4;
 const icoHeader=Buffer.alloc(6+16+40);
@@ -34,4 +35,48 @@ const dir=resolve(root,'src-tauri/icons');
 mkdirSync(dir,{recursive:true});
 const file=resolve(dir,'icon.ico');
 writeFileSync(file,Buffer.concat([icoHeader,pixels,mask]));
-console.log('Generated standalone Lu IDE icon: '+file);
+
+// Tauri's Linux icon resource needs an actual PNG, not a Windows ICO.
+// Convert this SAME first-party pixel data to a deterministic 64x64 RGBA PNG
+// with the correct top-down scanline order and standard zlib compression.
+// No downloaded graphics, image libraries, font files or environment tools.
+function crc32(bytes) {
+  let crc=0xffffffff;
+  for(const byte of bytes){
+    crc^=byte;
+    for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);
+  }
+  return (crc^0xffffffff)>>>0;
+}
+function pngChunk(kind,data){
+  const tag=Buffer.from(kind,'ascii');
+  const size=Buffer.alloc(4),checksum=Buffer.alloc(4);
+  size.writeUInt32BE(data.length);
+  checksum.writeUInt32BE(crc32(Buffer.concat([tag,data])));
+  return Buffer.concat([size,tag,data,checksum]);
+}
+const pngRows=Buffer.alloc(h*(1+w*4));
+for(let y=0;y<h;y++){
+  const rowStart=y*(1+w*4);
+  pngRows[rowStart]=0; // no PNG row filter
+  for(let x=0;x<w;x++){
+    const src=((h-1-y)*w+x)*4;
+    const dest=rowStart+1+x*4;
+    pngRows[dest]=pixels[src+2];
+    pngRows[dest+1]=pixels[src+1];
+    pngRows[dest+2]=pixels[src];
+    pngRows[dest+3]=pixels[src+3];
+  }
+}
+const ihdr=Buffer.alloc(13);
+ihdr.writeUInt32BE(w,0);ihdr.writeUInt32BE(h,4);
+ihdr[8]=8;ihdr[9]=6; // 8-bit RGBA
+const png=Buffer.concat([
+  Buffer.from([137,80,78,71,13,10,26,10]),
+  pngChunk('IHDR',ihdr),
+  pngChunk('IDAT',deflateSync(pngRows,{level:9})),
+  pngChunk('IEND',Buffer.alloc(0)),
+]);
+const pngFile=resolve(dir,'icon.png');
+writeFileSync(pngFile,png);
+console.log('Generated standalone Lu IDE icons: '+file+' and '+pngFile);

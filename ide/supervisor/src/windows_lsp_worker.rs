@@ -75,11 +75,19 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe_id: &str) -> Result<String, 
         "lsp_rust_analyzer" => "rust-analyzer.exe",
         "lsp_clangd" => "clangd.exe",
         "lsp_ruff" => "ruff.exe",
+        #[cfg(feature = "dap-transport")]
+        "dap_lldb_fixed" => "lldb-dap.exe",
         _ => return Err(SupervisorError::InvalidPlan),
     };
     if !clean_meta(root)?.is_dir()
         || !clean_meta(&root.join("bin"))?.is_dir()
         || !clean_meta(&root.join("bin").join(plan_server))?.is_file()
+    {
+        return Err(denied());
+    }
+    #[cfg(feature = "dap-transport")]
+    if recipe_id == "dap_lldb_fixed"
+        && !clean_meta(&root.join("debuggee/wo6-selftest.exe"))?.is_file()
     {
         return Err(denied());
     }
@@ -837,6 +845,209 @@ pub fn start_windows_lsp(
         gateway,
         native_uri,
     })
+}
+
+#[cfg(feature = "dap-transport")]
+pub fn start_windows_dap(
+    supervisor: Arc<Supervisor>,
+    job_id: &str,
+    plan: &JobPlan,
+    current_native_source_head: &str,
+    input: &PublishedInput,
+    trusted_release_bundle: &Path,
+    trusted_service: &TrustedBroker,
+) -> Result<WindowsDapSession, SupervisorError> {
+    if plan.recipe_id != "dap_lldb_fixed" || plan.effect_class != "debug_inspection_isolated" {
+        return Err(SupervisorError::InvalidPlan);
+    }
+    let executable_basename = "lldb-dap.exe";
+    let arguments: &[&str] = &[];
+    if !valid_job_id(job_id)
+        || plan.source_head != current_native_source_head
+        || plan.input_snapshot_sha256 != input.seal.source_sha256
+        || plan.manifest_sha256 != input.seal.manifest_sha256
+    {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    if native_lsp_bundle_digest(trusted_release_bundle, &plan.recipe_id)? != plan.toolchain_sha256 {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    native_lsp_trace("profile_create_start");
+    let profile = AppProfile::create(job_id)?;
+    native_lsp_trace("profile_created");
+    let local = profile.local_state()?;
+    let workspace = local.join("workspace");
+    let bundle = local.join("language-server");
+    stage_workspace(input, &workspace)?;
+    native_lsp_trace("workspace_staged");
+    native_lsp_trace("bundle_stage_start");
+    stage_bundle(
+        trusted_release_bundle,
+        &bundle,
+        &plan.recipe_id,
+        &plan.toolchain_sha256,
+    )?;
+    native_lsp_trace("bundle_staged");
+    let staged_input = PublishedInput {
+        root: workspace.clone(),
+        seal: input.seal.clone(),
+    };
+    verify_input(&staged_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    let staged_document = workspace.join(&input.seal.manifest_relative_path);
+    if !clean_meta(&staged_document)?.is_file() {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    let executable = bundle.join("bin").join(executable_basename);
+    if !clean_meta(&executable)?.is_file() {
+        return Err(denied());
+    }
+    let env = min_environment(&local, &bundle)?;
+    let command_text = format!(
+        "\"{}\"{}",
+        executable.display(),
+        arguments
+            .iter()
+            .map(|arg| format!(" {arg}"))
+            .collect::<String>()
+    );
+    if command_text.chars().any(char::is_control) || command_text.len() > 4096 {
+        return Err(denied());
+    }
+    let mut command = wstr(&command_text);
+    let plan_hash = supervisor
+        .inspect()?
+        .into_iter()
+        .find(|x| x.job_id == job_id)
+        .ok_or(SupervisorError::NoSuchJob)?
+        .plan_sha256;
+    let job = Job::create(job_id, &plan_hash, plan)?;
+    native_lsp_trace("job_created_empty");
+    if !proof().complete() {
+        return Err(denied());
+    }
+    native_lsp_trace("scm_lease_start");
+    let mut lease = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_service)?;
+    native_lsp_trace("scm_lease_fsynced");
+    // Clangd and the Windows runtime can open the NUL device by name after
+    // AppContainer launch, just as pinned Cargo/rustc does. Obtain an exact
+    // package-SID NUL lease from the independently restricted SCM service
+    // while the Job is empty. The service journals and verifies the grant,
+    // then revokes it before the final durable release ACK. This is NOT an
+    // interactive/user ACL edit, blanket AppContainer grant or launch bypass.
+    // The LSP adapter is compiled only with protected-recovery-service.
+    native_lsp_trace("scm_exact_nul_lease_requested");
+    lease.grant_null()?;
+    native_lsp_trace("scm_exact_nul_lease_fsynced");
+    supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
+    native_lsp_trace("grant_consumed");
+    let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
+        match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
+            Ok(value) => {
+                native_lsp_trace("suspended_child_attested");
+                value
+            }
+            Err(_) => {
+                native_lsp_trace("suspended_launch_denied");
+                if matches!(job.empty(), Ok(true)) {
+                    supervisor.native_deny_before_start(job_id, true)?;
+                    return Err(denied());
+                }
+                native_lsp_trace("suspended_launch_job_not_empty");
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(SupervisorError::Quarantined);
+            }
+        };
+    if !lease.alive() {
+        native_lsp_trace("scm_lease_lost_before_resume");
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
+    if let Err(reason) = supervisor.native_mark_running(job_id) {
+        native_lsp_trace("running_receipt_denied");
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(reason);
+    }
+    native_lsp_trace("running_receipt_fsynced");
+    if unsafe { ResumeThread(child_thread.0) } == u32::MAX {
+        native_lsp_trace("resume_denied");
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
+    // Pipe writer is separate from the supervisor event actor. A malicious
+    // server cannot indefinitely block the desktop via synchronous WriteFile.
+    native_lsp_trace("child_resumed");
+    let (write_queue, writer_thread) = match start_writer(stdin_write) {
+        Ok(value) => value,
+        Err(reason) => {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(reason);
+        }
+    };
+    native_lsp_trace("writer_ready");
+    let actor = WindowsLspProcess {
+        _profile: profile,
+        lease,
+        job,
+        process,
+        _thread: child_thread,
+        write_queue,
+        writer_thread: Some(writer_thread),
+        stdout_read,
+        debug_stderr,
+        released: false,
+    };
+    let gateway = crate::dap_transport::DapGateway::attach_native(
+        Arc::clone(&supervisor),
+        job_id,
+        &plan_hash,
+        &proof(),
+        Box::new(actor),
+    )?;
+    native_lsp_trace("gateway_attached");
+    Ok(WindowsDapSession {
+        gateway,
+        fixed_debuggee: bundle
+            .join("debuggee/wo6-selftest.exe")
+            .to_string_lossy()
+            .into_owned(),
+    })
+}
+
+#[cfg(feature = "dap-transport")]
+pub struct WindowsDapSession {
+    gateway: crate::dap_transport::DapGateway,
+    fixed_debuggee: String,
+}
+#[cfg(feature = "dap-transport")]
+impl WindowsDapSession {
+    pub fn initialize(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.initialize()
+    }
+    pub fn launch_fixed_fixture(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.launch_fixed_fixture(&self.fixed_debuggee)
+    }
+    pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
+        self.gateway.phase()
+    }
+    pub fn poll(
+        &mut self,
+    ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
+        self.gateway.poll()
+    }
+    pub fn threads(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.threads()
+    }
+    pub fn stack_trace(&mut self, thread_id: u64) -> Result<(), SupervisorError> {
+        self.gateway.stack_trace(thread_id)
+    }
+    pub fn close(self) -> Result<(), SupervisorError> {
+        self.gateway.close()
+    }
 }
 
 pub struct WindowsLspSession {

@@ -77,6 +77,14 @@ function App() {
   const [intentList, setIntentList] = useState(null);
   const [intentRecipe, setIntentRecipe] = useState('lu_ide_host_tests');
   const [intentBusy, setIntentBusy] = useState(false);
+  const [buildStatus, setBuildStatus] = useState(null);
+  const [buildBusy, setBuildBusy] = useState(false);
+  const [buildCancelBusy, setBuildCancelBusy] = useState(false);
+  const [buildResult, setBuildResult] = useState(null);
+  const buildStatusRequest = useRef(0);
+  const [debugStatus, setDebugStatus] = useState(null);
+  const [debugBusy, setDebugBusy] = useState(false);
+  const [debugResult, setDebugResult] = useState(null);
   const [reviewIntentId, setReviewIntentId] = useState(null);
   const intentRequest = useRef(0);
   const [contextBusy, setContextBusy] = useState(false);
@@ -146,6 +154,14 @@ function App() {
     setIntentList(null);
     setIntentBusy(false);
     setReviewIntentId(null);
+    buildStatusRequest.current += 1;
+    setBuildStatus(null);
+    setBuildResult(null);
+    setBuildBusy(false);
+    setBuildCancelBusy(false);
+    setDebugStatus(null);
+    setDebugBusy(false);
+    setDebugResult(null);
     setGitStatus(null);
     setGithubComparison(null);
     exactCiRequest.current += 1;
@@ -197,6 +213,40 @@ function App() {
   const isLanguages = section === 'languages';
   const isContinuity = section === 'continuity';
   const isJobs = section === 'tasks';
+  useEffect(() => {
+    const projectId = activeProject?.projectId;
+    if (!isJobs || !projectId) return;
+    let alive = true;
+    async function update() {
+      try {
+        const debug = await invoke('ide_debug_status', { projectId });
+        if (alive && activeProjectIdRef.current === projectId &&
+            debug && typeof debug.ready === 'boolean')
+          setDebugStatus(debug);
+      } catch {
+        if (alive && activeProjectIdRef.current === projectId)
+          setDebugStatus({ ready:false, code:'DEBUG_HOST_UNAVAILABLE',
+            description:'Protected debugger status unavailable', current:null, last:null });
+      }
+      try {
+        const value = await invoke('ide_build_status', { projectId });
+        if (!alive || activeProjectIdRef.current !== projectId) return;
+        if (value && typeof value.ready === 'boolean' &&
+            Array.isArray(value.recent) && Array.isArray(value.quarantined))
+          setBuildStatus(value);
+      } catch {
+        if (alive && activeProjectIdRef.current === projectId)
+          setBuildStatus({
+            ready:false, code:'BUILD_HOST_UNAVAILABLE',
+            description:'Protected worker status unavailable',
+            current:null, recent:[], quarantined:[]
+          });
+      }
+    }
+    void update();
+    const poll = window.setInterval(() => { void update(); }, 1000);
+    return () => { alive = false; window.clearInterval(poll); };
+  }, [isJobs, activeProject?.projectId]);
   // Advisory only: derives labels from two existing, separately observed native responses.
   const evidenceReconciliation = activeProject?.projectId &&
     projectContext?.projectId === activeProject.projectId &&
@@ -447,6 +497,154 @@ function App() {
         setProblem('Could not update job intent: ' + String(error));
     } finally {
       if (request === intentRequest.current) setIntentBusy(false);
+    }
+  }
+
+  async function refreshProtectedBuildStatus() {
+    const projectId = activeProject?.projectId;
+    if (!projectId) { setBuildStatus(null); return; }
+    const request = ++buildStatusRequest.current;
+    try {
+      const value = await invoke('ide_build_status', { projectId });
+      if (request !== buildStatusRequest.current ||
+          activeProjectIdRef.current !== projectId) return;
+      if (!value || typeof value.ready !== 'boolean' ||
+          !Array.isArray(value.recent) || !Array.isArray(value.quarantined))
+        throw Error('BUILD_STATUS_SHAPE_DENIED');
+      setBuildStatus(value);
+    } catch {
+      if (request === buildStatusRequest.current &&
+          activeProjectIdRef.current === projectId)
+        setBuildStatus({
+          ready: false, code: 'BUILD_HOST_UNAVAILABLE',
+          description: 'Trusted native worker status is unavailable.',
+          current: null, recent: [], quarantined: []
+        });
+    }
+  }
+
+  async function startProtectedBuild() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || buildBusy || !buildStatus?.ready ||
+        buildStatus.current || !['rust_check', 'rust_tests', 'lu_ide_host_tests'].includes(intentRecipe)) return;
+    setBuildBusy(true);
+    setBuildResult(null);
+    setProblem('');
+    try {
+      // This is a REQUEST, not an execution grant. A separate native OS
+      // confirmation follows sealed-source and release-pin admission.
+      const outcome = await invoke('ide_build_start', {
+        projectId, recipeId: intentRecipe
+      });
+      if (activeProjectIdRef.current !== projectId) return;
+      if (!outcome || outcome.projectId !== projectId ||
+          outcome.recipeId !== intentRecipe || !/^[a-f0-9]{64}$/.test(outcome.planSha256))
+        throw Error('BUILD_RESULT_SCOPE_DENIED');
+      setBuildResult(outcome);
+      setHint('Protected worker returned a durable result. Native and installed acceptance are separate gates.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Protected build/test was denied or failed: ' + String(error));
+    } finally {
+      setBuildBusy(false);
+      await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function cancelProtectedBuild() {
+    const projectId = activeProject?.projectId;
+    const current = buildStatus?.current;
+    if (!projectId || !current || current.projectId !== projectId ||
+        buildCancelBusy) return;
+    setBuildCancelBusy(true);
+    try {
+      await invoke('ide_build_cancel', { projectId, jobId: current.jobId || null });
+      if (activeProjectIdRef.current === projectId)
+        setHint('Cancellation requested. Worker is not marked cancelled until the OS process tree is verified empty.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Could not request protected cancellation: ' + String(error));
+    } finally {
+      setBuildCancelBusy(false);
+      await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function reconcileProtectedBuild(job) {
+    const projectId = activeProject?.projectId;
+    if (!job || job.projectId !== projectId ||
+        !job.requiresReconciliation || buildBusy) return;
+    setBuildBusy(true);
+    setProblem('');
+    try {
+      await invoke('ide_build_reconcile', { projectId, jobId: job.jobId });
+      if (activeProjectIdRef.current === projectId)
+        setHint('Interrupted worker reconciliation verified by the native OS broker. No job was restarted.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Kernel recovery remains quarantined: ' + String(error));
+    } finally {
+      setBuildBusy(false);
+      await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function runProtectedDebuggerFixture() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || !debugStatus?.ready || !!debugStatus.current || debugBusy) return;
+    setDebugBusy(true);
+    setProblem('');
+    setDebugResult(null);
+    try {
+      const value = await invoke('ide_debug_run_fixture', { projectId });
+      if (activeProjectIdRef.current !== projectId) return;
+      if (!value || value.projectId !== projectId ||
+          value.target !== 'fixed_installer_selftest_only_not_project_debugger')
+        throw Error('DEBUG_RESULT_SCOPE_DENIED');
+      setDebugResult(value);
+      setHint('The fixed debugger self-test returned a native stop/stack and cleanup receipt.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Protected debugger self-test denied or failed: ' + String(error));
+    } finally {
+      setDebugBusy(false);
+      const current = activeProjectIdRef.current;
+      if (current === projectId) {
+        invoke('ide_debug_status', { projectId }).then(setDebugStatus).catch(() => {});
+      }
+    }
+  }
+
+  async function reconcileProtectedDebugger(item) {
+    const projectId = activeProject?.projectId;
+    if (!item || item.projectId !== projectId ||
+        !item.requiresReconciliation || debugBusy) return;
+    setDebugBusy(true);
+    setProblem('');
+    try {
+      await invoke('ide_debug_reconcile', { projectId, jobId: item.jobId });
+      if (activeProjectIdRef.current === projectId)
+        setHint('Interrupted debugger was cleaned by the native OS broker; nothing was restarted.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Debug process tree remains quarantined: ' + String(error));
+    } finally {
+      setDebugBusy(false);
+      if (activeProjectIdRef.current === projectId)
+        invoke('ide_debug_status', { projectId }).then(setDebugStatus).catch(() => {});
+    }
+  }
+
+  async function cancelProtectedDebugger() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || debugStatus?.current?.projectId !== projectId) return;
+    try {
+      await invoke('ide_debug_cancel', {
+        projectId, jobId: debugStatus.current.jobId || null
+      });
+      setHint('Debugger cancellation requested; OS process tree must be verified empty.');
+    } catch (error) {
+      setProblem('Debugger cancellation denied: ' + String(error));
     }
   }
 
@@ -1216,7 +1414,7 @@ function App() {
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
           <h1>{isJobs ? 'Execution requests' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isJobs ? 'Review non-executable plans · No worker enabled · No grants' :
+          <p>{isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
@@ -1229,7 +1427,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? refreshIntents() : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -1248,12 +1446,110 @@ function App() {
       {isJobs
         ? <section className="workspaceContent continuityWorkspace" aria-label="Execution intent review">
             <div className="sectionHeading">
-              <h2>Job requests</h2>
-              <span>Wave D1 · Preparation only</span>
+              <h2>Build, test and job requests</h2>
+              <span>WO6 · Native OS admission required</span>
             </div>
-            <p className="capabilityNotice"><strong>No worker is enabled.</strong> This view records bounded
-              human intentions, not permission to launch processes. No external commands,
-              project scripts, test executables, or package managers can run here.</p>
+            <div className="continuityDocument jobIntentComposer" aria-label="Protected native build and test">
+              <h3>Protected Run / Test</h3>
+              <p>Only approved offline Cargo recipes can be executed from a frozen source snapshot
+                inside a restricted OS worker. A fresh native confirmation is required for each run.
+                The default desktop and machines without pinned toolchains cannot launch one.</p>
+              <p>Native worker: <strong>{buildStatus?.ready ? 'Release resources verified; OS admission checked on every run' :
+                (buildStatus?.code || 'Checking trusted native admission…')}</strong></p>
+              <p>{buildStatus?.description || 'No unprotected fallback is provided.'}</p>
+              <button className="primaryBtn" type="button"
+                disabled={!activeProject || !buildStatus?.ready || !!buildStatus.current || buildBusy ||
+                  !['rust_check','rust_tests','lu_ide_host_tests'].includes(intentRecipe)}
+                onClick={() => startProtectedBuild()}>
+                {buildBusy ? 'Protected job in progress…' : 'Request protected Run / Test'}
+              </button>
+              {buildStatus?.current?.projectId === activeProject?.projectId && <>
+                <p role="status">Active protected job: {buildStatus.current.recipeId} ·
+                  {buildStatus.current.jobId || 'Preparing frozen snapshot'}
+                  {buildStatus.current.cancellationRequested ? ' · cancellation requested' : ''}</p>
+                <button type="button" className="ghostBtn"
+                  disabled={buildCancelBusy || buildStatus.current.cancellationRequested}
+                  onClick={() => cancelProtectedBuild()}>
+                  {buildCancelBusy ? 'Requesting cancellation…' : 'Cancel and verify process-tree termination'}
+                </button>
+              </>}
+              {buildResult?.projectId === activeProject?.projectId && <div role="status">
+                <p>Last worker result: <strong>{buildResult.phase}</strong> · Job {buildResult.jobId}</p>
+                <p>Native exit: {String(buildResult.nativeExitCode ?? 'unknown')} ·
+                  Fixed OS error category: {buildResult.nativeErrorCategory || 'not reported'} · Timed out:
+                  {buildResult.timedOut ? 'yes' : 'no'} · Reconciliation:
+                  {buildResult.requiresReconciliation ? 'required' : 'not indicated'}</p>
+                <p>Source: <code>{buildResult.inputSnapshotSha256}</code></p>
+                <p>Toolchain: <code>{buildResult.toolchainSha256}</code></p>
+                <p>Worker output seal: {buildResult.outputSha256 || 'not independently published'}</p>
+                <p>Read-only artifact witness: {buildResult.artifactEvidenceState || 'unavailable'} ·
+                  {buildResult.artifactCount ?? 0} files · {buildResult.artifactTruncated ? 'display truncated' : 'bounded listing'}</p>
+                <p>Artifact manifest SHA-256: <code>{buildResult.artifactManifestSha256 || 'unavailable'}</code></p>
+                {Array.isArray(buildResult.artifactFiles) && buildResult.artifactFiles.length > 0 &&
+                  <ul>{buildResult.artifactFiles.map(item =>
+                    <li key={item.relativePath}><code>{item.relativePath}</code> ({item.bytes} bytes)
+                      · SHA-256 <code>{item.sha256}</code></li>)}</ul>}
+                <p>Installed-app acceptance: <strong>Not established by this result</strong>.</p>
+              </div>}
+              {buildStatus?.quarantined?.filter(item => item.requiresReconciliation).map(job =>
+                <div className="continuityEvent" key={job.jobId}>
+                  <p>Interrupted job <code>{job.jobId}</code> · {job.phase}.
+                    Execution stays quarantined until native kernel cleanup is verified.</p>
+                  <button type="button" className="ghostBtn"
+                    disabled={buildBusy || !!buildStatus.current}
+                    onClick={() => reconcileProtectedBuild(job)}>Verify OS-only cleanup (no rerun)</button>
+                </div>)}
+              {buildStatus?.recent?.length > 0 && <p>Recent native worker receipts:
+                {buildStatus.recent.length}. These results do not substitute for installed-app tests.</p>}
+            </div>
+            <div className="continuityDocument jobIntentComposer" aria-label="Protected native debugger self-test">
+              <h3>Protected debugger (LLDB-DAP)</h3>
+              <p>Only a reviewed, installer-pinned fixed debuggee can be launched for native
+                stopped-thread/stack acceptance. Arbitrary project executables, process attach,
+                terminal commands, expressions and debugger script execution are not available.</p>
+              <p>Debugger: <strong>{debugStatus?.ready
+                ? 'Signed fixture bundle verified; OS containment checked per run'
+                : (debugStatus?.code || 'Checking approved debugger assets…')}</strong></p>
+              <p>{debugStatus?.description || 'An unpinned adapter cannot execute.'}</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || !debugStatus?.ready || !!debugStatus.current || debugBusy}
+                onClick={() => runProtectedDebuggerFixture()}>
+                {debugBusy ? 'Inspecting fixed native debuggee…' : 'Run protected debugger self-test'}
+              </button>
+              {debugStatus?.current?.projectId === activeProject?.projectId && <>
+                <p role="status">Active debug session: {debugStatus.current.jobId || 'preflight'}
+                  {debugStatus.current.cancellationRequested ? ' · cancelling' : ''}</p>
+                <button type="button" className="ghostBtn"
+                  disabled={debugStatus.current.cancellationRequested}
+                  onClick={() => cancelProtectedDebugger()}>
+                  Request debugger cancellation
+                </button>
+              </>}
+              {Array.isArray(debugStatus?.quarantined) && debugStatus.quarantined
+                .filter(item => item.projectId === activeProject?.projectId &&
+                  item.requiresReconciliation)
+                .map(item => <div className="continuityEvent" key={item.jobId}>
+                  <p>Interrupted debugger job <code>{item.jobId}</code> · {item.phase}.
+                    No debuggee can restart while OS cleanup is unverified.</p>
+                  <button type="button" className="ghostBtn"
+                    disabled={debugBusy || !!debugStatus?.current}
+                    onClick={() => reconcileProtectedDebugger(item)}>
+                    Verify protected debugger cleanup (no execution)
+                  </button>
+                </div>)}
+              {debugResult?.projectId === activeProject?.projectId && <div role="status">
+                <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
+                <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
+                  {debugResult.threadsResponseObserved ? 'observed' : 'not proven'} · Stack:
+                  {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>
+                <p>Kernel tree cleanup: {debugResult.verifiedOsTreeReleaseByWorker
+                  ? 'reported by protected supervisor' : 'not verified'}.</p>
+                <p>Installed/debugger project release acceptance: <strong>Not established.</strong></p>
+              </div>}
+            </div>
+            <p className="capabilityNotice"><strong>Historical D1 intents below are non-executing.</strong>
+              Reviewing or cancelling an intent never issues a worker grant. A protected job
+              requires its own independently verified native authorization.</p>
             <div className="continuityDocument jobIntentComposer">
               <h3>Prepare a fixed recipe</h3>
               <p>Requires a registered project with a clean local Git HEAD and
