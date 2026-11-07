@@ -27,6 +27,10 @@ if ($LASTEXITCODE -ne 0 -or $dirty.Count -gt 0) { Deny 'source_tree_not_clean' }
 $tauri=Join-Path $repo 'ide/app/src-tauri'
 $app=Join-Path $tauri 'target/release/lu-ide-desktop.exe'
 if (!(Test-Path -LiteralPath $app -PathType Leaf)) { Deny 'reviewed_prebuilt_desktop_missing' }
+$desktopSigner=Get-AuthenticodeSignature -LiteralPath $app
+if ($desktopSigner.Status -ne 'Valid' -or !$desktopSigner.SignerCertificate) {
+  Deny 'reviewed_desktop_authenticode_missing'
+}
 $cliRoot=Join-Path $repo 'ide/app/node_modules/@tauri-apps/cli'
 $cliManifest=Join-Path $cliRoot 'package.json'
 $cli=Join-Path $repo 'ide/app/node_modules/.bin/tauri.cmd'
@@ -75,6 +79,7 @@ $service=Join-Path $NewPayloadRoot 'resources/recovery/windows_recovery_service.
 $policy=Get-Content (Join-Path $NewPayloadRoot 'resources/wo7-service-policy.json') -Raw | ConvertFrom-Json
 Copy-Item -LiteralPath $installer -Destination (Join-Path $NewCandidateRoot 'lu-ide-signed-setup.exe')
 Copy-Item -LiteralPath $service -Destination (Join-Path $NewCandidateRoot 'windows_recovery_service.exe')
+Copy-Item -LiteralPath $app -Destination (Join-Path $NewCandidateRoot 'lu-ide-desktop.exe')
 $candidate=[ordered]@{
   schema='lu.ide.wo7.signed-nsis.v1'
   releaseApproved=$false
@@ -83,6 +88,7 @@ $candidate=[ordered]@{
   acceptance=@{nativeWindows='pending';installedSigned='pending';serviceLifecycle='pending';uninstall='pending'}
   installer=@{path='lu-ide-signed-setup.exe';sha256=(Get-FileHash (Join-Path $NewCandidateRoot 'lu-ide-signed-setup.exe') -Algorithm SHA256).Hash.ToLowerInvariant();signerThumbprint=$InstallerSignerThumbprint.ToLowerInvariant()}
   service=@{path='windows_recovery_service.exe';sha256=(Get-FileHash (Join-Path $NewCandidateRoot 'windows_recovery_service.exe') -Algorithm SHA256).Hash.ToLowerInvariant();signerThumbprint=$policy.signerThumbprint}
+  desktop=@{path='lu-ide-desktop.exe';sha256=$desktopSha.ToLowerInvariant();signerThumbprint=$desktopSigner.SignerCertificate.Thumbprint.ToLowerInvariant()}
 }
 $candidate | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $NewCandidateRoot 'wo7-release.manifest.json') -Encoding UTF8
 Write-Host 'WO7_SIGNED_CANDIDATE_PREPARED_ONLY=PASS'
