@@ -1,0 +1,31 @@
+# INSTALLER TEMPLATE ONLY. Not an enabled or release-ready systemd service.
+# The trusted package builder substitutes both @...@ placeholders, checks
+# the installed host and helper are absolute, root-owned, non-writable and
+# release-hash-pinned, then creates one unit named lu-ide-delegated.service.
+# Requires Linux cgroup v2 and systemd >= 254 for DelegateSubgroup=.
+# No Docker, sudo fallback, or manual shell setup is part of the IDE UI.
+[Unit]
+Description=Lu IDE trusted native development host (delegated cgroup v2)
+Documentation=https://github.com/vjmichael/Lu-AI-GUI
+ConditionPathExists=/sys/fs/cgroup/cgroup.controllers
+After=local-fs.target
+
+[Service]
+Type=exec
+User=@LU_IDE_APPROVED_USER@
+Group=@LU_IDE_APPROVED_GROUP@
+Delegate=cpu memory pids
+DelegateSubgroup=lu-ide-host
+ExecStartPre=/usr/libexec/lu-ide/linux_cgroup_prepare
+ExecStart=@LU_IDE_SIGNED_NATIVE_HOST_ABSOLUTE_PATH@
+NoNewPrivileges=yes
+UMask=0077
+KillMode=control-group
+Restart=no
+# Do not set ProtectControlGroups/ProtectKernelTunables in a way that
+# makes the delegated cgroup kernel files read-only; WO4 must independently
+# verify exact controller availability and revocation before activation.
+# Never grant CAP_SYS_ADMIN or open a generic command-execution interface.
+
+[Install]
+WantedBy=multi-user.target
