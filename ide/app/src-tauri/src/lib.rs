@@ -76,6 +76,72 @@ fn stable_error(error: &IdeError) -> &'static str {
     }
 }
 
+/// WO9-D: native read-only preview for one tracked file; stage/commit
+/// require separate exact-source revalidation and an explicit OS confirmation.
+#[tauri::command]
+async fn ide_git_review_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::reviewed_git::ReviewedGitFile, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_reviewed_git_file(&project_id, &relative_path).map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GIT_REVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_stage_reviewed(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    expected: lu_ide_workspace::reviewed_git::ReviewedGitFile,
+) -> Result<lu_ide_workspace::reviewed_git::ReviewedStageReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let current = registry.preview_reviewed_git_file(
+            &expected.project_id, &expected.relative_path).map_err(str::to_owned)?;
+        if current.local_head != expected.local_head
+            || current.index_fingerprint != expected.index_fingerprint
+            || current.worktree_sha256 != expected.worktree_sha256
+            || current.file_size != expected.file_size {
+            return Err("WO9_GIT_REVIEW_CHANGED".into());
+        }
+        let allow = app.dialog().message(format!(
+            "Stage only this reviewed file?\n{}\nSHA-256 {}\nNo hooks, Git CLI, or remote operations.",
+            current.relative_path, current.worktree_sha256
+        )).title("Lu IDE · One-file Git stage")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+              "Stage reviewed bytes".into(), "Cancel".into())).blocking_show();
+        if !allow { return Err("WO9_GIT_STAGE_NOT_AUTHORIZED".into()); }
+        registry.stage_reviewed_git_file(&current).map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GIT_STAGE_HOST_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_commit_reviewed(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    stage: lu_ide_workspace::reviewed_git::ReviewedStageReceipt,
+    message: String,
+    author_name: String,
+    author_email: String,
+) -> Result<lu_ide_workspace::reviewed_git::ReviewedCommitReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let allow = app.dialog().message(format!(
+            "Create one local Git commit?\nFile: {}\nStaged SHA-256: {}\nMessage: {}\nNo Git hooks or push.",
+            stage.relative_path, stage.source_sha256, message
+        )).title("Lu IDE · Confirm local Git commit")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+              "Commit exact staged file".into(), "Cancel".into())).blocking_show();
+        if !allow { return Err("WO9_GIT_COMMIT_NOT_AUTHORIZED".into()); }
+        registry.commit_reviewed_git_file(&stage, &message, &author_name, &author_email)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WO9_GIT_COMMIT_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// WO9-A/B: inspect several explicitly registered projects in one native,
 /// bounded, non-executing release workflow. No paths or commands from WebView.
 #[tauri::command]
@@ -1069,6 +1135,9 @@ pub fn run() {
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
+            ide_git_review_file,
+            ide_git_stage_reviewed,
+            ide_git_commit_reviewed,
             ide_workflow_preview,
             ide_workflow_verify,
             ide_workflow_export_manifest,
