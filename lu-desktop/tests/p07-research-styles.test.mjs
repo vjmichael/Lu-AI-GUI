@@ -210,6 +210,7 @@ test('P07 catalog revision requires native side-by-side comparison with durable 
   assert.match(ledger,/p07_catalog_re_review_preserves_history_denies_stale_receipts_and_recovers/);
   assert.match(host,/pub\(crate\) fn prepare_citation_revision\(/);
   assert.match(host,/pub\(crate\) fn apply_citation_revision\(/);
+  assert.match(host,/p07_catalog_revision_reopens_offline_and_rejects_stale_human_consent/);
   assert.match(host,/let old=catalog_work_from_crossref/);
   assert.match(host,/let next=catalog_work_from_crossref/);
   assert.match(host,/replace_citation_catalog_after_review\(/);
