@@ -115,6 +115,17 @@ jobs:
       - name: Install frontend dependencies
         working-directory: ide/app
         run: npm install --no-audit --no-fund
+      - name: Prepare exact-source resolved licenses for real NSIS Tauri resources
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: unresolved Cargo native license sources' }
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual npm/Cargo third-party licenses not staged' }
+          Write-Host 'P05_E2_NATIVE_LICENSES=RESOLVED_AND_INCLUDED_NO_LEGAL_APPROVAL'
       - name: Build genuine unsigned standalone NSIS
         working-directory: ide/app
         shell: pwsh
@@ -122,6 +133,16 @@ jobs:
           $ErrorActionPreference='Stop'
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native NSIS build failed' }
+      - name: Bind NSIS installer bytes to reviewed legal files and exact source
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $installers=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($installers.Count -ne 1) { throw 'DENIED: exact single unsigned NSIS candidate missing' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --artifact $installers[0].FullName --receipt ide/app/src-tauri/e2-supervised-package-license-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: NSIS license inventory or package SHA differs' }
       - name: Check real installed executable launch/restart/uninstall
         shell: pwsh
         run: |
@@ -136,6 +157,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lu-ide-e2-default-alpha-unsigned-nsis-test-only
-          path: ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/e2-supervised-package-license-receipt.json
           if-no-files-found: ignore
           retention-days: 3
