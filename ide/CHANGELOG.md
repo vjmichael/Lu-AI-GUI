@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P05 — GitHub source and CI consolidation inventory (Nov 7, 2026):** Created separate P05 branch stacked on P04; audited all **30 currently open IDE PRs** (78 total open repository PRs) against P04 exact Git tree, pinning original heads and unique source SHA-1s. #43/#45 buffer identity, #46 Find in Project remain unported; #76 WO10 explicitly deferred. All 38 IDE workflows remain preserved and source-pinned; Windows/Linux P05 hostile inventory CI rejects premature PR closures, fake native evidence and dropped source/security gates. Semantic code/CI comparisons, native P02–P04 acceptance and resulting individual PR/CI reduction remain outstanding; **zero PRs closed and zero workflows disabled**. [P05 report](docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md).
+
+
 - **P04 source licensing and OS rollback extension (Nov 7, 2026):** unsigned native Windows and Linux package verification includes resolved npm/Cargo legal notices plus exact package SHA receipts. Added a native Linux `dpkg` post-install failure-injection and old-package recovery test (no signature required, real package manager and preserved user-state digest). Signed WO7 builder requires complete independently reviewed legal evidence as a separate input outside the clean source tree. Source implemented; OS/installed CI outcomes and protected installer upgrades still open.
 
 
