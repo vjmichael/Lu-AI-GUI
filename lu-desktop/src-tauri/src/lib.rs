@@ -62,7 +62,7 @@ use std::{
     io::{Read, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{atomic::{AtomicBool,Ordering},Arc, Mutex},
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -247,6 +247,8 @@ struct DesktopState {
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
     observe: Arc<observe_desktop::ObserveHost>,
     vision_probe:Mutex<Option<vision_context::VisionProbeReceipt>>,
+    /// Host-owned per-chat OCR workers, available for explicit cancellation.
+    ocr_cancellations:Mutex<HashMap<String,Arc<AtomicBool>>>,
 }
 
 fn next_id(prefix: &str) -> String {
@@ -622,6 +624,7 @@ impl DesktopState {
         Ok(Self {
             observe,
             vision_probe:Mutex::new(None),
+            ocr_cancellations:Mutex::new(HashMap::new()),
             background_processes,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
@@ -1251,14 +1254,54 @@ struct OcrImageView{
     source_verified:bool,
     human_review_required:bool,
     message:&'static str,
+    ocr_input_sha256:Option<String>,
+    region:Option<OcrRegionView>,
+    page:Option<u16>,
+    raster_engine_sha256:Option<String>,
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct OcrRegionView{x:u32,y:u32,width:u32,height:u32}
+fn claim_ocr(
+    state:&Arc<DesktopState>,chat_id:&str
+)->Result<Arc<AtomicBool>,String>{
+    let mut workers=state.ocr_cancellations.lock()
+        .map_err(|_|"OCR activity registry unavailable")?;
+    if workers.contains_key(chat_id){
+        return Err("This conversation already has an OCR worker".into())
+    }
+    let token=Arc::new(AtomicBool::new(false));
+    workers.insert(chat_id.to_owned(),Arc::clone(&token));
+    Ok(token)
+}
+fn finish_ocr(state:&Arc<DesktopState>,chat_id:&str,token:&Arc<AtomicBool>){
+    if let Ok(mut workers)=state.ocr_cancellations.lock(){
+        if workers.get(chat_id).is_some_and(|current|Arc::ptr_eq(current,token)){
+            workers.remove(chat_id);
+        }
+    }
+}
+/// Cancels one already-running OCR worker in the current conversation.
+#[tauri::command]
+fn lu_ocr_cancel(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<bool,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Select an existing OCR conversation")?;
+    let workers=state.ocr_cancellations.lock()
+        .map_err(|_|"OCR activity registry unavailable")?;
+    if let Some(token)=workers.get(&chat_id){
+        token.store(true,Ordering::SeqCst);
+        Ok(true)
+    }else{Ok(false)}
 }
 /// Both operator OCR routes reuse the same hash-pinned offline worker.
 fn offline_ocr_view(
     bytes:&[u8],executable:&Path,expected:&str,
-    tessdata:&Path,expected_data:&str
+    tessdata:&Path,expected_data:&str,cancel:&AtomicBool
 )->Result<OcrImageView,String>{
-    let observed=lu_core::native_ocr::recognize_pinned_image(
-        bytes,executable,expected,tessdata,expected_data
+    let observed=lu_core::native_ocr::recognize_pinned_image_cancellable(
+        bytes,executable,expected,tessdata,expected_data,cancel
     ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
     Ok(OcrImageView{
         source_sha256:observed.source_sha256,
@@ -1268,6 +1311,8 @@ fn offline_ocr_view(
         format:observed.source_format.to_owned(),
         source_verified:false,human_review_required:true,
         message:"Offline OCR transcription only. Review its accuracy before using it as evidence.",
+        ocr_input_sha256:None,region:None,
+        page:None,raster_engine_sha256:None,
     })
 }
 #[tauri::command]
@@ -1356,10 +1401,13 @@ async fn lu_ocr_read_selected_image(
           )).blocking_show()
     }).await.map_err(|_|"Native OCR consent unavailable")?;
     if !approved{return Ok(None);}
-    let output=tauri::async_runtime::spawn_blocking(move||{
-        offline_ocr_view(&bytes,&executable,expected,&tessdata,expected_data)
-    }).await.map_err(|_|"Native OCR execution worker unavailable")??;
-    Ok(Some(output))
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        offline_ocr_view(&bytes,&executable,expected,&tessdata,expected_data,&worker_token)
+    }).await.map_err(|_|"Native OCR execution worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
 }
 
 /// Attached-image OCR operates on already host-admitted original pixels.
@@ -1414,10 +1462,166 @@ async fn lu_ocr_read_attached_image(
     #[cfg(not(windows))]
     let executable=resources.join("lu-ocr").join("tesseract");
     let tessdata=resources.join("lu-ocr").join("tessdata");
-    let result=tauri::async_runtime::spawn_blocking(move||
-        offline_ocr_view(&source.bytes,&executable,expected,&tessdata,expected_data)
-    ).await.map_err(|_|"Native attached-image OCR worker unavailable")??;
-    Ok(Some(result))
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||
+        offline_ocr_view(&source.bytes,&executable,expected,&tessdata,expected_data,&worker_token)
+    ).await.map_err(|_|"Native attached-image OCR worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
+}
+
+/// Native OCR for a rectangular region of the original admitted PNG/JPEG.
+/// Cropping runs inside Lu Core; Tesseract receives only the derived PNG,
+/// while the review receipt preserves the original image's source digest.
+#[tauri::command]
+async fn lu_ocr_read_attached_region(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,image_ref:String,x:u32,y:u32,width:u32,height:u32
+)->Result<Option<OcrImageView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for image OCR")?;
+    let Some(expected)=option_env!("LU_OCR_TESSERACT_SHA256") else{
+        return Err("Approved offline OCR runtime is not bundled".into())
+    };
+    let Some(expected_data)=option_env!("LU_OCR_ENG_SHA256") else{
+        return Err("Approved OCR English language data is not bundled".into())
+    };
+    let region=lu_core::native_ocr::ImageOcrRegion{x,y,width,height};
+    if width==0||height==0||u64::from(width)*u64::from(height)>32_000_000{
+        return Err("Select a bounded original-image OCR rectangle".into())
+    }
+    let source=state.images.lock().map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).cloned().ok_or("Image no longer admitted")?;
+    let digest=format!("{:x}",Sha256::digest(&source.bytes));
+    if digest!=source.sha256.iter().map(|b|format!("{b:02x}")).collect::<String>(){
+        return Err("Original image digest changed".into())
+    }
+    let approved=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();let chat_id=chat_id.clone();
+        let image_ref=image_ref.clone();let digest=digest.clone();
+        move||app.dialog().message(format!(
+            "Read unverified text only from ORIGINAL image pixels?\n\n\
+            Chat: {chat_id}\nImage: {image_ref}\nSHA-256: {digest}\n\
+            Rectangle: x={x}, y={y}, width={width}, height={height}\n\n\
+            Processing stays offline; you must review and insert any text."
+        )).title("Lu — Authorize image region OCR")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Read selected region".into(),"Cancel".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Native image-region OCR consent unavailable")?;
+    if !approved{return Ok(None)}
+    let unchanged=state.images.lock().map_err(|_|"Image registry unavailable")?
+        .get(&image_ref).is_some_and(|now|
+            now.sha256==source.sha256&&now.bytes==source.bytes);
+    if !unchanged{return Err("Original image detached or changed".into())}
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let exe=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let exe=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let result=lu_core::native_ocr::recognize_pinned_image_region(
+            &source.bytes,region,&exe,expected,&tessdata,expected_data,&worker_token
+        ).map_err(|e|format!("Offline OCR refused: {e:?}"))?;
+        let info=result.observation;
+        Ok::<OcrImageView,String>(OcrImageView{
+            source_sha256:result.original_sha256,
+            ocr_input_sha256:Some(result.ocr_input_sha256),
+            region:Some(OcrRegionView{x,y,width,height}),
+            page:None,raster_engine_sha256:None,
+            text_sha256:info.recognized_text_sha256,engine_sha256:info.engine_sha256,
+            text:info.recognized_text,format:info.source_format.into(),
+            source_verified:false,human_review_required:true,
+            message:"Derived region OCR is unverified; verify against original pixels.",
+        })
+    }).await.map_err(|_|"Native region OCR worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
+}
+
+/// User-selected offline PDF OCR. The existing Reader native picker pins
+/// bytes before human consent; a second pinned, licensed PDF rasterizer
+/// outputs one bounded PNG directly into the existing Tesseract worker.
+/// No PDF-rendered file is written, executed, or made a model source.
+#[tauri::command]
+async fn lu_ocr_read_selected_pdf_page(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,page:u16,
+)->Result<Option<OcrImageView>,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing conversation for PDF OCR")?;
+    if page==0||page>32{return Err("Select a PDF page from 1 through 32".into())}
+    let Some(tess_sha)=option_env!("LU_OCR_TESSERACT_SHA256") else{
+        return Err("Approved offline Tesseract is not bundled".into())
+    };
+    let Some(data_sha)=option_env!("LU_OCR_ENG_SHA256") else{
+        return Err("Approved OCR language data is not bundled".into())
+    };
+    let Some(render_sha)=option_env!("LU_OCR_PDF_RENDER_SHA256") else{
+        return Err("A licensed, pinned offline PDF rasterizer is not bundled".into())
+    };
+    let resources=app.path().resource_dir()
+        .map_err(|_|"OCR resource directory unavailable")?;
+    #[cfg(windows)]
+    let rasterizer=resources.join("lu-ocr").join("pdftocairo.exe");
+    #[cfg(not(windows))]
+    let rasterizer=resources.join("lu-ocr").join("pdftocairo");
+    #[cfg(windows)]
+    let engine=resources.join("lu-ocr").join("tesseract.exe");
+    #[cfg(not(windows))]
+    let engine=resources.join("lu-ocr").join("tesseract");
+    let tessdata=resources.join("lu-ocr").join("tessdata");
+    let chosen=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();
+        move||reader_desktop::pick_reader_bytes(&app,8*1024*1024)
+    }).await.map_err(|_|"Native PDF picker unavailable")??;
+    let Some((name,bytes))=chosen else{return Ok(None)};
+    if !name.to_ascii_lowercase().ends_with(".pdf")
+        ||!bytes.starts_with(b"%PDF-"){
+        return Err("Choose an authentic PDF file for page OCR".into())
+    }
+    let source_sha=format!("{:x}",Sha256::digest(&bytes));
+    let confirmed=tauri::async_runtime::spawn_blocking({
+        let app=app.clone();let sha=source_sha.clone();
+        move||app.dialog().message(format!(
+            "Run offline, UNVERIFIED OCR on page {page} of selected PDF?\n\n\
+            Name: {name}\nSHA-256: {sha}\n\n\
+            A separately pinned Poppler renderer produces a bounded temporary\
+            in-memory PNG, then the pinned Tesseract reads it. Neither engine\
+            uses the network; no PDF files or image files are saved."
+        )).title("Lu — Authorize PDF page OCR")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Read this page".into(),"Cancel".into()
+          )).blocking_show()
+    }).await.map_err(|_|"Native PDF OCR consent unavailable")?;
+    if !confirmed{return Ok(None)}
+    let token=claim_ocr(state.inner(),&chat_id)?;
+    let worker_token=Arc::clone(&token);
+    let outcome=tauri::async_runtime::spawn_blocking(move||{
+        let result=lu_core::native_ocr::recognize_pinned_pdf_page(
+            &bytes,page,&rasterizer,render_sha,&engine,tess_sha,
+            &tessdata,data_sha,&worker_token
+        ).map_err(|e|format!("Offline PDF OCR refused: {e:?}"))?;
+        let info=result.observation;
+        Ok::<OcrImageView,String>(OcrImageView{
+            source_sha256:result.original_pdf_sha256,
+            text_sha256:info.recognized_text_sha256,
+            engine_sha256:info.engine_sha256,
+            ocr_input_sha256:Some(result.raster_png_sha256),
+            raster_engine_sha256:Some(result.raster_engine_sha256),
+            page:Some(page),region:None,
+            text:info.recognized_text,format:"pdf".into(),
+            source_verified:false,human_review_required:true,
+            message:"Scanned-PDF page OCR is unverified, manually review text.",
+        })
+    }).await.map_err(|_|"Native PDF OCR worker unavailable");
+    finish_ocr(state.inner(),&chat_id,&token);
+    Ok(Some(outcome??))
 }
 
 /// A native GGUF+MMProj semantic pixel probe. Synthetic images and answers
@@ -5366,6 +5570,9 @@ pub fn run() {
             lu_vision_run_probe,
             lu_ocr_read_selected_image,
             lu_ocr_read_attached_image,
+            lu_ocr_read_attached_region,
+            lu_ocr_read_selected_pdf_page,
+            lu_ocr_cancel,
             lu_office_word_replace_all,
             lu_office_presentation_replace_all,
             lu_image_workspace_export,

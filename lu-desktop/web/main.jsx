@@ -43,6 +43,8 @@ function App() {
   const [ocrBusy,setOcrBusy]=useState(false);
   const [ocrObservation,setOcrObservation]=useState(null);
   const [ocrReviewText,setOcrReviewText]=useState('');
+  const [ocrRegion,setOcrRegion]=useState({x:'0',y:'0',width:'',height:''});
+  const [ocrPdfPage,setOcrPdfPage]=useState('1');
   const [visionCapability,setVisionCapability] = useState(null);
   const [visionProbeBusy,setVisionProbeBusy]=useState(false); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
@@ -639,6 +641,55 @@ function App() {
       }
     }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
     finally{setOcrBusy(false);}
+  }
+  async function readAttachedRegionText(){
+    const sourceChat=chatId,sourceRef=imageViewer?.imageRef;
+    if(!sourceChat||!sourceRef||ocrBusy)return;
+    const key=JSON.stringify([sourceChat,sourceRef]);
+    const x=Number(ocrRegion.x),y=Number(ocrRegion.y);
+    const width=ocrRegion.width===''?imageViewer.width-x:Number(ocrRegion.width);
+    const height=ocrRegion.height===''?imageViewer.height-y:Number(ocrRegion.height);
+    if([x,y,width,height].some(v=>!Number.isSafeInteger(v))||
+       x<0||y<0||width<=0||height<=0||
+       x>=imageViewer.width||y>=imageViewer.height||
+       width>imageViewer.width-x||height>imageViewer.height-y){
+      setError('OCR rectangle must fit within the original image pixels.');return;
+    }
+    setOcrBusy(true);setOcrObservation(null);setOcrReviewText('');setError('');
+    try{
+      const result=await invoke('lu_ocr_read_attached_region',{
+        chatId:sourceChat,imageRef:sourceRef,x,y,width,height
+      });
+      if(result&&ocrImageScopeRef.current===key){
+        setOcrObservation({chatId:sourceChat,imageRef:sourceRef,...result});
+        setOcrReviewText(result.text.slice(0,12_000));
+      }
+    }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
+    finally{setOcrBusy(false);}
+  }
+  async function readSelectedPdfPage(){
+    if(!chatId||ocrBusy)return;
+    const page=Number(ocrPdfPage);
+    if(!Number.isSafeInteger(page)||page<1||page>32){
+      setError('Choose a PDF page number from 1 to 32.');return;
+    }
+    const sourceChat=chatId,key=ocrImageScopeRef.current;
+    setOcrBusy(true);setOcrObservation(null);setOcrReviewText('');setError('');
+    try{
+      const result=await invoke('lu_ocr_read_selected_pdf_page',{
+        chatId:sourceChat,page
+      });
+      if(result&&ocrImageScopeRef.current===key){
+        setOcrObservation({chatId:sourceChat,...result});
+        setOcrReviewText(result.text.slice(0,12_000));
+      }
+    }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
+    finally{setOcrBusy(false);}
+  }
+  async function cancelOfflineOcr(){
+    if(!chatId||!ocrBusy)return;
+    try{await invoke('lu_ocr_cancel',{chatId});}
+    catch(e){setError(String(e));}
   }
   async function readOfflineImageText(){
     if(!chatId||ocrBusy)return;
@@ -3514,14 +3565,58 @@ function App() {
             disabled={ocrBusy||!chatId||!imageViewer?.imageRef}>
             {ocrBusy?'Offline OCR active…':'Recognize text in this attached image'}
           </button>
+          {imageViewer?.imageRef&&<div aria-label="Original image OCR rectangle">
+            <small>Read only this original-image rectangle (not staged-edit coordinates).
+              Leave width/height blank to reach the image edge.
+              Original: {imageViewer.width} × {imageViewer.height} pixels.</small>
+            <div className="imageRevisionDimensions">
+              {['x','y','width','height'].map(field=><label key={field}>
+                OCR {field}<input type="number" min={field==='x'||field==='y'?0:1}
+                  max={8192} value={ocrRegion[field]}
+                  onChange={e=>setOcrRegion(v=>({...v,[field]:e.target.value}))}/>
+              </label>)}
+            </div>
+            <button type="button" disabled={ocrBusy||!chatId}
+              onClick={()=>void readAttachedRegionText()}>
+              Read selected original region
+            </button>
+          </div>}
           <button type="button" onClick={()=>void readOfflineImageText()}
             disabled={ocrBusy||!chatId}>
             {ocrBusy?'Recognizing from selected image…':'Choose image and extract text'}
           </button>
+          <div className="imageRevisionDimensions" aria-label="Offline scanned PDF page OCR">
+            <label>PDF page (1–32)
+              <input type="number" min="1" max="32" value={ocrPdfPage}
+                disabled={ocrBusy}
+                onChange={e=>setOcrPdfPage(e.target.value)}/>
+            </label>
+            <button type="button" disabled={!chatId||ocrBusy}
+              onClick={()=>void readSelectedPdfPage()}>
+              Choose PDF and OCR selected page
+            </button>
+          </div>
+          <small>PDF OCR requires separately licensed and hash-pinned offline
+            rasterizer resources in the installed application. Text and
+            rendered pixels remain unverified, even when extraction succeeds.</small>
+          {ocrBusy&&<button type="button" onClick={()=>void cancelOfflineOcr()}>
+            Stop active OCR worker
+          </button>}
           {ocrObservation?.chatId===chatId&&
             (!ocrObservation.imageRef||ocrObservation.imageRef===imageViewer?.imageRef)&&<div>
             <small>Unverified OCR · source SHA-256 {ocrObservation.sourceSha256}
               · text SHA-256 {ocrObservation.textSha256}</small>
+            {ocrObservation.page&&<small>
+              OCR page {ocrObservation.page} · Derived raster SHA-256
+              {' '}{ocrObservation.ocrInputSha256} · renderer SHA-256
+              {' '}{ocrObservation.rasterEngineSha256}
+            </small>}
+            {ocrObservation.region&&<small>
+              Original image OCR region:
+              ({ocrObservation.region.x},{ocrObservation.region.y}),
+              {ocrObservation.region.width} × {ocrObservation.region.height} px;
+              derived PNG SHA-256 {ocrObservation.ocrInputSha256}
+            </small>}
             <small>Editable OCR review, maximum 12,000 characters.
               The worker text SHA-256 identifies the uncorrected transcript,
               not any edits made here.

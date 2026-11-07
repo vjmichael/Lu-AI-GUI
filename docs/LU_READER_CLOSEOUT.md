@@ -13,6 +13,14 @@ model-facing desktop Q&A and range changes need *exact-head* CI and real
 installed-app acceptance. Never equate a CI compile with a successful
 real-model tool call.
 
+## OCR source implementation — region, scanned-PDF page and cancellation (2026-11-06)
+
+**Work order OCR-CLOSE-02 — implemented in source, acceptance deferred.** Extended the existing digest-pinned Tesseract OCR kernel rather than introducing a second worker. `recognize_pinned_image_cancellable` shares a bounded, stdin/stdout, host-owned process runner with an optional, separately pinned Poppler `pdftocairo` rasterizer. Windows children are spawned suspended and assigned to Lu's kill-on-close Job Object; Unix children run in a private process group and are killed/reaped on cancellation, timeout or exit. Host activity is tracked per conversation with a Stop OCR action; the old selected-image and attached-image routes now pass cancellation and release their registry entry after completion/error.
+
+The new native-attached-region command crops only the **original** host-admitted PNG/JPEG, retaining the original SHA-256 plus a distinct derived crop hash, exact bounded coordinates and unverified transcript digest. An explicitly selected PDF page (1–32) may be rasterized at <=2048 pixels by a separately license-reviewed, SHA-pinned Poppler executable supplied through the existing installer-owned `lu-ocr` resource set. PDF bytes are pinned through the existing Reader native picker **before** consent; one PNG is passed in-memory to the existing Tesseract. No arbitrary system PATH, shell, URL fetch, PDF save or model file grants. The reviewed Windows staging manifest can optionally supply `pdftocairo.exe` and `LU_OCR_PDF_RENDER_SHA256`. Without that exact resource, PDF OCR **fails closed**. Neither rasterization nor OCR establishes verified document text or trusted model instructions.
+
+**Open:** authentic license-reviewed PDF renderer distribution, Linux OCR package staging, installed multi-page OCR usability and real-file accuracy, rigorous OS worker sandbox beyond process containment, malicious PDF resource limits and truly progressive large corpus. Testing artifacts are authored but not executed in this work order.
+
 ## 2026-11-06 source continuation (not native acceptance)
 
 This is an updated implementation checkpoint on `lu/reader-ocr-image-closeout-20261106`, stacked on the IMAGE-WS-PREVIEW branch. The older status matrix below is retained as historical design context. The **existing** pinned Tesseract offline OCR worker is now reusable from the already-admitted original image in Image Workspace, with explicit native review, exact digest and chat/image scoped display. Reader adds ODT text, ODS A1 sheet ranges, and selected PPTX/ODP speaker notes (`notes:2`). Native PNG/JPEG decoding preflights OCR source dimensions. All extracted OCR words remain unverified human-review data; screenshots and PDF image pages are not silently treated as textual truth.
