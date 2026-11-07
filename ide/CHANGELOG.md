@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- WO8 native installed E2E implementation extended (Nov 7 UTC): CodeMirror's real accessibility textbox, Windows black-box review/Save and durable restarted project reopen, independent Linux Debian+GTK graphical launch and uninstall workflow, manually authorized signed-candidate GUI protected Cargo/LLDB native OS check, and fail-closed exact-SHA/platform/receipt release evidence matrix with hostile tests/source syntax CI. The native Windows/Linux installed jobs and genuine signed protected-feature release acceptance remain OPEN. [Ledger](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md).
+
+
 - WO8-A/B native Windows installed acceptance started (Nov 7 UTC): stacked draft branch `ide/wo8-installed-e2e-20261107`; added real unsigned NSIS install and UI Automation host, OS picker, tabs/source-open, read-only digest and no-worker-autostart checks, uninstall and dedicated Windows OS CI. Declares no native result until exact-head CI; WO8-C–F editing persistence/Linux/signed protected OS acceptance open. [Work-order evidence](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md).
 
 
