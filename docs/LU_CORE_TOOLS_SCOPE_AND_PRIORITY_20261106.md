@@ -1,3 +1,9 @@
+## Owner's AI-first tool policy and P10 progression — November 7, 2026
+
+**Superseding tool design principle:** Lu is an AI execution environment; the AI model supplies general procedural knowledge and plans, and Lu supplies reliable, authorized filesystem I/O, browser/Reader observations, supervised external application/process interaction, policy, resource containment, results and recovery. **Do not reimplement common specialist productivity applications as Lu micro-apps.** OS permission to access resources is distinct from host-validated authority to act. Prefer existing applications/libraries and general reusable execution primitives; add native specialist capabilities only after objective safety/correctness/performance evidence. See [AI-first tool policy](LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md).
+
+**P09:** Current bounded Office support is suitable; no more feature development requested. Source and acceptance remain independently tracked. **P10:** Started IMAGE-BASICS-01 as existing image I/O/basic edit correctness and scope audit; no new graphics application. [P10 ledger](LU_P10_IMAGE_BASICS.md). P04/P05 deferral remains unchanged.
+
 ## P09 owner-directed transition — November 7, 2026
 
 P09 OFFICE-BOUNDARY-01 is now the active Lu Core tool development phase after P08. Maintain bounded DOCX/PPTX/XLSX reading and non-destructive ordinary revisions; disclose that unchanged OOXML parts do not guarantee rich visual fidelity. **Do not build a full Office suite, chart editor, formula calculation engine or advanced layout tool.** P09 source and acceptance ledger: [LU_P09_OFFICE_BOUNDARY.md](LU_P09_OFFICE_BOUNDARY.md). P08's exact-head and installed-app acceptance remains independently OPEN. P04/P05 remain deferred.

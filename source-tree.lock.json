@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
-  "trackedFileCount": 527,
+  "trackedFileCount": 531,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -30,6 +30,10 @@
     {
       "path": ".github/workflows/lu-p09-office-boundary.yml",
       "blob": "b2be376619352f3e60d13858b488f8cd15703f6f"
+    },
+    {
+      "path": ".github/workflows/lu-p10-image-basics.yml",
+      "blob": "7006bb7a9e8462657f9c974cfa1f093d011a9214"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -108,6 +112,10 @@
       "blob": "a4d5a01a5e52747928cba910663543b5873342bb"
     },
     {
+      "path": "docs/LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md",
+      "blob": "2095f151da5f5548b6ede6f527a188e709dadcb7"
+    },
+    {
       "path": "docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md",
       "blob": "0c3165d92786b0a8a1c24f885d30eac6a997aa5d"
     },
@@ -133,7 +141,7 @@
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
-      "blob": "5e06284ee5f09779848cb9e72db3cbc50c13c24e"
+      "blob": "db8796a3f1925869dbb7c5b7347194080395b147"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -141,7 +149,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "4893f260495aaeb2aef68ea826f6c745cbdd647e"
+      "blob": "6d8227f36ce12e8c512e2a03a4f1b6f286640ae6"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -170,6 +178,10 @@
     {
       "path": "docs/LU_P09_OFFICE_BOUNDARY.md",
       "blob": "750100265d77f1e14c8e8140927b0a1630118d61"
+    },
+    {
+      "path": "docs/LU_P10_IMAGE_BASICS.md",
+      "blob": "f8d1ddcd5a87d8fcd97a1100899f5f840de46aed"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -682,6 +694,10 @@
     {
       "path": "lu-desktop/tests/p09-office-boundary.test.mjs",
       "blob": "5d1041c4e8229365e11b0d273203bddfd8493c9f"
+    },
+    {
+      "path": "lu-desktop/tests/p10-image-boundary.test.mjs",
+      "blob": "d23b10f426d6546bad7816d2bb2f86b6dbc14c6a"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -1329,7 +1345,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_image_revision.rs",
-      "blob": "41a8be6909d10eeb29b6f702c562ef6d1b4389a9"
+      "blob": "8f157fc77cc957d99a893560a09cf78a6ea6c486"
     },
     {
       "path": "src-tauri/lu-core/src/native_image_revision_history.rs",
