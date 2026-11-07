@@ -1,5 +1,8 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**IDE 07 WO2/WO3 native admission progress (Nov 6):** Windows CI confirmed exact-host pipe open after minimal no-pipe-create client ACL adjustment, then proved fully authenticated **service server** token/image identity with a query-only token inspection. The service still refused owner admission before READY. Source now impersonates only the kernel-attested connecting client for narrow owner process verification, reverting before all protected Job and permission effects. D7B native owner-crash test dispatch repaired; six Rustfmt hunks applied. Protected Cargo, host/service crash and two simultaneous NUL leases remain **UNVERIFIED at the new exact head**. See [Batch 02](docs/IDE_WORK_BATCH_02_20261106.md). No installed/release worker or LSP enablement.
+
+
 **WO2 native multi-job acceptance added:** GitHub Windows D7D now has a disposable `--nul-overlap` protected SCM fixture proving two independently authenticated Job-specific NUL grants can coexist and be revoked separately, after the original service admission passes. Fixed-service bootstrap grants only restricted SCM identity the NUL DACL-management rights and attempts cleanup in `finally`. This is source/CI-fixture work, **not a passing OS result**. WO3 service named-pipe authentication and crash/restart remain blocking. [Batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
 
 
