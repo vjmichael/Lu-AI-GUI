@@ -28,6 +28,8 @@ pub enum ImageRevisionOperation{
     Line{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
     /// Ellipse outline. Never advertised as a privacy mask.
     Ellipse{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
+    /// Diagonal line with a bounded, visible arrowhead.
+    Arrow{x:u32,y:u32,width:u32,height:u32,rgb:[u8;3],stroke:u32},
     /// Bounded pixel filters preserve the input alpha channel.
     Grayscale,
     InvertRgb,
@@ -77,6 +79,19 @@ fn original_alpha(source:&DynamicImage,filtered:DynamicImage)->DynamicImage{
         pixel[3]=from[3];
     }
     DynamicImage::ImageRgba8(edited)
+}
+fn paint_segment(
+    canvas:&mut image::RgbaImage,
+    a:(u32,u32),b:(u32,u32),rgb:[u8;3],stroke:u32
+){
+    let dx=i64::from(b.0)-i64::from(a.0);
+    let dy=i64::from(b.1)-i64::from(a.1);
+    let steps=dx.unsigned_abs().max(dy.unsigned_abs()).max(1);
+    for step in 0..=steps{
+        let xx=i64::from(a.0)+dx*step as i64/steps as i64;
+        let yy=i64::from(a.1)+dy*step as i64/steps as i64;
+        paint_brush(canvas,xx.max(0) as u32,yy.max(0) as u32,rgb,stroke);
+    }
 }
 fn validate_region(
     x:u32,y:u32,width:u32,height:u32,base_w:u32,base_h:u32
@@ -193,12 +208,27 @@ pub fn transform_admitted_image(
             validate_region(x,y,width,height,base_w,base_h)?;
             if !(1..=32).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
             let mut canvas=decoded.to_rgba8();
-            let count=width.max(height);
-            for step in 0..count{
-                let divisor=u64::from(count.saturating_sub(1).max(1));
-                let xx=x+((u64::from(step)*u64::from(width-1))/divisor) as u32;
-                let yy=y+((u64::from(step)*u64::from(height-1))/divisor) as u32;
-                paint_brush(&mut canvas,xx,yy,rgb,stroke);
+            paint_segment(&mut canvas,(x,y),(x+width-1,y+height-1),rgb,stroke);
+            DynamicImage::ImageRgba8(canvas)
+        },
+        ImageRevisionOperation::Arrow{x,y,width,height,rgb,stroke}=>{
+            validate_region(x,y,width,height,base_w,base_h)?;
+            if !(1..=32).contains(&stroke){return Err(ImageRevisionError::InvalidOperation)}
+            if width<3||height<3{return Err(ImageRevisionError::InvalidOperation)}
+            let mut canvas=decoded.to_rgba8();
+            let start=(x,y);let end=(x+width-1,y+height-1);
+            paint_segment(&mut canvas,start,end,rgb,stroke);
+            let dx=f64::from(width-1);
+            let dy=f64::from(height-1);
+            let length=(dx*dx+dy*dy).sqrt();
+            let ux=dx/length;let uy=dy/length;
+            let head=f64::from((stroke*4+6).min(48)).min(length*0.5);
+            for side in [-1.0f64,1.0]{
+                let wing_x=f64::from(end.0)-ux*head-side*uy*head*0.55;
+                let wing_y=f64::from(end.1)-uy*head+side*ux*head*0.55;
+                let wx=wing_x.round().clamp(0.0,f64::from(base_w-1)) as u32;
+                let wy=wing_y.round().clamp(0.0,f64::from(base_h-1)) as u32;
+                paint_segment(&mut canvas,(wx,wy),end,rgb,stroke);
             }
             DynamicImage::ImageRgba8(canvas)
         },
@@ -365,6 +395,21 @@ mod tests{
             transform_admitted_image(&source,ImageRevisionOperation::Contrast{percent:101}),
             Err(ImageRevisionError::InvalidOperation)
         );
+    }
+    #[test]
+    fn arrow_is_deterministic_bounded_and_immutable(){
+        let source=original();let original=source.bytes.clone();
+        let operation=ImageRevisionOperation::Arrow{
+            x:1,y:1,width:12,height:8,rgb:[255,80,0],stroke:2
+        };
+        let a=transform_admitted_image(&source,operation).unwrap();
+        let b=transform_admitted_image(&source,operation).unwrap();
+        assert_eq!(a.revision_sha256,b.revision_sha256);
+        assert_eq!(source.bytes,original);
+        assert_eq!(transform_admitted_image(&source,
+            ImageRevisionOperation::Arrow{
+                x:1,y:1,width:2,height:8,rgb:[255,80,0],stroke:2
+            }),Err(ImageRevisionError::InvalidOperation));
     }
     #[test]
     fn elliptical_and_line_annotations_are_deterministic_and_keep_original(){

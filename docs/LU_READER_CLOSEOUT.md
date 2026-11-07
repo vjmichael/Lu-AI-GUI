@@ -13,6 +13,21 @@ model-facing desktop Q&A and range changes need *exact-head* CI and real
 installed-app acceptance. Never equate a CI compile with a successful
 real-model tool call.
 
+
+## Follow-on tools workflow pass — OCR, Reader, image interface (2026-11-06)
+
+**Owner priority:** continue native source development; old GH operations and installed acceptance are lower priority. This work is source code committed in the stacked `lu/reader-ocr-image-closeout-20261106` branch, not a release or native-test claim.
+
+| Work order | Functionality implemented with existing components | User interaction / invariant |
+| --- | --- | --- |
+| OCR-PAGES-03 | Extend the **existing** offline, reviewed PDF OCR command to accept 1–8 consecutive pages (1–32). It calls the previously pinned Poppler + Tesseract chain for each page, preserving each page's distinct original PDF SHA-256, rendered PNG SHA-256, OCR text hash, OCR engine and rasterizer hashes. The entire batch fails on any page failure, with the same single conversation-owned cancellation token. | One OS-picked PDF and **one native approval**; page selector in the image viewer; each unverified page remains individually editable/reviewed and inserted into the chat draft separately. A source is never reopened between pages. Without the approved rasterizer binary, OCR refuses the operation. No automatic citation authority. |
+| READER-SELECT-03 | Connect the existing `native_reader::read_selected_bytes`, `read_plain_text_window` and digest-based Reader continuation to the regular native `lu_reader_pick_document` command. Reader now admits the UI-supplied read **selector only**, plus an offset and expected SHA-256. Complex document reads remain bounded to 200,000 extracted characters; ordinary UTF-8/UTF-16 text can continue through the full 8 MiB input. | Desktop `Reader section` input accepts `page:N`, `chapter:N`, `notes:N`, `sheet:Name`, `range:Sheet!A1:D10` and no selector for general text. `Continue Reader` reopens an **OS picker** and refuses a different source SHA-256. No model-provided filesystem path or silent grants. Picker filenames reject controls and bidirectional overrides. |
+| IMAGE-POINTER-06 | Add a bounded native **arrow** annotation using the same immutable staged operations; source-pixel mapping now also works on the **staged native preview**, so crop/rotate/resize editors can drag their next rectangle directly on current staged dimensions. Reuses preview identity key, current plan, native geometry validation and operator-approved new-file export. | Staged overlay is keyed to the exact preview/chat/assembly; changes clear stale selections. Selecting never writes pixels, files, prompts or tool grants. Original-image drag remains the separate OCR/original-coordinate input. |
+
+**Verification boundary:** New unit/contract fixtures updated. No fresh native Windows/Linux build, installed NSIS acceptance, licensed PDF rasterizer installation or real OCR/document corpus performed in this pass. Those gates are deferred, not green. No FFMPEG or network fallback.
+
+**Truly open product gaps:** PDF ToUnicode/CMap/object-stream decoding; long-form Office extraction beyond the conservative cap; historical .doc/.xls/.ppt import; rich EPUB/RTF typography and accessibility; OCR confidence/paragraph geometry and robust scanned-PDF corpus/packaging; image text/brush layers or generative edits; independent runtime containment assurance. Do not duplicate already working read-only parsers, existing OCR engines, revision history, or preview/export flows.
+
 ## OCR source implementation — region, scanned-PDF page and cancellation (2026-11-06)
 
 **Work order OCR-CLOSE-02 — implemented in source, acceptance deferred.** Extended the existing digest-pinned Tesseract OCR kernel rather than introducing a second worker. `recognize_pinned_image_cancellable` shares a bounded, stdin/stdout, host-owned process runner with an optional, separately pinned Poppler `pdftocairo` rasterizer. Windows children are spawned suspended and assigned to Lu's kill-on-close Job Object; Unix children run in a private process group and are killed/reaped on cancellation, timeout or exit. Host activity is tracked per conversation with a Stop OCR action; the old selected-image and attached-image routes now pass cancellation and release their registry entry after completion/error.

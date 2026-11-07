@@ -2,7 +2,7 @@
 // This predicts coordinates only; native Lu Core revalidates every operation
 // and owns the pixels, authority and final file/export receipt.
 export const REGION_IMAGE_OPERATIONS = Object.freeze([
-  'crop','redact','pixelate','rectangle','line','ellipse'
+  'crop','redact','pixelate','rectangle','line','ellipse','arrow'
 ]);
 const regions=new Set(REGION_IMAGE_OPERATIONS);
 const bounded=(w,h)=>Number.isSafeInteger(w)&&Number.isSafeInteger(h)
@@ -36,10 +36,11 @@ export function stagedImageDimensions(width,height,steps=[]){
       if(kind==='crop'){w=rw;h=rh;}
       if(kind==='pixelate' &&
         (!Number.isSafeInteger(step.blockSize)||step.blockSize<2||step.blockSize>128))return null;
-      if(['rectangle','line','ellipse'].includes(kind)){
+      if(['rectangle','line','ellipse','arrow'].includes(kind)){
         const stroke=step.stroke;
         if(!Number.isSafeInteger(stroke)||stroke<1||
-          stroke>(kind==='line'?32:64)||
+          stroke>(['line','arrow'].includes(kind)?32:64)||
+          (kind==='arrow'&&(rw<3||rh<3))||
           !Number.isSafeInteger(step.color)||step.color<0||step.color>0xffffff)return null;
       }
     }else{return null}

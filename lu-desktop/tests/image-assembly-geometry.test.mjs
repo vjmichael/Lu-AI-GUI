@@ -56,3 +56,18 @@ test('pointer regions map rendered zoomed rectangles to real original pixels',()
   assert.deepEqual(imagePointerPixel(-100,999,box,200,100),{x:0,y:99});
   assert.equal(imageDragRectangle({x:220,y:0},{x:1,y:1},200,100),null);
 });
+
+test('arrow annotations obey the native rectangular geometry and stroke bounds',()=>{
+  assert.deepEqual(stagedImageDimensions(80,60,[{
+    operation:'arrow',x:10,y:10,width:20,height:15,
+    stroke:3,color:0x224466
+  }]),{width:80,height:60});
+  assert.equal(stagedImageDimensions(80,60,[{
+    operation:'arrow',x:10,y:10,width:2,height:15,
+    stroke:3,color:0x224466
+  }]),null);
+  assert.equal(stagedImageDimensions(80,60,[{
+    operation:'arrow',x:10,y:10,width:20,height:15,
+    stroke:33,color:0x224466
+  }]),null);
+});

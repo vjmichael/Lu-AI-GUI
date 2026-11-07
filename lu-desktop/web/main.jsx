@@ -40,6 +40,8 @@ function App() {
   const [imageExportBusy,setImageExportBusy]=useState(false);
   const [imageSelection,setImageSelection]=useState(null);
   const imageDragRef=useRef(null);
+  const [stageSelection,setStageSelection]=useState(null);
+  const stageDragRef=useRef(null);
   const [imageExportReceipt,setImageExportReceipt]=useState(null);
   const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
   const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
@@ -48,6 +50,12 @@ function App() {
   const [ocrReviewText,setOcrReviewText]=useState('');
   const [ocrRegion,setOcrRegion]=useState({x:'0',y:'0',width:'',height:''});
   const [ocrPdfPage,setOcrPdfPage]=useState('1');
+  const [ocrPdfEndPage,setOcrPdfEndPage]=useState('1');
+  const [ocrPdfBatch,setOcrPdfBatch]=useState([]);
+  const [ocrPdfIndex,setOcrPdfIndex]=useState(0);
+  const [ocrPdfEdits,setOcrPdfEdits]=useState({});
+  const [readerSelector,setReaderSelector]=useState('');
+  const [readerContinuation,setReaderContinuation]=useState(null);
   const [visionCapability,setVisionCapability] = useState(null);
   const [visionProbeBusy,setVisionProbeBusy]=useState(false); // session diagnostic only, no model attestation
   const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
@@ -672,22 +680,33 @@ function App() {
   }
   async function readSelectedPdfPage(){
     if(!chatId||ocrBusy)return;
-    const page=Number(ocrPdfPage);
-    if(!Number.isSafeInteger(page)||page<1||page>32){
-      setError('Choose a PDF page number from 1 to 32.');return;
+    const page=Number(ocrPdfPage),pageEnd=Number(ocrPdfEndPage);
+    if(!Number.isSafeInteger(page)||!Number.isSafeInteger(pageEnd)||
+       page<1||pageEnd<page||pageEnd>32||pageEnd-page>=8){
+      setError('Choose 1–8 consecutive PDF pages between 1 and 32.');return;
     }
     const sourceChat=chatId,key=ocrImageScopeRef.current;
-    setOcrBusy(true);setOcrObservation(null);setOcrReviewText('');setError('');
+    setOcrBusy(true);setOcrObservation(null);setOcrReviewText('');
+    setOcrPdfBatch([]);setOcrPdfEdits({});setOcrPdfIndex(0);setError('');
     try{
       const result=await invoke('lu_ocr_read_selected_pdf_page',{
-        chatId:sourceChat,page
+        chatId:sourceChat,page,pageEnd
       });
-      if(result&&ocrImageScopeRef.current===key){
-        setOcrObservation({chatId:sourceChat,...result});
-        setOcrReviewText(result.text.slice(0,12_000));
+      if(Array.isArray(result)&&result.length&&ocrImageScopeRef.current===key){
+        const pages=result.map(value=>({...value,chatId:sourceChat}));
+        setOcrPdfBatch(pages);setOcrObservation(pages[0]);
+        setOcrReviewText(pages[0].text.slice(0,12_000));
       }
     }catch(e){if(ocrImageScopeRef.current===key)setError(String(e));}
     finally{setOcrBusy(false);}
+  }
+  function selectOcrPdfPage(index){
+    const result=ocrPdfBatch[index];
+    if(!result||result.chatId!==chatId)return;
+    setOcrPdfEdits(previous=>({...previous,
+      [ocrObservation?.page]:ocrReviewText}));
+    setOcrPdfIndex(index);setOcrObservation(result);
+    setOcrReviewText(ocrPdfEdits[result.page]??result.text.slice(0,12_000));
   }
   async function cancelOfflineOcr(){
     if(!chatId||!ocrBusy)return;
@@ -760,7 +779,46 @@ function App() {
       ?imagePlan.steps:[]
   ]);
   imagePreviewKeyRef.current=currentImagePreviewKey;
-  useEffect(()=>{setImageAssemblyPreview(null);},[currentImagePreviewKey]);
+  useEffect(()=>{
+    setImageAssemblyPreview(null);
+    setStageSelection(null);
+    stageDragRef.current=null;
+  },[currentImagePreviewKey]);
+  function startStagedSelection(event){
+    if(event.button!==0||imagePreviewBusy||
+      imageAssemblyPreview?.key!==currentImagePreviewKey)return;
+    const view=imageAssemblyPreview.result;
+    const pixel=imagePointerPixel(event.clientX,event.clientY,
+      event.currentTarget.getBoundingClientRect(),view.width,view.height);
+    if(!pixel)return;
+    stageDragRef.current={
+      key:currentImagePreviewKey,origin:pixel,
+      width:view.width,height:view.height
+    };
+    setStageSelection({key:currentImagePreviewKey,
+      x:pixel.x,y:pixel.y,width:1,height:1});
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
+  function moveStagedSelection(event){
+    const drag=stageDragRef.current;
+    if(!drag||drag.key!==currentImagePreviewKey)return;
+    const pixel=imagePointerPixel(event.clientX,event.clientY,
+      event.currentTarget.getBoundingClientRect(),drag.width,drag.height);
+    const rect=imageDragRectangle(drag.origin,pixel,drag.width,drag.height);
+    if(rect)setStageSelection({key:drag.key,...rect});
+  }
+  function endStagedSelection(event){
+    const drag=stageDragRef.current;stageDragRef.current=null;
+    if(!drag||drag.key!==currentImagePreviewKey)return;
+    const pixel=imagePointerPixel(event.clientX,event.clientY,
+      event.currentTarget.getBoundingClientRect(),drag.width,drag.height);
+    const rect=imageDragRectangle(drag.origin,pixel,drag.width,drag.height);
+    if(!rect)return;
+    setStageSelection({key:drag.key,...rect});
+    setImageEdit(v=>({...v,x:String(rect.x),y:String(rect.y),
+      width:String(rect.width),height:String(rect.height)}));
+  }
   function queueImageStep(){
     if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
     const previous=imagePlan.chatId===chatId&&imagePlan.imageRef===imageViewer.imageRef
@@ -777,7 +835,7 @@ function App() {
     const height=geometryNeutral?frame.height:Number(imageEdit.height);
     const x=region?Number(imageEdit.x):null;
     const y=region?Number(imageEdit.y):null;
-    const isDrawing=['rectangle','line','ellipse'].includes(imageEdit.mode);
+    const isDrawing=['rectangle','line','ellipse','arrow'].includes(imageEdit.mode);
     const blockSize=imageEdit.mode==='pixelate'?Number(imageEdit.blockSize):null;
     const stroke=isDrawing?Number(imageEdit.stroke):null;
     const color=isDrawing&&/^#[0-9a-fA-F]{6}$/.test(imageEdit.color)
@@ -872,9 +930,10 @@ function App() {
        filterInvalid||
        (imageEdit.mode==='pixelate'&&(!Number.isSafeInteger(blockSize)||
          blockSize<2||blockSize>128))||
-       (['rectangle','line','ellipse'].includes(imageEdit.mode)&&
+       (['rectangle','line','ellipse','arrow'].includes(imageEdit.mode)&&
         (hex===null||!Number.isSafeInteger(stroke)||
-         stroke<1||stroke>64)))){
+         stroke<1||stroke>(['line','arrow'].includes(imageEdit.mode)?32:64)||
+         (imageEdit.mode==='arrow'&&(width<3||height<3)))))){
       setError('Choose valid dimensions, mask/annotation region and color.');return;
     }
     setImageExportBusy(true);setImageExportReceipt(null);
@@ -886,8 +945,8 @@ function App() {
         operation:queuedPlan?'resize':imageEdit.mode,
         x:region?x:null,y:region?y:null,width,height,
         blockSize:!queuedPlan&&imageEdit.mode==='pixelate'?blockSize:null,
-        stroke:!queuedPlan&&['rectangle','line','ellipse'].includes(imageEdit.mode)?stroke:null,
-        color:!queuedPlan&&['rectangle','line','ellipse'].includes(imageEdit.mode)?hex:null,
+        stroke:!queuedPlan&&['rectangle','line','ellipse','arrow'].includes(imageEdit.mode)?stroke:null,
+        color:!queuedPlan&&['rectangle','line','ellipse','arrow'].includes(imageEdit.mode)?hex:null,
         amount:!queuedPlan&&['brightness','contrast'].includes(imageEdit.mode)?amount:null,
         sigma:!queuedPlan&&['blur','sharpen'].includes(imageEdit.mode)?sigma:null,
         threshold:!queuedPlan&&imageEdit.mode==='sharpen'?threshold:null,
@@ -2276,12 +2335,22 @@ function App() {
       await invoke('lu_release_image', {imageRef:image.imageRef}).catch(() => {});
     }
   }
-  async function attachReaderDocument() {
-    // Keep the attachment in its originating chat even if the operator
-    // switches conversations while the native system picker is open.
+  async function attachReaderDocument(continuePrevious=false) {
+    // The local picker is always native and the source is copied into one
+    // immutable snapshot; no document path can be passed by the WebView.
     const targetChat=currentChat.current||'new';
+    const continuation=continuePrevious?readerContinuation:null;
+    if(continuePrevious&&(!continuation||continuation.chatId!==targetChat||
+       continuation.selector!==readerSelector||
+       continuation.nextOffset===null)){
+      setError('No matching Reader source to continue. Select a fresh file.');return;
+    }
     try {
-      const document=await invoke('lu_reader_pick_document');
+      const document=await invoke('lu_reader_pick_document',{
+        selector:readerSelector,
+        offsetChars:continuation?.nextOffset??0,
+        expectedSourceSha256:continuation?.sourceSha256??''
+      });
       if (!document) return;
       const prior=pendingDrafts.current.get(targetChat);
       const currentlyVisible=targetChat===(currentChat.current||'new');
@@ -2290,15 +2359,20 @@ function App() {
         setError(`You can attach up to ${MAX_TEXT_FILES} documents per message`);
         return;
       }
-      const extracted=document.truncated
-        ?document.text+'\n[Reader: document text was truncated to fit the chat context]'
-        :document.text;
+      const sourceLabel='[Reader extraction: '+document.format+
+        (document.selector?'; '+document.selector:'')+
+        '; character offset '+document.offsetChars+
+        '; source SHA-256 '+document.sourceSha256+']\n';
+      const extracted=sourceLabel+document.text+
+        (document.truncated?'\n[Reader: more text may remain; continuation is source-pinned]':'');
       const item={
         name:document.name,
         size:document.bytesRead,
         text:extracted,
         format:document.format,
         truncated:document.truncated,
+        sourceSha256:document.sourceSha256,
+        selector:document.selector,offsetChars:document.offsetChars,
       };
       const next=[...previous,item];
       try{
@@ -2315,6 +2389,14 @@ function App() {
         draftFiles.current=next;
         setTextFiles(next);
       }
+      // If the user changed conversations while a native picker was open,
+      // the continuation stays attached to that origin, not to the new chat.
+      setReaderContinuation({
+        chatId:targetChat,name:document.name,
+        selector:document.selector,sourceSha256:document.sourceSha256,
+        nextOffset:document.nextOffsetChars,
+        sourceTruncated:document.sourceTruncated
+      });
       setError('');
     }catch(error){
       setError(String(error));
@@ -3548,8 +3630,27 @@ function App() {
               {archiveCancelRequested?'Stopping archive preview…':'Cancel archive preview'}
             </button>}
             <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
+            <label className="readerSectionSelector" title="Use Lu's existing safe Reader selectors">
+              Reader section
+              <input type="text" maxLength={160}
+                placeholder="page:2 · chapter:3 · notes:1 · range:Sales!A1:D10"
+                value={readerSelector}
+                onChange={e=>{
+                  setReaderSelector(e.target.value);
+                  setReaderContinuation(null);
+                }}/>
+            </label>
             <button type="button" className="subtleButton" disabled={!loaded}
-              onClick={()=>void attachReaderDocument()}>+ Read file</button>
+              onClick={()=>void attachReaderDocument(false)}>+ Read file</button>
+            {readerContinuation?.chatId===(currentChat.current||'new')&&
+              readerContinuation.selector===readerSelector&&
+              readerContinuation.nextOffset!==null&&
+              <button type="button" className="subtleButton" disabled={!loaded}
+                title={'Reselect '+readerContinuation.name+
+                  ' to verify its SHA-256 before reading the next excerpt'}
+                onClick={()=>void attachReaderDocument(true)}>
+                Continue Reader at {readerContinuation.nextOffset}
+              </button>}
             <button type="button" className="subtleButton"
               disabled={!loaded||chatBusy||working||!prompt.trim()}
               title="Select one document and allow a read-only AI Reader tool turn"
@@ -3682,14 +3783,20 @@ function App() {
             {ocrBusy?'Recognizing from selected image…':'Choose image and extract text'}
           </button>
           <div className="imageRevisionDimensions" aria-label="Offline scanned PDF page OCR">
-            <label>PDF page (1–32)
+            <label>First PDF page (1–32)
               <input type="number" min="1" max="32" value={ocrPdfPage}
                 disabled={ocrBusy}
-                onChange={e=>setOcrPdfPage(e.target.value)}/>
+                onChange={e=>{setOcrPdfPage(e.target.value);
+                  setOcrPdfEndPage(e.target.value);}}/>
+            </label>
+            <label>Last PDF page (up to 8 at a time)
+              <input type="number" min="1" max="32" value={ocrPdfEndPage}
+                disabled={ocrBusy}
+                onChange={e=>setOcrPdfEndPage(e.target.value)}/>
             </label>
             <button type="button" disabled={!chatId||ocrBusy}
               onClick={()=>void readSelectedPdfPage()}>
-              Choose PDF and OCR selected page
+              Choose PDF and OCR selected pages
             </button>
           </div>
           <small>PDF OCR requires separately licensed and hash-pinned offline
@@ -3700,6 +3807,15 @@ function App() {
           </button>}
           {ocrObservation?.chatId===chatId&&
             (!ocrObservation.imageRef||ocrObservation.imageRef===imageViewer?.imageRef)&&<div>
+            {ocrPdfBatch.length>1&&ocrPdfBatch[0].chatId===chatId&&
+              <label>Review OCR page
+                <select value={ocrPdfIndex}
+                  onChange={e=>selectOcrPdfPage(Number(e.target.value))}>
+                  {ocrPdfBatch.map((result,index)=><option
+                    key={result.page} value={index}>Page {result.page}
+                  </option>)}
+                </select>
+              </label>}
             <small>Unverified OCR · source SHA-256 {ocrObservation.sourceSha256}
               · text SHA-256 {ocrObservation.textSha256}</small>
             {ocrObservation.page&&<small>
@@ -3721,7 +3837,12 @@ function App() {
             <textarea rows={5} maxLength={12_000}
               aria-label="Review and correct unverified OCR transcription"
               value={ocrReviewText}
-              onChange={e=>setOcrReviewText(e.target.value)}/>
+              onChange={e=>{
+                setOcrReviewText(e.target.value);
+                if(ocrPdfBatch.length&&ocrObservation?.page){
+                  setOcrPdfEdits(v=>({...v,[ocrObservation.page]:e.target.value}));
+                }
+              }}/>
             <button type="button" onClick={()=>{
               if(ocrObservation?.chatId!==chatId||
                 (ocrObservation.imageRef&&ocrObservation.imageRef!==imageViewer?.imageRef))return;
@@ -3734,7 +3855,14 @@ function App() {
                 return;
               }
               setPrompt(candidate);
-              setOcrObservation(null);setOcrReviewText('');
+              // Each PDF page must be reviewed before insertion. Do not
+              // silently concatenate unchecked pages into a prompt.
+              if(ocrPdfBatch.length>1&&ocrPdfIndex+1<ocrPdfBatch.length){
+                selectOcrPdfPage(ocrPdfIndex+1);
+              }else{
+                setOcrObservation(null);setOcrReviewText('');
+                setOcrPdfBatch([]);setOcrPdfEdits({});
+              }
             }}>Insert reviewed OCR text into draft</button>
           </div>}
         </div>
@@ -3754,6 +3882,7 @@ function App() {
               <option value="rectangle">Rectangle outline</option>
               <option value="line">Diagonal line annotation</option>
               <option value="ellipse">Ellipse outline annotation</option>
+              <option value="arrow">Arrow annotation</option>
               <option value="grayscale">Grayscale (preserve alpha)</option>
               <option value="invert">Invert RGB (preserve alpha)</option>
               <option value="blur">Gaussian blur</option>
@@ -3795,11 +3924,11 @@ function App() {
             <input type="number" min="2" max="128" value={imageEdit.blockSize}
               onChange={e=>setImageEdit(v=>({...v,blockSize:e.target.value}))}/>
           </label>}
-          {['rectangle','line','ellipse'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
+          {['rectangle','line','ellipse','arrow'].includes(imageEdit.mode)&&<div className="imageRevisionDimensions">
             <label>Annotation color <input type="color" value={imageEdit.color}
               onChange={e=>setImageEdit(v=>({...v,color:e.target.value}))}/></label>
             <label>Stroke width <input type="number" min="1"
-              max={imageEdit.mode==='line'?32:64} value={imageEdit.stroke}
+              max={['line','arrow'].includes(imageEdit.mode)?32:64} value={imageEdit.stroke}
               onChange={e=>setImageEdit(v=>({...v,stroke:e.target.value}))}/></label>
           </div>}
           <div className="imageRevisionDimensions">
@@ -3838,11 +3967,29 @@ function App() {
           {imageAssemblyPreview?.key===currentImagePreviewKey&&
             imageAssemblyPreview.result?.dataUrl&&
             <div className="imageViewerViewport" aria-label="Native staged image preview">
-              <img src={imageAssemblyPreview.result.dataUrl}
-                alt="Preview of staged deterministic edits, not yet saved"/>
+              <div style={{position:'relative',display:'inline-block'}}>
+                <img src={imageAssemblyPreview.result.dataUrl}
+                  alt="Preview of staged edits; drag to select the next edit rectangle"
+                  onPointerDown={startStagedSelection}
+                  onPointerMove={moveStagedSelection}
+                  onPointerUp={endStagedSelection}
+                  onPointerCancel={()=>{stageDragRef.current=null;}}
+                  style={{display:'block',touchAction:'none',cursor:'crosshair',
+                    userSelect:'none'}}/>
+                {stageSelection?.key===currentImagePreviewKey&&
+                  <div aria-hidden="true" style={{
+                    position:'absolute',pointerEvents:'none',boxSizing:'border-box',
+                    left:(100*stageSelection.x/imageAssemblyPreview.result.width)+'%',
+                    top:(100*stageSelection.y/imageAssemblyPreview.result.height)+'%',
+                    width:(100*stageSelection.width/imageAssemblyPreview.result.width)+'%',
+                    height:(100*stageSelection.height/imageAssemblyPreview.result.height)+'%',
+                    border:'2px solid #4b9cff',background:'rgba(75,156,255,0.09)'
+                  }}/>}
+              </div>
               <small>Volatile native preview ·
                 {imageAssemblyPreview.result.width} × {imageAssemblyPreview.result.height} ·
                 SHA-256 {imageAssemblyPreview.result.revisionSha256}.
+                Drag to select coordinates for your next staged edit.
                 No file saved. Source image remains unchanged.</small>
             </div>}
           <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}

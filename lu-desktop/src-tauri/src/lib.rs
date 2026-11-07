@@ -1551,11 +1551,15 @@ async fn lu_ocr_read_attached_region(
 #[tauri::command]
 async fn lu_ocr_read_selected_pdf_page(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
-    chat_id:String,page:u16,
-)->Result<Option<OcrImageView>,String>{
+    chat_id:String,page:u16,page_end:Option<u16>,
+)->Result<Option<Vec<OcrImageView>>,String>{
     state.chats.history(&chat_id)
         .map_err(|_|"Choose an existing conversation for PDF OCR")?;
-    if page==0||page>32{return Err("Select a PDF page from 1 through 32".into())}
+    let page_end=page_end.unwrap_or(page);
+    if page==0||page>32||page_end<page||page_end>32
+        ||page_end-page>=8{
+        return Err("Choose 1–8 consecutive PDF pages between 1 and 32".into())
+    }
     let Some(tess_sha)=option_env!("LU_OCR_TESSERACT_SHA256") else{
         return Err("Approved offline Tesseract is not bundled".into())
     };
@@ -1589,36 +1593,39 @@ async fn lu_ocr_read_selected_pdf_page(
     let confirmed=tauri::async_runtime::spawn_blocking({
         let app=app.clone();let sha=source_sha.clone();
         move||app.dialog().message(format!(
-            "Run offline, UNVERIFIED OCR on page {page} of selected PDF?\n\n\
+            "Run offline, UNVERIFIED OCR on PDF pages {page}–{page_end}?\n\n\
             Name: {name}\nSHA-256: {sha}\n\n\
             A separately pinned Poppler renderer produces a bounded temporary\
             in-memory PNG, then the pinned Tesseract reads it. Neither engine\
             uses the network; no PDF files or image files are saved."
         )).title("Lu — Authorize PDF page OCR")
           .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-            "Read this page".into(),"Cancel".into()
+            "Read these pages".into(),"Cancel".into()
           )).blocking_show()
     }).await.map_err(|_|"Native PDF OCR consent unavailable")?;
     if !confirmed{return Ok(None)}
     let token=claim_ocr(state.inner(),&chat_id)?;
     let worker_token=Arc::clone(&token);
     let outcome=tauri::async_runtime::spawn_blocking(move||{
-        let result=lu_core::native_ocr::recognize_pinned_pdf_page(
-            &bytes,page,&rasterizer,render_sha,&engine,tess_sha,
+        let results=lu_core::native_ocr::recognize_pinned_pdf_pages(
+            &bytes,page,page_end,&rasterizer,render_sha,&engine,tess_sha,
             &tessdata,data_sha,&worker_token
         ).map_err(|e|format!("Offline PDF OCR refused: {e:?}"))?;
-        let info=result.observation;
-        Ok::<OcrImageView,String>(OcrImageView{
-            source_sha256:result.original_pdf_sha256,
-            text_sha256:info.recognized_text_sha256,
-            engine_sha256:info.engine_sha256,
-            ocr_input_sha256:Some(result.raster_png_sha256),
-            raster_engine_sha256:Some(result.raster_engine_sha256),
-            page:Some(page),region:None,
-            text:info.recognized_text,format:"pdf".into(),
-            source_verified:false,human_review_required:true,
-            message:"Scanned-PDF page OCR is unverified, manually review text.",
-        })
+        Ok::<Vec<OcrImageView>,String>(results.into_iter().map(|result|{
+            let page=result.page;
+            let info=result.observation;
+            OcrImageView{
+                source_sha256:result.original_pdf_sha256,
+                text_sha256:info.recognized_text_sha256,
+                engine_sha256:info.engine_sha256,
+                ocr_input_sha256:Some(result.raster_png_sha256),
+                raster_engine_sha256:Some(result.raster_engine_sha256),
+                page:Some(page),region:None,
+                text:info.recognized_text,format:"pdf".into(),
+                source_verified:false,human_review_required:true,
+                message:"Scanned-PDF page OCR is unverified, manually review text.",
+            }
+        }).collect())
     }).await.map_err(|_|"Native PDF OCR worker unavailable");
     finish_ocr(state.inner(),&chat_id,&token);
     Ok(Some(outcome??))
@@ -2569,7 +2576,7 @@ async fn lu_image_workspace_export(
             x:x.ok_or("Mosaic requires X")?,y:y.ok_or("Mosaic requires Y")?,
             width,height,block_size:block_size.unwrap_or(12),
         },
-        "rectangle"|"line"|"ellipse"=>{
+        "rectangle"|"line"|"ellipse"|"arrow"=>{
             let rgb=color.unwrap_or(0xff5500);
             if rgb>0xffffff {return Err("Invalid annotation color".into());}
             let x=x.ok_or("Annotation requires X")?;
@@ -2579,6 +2586,7 @@ async fn lu_image_workspace_export(
             match operation.as_str(){
                 "line"=>Operation::Line{x,y,width,height,rgb,stroke},
                 "ellipse"=>Operation::Ellipse{x,y,width,height,rgb,stroke},
+                "arrow"=>Operation::Arrow{x,y,width,height,rgb,stroke},
                 _=>Operation::Rectangle{x,y,width,height,rgb,stroke},
             }
         },
@@ -3386,18 +3394,80 @@ struct ReaderDocumentView{
     text:String,
     bytes_read:u64,
     truncated:bool,
+    selector:String,
+    source_sha256:String,
+    offset_chars:u32,
+    next_offset_chars:Option<u32>,
+    source_truncated:bool,
 }
+/// Native operator-only Reader picker. Reuses Lu Core's selective extraction
+/// and byte-window path. Any later continuation must reselect the source
+/// through the OS picker and supply the previous exact SHA-256.
 #[tauri::command]
-async fn lu_reader_pick_document(app:AppHandle)
-    ->Result<Option<ReaderDocumentView>,String>{
+async fn lu_reader_pick_document(
+    app:AppHandle,selector:Option<String>,
+    offset_chars:Option<u32>,expected_source_sha256:Option<String>,
+)->Result<Option<ReaderDocumentView>,String>{
+    let selector=selector.unwrap_or_default();
+    let offset=offset_chars.unwrap_or(0);
+    let expected=expected_source_sha256.unwrap_or_default();
+    if selector.len()>160||selector.chars().any(|c|c=='\0'||c=='\r'||c=='\n')
+       ||offset>8*1024*1024||(!expected.is_empty()&&
+           (expected.len()!=64||!expected.bytes().all(|c|c.is_ascii_hexdigit()
+               &&!c.is_ascii_uppercase()))){
+        return Err("Invalid bounded Reader selector, offset or source digest".into())
+    }
     tauri::async_runtime::spawn_blocking(move||{
         let Some((name,bytes))=reader_desktop::pick_reader_bytes(&app,8*1024*1024)?
             else{return Ok(None)};
-        let reader=lu_core::native_reader::read_text_bytes(&name,&bytes,6_000)
-            .map_err(|e|format!("Reader cannot extract this document: {e:?}"))?;
+        let digest=format!("{:x}",Sha256::digest(&bytes));
+        if !expected.is_empty()&&expected!=digest{
+            return Err("Reader source differs from previous excerpt; reset the source before continuing".into())
+        }
+        let max_chars=6_000usize;
+        let (format,total,truncated,chunk,source_truncated)=
+        if selector.is_empty(){
+            if let Some(plain)=lu_core::native_reader::read_plain_text_window(
+                &name,&bytes,usize::try_from(offset).unwrap_or(usize::MAX),
+                max_chars,false
+            ).map_err(|e|format!("Reader text window refused: {e:?}"))?{
+                if usize::try_from(offset).unwrap_or(usize::MAX)>plain.total_chars{
+                    return Err("Reader offset exceeds document length".into())
+                }
+                (plain.format,plain.total_chars,
+                    usize::try_from(offset).unwrap_or(usize::MAX)
+                        .saturating_add(max_chars)<plain.total_chars,
+                    plain.text,false)
+            }else{
+                let parsed=lu_core::native_reader::read_text_bytes(
+                    &name,&bytes,200_000
+                ).map_err(|e|format!("Reader cannot extract document: {e:?}"))?;
+                let total=parsed.text.chars().count();
+                if offset as usize>total{return Err("Reader offset exceeds extraction".into())}
+                let chunk=parsed.text.chars().skip(offset as usize)
+                    .take(max_chars).collect();
+                (parsed.format,total,offset as usize+max_chars<total,
+                    chunk,parsed.truncated)
+            }
+        }else{
+            let parsed=lu_core::native_reader::read_selected_bytes(
+                &name,&bytes,200_000,&selector
+            ).map_err(|e|format!("Reader section refused: {e:?}"))?;
+            let total=parsed.text.chars().count();
+            if offset as usize>total{return Err("Reader offset exceeds selection".into())}
+            let chunk=parsed.text.chars().skip(offset as usize)
+                .take(max_chars).collect();
+            (parsed.format,total,offset as usize+max_chars<total,
+                chunk,parsed.truncated)
+        };
+        let end=(offset as usize+max_chars).min(total);
+        let next=if truncated{Some(end as u32)}else{None};
         Ok(Some(ReaderDocumentView{
-            name,format:format!("{:?}",reader.format),text:reader.text,
-            bytes_read:bytes.len() as u64,truncated:reader.truncated,
+            name,format:format!("{format:?}"),text:chunk,
+            bytes_read:bytes.len() as u64,
+            truncated:truncated||source_truncated,
+            selector,source_sha256:digest,offset_chars:offset,
+            next_offset_chars:next,source_truncated,
         }))
     }).await.map_err(|_|"Native Reader worker unavailable")?
 }

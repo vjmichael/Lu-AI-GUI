@@ -324,6 +324,31 @@ pub fn recognize_pinned_pdf_page(
     })
 }
 
+/// A short operator-approved PDF page range. Page receipts retain independent
+/// derived raster identity and text hashes; a failed page returns NO partial
+/// transcript disguised as a successful full range.
+pub fn recognize_pinned_pdf_pages(
+    pdf:&[u8],first:u16,last:u16,
+    rasterizer:&Path,expected_rasterizer_sha:&str,
+    engine:&Path,expected_engine_sha:&str,
+    tessdata:&Path,expected_data_sha:&str,cancel:&AtomicBool,
+)->Result<Vec<PdfPageOcrObservation>,OcrFailure>{
+    if first==0||last<first||last>32||last-first>=8{
+        return Err(OcrFailure::InvalidImage)
+    }
+    if cancel.load(Ordering::SeqCst){return Err(OcrFailure::Cancelled)}
+    let mut results=Vec::with_capacity(usize::from(last-first+1));
+    for page in first..=last{
+        if cancel.load(Ordering::SeqCst){return Err(OcrFailure::Cancelled)}
+        let observation=recognize_pinned_pdf_page(
+            pdf,page,rasterizer,expected_rasterizer_sha,
+            engine,expected_engine_sha,tessdata,expected_data_sha,cancel
+        )?;
+        results.push(observation);
+    }
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -339,6 +364,20 @@ mod tests{
         assert_eq!(image_format(&corrupt),Err(OcrFailure::InvalidImage));
         assert_eq!(image_format(b"not a real png"),
             Err(OcrFailure::InvalidImage));
+    }
+    #[test]
+    fn pdf_batch_bounds_fail_before_any_untrusted_worker(){
+        let cancel=AtomicBool::new(false);
+        let missing=Path::new("/nonexistent");
+        for (start,end) in [(0,1),(2,1),(1,9),(25,33)]{
+            assert_eq!(recognize_pinned_pdf_pages(
+                b"not PDF",start,end,missing,"",missing,"",missing,"",&cancel
+            ),Err(OcrFailure::InvalidImage));
+        }
+        cancel.store(true,Ordering::SeqCst);
+        assert_eq!(recognize_pinned_pdf_pages(
+            b"not PDF",2,5,missing,"",missing,"",missing,"",&cancel
+        ),Err(OcrFailure::Cancelled));
     }
     #[test]
     fn pdf_ocr_refuses_unsafe_page_or_untrusted_pdf_before_spawn(){

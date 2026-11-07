@@ -57,7 +57,7 @@ impl ImageRevisionStep{
             "pixelate"=>Op::Pixelate{x:x()?,y:y()?,
                 width:self.width,height:self.height,
                 block_size:self.block_size.unwrap_or(12)},
-            "rectangle"|"line"|"ellipse"=>{
+            "rectangle"|"line"|"ellipse"|"arrow"=>{
                 let rgb=self.color.unwrap_or(0xff5500);
                 if rgb>0xffffff{return Err("Invalid image annotation color".into());}
                 let color=[(rgb>>16) as u8,(rgb>>8) as u8,rgb as u8];
@@ -68,6 +68,9 @@ impl ImageRevisionStep{
                         x,y,width:self.width,height:self.height,rgb:color,stroke
                     },
                     "ellipse"=>Op::Ellipse{
+                        x,y,width:self.width,height:self.height,rgb:color,stroke
+                    },
+                    "arrow"=>Op::Arrow{
                         x,y,width:self.width,height:self.height,rgb:color,stroke
                     },
                     _=>Op::Rectangle{

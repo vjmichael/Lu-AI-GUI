@@ -36,3 +36,16 @@ test('bounded native filters and original image selection share immutable assemb
   assert.match(bridge,/"sharpen"=>Op::Sharpen/);
   assert.match(host,/"contrast"=>Operation::Contrast/);
 });
+
+test('new arrows and staged-preview drag selection are native-source bounded',()=>{
+  assert.match(ui,/<option value="arrow">Arrow annotation<\/option>/);
+  assert.match(ui,/onPointerDown=\{startStagedSelection\}/);
+  assert.match(ui,/onPointerMove=\{moveStagedSelection\}/);
+  assert.match(ui,/onPointerUp=\{endStagedSelection\}/);
+  assert.match(ui,/stageSelection\?\.key===currentImagePreviewKey/);
+  assert.match(ui,/setImageEdit\(v=>\(\{\.\.\.v,x:String\(rect\.x\)/);
+  assert.match(core,/ImageRevisionOperation::Arrow/);
+  assert.match(core,/paint_segment\(&mut canvas/);
+  assert.match(bridge,/"arrow"=>Op::Arrow/);
+  assert.match(host,/"arrow"=>Operation::Arrow/);
+});

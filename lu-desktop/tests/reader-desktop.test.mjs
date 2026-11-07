@@ -8,14 +8,14 @@ const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8
 const readerHost=readFileSync(new URL('../src-tauri/src/reader_desktop.rs',import.meta.url),'utf8');
 
 test('native Reader file selection is host-mediated and file path never supplied by WebView',()=>{
-  assert.ok(host.includes('async fn lu_reader_pick_document(app:AppHandle)'));
+  assert.ok(host.includes('async fn lu_reader_pick_document('));
   assert.ok(readerHost.includes('blocking_pick_file()'));
   assert.ok(host.includes('lu_core::native_reader::read_text_bytes'));
   assert.ok(host.includes('pick_reader_bytes(&app,8*1024*1024)'));
   assert.ok(readerHost.includes('meta.file_type().is_file()'));
   assert.ok(readerHost.includes('read_to_end(&mut bytes)'));
   assert.ok(host.includes('lu_reader_pick_document,'));
-  assert.ok(ui.includes("invoke('lu_reader_pick_document')"));
+  assert.ok(ui.includes("invoke('lu_reader_pick_document',{"));
   assert.ok(!ui.includes("invoke('lu_reader_pick_document',{path:"));
 });
 test('Reader attachments remain in originating chat and respect the 16k prompt cap',()=>{
@@ -109,4 +109,24 @@ test('Reader picker and one trusted model tool reuse new RTF/EPUB format adapter
   assert.match(readerHost,/"odt","rtf","epub","pdf"/);
   assert.match(ui,/lu_reader_pick_document/);
   assert.match(host,/lu_reader_ask_document/);
+});
+
+test('Reader desktop exposes source-checked continuation and section selection',()=>{
+  assert.match(host,/selector:Option<String>/);
+  assert.match(host,/expected_source_sha256:Option<String>/);
+  assert.match(host,/read_selected_bytes\(/);
+  assert.match(host,/read_plain_text_window\(/);
+  assert.match(ui,/readerContinuation\.sourceSha256/);
+  assert.match(ui,/expectedSourceSha256:continuation\?\.sourceSha256/);
+  assert.match(ui,/Reader section/);
+  assert.match(ui,/Continue Reader at/);
+  assert.match(readerHost,/filename\.chars\(\)\.any/);
+});
+test('one approved scanned PDF may return independently reviewed page results',()=>{
+  assert.match(host,/page_end:Option<u16>/);
+  assert.match(host,/recognize_pinned_pdf_pages\(/);
+  assert.match(ui,/setOcrPdfBatch\(pages\)/);
+  assert.match(ui,/Review OCR page/);
+  assert.match(ui,/Choose 1–8 consecutive PDF pages/);
+  assert.match(ui,/OCR page \{ocrObservation.page\}/);
 });
