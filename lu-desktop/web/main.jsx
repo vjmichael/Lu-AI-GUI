@@ -274,6 +274,13 @@ function App() {
 
   const [historyPaneOpen,setHistoryPaneOpen]=useState(false);
   const [history, setHistory] = useState([]);
+  // Active transcript is a bounded visible window, not the entire ANSF book.
+  const [historyWindow,setHistoryWindow]=useState({
+    older:null,hasOlder:false,hasNewer:false
+  });
+  const loadingWindow=useRef(false);
+  const pendingPrepend=useRef(null);
+
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
   const [captureLocalTaskId,setCaptureLocalTaskId]=useState(null);
@@ -1589,6 +1596,63 @@ function App() {
     setFolders(list.folders);
     return list.chats;
   }
+  const MAX_VISIBLE_CHAT_ROWS=192;
+  async function loadLatestUiHistory(id){
+    const page=await invoke('lu_history_window',{
+      chatId:id,cursor:null,direction:'older',limit:64
+    });
+    if(requestedChat.current===id||currentChat.current===id){
+      setHistoryWindow({
+        older:page.nextCursor,hasOlder:page.hasMore,hasNewer:false
+      });
+    }
+    return page.entries;
+  }
+  async function loadOlderUiHistory(){
+    const id=currentChat.current;
+    if(!id||loadingWindow.current||!historyWindow.hasOlder||
+       historyWindow.older===null)return;
+    loadingWindow.current=true;
+    const el=transcriptRef.current;
+    const oldHeight=el?.scrollHeight??0;
+    const oldTop=el?.scrollTop??0;
+    try{
+      const page=await invoke('lu_history_window',{
+        chatId:id,cursor:historyWindow.older,direction:'older',limit:48
+      });
+      if(currentChat.current!==id)return;
+      const combined=[...page.entries,...history];
+      const removed=combined.length>MAX_VISIBLE_CHAT_ROWS;
+      pendingPrepend.current={oldHeight,oldTop};
+      setHistory(combined.slice(0,MAX_VISIBLE_CHAT_ROWS));
+      setHistoryWindow(prev=>({
+        older:page.nextCursor,hasOlder:page.hasMore,
+        hasNewer:prev.hasNewer||removed
+      }));
+    }catch(e){setError('Previous history page unavailable: '+String(e))}
+    finally{loadingWindow.current=false}
+  }
+  async function loadNewerUiHistory(){
+    const id=currentChat.current;
+    const last=history.at(-1)?.seq;
+    if(!id||!last||loadingWindow.current||!historyWindow.hasNewer)return;
+    loadingWindow.current=true;
+    try{
+      const page=await invoke('lu_history_window',{
+        chatId:id,cursor:last,direction:'newer',limit:48
+      });
+      if(currentChat.current!==id)return;
+      const combined=[...history,...page.entries];
+      const trimmed=combined.length>MAX_VISIBLE_CHAT_ROWS;
+      const windowRows=combined.slice(-MAX_VISIBLE_CHAT_ROWS);
+      setHistory(windowRows);
+      setHistoryWindow(prev=>({
+        older:trimmed?windowRows[0]?.seq:prev.older,
+        hasOlder:prev.hasOlder||trimmed,hasNewer:page.hasMore
+      }));
+    }catch(e){setError('Next history page unavailable: '+String(e))}
+    finally{loadingWindow.current=false}
+  }
   async function switchChat(id) {
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
@@ -1601,7 +1665,7 @@ function App() {
       });
     }
     requestedChat.current = id;
-    const entries = await invoke('lu_history', {chatId: id});
+    const entries = await loadLatestUiHistory(id);
     if (requestedChat.current !== id) return;
     currentChat.current = id;
     const draft = pendingDrafts.current.get(id) || {prompt:'',images:[],files:[]};
@@ -1694,7 +1758,7 @@ function App() {
       // Native auto turns aren't initiated by a WebView invoke. Read their
       // journaled assistant output, including after a background tab switch.
       if (currentChat.current===finishedChat){
-        invoke('lu_history',{chatId:finishedChat})
+        loadLatestUiHistory(finishedChat)
           .then(items=>{if(alive&&currentChat.current===finishedChat)setHistory(items);})
           .catch(()=>{});
       }
@@ -1717,6 +1781,9 @@ function App() {
     followOutput.current = follow;
     scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow});
     setAtBottom(follow);
+    if(el.scrollTop<140&&historyWindow.hasOlder)void loadOlderUiHistory();
+    if(el.scrollHeight-el.scrollTop-el.clientHeight<140&&historyWindow.hasNewer)
+      void loadNewerUiHistory();
   }
   function jumpToLatest() {
     const el = transcriptRef.current;
@@ -1725,6 +1792,12 @@ function App() {
     el.scrollTop = el.scrollHeight;
     scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow:true});
     setAtBottom(true);
+    if(historyWindow.hasNewer&&chatId){
+      const target=chatId;
+      void loadLatestUiHistory(target).then(rows=>{
+        if(currentChat.current===target)setHistory(rows);
+      }).catch(e=>setError('Latest history unavailable: '+String(e)));
+    }
   }
   useLayoutEffect(() => {
     const el = transcriptRef.current;
@@ -1739,6 +1812,15 @@ function App() {
     if (!el || !followOutput.current) return;
     el.scrollTop = el.scrollHeight;
   }, [history, visibleStream, chatId]);
+  useLayoutEffect(()=>{
+    const el=transcriptRef.current;
+    const pending=pendingPrepend.current;
+    if(!el||!pending)return;
+    el.scrollTop=pending.oldTop+(el.scrollHeight-pending.oldHeight);
+    followOutput.current=false;
+    pendingPrepend.current=null;
+  },[history]);
+
   useEffect(() => { if (!settingsOpen) composerRef.current?.focus(); }, [chatId]);
   useEffect(() => {
     function onShortcut(event) {
@@ -1913,6 +1995,8 @@ function App() {
         targetId = newChat.chatId;
         currentChat.current = targetId;
         setChatId(targetId);
+        setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+        setHistory([]);
         await refreshChats();
       } catch (error) { setError(String(error)); return; }
     }
@@ -1920,7 +2004,7 @@ function App() {
     try {
       const result = await invoke('lu_inspect_text_file', {chatId: targetId});
       if (result && currentChat.current === targetId) {
-        setHistory(await invoke('lu_history', {chatId: targetId}));
+        setHistory(await loadLatestUiHistory(targetId));
         setActivity(result.truncated ? 'File inspected (first 64 KiB)' : 'File inspected');
       }
       if (result) await refreshChats();
@@ -1928,7 +2012,7 @@ function App() {
       setError(String(error));
       await refreshChats().catch(() => {});
       if (currentChat.current === targetId)
-        setHistory(await invoke('lu_history', {chatId: targetId}).catch(() => []));
+        setHistory(await loadLatestUiHistory(targetId).catch(() => []));
     }
   }
 
@@ -1940,7 +2024,7 @@ function App() {
       if (result) {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
-          setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+          setHistory(await loadLatestUiHistory(proposal.chatId));
         setActivity(result.truncated ? 'Approved native read completed (truncated)' : 'Approved native read completed');
       }
     } catch (error) {
@@ -2022,7 +2106,7 @@ function App() {
         setLatestRestored({...restored,chatId});
         await refreshChats();
         if (currentChat.current === chatId)
-          setHistory(await invoke('lu_history',{chatId}));
+          setHistory(await loadLatestUiHistory(chatId));
       } else setActivity('Kept current file; restoration denied');
     } catch (error) { setError(String(error)); }
     finally {
@@ -2065,7 +2149,7 @@ function App() {
       if (edited) {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
-          setHistory(await invoke('lu_history',{chatId:proposal.chatId}));
+          setHistory(await loadLatestUiHistory(proposal.chatId));
         setActivity('Edited existing file: '+edited.fileName);
         setLatestEdited({...edited,proposalId:proposal.proposalId,chatId:proposal.chatId});
       } else setActivity('Edit denied in native confirmation');
@@ -2194,7 +2278,7 @@ function App() {
         setActivity('Archive group created: '+result.groupName);
         await refreshChats();
         if(currentChat.current===review.chatId){
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
         }
       }
     }catch(e){
@@ -2270,7 +2354,7 @@ function App() {
         setActivity('Archive extracted: ' + receipt.targetFolder);
         await refreshChats();
         if (currentChat.current === review.chatId)
-          setHistory(await invoke('lu_history', {chatId: review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Archive extraction denied in native confirmation');
       }
@@ -2346,7 +2430,7 @@ function App() {
         setActivity('Created ' + receipt.documentFormat.toUpperCase() + ': ' + receipt.fileName);
         await refreshChats();
         if (currentChat.current === review.chatId)
-          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Document creation denied in native confirmation');
       }
@@ -2406,7 +2490,7 @@ function App() {
         setActivity('Saved new document revision: ' + receipt.targetNewName);
         await refreshChats();
         if (currentChat.current === review.chatId)
-          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Office revision denied in native confirmation');
       }
@@ -2462,7 +2546,7 @@ function App() {
         setActivity('File ' + receipt.operation + ' completed: ' + receipt.targetName);
         await refreshChats();
         if (currentChat.current === view.chatId)
-          setHistory(await invoke('lu_history', {chatId:view.chatId}));
+          setHistory(await loadLatestUiHistory(view.chatId));
       } else {
         setActivity('File operation denied in native confirmation');
       }
@@ -2522,7 +2606,7 @@ function App() {
         await refreshTrashHistory(review.chatId);
         await refreshChats();
         if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('File trash denied in native confirmation');
       }
@@ -2572,7 +2656,7 @@ function App() {
         await refreshTrashHistory(review.chatId);
         await refreshChats();
         if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Restore denied in native confirmation');
       }
@@ -2647,7 +2731,7 @@ function App() {
         setActivity('Created approved multi-edit version: '+receipt.fileName);
         await refreshChats();
         if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       }else{setActivity('Office batch denied by native confirmation');}
     }catch(error){
       setError('Office batch rejected or uncertain. Inspect recovery before retry: '+String(error));
@@ -2689,7 +2773,7 @@ function App() {
       if (written) {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
-          setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+          setHistory(await loadLatestUiHistory(proposal.chatId));
         setActivity('Created new file: ' + written.fileName);
         setLatestCreated({...written, proposalId: proposal.proposalId, chatId: proposal.chatId});
       } else {
@@ -2733,6 +2817,8 @@ function App() {
       activeId=created.chatId;
       currentChat.current=activeId;
       setChatId(activeId);
+      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+      setHistory([]);
     }
     setJobs(prev=>({...prev,[activeId]:{
       generationId:null,phase:'selecting-document',position:0,text:''
@@ -2761,7 +2847,7 @@ function App() {
     } finally {
       await refreshChats().catch(()=>{});
       if (currentChat.current===activeId){
-        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        const entries=await loadLatestUiHistory(activeId).catch(()=>null);
         if (entries&&currentChat.current===activeId)setHistory(entries);
       }
       setJobs(prev=>removeJob(prev,activeId));
@@ -2783,6 +2869,8 @@ function App() {
       activeId=created.chatId;
       currentChat.current=activeId;
       setChatId(activeId);
+      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+      setHistory([]);
     }
     setJobs(prev=>({...prev,[activeId]:{
       generationId:null,phase:'selecting-workspace',position:0,text:''
@@ -2810,7 +2898,7 @@ function App() {
     } finally {
       await refreshChats().catch(()=>{});
       if (currentChat.current===activeId) {
-        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        const entries=await loadLatestUiHistory(activeId).catch(()=>null);
         if(entries&&currentChat.current===activeId)setHistory(entries);
       }
       setJobs(prev=>removeJob(prev,activeId));
@@ -2846,6 +2934,8 @@ function App() {
       activeId = created.chatId;
       currentChat.current = activeId;
       setChatId(activeId);
+      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+      setHistory([]);
     }
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
@@ -2887,7 +2977,7 @@ function App() {
       await refreshChats().catch(error => setError(String(error)));
       // A background turn must never steal focus from another conversation.
       if (currentChat.current === activeId) {
-        const entries = await invoke('lu_history', {chatId:activeId})
+        const entries = await loadLatestUiHistory(activeId)
           .catch(error => {setError(String(error));return null;});
         if (entries && currentChat.current === activeId) setHistory(entries);
       }
@@ -3214,12 +3304,17 @@ function App() {
         </div>}
       </section>}
       <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-relevant="additions">
+        {historyWindow.hasOlder&&<button type="button" className="subtleButton"
+          onClick={()=>void loadOlderUiHistory()}>Load older ANSF page</button>}
+
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {displayedHistory.map((entry,i) => <div key={i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
+        {displayedHistory.map((entry,i) => <div key={entry.seq??i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
           <MessageText text={entry.text} role={entry.role}/></div>)}
+        {historyWindow.hasNewer&&<button type="button" className="subtleButton"
+          onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
         {visibleJob && <div className="message assistant streaming"><span className="messageRole">
           {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'

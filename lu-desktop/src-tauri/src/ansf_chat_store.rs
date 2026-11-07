@@ -8,7 +8,7 @@ use lu_core::{
     ansf::AnsfStore,
     ansf_library::{AnsfLibrary,BookIndex,ChapterIndex},
     ansf_goals::{GoalEvent,GoalSnapshot,project_goal_events},
-    ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent},
+    ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent,VisibleChatMessage},
     ansf_source_ids::AnsfSourceId,
     ansf_semantic::fuse_source_ranks,
 };
@@ -73,6 +73,29 @@ pub struct OriginalTextPage{
     pub next_offset_chars:Option<usize>,
     pub total_chars:usize,
 }
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct HistoryWindowPage{
+    pub entries:Vec<HistoryWindowEntry>,
+    pub next_cursor:Option<i64>,
+    pub has_more:bool,
+}
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct HistoryWindowEntry{
+    pub seq:i64,
+    pub role:String,
+    pub text:String,
+    pub interrupted:bool,
+    pub cancelled:bool,
+}
+impl From<VisibleChatMessage> for HistoryWindowEntry{
+    fn from(e:VisibleChatMessage)->Self{
+        Self{seq:e.seq,role:e.role,text:e.text,
+            interrupted:e.interrupted,cancelled:e.cancelled}
+    }
+}
+
 
 
 /// Literal ASCII terms for the existing per-book SQLite FTS5 index. Query
@@ -767,6 +790,33 @@ impl ChatStore {
             offset_chars,
             next_offset_chars:if next<total_chars{Some(next)}else{None},
             total_chars,
+        })
+    }
+
+    /// Native GUI message window; old visible messages stay on ANSF disk.
+    /// This does not change the full-history export or the bounded model
+    /// context path. A cursor is an immutable display-event sequence.
+    pub fn history_window(
+        &self,chat_id:&str,cursor:Option<i64>,direction:&str,limit:usize
+    )->Result<HistoryWindowPage,String>{
+        if limit==0||limit>64{return Err("Invalid chat window length".into())}
+        let book=self.require(chat_id)?;
+        let (entries,has_more)=match direction{
+            "older"=>book.visible_chat_before(
+                chat_id,cursor.unwrap_or(i64::MAX),limit
+            ).map_err(to_err)?,
+            "newer"=>book.visible_chat_after(
+                chat_id,cursor.ok_or("A newer-page cursor is required")?,limit
+            ).map_err(to_err)?,
+            _=>return Err("Unknown chat window direction".into())
+        };
+        let next_cursor=if has_more{
+            if direction=="older"{entries.first().map(|e|e.seq)}
+            else{entries.last().map(|e|e.seq)}
+        }else{None};
+        Ok(HistoryWindowPage{
+            entries:entries.into_iter().map(Into::into).collect(),
+            next_cursor,has_more
         })
     }
 

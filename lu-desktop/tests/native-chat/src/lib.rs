@@ -305,6 +305,40 @@ mod m3_independent_history_acceptance{
         drop(reopened);fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn active_window_persists_immutable_stream_projection_across_reopen(){
+        let root=fixture();let chat;
+        {
+            let store=ChatStore::open(&root).unwrap();
+            chat=store.create_chat().unwrap().chat_id;
+            for n in 0..115{
+                store.append_user(&chat,&format!("Visible message {n:03}")).unwrap();
+            }
+            let gen=format!("g-{:032x}",99);
+            store.append_progress(&chat,&gen,"Started").unwrap();
+            store.append_progress(&chat,&gen,"Final checkpoint").unwrap();
+            store.complete(&chat,&gen).unwrap();
+            let latest=store.history_window(&chat,None,"older",64).unwrap();
+            assert_eq!(latest.entries.len(),64);
+            assert!(latest.has_more);
+            assert_eq!(latest.entries.last().unwrap().text,"Final checkpoint");
+            assert!(!latest.entries.last().unwrap().interrupted);
+            let old=store.history_window(&chat,latest.next_cursor,"older",64).unwrap();
+            assert_eq!(old.entries.len(),52);
+            assert!(!old.has_more);
+            assert!(old.entries.last().unwrap().seq<latest.entries[0].seq);
+            let forward=store.history_window(&chat,
+                Some(old.entries.last().unwrap().seq),"newer",64).unwrap();
+            assert_eq!(forward.entries.len(),64);
+            assert_eq!(forward.entries.last().unwrap().text,"Final checkpoint");
+            assert!(store.history_window(&chat,None,"newer",8).is_err());
+            assert!(store.history_window(&chat,None,"older",65).is_err());
+        }
+        let store=ChatStore::open(&root).unwrap();
+        let latest=store.history_window(&chat,None,"older",64).unwrap();
+        assert_eq!(latest.entries.last().unwrap().text,"Final checkpoint");
+        drop(store);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn original_source_reader_chunks_long_text_without_minting_authority(){
         let root=fixture();let store=ChatStore::open(&root).unwrap();
         let source=store.create_chat().unwrap().chat_id;

@@ -75,6 +75,15 @@ pub struct StoredLiveEvent{
     pub origin:LiveOrigin,
     pub source_entry_id:Option<i64>,
 }
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct VisibleChatMessage{
+    pub seq:i64,
+    pub role:String,
+    pub text:String,
+    pub interrupted:bool,
+    pub cancelled:bool,
+}
+
 fn opaque(value:&str,expected:&str)->bool{
     value.len()==expected.len()+32&&value.starts_with(expected)&&
         value[expected.len()..].bytes().all(|v|v.is_ascii_hexdigit()&&!v.is_ascii_uppercase())
@@ -198,6 +207,55 @@ pub(crate) fn initialize_live_chat_schema(conn:&Connection)->Result<(),AnsfError
             "ALTER TABLE ansf_live_chat_events ADD COLUMN legacy_turn_id TEXT"
         )?;
     }
+    // Derived pointer-only display projection: no text, no copied model
+    // instructions and no second authoritative conversation database.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ansf_visible_chat(
+           session_id TEXT NOT NULL REFERENCES ansf_sessions(id),
+           first_seq INTEGER NOT NULL REFERENCES ansf_live_chat_events(seq),
+           latest_event_seq INTEGER NOT NULL REFERENCES ansf_live_chat_events(seq),
+           generation_id TEXT,
+           role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+           status TEXT NOT NULL CHECK(status IN ('final','interrupted','cancelled')),
+           PRIMARY KEY(session_id,first_seq),
+           UNIQUE(session_id,generation_id)
+         );
+         CREATE INDEX IF NOT EXISTS ansf_visible_chat_cursor
+           ON ansf_visible_chat(session_id,first_seq);"
+    )?;
+    let existing:i64=conn.query_row(
+        "SELECT COUNT(*) FROM ansf_visible_chat",[],|r|r.get(0)
+    )?;
+    if existing==0 {
+        // One-time legacy projection rebuild. Long-lived books do NOT rescan
+        // all historical progress events on every open.
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO ansf_visible_chat
+             (session_id,first_seq,latest_event_seq,generation_id,role,status)
+             SELECT session_id,seq,seq,NULL,
+               CASE WHEN kind IN ('user','reader_user') THEN 'user' ELSE 'assistant' END,
+               'final'
+             FROM ansf_live_chat_events
+             WHERE kind IN ('user','reader_user','assistant_final');
+             INSERT OR IGNORE INTO ansf_visible_chat
+             (session_id,first_seq,latest_event_seq,generation_id,role,status)
+             SELECT p.session_id,MIN(p.seq),MAX(p.seq),p.generation_id,'assistant',
+               CASE WHEN EXISTS(
+                    SELECT 1 FROM ansf_live_chat_events x
+                    WHERE x.session_id=p.session_id AND x.generation_id=p.generation_id
+                    AND x.kind='assistant_completed'
+                  ) THEN 'final'
+                  WHEN EXISTS(
+                    SELECT 1 FROM ansf_live_chat_events x
+                    WHERE x.session_id=p.session_id AND x.generation_id=p.generation_id
+                    AND x.kind='assistant_cancelled'
+                  ) THEN 'cancelled'
+                  ELSE 'interrupted' END
+             FROM ansf_live_chat_events p
+             WHERE p.kind='assistant_progress'
+             GROUP BY p.session_id,p.generation_id;"
+        )?;
+    }
     Ok(())
 }
 impl AnsfStore{
@@ -295,6 +353,47 @@ impl AnsfStore{
                 event.call_id,event.tool_id,origin.as_str(),source_entry_id],
         )?;
         let seq=tx.last_insert_rowid();
+        // A bounded display index points to the actual original event text.
+        // Stream checkpoints update only the last-event pointer; they do not
+        // duplicate megabytes of text in a second transcript.
+        match event.kind{
+            LiveKind::User|LiveKind::ReaderUser|LiveKind::AssistantFinal=>{
+                let role=if matches!(event.kind,LiveKind::AssistantFinal){
+                    "assistant"
+                }else{"user"};
+                tx.execute(
+                    "INSERT INTO ansf_visible_chat
+                     (session_id,first_seq,latest_event_seq,generation_id,role,status)
+                     VALUES(?1,?2,?2,NULL,?3,'final')",
+                    params![session_id,seq,role]
+                )?;
+            }
+            LiveKind::AssistantProgress=>{
+                tx.execute(
+                    "INSERT OR IGNORE INTO ansf_visible_chat
+                     (session_id,first_seq,latest_event_seq,generation_id,role,status)
+                     VALUES(?1,?2,?2,?3,'assistant','interrupted')",
+                    params![session_id,seq,event.generation_id]
+                )?;
+                tx.execute(
+                    "UPDATE ansf_visible_chat SET latest_event_seq=?1
+                     WHERE session_id=?2 AND generation_id=?3
+                     AND status='interrupted' AND latest_event_seq<?1",
+                    params![seq,session_id,event.generation_id]
+                )?;
+            }
+            LiveKind::AssistantCompleted|LiveKind::AssistantCancelled=>{
+                let status=if event.kind==LiveKind::AssistantCompleted{
+                    "final"
+                }else{"cancelled"};
+                tx.execute(
+                    "UPDATE ansf_visible_chat SET status=?1
+                     WHERE session_id=?2 AND generation_id=?3",
+                    params![status,session_id,event.generation_id]
+                )?;
+            }
+            LiveKind::BrowserObservation=>{}
+        }
         if let Some(entry_id)=source_entry_id {
             tx.execute(
                 "UPDATE ansf_chapters
@@ -307,6 +406,59 @@ impl AnsfStore{
         Ok(StoredLiveEvent{seq,session_id:session_id.to_owned(),
             event:event.clone(),origin,source_entry_id})
     }
+    /// Reconstruct a bounded visible window from immutable originals and a
+    /// pointer-only projection. No full-history event scan or stream replay.
+    pub fn visible_chat_before(
+        &self,session_id:&str,before_seq:i64,limit:usize
+    )->Result<(Vec<VisibleChatMessage>,bool),AnsfError>{
+        self.visible_chat_page(session_id,before_seq,limit,false)
+    }
+    pub fn visible_chat_after(
+        &self,session_id:&str,after_seq:i64,limit:usize
+    )->Result<(Vec<VisibleChatMessage>,bool),AnsfError>{
+        self.visible_chat_page(session_id,after_seq,limit,true)
+    }
+    fn visible_chat_page(
+        &self,session_id:&str,cursor:i64,limit:usize,forward:bool
+    )->Result<(Vec<VisibleChatMessage>,bool),AnsfError>{
+        if !valid_session(session_id)||cursor<0||limit==0||limit>64{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let sql=if forward{
+            "SELECT d.first_seq,d.role,d.status,e.text
+             FROM ansf_visible_chat d
+             JOIN ansf_live_chat_events e ON d.latest_event_seq=e.seq
+             WHERE d.session_id=?1 AND d.first_seq>?2
+             ORDER BY d.first_seq ASC LIMIT ?3"
+        }else{
+            "SELECT d.first_seq,d.role,d.status,e.text
+             FROM ansf_visible_chat d
+             JOIN ansf_live_chat_events e ON d.latest_event_seq=e.seq
+             WHERE d.session_id=?1 AND d.first_seq<?2
+             ORDER BY d.first_seq DESC LIMIT ?3"
+        };
+        let mut stmt=conn.prepare(sql)?;
+        let mut entries=stmt.query_map(
+            params![session_id,cursor,(limit+1) as i64],|r|{
+                let status:String=r.get(2)?;
+                let (interrupted,cancelled)=match status.as_str(){
+                    "final"=>(false,false),"interrupted"=>(true,false),
+                    "cancelled"=>(true,true),
+                    _=>return Err(rusqlite::Error::InvalidQuery)
+                };
+                Ok(VisibleChatMessage{
+                    seq:r.get(0)?,role:r.get(1)?,text:r.get(3)?,
+                    interrupted,cancelled
+                })
+            }
+        )?.collect::<Result<Vec<_>,_>>()?;
+        let has_more=entries.len()>limit;
+        entries.truncate(limit);
+        if !forward{entries.reverse();}
+        Ok((entries,has_more))
+    }
+
     /// Constant-time index repair probe for derived desktop activity.
     pub fn latest_live_chat_seq(&self,session_id:&str)->Result<i64,AnsfError>{
         if !valid_session(session_id){return Err(AnsfError::InvalidInput)}
@@ -449,6 +601,65 @@ mod tests{
             assert!(store.live_chat_events_after("c-live",0,101).is_err());
         }
         let _=fs::remove_file(db);
+    }
+    #[test]
+    fn durable_visible_cursor_pages_collapse_stream_progress_and_recover_cancelled(){
+        let db=path();
+        {
+            let store=AnsfStore::open(&db).unwrap();
+            store.create_session("c-window","workspace","Windowed").unwrap();
+            store.start_chapter("c-window","Chapter").unwrap();
+            for n in 1u8..=120{
+                store.append_host_chat_event("c-window",
+                    &event(n,LiveKind::User,&format!("Original message {n:03}"),
+                        None,None)).unwrap();
+            }
+            store.append_host_chat_event("c-window",
+                &event(121,LiveKind::AssistantProgress,"partial",None,Some(9))).unwrap();
+            for n in 122u8..=125{
+                store.append_host_chat_event("c-window",
+                    &event(n,LiveKind::AssistantProgress,
+                        &format!("checkpoint {n}"),None,Some(9))).unwrap();
+            }
+            store.append_host_chat_event("c-window",
+                &event(126,LiveKind::AssistantCompleted,"",None,Some(9))).unwrap();
+            store.append_host_chat_event("c-window",
+                &event(127,LiveKind::AssistantProgress,"cancelled partial",None,Some(10))).unwrap();
+            store.append_host_chat_event("c-window",
+                &event(128,LiveKind::AssistantCancelled,"",None,Some(10))).unwrap();
+            let (last,has_more)=store.visible_chat_before("c-window",i64::MAX,64).unwrap();
+            assert!(has_more);
+            assert_eq!(last.len(),64);
+            assert_eq!(last.last().unwrap().text,"cancelled partial");
+            assert!(last.last().unwrap().cancelled);
+            assert_eq!(last[last.len()-2].text,"checkpoint 125");
+            assert!(!last[last.len()-2].interrupted);
+            let (older,more)=store.visible_chat_before(
+                "c-window",last.first().unwrap().seq,64).unwrap();
+            assert!(!more);
+            assert_eq!(older.len(),58);
+            assert_eq!(older[0].text,"Original message 001");
+            assert!(older.last().unwrap().seq<last[0].seq);
+            let (after,more)=store.visible_chat_after("c-window",
+                older.last().unwrap().seq,64).unwrap();
+            assert!(!more);
+            assert_eq!(after,last);
+        }
+        {
+            let store=AnsfStore::open(&db).unwrap();
+            let (last,_) = store.visible_chat_before("c-window",i64::MAX,64).unwrap();
+            assert!(last.last().unwrap().cancelled);
+            // Derived rows may be repaired from immutable live event originals.
+            store.conn.lock().unwrap().execute_batch(
+                "DROP TABLE ansf_visible_chat").unwrap();
+        }
+        let reopened=AnsfStore::open(&db).unwrap();
+        let (last,_) = reopened.visible_chat_before("c-window",i64::MAX,64).unwrap();
+        assert_eq!(last.last().unwrap().text,"cancelled partial");
+        assert_eq!(last.len(),64);
+        assert!(reopened.visible_chat_before("c-window",-1,64).is_err());
+        assert!(reopened.visible_chat_before("c-window",i64::MAX,65).is_err());
+        drop(reopened);let _=fs::remove_file(db);
     }
     #[test]
     fn imported_history_is_not_permission_and_duplicate_replay_is_strict(){

@@ -6399,6 +6399,14 @@ fn lu_move_chat(
     state.chats.move_chat(&chat_id, folder_id)
 }
 #[tauri::command]
+fn lu_history_window(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,cursor:Option<i64>,
+    direction:String,limit:usize
+)->Result<chat_store::HistoryWindowPage,String>{
+    state.chats.history_window(&chat_id,cursor,&direction,limit)
+}
+#[tauri::command]
 fn lu_history(
     state: State<'_, Arc<DesktopState>>,
     chat_id: String,
@@ -6890,6 +6898,7 @@ pub fn run() {
             lu_rollback_history,
             lu_open_edited_folder,
             lu_history,
+            lu_history_window,
             lu_chats,
             memory_desktop::lu_m2_goal_context,
             memory_desktop::lu_m2_set_goal,

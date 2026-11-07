@@ -1,3 +1,7 @@
+## M3 active-chat history windowing — 2026-11-07 (SOURCE/CI PENDING)
+
+Added derived, text-free display-message pointer projection in ANSF SQLite; bounded 64-row before/after original stream cursor API; desktop uses 64-row initial latest pages and max 192 rendered rows with on-demand older/newer loading. Durable cancelled/complete streaming statuses preserved. Synthetic native tests added. Variable-height eviction, exact scroll continuity, very long transcripts and installed Win11 acceptance remain open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
 ## M3 asset-ledger foundation — 2026-11-07 (SOURCE/CI PENDING)
 
 Committed small immutable source-linked operational asset references outside ANSF; host-native picker + explicit confirm records SHA-256/size/version for SDK/NSIS/MSVC/LLVM packages. Reopening re-hashes and distinguishes present/missing/changed. Independent Library pane exposes manual register/verify. No automatic procedural reuse, build environment restoration, or user task authority added; physical installed acceptance open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).

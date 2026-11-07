@@ -12,7 +12,7 @@ on:
       - 'lu-desktop/tests/m3-ansf-recall.test.mjs'
       - '.github/workflows/lu-m3-ansf-recall.yml'
       - 'src-tauri/lu-core/src/ansf*.rs'
-      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs lu-desktop/tests/m3-operational-assets.test.mjs'
+      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs lu-desktop/tests/m3-operational-assets.test.mjs lu-desktop/tests/m3-windowed-chat.test.mjs'
       - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
