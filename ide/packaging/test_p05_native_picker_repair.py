@@ -29,6 +29,22 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn('accessible(ROOT.name, seconds=15)',a)
         self.assertIn('deny("native_folder_chooser_not_accepted")',a)
         self.assertIn("ephemeral_fixture_was_already_registered_before_picker",a)
+    def test_restarted_project_must_reopen_through_actual_installed_ui(self):
+        windows=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text()
+        mark=windows.split("    Require 'Registered projects'",1)[1]
+        self.assertIn("Click 'Reopen'",mark)
+        self.assertLess(mark.index("Click 'Reopen'"),mark.index("Click 'Edit'"))
+        self.assertIn("Require 'Open · editor available'",mark)
+        self.assertIn("WO8_NATIVE_PROJECT_REOPEN=real_installed_ui_reactivated",mark)
+        linux=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text()
+        editor=linux.split("def editor_project():",1)[1].split("def main():",1)[0]
+        self.assertIn('activate("Reopen", timeout=15)',editor)
+        self.assertLess(editor.index('activate("Reopen"'),editor.index('activate("Edit")'))
+        self.assertIn('accessible("Open · editor available", seconds=15)',editor)
+        frontend=(ROOT/"ide/app/web/main.jsx").read_text()
+        self.assertIn("Closed · ready to reopen",frontend)
+        self.assertIn(">Reopen</button>",frontend)
+        self.assertIn(">Edit</button>",frontend)
     def test_neither_platform_uses_internal_api_or_synthetic_acceptance(self):
         for path in ("ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
                      "ide/app/fixtures/wo8_linux_editor_atspi.py"):

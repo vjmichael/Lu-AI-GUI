@@ -546,6 +546,19 @@ try {
     }
     Require 'Registered projects'
     Require (Split-Path $fixed -Leaf)
+    # The registry persists the directory across desktop restart but the
+    # newly launched desktop intentionally restores it as CLOSED. The real
+    # UI exposes Reopen, not Edit, until that explicit project transition.
+    # Never bypass via host IPC or assume catalog presence means active.
+    $closed=$null
+    try { $closed=Find-Control 'Closed · ready to reopen' '' 3 } catch {}
+    if ($closed) {
+      Click 'Reopen'
+      Require 'Open · editor available'
+      Write-Host 'WO8_NATIVE_PROJECT_REOPEN=real_installed_ui_reactivated'
+    } else {
+      Require 'Open · editor available'
+    }
     Click 'Edit'
     Require 'Source explorer and editor'
     Click 'main.rs'

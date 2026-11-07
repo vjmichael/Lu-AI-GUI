@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **P05 native registered-project restart repair (Nov 7):** Actual Windows installed UI now proved chooser registration and explicit save; subsequent test failed because restarted project was `Closed · ready to reopen`, correctly exposing `Reopen` rather than `Edit`. Updated Windows UIA/Linux GTK AT-SPI to explicitly reopen through real OS UI and verify active state before editor, with hostile source checks. Native recheck pending.
+
 - **P05 native WO9 upstream receipt verification repair (Nov 7):** Inspected exact-head Win/Linux failure receipts: WO9 Windows repeated upstream source fetch; WO9 Linux omitted it. Corrected both actual packaging jobs, added complete CI wiring regressions across six E2/WO8/WO9 jobs; real installed UI acceptance remains open.
 
 - **P05 complete unsigned verification artifact license reach (Nov 7):** Extended exact upstream full-text fetch+hashed receipt/actual-package hash to both E2 Windows, WO8 Win/Linux and WO9 Win/Linux package builds. Repaired all corresponding CLI 2.12 pins; preserved exact older workflow blob identities, native installed tests and no-release policy.

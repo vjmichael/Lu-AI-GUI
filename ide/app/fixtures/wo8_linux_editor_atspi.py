@@ -303,6 +303,17 @@ def select_native_folder():
 
 
 def editor_project():
+    # After a true desktop restart, the persisted project is registered but
+    # CLOSED. Reopen through the installed GTK/WebKit accessibility UI; never
+    # jump directly into an IPC or assume a saved catalog means an open editor.
+    try:
+        accessible("Closed · ready to reopen", seconds=2)
+    except RuntimeError:
+        pass
+    else:
+        activate("Reopen", timeout=15)
+        print("WO8_LINUX_PROJECT_REOPEN=real_atspi_action", flush=True)
+    accessible("Open · editor available", seconds=15)
     activate("Edit")
     accessible("Source explorer and editor", seconds=15)
     activate("main.rs")
