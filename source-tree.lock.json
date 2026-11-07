@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "468d70919f0977cc967e93fac7171f784af012f1",
-  "trackedFileCount": 541,
+  "trackedFileCount": 542,
   "files": [
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
@@ -165,15 +165,19 @@
     },
     {
       "path": "docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md",
-      "blob": "43d70af907c7553ab8f1ad1622f71252539b2a95"
+      "blob": "0df6a12fd7d96d8ca3b9ccbfe1bd40be66af3922"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
       "blob": "0bbad7e0b1da86dcc9467541b3496036e60e7522"
     },
     {
+      "path": "docs/LU_M1_MEMORY_EVIDENCE_AND_AUTHORITY_AUDIT_20261107.md",
+      "blob": "3cd13ca08c605825249adddee44f15c47e8ff06e"
+    },
+    {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "0ab6d57ac41eb8ccc7fe398f09832bc04f0fef35"
+      "blob": "981fca675156001b72cf0aa7ad72aa3fa3798475"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -925,7 +929,7 @@
     },
     {
       "path": "src-tauri/lu-core/MEMORY_AND_MEDIA_ROADMAP.md",
-      "blob": "e8a95dc99e70b833878041124b2b88573b3f8679"
+      "blob": "c75871e3218ea88d1bb2a269877321b08659f576"
     },
     {
       "path": "src-tauri/lu-core/README.md",
