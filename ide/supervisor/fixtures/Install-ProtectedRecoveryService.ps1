@@ -150,7 +150,10 @@ try {
   }
   # Restrict service management to SYSTEM and Administrators. This changes
   # the service object DACL, not the named pipe or evidence directory DACLs.
-  $scmSddl='D:P(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWRPWPDTLOCRRC;;;BA)'
+  # SYSTEM and elevated Administrators need DELETE (SD) for explicit
+  # uninstallation/CI teardown. This is the SCM *service object*, never
+  # the protected named-pipe, Job, NUL device or evidence DACL.
+  $scmSddl='D:P(A;;CCLCSWRPWPDTLOCRRCSD;;;SY)(A;;CCLCSWRPWPDTLOCRRCSD;;;BA)'
   & sc.exe sdset $serviceName $scmSddl | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: service management DACL failed' }
   if ($Start) {
