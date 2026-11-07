@@ -201,6 +201,11 @@ mod protected {
         poll_until_ready(&mut dap, cancel)?;
         println!("PASS: native OS-restricted LLDB-DAP initialize");
         dap.launch_fixed_fixture().map_err(|e| e.code())?;
+        // The adapter may have sent initialized in the same read that
+        // completed initialize, before the native fixed launch was issued.
+        if dap.configuration_needed() {
+            dap.configuration_done().map_err(|e| e.code())?;
+        }
         let began = Instant::now();
         let mut stopped = None;
         let mut threads = false;
