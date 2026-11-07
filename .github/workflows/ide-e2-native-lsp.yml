@@ -143,15 +143,49 @@ jobs:
           sudo install -d -m 755 /opt/lu-ide-e2-test/bin
           sudo install -o root -g root -m 755 "$(command -v clangd)" /opt/lu-ide-e2-test/bin/clangd
           echo LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test >> "$GITHUB_ENV"
-      - name: Require real writable delegated cgroup
+      - name: Check genuine systemd delegation support (not root cgroup write access)
+        shell: bash
         run: |
+          set -euo pipefail
+          systemctl --version | head -n 1
           cat /proc/self/cgroup
           cat /sys/fs/cgroup/cgroup.controllers
-          if ! test -w /sys/fs/cgroup; then
-            echo 'DENIED: hosted runner has no delegated cgroup; not native acceptance'
-            exit 1
+          test -x /usr/bin/systemd-run || { echo 'DENIED: no native systemd-run'; exit 1; }
+          test -f /sys/fs/cgroup/cgroup.controllers
+          if ! test "$(id -un)" = runner; then
+            echo 'DENIED: unexpected hosted runner account'; exit 1
           fi
-      - name: Real isolated Linux clangd protocol and cancellation
+          echo 'Systemd manager must prove delegated service controllers; ordinary runner root cgroup write access is irrelevant.'
+      - name: Compile genuine cgroup admission helper and fixed native clangd fixture
+        shell: bash
         run: |
-          cargo run --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_lsp_acceptance
-          cargo run --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_lsp_acceptance -- --cancel
+          set -euo pipefail
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_lsp_acceptance
+      - name: Run genuine unprivileged systemd delegated clangd and cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$(realpath ide/sandbox/target/debug/linux_cgroup_prepare)"
+          fixture="$(realpath ide/supervisor/target/debug/examples/e2_native_lsp_acceptance)"
+          # This privileged ACTIONS setup merely asks systemd to provision
+          # an exact delegated CPU/memory/PID unit. The worker executes as
+          # unprivileged runner and MUST prove kernel membership/quotas itself.
+          # No Docker, generic shell worker, direct cgroup chmod, fake cgroupfs
+          # or uncontained fallback on failure. The helper only touches its
+          # own fixed, OS-delegated unit parent, before ExecStart.
+          for mode in normal cancel; do
+            cmd=()
+            if [[ "$mode" == cancel ]]; then cmd+=(--cancel); fi
+            sudo /usr/bin/systemd-run --wait --collect --pipe \
+              --unit=lu-ide-delegated \
+              --property=Type=exec \
+              --property=User=runner \
+              --property=Group=runner \
+              --property='Delegate=cpu memory pids' \
+              --property=DelegateSubgroup=lu-ide-host \
+              --property="ExecStartPre=$helper" \
+              --setenv=LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test \
+              "$fixture" "${cmd[@]}"
+            echo "PASS: real systemd delegated Linux clangd $mode fixture"
+          done
