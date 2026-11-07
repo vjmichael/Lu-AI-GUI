@@ -615,6 +615,26 @@ function App() {
     }
   }
 
+  async function reconcileProtectedDebugger(item) {
+    const projectId = activeProject?.projectId;
+    if (!item || item.projectId !== projectId ||
+        !item.requiresReconciliation || debugBusy) return;
+    setDebugBusy(true);
+    setProblem('');
+    try {
+      await invoke('ide_debug_reconcile', { projectId, jobId: item.jobId });
+      if (activeProjectIdRef.current === projectId)
+        setHint('Interrupted debugger was cleaned by the native OS broker; nothing was restarted.');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId)
+        setProblem('Debug process tree remains quarantined: ' + String(error));
+    } finally {
+      setDebugBusy(false);
+      if (activeProjectIdRef.current === projectId)
+        invoke('ide_debug_status', { projectId }).then(setDebugStatus).catch(() => {});
+    }
+  }
+
   async function cancelProtectedDebugger() {
     const projectId = activeProject?.projectId;
     if (!projectId || debugStatus?.current?.projectId !== projectId) return;
@@ -1504,6 +1524,18 @@ function App() {
                   Request debugger cancellation
                 </button>
               </>}
+              {Array.isArray(debugStatus?.quarantined) && debugStatus.quarantined
+                .filter(item => item.projectId === activeProject?.projectId &&
+                  item.requiresReconciliation)
+                .map(item => <div className="continuityEvent" key={item.jobId}>
+                  <p>Interrupted debugger job <code>{item.jobId}</code> · {item.phase}.
+                    No debuggee can restart while OS cleanup is unverified.</p>
+                  <button type="button" className="ghostBtn"
+                    disabled={debugBusy || !!debugStatus?.current}
+                    onClick={() => reconcileProtectedDebugger(item)}>
+                    Verify protected debugger cleanup (no execution)
+                  </button>
+                </div>)}
               {debugResult?.projectId === activeProject?.projectId && <div role="status">
                 <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
                 <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
