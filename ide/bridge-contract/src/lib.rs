@@ -1,5 +1,6 @@
 //! WO10-A strict data-only Protobuf codec for a future optional Lu bridge.
 //! The codec is not a socket, peer authentication, human grant or permission.
+pub mod transport;
 use prost::Message;
 fn valid_project_id(id: &str) -> bool {
     id.strip_prefix("ide-").is_some_and(|s| s.len() == 32
