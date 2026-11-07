@@ -5947,7 +5947,7 @@ fn lu_observe_stop(
 #[tauri::command]
 async fn lu_observe_forget_notes(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
-)->Result<usize,String>{
+)->Result<Option<usize>,String>{
     state.chats.history(&chat_id)
         .map_err(|_|"Select an existing conversation before forgetting notes")?;
     let confirmed=tauri::async_runtime::spawn_blocking(move||
@@ -5963,10 +5963,10 @@ async fn lu_observe_forget_notes(
             "Forget diagnostic notes".into(),"Keep notes".into()
         )).blocking_show()
     ).await.map_err(|_|"Observation note deletion approval unavailable")?;
-    if !confirmed{return Ok(0)}
+    if !confirmed{return Ok(None)}
     state.chats.history(&chat_id)
         .map_err(|_|"The selected conversation is no longer available")?;
-    state.observe.forget_notes(&chat_id)
+    state.observe.forget_notes(&chat_id).map(Some)
 }
 /// Renderer event hints are NOT trusted test outcomes. Only two enumerated
 /// low-information signals are admitted, and no screenshot/text is accepted.
