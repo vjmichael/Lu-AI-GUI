@@ -541,21 +541,15 @@ fn classify_native_output(first: &[u8]) -> &'static str {
         || lower.contains("user namespaces are not enabled")
     {
         "bubblewrap_namespace_denied"
-    } else if lower.contains("operation not permitted")
-        || lower.contains("permission denied")
-    {
+    } else if lower.contains("operation not permitted") || lower.contains("permission denied") {
         "native_permission_denied"
-    } else if lower.contains("failed to download")
-        || lower.contains("network is unreachable")
-    {
+    } else if lower.contains("failed to download") || lower.contains("network is unreachable") {
         "unexpected_network_request"
     } else if lower.contains("lock file needs to be updated")
         || lower.contains("lockfile needs to be updated")
     {
         "offline_lockfile_incompatible"
-    } else if lower.contains("could not execute process")
-        || lower.contains("couldn't execute")
-    {
+    } else if lower.contains("could not execute process") || lower.contains("couldn't execute") {
         "compiler_exec_failed"
     } else if lower.contains("no such file or directory") {
         "required_file_missing"
