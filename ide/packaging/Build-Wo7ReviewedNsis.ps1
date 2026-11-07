@@ -5,6 +5,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$RepositoryRoot,
   [Parameter(Mandatory=$true)][string]$ApprovedInventory,
+  [Parameter(Mandatory=$true)][string]$ApprovedLicenseBundleRoot,
   [Parameter(Mandatory=$true)][string]$InputRoot,
   [Parameter(Mandatory=$true)][string]$NewPayloadRoot,
   [Parameter(Mandatory=$true)][string]$NewCandidateRoot,
@@ -32,7 +33,16 @@ $review=Get-Content -LiteralPath $ApprovedInventory -Raw | ConvertFrom-Json
 # compiled frontend JS or actual resolved Cargo dependency graph. Require a
 # second independently reviewed, SHA-pinned legal inventory and exact source
 # before bundling an installer. This is a gate, not an automatic sign-off.
-$legalBundle=Join-Path $repo 'ide/app/src-tauri/verification-notices'
+# The signed reviewer supplies a separately produced complete legal bundle
+# outside the clean source checkout, pinned by the ApprovedInventory SHA.
+# Generating untracked notices inside the repository would invalidate the
+# deliberate git-status clean-source gate above.
+$legalBundle=[IO.Path]::GetFullPath($ApprovedLicenseBundleRoot).TrimEnd('\')
+if (!(Test-Path -LiteralPath $legalBundle -PathType Container) -or
+    $legalBundle -ieq $repo -or
+    $legalBundle.StartsWith(($repo+'\'),[StringComparison]::OrdinalIgnoreCase)) {
+  Deny 'license_bundle_must_be_independent_reviewed_staging_root'
+}
 $legalManifest=Join-Path $legalBundle 'inventory.json'
 if (!(Test-Path -LiteralPath $legalManifest -PathType Leaf)) {
   Deny 'complete_resolved_npm_cargo_notices_unavailable'

@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P04 source licensing and OS rollback extension (Nov 7, 2026):** unsigned native Windows and Linux package verification includes resolved npm/Cargo legal notices plus exact package SHA receipts. Added a native Linux `dpkg` post-install failure-injection and old-package recovery test (no signature required, real package manager and preserved user-state digest). Signed WO7 builder requires complete independently reviewed legal evidence as a separate input outside the clean source tree. Source implemented; OS/installed CI outcomes and protected installer upgrades still open.
+
+
 - **P04 licence notices and crash-resilient redundant versions (Nov 7, 2026):** Retrieved upstream LLVM/Python/Tauri/CodeMirror/esbuild full license texts; resolved npm/Cargo license collector and SHA-pinned notice verifier integrated into actual Windows NSIS/Linux Debian unsigned verification packages, including GitHub artifacts and an installed/package inventory presence gate. Signed WO7 builder now requires independent legal inventory review. Added fsynced OS filesystem transaction with retained prior version, exact hashes, manual recovery and real subprocess-abrupt-exit fault tests across switch phases. **Fixture-only OS mechanism** until protected NSIS/dpkg/SCM integration; P04 native installed GUI and final release approval still open. Signing identity deferred. [P04 ledger](docs/IDE_P04_INSTALLED_RELEASE_CLOSEOUT_20261107.md).
 
 
