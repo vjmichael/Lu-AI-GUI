@@ -130,12 +130,22 @@ mod windows_capture_worker {
     #[allow(unsafe_code)]
     mod process_instance {
         use windows::{
-            core::Owned,
-            Win32::Foundation::FILETIME,
+            Win32::Foundation::{HANDLE,FILETIME,CloseHandle},
             Win32::System::Threading::{
                 OpenProcess,GetProcessTimes,PROCESS_QUERY_LIMITED_INFORMATION
             }
         };
+        // Win32 HANDLE is *not* an automatically owning COM/WinRT object.
+        // Keep the process-query-only resource within a small RAII boundary.
+        struct ProcessQueryHandle(HANDLE);
+        impl Drop for ProcessQueryHandle{
+            fn drop(&mut self){
+                // SAFETY: the handle originated from successful OpenProcess
+                // in this scope, is owned exactly once and is not a pseudo
+                // handle. Drop does not export the handle to app/renderer.
+                let _=unsafe{CloseHandle(self.0)};
+            }
+        }
         pub(super) fn born_at(pid:u32)->Result<u64,&'static str>{
             if pid==0{return Err("Missing native process identity")}
             // SAFETY: PID originates from the actual OS window; no handles,
@@ -145,13 +155,13 @@ mod windows_capture_worker {
             let handle=unsafe{
                 OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,false,pid)
             }.map_err(|_|"Cannot attest Windows process instance")?;
-            let process=unsafe{Owned::new(handle)};
+            let process=ProcessQueryHandle(handle);
             let mut created=FILETIME::default();
             let mut ended=FILETIME::default();
             let mut kernel=FILETIME::default();
             let mut user=FILETIME::default();
             unsafe{
-                GetProcessTimes(*process,
+                GetProcessTimes(process.0,
                     &mut created,&mut ended,&mut kernel,&mut user)
             }.map_err(|_|"Process creation timestamp unavailable")?;
             let instance=(u64::from(created.dwHighDateTime)<<32)
