@@ -1,55 +1,26 @@
-//! M2: human-owned task goals and clarifying answers in real Lu desktop.
-//! ChatStore is canonical for human memory events. ANSF SQLite mirrors those
-//! immutable entries with exact source identity and idempotent repair.
-//! Nothing in this module creates a tool grant or a model-authority turn.
+//! M2: user goal and clarification controls over canonical ANSF SQLite.
+//! ANSF itself holds the immutable original decision records. There is no
+//! JSONL-to-SQLite mirror and no separate agent-memory database.
 use super::*;
-use lu_core::{
-    ansf::AnsfStore,
-    ansf_goals::{GoalEvent,GoalEventKind,GoalSnapshot,project_goal_events},
-};
+use lu_core::ansf_goals::{GoalEvent,GoalEventKind,GoalSnapshot,project_goal_events};
 use std::{path::Path,sync::Mutex};
 
-pub(crate) struct GoalMemoryDesktop {
-    ansf:AnsfStore,
+pub(crate) struct GoalMemoryDesktop{
     sync:Mutex<()>,
 }
-impl GoalMemoryDesktop {
-    pub(crate) fn open(root:&Path)->Result<Self,String>{
-        let path=root.join("lu-ansf.sqlite");
-        if let Ok(meta)=fs::symlink_metadata(&path){
-            if !meta.is_file()||meta.file_type().is_symlink(){
-                return Err("ANSF memory file is not a regular local SQLite database".into())
-            }
-        }
-        Ok(Self{
-            ansf:AnsfStore::open(&path).map_err(|e|
-                format!("Cannot open existing ANSF memory: {e:?}"))?,
-            sync:Mutex::new(()),
-        })
+impl GoalMemoryDesktop{
+    pub(crate) fn open(_root:&Path)->Result<Self,String>{
+        Ok(Self{sync:Mutex::new(())})
     }
     pub(crate) fn snapshot(&self,chats:&ChatStore,chat_id:&str)->Result<GoalSnapshot,String>{
-        // Mutex serializes replay/validation, not the human authority itself.
-        let _guard=self.sync.lock().map_err(|_|"ANSF reconciliation lock poisoned")?;
-        let source=chats.memory_events(chat_id)?;
-        self.ansf.ensure_session(chat_id,"lu-desktop-local-profile","Lu task memory")
-            .map_err(|e|format!("ANSF session ownership mismatch: {e:?}"))?;
-        for event in &source{
-            self.ansf.mirror_goal_event(chat_id,event)
-                .map_err(|e|format!("ANSF mirror cannot reconcile: {e:?}"))?;
-        }
-        let actual=self.ansf.goal_events(chat_id)
-            .map_err(|e|format!("ANSF memory cannot be checked: {e:?}"))?;
-        // Unexpected records are not silent "memories". The exact journal
-        // must equal the indexed projection before we use it for model context.
-        if source!=actual{
-            return Err("ANSF memory differs from host-authenticated chat events".into())
-        }
-        project_goal_events(&actual).map_err(|_|"Invalid ANSF goal context".into())
+        let _guard=self.sync.lock().map_err(|_|"ANSF goal lock poisoned")?;
+        let records=chats.memory_events(chat_id)?;
+        project_goal_events(&records).map_err(|_|"Invalid ANSF goal history".into())
     }
     fn append(&self,chats:&ChatStore,chat_id:&str,event:GoalEvent)->Result<GoalSnapshot,String>{
+        // Native SQLite write is authoritative and transactional; a recovered
+        // conversation does not depend on a separate mirrored JSONL event.
         chats.append_goal_memory_event(chat_id,event)?;
-        // If mirror publication fails after a durable ChatStore append, a
-        // later read/restart replays the source. Never append it twice on retry.
         self.snapshot(chats,chat_id)
     }
     pub(crate) fn set_goal(&self,chats:&ChatStore,chat_id:&str,text:String)
