@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 nonce-bound foreground OS identity receipt
+
+The native WGC SHA-256 receipt now uses different domains for the verified foreground HWND and the unidentifiable generic GraphicsCapturePicker item. In foreground mode, HWND, owning PID, process creation FILETIME, task nonce and fully blanked frame geometry are hashed together. The OS identifiers never appear in stdout, the GUI or model context. Invalid foreground identity refuses a receipt. Generic selection uses a separate **unverified** domain, never borrows foreground source identity. Rust tests verify that changing HWND/PID/birth changes the result but changing original pixel values does not. This is stronger provenance for foreground mode only, not general source attribution, independent GUI verification or working visual model access.
+
 ## P06 native Windows NSIS install/uninstall evidence harness (not yet executed)
 
 Added `scripts/verify-observe-nsis-cycle-windows.ps1` to run **the actual hash-reviewed NSIS install/uninstall lifecycle** on an explicitly confirmed clean disposable Windows machine. It rejects a pre-existing Lu install/process, requires independent SHA-256 for installer, installed Lu and WGC worker and reviewed uninstaller basename, selects a fresh temporary target path, runs standard NSIS `/S` and `/D`, checks the real installed binary hashes and optional separate native UIA smoke, runs the actual uninstaller and verifies app/worker removal plus uninstall-registry cleanup. It records failure stage and preserves forensic evidence instead of automatically deleting an unknown install directory. This is code and release-test procedure, **not a physical Windows PASS**. Running on an existing everyday Lu installation is explicitly forbidden. It does not certify WGC source identity, privacy-redacted pixels, model GUI capability or GPU quota.

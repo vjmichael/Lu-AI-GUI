@@ -117,7 +117,10 @@ fn approved_regions_only_bgra(
 /// exists yet, so image evidence/pixel previews are categorically forbidden.
 /// The digest commits to nonce, geometry and a wholly blank output frame.
 /// Not suitable for visual comparison or as a screenshot fingerprint.
-fn frame_receipt(nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8])->Option<String> {
+fn frame_receipt(
+    nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8],
+    foreground:Option<(usize,u32,u64)>
+)->Option<String> {
     use sha2::{Digest,Sha256};
     if nonce.len()!=32||!nonce.bytes().all(|b|b.is_ascii_hexdigit())
         ||!frame_geometry_valid(width,height,row_pitch,pixels.len()) {return None;}
@@ -126,6 +129,19 @@ fn frame_receipt(nonce:&str,width:u32,height:u32,row_pitch:u32,pixels:&[u8])->Op
     let mut hash=Sha256::new();
     hash.update(b"Lu-WGC-whole-frame-redacted-v2");
     hash.update(nonce.as_bytes());
+    // A verified foreground window is NOT interchangeable with an
+    // unidentifiable generic picker item. Bind native source lifetime to
+    // the digest without sending any OS identifiers or content pixels.
+    match foreground {
+        Some((hwnd,pid,born)) if hwnd!=0&&pid!=0&&born!=0=>{
+            hash.update(b"native-foreground-window-v1");
+            hash.update((hwnd as u64).to_le_bytes());
+            hash.update(pid.to_le_bytes());
+            hash.update(born.to_le_bytes());
+        },
+        Some(_)=>return None,
+        None=>hash.update(b"unverified-generic-picker-v1"),
+    }
     hash.update(width.to_le_bytes());
     hash.update(height.to_le_bytes());
     let _=pitch;
@@ -157,19 +173,19 @@ mod frame_geometry_tests {
         // A 2x2 BGRA image: 8 active bytes per row, 4 pitch-padding bytes.
         for index in 0..8 {padded[index]=index as u8;}
         for index in 12..20 {padded[index]=(index+2) as u8;}
-        let receipt=frame_receipt(nonce,2,2,12,&padded).unwrap();
+        let receipt=frame_receipt(nonce,2,2,12,&padded,None).unwrap();
         padded[8..12].fill(255);
         padded[20..24].fill(255);
-        assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None).unwrap(),receipt);
         padded[12]^=1;
-        assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None).unwrap(),receipt);
         // All-sensitive screen content is fully suppressed in the receipt.
         padded.fill(255);
-        assert_eq!(frame_receipt(nonce,2,2,12,&padded).unwrap(),receipt);
-        assert_ne!(frame_receipt("ffeeddccbbaa99887766554433221100",2,2,12,&padded).unwrap(),receipt);
-        assert!(frame_receipt(nonce,2,2,12,&padded[..19]).is_none());
-        assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded).is_none());
-        assert!(frame_receipt(nonce,0,2,12,&padded).is_none());
+        assert_eq!(frame_receipt(nonce,2,2,12,&padded,None).unwrap(),receipt);
+        assert_ne!(frame_receipt("ffeeddccbbaa99887766554433221100",2,2,12,&padded,None).unwrap(),receipt);
+        assert!(frame_receipt(nonce,2,2,12,&padded[..19],None).is_none());
+        assert!(frame_receipt("not-a-host-nonce",2,2,12,&padded,None).is_none());
+        assert!(frame_receipt(nonce,0,2,12,&padded,None).is_none());
     }
     #[test]
     fn future_sensitive_region_mask_is_stride_correct_without_touching_padding(){
@@ -181,6 +197,22 @@ mod frame_geometry_tests {
         assert_eq!(&frame[0..4],&[99;4]);
         assert_eq!(&frame[8..16],&[99;8]);
         assert_eq!(&frame[24..32],&[99;8]);
+    }
+    #[test]
+    fn nonce_bound_foreground_provenance_is_distinct_and_privacy_preserving(){
+        let nonce="00112233445566778899aabbccddeeff";
+        let orig=vec![7u8;24];
+        let generic=frame_receipt(nonce,2,2,12,&orig,None).unwrap();
+        let id=(0x1234usize,9123u32,123456789u64);
+        let fg=frame_receipt(nonce,2,2,12,&orig,Some(id)).unwrap();
+        assert_ne!(generic,fg);
+        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0+1,id.1,id.2))).unwrap());
+        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0,id.1+1,id.2))).unwrap());
+        assert_ne!(fg,frame_receipt(nonce,2,2,12,&orig,Some((id.0,id.1,id.2+1))).unwrap());
+        assert!(frame_receipt(nonce,2,2,12,&orig,Some((0,id.1,id.2))).is_none());
+        let changed=vec![99u8;24];
+        assert_eq!(fg,frame_receipt(nonce,2,2,12,&changed,Some(id)).unwrap());
+        assert_eq!(generic,frame_receipt(nonce,2,2,12,&changed,None).unwrap());
     }
     #[test]
     fn reviewed_region_export_defaults_to_black_and_never_copies_pitch_padding(){
@@ -426,7 +458,10 @@ mod windows_capture_worker {
             // frame for its receipt: no private pixel values reach stdout,
             // the host, a disk file or a model. No useful visual proof exists
             // until separate trusted sensitive-region classification.
-            let digest=super::frame_receipt(&self.nonce,width,height,row_pitch,buffer)
+            let digest=super::frame_receipt(
+                &self.nonce,width,height,row_pitch,buffer,
+                self.foreground_identity
+            )
                 .ok_or("Invalid frame receipt geometry or host nonce")?;
             // FrameBuffer release unmaps staging surface when dropped.
             // The operating system owns the GPU/driver buffers; Lu does not

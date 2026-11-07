@@ -2739,7 +2739,7 @@ function App() {
           </div>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
             An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
-            the general picker can select a monitor. Neither gives the model its pixels.</small>
+            the general picker can select a monitor but cannot independently identify the selected OS source. Both paths fully blank the captured frame; neither sends pixels to the model.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
               <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}

@@ -187,3 +187,13 @@ test('P06 independently hash-reviewed native NSIS install/uninstall is a real op
   assert.match(script,/gpuHardwareQuota='NOT_TESTED'/);
   assert.doesNotMatch(script,/Remove-Item -Recurse|Invoke-WebRequest|Start-BitsTransfer/);
 });
+
+test('P06 source-instance domain bound in redacted receipt; generic remains unverified',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  assert.match(worker,/native-foreground-window-v1/);
+  assert.match(worker,/unverified-generic-picker-v1/);
+  assert.match(worker,/nonce_bound_foreground_provenance_is_distinct_and_privacy_preserving/);
+  assert.match(worker,/hash\.update\(\(hwnd as u64\)\.to_le_bytes\(\)\)/);
+  assert.match(worker,/hash\.update\(born\.to_le_bytes\(\)\)/);
+  assert.match(worker,/self\.foreground_identity/);
+});
