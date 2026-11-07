@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Parse actual Linux installed acceptance shell
         run: |
           bash -n ide/app/fixtures/Test-Wo8InstalledDeb.sh
@@ -40,6 +42,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Parse native UI Automation and refuse unsupported test declarations
         shell: pwsh
         run: |
