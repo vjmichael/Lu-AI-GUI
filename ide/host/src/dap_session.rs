@@ -363,8 +363,8 @@ impl DapSession {
                     // Outputs and capabilities can contain hostile text/paths.
                     // Do not forward them to WebView or execute adapter commands.
                     "output" | "thread" | "module" | "loadedSource" | "process" | "breakpoint"
-                    | "capabilities" | "invalidated" | "memory"
-                    | "progressStart" | "progressUpdate" | "progressEnd"
+                    | "capabilities" | "invalidated" | "memory" | "progressStart"
+                    | "progressUpdate" | "progressEnd"
                         if !matches!(self.phase, DapPhase::Detached) =>
                     {
                         Ok(None)
@@ -529,17 +529,27 @@ mod tests {
             "seq":0,"type":"response","request_seq":1,
             "command":"initialize","success":true
         }));
-        assert_eq!(session.receive(&response).unwrap(), vec![DapEvent::Initialized]);
+        assert_eq!(
+            session.receive(&response).unwrap(),
+            vec![DapEvent::Initialized]
+        );
         assert_eq!(session.phase(), DapPhase::AwaitingInitializedEvent);
-        session.receive(&framed(json!({
-            "seq":1,"type":"event","event":"initialized"
-        }))).unwrap();
+        session
+            .receive(&framed(json!({
+                "seq":1,"type":"event","event":"initialized"
+            })))
+            .unwrap();
         assert_eq!(session.phase(), DapPhase::Ready);
         // An uncorrelated reply stays rejected even with a legal server seq.
-        assert_eq!(session.receive(&framed(json!({
-            "seq":0,"type":"response","request_seq":0,
-            "command":"threads","success":true
-        }))).unwrap_err(), DapError::UnexpectedResponse);
+        assert_eq!(
+            session
+                .receive(&framed(json!({
+                    "seq":0,"type":"response","request_seq":0,
+                    "command":"threads","success":true
+                })))
+                .unwrap_err(),
+            DapError::UnexpectedResponse
+        );
         assert_eq!(session.phase(), DapPhase::Quarantined);
     }
     #[test]
