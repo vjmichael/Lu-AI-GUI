@@ -37,6 +37,14 @@ function App() {
   const [chats, setChats] = useState([]);
   const [folders, setFolders] = useState([]);
   const [chatId, setChatId] = useState(null);
+  // M2 host-authored goal/clarification context, separate from normal chat.
+  const [m2Context,setM2Context]=useState(null);
+  const [m2GoalDraft,setM2GoalDraft]=useState('');
+  const [m2QuestionDraft,setM2QuestionDraft]=useState('');
+  const [m2Comments,setM2Comments]=useState({});
+  const [m2PanelOpen,setM2PanelOpen]=useState(false);
+  const [m2Busy,setM2Busy]=useState(false);
+
   const activeChatRef=useRef(null);
   activeChatRef.current=chatId;
   const [history, setHistory] = useState([]);
@@ -1288,6 +1296,65 @@ function App() {
     return ()=>{alive=false;clearInterval(timer);};
   },[backgroundPaneOpen,chatId]);
 
+  // M2 state is reloaded from the native ANSF+chat-journal reconciliation
+  // for every conversation; no model event or localStorage confers authority.
+  useEffect(()=>{
+    let alive=true;
+    setM2Context(null);
+    setM2Comments({});
+    if(!chatId)return ()=>{alive=false;};
+    invoke('lu_m2_goal_context',{chatId}).then(view=>{
+      if(!alive||activeChatRef.current!==chatId)return;
+      setM2Context({...view,chatId});
+      setM2GoalDraft(view.goal||'');
+    }).catch(error=>{if(alive&&activeChatRef.current===chatId)
+      setError('Goal memory could not be reconciled: '+String(error));});
+    return ()=>{alive=false;};
+  },[chatId]);
+  async function m2SetGoal(event){
+    event.preventDefault();
+    if(!chatId||m2Busy||!m2GoalDraft.trim())return;
+    const target=chatId;setM2Busy(true);setError('');
+    try{
+      const view=await invoke('lu_m2_set_goal',{chatId:target,goal:m2GoalDraft});
+      if(activeChatRef.current===target){
+        setM2Context({...view,chatId:target});
+        setM2GoalDraft(view.goal);
+        setActivity('Goal saved in ANSF-backed memory');
+      }
+    }catch(error){setError('Goal not confirmed: '+String(error));}
+    finally{setM2Busy(false);}
+  }
+  async function m2OpenQuestion(event){
+    event.preventDefault();
+    if(!chatId||m2Busy||!m2QuestionDraft.trim())return;
+    const target=chatId;setM2Busy(true);setError('');
+    try{
+      const view=await invoke('lu_m2_open_question',{chatId:target,question:m2QuestionDraft});
+      if(activeChatRef.current===target){
+        setM2Context({...view,chatId:target});
+        setM2QuestionDraft('');
+      }
+    }catch(error){setError('Question not recorded: '+String(error));}
+    finally{setM2Busy(false);}
+  }
+  async function m2Answer(questionId,choice){
+    if(!chatId||m2Busy)return;
+    const target=chatId;setM2Busy(true);setError('');
+    try{
+      const comment=(m2Comments[questionId]||'').trim();
+      const view=await invoke('lu_m2_answer_question',{
+        chatId:target,questionId,choice,comment:comment||null
+      });
+      if(activeChatRef.current===target){
+        setM2Context({...view,chatId:target});
+        setM2Comments(old=>({...old,[questionId]:''}));
+        setActivity(choice==='not_now'?'Clarification deferred; no answer or permission inferred'
+          :'Clarification recorded for future turns');
+      }
+    }catch(error){setError('Clarification not recorded: '+String(error));}
+    finally{setM2Busy(false);}
+  }
   async function refreshChats() {
     const list = await invoke('lu_chats');
     setChats(list.chats);
@@ -2855,6 +2922,64 @@ function App() {
           <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
+      {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">
+        <header className="m2MemoryHeader">
+          <strong>Goal memory {m2Context?.goal?'· '+m2Context.goal.slice(0,75):'· not set'}</strong>
+          <button type="button" className="subtleButton" aria-expanded={m2PanelOpen}
+            onClick={()=>setM2PanelOpen(v=>!v)}>
+            {m2PanelOpen?'Hide goal details':'Goal & questions'}
+            {m2Context?.questions?.some(q=>q.status==='pending'||q.status==='deferred')
+              ?' · needs your input':''}
+          </button>
+        </header>
+        {m2PanelOpen&&<div className="m2MemoryBody">
+          <small>This is your chat's persistent task context, not an application permission.
+            Only an actual user action can change it. Lu will reuse confirmed answers
+            when constructing subsequent local-model context.</small>
+          <form onSubmit={m2SetGoal}>
+            <label>Current goal
+              <textarea rows={2} maxLength={4096} value={m2GoalDraft}
+                placeholder="What are we trying to accomplish?"
+                onChange={event=>setM2GoalDraft(event.target.value)}/>
+            </label>
+            <button type="submit" disabled={m2Busy||!m2GoalDraft.trim()||
+                m2GoalDraft===m2Context?.goal}>Save goal</button>
+          </form>
+          {m2Context?.goalId&&<form onSubmit={m2OpenQuestion}>
+            <label>Stage a clarification for the user
+              <input maxLength={1024} value={m2QuestionDraft}
+                placeholder="A yes or no decision to clarify the current goal"
+                onChange={event=>setM2QuestionDraft(event.target.value)}/>
+            </label>
+            <button type="submit" disabled={m2Busy||!m2QuestionDraft.trim()}>
+              Add clarification
+            </button>
+            <small>In M2, questions are user-reviewed. Automatic model-proposed question
+              cards are not enabled yet.</small>
+          </form>}
+          {(m2Context?.questions||[]).slice(-12).map(q=><section key={q.questionId}
+            className="m2QuestionCard" aria-label="Goal clarification">
+            <strong>{q.question}</strong>
+            <small>{q.status==='deferred'?'Not now · you can answer later':
+              q.status==='answered'?'Answered: '+q.choice:q.status==='superseded'
+              ?'Superseded by a revised goal':'Awaiting an answer'}</small>
+            {['pending','deferred'].includes(q.status)&&<>
+              <label>Optional comment
+                <textarea rows={2} maxLength={1024} value={m2Comments[q.questionId]||''}
+                  onChange={e=>setM2Comments(old=>({...old,[q.questionId]:e.target.value}))}
+                  placeholder="Add details to your answer"/>
+              </label>
+              <div className="m2QuestionChoices">
+                <button type="button" disabled={m2Busy} onClick={()=>void m2Answer(q.questionId,'yes')}>Yes</button>
+                <button type="button" disabled={m2Busy} onClick={()=>void m2Answer(q.questionId,'no')}>No</button>
+                <button type="button" className="subtleButton" disabled={m2Busy}
+                  onClick={()=>void m2Answer(q.questionId,'not_now')}>Not now</button>
+              </div>
+            </>}
+            {q.status==='answered'&&q.comment&&<small>Your comment: {q.comment}</small>}
+          </section>)}
+        </div>}
+      </section>}
       <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-relevant="additions">
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
