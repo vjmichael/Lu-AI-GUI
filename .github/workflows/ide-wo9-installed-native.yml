@@ -41,8 +41,30 @@ jobs:
         run: |
           npm install --ignore-scripts --no-audit --no-fund
           npm run check
+          cargo fetch --manifest-path src-tauri/Cargo.toml
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows native package legal notices missing' }
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native NSIS build failed' }
+      - name: Bind actual Windows WO9 package to resolved third-party notices
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $setups=@(Get-ChildItem ide/app/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'DENIED: WO9 review expected one installer' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --artifact $setups[0].FullName --receipt ide/app/src-tauri/wo9-verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 signed-source license proof missing' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-wo9-windows-unsigned-and-licenses
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/wo9-verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
       - name: OS-installed WebView, workflow review, reviewed Git commit and uninstall
         shell: pwsh
         run: |
@@ -60,6 +82,10 @@ jobs:
             $proc=Start-Process $installers[0].FullName -ArgumentList @('/S',('/D='+$root)) -PassThru -Wait
             if ($proc.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe)) { throw 'DENIED: actual installed NSIS failed' }
             $installed=$true
+            $nativeNotice=Join-Path $root 'THIRD_PARTY_LICENSES\inventory.json'
+            if (!(Test-Path -LiteralPath $nativeNotice -PathType Leaf)) {
+              throw 'DENIED: installed WO9 native Windows package omitted third-party license evidence'
+            }
             $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
             foreach($kind in @('portfolio','git')) {
               $fixture=Join-Path $env:RUNNER_TEMP ('wo9-'+$kind+'-'+$env:GITHUB_RUN_ID)
@@ -116,7 +142,28 @@ jobs:
         run: |
           npm install --ignore-scripts --no-audit --no-fund
           npm run check
+          cargo fetch --manifest-path src-tauri/Cargo.toml
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}'
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Bind actual WO9 Debian package to resolved license evidence
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" == 1 ]] || { echo 'DENIED: WO9 one Debian package required'; exit 2; }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --artifact "${packages[0]}" --receipt ide/app/src-tauri/wo9-verification-package-receipt.json
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-wo9-linux-unsigned-and-licenses
+          path: |
+            ide/app/src-tauri/target/release/bundle/deb/*.deb
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/wo9-verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Real Debian installation, OS picker, GTK portfolio and verified ZIP bytes
         shell: bash
         run: |

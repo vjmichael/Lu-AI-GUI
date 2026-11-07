@@ -107,3 +107,7 @@ The unsigned Linux installed-acceptance workflow now runs `Test-P04UnsignedDebBr
 ### Reviewed signed legal bundle must be outside clean source tree
 
 The manual signed WO7 bundler now takes mandatory `ApprovedLicenseBundleRoot`. It requires the complete resolved-dependency license bundle to be independently prepared and SHA-reviewed **outside** the clean git checkout, rather than generating untracked `verification-notices` inside it (which would fail WO7's strict clean-source preflight). Its actual license files are rehashed and copied into the signed installer and candidate after the native source-stage gate. Both the legal input and source SHA are independently pinned; no signer is chosen or invoked until release authorization.
+
+### WO9 verification packages also carry licenses
+
+The actual native WO9 Windows NSIS and Linux Debian Git/ZIP acceptance workflows independently compile packages. They now perform the same prebuild resolved npm/Cargo legal notice collection, embedded `THIRD_PARTY_LICENSES` packaging, exact-source/package-hash inventory verification and companion GitHub artifact upload as WO8. Windows WO9 native installation and the Linux `.deb` archive explicitly assert the legal inventory is present before performing Git/ZIP acceptance. This closes an overlooked package submission path: **every currently identified WO8/WO9 unsigned installer verification build carries the license evidence**, without promoting any package to a signed release.
