@@ -59,6 +59,19 @@ Lu must coordinate long work while the user chats, without wasting LLM tokens po
 
 **Remaining acceptance:** exact new head Windows/Linux build/test and failure repair, installed Windows NSIS end-to-end, independently observed GPU/VRAM and physical pressure/throughput tests. Future P03/P05 may add GPU model-aware admission, network shaping and transfer worker registration, without prematurely expanding P02 scope.
 
+## P02 final scoped engineering closeout and CI disposition (2026-11-06)
+
+**Implemented in source and connected to desktop:**
+1. Durable owner-scoped priority/dependency/delay queue, in-session recurrence, safe-by-design optional retry, queued pause/resume/cancel and bounded task result notices; supervised native file scan uses the queue and physical RAM/CPU-pressure-based admission.
+2. Windows audited Win32 CPU/memory probes and pre-resume Windows Job Object memory ceiling; Linux /proc CPU/memory sampling, **PR_SET_PDEATHSIG pre-exec parent-death cleanup** for all supervisor-launched native workers and a hard RLIMIT_AS ceiling for Linux file scans. These do not claim GPU/VRAM or network-rate monitoring.
+3. Host-only Guardian leases shared by the scheduled scan and three independently authorized native OCR paths; slots released on tool/worker exit while preserving original user consent.
+4. Durable recurring metadata with **explicit native reapproval after host restart**. No privilege/path/executable is persisted or automatically replayed, intentionally: unattended cross-restart recurrence would require a new, revocable user-approved durable authorization design.
+5. First-party scan results persist a verified digest/byte count in the same transaction as the COMPLETED task notice. These are integrity receipts, **not proof of any exported file artifact**.
+
+**CI evidence, not implied installed acceptance:** Windows/Linux native scheduler and background tool tests were green in earlier runs. Linux focused P02 [run 42329477862](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42329477862) completed successfully, including genuine 12 MiB scanner E2E; Windows for that run was canceled after passing its P02 native steps due to newer source. Latest exact-head [P02 native acceptance workflow](https://github.com/vjmichael/Lu-AI-GUI/actions/workflows/lu-tools-11-background.yml) must be reviewed after the final lock commit; until the current Windows/Linux jobs finish, status is **verification IN PROGRESS**, not green.
+
+**Remaining independent/intentional gates:** Physical Windows NSIS installed-app launch/restart, real GPU/VRAM/backend telemetry, system-level bandwidth/disk-I/O shaping, and worker-specific adapters for Browser/Research/Archive/Transfer/Observe that retain each domain's independent authority. These cannot be certified from core source contracts or an engine-free GitHub host compile. They are marked as distinct future platform/release acceptance or P03/P05/P06/P08 integration obligations, not automatically assigned extra P02 work. **STOP before P03.**
+
 ## Remaining P02 work and explicit limits
 
 1. **Native verification and repair**: exact-head Rust/Windows/Linux compilation, Node/React, authentic installed Windows worker, cancellation/restart/queue tests. Existing CI and installed-app gates are not yet claimed green.
