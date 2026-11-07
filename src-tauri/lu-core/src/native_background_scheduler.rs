@@ -773,6 +773,41 @@ mod tests{
         assert_eq!(queue.list_owned("c-owner",5).unwrap()[0].state,"NEEDS_REVIEW");
     }
     #[test]
+    fn reviewed_worker_runs_through_real_os_supervisor_and_persists_completion(){
+        use sha2::{Digest,Sha256};
+        use std::{path::PathBuf,fs,thread,time::Duration};
+        #[cfg(windows)]
+        let executable=PathBuf::from(std::env::var_os("ComSpec")
+            .unwrap_or_else(||std::ffi::OsString::from(
+                r"C:\Windows\System32\cmd.exe")));
+        #[cfg(unix)]
+        let executable=PathBuf::from("/bin/true");
+        assert!(executable.is_file(),"reviewed real OS worker fixture missing");
+        let hash=format!("{:x}",Sha256::digest(fs::read(&executable).unwrap()));
+        #[cfg(windows)]
+        let args=vec!["/D".into(),"/C".into(),"exit /b 0".into()];
+        #[cfg(unix)]
+        let args=vec![];
+        let (store,_,queue)=test_scheduler();
+        let now=now_unix();
+        queue.enqueue_host_plan(TrustedWorkerPlan{
+            task_id:"scan-live".into(),workspace_id:"c-owner".into(),
+            executable,expected_sha256:hash,args,
+            progress_protocol:false,max_runtime_seconds:Some(10),
+        },ScheduleOptions::file_scan(now,None,Priority::Normal)).unwrap();
+        assert_eq!(queue.tick_at(now).unwrap(),1);
+        let mut done=false;
+        for _ in 0..100{
+            thread::sleep(Duration::from_millis(10));
+            queue.tick_at(now_unix()).unwrap();
+            if queue.state_for("scan-live","c-owner").unwrap().as_deref()
+                ==Some("COMPLETED"){done=true;break}
+        }
+        assert!(done,"reviewed worker should produce a real terminal receipt");
+        assert_eq!(store.get("scan-live").unwrap().unwrap().state,TaskState::Completed);
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,0);
+    }
+    #[test]
     fn guardian_external_lease_obeys_budget_and_releases_on_drop(){
         let (_,_,queue)=test_scheduler();
         let queue=Arc::new(queue);
