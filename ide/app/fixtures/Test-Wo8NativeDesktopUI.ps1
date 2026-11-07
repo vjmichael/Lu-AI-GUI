@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -90,11 +90,13 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  # Native folder chooser must be opened through UI, never by trusting input path.
-  Click '+ Open folder'
-  Start-Sleep -Seconds 2
-  $proc.Refresh()
-  if ($proc.HasExited) { Deny 'picker_killed_desktop' }
+  if ($Scenario -ne 'PersistedRestart') {
+    # Native folder chooser must be opened through UI, never by trusting input path.
+    Click '+ Open folder'
+    Start-Sleep -Seconds 2
+    $proc.Refresh()
+    if ($proc.HasExited) { Deny 'picker_killed_desktop' }
+  }
   if ($Scenario -eq 'Shell') {
     [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
     Start-Sleep -Milliseconds 800
@@ -108,15 +110,16 @@ try {
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    # Standard Windows folder dialog address navigation; real desktop input.
-    [System.Windows.Forms.SendKeys]::SendWait('^l')
-    [System.Windows.Forms.Clipboard]::SetText($fixed)
-    [System.Windows.Forms.SendKeys]::SendWait('^v')
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-    Start-Sleep -Seconds 2
-    # The Windows directory chooser's confirmation label is OS-version dependent.
-    $button=$null
-    foreach ($name in @('Select Folder','Choose Folder','Open','Select')) {
+    if ($Scenario -ne 'PersistedRestart') {
+      # Standard Windows folder dialog address navigation; real desktop input.
+      [System.Windows.Forms.SendKeys]::SendWait('^l')
+      [System.Windows.Forms.Clipboard]::SetText($fixed)
+      [System.Windows.Forms.SendKeys]::SendWait('^v')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+      Start-Sleep -Seconds 2
+      # The Windows directory chooser's confirmation label is OS-version dependent.
+      $button=$null
+      foreach ($name in @('Select Folder','Choose Folder','Open','Select')) {
       try {
         $desktop=[System.Windows.Automation.AutomationElement]::RootElement
         $buttons=$desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
@@ -129,8 +132,9 @@ try {
         if ($button) { break }
       } catch {}
     }
-    if (!$button) { Deny 'native_picker_confirmation_not_found' }
-    $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+      if (!$button) { Deny 'native_picker_confirmation_not_found' }
+      $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    }
     Require 'Registered projects'
     Require (Split-Path $fixed -Leaf)
     Click 'Edit'
@@ -138,7 +142,40 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
-    Write-Host 'WO8_INSTALLED_NATIVE_FOLDER_REGISTRATION_AND_SOURCE_OPEN=PASS'
+    if ($Scenario -eq 'EditorPersistence') {
+      $source=Join-Path $fixed 'main.rs'
+      $saved=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      $editor=Find-Control 'Source editor text' ''
+      if (!$editor.Current.IsKeyboardFocusable) { Deny 'editor_not_accessibly_focusable' }
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// WO8_EXPLICIT_PERSISTENCE_SENTINEL')
+      Start-Sleep -Milliseconds 900
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $saved) {
+        Deny 'unsaved_editor_draft_mutated_disk'
+      }
+      Click 'Review changes'
+      Require 'Save reviewed changes'
+      Click 'Return to editor'
+      Click 'Save · Ctrl+S'
+      $deadline=(Get-Date).AddSeconds(12)
+      do {
+        Start-Sleep -Milliseconds 450
+        $current=[IO.File]::ReadAllText($source)
+        if ($current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { break }
+      } while ((Get-Date) -lt $deadline)
+      if (!$current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { Deny 'explicit_save_not_persisted' }
+      Require 'Saved main.rs'
+      Write-Host 'WO8_INSTALLED_NATIVE_REVIEW_AND_EXPLICIT_SAVE=PASS'
+    } elseif ($Scenario -eq 'PersistedRestart') {
+      if (![IO.File]::ReadAllText((Join-Path $fixed 'main.rs')).Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) {
+        Deny 'previously_saved_file_missing_after_restart'
+      }
+      Require 'Source editor text'
+      Write-Host 'WO8_NATIVE_PERSISTENT_PROJECT_REOPEN_AND_SOURCE=PASS'
+    } else {
+      Write-Host 'WO8_INSTALLED_NATIVE_FOLDER_REGISTRATION_AND_SOURCE_OPEN=PASS'
+    }
   }
   foreach($name in $before.Keys) {
     if ((BoundedProcess $name) -gt $before[$name]) {
