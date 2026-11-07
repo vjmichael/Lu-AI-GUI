@@ -326,11 +326,13 @@ async fn hostile_repository_helpers_are_not_executed_during_read_only_status(){
     // with its own trusted Git command policy and cleared process environment.
     // Record a marker via an invalid helper path: any attempted helper spawn
     // would cause the otherwise valid status inspection to fail.
-    fs::write(root.join(".git/config"),format!(
-        "[core]\\n\\tbare = false\\n\\tfsmonitor = {}\\n[diff \\"external\\"]\\n\\tcommand = {}\\n",
-        "lu-p11-forbidden-fsmonitor", "lu-p11-forbidden-diff-helper"
-    )).unwrap();
-    fs::write(root.join(".gitattributes"),"notes.txt diff=external\\n").unwrap();
+    fs::write(root.join(".git/config"),r#"[core]
+    bare = false
+    fsmonitor = lu-p11-forbidden-fsmonitor
+[diff "external"]
+    command = lu-p11-forbidden-diff-helper
+"#).unwrap();
+    fs::write(root.join(".gitattributes"),"notes.txt diff=external\n").unwrap();
     let (registry,catalog)=register(&root,&git);
     let (auth,origin)=scope();
     let permitted=allowed();
