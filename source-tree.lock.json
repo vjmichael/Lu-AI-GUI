@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6a8162d605cf4c2dfa4af5df193359591a6725ac",
+  "sourceCommitBeforeLock": "151d61e7842841735beafa49efef850494d05255",
   "trackedFileCount": 502,
   "files": [
     {
@@ -845,7 +845,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
-      "blob": "26a5b2d9ecc4826ebfd631b02599aba4b3d5f4f0"
+      "blob": "7fc20a85888a4a760d378a422040b8e114085635"
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
@@ -1105,7 +1105,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/model_provider_catalog.rs",
-      "blob": "b68d430b18d4c9ce807ebf3d1571d2e60155c774"
+      "blob": "57c87b4b8b2fd737ff48be650cc969728a994bac"
     },
     {
       "path": "src-tauri/lu-core/src/model_turn_journal.rs",
