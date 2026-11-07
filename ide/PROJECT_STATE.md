@@ -1,5 +1,11 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**REVISED USER DECISION — WO10 IS POST–LU CORE v1.0 (November 7, 2026).** Do not resume WO10 interface design or implementation **before Lu Core reaches v1.0** and the user explicitly directs resumption. The present bridge/Protobuf/IPC prototypes are exploratory, not the selected integration architecture; keep PR #76 draft/unmerged and exclude it from installers. Lu IDE continues standalone.
+
+**Architecture decision intentionally deferred:** Evaluate Lu Core v1.0 alongside Cognitum, NVP, and the full DLC Workspaces and DLC CE ecosystem before choosing a shared integration framework. Consider whether logic/reasoning pathways belong inside Lu Core and how core tools, workspaces and CE capabilities are admitted, discovered, supervised, cancelled and given durable context. Compare native in-process interfaces where appropriate, local AF_UNIX sockets on Linux (with corresponding supported Windows transport), Protobuf-encoded IPC, and API/RPC approaches rather than committing now. **AF_UNIX is a transport; Protobuf is a serialization format; an API is an interface contract, so these are not necessarily mutually exclusive.** Retain host ownership of files, permissions and process execution. No cross-workspace memory or tool authority is implied by attachment.
+
+**Reopening gates:** (1) Lu Core v1.0 reached and its architecture stable; (2) audit actual Cognitum/NVP/IDE and other DLC workshop/CE requirements; (3) select/test a cross-platform contract and native security/worker lifecycle; (4) obtain an explicit user instruction to resume WO10. None is satisfied merely by code on the deferred branch.
+
 **USER DIRECTIVE — DEFERRED (November 7, 2026):** Suspend all Lu Core ↔ Lu IDE interface and integration work until explicitly resumed. This includes IPC/peer pairing, model sharing or inference handoff, coding chat, proposal delivery, and Lu-related connection UIs. Work already committed on this experimental branch is **incomplete and unverified**, must stay in a draft PR, and must **not** be merged, shipped, enabled, or treated as WO10 acceptance. Keep Lu IDE standalone. Resume other, non-interface work only on explicit instruction. WO9-F and earlier release/installed acceptance gates remain independent and open.
 
 ### WO10 optional Lu Core bridge work started — November 7, 2026 UTC
