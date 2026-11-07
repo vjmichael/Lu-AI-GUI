@@ -40,7 +40,10 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
     'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile',
     'ide_workflow_preview', 'ide_workflow_verify',
-    'ide_workflow_export_manifest', 'ide_workflow_export_bundle'
+    'ide_workflow_export_manifest', 'ide_workflow_export_bundle',
+    'ide_git_review_file', 'ide_git_stage_reviewed', 'ide_git_commit_reviewed',
+    'ide_workflow_create', 'ide_workflow_list_runs', 'ide_workflow_cancel_pending',
+    'ide_workflow_run_step'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -292,7 +295,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 35, 'native capability catalog must include WO9 bounded workflows');
+  assert.equal(commands.length, 41, 'native capability catalog includes WO9 bounded workflows and reviewed Git');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -327,7 +330,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.match(debugBackend, /reconcile_linux_interrupted/);
   assert.match(debugBackend, /DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN/);
   const declared = registered.filter(value =>
-    value !== 'ide_list_capabilities' &&
+    value !== 'ide_list_capabilities' && value !== 'ide_workflow_run_step' &&
     !nativeLspCommands.includes(value) &&
     !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
@@ -348,7 +351,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 35);
+  assert.equal(Object.keys(schemas.operations).length, 41);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
