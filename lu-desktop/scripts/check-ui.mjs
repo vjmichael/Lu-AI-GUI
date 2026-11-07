@@ -47,11 +47,12 @@ const tests = [
     host.includes('observer.launch_one_shot(&chat_id,plan,lease)') &&
     host.includes('guardian.admit_host_worker(') &&
     host.includes('lu_observe_capture_available,') &&
-    ui.includes("invoke('lu_observe_capture_one_shot',{chatId})") &&
+    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly})") &&
     ui.includes('Select window/display · capture one frame') &&
     ui.includes('Capture selected foreground app (4s)') &&
     host.includes('--lu-observe-foreground-one-shot') &&
-    ui.includes("if(action==='pause'||action==='stop')setCaptureTaskId(null)") &&
+    ui.includes("if(action==='pause'||action==='stop'){") &&
+    ui.includes('setCaptureTaskId(null);setCaptureReceipt(null)') &&
     ui.includes('Neither gives the model its pixels') &&
     ui.includes('fullyRedactedReceipt')],
   ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
@@ -73,10 +74,13 @@ const tests = [
     host.includes('vision_context::image_preflight(') &&
     ui.includes("invoke('lu_vision_capability')") &&
     ui.includes('Vision: {visionCapability.status}')],
-  ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
-    ui.includes('Image Workspace · read-only preview') &&
+  ['Image Workspace keeps immutable original and native-reviewed revision export separate from AI edits',
+    ui.includes('Image Workspace · original and immutable revision export') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
-    ui.includes('Crop, resize, annotations and AI edits are not enabled') &&
+    ui.includes('Original stays unchanged. Native approval and a NEW PNG destination are required') &&
+    ui.includes('AI-generated editing and automatic source overwrite remain disabled') &&
+    ui.includes('async function exportImageRevision()') &&
+    host.includes('fn lu_image_workspace_export(') &&
     css.includes('.imageViewerDialog')],
   ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
     host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&
