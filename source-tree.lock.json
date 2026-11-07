@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "896cc457feb0d333bec9d7012d3a8e53a727b95a",
+  "sourceCommitBeforeLock": "02e172e813a6aa09710bcb90b5e44df723c10d86",
   "trackedFileCount": 495,
   "files": [
     {
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-11-background.yml",
-      "blob": "634eef9813eaf0f2cd054a4d2b4eb1130d386ff1"
+      "blob": "736da772f7f1fbb6a295c957d0c75563d80fdece"
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
@@ -1141,7 +1141,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "cbcb2564a29499bee08f0d932c8fd39ba9d1b04f"
+      "blob": "3b4f1aab3a66449de90edad7512318a498068516"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
