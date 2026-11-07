@@ -417,6 +417,7 @@ struct DesktopState {
     catalog_path: PathBuf,
     chats: ChatStore,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
+    continuity: lu_core::continuity::ContinuityStore,
     // Failures of optional memory indexing do not prevent basic alpha chat.
     goal_memory: Result<memory_desktop::GoalMemoryDesktop,String>,
     read_proposals: read_proposal::ReadApprovalQueue,
@@ -863,6 +864,9 @@ impl DesktopState {
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
+            continuity:lu_core::continuity::ContinuityStore::open(
+                &root.join("lu-context-continuity.sqlite")
+            ).map_err(|e|format!("Continuity store unavailable: {e:?}"))?,
             goal_memory: memory_desktop::GoalMemoryDesktop::open(&root),
             read_proposals: read_proposal::ReadApprovalQueue::default(),
             write_proposals: write_proposal::WriteProposalQueue::default(),
@@ -3556,6 +3560,53 @@ fn m3_asset_view(
         sha256:record.sha256,bytes:record.bytes,presence
     }
 }
+#[tauri::command]
+fn lu_m3_resume_continuity(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,task_id:String
+)->Result<Option<chat_store::ContinuityView>,String>{
+    state.chats.recall_project_continuity(
+        &chat_id,&project_id,&task_id,&state.continuity
+    )
+}
+#[tauri::command]
+async fn lu_m3_record_continuity(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,task_id:String,
+    source_ids:Vec<String>,completed_work:String,
+    next_action:String,blockers:Vec<String>
+)->Result<Option<chat_store::ContinuityView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        // Before showing the native approval, validate exact original sources
+        // and the proposed payload in the host-owned profile.
+        if source_ids.is_empty()||source_ids.len()>32||
+           completed_work.trim().is_empty()||next_action.trim().is_empty()||
+           completed_work.len()>4096||next_action.len()>4096||
+           blockers.len()>32||blockers.iter().any(|b|b.len()>4096){
+            return Err("Invalid bounded task continuity checkpoint".into())
+        }
+        for source in &source_ids{
+            state.chats.original_source_text_page(&chat_id,source,0,1)?;
+        }
+        let approved=app.dialog().message(format!(
+            "Save a durable, source-linked checkpoint for project '{}', task '{}'?\n\n\
+             Completed: {}\nNext: {}\nOriginal sources: {}\n\n\
+             Future chats may retrieve this context, but it never grants tool execution.",
+            project_id,task_id,completed_work,next_action,source_ids.len()
+        )).title("Lu — Confirm task memory")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Save checkpoint".into(),"Cancel".into()
+          )).blocking_show();
+        if !approved{return Ok(None)}
+        let id=next_id("checkpoint-");
+        state.chats.record_continuity(
+            &chat_id,&project_id,&task_id,&id,&source_ids,
+            &completed_work,&next_action,&blockers,&state.continuity
+        ).map(Some)
+    }).await.map_err(|_|"Task memory worker unavailable")?
+}
+
 #[tauri::command]
 async fn lu_m3_operational_inventory(
     state:State<'_,Arc<DesktopState>>,chat_id:String,project_id:String
@@ -6910,6 +6961,8 @@ pub fn run() {
             lu_m3_source_text_page,
             lu_m3_operational_inventory,
             lu_m3_remember_asset,
+            lu_m3_resume_continuity,
+            lu_m3_record_continuity,
             lu_background_tasks,
             lu_background_guardian_status,
             lu_background_queue_control,

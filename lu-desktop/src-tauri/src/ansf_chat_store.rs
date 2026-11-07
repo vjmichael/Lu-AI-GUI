@@ -11,6 +11,7 @@ use lu_core::{
     ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent,VisibleChatMessage},
     ansf_source_ids::AnsfSourceId,
     ansf_semantic::fuse_source_ranks,
+    continuity::{ContinuityStore,TaskCheckpoint},
 };
 use rand::{rngs::OsRng,RngCore};
 use rusqlite::{params,Connection,OptionalExtension};
@@ -73,6 +74,19 @@ pub struct OriginalTextPage{
     pub next_offset_chars:Option<usize>,
     pub total_chars:usize,
 }
+#[derive(Debug,Clone,Serialize,PartialEq,Eq)]
+#[serde(rename_all="camelCase")]
+pub struct ContinuityView{
+    pub checkpoint_id:String,
+    pub project_id:String,
+    pub task_id:String,
+    pub source_chat_id:String,
+    pub original_source_ids:Vec<String>,
+    pub completed_work:String,
+    pub next_action:String,
+    pub blockers:Vec<String>,
+}
+
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct HistoryWindowPage{
@@ -818,6 +832,75 @@ impl ChatStore {
             entries:entries.into_iter().map(Into::into).collect(),
             next_cursor,has_more
         })
+    }
+
+    /// A human-confirmed operational checkpoint ties work to the ORIGINAL
+    /// ANSF source entries of one host-profile-owned conversation. No message
+    /// or remembered instruction becomes new turn/effect authority.
+    pub fn record_continuity(
+        &self,chat_id:&str,project_id:&str,task_id:&str,
+        checkpoint_id:&str,source_ids:&[String],completed_work:&str,
+        next_action:&str,blockers:&[String],continuity:&ContinuityStore
+    )->Result<ContinuityView,String>{
+        if source_ids.is_empty()||source_ids.len()>32||
+           completed_work.trim().is_empty()||next_action.trim().is_empty(){
+            return Err("Continuity needs original evidence, work and next action".into())
+        }
+        let book=self.require(chat_id)?;
+        let mut entry_ids=Vec::with_capacity(source_ids.len());
+        for raw in source_ids{
+            let parsed=AnsfSourceId::parse(raw).map_err(to_err)?;
+            if parsed.session_id()!=chat_id{
+                return Err("Checkpoint must cite its own original conversation".into())
+            }
+            let entry=book.read_entry(chat_id,parsed.entry_id())
+                .map_err(to_err)?.ok_or("Original checkpoint evidence unavailable")?;
+            if !matches!(entry.role.as_str(),"user"|"assistant")||
+               entry.stable_source_id().map_err(to_err)?!=*raw{
+                return Err("Checkpoint source is not an exact original".into())
+            }
+            if !entry_ids.contains(&entry.id){entry_ids.push(entry.id)}
+        }
+        let checkpoint=TaskCheckpoint{
+            checkpoint_id:checkpoint_id.into(),project_id:project_id.into(),
+            task_id:task_id.into(),conversation_id:chat_id.into(),
+            source_entry_ids:entry_ids,completed_work:completed_work.into(),
+            next_action:next_action.into(),blockers:blockers.to_vec(),
+        };
+        continuity.append_verified(&checkpoint,&book).map_err(to_err)?;
+        self.continuity_view(chat_id,checkpoint)
+    }
+    fn continuity_view(
+        &self,active_chat:&str,checkpoint:TaskCheckpoint
+    )->Result<ContinuityView,String>{
+        let mut ids=Vec::new();
+        for n in &checkpoint.source_entry_ids{
+            let source_id=AnsfSourceId::new(checkpoint.conversation_id.clone(),*n)
+                .map_err(to_err)?.encode();
+            // Recheck profile ownership and actual original existence now.
+            self.original_source_text_page(active_chat,&source_id,0,1)?;
+            ids.push(source_id);
+        }
+        Ok(ContinuityView{
+            checkpoint_id:checkpoint.checkpoint_id,
+            project_id:checkpoint.project_id,
+            task_id:checkpoint.task_id,
+            source_chat_id:checkpoint.conversation_id,
+            original_source_ids:ids,
+            completed_work:checkpoint.completed_work,
+            next_action:checkpoint.next_action,
+            blockers:checkpoint.blockers,
+        })
+    }
+    /// A new chat may resume a confirmed project/task checkpoint from an old
+    /// chat in the same authenticated profile. No execution or tool grant.
+    pub fn recall_project_continuity(
+        &self,active_chat:&str,project_id:&str,task_id:&str,
+        continuity:&ContinuityStore
+    )->Result<Option<ContinuityView>,String>{
+        self.require(active_chat)?;
+        let checkpoint=continuity.latest(project_id,task_id).map_err(to_err)?;
+        checkpoint.map(|c|self.continuity_view(active_chat,c)).transpose()
     }
 
     pub fn history(&self,chat_id:&str)->Result<Vec<ChatMessage>,String>{

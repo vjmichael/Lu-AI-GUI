@@ -12,7 +12,7 @@ on:
       - 'lu-desktop/tests/m3-ansf-recall.test.mjs'
       - '.github/workflows/lu-m3-ansf-recall.yml'
       - 'src-tauri/lu-core/src/ansf*.rs'
-      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs lu-desktop/tests/m3-operational-assets.test.mjs lu-desktop/tests/m3-windowed-chat.test.mjs'
+      - 'lu-desktop/tests/m3-semantic-contract.test.mjs lu-desktop/tests/m3-history-pane.test.mjs lu-desktop/tests/m3-operational-assets.test.mjs lu-desktop/tests/m3-windowed-chat.test.mjs lu-desktop/tests/m3-continuity-bridge.test.mjs'
       - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
@@ -39,6 +39,8 @@ jobs:
         run: node scripts/verify-source-tree.mjs
       - name: Test M3 production native desktop cross-chat retrieval
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_cross_chat_acceptance -- --nocapture
+      - name: Test cross-chat project task continuity, source identity and restart
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_project_continuity_acceptance -- --nocapture
       - name: Test independent ANSF page cursor and source continuation
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_independent_history_acceptance -- --nocapture
       - name: Test M2 restart/migration compatibility

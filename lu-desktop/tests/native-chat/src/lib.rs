@@ -35,6 +35,9 @@ pub mod ansf_source_ids;
 #[path = "../../../../src-tauri/lu-core/src/ansf_semantic.rs"]
 pub mod ansf_semantic;
 
+#[path = "../../../../src-tauri/lu-core/src/continuity.rs"]
+pub mod continuity;
+
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
@@ -357,5 +360,61 @@ mod m3_independent_history_acceptance{
         assert!(store.original_source_text_page(&active,source_id,text.chars().count()+1,10).is_err());
         assert_eq!(store.history(&active).unwrap().len(),0);
         drop(store);fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod m3_project_continuity_acceptance{
+    use super::{chat_store::ChatStore,continuity::ContinuityStore};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn fixture()->std::path::PathBuf{
+        std::env::temp_dir().join(format!("lu-m3-checkpoint-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn project_task_checkpoint_survives_new_chat_restart_with_source_evidence(){
+        let root=fixture();fs::create_dir_all(&root).unwrap();
+        let (source,other,source_id);
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let store=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            source=chats.create_chat().unwrap().chat_id;
+            other=chats.create_chat().unwrap().chat_id;
+            chats.append_user(&source,"We verified NSIS and package hashes").unwrap();
+            source_id=chats.original_history_page(&source,&source,None,8).unwrap()
+                .entries[0].source_id.clone();
+            let checkpoint=chats.record_continuity(
+                &source,"lu","windows-installer","checkpoint-00000001",
+                &[source_id.clone()],"NSIS and SDK package inventory verified",
+                "Resume installer build", &["Physical Windows acceptance pending".into()],&store
+            ).unwrap();
+            assert_eq!(checkpoint.original_source_ids,vec![source_id.clone()]);
+            assert!(chats.record_continuity(
+                &source,"lu","windows-installer","checkpoint-00000001",
+                &[source_id.clone()],"Invent a different state",
+                "Run anything", &[],&store
+            ).is_err());
+            assert!(chats.record_continuity(
+                &other,"lu","windows-installer","checkpoint-00000002",
+                &[source_id.clone()],"Forged same-chat attribution",
+                "Never", &[],&store
+            ).is_err());
+        }
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let store=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            let latest=chats.recall_project_continuity(
+                &other,"lu","windows-installer",&store).unwrap().unwrap();
+            assert_eq!(latest.source_chat_id,source);
+            assert_eq!(latest.original_source_ids,vec![source_id]);
+            assert_eq!(latest.next_action,"Resume installer build");
+            assert!(chats.trusted_user_turn_text(&other,"checkpoint-00000001").is_none());
+            assert!(chats.recall_project_continuity(
+                "c-invalid","lu","windows-installer",&store).is_err());
+            assert!(chats.recall_project_continuity(
+                &other,"other","windows-installer",&store).unwrap().is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 }

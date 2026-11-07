@@ -1,3 +1,7 @@
+## M3 prior Continuity Plane desktop bridge — 2026-11-07 (SOURCE/CI PENDING)
+
+Reused existing immutable Lu Core ContinuityStore, wired host-owned SQLite storage; native-approved source-linked save and owner-scoped cross-chat latest-task recall in independent History Library pane; completed work, blockers and next action persist after restart; no recalled source/effect grant. Production portable native source tests and CI contract submitted. Automatic resume, verified procedural action receipts and CCM still open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
 ## M3 active-chat history windowing — 2026-11-07 (SOURCE/CI PENDING)
 
 Added derived, text-free display-message pointer projection in ANSF SQLite; bounded 64-row before/after original stream cursor API; desktop uses 64-row initial latest pages and max 192 rendered rows with on-demand older/newer loading. Durable cancelled/complete streaming statuses preserved. Synthetic native tests added. Variable-height eviction, exact scroll continuity, very long transcripts and installed Win11 acceptance remain open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).

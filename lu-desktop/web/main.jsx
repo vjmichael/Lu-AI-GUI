@@ -43,6 +43,15 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [assetSource,setAssetSource]=useState('');
   const [assetRows,setAssetRows]=useState([]);
   const [assetBusy,setAssetBusy]=useState(false);
+  const [resumeProject,setResumeProject]=useState('lu');
+  const [resumeTask,setResumeTask]=useState('windows-installer');
+  const [resumeSource,setResumeSource]=useState('');
+  const [resumeCompleted,setResumeCompleted]=useState('');
+  const [resumeNext,setResumeNext]=useState('');
+  const [resumeBlockers,setResumeBlockers]=useState('');
+  const [resumeRecord,setResumeRecord]=useState(null);
+  const [resumeBusy,setResumeBusy]=useState(false);
+
   const requests=useRef(0);
   const scrollRef=useRef(null);
   const prependHeight=useRef(null);
@@ -161,6 +170,36 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     }catch(e){setError('Local package was not recorded: '+String(e))}
     finally{setAssetBusy(false)}
   }
+  async function resumeCheckpoint(){
+    if(!activeChatId||!resumeProject.trim()||!resumeTask.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const value=await invoke('lu_m3_resume_continuity',{
+        chatId:activeChatId,projectId:resumeProject.trim(),
+        taskId:resumeTask.trim()
+      });
+      setResumeRecord(value);
+    }catch(e){setError('Task continuity lookup unavailable: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  async function saveCheckpoint(e){
+    e.preventDefault();
+    const sourceId=resumeSource.trim()||
+      (reading?.sourceChatId===activeChatId?reading.sourceId:null);
+    if(!activeChatId||!sourceId||!resumeCompleted.trim()||
+       !resumeNext.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const saved=await invoke('lu_m3_record_continuity',{
+        chatId:activeChatId,projectId:resumeProject.trim(),
+        taskId:resumeTask.trim(),sourceIds:[sourceId],
+        completedWork:resumeCompleted.trim(),nextAction:resumeNext.trim(),
+        blockers:resumeBlockers.split('\n').map(x=>x.trim()).filter(Boolean).slice(0,32)
+      });
+      if(saved)setResumeRecord(saved);
+    }catch(e){setError('Checkpoint not saved: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
   return <aside className="ansfHistoryPane" aria-label="Independent ANSF history browser">
     <header className="ansfHistoryHeader">
       <div><strong>ANSF Library</strong><small>Independent history · active chat unchanged</small></div>
@@ -182,6 +221,53 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     </form>
     {error&&<p role="alert" className="ansfHistoryError">{error}</p>}
     <small>Historical source text is read-only context, never a new tool permission.</small>
+    <details className="ansfAssetsMemory" aria-label="Project continuity">
+      <summary>Continue previous work · project checkpoint</summary>
+      <small>Source-linked task progress remains available across Lu conversations and model changes. Historical work does not grant a new tool operation.</small>
+      <form className="ansfAssetForm" onSubmit={saveCheckpoint}>
+        <label>Project ID
+          <input value={resumeProject} maxLength={128}
+            onChange={e=>setResumeProject(e.target.value)}/>
+        </label>
+        <label>Task ID
+          <input value={resumeTask} maxLength={128}
+            onChange={e=>setResumeTask(e.target.value)}/>
+        </label>
+        <label>ANSF evidence from this conversation
+          <input value={resumeSource||
+             (reading?.sourceChatId===activeChatId?reading?.sourceId:'')}
+            maxLength={224} onChange={e=>setResumeSource(e.target.value)}
+            placeholder="Source ID from this original chat"/>
+        </label>
+        <label>Work completed and verified
+          <textarea value={resumeCompleted} maxLength={4096} rows={2}
+            onChange={e=>setResumeCompleted(e.target.value)}/>
+        </label>
+        <label>Next action
+          <textarea value={resumeNext} maxLength={4096} rows={2}
+            onChange={e=>setResumeNext(e.target.value)}/>
+        </label>
+        <label>Unresolved blockers (one per line)
+          <textarea value={resumeBlockers} maxLength={4096} rows={2}
+            onChange={e=>setResumeBlockers(e.target.value)}/>
+        </label>
+        <button type="submit" disabled={resumeBusy||!resumeCompleted.trim()||
+          !resumeNext.trim()||!(resumeSource||
+          (reading?.sourceChatId===activeChatId&&reading?.sourceId))}>
+          Confirm and save checkpoint…</button>
+      </form>
+      <button type="button" disabled={resumeBusy||!resumeProject.trim()||!resumeTask.trim()}
+        onClick={()=>void resumeCheckpoint()}>
+        {resumeBusy?'Reading checkpoint…':'Find latest task checkpoint'}</button>
+      {resumeRecord&&<section className="ansfHistoryEntry" aria-label="Verified project continuity">
+        <strong>{resumeRecord.projectId} · {resumeRecord.taskId}</strong>
+        <small>Origin chat {resumeRecord.sourceChatId} · original evidence {resumeRecord.originalSourceIds.join(', ')}</small>
+        <p>Completed: {resumeRecord.completedWork}</p>
+        <p>Next: {resumeRecord.nextAction}</p>
+        {resumeRecord.blockers.map((b,i)=><p key={i}>Blocker: {b}</p>)}
+        <small>This is context, not current permission to run any tool.</small>
+      </section>}
+    </details>
     <details className="ansfAssetsMemory">
       <summary>Operational memory · reusable build assets</summary>
       <small>Host-verified file hashes and source IDs; a remembered path is not an execution permission.</small>
