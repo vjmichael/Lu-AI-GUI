@@ -1,3 +1,7 @@
+## Owner's P07→P08 scope transition — November 7, 2026
+
+P07 general-purpose Research/citation capability is sufficiently implemented to move forward. **The owner explicitly does NOT require comprehensive SBL, independent verification of publication details, or specialist scholarly editing in Lu Core.** Such work is delegated to specialist software/DLC instead of expanding Lu. P07 exact-head CI and installed acceptance remain recorded separately as engineering gates; not misreported as passed. Current active work: **P08 ARCHIVE-SPLIT-01 — Archive byte splitting, approved staged resume and checksum-verified no-overwrite reassembly.** P08 implements a format-agnostic Lu byte-part container, *not* native spanned ZIP/RAR/7z. See [P08 ledger](LU_P08_ARCHIVE_SPLIT.md). Complex ISO/UDF extraction and niche repairs are optional specialist territory. P04/P05 remain deferred.
+
 ## Current owner-directed status (2026-11-07) — P07 in progress
 
 The owner subsequently authorized continuing P07 scholarly Research and citation development; this **supersedes** the earlier historical text below saying P07 was unstarted or required another instruction. P07 has now implemented evidence-bound native citations, Crossref catalog snapshots, offline bibliography previews and atomic file export, and bounded SBL Scripture/journal support; exact-head native CI and installed GUI acceptance remain OPEN. See [P07 implementation and open acceptance ledger](LU_P07_RESEARCH_STYLES.md). P04/P05 remain deferred. No earlier P06 physical WGC/GGUF acceptance gate is reclassified as PASS.
