@@ -175,11 +175,15 @@ mod tests {
         assert_ne!(a.terminal_receipt_hash, b.terminal_receipt_hash);
         drop(sup);
         let reopened = Supervisor::open(path.clone()).unwrap();
-        let c = reopened.review_build_test_evidence(
-            &job.job_id, &plan.project_id, &job.plan_sha256, &plan.source_head
-        ).unwrap();
-        assert_eq!(c.stage, BuildTestStage::ReviewedNoExecution);
-        assert!(!c.os_execution_accepted);
+        // D3 replay intentionally drops the full executable plan. Do not
+        // reconstruct or trust a stale plan from the receipt chain, and do
+        // not turn historical review into a post-restart run capability.
+        assert_eq!(
+            reopened.review_build_test_evidence(
+                &job.job_id, &plan.project_id, &job.plan_sha256, &plan.source_head
+            ).unwrap_err(),
+            SupervisorError::InvalidPlan
+        );
         std::fs::remove_file(path).unwrap();
     }
     #[test]
