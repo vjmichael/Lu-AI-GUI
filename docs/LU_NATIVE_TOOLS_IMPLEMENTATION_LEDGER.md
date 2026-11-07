@@ -4,6 +4,14 @@ Source inventory checkpoint: `lu/reader-ocr-image-closeout-20261106` (draft PR #
 Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed NSIS acceptance are deliberately deferred by the owner. Source-completion, native integration and cross-platform tests are separate obligations. This ledger preserves historical wave entries below, but the current state is always the latest **stacked integration tree**, not a stale original PR description.
 
 
+## P06 OBSERVE-PRIVACY-01 — owner-authorized privacy closeout source (2026-11-06)
+
+**Branch:** `lu/p06-observe-privacy-20261106`, stacked directly on P03 PR #71 exact head `f54fd82cccd5803b2912efe7d8be513b19b9b559`. Owner explicitly moved to **P06 Observe & Learn** without ordering development of P04 or P05; those remain separate. P07 is not authorized. The older Observe & Learn draft PR #61 remains an independent older stack and is **not overwritten** by this work.
+
+**P06 completed in source:** fixes a real SQLite bug in older/current profiles where the `lu_awareness_notes` CHECK excluded native `native_runtime` events despite ObserveHost emitting them. Atomic migration preserves old notes; new notes properly retain renderer versus host runtime provenance without claiming a verified GUI failure. Adds seven-day logical retention on open/inspection; authenticated **native-dialog-approved per-chat forget** for prior/current note rows; prevents deleted volatile awareness from leaking back into handoffs while keeping monotonic replay protection. Visible React controls can forget notes even when observation is OFF. Task-operation records, chat text, captured frames and ANSF memories are distinct, not deleted by this action. Reuses the existing default-OFF, expiring consent, process-supervised capture, no-pixel-retention and no-auto-model design. Adds source-contract/native Windows/Linux CI tests and exact tracked-source lock.
+
+**Verification:** source authored, latest P06 exact SHA native CI acceptance OPEN until actual Windows/Linux jobs complete; never equate a rendered UI hint, WGC digest, CI source contract or stub with independent installed GUI verification. No second resident LLM, GPU/VRAM budget claim, autonomous learning, unredacted screen stream or additional privileges added. Owner-deferred physical NSIS and AMD Vulkan/MMProj and real WGC picker/OS identity/redaction acceptance remain explicitly OPEN. [P06 work documentation](LU_P06_OBSERVE_PRIVACY.md).
+
 ## P03 source closeout continuation — real Reader/tool binding and model catalog (latest 2026-11-06)
 
 - **Implemented:** Fresh operator-picked Reader evidence re-identification (exact per-chat/session/source SHA-256+mtime epoch after *successful* native Reader turn; no cached file grant or skipped tool read); existing P01 Workspace discovery rechecks current per-file metadata and content.
@@ -106,7 +114,7 @@ Focused P02 GitHub [run 42330642106](https://github.com/vjmichael/Lu-AI-GUI/acti
 | **P03** | AI Operations Layer + model/provider manager | AI-OPS-01 | Efficient tool/context routing, GPUs, backend compatibility and native model discovery/download pane | **QUEUED — NOT STARTED** |
 | **P04** | Unified Reader/OCR | DOC-STREAM-01 | One user-facing Reader, streamed large books/pages, multilingual OCR, layout/forms, semantic/visual retrieval | **QUEUED — NOT STARTED** |
 | **P05** | Browser + shared Transfer Manager | BROWSER-TRANSFER-01 | Navigable interactive sessions, queued/rate-limited/recoverable downloads, guardian coordination | **QUEUED — NOT STARTED** |
-| **P06** | Observe & Learn | OBSERVE-PRIVACY-01 | Privacy-first, off-by-default, event-driven observation and verified handoff | **QUEUED — NOT STARTED** |
+| **P06** | Observe & Learn | OBSERVE-PRIVACY-01 | Privacy-first, off-by-default, event-driven observation and verified handoff | **PRIVACY SOURCE IMPLEMENTED; NATIVE/PHYSICAL ACCEPTANCE OPEN** |
 | **P07** | Research + citation-style support | RESEARCH-STYLE-01 | Evidence/provenance, MLA/APA/Chicago/Turabian/SBL, specialist work bounded | **QUEUED — NOT STARTED** |
 | **P08** | Archives/packages | ARCHIVE-SPLIT-01 | Split/multivolume archives, optional complex ISO/UDF; specialized repairs deferred | **QUEUED — NOT STARTED** |
 | **P09** | Office/spreadsheets | OFFICE-BOUNDARY-01 | Reliable read/edit, original and layout protection; full Office suite not planned | **MAINTAIN / OPTIONAL** |
