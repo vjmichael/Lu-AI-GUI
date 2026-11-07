@@ -2843,7 +2843,7 @@ function App() {
             You choose what the screen exposes. No remote viewing interface.</small>
           <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
             An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
-            the general picker can select a monitor but cannot independently identify the selected OS source. Both paths fully blank the captured frame; neither sends pixels to the model.</small>
+            the general picker can select a monitor but cannot independently identify the selected OS source. Receipt-only capture fully blanks the frame. Separate user-approved local-GGUF image modes retain one private bounded frame for a deliberate second Attach action.</small>
           <div className="settingsActions">
             {observeView.mode==='off' &&
               <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
