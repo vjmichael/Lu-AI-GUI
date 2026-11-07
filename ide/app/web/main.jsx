@@ -34,6 +34,7 @@ function App() {
   const [workflowProjectIds, setWorkflowProjectIds] = useState([]);
   const [workflowInspection, setWorkflowInspection] = useState(null);
   const [workflowRevalidated, setWorkflowRevalidated] = useState(false);
+  const [workflowExport, setWorkflowExport] = useState(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const workflowRequest = useRef(0);
 
@@ -344,6 +345,7 @@ function App() {
     workflowRequest.current += 1;
     setWorkflowInspection(null);
     setWorkflowRevalidated(false);
+    setWorkflowExport(null);
     setWorkflowProjectIds(previous =>
       selected ? [...new Set([...previous, projectId])].slice(0, 8)
         : previous.filter(id => id !== projectId));
@@ -356,6 +358,7 @@ function App() {
     setWorkflowBusy(true);
     setWorkflowInspection(null);
     setWorkflowRevalidated(false);
+    setWorkflowExport(null);
     setProblem('');
     try {
       const value = await invoke('ide_workflow_preview', { projectIds: chosen });
@@ -387,6 +390,33 @@ function App() {
       if (serial === workflowRequest.current) {
         setWorkflowInspection(null);
         setProblem('Workflow changed or is blocked; inspect again before review: ' + String(error));
+      }
+    } finally {
+      if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function exportMultiProjectManifest() {
+    if (!workflowInspection?.readyForReview || !workflowRevalidated || workflowBusy) return;
+    const serial = ++workflowRequest.current;
+    const projectIds = workflowInspection.projects.map(item => item.projectId);
+    setWorkflowBusy(true);
+    setProblem('');
+    try {
+      // The destination is selected in a native OS dialog by the trusted Tauri
+      // host. The WebView never supplies or receives an absolute path.
+      const exported = await invoke('ide_workflow_export_manifest', {
+        projectIds, expectedFingerprint: workflowInspection.fingerprint,
+      });
+      if (serial === workflowRequest.current) {
+        setWorkflowExport(exported);
+        setWorkflowRevalidated(false); // one explicit review per export
+        setHint('Workflow review manifest exported through native folder picker.');
+      }
+    } catch (error) {
+      if (serial === workflowRequest.current) {
+        setWorkflowRevalidated(false);
+        setProblem('Workflow manifest export denied or cancelled: ' + String(error));
       }
     } finally {
       if (serial === workflowRequest.current) setWorkflowBusy(false);
@@ -1844,6 +1874,19 @@ function App() {
               {workflowRevalidated && <p role="status">
                 Exact evidence matched. This does not stage files, create an archive,
                 grant Git write rights, or satisfy native OS and signing gates.</p>}
+              <button className="primaryBtn" type="button"
+                disabled={workflowBusy || !workflowRevalidated}
+                onClick={() => exportMultiProjectManifest()}>
+                Export reviewed manifest to OS-selected folder
+              </button>
+              {workflowExport && <div role="status">
+                <p>Exported: <strong>{workflowExport.fileName}</strong> ·
+                  {' '}{workflowExport.byteLength.toLocaleString()} bytes</p>
+                <p>SHA-256: <code>{workflowExport.sha256}</code></p>
+                <p>Files included in package: <strong>No</strong> ·
+                  Signing: <strong>Not performed</strong> ·
+                  Release approval: <strong>Not granted</strong></p>
+              </div>}
             </div>}
           </section>
         : isSource
