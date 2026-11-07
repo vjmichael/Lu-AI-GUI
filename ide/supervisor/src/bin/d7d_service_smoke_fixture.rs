@@ -160,8 +160,16 @@ fn smoke() -> Result<(), String> {
         },
     };
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 2 {
-        return Err("service path + fixed hash required".into());
+    let overlapping_null = args.len() == 3 && args[2] == "--nul-overlap";
+    if !(args.len() == 2 || overlapping_null) {
+        return Err("service path + fixed hash and optional --nul-overlap required".into());
+    }
+    if overlapping_null
+        && (std::env::var_os("CI").as_deref() != Some(std::ffi::OsStr::new("true"))
+            || std::env::var_os("GITHUB_ACTIONS").as_deref()
+                != Some(std::ffi::OsStr::new("true")))
+    {
+        return Err("DENIED: overlapping global-device ACL fixture is disposable CI only".into());
     }
     let exe = PathBuf::from(&args[0]);
     let hash = args[1].to_string_lossy().into_owned().to_ascii_lowercase();
@@ -199,6 +207,53 @@ fn smoke() -> Result<(), String> {
         expected_sha256: hash,
         private_witness_directory: PathBuf::from(r"C:\ProgramData\LuIDERecoveryBroker"),
     };
+    if overlapping_null {
+        // Two simultaneously retained protected SCM sessions exercise real
+        // machine-global NUL DACL transactions. A stale-ACL overwrite by
+        // either grant or revoke must fail the second authenticated release.
+        // No project code or AppContainer child is ever executed here.
+        let mut other_nonce = [0u8; 16];
+        OsRng.fill_bytes(&mut other_nonce);
+        let other_id = format!(
+            "job-{}",
+            other_nonce
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
+        if other_id == id {
+            return Err("DENIED: CI job identity collision".into());
+        }
+        let second_name = ws(&format!("Global\\LuIdeD7-{other_id}-{}", &plan[..16]));
+        let second = unsafe { CreateJobObjectW(&acl.attributes, second_name.as_ptr()) };
+        if second.is_null() {
+            return Err("DENIED: second kernel Job creation failed".into());
+        }
+        let _second_guard = Close(second);
+        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            return Err("DENIED: second Job ID already existed".into());
+        }
+        let mut first = ServiceLease::begin(job, &id, &plan, &config)
+            .map_err(|e| format!("first protected service admission: {}", e.code()))?;
+        let mut another = ServiceLease::begin(second, &other_id, &plan, &config)
+            .map_err(|e| format!("second protected service admission: {}", e.code()))?;
+        first
+            .grant_null()
+            .map_err(|e| format!("first service-owned exact grant: {}", e.code()))?;
+        another
+            .grant_null()
+            .map_err(|e| format!("second service-owned exact grant: {}", e.code()))?;
+        // If the first revoke overwrites the second live package ACE, the
+        // second verified revoke must refuse to ACK; no false PASS is issued.
+        first
+            .release_empty()
+            .map_err(|e| format!("first independently verified revoke: {}", e.code()))?;
+        another
+            .release_empty()
+            .map_err(|e| format!("second independently verified revoke: {}", e.code()))?;
+        println!("PASS: two protected NUL grants overlapped, then independently revoked and acknowledged");
+        return Ok(());
+    }
     let mut lease = ServiceLease::begin(job, &id, &plan, &config)
         .map_err(|e| format!("service admission: {}", e.code()))?;
     if !lease.alive() {
