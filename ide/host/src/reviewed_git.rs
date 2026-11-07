@@ -22,7 +22,7 @@ pub struct ReviewedGitFile {
     pub worktree_sha256: String,
     pub index_fingerprint: String,
     pub file_size: usize,
-    pub stage: &'static str,
+    pub stage: String,
     pub code_executed: bool,
     pub git_hooks_executed: bool,
     pub remote_updated: bool,
@@ -176,7 +176,7 @@ impl IdeWorkspaceRegistry {
             worktree_sha256: hex_digest(&bytes),
             index_fingerprint: index_fingerprint(&index),
             file_size: bytes.len(),
-            stage: "preview_only",
+            stage: "preview_only".into(),
             code_executed: false,
             git_hooks_executed: false,
             remote_updated: false,
@@ -253,7 +253,7 @@ impl IdeWorkspaceRegistry {
         safe_relative(&stage.relative_path)?;
         let (repo, _) = checked_project(self, &stage.project_id)?;
         same_head(&repo, &stage.base_head)?;
-        let index = repo.index().map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
+        let mut index = repo.index().map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
         if index.has_conflicts() || index.len() > MAX_INDEX_ENTRIES
             || index_fingerprint(&index) != stage.staged_index_fingerprint
         { return Err("WO9_GIT_INDEX_CHANGED_AFTER_STAGE"); }
