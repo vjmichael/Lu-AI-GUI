@@ -293,8 +293,11 @@ pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorErro
 impl PipeSecurity {
     pub fn new(approved_user_sid: &str) -> Result<Self, SupervisorError> {
         validate_approved_host_user_sid(approved_user_sid)?;
-        // 0x00100003: SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA.
-        // Does NOT include FILE_APPEND_DATA / FILE_CREATE_PIPE_INSTANCE.
+        // For this exact installer-pinned host SID, allow mapped FILE
+        // read/write data, attributes, EAs, READ_CONTROL and SYNCHRONIZE.
+        // Exclude bit 4: FILE_APPEND_DATA is FILE_CREATE_PIPE_INSTANCE on
+        // named pipes. No WRITE_DAC, WRITE_OWNER, DELETE or other principal.
+        // Native service attestation still verifies the exact kernel ACE.
         // The service must NOT try to assign SYSTEM as an object owner: it
         // runs as restricted LocalService and cannot assume that privilege.
         // Its own kernel-verified service SID receives explicit server rights.
@@ -310,7 +313,7 @@ impl PipeSecurity {
         // integrity AppContainer from writing to this trusted IPC endpoint.
         // Authorization still requires kernel PID/token + pinned image hash.
         let sddl = format!(
-            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})S:(ML;;NW;;;ME)",
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})S:(ML;;NW;;;ME)",
             sid_of_service()?,
             approved_user_sid
         );
@@ -421,7 +424,7 @@ pub fn verify_created_pipe_security(
             service_found = true;
         } else if unsafe { EqualSid(sid, user.0) } != 0 {
             // Read + write + synchronize, not FILE_CREATE_PIPE_INSTANCE (4).
-            const ALLOWED: u32 = 0x0010_0003;
+            const ALLOWED: u32 = 0x0012_019b;
             // Do not accept a kernel ACE with extra WRITE_DAC, WRITE_OWNER,
             // DELETE or other rights merely because it includes the three
             // requested client rights. The installed exact-user ACL must be
@@ -817,7 +820,7 @@ mod tests {
         let sid = "S-1-5-21-11-22-33-1001";
         validate_approved_host_user_sid(sid).unwrap();
         let template = format!(
-            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x00100003;;;{})S:(ML;;NW;;;ME)",
+            "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})S:(ML;;NW;;;ME)",
             "S-1-5-80-1-2-3-4-5", sid
         );
         // Medium/no-write-up is an explicit MIC policy, not another
@@ -825,11 +828,16 @@ mod tests {
         assert!(template.ends_with("S:(ML;;NW;;;ME)"));
         assert!(!template.contains("S:(ML;;NW;;;LW)"));
         assert!(!template.contains(";;;AC)"));
-        assert!(template.contains("0x00100003;;;S-1-5-21-11-22-33-1001"));
+        assert!(template.contains("0x0012019b;;;S-1-5-21-11-22-33-1001"));
         assert!(!template.contains(";;;IU"));
         assert!(!template.contains(";;;AU"));
         assert!(validate_approved_host_user_sid("S-1-5-18").is_err());
         assert!(validate_approved_host_user_sid("S-1-5-32-544").is_err());
+        // Exact host ACE still cannot create another pipe server instance.
+        let host_mask = 0x0012_019b_u32;
+        assert_eq!(host_mask & 0x0000_0004, 0);
+        assert_eq!(host_mask & 0x0004_0000, 0);
+        assert_eq!(host_mask & 0x0008_0000, 0);
         assert!(!template.contains(";;;WD"));
         assert!(!template.contains(";;;AN"));
     }
