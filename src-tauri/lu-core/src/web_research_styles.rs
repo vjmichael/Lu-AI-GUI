@@ -190,6 +190,34 @@ pub fn render_correlated(
     })
 }
 
+/// Render a bounded, deterministic scholarly bibliography *only* after each
+/// entry passed its own existing native EvidenceLedger corroboration. The
+/// result is an all-or-nothing host preview, not a license to invent facts.
+pub fn render_bibliography(
+    ledger:&EvidenceLedger,works:&[CatalogWork],style:Style
+)->Result<Vec<RenderedCitation>,StyleError>{
+    use std::collections::HashSet;
+    const MAX_BIBLIOGRAPHY_ITEMS:usize=120;
+    if works.is_empty()||works.len()>MAX_BIBLIOGRAPHY_ITEMS{
+        return Err(StyleError::InvalidField);
+    }
+    let mut seen=HashSet::new();
+    let mut rendered=Vec::with_capacity(works.len());
+    for work in works{
+        // A caller must not repeat one corroborated source under different
+        // author, edition or date metadata in the same bibliography.
+        if !seen.insert(&work.source_id){
+            return Err(StyleError::IdentityMismatch);
+        }
+        rendered.push(render_correlated(ledger,work,style)?);
+    }
+    rendered.sort_by(|a,b|
+        a.bibliography.to_lowercase().cmp(&b.bibliography.to_lowercase())
+            .then_with(||a.source_id.cmp(&b.source_id))
+    );
+    Ok(rendered)
+}
+
 /// A bounded CSL-JSON-compatible data record; not a CSL rendering engine.
     /// It exports *only* reviewed fields, preserving provenance and no-page
     /// honesty. Never serializes page numbers, guesses abbreviations or
@@ -306,6 +334,42 @@ mod tests{
         assert_eq!(render_correlated(&ledger,&fake,Style::Apa7),
             Err(StyleError::IdentityMismatch));
         assert_eq!(export_csl_json(&ledger,&fake),
+            Err(StyleError::IdentityMismatch));
+    }
+    #[test]
+    fn bounded_bibliography_sorts_only_existing_correlated_sources(){
+        let mut ledger=verified();
+        ledger.discover(&Candidate{id:"source-2".into(),title:"Another Study".into(),
+          author:"Alice Adams".into(),identifier:"doi:10.1000/second".into()}).unwrap();
+        ledger.corroborate("source-2",&TrustedBibliography{
+          record_url:"https://publisher.example/second".into(),
+          title:"Another Study".into(),author:"Alice Adams".into(),
+          identifier:"doi:10.1000/second".into()}).unwrap();
+        let first=book();
+        let mut second=book();
+        second.source_id="source-2".into();
+        second.title="Another Study".into();
+        second.record_url="https://publisher.example/second".into();
+        second.authors=vec![Author{family:"Adams".into(),given:"Alice".into()}];
+        let preview=render_bibliography(&ledger,&[first.clone(),second.clone()],
+            Style::Apa7).unwrap();
+        assert_eq!(preview.len(),2);
+        assert_eq!(preview[0].source_id,"source-2");
+        assert_eq!(preview[1].source_id,"source-1");
+        assert!(preview.iter().all(|entry|
+            entry.bibliography_identity_corroborated &&
+            !entry.publication_details_verified &&
+            !entry.quotation_or_page_verified &&
+            !entry.factual_claim_verified));
+        assert_eq!(render_bibliography(&ledger,&[first.clone(),first.clone()],
+            Style::Mla9),Err(StyleError::IdentityMismatch));
+        assert_eq!(render_bibliography(&ledger,&[],Style::Apa7),
+            Err(StyleError::InvalidField));
+        assert_eq!(render_bibliography(&ledger,&vec![first.clone();121],
+            Style::Apa7),Err(StyleError::InvalidField));
+        let mut forged=second.clone();
+        forged.authors[0].family="Impostor".into();
+        assert_eq!(render_bibliography(&ledger,&[first,forged],Style::Apa7),
             Err(StyleError::IdentityMismatch));
     }
     #[test]
