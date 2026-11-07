@@ -1309,7 +1309,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_capability_inventory.rs",
-      "blob": "2d5491d01a93dc09a5b38b4ec102b1a54544f375"
+      "blob": "7b001659dd326dcd0308093eccea3bc2b8f0ecb2"
     },
     {
       "path": "src-tauri/lu-core/src/native_chat_ids.rs",
