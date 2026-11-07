@@ -45,9 +45,30 @@ test('P06 seven-day retention and chat-only deletion cannot mint tool or learnin
   assert.doesNotMatch(host,/grant_learning_review\(true\)/);
 });
 test('P06 capture receipts never imply verified visual interpretation or retained pixels',()=>{
-  assert.match(host,/source_identity_attested:false/);
+  assert.match(host,/source_identity_attested:source_attested/);
+  assert.match(host,/capture_guardian:Option<GuardianLease>/);
+  assert.match(host,/session\.capture_guardian\.take\(\)/);
+  assert.match(host,/release_guardian_when_reaped/);
+  assert.match(host,/fully_redacted_receipt:terminal&&sha\.is_some\(\)/);
   assert.match(host,/pixels_retained:false/);
   assert.match(host,/visual_interpretation_verified:false/);
   assert.match(desktop,/lu_observe_capture_one_shot/);
   assert.match(ui,/No observation data/);
+});
+
+test('P06 native WGC process instance is verified, generic picker stays unverified',()=>{
+  const worker=read('../../src-tauri/lu-observe-capture-worker/src/main.rs');
+  const scheduler=read('../../src-tauri/lu-core/src/native_background_scheduler.rs');
+  assert.match(worker,/OpenProcess\(PROCESS_QUERY_LIMITED_INFORMATION,false,pid\)/);
+  assert.match(worker,/GetProcessTimes/);
+  assert.match(worker,/process_instance::born_at\(pid\)\?!=born/);
+  assert.match(worker,/foreground_identity:Option<\(usize,u32,u64\)>/);
+  assert.match(worker,/\(nonce\.into_owned\(\),None\)/);
+  assert.match(worker,/padded\.fill\(255\)/);
+  assert.match(worker,/Lu-WGC-whole-frame-redacted-v2/);
+  assert.match(scheduler,/pub fn capture_one_shot\(\)/);
+  assert.match(desktop,/guardian\.admit_host_worker\(/);
+  assert.match(desktop,/observer\.launch_one_shot\(&chat_id,plan,lease\)/);
+  assert.match(ui,/fullyRedactedReceipt/);
+  assert.match(ui,/sourceIdentityAttested/);
 });
