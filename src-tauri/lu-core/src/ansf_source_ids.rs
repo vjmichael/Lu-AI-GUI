@@ -95,7 +95,8 @@ impl Entry {
         Ok(AnsfSourceId::new(self.session_id.clone(),self.id)?.encode())
     }
 }
-/// One model-facing operation for a KNOWN source ID. Internally it requires
+/// One host-callable operation for a KNOWN source ID; the installed model
+/// interface is a separate integration gate. Internally it requires
 /// only indexed book-identity and exact entry lookups, not three searches.
 ///
 /// The opener is supplied by a trusted host, which must confine the original
