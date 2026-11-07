@@ -35,7 +35,7 @@ test('P03 model inspection does not certify compatibility or invent GPU proof',(
   assert.match(ui,/invoke\('lu_model_preflight'/);
   assert.match(ui,/modelSearch/);
   assert.match(ui,/modelInspection\?\.loadAllowed/);
-  assert.match(ui,/Remote provider search\/download is not enabled/);
+  assert.match(ui,/A remote search result never installs, imports or loads a model/);
 });
 test('P03 provider review requires immutable revision and verified digest and approval',()=>{
   assert.match(core,/c\.provider!="hugging_face"/);
