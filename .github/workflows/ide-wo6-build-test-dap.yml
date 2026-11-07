@@ -40,6 +40,17 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml execution_intents::tests -- --nocapture
           cargo test --manifest-path ide/supervisor/Cargo.toml --lib -- --nocapture
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib -- --nocapture
+      - name: Strict debugger release-manifest and fixed debuggee audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s ide/packaging -p 'test_debug_adapters.py' -v
+          python3 ide/packaging/verify_debug_adapters.py
+          if python3 ide/packaging/verify_debug_adapters.py --release; then
+            echo 'DENIED: unsigned/unreviewed LLDB-DAP accidentally approved for release'
+            exit 1
+          fi
+          test -r ide/supervisor/fixtures/debug/wo6_selftest.c
       - name: Scope gate
         shell: bash
         run: |
