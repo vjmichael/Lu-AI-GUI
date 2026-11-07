@@ -110,6 +110,13 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    pub(crate) fn configuration_done(&mut self) -> Result<(), SupervisorError> {
+        // The pinned native adapter can emit initialized only after launch.
+        // This is the empty, nonexecuting DAP configuration confirmation.
+        let frame = self.session.configuration_done().map_err(protocol_denied)?;
+        trace_dap("fixed_configuration_done_requested");
+        self.send(&frame)
+    }
     pub(crate) fn threads(&mut self) -> Result<(), SupervisorError> {
         let frame = self.session.threads().map_err(protocol_denied)?;
         self.send(&frame)
