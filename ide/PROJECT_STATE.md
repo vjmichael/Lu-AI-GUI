@@ -1,5 +1,7 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**USER DIRECTIVE — DEFERRED (November 7, 2026):** Suspend all Lu Core ↔ Lu IDE interface and integration work until explicitly resumed. This includes IPC/peer pairing, model sharing or inference handoff, coding chat, proposal delivery, and Lu-related connection UIs. Work already committed on this experimental branch is **incomplete and unverified**, must stay in a draft PR, and must **not** be merged, shipped, enabled, or treated as WO10 acceptance. Keep Lu IDE standalone. Resume other, non-interface work only on explicit instruction. WO9-F and earlier release/installed acceptance gates remain independent and open.
+
 ### WO10 optional Lu Core bridge work started — November 7, 2026 UTC
 
 **Scope decision:** Proceed to WO10 development; do NOT treat WO9-F native installed testing or upstream WO6–WO8 release security as complete. WO10's scope is the optional authenticated out-of-process Lu Core ↔ standalone Lu IDE integration. The standalone IDE and its project, source, Git, protected-worker and human authorization remain independently owned. Branch `ide/wo10-optional-lu-bridge-20261107` stacked on WO9 draft PR #75.
