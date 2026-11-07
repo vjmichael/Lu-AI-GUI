@@ -33,6 +33,8 @@ jobs:
           $result = & python ide/packaging/verify_wo7_nsis_release.py --artifact-root ide/packaging --source-sha $env:GITHUB_SHA 2>&1
           if ($LASTEXITCODE -eq 0) { throw 'DENIED: unreviewed WO7 release unexpectedly authorized' }
           if (($result | Out-String) -notmatch 'DENIED') { throw 'DENIED: missing fail-closed release error' }
+          # PowerShell retains the expected child exit code unless explicitly reset.
+          $global:LASTEXITCODE = 0
           Write-Host 'PASS: unsigned source CI and unapproved artifacts cannot satisfy WO7 release'
       - name: Distinguish source checks from signed installed acceptance
         run: echo "Source negative tests only. No Authenticode identity, real installed SCM, bundled LLDB or signed NSIS release accepted."
