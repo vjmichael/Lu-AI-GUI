@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **P03 — native security development & honest acceptance (November 7, 2026, PR #80):** Restored the malformed E2 real Windows/Linux protected-clangd workflow (previous current heads never scheduled it), repaired two native Rust 1.99 formatter diffs affecting Windows/Linux kernel probe CI, and extended native LLDB-DAP debug-only response diagnostics without leaking project paths. Previously verified real Linux cgroup-v2/Bwrap containment, Linux clangd editor operations, debugger abrupt-host-crash kernel cleanup/journal quarantine, and Windows protected Cargo/SCM crash recovery remain positive **on earlier commits**. The current exact-head E2/WO6 tests are queued; Windows LLDB-DAP AppContainer startup still reports permission denial and Linux LLDB launch still returns adapter error. P03 is **OPEN**, not release accepted. Evidence: [P03 native ledger](docs/IDE_P03_NATIVE_SECURITY_ACCEPTANCE_20261107.md), [phase ledger](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md).
+
+
 - **P01 source baseline consolidated (Nov 7, 2026):** [draft PR #78](https://github.com/vjmichael/Lu-AI-GUI/pull/78) on `main`, candidate imports latest nondeferred IDE source plus canonical P01–P07 ledger. Verified only `ide/` and 32 IDE workflows differ from main; all Lu Core/Desktop/docs/CI preserved; WO10 absent. Audited 26 IDE PRs, recorded unported B2/B3 branch features and other exceptions. **P01 source-stage done; P02 not started; native Win/Linux and release validation still red.** [Audit](docs/IDE_P01_INTEGRATION_AUDIT_20261107.md).
 
 
