@@ -292,6 +292,8 @@ try {
       Write-Host 'WO9_INSTALLED_NATIVE_MULTI_PROJECT_REVIEW_AND_PINNED_EXPORT_UI=PASS'
     }
     if ($Scenario -eq 'Wo9ReviewedGit') {
+      # External editor modifies one *tracked* file; only this one is reviewed.
+      [IO.File]::AppendAllText((Join-Path $fixed 'main.rs'),"`n// WO9_NATIVE_REVIEWED_CHANGE`n")
       Click 'Source control'
       Require 'Reviewed local Git staging and commit'
       $before=(git -C $fixed rev-parse HEAD).Trim()
