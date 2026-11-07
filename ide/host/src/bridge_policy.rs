@@ -138,6 +138,18 @@ impl Session {
                     || offer.project_id != self.project_id {
                     return Err("BRIDGE_PROPOSAL_OUT_OF_SCOPE");
                 }
+                // Require the SAME strict host proposal envelope used by the
+                // human import inbox. A spoofed outer project/task identity
+                // cannot smuggle a proposal for another project. This check
+                // does not itself import or approve anything.
+                let json = std::str::from_utf8(&offer.proposal_json)
+                    .map_err(|_| "BRIDGE_PROPOSAL_INVALID_UTF8")?;
+                let parsed = crate::proposal::ProposalEnvelope::parse(json)
+                    .map_err(|_| "BRIDGE_PROPOSAL_UNTRUSTED_OR_INVALID")?;
+                if parsed.project_id != self.project_id
+                    || parsed.task_id != offer.task_id {
+                    return Err("BRIDGE_PROPOSAL_IDENTITY_MISMATCH");
+                }
                 // A proposal offer is UNTRUSTED. Its bytes must go through
                 // IdeProposalInbox::import + independently approved staging;
                 // never to source.save, Git, worker, or a shell.
@@ -249,7 +261,18 @@ mod tests {
             body: Some(Body::ProposalOffer(ProposedChangeOffer {
                 project_id: project(), thread_id: "ide-thread".into(),
                 task_id: "task-1".into(),
-                proposal_json: br#"{\"claimedProducer\":\"Lu\",\"edits\":[]}"#.to_vec(),
+                proposal_json: serde_json::json!({
+                    "schemaVersion": 1,
+                    "taskId": "task-1",
+                    "projectId": project(),
+                    "claimedProducer": "Lu",
+                    "rationale": "Review in IDE; do not auto-apply",
+                    "edits": [{
+                        "relativePath": "src/main.rs",
+                        "expectedRevision": "a".repeat(64),
+                        "proposedText": "fn main() {}",
+                    }]
+                }).to_string().into_bytes(),
             })),
         };
         let bytes = bridge_wire::encode(&msg).unwrap();
