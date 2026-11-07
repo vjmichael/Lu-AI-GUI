@@ -1,5 +1,8 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+**WO2 native multi-job acceptance added:** GitHub Windows D7D now has a disposable `--nul-overlap` protected SCM fixture proving two independently authenticated Job-specific NUL grants can coexist and be revoked separately, after the original service admission passes. Fixed-service bootstrap grants only restricted SCM identity the NUL DACL-management rights and attempts cleanup in `finally`. This is source/CI-fixture work, **not a passing OS result**. WO3 service named-pipe authentication and crash/restart remain blocking. [Batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
+
+
 **WO2/WO3 native repair continuation:** plain `windows-worker` no longer compiles protected SCM-only recovery symbols (fix for observed Windows E0433/E0425). Applied 31 native Rustfmt 1.99 hunks across NUL bootstrap, device lease, recovery service and client. D7D crash/service-loss CI both stopped at pre-child service admission; CI observers now emit whitelisted native denial stages for precise diagnosis. Corrected source is committed, exact-head OS acceptance pending; release worker and live LSP remain disabled. [Batch 02 ledger](docs/IDE_WORK_BATCH_02_20261106.md).
 
 
