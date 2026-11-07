@@ -509,6 +509,72 @@ pub fn format_sbl_scripture_reference(
     })
 }
 
+/// Very small publisher-identified critical-edition catalog. This
+/// attests the bibliographic *edition identity* only; an edition existing
+/// does NOT prove any textual reading, verse numbering, translation or
+/// manuscript witness. This is intentionally not a general ancient-work
+/// or transliteration renderer.
+#[derive(serde::Serialize,Debug,Clone,PartialEq,Eq)]
+#[serde(rename_all="camelCase")]
+pub struct SblCriticalEditionReference{
+    pub reference:String,
+    pub edition_id:String,
+    pub edition_title:&'static str,
+    pub publisher:&'static str,
+    pub publication_year:u16,
+    pub isbn:&'static str,
+    pub catalog_url:&'static str,
+    pub passage_verified:bool,
+    pub versification_verified:bool,
+    pub manuscript_witness_verified:bool,
+    pub translation_verified:bool,
+    pub coverage:&'static str,
+}
+pub fn format_sbl_critical_edition_locator(
+    edition_id:&str,book:&str,chapter:u16,
+    first_verse:u16,last_verse:Option<u16>
+)->Result<SblCriticalEditionReference,StyleError>{
+    let short=sbl_canonical_book_abbreviation(book)
+        .ok_or(StyleError::Unsupported)?;
+    if chapter==0||chapter>150||first_verse==0||first_verse>176
+        ||last_verse.is_some_and(|last|last<=first_verse||last>176){
+        return Err(StyleError::InvalidField);
+    }
+    let new_testament=matches!(short,
+        "Matt"|"Mark"|"Luke"|"John"|"Acts"|"Rom"|"1 Cor"|"2 Cor"|
+        "Gal"|"Eph"|"Phil"|"Col"|"1 Thess"|"2 Thess"|"1 Tim"|
+        "2 Tim"|"Titus"|"Phlm"|"Heb"|"Jas"|"1 Pet"|"2 Pet"|
+        "1 John"|"2 John"|"3 John"|"Jude"|"Rev");
+    let (title,publisher,year,isbn,url)=match edition_id{
+        "NA28" if new_testament=>(
+            "Novum Testamentum Graece, 28th revised edition",
+            "Deutsche Bibelgesellschaft",2012,
+            "978-3-438-05140-0",
+            "https://www.nestle-aland.com/"
+        ),
+        "RAHLFS-HANHART-2006" if !new_testament=>(
+            "Septuaginta, Rahlfs-Hanhart revised edition",
+            "Deutsche Bibelgesellschaft",2006,
+            "978-1-59856-180-7",
+            "https://www.hendricksonpublishers.com/p/septuaginta-lxx-rahlfs-hanhart-revised-edition/9781598561807"
+        ),
+        _=>return Err(StyleError::Unsupported),
+    };
+    let verse=match last_verse{
+        Some(last)=>format!("{first_verse}–{last}"),
+        None=>first_verse.to_string(),
+    };
+    Ok(SblCriticalEditionReference{
+        reference:format!("{edition_id}, {short} {chapter}:{verse}"),
+        edition_id:edition_id.to_owned(),
+        edition_title:title,publisher,publication_year:year,isbn,
+        catalog_url:url,
+        passage_verified:false,versification_verified:false,
+        manuscript_witness_verified:false,translation_verified:false,
+        coverage:"IDENTIFIED_CRITICAL_EDITION_ONLY_NO_TEXT_OR_WITNESS",
+    })
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -551,6 +617,27 @@ mod tests{
         assert_eq!(sbl_known_journal_abbreviation("Journal of Biblical Literature"),Some("JBL"));
         assert_eq!(sbl_known_journal_abbreviation("Catholic Biblical Quarterly"),Some("CBQ"));
         assert_eq!(sbl_known_journal_abbreviation("Journal of History"),None);
+    }
+    #[test]
+    fn p07_critical_edition_catalog_refuses_unmatched_canon_and_unverified_text(){
+        let nt=format_sbl_critical_edition_locator("NA28","John",1,1,Some(3)).unwrap();
+        assert_eq!(nt.reference,"NA28, John 1:1–3");
+        assert_eq!(nt.publication_year,2012);
+        assert!(nt.isbn.contains("05140"));
+        assert!(!nt.passage_verified&&!nt.versification_verified
+            &&!nt.manuscript_witness_verified&&!nt.translation_verified);
+        let ot=format_sbl_critical_edition_locator(
+            "RAHLFS-HANHART-2006","Psalms",23,1,None
+        ).unwrap();
+        assert_eq!(ot.reference,"RAHLFS-HANHART-2006, Ps 23:1");
+        assert_eq!(ot.publication_year,2006);
+        assert_eq!(format_sbl_critical_edition_locator("NA28","Genesis",1,1,None),
+            Err(StyleError::Unsupported));
+        assert_eq!(format_sbl_critical_edition_locator(
+            "RAHLFS-HANHART-2006","Matthew",1,1,None
+        ),Err(StyleError::Unsupported));
+        assert_eq!(format_sbl_critical_edition_locator("NA29","John",1,1,None),
+            Err(StyleError::Unsupported));
     }
     #[test]
     fn sbl_scripture_locator_formats_only_user_supplied_book_verse_translation(){
