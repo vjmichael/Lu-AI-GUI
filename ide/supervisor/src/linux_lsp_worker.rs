@@ -787,7 +787,7 @@ mod tests {
     #[test]
     fn kernel_quota_witness_emits_only_bounded_boolean_or_unavailable() {
         let file = std::env::temp_dir().join(format!("wo6-kernel-limit-{:032x}", rand::random::<u128>()));
-        std::fs::write(&file, "max 0\\nother 12\\noom_kill 1\\n").unwrap();
+        std::fs::write(&file, "max 0\nother 12\noom_kill 1\n").unwrap();
         assert_eq!(kernel_limit_hit(&file, "max"), "no");
         assert_eq!(kernel_limit_hit(&file, "oom_kill"), "yes");
         assert_eq!(kernel_limit_hit(&file, "none"), "unavailable");
