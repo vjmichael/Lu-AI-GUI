@@ -284,3 +284,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .imageRevisionDimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
 .imageRevisionForm input{max-width:100%;min-width:0;}
 .imageRevisionForm button{justify-self:start;}
+
+/* P02: host-owned task scheduling, not a model-driven dashboard. */
+.backgroundScheduleOptions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;
+ padding:12px 18px;border-bottom:1px solid #30435b}
+.backgroundScheduleOptions label{display:grid;gap:5px;min-width:0;font-size:11px;color:#c8dcee}
+.backgroundScheduleOptions select{min-width:0;width:100%;background:#1b2b3e;color:#eef5fc;
+ border:1px solid #56708a;border-radius:6px;padding:7px 5px;font-size:11px}
+.backgroundGuardianStatus{display:grid;gap:5px;padding:10px 18px;border-bottom:1px solid #30435b;
+ background:#1d3345;color:#e1edf8;font-size:12px}
+.backgroundGuardianStatus small{color:#adbed0;line-height:1.5}
+@media(max-width:650px){.backgroundScheduleOptions{grid-template-columns:1fr}}

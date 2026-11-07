@@ -1,7 +1,7 @@
 # Lu Core tools — owner-approved scope, integration architecture, and priority order
 
 **Decision date:** 2026-11-06  
-**Status:** Owner-approved PRODUCT DIRECTION and sequential DEVELOPMENT QUEUE. The owner's subsequent instruction authorized P01 source development; **P01 bounded source is implemented, and P02 must NOT start without another instruction.**  
+**Status:** Owner-approved PRODUCT DIRECTION and sequential DEVELOPMENT QUEUE. The owner's subsequent instruction authorized P01 source development; **P01 and subsequently authorized P02 now have bounded source implementations; P03 must NOT start without another instruction.**  
 **Project:** Independent Lu Core desktop AI, distinct from Lu IDE and optional DLCs.
 
 ## 1. Why this change is being made
@@ -12,7 +12,7 @@ This is a NEW explicit owner decision and thus takes precedence where it conflic
 
 ## 2. One ordered, owner-approved priority register
 
-Priority is the order in which to consider *future tool-area implementation*, **not a promise that all queued features must ship in v1.0**. Higher items may share common infrastructure; independent verification can proceed without blocking feature-development decisions. Implementation is sequential and owner-gated. P01 FS-DISCOVER-01 was explicitly authorized and source-implemented; the next P02 work package is paused until separately instructed.
+Priority is the order in which to consider *future tool-area implementation*, **not a promise that all queued features must ship in v1.0**. Higher items may share common infrastructure; independent verification can proceed without blocking feature-development decisions. Implementation is sequential and owner-gated. P01 FS-DISCOVER-01 and subsequently P02 TASK-SCHED-01 were explicitly authorized and source-implemented; P03 remains paused until separately instructed.
 
 | Rank | Core tool area | Approved direction / boundary | Initial follow-on work package |
 | --- | --- | --- | --- |
@@ -34,6 +34,10 @@ Priority is the order in which to consider *future tool-area implementation*, **
 ### P01 execution note (2026-11-06)
 
 The bounded source path for `FS-DISCOVER-01` is committed through the existing authenticated Workspace Reader/Tools loop. It provides a memory-only incremental metadata cache, typed `lu_files_discover`, metadata freshness rechecks and bounded optional literal text search. It does **not** provide all-drive discovery, semantic indexing, persistent index storage or independent Windows verification. See [P01 closeout](LU_FILESYSTEM_DISCOVERY_P01.md). P02 remains QUEUED.
+
+### P02 execution note (2026-11-06)
+
+The owner authorized P02 after P01 was submitted to GitHub compilation CI. `TASK-SCHED-01` now has a bounded native/desktop scheduler, conservative resource admission, queued media scans, delayed/recurring options, priority, host-owned worker cancellation and existing durable terminal notices. **This is not yet a universal scheduler for every tool worker, an OS-wide live telemetry system, or unattended durable recurrence across host restart.** See [P02 design/ledger](LU_BACKGROUND_SCHEDULER_P02.md). Exact-head CI and native Windows acceptance remain OPEN. **Stop before P03.**
 
 ## 3. Critical interfaces and reuse — avoid duplicate implementations
 
@@ -59,4 +63,4 @@ This decision does not claim the ranked implementation tasks are coded, that cur
 
 ## 5. Execution boundary
 
-**Current execution stop:** The later owner instruction authorized sequential Pxx source development, one area per turn. **P01 bounded source work is now complete; STOP and wait for explicit authorization before beginning P02.** P01's remaining advanced indexing ideas and native acceptance remain recorded in [P01 filesystem discovery closeout](LU_FILESYSTEM_DISCOVERY_P01.md). No automatic implementation, PR merge or background work is implied.
+**Current execution stop:** The later owner instruction authorized sequential Pxx source development, one area per turn. **P01 and the later separately approved P02 have bounded source work committed; STOP and wait for explicit authorization before beginning P03.** P01's remaining advanced indexing ideas and native acceptance remain recorded in [P01 filesystem discovery closeout](LU_FILESYSTEM_DISCOVERY_P01.md). No automatic implementation, PR merge or background work is implied.

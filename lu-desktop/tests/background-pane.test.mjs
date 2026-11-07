@@ -10,11 +10,11 @@ test('background pane uses local persistent host task query, not model monitorin
   assert.ok(host.includes('lu-background-tasks.sqlite'));
   assert.ok(host.includes('background_tasks.reconcile_interrupted()'));
   assert.ok(host.includes('fn lu_background_tasks('));
-  assert.ok(host.includes('state.background_tasks.dashboard(100)'));
+  assert.ok(host.includes('state.background_tasks.dashboard_for_workspace(&chat_id,100)'));
   assert.ok(host.includes('lu_background_tasks,'));
-  assert.ok(ui.includes("await invoke('lu_background_tasks')"));
+  assert.ok(ui.includes("invoke('lu_background_tasks',{chatId})"));
   assert.ok(ui.includes('setInterval(refresh,2500)'));
-  assert.ok(ui.includes("await invoke('lu_background_cancel', {taskId})"));
+  assert.ok(ui.includes("await invoke('lu_background_cancel', {taskId,chatId})"));
 });
 test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(ui.includes('Background Tasks'));
@@ -27,9 +27,9 @@ test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(ui.includes('Requires review before retrying.'));
   assert.ok(ui.includes('task.canCancel &&'));
   assert.ok(host.includes('fn lu_background_cancel('));
-  assert.ok(host.includes('processes.cancel_operator_owned(&task_id)'));
+  assert.ok(host.includes('scheduler.cancel_owned(&task_id,&chat_id)'));
   assert.ok(host.includes('Terminate task'));
-  assert.ok(ui.includes('Pause and resume remain unavailable'));
+  assert.ok(ui.includes('Queued tasks can be paused, resumed or cancelled'));
 
   assert.ok(css.includes('.backgroundPaneBackdrop'));
   assert.ok(css.includes('.backgroundTaskProgress'));
@@ -40,10 +40,10 @@ test('real native file-scan worker connects the system picker to the pane',()=>{
   assert.ok(host.includes('.blocking_pick_file()'));
   assert.ok(host.includes('std::env::current_exe()'));
   assert.ok(host.includes('progress_protocol:true'));
-  assert.ok(host.includes('processes.start_host_approved(plan)'));
-  assert.ok(ui.includes("await invoke('lu_background_scan_file',{chatId:chatId||null})"));
+  assert.ok(host.includes('scheduler.enqueue_host_plan(plan,options)'));
+  assert.ok(ui.includes("await invoke('lu_background_scan_file',{"));
   assert.ok(ui.includes('Scan media file…'));
-  assert.ok(ui.includes('not video content analysis'));
+  assert.ok(ui.includes('Native SHA-256 integrity scan'));
   assert.ok(css.includes('.backgroundScanLaunch'));
 });
 test('Lu host pushes end notifications without model polling, and routes them into the next chat turn',()=>{
@@ -55,7 +55,7 @@ test('Lu host pushes end notifications without model polling, and routes them in
   assert.ok(ui.includes("listen('lu-background-terminal'"));
   assert.ok(ui.includes('backgroundGlobalNotice'));
   assert.ok(ui.includes('Background task ended:'));
-  assert.ok(ui.includes("await invoke('lu_background_scan_file',{chatId:chatId||null})"));
+  assert.ok(ui.includes("await invoke('lu_background_scan_file',{"));
   assert.ok(!ui.includes("invoke('lu_generate', {taskId"));
 });
 test('explicit native opt-in is required before Lu can proactively ask the model to respond',()=>{

@@ -1,4 +1,4 @@
-name: Lu TOOLS-11 background task status
+name: Lu P02 Background Task Scheduler and Guardian
 on:
   push:
     branches: ['lu/tools-11-*', 'lu/reader-*']
@@ -7,6 +7,11 @@ on:
       - 'src-tauri/lu-core/src/native_background_status.rs'
       - 'src-tauri/lu-core/src/native_background_result.rs'
       - 'src-tauri/lu-core/src/native_background_control.rs'
+      - 'src-tauri/lu-core/src/native_background_scheduler.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/background-scheduler.test.mjs'
+      - 'lu-desktop/tests/background-pane.test.mjs'
       - 'src-tauri/lu-core/src/native_reader_pdf.rs'
       - 'src-tauri/lu-core/src/tasks.rs'
       - 'src-tauri/lu-core/src/lib.rs'
@@ -40,6 +45,10 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_result -- --nocapture
       - name: Verify host-bound one-shot start/cancel against real owned workers
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_control -- --nocapture
+      - name: P02 test durable queued work, Resource Guardian admission, recurrence and restart review
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_scheduler -- --nocapture
+      - name: P01 ensure native metadata discovery still compiles with P02
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_file_discovery -- --nocapture
       - name: Verify DOCX archive and XML security cases
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_reader_docx -- --nocapture
       - name: Verify OpenDocument ODS and ODP extraction
@@ -76,8 +85,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib terminal_notification_tests -- --nocapture
       - name: Verify explicit default-off auto-continuation preferences
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib task_auto_continue_tests -- --nocapture
-      - name: Verify background pane UI contract
-        run: node --test lu-desktop/tests/background-pane.test.mjs
+      - name: Verify P02 native scheduler and Background Tasks pane contracts
+        run: node --test lu-desktop/tests/background-scheduler.test.mjs lu-desktop/tests/background-pane.test.mjs
       - name: Verify Reader desktop picker and per-chat draft contract
         run: node --test lu-desktop/tests/reader-desktop.test.mjs
       - name: Verify image assembly geometry coordinates

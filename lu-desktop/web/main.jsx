@@ -128,6 +128,10 @@ function App() {
   const [latestEdited, setLatestEdited] = useState(null);
   const [backgroundPaneOpen,setBackgroundPaneOpen] = useState(false);
   const [backgroundTasks,setBackgroundTasks] = useState([]);
+  const [backgroundGuardian,setBackgroundGuardian] = useState(null);
+  const [backgroundDelay,setBackgroundDelay] = useState('0');
+  const [backgroundRepeat,setBackgroundRepeat] = useState('0');
+  const [backgroundPriority,setBackgroundPriority] = useState('normal');
   const [backgroundError,setBackgroundError] = useState('');
   const [backgroundFilter,setBackgroundFilter] = useState('active');
   const [backgroundTerminalNotice,setBackgroundTerminalNotice] = useState(null);
@@ -232,7 +236,7 @@ function App() {
   const visibleStream = visibleJob?.text ?? '';
   const chatBusy = Boolean(visibleJob);
   const activeBackgroundTasks=backgroundTasks.filter(task=>
-    ['PENDING','RUNNING','PAUSED'].includes(task.state));
+    ['PENDING','QUEUED','RUNNING','PAUSED'].includes(task.state));
   const shownBackgroundTasks=backgroundFilter==='active'
     ?activeBackgroundTasks:backgroundTasks;
   // An in-flight checkpoint is already visible in the live stream buffer.
@@ -1013,7 +1017,12 @@ function App() {
     setBackgroundError('');
     try {
       // Host-owned OS file dialog and pinned Lu worker, never model inference.
-      const taskId=await invoke('lu_background_scan_file',{chatId:chatId||null});
+      const taskId=await invoke('lu_background_scan_file',{
+        chatId:chatId||null,
+        delayMinutes:Number(backgroundDelay),
+        repeatMinutes:Number(backgroundRepeat),
+        priority:backgroundPriority
+      });
       if (taskId) {
         setBackgroundFilter('active');
         await refreshBackgroundTasks();
@@ -1047,7 +1056,7 @@ function App() {
   }
   async function cancelBackgroundTask(taskId) {
     try {
-      await invoke('lu_background_cancel', {taskId});
+      await invoke('lu_background_cancel', {taskId,chatId});
       await refreshBackgroundTasks();
     } catch (error) {
       // Native dialog denial and races against completion are not success.
@@ -1057,11 +1066,24 @@ function App() {
       }
     }
   }
+  async function changeQueuedBackgroundState(taskId,action){
+    if(!chatId)return;
+    try{
+      await invoke('lu_background_queue_control',{chatId,taskId,action});
+      await refreshBackgroundTasks();
+    }catch(error){
+      setBackgroundError(String(error));
+    }
+  }
   async function refreshBackgroundTasks() {
     try {
-      if(!chatId){setBackgroundTasks([]);return;}
-      const items=await invoke('lu_background_tasks',{chatId});
+      if(!chatId){setBackgroundTasks([]);setBackgroundGuardian(null);return;}
+      const [items,guardian]=await Promise.all([
+        invoke('lu_background_tasks',{chatId}),
+        invoke('lu_background_guardian_status',{chatId})
+      ]);
       setBackgroundTasks(Array.isArray(items)?items:[]);
+      setBackgroundGuardian(guardian||null);
       setBackgroundError('');
     } catch (error) {
       setBackgroundError(String(error));
@@ -4038,12 +4060,44 @@ function App() {
           </label>
           <small>Off by default. When enabled, Lu may start a short AI reply after completion, failure, cancellation, interruption, or timeout. Does not grant tool permissions or load a model.</small>
         </div>
+        <div className="backgroundScheduleOptions" aria-label="Background scan scheduling">
+          <label>When
+            <select value={backgroundDelay} onChange={e=>setBackgroundDelay(e.target.value)}>
+              <option value="0">As resources permit</option>
+              <option value="5">In 5 minutes</option>
+              <option value="30">In 30 minutes</option>
+              <option value="60">In 1 hour</option>
+              <option value="1440">Tomorrow</option>
+            </select>
+          </label>
+          <label>Repeat
+            <select value={backgroundRepeat} onChange={e=>setBackgroundRepeat(e.target.value)}>
+              <option value="0">Once</option>
+              <option value="60">Every hour</option>
+              <option value="1440">Daily</option>
+              <option value="10080">Weekly</option>
+            </select>
+          </label>
+          <label>Priority
+            <select value={backgroundPriority} onChange={e=>setBackgroundPriority(e.target.value)}>
+              <option value="background">Low</option>
+              <option value="normal">Normal</option>
+              <option value="interactive">High (still resource-limited)</option>
+            </select>
+          </label>
+        </div>
+        {backgroundGuardian && <div className="backgroundGuardianStatus" role="status">
+          <strong>Resource Guardian</strong>
+          <span>Queued: {backgroundGuardian.queued} · Running: {backgroundGuardian.running} · Paused: {backgroundGuardian.paused}</span>
+          <span>Workers: {backgroundGuardian.workerUsed}/{backgroundGuardian.workerCapacity} · CPU slots: {backgroundGuardian.cpuUsed}/{backgroundGuardian.cpuCapacity} · RAM reservation: {backgroundGuardian.ramUsedMib}/{backgroundGuardian.ramCapacityMib} MiB</span>
+          <small>GPU tasks stay disabled without verified VRAM availability. These are Lu reservation limits, not total system telemetry.</small>
+        </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"
             onClick={()=>void startMediaFileScan()}>
             Scan media file…
           </button>
-          <small>Native worker · file integrity scan (SHA-256), not video content analysis</small>
+          <small>Native SHA-256 integrity scan · queued by Lu. Recurring scans require new authorization after app restart.</small>
         </div>
         {backgroundTerminalNotice && <div className="backgroundTerminalBanner" role="status">
           <strong>Task ended: {backgroundTerminalNotice.state}</strong>
@@ -4079,8 +4133,13 @@ function App() {
             <div className="backgroundTaskFoot">
               <span>{task.progress}% recorded</span><span>Updated: {task.updatedAt || 'unknown'}</span>
             </div>
-            {['INTERRUPTED','FAILED'].includes(task.state) &&
+            {task.priority && <small>Priority: {task.priority}{task.dueUnix ? ' · Due: '+new Date(task.dueUnix*1000).toLocaleString():''}{task.repeatSeconds ? ' · Repeats every '+Math.round(task.repeatSeconds/60)+' min':''}</small>}
+            {['INTERRUPTED','FAILED','NEEDS_REVIEW'].includes(task.state) &&
               <p className="backgroundTaskWarning">Requires review before retrying.</p>}
+            {task.canPause && <button className="subtleButton" type="button"
+              onClick={()=>void changeQueuedBackgroundState(task.taskId,'pause')}>Pause queued</button>}
+            {task.canResume && <button className="subtleButton" type="button"
+              onClick={()=>void changeQueuedBackgroundState(task.taskId,'resume')}>Resume queued</button>}
             {task.canCancel && <button className="backgroundTaskCancel" type="button"
               onClick={()=>void cancelBackgroundTask(task.taskId)}>
               Cancel task…
@@ -4093,9 +4152,9 @@ function App() {
             </p>}
         </div>
         <footer className="backgroundPaneFooter">
-          Cancel is available only for Lu-owned live workers and requires native confirmation.
-          Pause and resume remain unavailable until workers support them.
-          Ordinary progress updates do not invoke the AI model.
+          Queued tasks can be paused, resumed or cancelled. Running tasks can be cancelled
+          with native confirmation, but not paused unless their worker supports it.
+          Recovery never automatically replays interrupted work; ordinary progress does not invoke the AI model.
         </footer>
       </aside>
     </div>}

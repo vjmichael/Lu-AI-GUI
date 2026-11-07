@@ -244,6 +244,7 @@ struct DesktopState {
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
+    background_scheduler: Arc<lu_core::native_background_scheduler::BackgroundScheduler>,
     background_processes: Arc<lu_core::native_background_process::BackgroundProcessSupervisor>,
     observe: Arc<observe_desktop::ObserveHost>,
     vision_probe:Mutex<Option<vision_context::VisionProbeReceipt>>,
@@ -618,6 +619,14 @@ impl DesktopState {
             )
         );
 
+        let background_scheduler=Arc::new(
+            lu_core::native_background_scheduler::BackgroundScheduler::open(
+                &root.join("lu-background-schedule.sqlite"),
+                Arc::clone(&background_tasks),
+                Arc::clone(&background_processes),
+                lu_core::native_background_scheduler::ResourceBudget::interactive_first(),
+            ).map_err(|e|format!("Background scheduler unavailable: {e:?}"))?
+        );
         let observe=Arc::new(observe_desktop::ObserveHost::new(
             Arc::clone(&background_tasks),Arc::clone(&background_processes)
         ));
@@ -626,6 +635,7 @@ impl DesktopState {
             vision_probe:Mutex::new(None),
             ocr_cancellations:Mutex::new(HashMap::new()),
             background_processes,
+            background_scheduler,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
             models_dir,
@@ -690,7 +700,16 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             std::thread::sleep(Duration::from_millis(500));
             // The native task supervisor must not depend on a visible
             // WebView. The OS terminates this host thread when Lu exits.
-            let _=state.background_processes.poll();
+            // Host-only guardian admission. A loaded model reserves greater
+            // foreground capacity; background GPU jobs stay prohibited until
+            // a verified per-backend VRAM monitor establishes an allowance.
+            let mut budget=lu_core::native_background_scheduler::
+                ResourceBudget::interactive_first();
+            if state.supervisor.status().is_ok_and(|s|s.session_id.is_some()){
+                budget.workers=1;budget.cpu=1;budget.ram_mib=512;
+            }
+            let _=state.background_scheduler.set_budget(budget);
+            let _=state.background_scheduler.tick();
             // The existing watchdog also expires Lu-only observation leases.
             state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
@@ -3318,6 +3337,23 @@ struct BackgroundTaskView {
     last_heartbeat:Option<String>,
     updated_at:String,
     can_cancel:bool,
+    can_pause:bool,
+    can_resume:bool,
+    needs_review:bool,
+    priority:Option<String>,
+    due_unix:Option<u64>,
+    repeat_seconds:Option<u64>,
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct BackgroundGuardianView {
+    queued:u32,running:u32,paused:u32,
+    worker_capacity:u16,worker_used:u16,
+    cpu_capacity:u16,cpu_used:u16,
+    ram_capacity_mib:u32,ram_used_mib:u32,
+    gpu_capacity:u16,gpu_used:u16,
+    disk_capacity:u16,disk_used:u16,
+    network_capacity:u16,network_used:u16,
 }
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
@@ -3327,8 +3363,25 @@ async fn lu_background_scan_file(
     app:AppHandle,
     state:State<'_,Arc<DesktopState>>,
     chat_id:Option<String>,
+    delay_minutes:Option<u32>,
+    repeat_minutes:Option<u32>,
+    priority:Option<String>,
 )->Result<Option<String>,String>{
-    let processes=Arc::clone(&state.background_processes);
+    use lu_core::native_background_scheduler::{
+        Priority,ScheduleOptions,now_unix
+    };
+    let scheduler=Arc::clone(&state.background_scheduler);
+    let delay=delay_minutes.unwrap_or(0);
+    let recurring=repeat_minutes.filter(|n|*n!=0);
+    if delay>10080||recurring.is_some_and(|n|n<1||n>10080){
+        return Err("Background scheduling supports at most one week ahead or between repeats".into())
+    }
+    let priority=match priority.as_deref().unwrap_or("normal"){
+        "background"=>Priority::Background,
+        "normal"=>Priority::Normal,
+        "interactive"=>Priority::Interactive,
+        _=>return Err("Invalid background priority".into()),
+    };
     let workspace=if let Some(id)=chat_id{
         if !id.starts_with("c-")||id.len()>128{
             return Err("Invalid conversation for background task".into());
@@ -3342,6 +3395,16 @@ async fn lu_background_scan_file(
                 "mp3","wav","flac","m4a","ogg"])
             .blocking_pick_file();
         let Some(file)=file else{return Ok(None);};
+        if delay>0||recurring.is_some(){
+            let confirmation=app.dialog().message(format!(
+                "Schedule this selected media scan?\nDelay: {} minute(s).\nRepeat: {}.\n\nLu will queue it behind interactive work. A recurring plan is bound to this app session; after Lu restarts, a new approval is needed before another execution.",
+                delay,recurring.map_or("Off".into(),|n|format!("Every {n} minute(s)"))
+            )).title("Lu — Approve scheduled background scan")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve schedule".into(),"Cancel".into()
+            )).blocking_show();
+            if !confirmation{return Ok(None)}
+        }
         let requested=file.into_path().map_err(|_|"Invalid media file location")?;
         let meta=fs::symlink_metadata(&requested)
             .map_err(|_|"Selected media file is unavailable")?;
@@ -3378,8 +3441,14 @@ async fn lu_background_scan_file(
             max_runtime_seconds:None,
         };
         let task_id=plan.task_id.clone();
-        processes.start_host_approved(plan)
-            .map_err(|e|format!("Media scan could not start: {e:?}"))?;
+        let options=ScheduleOptions::file_scan(
+            now_unix().saturating_add(u64::from(delay)*60),
+            recurring.map(|n|u64::from(n)*60),
+            priority,
+        );
+        scheduler.enqueue_host_plan(plan,options)
+            .map_err(|e|format!("Media scan could not be queued: {e:?}"))?;
+        // The host watchdog owns resource admission and actual process start.
         Ok(Some(task_id))
     }).await.map_err(|_|"Native media picker unavailable")?
 }
@@ -3475,22 +3544,88 @@ async fn lu_reader_pick_document(
 fn lu_background_tasks(
     state:State<'_,Arc<DesktopState>>,chat_id:String
 )->Result<Vec<BackgroundTaskView>,String>{
-    // Normal desktop Tasks view stays limited to the selected conversation.
-    // The renderer cannot get another conversation's task detail by
-    // asking for an arbitrary workspace ID that does not exist in ChatStore.
     state.chats.history(&chat_id)
         .map_err(|_|"Choose a valid conversation for background tasks")?;
-    state.background_processes.poll()
-        .map_err(|_|"Background process status needs reconciliation")?;
+    // The host watchdog polls and launches independently of this UI.
+    let queued=state.background_scheduler.list_owned(&chat_id,100)
+        .map_err(|e|format!("Scoped schedule unavailable: {e:?}"))?;
     let tasks=state.background_tasks.dashboard_for_workspace(&chat_id,100)
         .map_err(|_|"Scoped background task overview unavailable")?;
-    Ok(tasks.into_iter().map(|task|BackgroundTaskView{
-        task_id:task.task_id.clone(),workspace_id:task.workspace_id,
-        state:task.state.as_str().to_owned(),
-        progress:task.progress,detail:task.detail,
-        last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
-        can_cancel:state.background_processes.can_cancel(&task.task_id),
-    }).collect())
+    let mut actual=tasks.into_iter()
+        .map(|v|(v.task_id.clone(),v))
+        .collect::<std::collections::BTreeMap<_,_>>();
+    let mut result=Vec::new();
+    for item in queued{
+        let record=actual.remove(&item.task_id);
+        let state_name=record.as_ref()
+            .map(|v|v.state.as_str().to_string())
+            .unwrap_or_else(||item.state.clone());
+        result.push(BackgroundTaskView{
+            task_id:item.task_id,
+            workspace_id:Some(chat_id.clone()),
+            state:if item.state=="NEEDS_REVIEW"{"NEEDS_REVIEW".into()}
+                else{state_name},
+            progress:record.as_ref().map_or(0,|v|v.progress),
+            detail:record.as_ref().map_or_else(||
+                format!("{} · {}",item.kind,item.last_result),
+                |v|v.detail.clone()),
+            last_heartbeat:record.as_ref().and_then(|v|v.last_heartbeat.clone()),
+            updated_at:record.as_ref().map_or_else(||
+                "Scheduled".into(),|v|v.updated_at.clone()),
+            can_cancel:item.can_cancel,
+            can_pause:item.can_pause,
+            can_resume:item.can_resume,
+            needs_review:item.requires_review,
+            priority:Some(item.priority),
+            due_unix:Some(item.due_unix),
+            repeat_seconds:item.repeat_seconds,
+        });
+    }
+    for (_,task) in actual{
+        if result.len()>=100{break}
+        result.push(BackgroundTaskView{
+            task_id:task.task_id.clone(),workspace_id:task.workspace_id,
+            state:task.state.as_str().to_owned(),
+            progress:task.progress,detail:task.detail,
+            last_heartbeat:task.last_heartbeat,updated_at:task.updated_at,
+            can_cancel:state.background_processes.can_cancel(&task.task_id),
+            can_pause:false,can_resume:false,needs_review:false,
+            priority:None,due_unix:None,repeat_seconds:None,
+        });
+    }
+    result.truncate(100);
+    Ok(result)
+}
+#[tauri::command]
+fn lu_background_guardian_status(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<BackgroundGuardianView,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose a valid conversation for guardian status")?;
+    let snapshot=state.background_scheduler.guardian_snapshot(&chat_id)
+        .map_err(|e|format!("Guardian status unavailable: {e:?}"))?;
+    Ok(BackgroundGuardianView{
+        queued:snapshot.queued,running:snapshot.running,paused:snapshot.paused,
+        worker_capacity:snapshot.capacity.workers,worker_used:snapshot.used.workers,
+        cpu_capacity:snapshot.capacity.cpu,cpu_used:snapshot.used.cpu,
+        ram_capacity_mib:snapshot.capacity.ram_mib,ram_used_mib:snapshot.used.ram_mib,
+        gpu_capacity:snapshot.capacity.gpu,gpu_used:snapshot.used.gpu,
+        disk_capacity:snapshot.capacity.disk,disk_used:snapshot.used.disk,
+        network_capacity:snapshot.capacity.network,network_used:snapshot.used.network,
+    })
+}
+#[tauri::command]
+fn lu_background_queue_control(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,task_id:String,action:String
+)->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    let manager=&state.background_scheduler;
+    match action.as_str(){
+        "pause"=>manager.pause_queued(&task_id,&chat_id),
+        "resume"=>manager.resume_queued(&task_id,&chat_id),
+        _=>return Err("Only queued task pause/resume is supported".into()),
+    }.map_err(|e|format!("Cannot update scheduled task: {e:?}"))
 }
 /// Explicit user-initiated OS dialog. The WebView cannot supply a path,
 /// task grant, scope or model-generated approval.
@@ -5351,15 +5486,19 @@ fn lu_background_auto_continue(
 async fn lu_background_cancel(
     app:AppHandle,
     state:State<'_,Arc<DesktopState>>,
-    task_id:String,
+    task_id:String,chat_id:String,
 )->Result<(),String>{
+    state.chats.history(&chat_id)?;
+    let scheduler=Arc::clone(&state.background_scheduler);
     let processes=Arc::clone(&state.background_processes);
-    if task_id.is_empty()||task_id.len()>128
-       ||!processes.can_cancel(&task_id){
-        return Err("No live Lu-owned worker with that task ID".into());
+    let status=scheduler.state_for(&task_id,&chat_id)
+        .map_err(|_|"Scheduled task ownership unavailable")?;
+    if !matches!(status.as_deref(),Some("QUEUED"|"PAUSED"|"RUNNING"))
+       &&!processes.can_cancel(&task_id){
+        return Err("No cancellable Lu-owned task in this conversation".into())
     }
     let message=format!(
-        "Cancel Lu's currently running background task?\n\n{}\n\n         This terminates its owned process and records CANCELLED.          Previous completed checkpoints are retained.",
+        "Cancel the authorized background task?\n\n{}\n\nQueued jobs will be removed. Live jobs are terminated and reaped before Lu records cancellation.",
         task_id
     );
     let confirmed=tauri::async_runtime::spawn_blocking(move||{
@@ -5370,10 +5509,15 @@ async fn lu_background_cancel(
             )).blocking_show()
     }).await.map_err(|_|"Native cancellation prompt unavailable")?;
     if !confirmed{return Err("Cancellation declined".into());}
-    tauri::async_runtime::spawn_blocking(move||
-        processes.cancel_operator_owned(&task_id)
-            .map_err(|e|format!("Cannot cancel owned worker: {e:?}"))
-    ).await.map_err(|_|"Task cancellation worker unavailable")?
+    tauri::async_runtime::spawn_blocking(move||{
+        if status.is_some(){
+            scheduler.cancel_owned(&task_id,&chat_id)
+                .map_err(|e|format!("Cannot cancel scheduled work: {e:?}"))
+        }else{
+            processes.cancel_owned(&task_id,&chat_id)
+                .map_err(|e|format!("Cannot cancel owned worker: {e:?}"))
+        }
+    }).await.map_err(|_|"Task cancellation worker unavailable")?
 }
 #[tauri::command]
 fn lu_new_chat(state: State<'_, Arc<DesktopState>>) -> Result<ChatSummary, String> {
@@ -5753,6 +5897,8 @@ pub fn run() {
             lu_history,
             lu_chats,
             lu_background_tasks,
+            lu_background_guardian_status,
+            lu_background_queue_control,
             lu_reader_pick_document,
             lu_reader_ask_document,
             lu_workspace_ask_directory,

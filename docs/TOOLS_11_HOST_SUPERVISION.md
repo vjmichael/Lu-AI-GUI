@@ -9,6 +9,14 @@ Original Jan tool domain: `background` in §5.2 (start/status/stop). This
 extension retains the per-task authority, native typed Protobuf, durable
 journal, cancellation, and resource supervision already required by Lu.
 
+## P02 scheduler + resource guardian continuation (2026-11-06)
+
+The owner explicitly approved sequential P02 work after submitting P01 native compilation to CI. See [P02 — background scheduling/Guardian](LU_BACKGROUND_SCHEDULER_P02.md).
+
+**New source:** `native_background_scheduler.rs` adds durable queue metadata, due times, priority/age ordering, explicit dependencies, limited idempotent retries and recurring first-party scans with original owned worker plans kept in volatile memory. One native host watchdog evaluates a configured Resource Guardian reservation ceiling, then delegates actual launch/cancellation/terminal receipts to the existing trusted `BackgroundProcessSupervisor`. On startup formerly queued/running/paused schedule rows become NEEDS_REVIEW rather than implicitly replaying effects. UI now shows queued/paused jobs and resource reservation consumption. Recurring consent is explicitly native-confirmed and is NOT automatically renewed across Lu restart.
+
+**Open:** CI/native compile and physical installed acceptance; full resource telemetry and worker-adapter coverage beyond the media scan; durable cross-restart recurring permits; verified artifact-result manifest. This continuation supersedes older `Not yet implemented: verified resource budgets` as to conservative *configured admission reservations only*, not actual OS-wide monitoring or hard resident-memory enforcement.
+
 ## Execution model
 
 1. User/model proposes a job. The **trusted host**, not the model, validates
