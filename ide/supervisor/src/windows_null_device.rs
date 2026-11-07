@@ -8,7 +8,12 @@
 #[cfg(all(feature = "ci-native-null-lease", not(debug_assertions)))]
 compile_error!("DENIED: disposable kernel NUL DACL lease must never ship in release builds");
 use crate::SupervisorError;
-use std::{ffi::c_void, mem::size_of, ptr, sync::{Mutex, MutexGuard}};
+use std::{
+    ffi::c_void,
+    mem::size_of,
+    ptr,
+    sync::{Mutex, MutexGuard},
+};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, LocalFree, HANDLE, INVALID_HANDLE_VALUE},
     Security::{
@@ -179,9 +184,7 @@ impl CiNullLease {
             // The installed service may revoke only the exact narrow grant
             // it originally installed. Unknown ACL state remains quarantined.
             with_dacl(self.handle.0, |acl| {
-                if exact_service_sid_ace(acl, self.sid)?
-                    == Some(GENERIC_READ | GENERIC_WRITE)
-                {
+                if exact_service_sid_ace(acl, self.sid)? == Some(GENERIC_READ | GENERIC_WRITE) {
                     Ok(())
                 } else {
                     Err(denied())
@@ -272,9 +275,7 @@ fn grant_exact_sid(sid: PSID) -> Result<CiNullLease, SupervisorError> {
         lease.applied = true;
         change(lease.handle.0, lease.sid, GRANT_ACCESS)?;
         with_dacl(lease.handle.0, |acl| {
-            if exact_service_sid_ace(acl, sid)?
-                == Some(GENERIC_READ | GENERIC_WRITE)
-            {
+            if exact_service_sid_ace(acl, sid)? == Some(GENERIC_READ | GENERIC_WRITE) {
                 Ok(())
             } else {
                 Err(denied())
@@ -284,7 +285,6 @@ fn grant_exact_sid(sid: PSID) -> Result<CiNullLease, SupervisorError> {
     result?;
     Ok(lease)
 }
-
 
 // Production service-owned NUL lease. The elevated install-time bootstrap
 // grants only the fixed restricted service SID DACL-management rights;
@@ -296,7 +296,9 @@ struct DerivedPackageSid(PSID);
 impl Drop for DerivedPackageSid {
     fn drop(&mut self) {
         if !self.0.is_null() {
-            unsafe { windows_sys::Win32::Security::FreeSid(self.0); }
+            unsafe {
+                windows_sys::Win32::Security::FreeSid(self.0);
+            }
         }
     }
 }
@@ -343,7 +345,9 @@ fn derive_job_sid(job_id: &str) -> Result<DerivedPackageSid, SupervisorError> {
     };
     if status < 0 || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
         if !sid.is_null() {
-            unsafe { windows_sys::Win32::Security::FreeSid(sid); }
+            unsafe {
+                windows_sys::Win32::Security::FreeSid(sid);
+            }
         }
         return Err(denied());
     }
@@ -368,7 +372,9 @@ pub(crate) fn reconcile_service_null_intent(job_id: &str) -> Result<(), Supervis
             ptr::null_mut(),
         )
     };
-    if raw.is_null() || raw == INVALID_HANDLE_VALUE { return Err(denied()); }
+    if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+        return Err(denied());
+    }
     let handle = Handle(raw);
     // This is the only ACE inserted by ServiceNullLease. A different mask,
     // duplicate allow or deny ACE must be investigated, never silently
