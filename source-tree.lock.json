@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f161813c22649d05739277a688fd3ca07585c0b9",
+  "sourceCommitBeforeLock": "ddb8094996848beee9c7807f15098599f0040590",
   "trackedFileCount": 506,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "94cb308d19ddf7f907364cb256d254a1e650dba5"
+      "blob": "1d3344ab331f307b5703870820c6c1349b81c731"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "0c65a853adc008361e6933602c8747fa54d78129"
+      "blob": "3e0492b4466a5f68575ab48fc1ecadbc4e6382eb"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -325,7 +325,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "cea344d4f7df934800cf935fd52f28c49a44537a"
+      "blob": "3cba175b0957647569c33964588a0035154aedc6"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -469,7 +469,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
-      "blob": "e59b4df44f86f58690fce2d5c46d0547ff3f29d0"
+      "blob": "ef0aec1d6e37d2346adf45f6bc3e405884133b1a"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
@@ -797,7 +797,7 @@
     },
     {
       "path": "scripts/verify-observe-installed-windows.ps1",
-      "blob": "1efeb83f49703076430562a80892a832f7d2a7d8"
+      "blob": "3e4086f01aa99695b0d0c60362c92460024bb879"
     },
     {
       "path": "scripts/verify-source-tree.mjs",
