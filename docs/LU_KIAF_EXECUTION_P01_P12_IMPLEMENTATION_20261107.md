@@ -26,6 +26,9 @@
 - The inventory explicitly reports **registered_and_turn_granted_only**; external dependencies and task outcome verification are **false** until independently established. Tool schema registration must not be sold as installed app availability or successful effect.
 - This does not affect dispatch permission logic.
 
+### K — grounded benchmark failure attribution
+- Existing `benchmark_contract.rs` keeps its v1 record schema and previous failure labels. Additional `ExecutionInterface`, `AuthorizationPolicy`, `ResultVerification` and `Recovery` failure labels now map deterministically to K/I/A/F, while ambiguous native-tool failures stay **undetermined** instead of being falsely attributed to the model. This prepares honest target-local-model comparisons without claiming the benchmark has run on the user's GPU.
+
 ### CI
 - Dedicated native matrix for **Linux and Windows** compiles the registered tool bridge, artifact checker, model/read-only workflow and malicious/no-authority regressions; source-tree verification required on each OS.
 - Passing CI can establish source/native fixture checks, not physical installed NSIS/GGUF/MMProj, host-owned external-app execution, Python isolation or GUI/E2E acceptance.
