@@ -25,7 +25,7 @@ test('M2 native commands are registered and not a general tool interface',()=>{
   }
   assert.match(memory,/chats\.append_goal_memory_event\(chat_id,event\)/);
   assert.match(memory,/source!=actual/);
-  assert.match(memory,/model_context\(&goal_context\)/);
+  assert.match(host,/model_context\(&goal_context\)/);
   assert.doesNotMatch(memory,/ExecuteCode|NetworkWrite|grant\(/);
 });
 test('M2 source of truth remains host-authenticated chat events, not recalled consent',()=>{
