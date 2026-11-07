@@ -11,6 +11,8 @@ on:
       - 'ide/packaging/p06_target_license_scope.py'
       - 'ide/packaging/test_p06_target_license_scope.py'
       - 'ide/packaging/test_p06_source_notice_recovery.py'
+      - 'ide/packaging/test_p06_r_efi_authors.py'
+      - 'ide/packaging/upstream-crate-notices/**'
       - 'ide/packaging/test_p06_license_provenance.py'
       - 'ide/host/LICENSE'
       - 'ide/app/src-tauri/LICENSE'
@@ -105,6 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           python ide/packaging/verify_p06_dependency_graph.py --repo-root . --source-sha "$EXACT_SHA" --license-root ide/app/src-tauri/p06-notices --output ide/app/src-tauri/p06-dependency-evidence.json
+          python -m unittest discover -s ide/packaging -p 'test_p06_r_efi_authors.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_source_notice_recovery.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_license_provenance.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_license_triage.py' -v

@@ -124,6 +124,17 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
             if not isinstance(item,dict):
                 raise Denied("invalid_resolved_package_notice")
             validate_mark(item,"resolved/"+row["manager"]+"/")
+            if (row.get("manager")=="cargo" and row.get("name")=="r-efi"
+                    and item.get("originalName")=="AUTHORS"):
+                from collect_verification_licenses import R_EFI_AUTHOR_GIT_BLOBS,R_EFI_LICENSE,git_blob_sha
+                version=row.get("version")
+                pinned=R_EFI_AUTHOR_GIT_BLOBS.get(version)
+                if (pinned is None or row.get("declaredLicense")!=R_EFI_LICENSE
+                        or item.get("upstreamGitBlobSha")!=pinned
+                        or item.get("upstreamSource")!=
+                            "https://raw.githubusercontent.com/r-efi/r-efi/v"+version+"/AUTHORS"
+                        or git_blob_sha(safe_file(root,item["path"]).read_bytes())!=pinned):
+                    raise Denied("r_efi_original_license_notice_provenance_mismatch")
     actual=set()
     for folder,dirs,files in os.walk(root,followlinks=False):
         for d in dirs:

@@ -56,6 +56,41 @@ def files_for(root):
             out.append(child)
     return out[:16]
 
+# r-efi's exact released original licensing/copyright notice is AUTHORS,
+# not LICENSE.*. Compare the actual Cargo-locked .crate AUTHORS file with the
+# pinned upstream release bytes and their Git source blob identities. A
+# different version, expression, missing file or changed copyright never
+# inherits an MIT notice. This retrieves documentary evidence, not a legal
+# election of MIT/Apache/LGPL and not an acceptance of binary shipment.
+R_EFI_AUTHOR_GIT_BLOBS = {
+    "5.3.0": "7397b2bd6a8580d51fe7b23783f8f1a05fa70291",
+    "6.0.0": "79c8b7c4a1dabcfbc718b7fe6d43b1892f9850cd",
+}
+R_EFI_LICENSE = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+
+def git_blob_sha(content):
+    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\\0" + content).hexdigest()
+
+def verified_r_efi_authors(manager, name, version, declared, folder, repo_root):
+    if manager != "cargo" or name != "r-efi" or version not in R_EFI_AUTHOR_GIT_BLOBS:
+        return None
+    if declared != R_EFI_LICENSE:
+        raise Denied("r_efi_exact_license_expression_changed")
+    local = folder / "AUTHORS"
+    reviewed = repo_root / "ide/packaging/upstream-crate-notices" / ("r-efi-"+version+"-AUTHORS.txt")
+    if not local.exists():
+        return None
+    for candidate in (local,reviewed):
+        if (candidate.is_symlink() or not candidate.is_file()
+                or not 100 <= candidate.stat().st_size <= MAX_TEXT):
+            raise Denied("untrusted_r_efi_original_authors")
+        data = candidate.read_bytes()
+        if git_blob_sha(data) != R_EFI_AUTHOR_GIT_BLOBS[version]:
+            raise Denied("r_efi_source_notice_differs_from_exact_upstream_tag")
+    if local.read_bytes() != reviewed.read_bytes():
+        raise Denied("r_efi_crate_notice_differs_from_reviewed_source")
+    return local
+
 def npm_packages(root):
     node=root/"ide"/"app"/"node_modules"
     if not node.is_dir():
@@ -183,6 +218,9 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
         results=[]
         for index,(manager,name,version,declared,folder) in enumerate(sorted_rows):
             files=files_for(folder)
+            authors=verified_r_efi_authors(manager,name,version,declared,folder,repo_root)
+            if authors is not None and authors not in files:
+                files.append(authors)
             notices=[]
             for no,src in enumerate(files):
                 if b"\x00" in src.read_bytes()[:4096]:
@@ -191,8 +229,12 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                 target=stage/relative
                 target.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copyfile(src,target,follow_symlinks=False)
-                notices.append({"path":relative,"sha256":digest(target),
-                                "originalName":src.name})
+                notice={"path":relative,"sha256":digest(target),
+                                "originalName":src.name}
+                if src.name=="AUTHORS" and manager=="cargo" and name=="r-efi" and version in R_EFI_AUTHOR_GIT_BLOBS:
+                    notice["upstreamSource"]="https://raw.githubusercontent.com/r-efi/r-efi/v"+version+"/AUTHORS"
+                    notice["upstreamGitBlobSha"]=R_EFI_AUTHOR_GIT_BLOBS[version]
+                notices.append(notice)
             # The platform package @esbuild/<target> is built from the exact
             # esbuild source release, but its npm tarball has no LICENSE file.
             # Reuse only the verified, pinned upstream MIT text for that same
