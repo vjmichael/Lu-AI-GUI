@@ -7,9 +7,13 @@ param(
   [Parameter(Mandatory=$true)][string]$InstalledExe,
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$LuSha256,
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$WorkerSha256,
-  [switch]$InspectObserveUi
+  [switch]$InspectObserveUi,
+  [switch]$ExerciseObservationLifecycle
 )
 $ErrorActionPreference='Stop'
+if($ExerciseObservationLifecycle -and -not $InspectObserveUi){
+  throw 'Lifecycle acceptance requires explicit -InspectObserveUi opt-in'
+}
 if($env:OS -ne 'Windows_NT'){throw 'Physical interactive Windows desktop required'}
 function Verify-Binary([string]$Path,[string]$Digest) {
   if(-not [IO.Path]::IsPathRooted($Path)){throw 'Must supply an absolute installed binary path'}
@@ -34,6 +38,7 @@ $record=[ordered]@{
   installedBinaryDigest='PASS'
   nativeWindowLaunched='INCONCLUSIVE'
   observeOffByDefault='NOT_TESTED'
+  observeUiLifecycle='NOT_TESTED'
   wgcPickerAndCancellation='NOT_TESTED'
   foregroundOsSourceInstance='NOT_TESTED'
   sensitiveRegionRedaction='NOT_TESTED'
@@ -74,6 +79,56 @@ try {
       $record.observeOffByDefault='PASS'
     } else {
       $record.observeOffByDefault='INCONCLUSIVE_SELECT_EXISTING_CHAT'
+    }
+    if($ExerciseObservationLifecycle){
+      if($record.observeOffByDefault -ne 'PASS'){
+        throw 'Select a locally owned existing chat before running the optional lifecycle'
+      }
+      function Find-ObservedButton([string]$buttonName){
+        $query=[System.Windows.Automation.PropertyCondition]::new(
+          [System.Windows.Automation.AutomationElement]::NameProperty,$buttonName)
+        return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$query)
+      }
+      function Press-ObservedButton([string]$buttonName){
+        $element=Find-ObservedButton $buttonName
+        if($null -eq $element){return $false}
+        try{
+          $invoke=$element.GetCurrentPattern(
+            [System.Windows.Automation.InvokePattern]::Pattern)
+          $invoke.Invoke()
+          return $true
+        }catch{return $false}
+      }
+      function Await-ObservedButton([string]$buttonName,[int]$seconds){
+        $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
+        do{
+          if($null -ne (Find-ObservedButton $buttonName)){return $true}
+          Start-Sleep -Milliseconds 300
+        }while([DateTime]::UtcNow -lt $deadline)
+        return $false
+      }
+      # Explicit interactive operator approval is still required in the
+      # native Lu consent modal. The harness does NOT approve or dismiss it.
+      if(-not (Press-ObservedButton 'Start observing Lu')){
+        throw 'Native UI Automation could not invoke the Lu-only consent request'
+      }
+      if(-not (Await-ObservedButton 'Pause' 45)){
+        $record.observeUiLifecycle='INCONCLUSIVE_NATIVE_CONSENT_NOT_APPROVED'
+      }else{
+        if(-not (Press-ObservedButton 'Pause') -or
+          -not (Await-ObservedButton 'Resume' 8)){
+          throw 'Actual installed Observe UI did not enter paused state'
+        }
+        if(-not (Press-ObservedButton 'Resume') -or
+          -not (Await-ObservedButton 'Stop observation' 8)){
+          throw 'Actual installed Observe UI did not resume'
+        }
+        if(-not (Press-ObservedButton 'Stop observation') -or
+          -not (Await-ObservedButton 'Start observing Lu' 8)){
+          throw 'Actual installed Observe UI did not return to OFF'
+        }
+        $record.observeUiLifecycle='PASS_UIA_VISIBLE_LIFECYCLE_ONLY'
+      }
     }
   }
 } catch {
