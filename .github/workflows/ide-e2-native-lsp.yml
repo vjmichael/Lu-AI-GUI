@@ -160,20 +160,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_lsp_host
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_lsp_acceptance
       - name: Run genuine unprivileged systemd delegated clangd and cancellation
         shell: bash
         run: |
           set -euo pipefail
-          helper="$(realpath ide/sandbox/target/debug/linux_cgroup_prepare)"
-          fixture="$(realpath ide/supervisor/target/debug/examples/e2_native_lsp_acceptance)"
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_lsp_host)"
           # This privileged ACTIONS setup merely asks systemd to provision
           # an exact delegated CPU/memory/PID unit. The worker executes as
           # unprivileged runner and MUST prove kernel membership/quotas itself.
           # No Docker, generic shell worker, direct cgroup chmod, fake cgroupfs
-          # or uncontained fallback on failure. The helper only touches its
-          # own fixed, OS-delegated unit parent, before ExecStart.
+          # or uncontained fallback on failure. systemd MUST first place
+          # this fixed host executable inside lu-ide-host via ExecStart; the
+          # host then launches only the trusted fixed helper and native LSP
+          # fixture. Enabling controllers in ExecStartPre previously produced
+          # kernel EBUSY as systemd attempted to attach ExecStart to the root.
           for mode in normal cancel; do
             cmd=()
             if [[ "$mode" == cancel ]]; then cmd+=(--cancel); fi
@@ -185,9 +187,7 @@ jobs:
               --property=Group=runner \
               --property='Delegate=cpu memory pids' \
               --property=DelegateSubgroup=lu-ide-host \
-              --property="ExecStartPre=$helper" \
-              --setenv=LU_IDE_E2_PINNED_LSP_BUNDLE=/opt/lu-ide-e2-test \
-              "$fixture" "${cmd[@]}" || result=$?
+              "$host" "${cmd[@]}" || result=$?
             if [[ "$result" != 0 ]]; then
               echo 'DENIED: genuine delegated unit failed; systemd kernel/service evidence follows'
               sudo systemctl show lu-ide-delegated.service --no-pager \
