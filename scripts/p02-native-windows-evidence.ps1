@@ -67,8 +67,8 @@ if ($InferencePid -gt 0 -or $RequireGpu) {
     if ($proc -and $proc.Name -ieq 'llama-server.exe') {
         $gpu.inferencePid = $InferencePid
         try {
-            $dedicated = @(Get-Counter -Counter '\\GPU Process Memory(*)\\Dedicated Usage' -ErrorAction Stop).CounterSamples
-            $shared = @(Get-Counter -Counter '\\GPU Process Memory(*)\\Shared Usage' -ErrorAction Stop).CounterSamples
+            $dedicated = @(Get-Counter -Counter '\GPU Process Memory(*)\Dedicated Usage' -ErrorAction Stop).CounterSamples
+            $shared = @(Get-Counter -Counter '\GPU Process Memory(*)\Shared Usage' -ErrorAction Stop).CounterSamples
             $pattern = "(?i)(?:^|_)pid_$InferencePid(?:_|$)"
             $ded = @($dedicated | Where-Object { $_.InstanceName -match $pattern })
             $sha = @($shared | Where-Object { $_.InstanceName -match $pattern })
