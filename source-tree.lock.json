@@ -529,7 +529,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_desktop.rs",
-      "blob": "22e1964408dc49c0aa051813af7120d53057ac8d"
+      "blob": "8ad37afa993eca8458996db59f3621bec85044f0"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -689,7 +689,7 @@
     },
     {
       "path": "lu-desktop/tests/m2-ansf-memory.test.mjs",
-      "blob": "062cf3dc57c6e3a00a45e1e6cdb5bdd9d2b5b578"
+      "blob": "81a1b150f48b95bfb7e3c2ba25818f27dd10ca45"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -997,7 +997,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_goals.rs",
-      "blob": "96266120565ddc4c19808fa910a80b00ca4304c8"
+      "blob": "813475c604a87c63c029b3856a7248ebf593d2d5"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_import.rs",
