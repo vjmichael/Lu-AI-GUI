@@ -1,0 +1,63 @@
+name: IDE WO9 advanced workflows native Git and manifest review
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/web/**'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md'
+      - '.github/workflows/ide-wo9-advanced-workflows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-workflow-revision-guard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source under test
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native Rust Git/artifact source and native export tests
+        run: cargo test --manifest-path ide/host/Cargo.toml advanced_workflows -- --nocapture
+      - name: Source stage is NOT installed package signing/release
+        shell: bash
+        run: |
+          echo 'WO9_NATIVE_LIBGIT2_AND_MANIFEST_TESTS_ONLY'
+          echo 'WO9_OS_INSTALLED_AND_PROTECTED_EXECUTION=NOT_ACCEPTED'
+  desktop-workflow-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify actual React Packages page and tests
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Guard against executable workflow promotions
+        run: |
+          grep -q 'ready_for_release: false' ide/host/src/advanced_workflows.rs
+          grep -q 'package_created: false' ide/host/src/advanced_workflows.rs
+          grep -q 'source_fingerprint' ide/host/src/advanced_workflows.rs
