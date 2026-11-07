@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+### WO9 advanced Git/packaging/multi-project workflows started — 2026-11-07 UTC
+
+**Roadmap remains exactly ten work orders:** historical WO1–WO3 acceptance; WO4–WO8 still have native/release acceptance to close; **WO9** advanced packaging, Git, multi-project workflows in development; WO10 optional Lu Core self-development bridge later. WO9 begins in `ide/wo9-advanced-workflows-20261107` **stacked on WO8 PR #74**. WO8's signed installed native cancellation, Linux editor and WO7 release gates are not reclassified as passed or cancelled by this.
+
+**Source implemented (WO9-A/B/C):** `host/src/advanced_workflows.rs` accepts only registered active project IDs (up to eight), uses bounded native libgit2 and `cap_std` artifact inventory to build an ordered multi-project Git/packaging evidence digest and explicit blockers. Native Tauri and the newly enabled **Packages & Workflows** UI provide preview, revalidation, and OS-picker-selected no-overwrite fsynced JSON review manifest. A second explicit action writes a portable stored ZIP of only independently hashed known artifact files, with exact source revision recheck, byte limits, native folder destination, no project-source writes, and no arbitrary command or Git execution. Added real Rust local Git fixture and ZIP readback/source-drift negative tests and a Windows/Linux native host + React UI CI workflow. Native installed acceptance **not yet established**. Details: [WO9 ledger](docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md).
+
+**WO9 open:** reviewed file-specific Git stage/commit without hooks/push, durable multi-project dependent-job coordinator using existing native supervisor and per-turn authority, actual installed Windows/Linux ZIP/GUI acceptance, signed packaging/license closures and final release gate. WO10 bridge is not enabled. No hidden release promotion from green unit tests.
+
+
 ### WO8 durable build/LLDB crash journal repair — 2026-11-07 UTC
 
 Native build and debug status now expose exact supervisor-replayed job journals across IDE restart (source: `app/src-tauri/src/build_backend.rs`, `debug_backend.rs`). The installed Jobs UI shows bounded job ID, phase, plan digest and required OS reconciliation. Full native security quarantine is **not truncated**, even though the display journal is limited to 32. Windows signed installed acceptance now covers real Cargo cancel/desktop crash/service crash/source swap and real DAP cancellation, each requiring observed OS worker, durable exact job receipt and native OS-only cleanup if quarantined. Manual workflow: `.github/workflows/ide-wo8-protected-recovery.yml`, still unexecuted without approved signed WO7 candidate. [WO8 evidence ledger](docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md). Native Win/Linux installed CI and release acceptance still OPEN.
