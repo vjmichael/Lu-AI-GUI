@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from upstream_notice_receipt import SOURCES
 
 LICENSE_RE = re.compile(r"^(?:license|licence|copying|copyright|notice)(?:[._ -].*)?$", re.I)
 MAX_TEXT = 2_000_000
@@ -25,7 +26,7 @@ MAX_PACKAGES = 4000
 UPSTREAM = {
     "LLVM-18.1.8-LICENSE.txt": "llvmorg-18.1.8",
     "Python-3.10.11-LICENSE.txt": "v3.10.11",
-    "Tauri-LICENSE-MIT.txt": "tauri-2e23492ab9bcec06bab041e0e47447aaa0da298c",
+    "Tauri-LICENSE-MIT.txt": "tauri-v2.12.5",
     "Tauri-LICENSE-APACHE-2.0.txt": "tauri-2e23492ab9bcec06bab041e0e47447aaa0da298c",
     "CodeMirror-6-LICENSE-MIT.txt": "codemirror-view-6.0.0",
     "esbuild-0.25.9-LICENSE-MIT.txt": "esbuild-v0.25.9",
@@ -109,7 +110,7 @@ def cargo_packages(root):
         raise Denied("unbounded_cargo_inventory")
     return rows,[]
 
-def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False):
+def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, upstream_receipt=None):
     if not SHA40.fullmatch(source_sha):
         raise Denied("source_sha_missing")
     repo_root=repo_root.resolve(strict=True)
@@ -146,6 +147,38 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False):
             shutil.copyfile(path,target,follow_symlinks=False)
             copied.append({"path":target.relative_to(stage).as_posix(),
                            "sha256":digest(target),"sourceRevision":source})
+        retrieval = None
+        if upstream_receipt is not None:
+            receipt_path = Path(upstream_receipt)
+            if receipt_path.is_symlink() or not receipt_path.is_file() or receipt_path.stat().st_size > 50000:
+                raise Denied("invalid_upstream_fetch_receipt")
+            fetched = json.loads(receipt_path.read_text(encoding="utf-8"))
+            sources = fetched.get("sources", []) if isinstance(fetched, dict) else []
+            if (fetched.get("schema") != "lu.ide.upstream-notice-fetch.v1"
+                    or fetched.get("sourceSha") != source_sha
+                    or fetched.get("allSourcesRetrieved") is not True
+                    or fetched.get("releaseApproved") is not False
+                    or fetched.get("licenseLegalReviewApproved") is not False
+                    or not isinstance(sources, list)
+                    or len(sources) != len(UPSTREAM)
+                    or {row.get("name") for row in sources} != set(UPSTREAM)):
+                raise Denied("unverified_upstream_license_receipt")
+            verified = {row["name"]: row for row in sources}
+            for row in copied:
+                name = Path(row["path"]).name
+                item = verified[name]
+                source_rev, source_url = SOURCES[name]
+                if (item.get("sourceRevision") != source_rev
+                        or item.get("sourceUrl") != source_url
+                        or item.get("matchesUpstream") is not True
+                        or item.get("bundledSourceSha256") != row["sha256"]
+                        or not isinstance(item.get("sourceSha256"), str)
+                        or len(item["sourceSha256"]) != 64):
+                    raise Denied("unverified_upstream_notice_source:" + name)
+            target = stage / "upstream-fetch.json"
+            shutil.copyfile(receipt_path, target, follow_symlinks=False)
+            retrieval = {"path": "upstream-fetch.json", "sha256": digest(target),
+                         "sourceCount": len(UPSTREAM), "allSourcesRetrieved": True}
         results=[]
         for index,(manager,name,version,declared,folder) in enumerate(sorted_rows):
             files=files_for(folder)
@@ -185,6 +218,7 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False):
                 "sourceSha":source_sha,
                 "packageCount":len(results),
                 "upstreamLicenses":copied,
+                "upstreamRetrieval":retrieval,
                 "dependencyLocks":locks,
                 "resolvedPackages":results,
                 "unresolved":sorted(set(errors)),
@@ -212,9 +246,10 @@ def main():
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--source-sha",required=True)
     p.add_argument("--require-complete",action="store_true")
+    p.add_argument("--upstream-receipt",type=Path)
     a=p.parse_args()
     try:
-        report=bundle(a.repo_root,a.output,a.source_sha,a.require_complete)
+        report=bundle(a.repo_root,a.output,a.source_sha,a.require_complete,a.upstream_receipt)
     except (ValueError,TypeError,OSError) as exc:
         print("DENIED: "+(str(exc) if isinstance(exc,Denied) else "source_inventory_unavailable"),file=sys.stderr)
         return 1

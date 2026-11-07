@@ -43,7 +43,7 @@ def safe_file(root:Path,rel:str):
         raise Denied("notice_file_too_large")
     return candidate
 
-def audit(root:Path,source_sha:str,require_complete=False):
+def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False):
     if not SHA40.fullmatch(source_sha):
         raise Denied("exact_head_not_provided")
     if root.is_symlink():
@@ -55,6 +55,8 @@ def audit(root:Path,source_sha:str,require_complete=False):
             data.get("licenseLegalReviewApproved") is not False):
         raise Denied("untrusted_notice_inventory")
     rows,upstream=data.get("resolvedPackages"),data.get("upstreamLicenses")
+    if require_upstream and data.get("upstreamRetrieval") is None:
+        raise Denied("upstream_license_sources_not_retrieved")
     locks=data.get("dependencyLocks")
     pending=data.get("unresolved")
     if not isinstance(rows,list) or len(rows)>4000 or data.get("packageCount")!=len(rows):
@@ -62,6 +64,28 @@ def audit(root:Path,source_sha:str,require_complete=False):
     if not isinstance(upstream,list) or len(upstream)!=6 or not isinstance(pending,list):
         raise Denied("missing_upstream_or_unresolved_classification")
     expected={"inventory.json","README.txt"}
+    fetched=data.get("upstreamRetrieval")
+    if fetched is not None:
+        if (not isinstance(fetched, dict) or fetched.get("path") != "upstream-fetch.json"
+                or fetched.get("sourceCount") != 6 or fetched.get("allSourcesRetrieved") is not True):
+            raise Denied("invalid_upstream_license_receipt_ref")
+        receipt_path=safe_file(root, "upstream-fetch.json")
+        if sha(receipt_path)!=fetched.get("sha256"):
+            raise Denied("upstream_fetch_receipt_digest_drift")
+        proof=json.loads(receipt_path.read_text(encoding="utf-8"))
+        records=proof.get("sources", []) if isinstance(proof, dict) else []
+        if (proof.get("schema") != "lu.ide.upstream-notice-fetch.v1"
+                or proof.get("sourceSha") != source_sha
+                or proof.get("allSourcesRetrieved") is not True
+                or proof.get("releaseApproved") is not False
+                or not isinstance(records, list) or len(records) != 6):
+            raise Denied("untrusted_upstream_fetch_receipt")
+        compared={r.get("name"):r for r in records if isinstance(r, dict)}
+        if len(compared)!=6 or any(
+                compared.get(Path(row["path"]).name, {}).get("bundledSourceSha256") != row["sha256"]
+                for row in upstream):
+            raise Denied("upstream_fetch_notice_mismatch")
+        expected.add("upstream-fetch.json")
     def validate_mark(item,source):
         rel,digest=item.get("path"),item.get("sha256")
         if not isinstance(digest,str) or not SHA64.fullmatch(digest):
@@ -114,7 +138,7 @@ def audit(root:Path,source_sha:str,require_complete=False):
         raise Denied("falsely_classified_license_completeness")
     if require_complete and (pending or not rows):
         raise Denied("incomplete_resolved_dependency_license_inventory")
-    return {"sourceSha":source_sha,"packages":len(rows),
+    return {"sourceSha":source_sha,"upstreamRetrievalVerified":fetched is not None,"packages":len(rows),
             "notices":len(expected)-2,"unresolved":len(pending),
             "actualBytesVerified":True,"signedOrLegallyApproved":False}
 
@@ -125,9 +149,10 @@ def main():
     p.add_argument("--artifact",type=Path)
     p.add_argument("--receipt",type=Path)
     p.add_argument("--require-complete",action="store_true")
+    p.add_argument("--require-upstream",action="store_true")
     a=p.parse_args()
     try:
-        result=audit(a.license_root,a.source_sha,a.require_complete)
+        result=audit(a.license_root,a.source_sha,a.require_complete,a.require_upstream)
         if a.artifact:
             if a.artifact.is_symlink() or not a.artifact.is_file() or a.artifact.stat().st_size>1024*1024*1024:
                 raise Denied("built_installer_absent_or_linked")
