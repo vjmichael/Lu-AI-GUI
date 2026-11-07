@@ -647,8 +647,19 @@ mod windows_capture_worker {
             if let Some(frame)=local_image{
                 // Separate binary section, accepted ONLY by the host-owned
                 // image-mode parser. Never a TaskStore receipt or WebView.
+                // Name the OS-backed source mode in the *private* binary
+                // section. This is not an HWND, PID, monitor handle or title.
+                // The host only accepts the exact source kind it launched.
+                let source_kind=match (
+                    self.foreground_identity,self.primary_monitor_identity
+                ){
+                    (Some(_),None)=>"native-foreground-window-v1",
+                    (None,Some(_))=>"native-primary-monitor-v1",
+                    _=>return Err("Native local image source identity unavailable".into()),
+                };
                 let sha=format!("{:x}",sha2::Sha256::digest(&frame.bytes));
-                writeln!(output,"B\t{}\t{}\t{}",frame.width,frame.height,sha)?;
+                writeln!(output,"B\t{}\t{}\t{}\t{}",
+                    source_kind,frame.width,frame.height,sha)?;
                 output.write_all(&frame.bytes)?;
             }
             output.flush()?;
