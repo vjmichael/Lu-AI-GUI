@@ -1,0 +1,38 @@
+name: IDE WO7 signed NSIS preflight (default deny)
+on:
+  pull_request:
+    paths:
+      - 'ide/packaging/**'
+      - 'ide/docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md'
+      - '.github/workflows/ide-wo7-signed-release-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  signed-release-source-negative:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run hostile signed release preflight fixture tests
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_nsis_release.py' -v
+      - name: Assert current manifest cannot ship a debugger or service
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $result = & python ide/packaging/verify_wo7_nsis_release.py --artifact-root ide/packaging --source-sha $env:GITHUB_SHA 2>&1
+          if ($LASTEXITCODE -eq 0) { throw 'DENIED: unreviewed WO7 release unexpectedly authorized' }
+          if (($result | Out-String) -notmatch 'DENIED') { throw 'DENIED: missing fail-closed release error' }
+          Write-Host 'PASS: unsigned source CI and unapproved artifacts cannot satisfy WO7 release'
+      - name: Distinguish source checks from signed installed acceptance
+        run: echo "Source negative tests only. No Authenticode identity, real installed SCM, bundled LLDB or signed NSIS release accepted."
