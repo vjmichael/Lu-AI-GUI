@@ -4140,6 +4140,66 @@
           "automaticExecution"
         ]
       }
+    },
+    "bridge.status": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "paired": {
+            "type": "boolean"
+          },
+          "endpointVerified": {
+            "type": "boolean"
+          },
+          "peerAuthenticated": {
+            "type": "boolean"
+          },
+          "activeProject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connectionState": {
+            "type": "string",
+            "const": "not_connected"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "autonomousExecutionAllowed": {
+            "type": "boolean"
+          },
+          "defaultProjectDisclosure": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "paired",
+          "endpointVerified",
+          "peerAuthenticated",
+          "activeProject",
+          "connectionState",
+          "reasonCode",
+          "mode",
+          "autonomousExecutionAllowed",
+          "defaultProjectDisclosure"
+        ]
+      }
     }
   }
 }
