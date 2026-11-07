@@ -383,7 +383,7 @@ async fn ide_build_status(
             "ready":false,
             "code":"BUILD_PROTECTED_WORKER_NOT_INSTALLED",
             "description":"Default IDE does not ship an authorized native build/test runtime.",
-            "current":null, "recent":[], "quarantined":[]
+            "current":null, "recent":[], "journal":[], "quarantined":[]
         }))
     }
 }
