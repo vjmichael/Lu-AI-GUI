@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -272,6 +272,47 @@ try {
     Click 'main.rs'
     Require 'Source code editor'
     Require 'main.rs'
+    if ($Scenario -eq 'Wo9ProtectedGraph') {
+      # Signed-release-only test: the portable unsigned IDE must never launch.
+      $sign=Get-AuthenticodeSignature -LiteralPath $exe
+      if ($sign.Status -ne 'Valid' -or !$sign.SignerCertificate) {
+        Deny 'wo9_protected_graph_requires_signed_installed_candidate'
+      }
+      $service=VerifiedInstalledService
+      $beforeWorkers=ProtectedWorkerCount
+      Click 'Packages & workflows'
+      Require 'Multi-project release review'
+      $checkbox=Find-Control (Split-Path $fixed -Leaf) 'CheckBox' 25
+      if (!$checkbox.Current.IsEnabled) { Deny 'wo9_protected_project_disabled' }
+      $checkbox.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+      Click 'Inspect selected workflow'
+      Require 'Eligible for human source review'
+      Click 'Verify frozen Git and artifact evidence again'
+      Require 'Exact evidence matched'
+      Click 'Add dependent step'
+      Click 'Add dependent step'
+      Require 'Step 2'
+      Click 'Record exact dependency workflow'
+      Require 'Durable dependent build/test workflow'
+      if ((ProtectedWorkerCount) -ne $beforeWorkers) {
+        Deny 'wo9_graph_creation_launched_worker_automatically'
+      }
+      $runControls=Find-Control 'Request separately approved protected step' 'Button' 30
+      if (!$runControls.Current.IsEnabled) { Deny 'wo9_first_protected_step_unavailable' }
+      Click 'Request separately approved protected step'
+      Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+      [void](Find-Control 'Native step returned' '' 360)
+      Require 'passed'
+      $second=Find-Control 'Request separately approved protected step' 'Button' 30
+      if (!$second.Current.IsEnabled) { Deny 'wo9_dependent_protected_step_unavailable' }
+      Click 'Request separately approved protected step'
+      Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+      [void](Find-Control 'Native step returned' '' 360)
+      Require 'passed'
+      Require 'Auto-run: disabled'
+      Require 'Release approved: no'
+      Write-Host 'WO9_SIGNED_INSTALLED_TWO_STEP_PROTECTED_DEPENDENT_WORKFLOW=PASS'
+    }
     if ($Scenario -eq 'Wo9WorkflowPortfolio') {
       # Actual installed Tauri WebView, not the standalone frontend served in a
       # browser. The registered fixture must have a clean HEAD + one artifact.
