@@ -8,11 +8,15 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$LuSha256,
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$WorkerSha256,
   [switch]$InspectObserveUi,
-  [switch]$ExerciseObservationLifecycle
+  [switch]$ExerciseObservationLifecycle,
+  [switch]$ExerciseCaptureCancellation
 )
 $ErrorActionPreference='Stop'
 if($ExerciseObservationLifecycle -and -not $InspectObserveUi){
   throw 'Lifecycle acceptance requires explicit -InspectObserveUi opt-in'
+}
+if($ExerciseCaptureCancellation -and -not $ExerciseObservationLifecycle){
+  throw 'Capture worker reap trial requires explicit -ExerciseObservationLifecycle and -InspectObserveUi'
 }
 if($env:OS -ne 'Windows_NT'){throw 'Physical interactive Windows desktop required'}
 function Verify-Binary([string]$Path,[string]$Digest) {
@@ -31,7 +35,7 @@ if([IO.Path]::GetFileName($app) -ne 'Lu.exe'){
 }
 $worker=Verify-Binary (Join-Path (Split-Path -Parent $app) 'lu-observe-capture-worker.exe') $WorkerSha256
 $record=[ordered]@{
-  schema='Lu-P06-installed-evidence-v1'
+  schema='Lu-P06-installed-evidence-v2'
   observedAtUtc=[DateTime]::UtcNow.ToString('o')
   appSha256=$LuSha256.ToLowerInvariant()
   workerSha256=$WorkerSha256.ToLowerInvariant()
@@ -39,6 +43,7 @@ $record=[ordered]@{
   nativeWindowLaunched='INCONCLUSIVE'
   observeOffByDefault='NOT_TESTED'
   observeUiLifecycle='NOT_TESTED'
+  captureWorkerOsReap='NOT_TESTED'
   wgcPickerAndCancellation='NOT_TESTED'
   foregroundOsSourceInstance='NOT_TESTED'
   sensitiveRegionRedaction='NOT_TESTED'
@@ -107,6 +112,27 @@ try {
         }while([DateTime]::UtcNow -lt $deadline)
         return $false
       }
+      # For this optional physical Windows trial, the independent Win32
+      # process table (not a renderer "worker ready" hint) establishes that
+      # an EXACT installed hash-reviewed WGC worker was started by Lu.
+      # No screenshot, window title, raw process arguments or frame pixel is
+      # placed into this evidence receipt.
+      function Get-OwnedCaptureWorkerPids {
+        $found=@()
+        $entries=@(Get-CimInstance -ClassName Win32_Process -Filter "Name='lu-observe-capture-worker.exe'" -ErrorAction Stop)
+        foreach($entry in $entries){
+          if([int64]$entry.ParentProcessId -ne [int64]$child.Id){continue}
+          if([string]::IsNullOrWhiteSpace($entry.ExecutablePath)){
+            throw 'OS cannot identify the native child image; no worker provenance accepted'
+          }
+          $actualPath=[IO.Path]::GetFullPath([string]$entry.ExecutablePath)
+          if($actualPath -ine [IO.Path]::GetFullPath($worker)){
+            throw 'Unreviewed WGC child process image; native worker identity mismatch'
+          }
+          $found+=([int64]$entry.ProcessId)
+        }
+        return $found
+      }
       # Explicit interactive operator approval is still required in the
       # native Lu consent modal. The harness does NOT approve or dismiss it.
       if(-not (Press-ObservedButton 'Start observing Lu')){
@@ -123,9 +149,44 @@ try {
           -not (Await-ObservedButton 'Stop observation' 8)){
           throw 'Actual installed Observe UI did not resume'
         }
+        $captureObserved=$false
+        if($ExerciseCaptureCancellation){
+          if(@(Get-OwnedCaptureWorkerPids).Count -ne 0){
+            throw 'Capture worker was already running before the operator test'
+          }
+          # This invokes only the real Lu UI action; the distinct Lu-native
+          # warning must be approved by the human, then leave the Windows
+          # picker OPEN for the Stop/reap trial. Never automate approval.
+          Write-Output 'Operator trial: approve native capture warning manually and leave Windows picker open.'
+          if(-not (Press-ObservedButton 'Select window/display · capture one frame')){
+            throw 'Installed Lu did not expose the native OS-picker request control'
+          }
+          $workerDeadline=[DateTime]::UtcNow.AddSeconds(60)
+          do{
+            if(@(Get-OwnedCaptureWorkerPids).Count -gt 0){$captureObserved=$true;break}
+            Start-Sleep -Milliseconds 300
+          }while([DateTime]::UtcNow -lt $workerDeadline)
+          if(-not $captureObserved){
+            $record.captureWorkerOsReap='INCONCLUSIVE_NO_NATIVE_CHILD_OBSERVED'
+          }else{
+            $record.captureWorkerOsReap='PENDING_NATIVE_STOP'
+          }
+        }
         if(-not (Press-ObservedButton 'Stop observation') -or
           -not (Await-ObservedButton 'Start observing Lu' 8)){
           throw 'Actual installed Observe UI did not return to OFF'
+        }
+        if($ExerciseCaptureCancellation -and $captureObserved){
+          $reapDeadline=[DateTime]::UtcNow.AddSeconds(15)
+          do{
+            if(@(Get-OwnedCaptureWorkerPids).Count -eq 0){break}
+            Start-Sleep -Milliseconds 250
+          }while([DateTime]::UtcNow -lt $reapDeadline)
+          if(@(Get-OwnedCaptureWorkerPids).Count -gt 0){
+            $record.captureWorkerOsReap='FAIL_WORKER_SURVIVED_NATIVE_STOP'
+            throw 'Native WGC process survived Stop: no cancellation success or Guardian release accepted'
+          }
+          $record.captureWorkerOsReap='PASS_OS_CHILD_REAP_ONLY'
         }
         $record.observeUiLifecycle='PASS_UIA_VISIBLE_LIFECYCLE_ONLY'
       }
@@ -147,5 +208,5 @@ try {
     'lu-p06-installed-'+[Guid]::NewGuid().ToString('N')+'.json')
   ($record|ConvertTo-Json -Depth 6)|Set-Content -LiteralPath $evidence -Encoding UTF8 -NoNewline
   Write-Output "P06 native installed smoke receipt: $evidence"
-  Write-Output 'OS app/window verification is not WGC, redaction, GUI test or NSIS acceptance.'
+  Write-Output 'OS app/window and optional WGC child reaping do not prove picker selection, sensitive-region redaction, GUI test or NSIS acceptance.'
 }

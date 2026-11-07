@@ -54,7 +54,10 @@ test('P06 capture receipts never imply verified visual interpretation or retaine
   assert.match(host,/p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker/);  assert.match(host,/release_guardian_when_reaped/);
   assert.match(host,/capture_processes\.poll\(\)\s*\.map_err\(/);
   assert.doesNotMatch(host,/let _=self\.capture_processes\.poll\(\)/);
-  assert.match(host,/let receipt_ready=terminal&&sha\.is_some\(\)/);
+  assert.match(host,/let receipt_ready=verified_reaped_frame_receipt\(/);
+  assert.match(host,/let worker_reaped=!self\.capture_processes\.can_cancel\(&task_id\)/);
+  assert.match(host,/frame_sha256:if receipt_ready\{sha\}else\{None\}/);
+  assert.match(host,/p06_capture_receipt_requires_supervised_os_reap_before_evidence/);
   assert.match(host,/fully_redacted_receipt:receipt_ready/);
   assert.match(host,/pixels_retained:false/);
   assert.match(host,/visual_interpretation_verified:false/);
@@ -89,4 +92,17 @@ test('P06 denied Windows WGC child is never misreported as workflow failure',()=
   const legacy=read('../../.github/workflows/lu-v1-observe-learn.yml');
   assert.match(focused,/if\(\$LASTEXITCODE -ne 1\)\{throw 'Native WGC worker failed closedness check'\}[\s\S]*?exit 0/);
   assert.match(legacy,/throw 'Capture worker did not reject unauthorized invocation without pixel output'[\s\S]*?exit 0/);
+});
+
+test('P06 physical Windows child-process evidence is opt-in and cannot claim WGC UI or redaction',()=>{
+  const script=read('../../scripts/verify-observe-installed-windows.ps1');
+  assert.match(script,/\[switch\]\$ExerciseCaptureCancellation/);
+  assert.match(script,/Get-CimInstance -ClassName Win32_Process/);
+  assert.match(script,/ParentProcessId/);
+  assert.match(script,/ExecutablePath/);
+  assert.match(script,/captureWorkerOsReap='PASS_OS_CHILD_REAP_ONLY'/);
+  assert.match(script,/wgcPickerAndCancellation='NOT_TESTED'/);
+  assert.match(script,/sensitiveRegionRedaction='NOT_TESTED'/);
+  assert.match(script,/visionOrGuiTestAcceptance='NOT_TESTED'/);
+  assert.doesNotMatch(script,/Press-ObservedButton 'Approve'/);
 });

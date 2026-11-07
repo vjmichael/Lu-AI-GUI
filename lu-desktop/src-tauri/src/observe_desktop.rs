@@ -91,6 +91,11 @@ pub(crate) struct ObserveHost {
     capture_processes:Arc<BackgroundProcessSupervisor>,
     epoch:Instant,
 }
+/// Even a terminal task row with a matching digest must not be published as
+/// capture evidence until the OS supervisor has reaped its native worker.
+fn verified_reaped_frame_receipt(worker_reaped:bool,terminal:bool,digest_valid:bool)->bool{
+    worker_reaped&&terminal&&digest_valid
+}
 fn format_error(e:ObserveError)->String{format!("Observe session refused: {e:?}")}
 impl ObserveHost {
     pub(crate) fn new(task_store:Arc<TaskStore>,capture_processes:Arc<BackgroundProcessSupervisor>)->Self{
@@ -410,16 +415,21 @@ impl ObserveHost {
             .map(str::to_owned);
         // Evaluate receipt flags before moving sha into the returned view.
         // Completed capture + validated receipt, not visible image evidence.
-        let receipt_ready=terminal&&sha.is_some();
+        // A task row alone cannot establish receipt provenance: a process
+        // still owned by the supervisor might not have terminated or
+        // released its OS capture resources. Fail closed until reaped.
+        let worker_reaped=!self.capture_processes.can_cancel(&task_id);
+        let receipt_ready=verified_reaped_frame_receipt(
+            worker_reaped,terminal,sha.is_some());
         let source_attested=receipt_ready&&current.capture_foreground;
-        if !self.capture_processes.can_cancel(&task_id){
+        if worker_reaped{
             current.capture_guardian.take();
         }
         Ok(Some(ObserveCaptureReceiptView{
             capture_task_id:task_id.into(),
             state:row.state.as_str().into(),
             image_received:receipt_ready,
-            frame_sha256:if terminal{sha}else{None},
+            frame_sha256:if receipt_ready{sha}else{None},
             source_identity_attested:source_attested,
             pixels_retained:false,
             // The pinned P06 worker suppresses the entire BGRA frame in
@@ -693,6 +703,14 @@ mod tests{
         // OS user consent through the same native dialog as any new Observe.
         host.start("c-main","obs-after-recovery".into()).unwrap();
         host.stop("c-main").unwrap();
+    }
+    #[test]
+    fn p06_capture_receipt_requires_supervised_os_reap_before_evidence(){
+        assert!(!verified_reaped_frame_receipt(false,true,true));
+        assert!(!verified_reaped_frame_receipt(true,false,true));
+        assert!(!verified_reaped_frame_receipt(true,true,false));
+        assert!(!verified_reaped_frame_receipt(false,false,false));
+        assert!(verified_reaped_frame_receipt(true,true,true));
     }
     #[test]
     fn p06_rejected_capture_plan_drops_guardian_reservation_without_spawning_worker(){
