@@ -91,7 +91,7 @@ pub(crate) fn pick_reader_verified(
     // or resolve the original OS path again for a model turn.
     let after=input.metadata().map_err(|_|"Selected Reader file changed")?;
     if after.len()!=meta.len() || after.modified().ok()!=meta.modified().ok(){
-        return Err("Reader source changed during native selection")
+        return Err("Reader source changed during native selection".into())
     }
     let stamp=after.modified().ok()
         .and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok())
