@@ -180,6 +180,60 @@ fn metadata() -> Vec<CapabilityMeta> {
             "up to 30 local commit IDs, summaries and times; no remote assertion"
         ),
         capability!(
+            "git.reviewOne",
+            "ide_git_review_file",
+            "Review one exact tracked Git file",
+            "Native libgit2 and registered project capability validate a tracked regular file, SHA and index before staging.",
+            "read",
+            "active native registered project; only tracked regular source; no hooks/network",
+            "file SHA256, index fingerprint and local HEAD; no Git writes"
+        ),
+        capability!(
+            "git.stageOne",
+            "ide_git_stage_reviewed",
+            "Stage one reviewed Git file",
+            "After separate OS confirmation, stage the exact in-memory reviewed bytes with libgit2; never run hooks or push.",
+            "file_write",
+            "prior exact review, unchanged source SHA/HEAD/index and native OS one-use consent",
+            "pinned Git index entry and blob SHA; no process launched"
+        ),
+        capability!(
+            "git.commitOne",
+            "ide_git_commit_reviewed",
+            "Commit one reviewed staged Git file",
+            "After separate OS confirmation, create a local commit and conditionally update unchanged branch reference; never run hooks or push.",
+            "file_write",
+            "exact staged receipt, unchanged HEAD and index, reviewed message and identity, native consent",
+            "new local commit SHA; remote unchanged and no installer approval"
+        ),
+        capability!(
+            "workflow.create",
+            "ide_workflow_create",
+            "Create durable dependent build/test graph",
+            "Persist finite recipe dependencies from an exact local Git/artifact workflow fingerprint; no process or authorization.",
+            "catalog_write",
+            "registered active projects, fresh exact fingerprint, earlier-step-only dependencies and fixed recipes",
+            "fsynced native workflow ID and pending steps; auto execution forbidden"
+        ),
+        capability!(
+            "workflow.listRuns",
+            "ide_workflow_list_runs",
+            "Read durable workflow state",
+            "Read bounded projects/steps and native supervisor job receipts from a private journal; interrupted steps remain quarantined.",
+            "read",
+            "local native app profile available",
+            "actual durable states, not independently installed release proof"
+        ),
+        capability!(
+            "workflow.cancelPending",
+            "ide_workflow_cancel_pending",
+            "Cancel a not-started workflow step",
+            "Persist pending-step cancellation and prevent dependents; executing OS jobs must use protected supervisor cancel instead.",
+            "catalog_write",
+            "exact workflow and pending step; no process to kill",
+            "fsynced cancelled pending state, no worker started"
+        ),
+        capability!(
             "workflow.preview",
             "ide_workflow_preview",
             "Inspect registered multi-project workflow",
@@ -453,8 +507,8 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 35);
-        assert!(catalog.capabilities.len() <= 40);
+        assert_eq!(catalog.capabilities.len(), 41);
+        assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
         for item in &catalog.capabilities {
