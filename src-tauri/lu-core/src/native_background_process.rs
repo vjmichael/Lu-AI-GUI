@@ -103,8 +103,11 @@ fn read_worker_progress(
         for _ in 0..128{
             let mut byte=[0u8;1];
             match input.read(&mut byte){
-                Ok(0)=>return if allow_local_image
-                    &&final_result.as_ref().is_some_and(|p:&ScanProof|p.frame.is_none()){
+                Ok(0)=>return if !line.is_empty()
+                    ||(allow_local_image
+                        &&final_result.as_ref().is_some_and(|p:&ScanProof|p.frame.is_none())){
+                    // A partial trailing line after a complete binary frame
+                    // is never a valid extension of the reviewed protocol.
                     None
                 }else{final_result},
                 Err(_)=>return None,
@@ -512,6 +515,54 @@ mod tests{
         // binary payload MUST be rejected.
         assert!(read_worker_progress(Cursor::new(message),&store,
             "obs-frame-1",false).is_none());
+    }
+    #[test]
+    fn os_owned_image_pipe_enters_real_png_admission_and_remains_off_network(){
+        use std::io::Cursor;
+        use crate::native_observe_image_admission::admit_wgc_frame_locally;
+        use crate::native_observe_egress::{DataProvenance,Destination};
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("obs-frame-2",Some("c-native"),None).unwrap();
+        store.start("obs-frame-2").unwrap();
+        let bgra=vec![1u8,2,3,255,4,5,6,255];
+        let hash=format!("{:x}",Sha256::digest(&bgra));
+        let digest="b".repeat(64);
+        let mut packet=format!("P\t1\t1\nD\t{digest}\nB\t2\t1\t{hash}\n").into_bytes();
+        packet.extend_from_slice(&bgra);
+        let scanned=read_worker_progress(Cursor::new(packet),&store,
+            "obs-frame-2",true).unwrap();
+        let frame=scanned.frame.unwrap();
+        let admitted=admit_wgc_frame_locally(
+            &frame.bytes,frame.width,frame.height,frame.row_pitch,true
+        ).unwrap();
+        assert_eq!(admitted.provenance,DataProvenance::OBSERVE_LEARN);
+        assert!(admitted.pinned.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(admitted.provenance.gate(Destination::LocalInference).is_ok());
+        assert!(admitted.provenance.gate(Destination::NetworkSocket).is_err());
+        assert!(admitted.provenance.gate(Destination::RemoteModel).is_err());
+        let sqlite=store.get("obs-frame-2").unwrap().unwrap();
+        assert_eq!(sqlite.detail,format!("SHA-256: {digest}"));
+        assert!(!sqlite.detail.contains(&hash));
+    }
+    #[test]
+    fn malformed_or_truncated_observed_pixels_never_produce_image_proof(){
+        use std::io::Cursor;
+        let bgra=vec![1u8,2,3,255];
+        let hash=format!("{:x}",Sha256::digest(&bgra));
+        let digest="c".repeat(64);
+        let mut valid=format!("P\t1\t1\nD\t{digest}\nB\t1\t1\t{hash}\n").into_bytes();
+        valid.extend_from_slice(&bgra);
+        let mut wrong=valid.clone();
+        *wrong.last_mut().unwrap()^=1;
+        let truncated=valid[..valid.len()-1].to_vec();
+        let mut extra=valid.clone();extra.push(b'X');
+        for (i,packet) in [wrong,truncated,extra].into_iter().enumerate(){
+            let id=format!("obs-bad-{i}");
+            let store=TaskStore::open(Path::new(":memory:")).unwrap();
+            store.create(&id,Some("c-native"),None).unwrap();
+            store.start(&id).unwrap();
+            assert!(read_worker_progress(Cursor::new(packet),&store,&id,true).is_none());
+        }
     }
     #[test]
     fn unreviewed_executable_never_creates_a_job(){

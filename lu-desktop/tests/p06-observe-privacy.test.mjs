@@ -415,3 +415,16 @@ test('P06 real local WGC image is bound to OS worker, one chat and local GGUF on
   assert.match(ui,/setImages\(prev=>prev\.some/);
   assert.doesNotMatch(host,/open_external_observed_frame/);
 });
+
+test('P06 end-to-end local native WGC protocol accepts PNG only after hash and EOF verification',()=>{
+  const supervisor=read('../../src-tauri/lu-core/src/native_background_process.rs');
+  const ci=read('../../.github/workflows/lu-p06-observe-privacy.yml');
+  assert.match(supervisor,/os_owned_image_pipe_enters_real_png_admission_and_remains_off_network/);
+  assert.match(supervisor,/malformed_or_truncated_observed_pixels_never_produce_image_proof/);
+  assert.match(supervisor,/if !line\.is_empty\(\)/);
+  assert.match(supervisor,/admit_wgc_frame_locally\(/);
+  assert.match(supervisor,/Destination::RemoteModel/);
+  assert.match(supervisor,/!sqlite\.detail\.contains\(&hash\)/);
+  assert.match(ci,/os_owned_image_pipe_enters_real_png_admission_and_remains_off_network/);
+  assert.match(ci,/malformed_or_truncated_observed_pixels_never_produce_image_proof/);
+});

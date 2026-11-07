@@ -57,6 +57,10 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p06_ -- --nocapture
       - name: Test baseline chat-scoped durable note authority
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - name: Test end-to-end in-memory WGC protocol to admitted local GGUF image
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib os_owned_image_pipe_enters_real_png_admission_and_remains_off_network -- --nocapture
+      - name: Reject corrupt or truncated local WGC binary frames
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib malformed_or_truncated_observed_pixels_never_produce_image_proof -- --nocapture
       - name: Test private in-memory binary WGC worker transport
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite -- --nocapture
       - name: Test native local WGC to admitted PNG image and non-network provenance
