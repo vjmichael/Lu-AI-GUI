@@ -37,6 +37,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Parse real Windows UI acceptance fixture without executing it
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: native acceptance fixture has invalid PowerShell: $($errors[0])" }
       - name: Install and interact with actual native WebView and OS picker
         shell: pwsh
         run: |
@@ -65,10 +71,14 @@ jobs:
             [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),"fn main() { println!(`"wo8`"); }`n")
             $sourcePath=Join-Path $fixture 'main.rs'
             $originalSourceHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
-            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario ProjectReadOnly -FixtureRoot $fixture
-            if (!$?) { throw 'DENIED: OS UI Automation project test failed' }
-            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $originalSourceHash) {
-              throw 'DENIED: opening source in installed IDE modified disk without approval'
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario EditorPersistence -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: native UI editor review/save failed' }
+            $newSourceHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
+            if ($newSourceHash -eq $originalSourceHash) { throw 'DENIED: explicit save did not change fixture source' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario PersistedRestart -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: native project restart/persistence failed' }
+            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
+              throw 'DENIED: reopened fixture source unexpectedly mutated'
             }
             $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
             if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
