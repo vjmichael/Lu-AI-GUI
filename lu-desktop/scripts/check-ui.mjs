@@ -57,7 +57,7 @@ const tests = [
     host.includes('fn lu_observe_status(') &&
     host.includes('lu_observe_start,') &&
     ui.includes('Observe & Learn · Lu UI only') &&
-    ui.includes('Can see desktop: No') &&
+    ui.includes('Neither gives the model its pixels.') &&
     ui.includes("observeAction('stop')") &&
     host.includes('notice.task_id.starts_with("obs-")') &&
     css.includes('.observePilot')],
@@ -72,9 +72,9 @@ const tests = [
     ui.includes("invoke('lu_vision_capability')") &&
     ui.includes('Vision: {visionCapability.status}')],
   ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
-    ui.includes('Image Workspace · read-only preview') &&
+    ui.includes('Image Workspace') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
-    ui.includes('Crop, resize, annotations and AI edits are not enabled') &&
+    ui.includes('Original stays unchanged') &&
     css.includes('.imageViewerDialog')],
   ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
     host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&

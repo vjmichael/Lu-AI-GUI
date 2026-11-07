@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8357dfd0c23caa79ee6a85ecc83b75a33773f06a",
+  "sourceCommitBeforeLock": "7d94d70b83b72671712122270c01d5e1c5c79724",
   "trackedFileCount": 474,
   "files": [
     {
@@ -293,7 +293,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "fa05f2b6542828b39c8af0bb253d83358dfb551f"
+      "blob": "3294b867384e32a8936eb43defc60f60425d2574"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -529,7 +529,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-visibility-settings.test.mjs",
-      "blob": "467220addf4184fc64f94d41974c02efb943264b"
+      "blob": "703405961b97077ab8ae68a9f230b988bd11a5e0"
     },
     {
       "path": "lu-desktop/tests/image-edit-intent.test.mjs",
