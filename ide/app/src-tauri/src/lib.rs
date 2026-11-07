@@ -123,6 +123,26 @@ async fn ide_workflow_export_manifest(
     }).await.map_err(|_| "WORKFLOW_EXPORT_HOST_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// WO9-C: real portable ZIP of independently hashed predetermined project
+/// artifacts only. Native OS folder chooser supplies the destination;
+/// WebView cannot submit filesystem paths, commands, Git write or release flags.
+#[tauri::command]
+async fn ide_workflow_export_bundle(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_ids: Vec<String>,
+    expected_fingerprint: String,
+) -> Result<lu_ide_workspace::advanced_workflows::WorkflowBundleExport, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = NativePicker(app).choose_project_directory()
+            .map_err(|_| "WORKFLOW_BUNDLE_PICKER_UNAVAILABLE")?
+            .ok_or("WORKFLOW_BUNDLE_CANCELLED")?;
+        registry.export_workflow_bundle(&project_ids, &expected_fingerprint, &selected)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "WORKFLOW_BUNDLE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Read file metadata and bounded SHA-256 under an active registered project.
 /// The result NEVER proves an executable is safe or operable.
 #[tauri::command]
@@ -1052,6 +1072,7 @@ pub fn run() {
             ide_workflow_preview,
             ide_workflow_verify,
             ide_workflow_export_manifest,
+            ide_workflow_export_bundle,
             ide_list_projects,
             ide_choose_project,
             ide_open_project,
