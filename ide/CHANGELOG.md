@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **WO7-A signed NSIS source preflight started (2026-11-06 local):** new stacked branch `ide/wo7-signed-nsis-release-20261106`, protected Windows installer/service SHA and signer validation, exact SHA review records, default-deny manifest and hostile cross-OS tests/workflow. No binary signed or staged; upstream WO6 native DAP, final third-party license inventory and protected installed application remain OPEN. [WO7 ledger](docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md).
+
+
 - Started WO4 Linux delegated containment (Nov 6–7, 2026): new stacked draft PR #68 and [dedicated ledger](docs/IDE_WORK_ORDER_04_LINUX_DELEGATION_20261106.md). Linux worker requires a pre-provisioned empty cgroup-v2 parent with host in separate `lu-ide-host` leaf, enabled CPU/memory/PID controllers, exact empty kernel `populated 0` evidence, and fail-closed cleanup semantics. The standalone probe now tests the same delegation contract. Prior native Windows WO1–3 acceptance remains unchanged. **Seven work orders remain (WO4–WO10).** WO4 Linux native delegated execution acceptance pending.
 
 
