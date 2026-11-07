@@ -334,6 +334,28 @@ async fn ide_debug_cancel(
     }
 }
 
+#[tauri::command]
+async fn ide_debug_reconcile(
+    app: AppHandle,
+    project_id: String,
+    job_id: String,
+) -> Result<String, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        let backend = app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEBUG_PROTECTED_HOST_UNAVAILABLE")?;
+        let backend = Arc::clone(backend.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            backend.reconcile(&app, &project_id, &job_id).map(str::to_owned)
+        }).await.map_err(|_| "DEBUG_RECOVERY_TASK_UNAVAILABLE")?;
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, project_id, job_id);
+        Err("DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED".into())
+    }
+}
+
 // WO6 native protected Cargo: explicit feature-only host authority.
 // The default desktop exposes read-only "unavailable" status; none of these
 // commands can run an unpinned executable, accept a path, grant token, source
@@ -968,6 +990,7 @@ pub fn run() {
             ide_debug_status,
             ide_debug_run_fixture,
             ide_debug_cancel,
+            ide_debug_reconcile,
             ide_read_project_context,
             ide_record_task_update,
             ide_observe_task_ci,
