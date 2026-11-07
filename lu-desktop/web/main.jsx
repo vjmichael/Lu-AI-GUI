@@ -4688,6 +4688,16 @@ function App() {
                   <small>Crossref metadata response SHA-256:
                     {' '}{researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}</small>
                   <small>{researchCitationsByChat[chatId+'|'+l.sourceId].message}</small>
+                  <details>
+                    <summary>CSL-JSON-compatible source record · evidence limitations included</summary>
+                    <pre>{JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)}</pre>
+                    <button type="button"
+                      onClick={()=>void navigator.clipboard.writeText(
+                        JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)
+                      ).catch(e=>setResearchError(String(e)))}>
+                      Copy reviewed CSL JSON
+                    </button>
+                  </details>
                   <small>Bibliographic identity matched; publication particulars, quotations,
                     pages, and interpretations remain unverified. This is a preview,
                     not a final scholarly citation.</small>
