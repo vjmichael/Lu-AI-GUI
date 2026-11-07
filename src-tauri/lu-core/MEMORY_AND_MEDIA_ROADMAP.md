@@ -19,7 +19,7 @@
 
 ## November 7, 2026 — human-centered, memory-first Lu operating philosophy
 
-**New owner priority:** Before expanding general model-directed application/process execution, establish operationally usable, source-grounded memory, a persistent user-goal/clarification loop and verified reusable procedures. See the canonical [human-centered AI/memory philosophy](../../../docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md) and [execution framework](../../../docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md).
+**New owner priority:** Before expanding general model-directed application/process execution, establish operationally usable, source-grounded memory, a persistent user-goal/clarification loop and verified reusable procedures. See the canonical [human-centered AI/memory philosophy](../../docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md) and [execution framework](../../docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md).
 
 The user is not merely a prompt source. Lu must help users of differing expertise articulate and refine goals, ask material clarifying questions without repeatedly interrogating them, preserve answers and changes of intent, and adapt technical explanations to the need—not infer users' intelligence. User intent, model knowledge, real interfaces, task-scoped host authority, independent feedback and selectively retrieved memory form the working loop.
 
