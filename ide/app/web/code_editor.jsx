@@ -81,6 +81,10 @@ export function createEditorState(text, filename, onChange) {
       oneDark,
       lspDiagnosticField,
       EditorView.lineWrapping,
+      // Native WebView accessibility: expose the actual editable surface to
+      // keyboard and screen-reader users and black-box installed OS tests.
+      EditorView.contentAttributes.of({ 'aria-label': 'Source editor text',
+        'aria-multiline': 'true', role: 'textbox' }),
       EditorView.theme({
         '&': { height: '100%', fontSize: '13px' },
         '.cm-scroller': { fontFamily: 'Consolas, "Cascadia Code", ui-monospace, monospace' },
