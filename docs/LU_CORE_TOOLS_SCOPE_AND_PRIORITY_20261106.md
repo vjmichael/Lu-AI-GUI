@@ -1,3 +1,7 @@
+## 2026-11-07 binding AI Execution Layer conceptual model — supersedes tool-type assumptions
+
+**Practical AI Capability = f(K, I, A, F)**, where K = model knowledge/reasoning; I = actual execution interfaces; A = human/host-authorized access (distinct from OS permission); F = feedback, verification and recovery. The source of truth is the [Canonical AI Execution Layer philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md) and [P01–P12 tool review](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md). **Exactly three capability classifications: Foundational, Utility, Specialist.** P01–P12 may span classes; their labels are no longer a reason to create a domain micro-app. Preserve bounded existing tools, operate external specialist apps when approved, and evaluate the missing general execution interface and independent result checks before authorizing new code. This is a documentation-only audit. P12 remains not authorized.
+
 ## Owner progression to P11 — November 7, 2026
 
 P10 basic image tool source and Linux native acceptance progressed; installed Windows/Linux image editing remains separately OPEN. P11 GIT-CORE-01 is now authorized as a bounded audit/hardening of host-selected, read-only Git executable inspection. Under the [AI-first external software policy](LU_AI_TOOL_DESIGN_PRINCIPLES_20261107.md), do **not** create a Git client, allow arbitrary model Git command execution, or duplicate Lu IDE. [P11 ledger](LU_P11_GIT_CORE.md).
