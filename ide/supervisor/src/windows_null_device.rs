@@ -327,7 +327,6 @@ impl ServiceNullLease {
     }
 }
 
-
 #[cfg(feature = "protected-recovery-service")]
 fn derive_job_sid(job_id: &str) -> Result<DerivedPackageSid, SupervisorError> {
     if job_id.len() != 36
@@ -340,7 +339,8 @@ fn derive_job_sid(job_id: &str) -> Result<DerivedPackageSid, SupervisorError> {
     let mut sid = ptr::null_mut();
     let status = unsafe {
         windows_sys::Win32::Security::Isolation::DeriveAppContainerSidFromAppContainerName(
-            wide(&name).as_ptr(), &mut sid,
+            wide(&name).as_ptr(),
+            &mut sid,
         )
     };
     if status < 0 || sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
@@ -408,7 +408,8 @@ fn exact_service_sid_ace(acl: *mut ACL, sid: PSID) -> Result<Option<u32>, Superv
             size_of::<ACL_SIZE_INFORMATION>() as u32,
             AclSizeInformation,
         )
-    } == 0 {
+    } == 0
+    {
         return Err(denied());
     }
     let mut found: Option<u32> = None;
