@@ -33,6 +33,14 @@ class OriginalCrateNotices(unittest.TestCase):
                 self.assertEqual(git_blob_sha(text),R_EFI_AUTHOR_GIT_BLOBS[version])
                 self.assertEqual(verified_r_efi_authors("cargo","r-efi",version,
                     R_EFI_LICENSE,self.crate,self.repo).name,"AUTHORS")
+    def test_checkout_preserves_exact_tag_bytes_on_native_windows_and_linux(self):
+        attrs=(ROOT/".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("ide/packaging/upstream-crate-notices/*.txt text eol=lf",attrs)
+        for version in R_EFI_AUTHOR_GIT_BLOBS:
+            notice=(ROOT/"ide/packaging/upstream-crate-notices"/
+                    ("r-efi-"+version+"-AUTHORS.txt")).read_bytes()
+            self.assertNotIn(b"\r",notice)
+            self.assertEqual(git_blob_sha(notice),R_EFI_AUTHOR_GIT_BLOBS[version])
     def test_changed_upstream_original_is_denied(self):
         self.copy_released_notice("6.0.0")
         (self.crate/"AUTHORS").write_text("MIT license maybe")

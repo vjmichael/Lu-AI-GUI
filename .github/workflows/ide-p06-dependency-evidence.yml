@@ -91,6 +91,16 @@ jobs:
           set -euo pipefail
           python ide/packaging/verify_tauri_minor.py --repo-root .
           python -m unittest discover -s ide/packaging -p 'test_verify_p06_dependency_graph.py' -v
+      - name: Verify native working-copy original license bytes are exact upstream Git blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for rev in 5.3.0 6.0.0; do
+            p="ide/packaging/upstream-crate-notices/r-efi-${rev}-AUTHORS.txt"
+            test "$(git hash-object --no-filters "$p")" = "$(git rev-parse "HEAD:$p")"
+            test "$(git hash-object "$p")" = "$(git rev-parse "HEAD:$p")"
+          done
+          python -m unittest discover -s ide/packaging -p 'test_p06_r_efi_authors.py' -v
       - name: Fetch original six pinned upstream licenses and resolved npm/Cargo texts
         shell: bash
         env:
