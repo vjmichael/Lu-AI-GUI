@@ -2831,6 +2831,21 @@ fn lu_research_sbl_scripture_locator(
     ).map_err(|e|format!("Unrecognized or incomplete SBL Scripture locator: {e:?}"))
 }
 
+/// A deterministic edition reference lookup; scholarly book and ISBN
+/// metadata from a fixed publisher-identified record, but no invented
+/// Greek/Hebrew reading, translation or manuscript witness.
+#[tauri::command]
+fn lu_research_sbl_critical_edition_locator(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,edition_id:String,
+    book:String,chapter:u16,first_verse:u16,last_verse:Option<u16>
+)->Result<lu_core::web_research_styles::SblCriticalEditionReference,String>{
+    state.chats.history(&chat_id)
+        .map_err(|_|"Choose an existing Research conversation")?;
+    lu_core::web_research_styles::format_sbl_critical_edition_locator(
+        &edition_id,&book,chapter,first_verse,last_verse
+    ).map_err(|e|format!("Unknown or inconsistent critical edition reference: {e:?}"))
+}
+
 /// Render all previously pinned, chat-owned Crossref sources OFFLINE.
 /// Incomplete source data fails the entire preview, without silently
 /// dropping entries or generating model-provided references.
@@ -6642,6 +6657,7 @@ pub fn run() {
             lu_research_bibliography_preview,
             lu_research_bibliography_export,
             lu_research_sbl_scripture_locator,
+            lu_research_sbl_critical_edition_locator,
             lu_research_retrieve_document,
             lu_research_cancel_document,
             lu_research_verify_document_passage,
