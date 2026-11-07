@@ -166,7 +166,7 @@ mod tests{
     use super::*;
     #[test] fn denies_query_injection_and_unsafe_repo(){
         assert_eq!(search_url("qwen 3").unwrap(),
-            "https://huggingface.co/api/models?search=qwen%203&limit=12&full=true&cardData=true&cardData=true");
+            "https://huggingface.co/api/models?search=qwen%203&limit=12&full=true&cardData=true");
         for q in ["","x&private=true","../secret","x#fragment","üñicode"]{
             assert!(search_url(q).is_err());
         }
