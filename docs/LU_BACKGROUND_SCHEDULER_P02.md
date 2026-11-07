@@ -9,6 +9,23 @@
 - Narrow source repair at `5ec72386998475a6287cebbf7a8696a8c6417153`: explicitly typed the blocking vision-probe closure as `Result<VisionCapabilityView,String>` to resolve ambiguous `Err("…".into())` inference. Source-tree lock was regenerated on the branch. No scheduler/resource/permission/containment behavior was broadened.
 - **Current status:** fix committed, exact-post-repair native Windows/Linux CI result **pending**, not claimed successful. Physical Windows installed NSIS/GGUF/AMD GPU/resource-pressure acceptance remains open. P02 bounded source work complete; **do not begin P03** without the owner's next instruction.
 
+## P02 native Windows/Linux CI closeout + physical evidence probe (2026-11-06)
+
+**Validated prior exact source `76b17891443d00256636be5d7e9fe19e7347e07d`:** focused P02 [run 42332513239](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42332513239) completed **SUCCESS on both Windows and Linux**. The Windows host passed its full Rust desktop compilation (with no packaged inference engine in CI) and native Reader regression; the real scanner fixture, scheduler, cancellation, TaskStore and frontend contracts also passed. This closes *that SHA's focused native CI gate*; it does not certify the later evidence-script changes until their own CI completes.
+
+**New physical-evidence preparation:** `scripts/p02-native-windows-evidence.ps1` reads actual Windows WMI CPU load and free physical RAM. The focused Windows CI runs it without a Lu app or model, and must label GPU and installed acceptance **not requested**. For a later physical, interactive Win11 test, operator-supplied exact installed `Lu.exe` path and PID can prove a responsive window plus executable SHA; an actual child `llama-server.exe` PID may be checked against the system's WDDM `GPU Process Memory` dedicated/shared process counters. `-RequireInstalled` and `-RequireGpu` fail closed when those observations are absent. The script never downloads, starts, kills, or modifies a process and records no GGUF filename, command line, or input document.
+
+**What the probe cannot prove:** A window/path digest alone is not NSIS installation/restart/uninstall acceptance. WDDM process counters are not verified Vulkan/ROCm backend attribution, overall VRAM capacity, or authorization to schedule GPU work; the Guardian's background GPU/VRAM budgets remain **zero**. Actual physical acceptance additionally requires the hash-pinned Vulkan engine staged through `lu-desktop/scripts/stage-engine.mjs`, real GGUF+MMProj on the Windows AMD test machine, an interactive installed Lu session, and observed P02 queue/delay/pause/cancel/recovery/result receipts while a model loads/generates. Those resources and a connected physical desktop are not present on GitHub-hosted workers, so **NOT PASSED**.
+
+**Later physical-run example, with actual trusted PIDs and operator-controlled paths:**
+```powershell
+pwsh -NoProfile -File scripts/p02-native-windows-evidence.ps1 `
+  -InstalledExe 'C:\Program Files\Lu\Lu.exe' -AppPid 1234 `
+  -InferencePid 5678 -RequireInstalled -RequireGpu `
+  -EvidenceFile '.\p02-local-evidence.json'
+```
+The example paths/PIDs are placeholders, not asserted real machine state. A full installed-app result also requires operator-verified chat/model/UI action receipts and uninstall/reinstall observation. No release claim from the script alone.
+
 ## Owner goal
 
 Lu must coordinate long work while the user chats, without wasting LLM tokens polling workers or overrunning hardware. The shared native host—not the model—owns queue order, process launch, cancellation, result receipts, and budgets. Work is bound to operator-authorized tasks and a registered reviewed worker. Resource admission does not equal new permission to read files, run executables, or use the network.
