@@ -41,6 +41,7 @@ $record=[ordered]@{
   workerSha256=$WorkerSha256.ToLowerInvariant()
   installedBinaryDigest='PASS'
   nativeWindowLaunched='INCONCLUSIVE'
+  uiAutomationWindowProcessAttested='NOT_TESTED'
   observeOffByDefault='NOT_TESTED'
   observeUiLifecycle='NOT_TESTED'
   captureWorkerOsReap='NOT_TESTED'
@@ -71,6 +72,11 @@ try {
     Add-Type -AssemblyName UIAutomationTypes
     $root=[System.Windows.Automation.AutomationElement]::FromHandle($child.MainWindowHandle)
     if($null -eq $root){throw 'Windows UI Automation could not attest the Lu window'}
+    # Independent OS UIA process identity must match reviewed launched Lu.
+    if([int64]$root.Current.ProcessId -ne [int64]$child.Id){
+      throw 'Observed native UIA window belongs to a different process'
+    }
+    $record.uiAutomationWindowProcessAttested='PASS'
     $scope=[System.Windows.Automation.TreeScope]::Descendants
     $name=[System.Windows.Automation.AutomationElement]::NameProperty
     $start=$root.FindFirst($scope,
@@ -162,8 +168,10 @@ try {
             throw 'Installed Lu did not expose the native OS-picker request control'
           }
           $workerDeadline=[DateTime]::UtcNow.AddSeconds(60)
+          $observedWorkerPids=@()
           do{
-            if(@(Get-OwnedCaptureWorkerPids).Count -gt 0){$captureObserved=$true;break}
+            $observedWorkerPids=@(Get-OwnedCaptureWorkerPids)
+            if($observedWorkerPids.Count -gt 0){$captureObserved=$true;break}
             Start-Sleep -Milliseconds 300
           }while([DateTime]::UtcNow -lt $workerDeadline)
           if(-not $captureObserved){
@@ -186,7 +194,21 @@ try {
             $record.captureWorkerOsReap='FAIL_WORKER_SURVIVED_NATIVE_STOP'
             throw 'Native WGC process survived Stop: no cancellation success or Guardian release accepted'
           }
+          # Check original OS PIDs as well: a changed image name/parent
+          # must not be accepted as proof of worker process cleanup.
+          foreach($observedPid in $observedWorkerPids){
+            $remaining=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId={0}" -f $observedPid) -ErrorAction Stop)
+            if($remaining.Count -gt 0){
+              $record.captureWorkerOsReap='FAIL_OBSERVED_OS_PROCESS_STILL_ACTIVE'
+              throw 'Previously observed WGC child PID remains alive after Stop'
+            }
+          }
           $record.captureWorkerOsReap='PASS_OS_CHILD_REAP_ONLY'
+        }
+        # A reused HWND or replaced process after Start/Stop is not proof.
+        $child.Refresh()
+        if($child.HasExited -or [int64]$root.Current.ProcessId -ne [int64]$child.Id){
+          throw 'Native Lu process or UIA ownership changed during test'
         }
         $record.observeUiLifecycle='PASS_UIA_VISIBLE_LIFECYCLE_ONLY'
       }

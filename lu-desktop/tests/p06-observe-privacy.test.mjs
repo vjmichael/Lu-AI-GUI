@@ -101,6 +101,9 @@ test('P06 physical Windows child-process evidence is opt-in and cannot claim WGC
   assert.match(script,/\[switch\]\$ExerciseCaptureCancellation/);
   assert.match(script,/Get-CimInstance -ClassName Win32_Process/);
   assert.match(script,/ParentProcessId/);
+  assert.match(script,/uiAutomationWindowProcessAttested='PASS'/);
+  assert.match(script,/root\.Current\.ProcessId/);
+  assert.match(script,/FAIL_OBSERVED_OS_PROCESS_STILL_ACTIVE/);
   assert.match(script,/ExecutablePath/);
   assert.match(script,/captureWorkerOsReap='PASS_OS_CHILD_REAP_ONLY'/);
   assert.match(script,/wgcPickerAndCancellation='NOT_TESTED'/);

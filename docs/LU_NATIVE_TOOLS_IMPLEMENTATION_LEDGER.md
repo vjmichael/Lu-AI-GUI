@@ -6,6 +6,8 @@ Status: DEVELOPMENT SOURCE, NOT a stable Lu v1.0. Windows-native and installed N
 
 ## P06 WGC closeout continuation — source and physical boundaries (latest)
 
+**P06 OS-origin GUI evidence hardening (2026-11-06):** Optional physical installed Windows script now compares UIA root process ID with the hash-reviewed launched Lu PID before and after actions, and verifies originally seen WGC child PIDs are gone after Stop (not just no matching image name remains). No simulated physical pass. [Details](LU_P06_OBSERVE_PRIVACY.md).
+
 **P06 D3D11 callback source-instance recheck (2026-11-06):** Foreground WGC now repeats HWND/PID/FILETIME attestation after mapped frame readback and before emitting the redacted receipt, refusing changed process/window instances without loosening generic picker restrictions. Exact-head native Windows compile and physical OS timing test pending; no permanent HWND generation proof. [P06](LU_P06_OBSERVE_PRIVACY.md).
 
 **P06 selective redaction algorithm staged (2026-11-06):** Added a bounded, stride-aware, pre-validated in-memory BGRA rectangle masker with unit tests for padding integrity, overflow, late-invalid region atomic refusal and empty/incomplete mask denial. **Not active** in the captured-frame output and NOT a sensitive-data detection or safe image-export gate. The live WGC receipt remains whole-frame blanked; OS-source-bound secret classification and any meaningful model vision remain OPEN. [Details](LU_P06_OBSERVE_PRIVACY.md).

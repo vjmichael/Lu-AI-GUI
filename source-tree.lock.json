@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c0921533339330ad73f1364ed80c3b3e59c6e7f8",
+  "sourceCommitBeforeLock": "d3a270a476b97ef2f30e6784140f93713d2a89a2",
   "trackedFileCount": 506,
   "files": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "98efb408e1239478e4261a1652f8f94e7ea8bf29"
+      "blob": "24b06abebe6d1ddba7a74819a88fc1897b9aedf1"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "docs/LU_P06_OBSERVE_PRIVACY.md",
-      "blob": "5534ff8d5c6cdef6a01adf931e4957f717b4cc24"
+      "blob": "f131314ef5ae1d603fdbcfd652bac8de815daa35"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "000ef475df129ad0c320f4a34ab8e725a6d8e394"
+      "blob": "977a01216044e82d6b8315afc90447436441aeaa"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -797,7 +797,7 @@
     },
     {
       "path": "scripts/verify-observe-installed-windows.ps1",
-      "blob": "2132c444bbbad5c59dba1c2cab0ddb859acf7188"
+      "blob": "62e27e636d37ac7cd65a2f87e493f612424b3f18"
     },
     {
       "path": "scripts/verify-source-tree.mjs",
