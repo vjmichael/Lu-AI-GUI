@@ -300,6 +300,18 @@ mod windows_capture_worker {
             // The operating system owns the GPU/driver buffers; Lu does not
             // retain or copy the pixel data into a persistent heap or file.
             drop(gpu_frame);
+            // Recheck identity AFTER D3D11 readback as well. This closes a
+            // meaningful interval where the foreground window or owning
+            // process could disappear between the pre-frame check and
+            // stdout receipt publication. Still not a durable HWND token.
+            if let Some((hwnd,pid,born))=self.foreground_identity{
+                let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
+                if !window.is_valid()||window.process_id()?!=pid
+                    ||process_instance::born_at(pid)?!=born{
+                    control.stop();
+                    return Err("Foreground window instance changed during readback".into());
+                }
+            }
             self.captured=true;
             let mut output=io::stdout().lock();
             writeln!(output,"P\t1\t1")?;

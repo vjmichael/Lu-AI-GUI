@@ -73,6 +73,8 @@ test('P06 native WGC process instance is verified, generic picker stays unverifi
   assert.match(worker,/struct ProcessQueryHandle\(HANDLE\)/);
   assert.match(worker,/CloseHandle\(self\.0\)/);
   assert.match(worker,/process_instance::born_at\(pid\)\?!=born/);
+  assert.equal((worker.match(/process_instance::born_at\(pid\)\?!=born/g)||[]).length,2);
+  assert.match(worker,/Foreground window instance changed during readback/);
   assert.match(worker,/foreground_identity:Option<\(usize,u32,u64\)>/);
   assert.match(worker,/\(nonce\.into_owned\(\),None\)/);
   assert.match(worker,/padded\.fill\(255\)/);
