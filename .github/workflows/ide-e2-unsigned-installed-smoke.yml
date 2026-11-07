@@ -44,6 +44,8 @@ jobs:
           $ErrorActionPreference='Stop'
           cargo fetch --manifest-path ide/app/src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: unresolved Cargo native license sources' }
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual resolved Tauri runtime graph incompatibility' }
           python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual npm/Cargo third-party licenses not staged' }
           Write-Host 'P05_E2_NATIVE_LICENSES=RESOLVED_AND_INCLUDED_NO_LEGAL_APPROVAL'
@@ -52,7 +54,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          npx --yes @tauri-apps/cli@2.11.5 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real NSIS build failed' }
       - name: Bind NSIS installer bytes to reviewed legal files and exact source
         shell: pwsh

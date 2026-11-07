@@ -52,6 +52,23 @@ def check_alignment(root: Path):
             raise VersionDenied("installed_workflow_cli_major_minor_mismatch:" + rel)
         if "--bundles nsis" not in body or "Test-InstalledAlphaNsis.ps1" not in body:
             raise VersionDenied("installed_native_smoke_gate_removed:" + rel)
+    # Cross-check the resolved Tauri runtime graph. Cargo's semver ranges
+    # caused real mismatched Monitor/Error APIs within the Tauri crate.
+    lock = root / "ide/app/src-tauri/Cargo.lock"
+    if lock.exists():
+        try:
+            packages = tomllib.loads(lock.read_text(encoding="utf-8"))["package"]
+        except (OSError, ValueError, TypeError, KeyError) as e:
+            raise VersionDenied("resolved_cargo_lock_unreadable") from e
+        for component in ("tauri", "tauri-runtime", "tauri-runtime-wry"):
+            resolved = [p["version"] for p in packages if p.get("name") == component]
+            if len(resolved) != 1 or not EXACT_NPM.fullmatch(resolved[0]):
+                raise VersionDenied("resolved_tauri_component_missing_or_ambiguous:" + component)
+            version = EXACT_NPM.fullmatch(resolved[0])
+            if version.group(1, 2) != minor:
+                raise VersionDenied("resolved_tauri_runtime_major_minor_mismatch:" + component)
+            if component == "tauri" and resolved[0] != rust_spec[1:]:
+                raise VersionDenied("resolved_tauri_core_patch_drift")
     installed = root / "ide/app/node_modules/@tauri-apps/api/package.json"
     if installed.exists():
         try:
