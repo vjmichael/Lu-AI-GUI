@@ -222,3 +222,20 @@ test('P07 catalog revision requires native side-by-side comparison with durable 
   assert.match(ui,/Review changed Crossref metadata/);
   assert.match(ui,/researchCitationRevisionByChat/);
 });
+
+test('P07 curated Greek critical editions never certify passages, witnesses or translations',()=>{
+  const desktop=read('../src-tauri/src/lib.rs');
+  const ui=read('../web/main.jsx');
+  assert.match(src,/pub fn format_sbl_critical_edition_locator\(/);
+  assert.match(src,/IDENTIFIED_CRITICAL_EDITION_ONLY_NO_TEXT_OR_WITNESS/);
+  assert.match(src,/manuscript_witness_verified:false,translation_verified:false/);
+  assert.match(src,/passage_verified:false,versification_verified:false/);
+  assert.match(src,/NA28/);
+  assert.match(src,/RAHLFS-HANHART-2006/);
+  assert.match(src,/p07_critical_edition_catalog_refuses_unmatched_canon_and_unverified_text/);
+  assert.match(desktop,/fn lu_research_sbl_critical_edition_locator\(/);
+  assert.match(desktop,/lu_research_sbl_critical_edition_locator,/);
+  assert.match(ui,/invoke\('lu_research_sbl_critical_edition_locator'/);
+  assert.match(ui,/Text readings, verse-numbering equivalences/);
+  assert.match(ui,/Copy critical-edition reference/);
+});
