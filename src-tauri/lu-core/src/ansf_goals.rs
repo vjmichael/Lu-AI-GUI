@@ -10,7 +10,7 @@ use sha2::{Digest,Sha256};
 const MAX_EVENTS:usize=1024;
 const MAX_QUESTIONS:usize=64;
 
-#[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 #[serde(rename_all="snake_case")]
 pub enum GoalEventKind { SetGoal, AskQuestion, RespondQuestion }
 
