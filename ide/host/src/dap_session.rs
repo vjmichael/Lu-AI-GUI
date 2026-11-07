@@ -46,6 +46,7 @@ pub enum DapPhase {
     Initializing,
     AwaitingInitializedEvent,
     Ready,
+    Launching,
     Stopped,
     Closing,
     Terminated,
@@ -54,6 +55,7 @@ pub enum DapPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DapEvent {
     Initialized,
+    LaunchAcknowledged,
     Stopped { thread_id: u64 },
     Continued,
     Terminated,
@@ -129,6 +131,28 @@ impl DapSession {
             }),
         )
     }
+    /// ONLY the native OS worker may call this with the self-test target
+    /// from its independently sealed installer bundle. This method never
+    /// accepts an executable path, args or environment from the WebView.
+    /// The debuggee inherits the adapter's restricted Job/cgroup.
+    pub fn launch_fixed_fixture(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Ready {
+            return Err(DapError::InvalidPhase);
+        }
+        let valid = program == "/ls/debuggee/wo6-selftest"
+            || (program.len() <= 1024
+                && std::path::Path::new(program).is_absolute()
+                && program.ends_with("\\debuggee\\wo6-selftest.exe"));
+        if !valid || program.contains("..") || program.chars().any(char::is_control) {
+            return Err(DapError::InvalidMessage);
+        }
+        self.phase = DapPhase::Launching;
+        self.request("launch", json!({
+            "program": program, "stopOnEntry": true, "noDebug": false,
+            "args": [], "env": {}, "runInTerminal": false
+        }))
+    }
+
     /// Read-only inspection of a debugger whose target was separately approved.
     pub fn threads(&mut self) -> Result<Vec<u8>, DapError> {
         if !matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) {
@@ -238,6 +262,12 @@ impl DapSession {
                         };
                         Ok(Some(DapEvent::Initialized))
                     }
+                    "launch" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
+                        if self.phase == DapPhase::Launching {
+                            self.phase = DapPhase::Ready;
+                        }
+                        Ok(Some(DapEvent::LaunchAcknowledged))
+                    }
                     "threads" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
                         let body = obj
                             .get("body")
@@ -297,7 +327,9 @@ impl DapSession {
                         }
                         Ok(None)
                     }
-                    "stopped" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
+                    "stopped" if matches!(
+                        self.phase, DapPhase::Ready | DapPhase::Launching | DapPhase::Stopped
+                    ) => {
                         let thread_id = obj
                             .get("body")
                             .and_then(|b| b.get("threadId"))
@@ -421,6 +453,42 @@ mod tests {
         );
         assert_eq!(s.phase(), DapPhase::Terminated);
     }
+    #[test]
+    fn only_fixed_native_fixture_can_be_launched_and_response_is_correlated() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        let resp = framed(json!({
+            "seq":2,"type":"response","request_seq":1,
+            "command":"initialize","success":true
+        }));
+        session.receive(&resp).unwrap();
+        session.receive(&framed(json!({
+            "seq":3,"type":"event","event":"initialized"
+        }))).unwrap();
+        assert_eq!(session.phase(), DapPhase::Ready);
+        assert_eq!(
+            session.launch_fixed_fixture("/tmp/other").unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(
+            session.launch_fixed_fixture("/ls/debuggee/../secrets").unwrap_err(),
+            DapError::InvalidMessage
+        );
+        let wire = session.launch_fixed_fixture("/ls/debuggee/wo6-selftest").unwrap();
+        assert!(std::str::from_utf8(&wire).unwrap().contains("stopOnEntry"));
+        assert_eq!(session.phase(), DapPhase::Launching);
+        let observed = session.receive(&framed(json!({
+            "seq":4,"type":"event","event":"stopped",
+            "body":{"reason":"entry","threadId":1}
+        }))).unwrap();
+        assert_eq!(observed, vec![DapEvent::Stopped { thread_id:1 }]);
+        assert_eq!(session.phase(), DapPhase::Stopped);
+        assert_eq!(session.receive(&framed(json!({
+            "seq":5,"type":"response","request_seq":2,
+            "command":"launch","success":true
+        })).unwrap(), vec![DapEvent::LaunchAcknowledged]);
+    }
+
     #[test]
     fn reverse_request_is_quarantined_not_dispatched() {
         let mut s = DapSession::new();
