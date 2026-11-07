@@ -87,3 +87,35 @@ jobs:
             echo 'P03_HOST_CGROUP_DELEGATED_EXECUTION=NOT_VERIFIED'
           fi
           echo 'P03_BWRAP_DENIAL_CRASH_RECOVERY=NEEDS_INDEPENDENT_KERNEL_WITNESS'
+  wo4-independent-kernel-witness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Compile fixed cgroup-v2 prepare, independent witness and trusted unit host
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_native_witness --bin linux_delegated_ci_wo4_host
+          cargo test --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_native_witness
+      - name: Live actual CPU/memory/PID quota, child + grandchild cgroup.kill and populated zero
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo4_host)"
+          sudo /usr/bin/systemd-run --wait --collect --pipe \
+            --unit=lu-ide-delegated \
+            --property=Type=exec \
+            --property=User=runner \
+            --property=Group=runner \
+            --property='Delegate=cpu memory pids' \
+            --property=DelegateSubgroup=lu-ide-host \
+            "$host"
+          echo 'PASS: actual native cgroup kernel witness on exact PR SHA, independent from Cargo and clangd'
+      - name: Kernel evidence is not a release or installed application approval
+        run: echo 'WO4_NATIVE_KERNEL_WITNESS_ONLY=ACTUAL_OS_PASS_IF_PREVIOUS_STEP_PASS'
