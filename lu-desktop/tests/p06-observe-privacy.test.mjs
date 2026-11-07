@@ -171,3 +171,19 @@ test('P06 zero-default approved BGRA region extraction and external GPU counter 
   assert.match(gui,/Evidence contains checks not in intended plan/);
   assert.match(ci,/native_gui_verification::tests/);
 });
+
+test('P06 independently hash-reviewed native NSIS install/uninstall is a real opt-in test, not a scripted pass',()=>{
+  const script=read('../../scripts/verify-observe-nsis-cycle-windows.ps1');
+  assert.match(script,/\$DisposableMachineConfirmed/);
+  assert.match(script,/Match-Sha \$installer \$InstallerSha256/);
+  assert.match(script,/Lu-Registrations/);
+  assert.match(script,/Get-Process -Name Lu/);
+  assert.match(script,/Start-Process -FilePath \$installer/);
+  assert.match(script,/Match-Sha \$app \$LuSha256/);
+  assert.match(script,/Match-Sha \$worker \$WorkerSha256/);
+  assert.match(script,/Start-Process -FilePath \$uninstaller/);
+  assert.match(script,/uninstallRegistration='PASS'/);
+  assert.match(script,/wgcPicker='NOT_TESTED'/);
+  assert.match(script,/gpuHardwareQuota='NOT_TESTED'/);
+  assert.doesNotMatch(script,/Remove-Item -Recurse|Invoke-WebRequest|Start-BitsTransfer/);
+});

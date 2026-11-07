@@ -1,5 +1,9 @@
 # Lu Core P06 — OBSERVE-PRIVACY-01 (Observe & Learn)
 
+## P06 native Windows NSIS install/uninstall evidence harness (not yet executed)
+
+Added `scripts/verify-observe-nsis-cycle-windows.ps1` to run **the actual hash-reviewed NSIS install/uninstall lifecycle** on an explicitly confirmed clean disposable Windows machine. It rejects a pre-existing Lu install/process, requires independent SHA-256 for installer, installed Lu and WGC worker and reviewed uninstaller basename, selects a fresh temporary target path, runs standard NSIS `/S` and `/D`, checks the real installed binary hashes and optional separate native UIA smoke, runs the actual uninstaller and verifies app/worker removal plus uninstall-registry cleanup. It records failure stage and preserves forensic evidence instead of automatically deleting an unknown install directory. This is code and release-test procedure, **not a physical Windows PASS**. Running on an existing everyday Lu installation is explicitly forbidden. It does not certify WGC source identity, privacy-redacted pixels, model GUI capability or GPU quota.
+
 ## P06 future reviewed-region sanitization and independent evidence hardening
 
 - **Zero-default image compositor (source only):** New `approved_regions_only_bgra` copies pixels exclusively inside a bounded list of individually reviewed regions into a newly allocated, fully zeroed BGRA image. Missing/invalid/overflowing regions refuse to produce *any* output buffer; D3D row padding and all outside pixels stay zero. Existing region-mask algorithm still available. This is intentionally **not connected** to WGC receipt, UI preview or model media; no trusted user-reviewed region grant or source/coordinate attestation exists yet.

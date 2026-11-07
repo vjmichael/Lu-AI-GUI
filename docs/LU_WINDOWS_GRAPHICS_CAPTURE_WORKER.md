@@ -1,5 +1,9 @@
 # OBSERVE-WIN-CAPTURE-05 — Windows native picker and one-frame capture
 
+## P06 real NSIS installer/uninstaller cycle source
+
+Optional disposable Windows test script now executes the real hash-reviewed NSIS installer/uninstaller and independently checks installed and removed Lu/worker binaries and uninstall registrations. It is not yet run on physical Windows and does not claim WGC or GPU acceptance. [P06 privacy](LU_P06_OBSERVE_PRIVACY.md).
+
 ## P06 OS visible foreground and installed restart follow-up
 
 Foreground-only native capture now checks that the OS window is top-level, visible and not DWM-cloaked, with a readback-before/after identity check. Generic picker remains identity-unverified and wholly blanked. The independent physical installed script optionally tests second-process restart and UIA OFF; **no physical acceptance is claimed**.
