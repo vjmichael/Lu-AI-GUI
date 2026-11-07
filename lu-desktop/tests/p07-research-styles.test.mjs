@@ -51,3 +51,13 @@ test('P07 existing evidence ledger rejects real newlines, not a literal backslas
   assert.ok(src.includes('discovered_candidate("source-1\\nOTHER")'));
   assert.doesNotMatch(src,/discovered_candidate\("source-1\\\\nOTHER"\)/);
 });
+
+test('P07 bibliography preview is bounded, sorted, atomic and cannot duplicate corroborated sources',()=>{
+  assert.match(src,/pub fn render_bibliography\(/);
+  assert.match(src,/MAX_BIBLIOGRAPHY_ITEMS:usize=120/);
+  assert.match(src,/if !seen\.insert\(&work\.source_id\)/);
+  assert.match(src,/rendered\.push\(render_correlated\(ledger,work,style\)\?\)/);
+  assert.match(src,/rendered\.sort_by/);
+  assert.match(src,/bounded_bibliography_sorts_only_existing_correlated_sources/);
+  assert.doesNotMatch(src,/factual_claim_verified:true/);
+});
