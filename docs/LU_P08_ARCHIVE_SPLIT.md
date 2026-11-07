@@ -37,3 +37,11 @@ The prior P07 advanced scholarly tool expansion is now OUT OF CORE SCOPE under o
 - Core intentionally does not implement standalone archive repair/editor or non-licensed password/RAR archive writers.
 
 **Next gate:** complete exact-head CI and installed desktop acceptance before marking ARCHIVE-SPLIT-01 final.
+
+## Native CI repair / acceptance follow-up — November 7, 2026
+
+Inspected PR #81 exact source head `71873eca4d60b9f585822e4e31c5705f1275e5c8` and associated GitHub Actions job logs. Its Windows `native_archive_split` suite passed **4/4** real round-trip, corruption, staged-resume and source-safety tests. The source-integrity workflow passed. This is native Rust test evidence, **not installed desktop acceptance**.
+
+Separate regression failures were confirmed: Windows `native_archive_tree_authority` fixture deletion encountered OS error 32 while capability holders were still live; Linux `native_workspace_read_turn` failed registration before dispatch in two tests; the frontend had a malformed P07 JavaScript test regex; several other frontend assertions and browser candidate artifact setup are independently failing. Changes in this branch: `8a8de1e` explicitly releases archive policy/registry/authority handles before Windows fixture cleanup; `3f9baeb` adds the native registration error detail to CI diagnostics without weakening authorization; `914ffe1` repairs the invalid P07 test regex (not an expansion of the citation engine).
+
+**Current gate:** fresh CI on the amended head must finish and the Linux registration root cause must be resolved from the more specific diagnostic. Do not count queued jobs as pass. Installed Windows NSIS launch/picker/confirmation/large-file and interruption/restart tests, separate Linux desktop tests, and cleanup of uncertain staged outputs remain **OPEN, NOT TESTED**. A passing native unit suite cannot substitute for installation and GUI acceptance. Citation/SBL expansion remains explicitly out of scope.
