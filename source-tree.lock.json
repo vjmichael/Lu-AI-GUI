@@ -965,7 +965,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
-      "blob": "7fc20a85888a4a760d378a422040b8e114085635"
+      "blob": "7115785b3caa187babdce579bed7ef00affc0a61"
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
@@ -1273,7 +1273,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_artifact_inspect.rs",
-      "blob": "9c36dc3e5621be324d24f42b9ff848650d6cd1e3"
+      "blob": "4c6d58f3e4d0bab17307895f2b65055f1a721cf9"
     },
     {
       "path": "src-tauri/lu-core/src/native_atomic_write.rs",
