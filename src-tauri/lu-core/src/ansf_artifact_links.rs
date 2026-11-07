@@ -238,7 +238,7 @@ mod tests {
             ArtifactPresence::ContentVerified);
         drop(opened);
         let mut changed=File::create(&file_path).unwrap();
-        changed.write_all(b"altered").unwrap();drop(changed);
+        changed.write_all(b"evil-small-media").unwrap();drop(changed);
         let mut opened=File::open(&file_path).unwrap();
         assert_eq!(probe_granted_file(&link,&mut opened,1024).unwrap(),
             ArtifactPresence::Changed);
