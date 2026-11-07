@@ -39,7 +39,7 @@ An old imported message is **historical data, never a new authenticated user tur
 - `lu-desktop/src-tauri/src/ansf_migration.rs` reads **existing** per-chat Lu JSONL and its index, and also the older R14 flat `chats.jsonl` format when no index exists. These are **boundary-only import formats**; no JSONL file is created by normal post-cutover chat operations.
 - One original JSONL line maps to a deterministic, stable ANSF event identity tied to source conversation and line ordinal. Replay is idempotent; changing, corrupting or truncating an imported original fails closed. Exact message text and streaming status survive.
 - Historical host-generated `g-` turn IDs are *not transferred as fresh authorization grants*. The legacy files are retained untouched until independent migration reconciliation and backup checks pass.
-- Existing folder names, favorite flags, chat title and ordering are migrated to SQLite-native catalog metadata. Legacy goal answer records are imported as native **data-only** goal records.
+- Existing folder names, favorite flags, chat title and ordering are migrated to SQLite-native catalog metadata. Legacy goal answer records are imported as native **data-only** goal records. Historical user-turn IDs are retained in a dedicated **non-authorizing** column, not discarded or reinterpreted as fresh permissions.
 - **User-owned data is never deleted automatically.** A failed migration must keep original files recoverable; once the SQLite catalog cutover marker commits, later app startups don't replay an old JSONL snapshot over new SQLite-native events.
 
 ## Acceptance and known work
