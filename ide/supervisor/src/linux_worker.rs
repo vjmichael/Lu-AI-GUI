@@ -32,6 +32,14 @@ use std::{
 #[cfg(feature = "lsp-transport")]
 #[path = "linux_lsp_worker.rs"]
 pub mod lsp_native;
+fn native_linux_cgroup_trace(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!("PROTECTED_LINUX_CGROUP_STAGE={stage}");
+    }
+}
+
 const BWRAP: &str = "/usr/bin/bwrap";
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";
@@ -231,14 +239,17 @@ fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> 
         return Err(denied());
     }
     let parent = current_cgroup_parent()?;
+    native_linux_cgroup_trace("parent_delegation_verified");
     let dir = parent.join(format!("lu-ide-{job_id}"));
     fs::create_dir(&dir).map_err(|_| denied())?;
+    native_linux_cgroup_trace("job_cgroup_created");
     let mut group = Cgroup { dir, active: true };
     // A brand-new dedicated worker cgroup may not already hold a process.
     if !group.zero_members() {
         group.remove_empty();
         return Err(denied());
     }
+    native_linux_cgroup_trace("new_cgroup_empty");
     let settings = [
         ("cpu.max", "50000 100000".to_owned()),
         ("memory.max", plan.memory_limit_bytes.to_string()),
@@ -246,19 +257,23 @@ fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> 
     ];
     for (key, value) in settings {
         if fs::write(group.dir.join(key), &value).is_err() {
+            native_linux_cgroup_trace("quota_write_denied");
             group.remove_empty();
             return Err(denied());
         }
         let actual = fs::read_to_string(group.dir.join(key)).map_err(|_| denied())?;
         if actual.trim() != value {
+            native_linux_cgroup_trace("quota_readback_mismatch");
             group.remove_empty();
             return Err(denied());
         }
     }
+    native_linux_cgroup_trace("cpu_memory_pids_quota_readback_verified");
     if !group.dir.join("cgroup.kill").is_file() || !group.dir.join("cgroup.procs").is_file() {
         group.remove_empty();
         return Err(denied());
     }
+    native_linux_cgroup_trace("cgroup_kill_and_procs_available");
     Ok(group)
 }
 

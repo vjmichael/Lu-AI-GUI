@@ -1,5 +1,10 @@
 name: Lu IDE unsigned installed NSIS desktop smoke (not E2 release acceptance)
 on:
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - '.github/workflows/ide-e2-unsigned-installed-smoke.yml'
   push:
     branches: ['ide/wave-e2-supervised-lsp-editor-20261106']
     paths:

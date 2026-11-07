@@ -42,6 +42,16 @@ pub(crate) fn trusted_staged_file_uri(path: &Path) -> Result<String, SupervisorE
     Ok(out)
 }
 
+// Debug/CI-only fixed fault classifications. Do not log protocol bytes,
+// source text, client data, paths, credentials or arbitrary error strings.
+fn trace_native_lsp_gateway(stage: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!("PROTECTED_LSP_GATEWAY_STAGE={stage}");
+    }
+}
+
 const MAX_CHUNK: usize = 16 * 1024;
 const MAX_PENDING_OUTPUT: usize = MAX_MESSAGE + 256;
 const READ_WAIT: Duration = Duration::from_millis(400);
@@ -122,8 +132,10 @@ impl LspGateway {
             .ok_or(SupervisorError::Quarantined)?
             .write_bounded(frame);
         if sent.is_err() {
+            trace_native_lsp_gateway("send_pipe_failed");
             return self.deny_and_quarantine();
         }
+        trace_native_lsp_gateway("send_pipe_completed");
         Ok(())
     }
     pub(crate) fn phase(&self) -> LspPhase {
@@ -180,7 +192,10 @@ impl LspGateway {
             .read_bounded(MAX_CHUNK, READ_WAIT);
         let frame = match read {
             Ok(frame) => frame,
-            Err(_) => return self.deny_and_quarantine(),
+            Err(_) => {
+                trace_native_lsp_gateway("read_pipe_failed");
+                return self.deny_and_quarantine();
+            }
         };
         if frame.len() > MAX_CHUNK || self.io_bytes.saturating_add(frame.len()) > MAX_TOTAL_IO {
             return self.deny_and_quarantine();
@@ -189,10 +204,15 @@ impl LspGateway {
         if frame.is_empty() {
             return Ok(Vec::new());
         }
+        trace_native_lsp_gateway("read_pipe_data");
         let (events, replies) = match self.session.receive(&frame) {
             Ok(result) => result,
-            Err(_) => return self.deny_and_quarantine(),
+            Err(_) => {
+                trace_native_lsp_gateway("parse_or_protocol_denied");
+                return self.deny_and_quarantine();
+            }
         };
+        trace_native_lsp_gateway("protocol_received");
         for outbound in replies {
             self.send(&outbound)?;
         }
