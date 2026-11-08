@@ -64,11 +64,12 @@ jobs:
             initial_revision_survives_restart_and_hash_chain_rejects_stale_parent \
             human_turn_and_reference_checks_are_not_model_authority \
             exact_human_review_does_not_grant_execution_or_rewrite_revision \
-            sources_and_revision_payload_validate_immutable_dependencies; do
+            sources_and_revision_payload_validate_immutable_dependencies \
+            change_monitor_rejects_mislabelled_or_noop_revisions; do
             grep -Fq "test agent_plan_revisions::tests::$name ... ok" \
               agent01b-evidence/revisions-native-rust.log
           done
-          grep -Fq 'test result: ok. 4 passed; 0 failed;' \
+          grep -Fq 'test result: ok. 5 passed; 0 failed;' \
             agent01b-evidence/revisions-native-rust.log
       - name: Test actual ChatStore plus ANSF goal and separately reviewed plan
         shell: bash
