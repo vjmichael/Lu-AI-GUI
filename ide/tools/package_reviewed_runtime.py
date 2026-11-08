@@ -24,10 +24,10 @@ MAX_PATH = 1024
 MAX_DEPTH = 32
 REQUIRED = {
     ("python_pytest", "windows-x64"): (
-        "bin/python.exe", "Lib/pytest/__init__.py",
+        "bin/python.exe", "Lib/site-packages/pytest/__init__.py",
         "LICENSES/python.txt", "LICENSES/pytest.txt"),
     ("python_pytest", "linux-x64"): (
-        "bin/python3", "lib/pytest/__init__.py",
+        "bin/python3", "lib/python3.13/site-packages/pytest/__init__.py",
         "LICENSES/python.txt", "LICENSES/pytest.txt"),
     ("js_tests", "windows-x64"): ("bin/node.exe", "LICENSES/node.txt"),
     ("js_tests", "linux-x64"): ("bin/node", "LICENSES/node.txt"),
