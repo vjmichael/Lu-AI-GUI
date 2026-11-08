@@ -38,6 +38,7 @@ mod reviewed_task_continuity;
 mod agent_plan_progress;
 mod agent_plan_review;
 mod chat_message_interactions;
+mod chat_message_revisions;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -5261,6 +5262,67 @@ async fn lu_agent_cancel_plan(
     }).await.map_err(|_|"Plan cancellation review failed")?
 }
 
+/// UX-CHAT02: immutable ANSF originals, append-only human display
+/// corrections. Historical model input/tool receipts never change.
+#[tauri::command]
+fn lu_message_revision_page(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,seqs:Vec<i64>,
+)->Result<chat_message_revisions::MessageRevisionPage,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message history profile unavailable")?;
+    chat_message_revisions::read(root,&chat_id,&seqs,&state.chats)
+}
+#[tauri::command]
+fn lu_edit_message_display(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+    seq:i64,expected_version:i64,expected_sha:String,text:String,
+)->Result<chat_message_revisions::MessageRevisionView,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message history profile unavailable")?;
+    chat_message_revisions::edit(
+        root,&chat_id,seq,expected_version,&expected_sha,&text,&state.chats
+    )
+}
+/// Post a NEW human-authenticated ANSF message with a pinned reply edge.
+/// Never calls the model, opens an application permission or resumes tools.
+/// Persist a unique PREPARED reply intent before the ANSF append. A crashed
+/// last write is reconciled from the same original turn, never retransmitted.
+#[tauri::command]
+fn lu_post_linked_reply(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+    parent_seq:i64,parent_version:i64,
+    parent_sha:String,text:String,
+)->Result<chat_message_revisions::ReplyReceipt,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message history profile unavailable")?;
+    let turn=next_id("g-");
+    chat_message_revisions::prepare_reply(
+        root,&chat_id,parent_seq,parent_version,&parent_sha,
+        &turn,&text,&state.chats
+    )?;
+    let append=state.chats.append_user_with_turn_id(&chat_id,&turn,&text);
+    let reconciled=chat_message_revisions::reconcile_reply(
+        root,&chat_id,&turn,&state.chats
+    );
+    match reconciled{
+        Ok(Some(receipt))=>Ok(receipt),
+        Ok(None)=>Err(format!(
+            "Linked reply was not confirmed in original ANSF. Do not resubmit              until checking pending reply recovery. Append status: {append:?}"
+        )),
+        Err(error)=>Err(format!(
+            "Linked reply outcome uncertain: {error}. Inspect original              conversation and reconcile existing saved turn; do not replay."
+        )),
+    }
+}
+/// A manual repair of PREPARED metadata ONLY. Never sends a message.
+#[tauri::command]
+fn lu_reconcile_message_replies(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+)->Result<usize,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message history profile unavailable")?;
+    chat_message_revisions::reconcile_pending(root,&chat_id,&state.chats)
+}
 /// UX-CHAT01: decorations are host-owned, persisted separately from
 /// immutable ANSF messages and never consumed as inference/tool authority.
 #[tauri::command]
@@ -7650,6 +7712,10 @@ pub fn run() {
             lu_message_decorations,
             lu_set_message_reaction,
             lu_set_chat_appearance,
+            lu_message_revision_page,
+            lu_edit_message_display,
+            lu_post_linked_reply,
+            lu_reconcile_message_replies,
             lu_deny_native_action_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,
