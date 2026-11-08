@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2e57c760f8df2f8cdf4fb7d0e2daa6eba6ce7fb9",
-  "trackedFileCount": 670,
+  "sourceCommitBeforeLock": "9db90b4e1b5d2507d24e9a61225d233fa609dbd0",
+  "trackedFileCount": 672,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p08-reviewed-recovery.yml",
-      "blob": "51f32340d5d1b794601306da527fb600f1738039"
+      "blob": "6d2bfa4a2332b714d60c97da8c3cb87a0737db84"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -206,6 +206,10 @@
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
       "blob": "7e62ee0ed47e0605081f689b410cdf34dd44052b"
+    },
+    {
+      "path": "benchmarks/e1/e1_p08_setsid_escape_probe.py",
+      "blob": "b655a718c5498509e7e24e0944cf14714f8e9a28"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -356,8 +360,12 @@
       "blob": "800eeae5f3dd6053a92ef751ed44a16d82493386"
     },
     {
+      "path": "docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md",
+      "blob": "46a5eecc94c152d62907904f22678c42cb3816b5"
+    },
+    {
       "path": "docs/LU_E1_P08_LINUX_GROUP_GUARD_20261108.md",
-      "blob": "5d152ae87694b12ff94059ebedb4dfb33510a5d6"
+      "blob": "d6633e6290d955a1b8702dc94923c39904e48868"
     },
     {
       "path": "docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md",
@@ -497,7 +505,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "d284f884a26dc1ad0b7bfc305845a6a44015b34a"
+      "blob": "91af0530836baab9670faffcf99d0a502cfe16c2"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -841,7 +849,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "bb11821566ef6ca88890d9b1e329db45d5ffbb0d"
+      "blob": "ba60fa1c8ae3a0ab440c9e9926a1f6dd435fc2e2"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
