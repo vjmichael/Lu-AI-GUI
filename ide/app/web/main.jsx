@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import {newBufferIdentity,advanceBufferIdentity,rebaseBufferAfterSave,captureBufferSpan,resolveBufferSpan,formatBufferReference} from './draft_ref_port.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
@@ -64,6 +65,7 @@ function App() {
   const [findRequest, setFindRequest] = useState(null);
   const [cursorByTab, setCursorByTab] = useState({});
   const [referencePending, setReferencePending] = useState(false);
+  const [draftReferencePending, setDraftReferencePending] = useState(false);
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -138,6 +140,16 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  // Session-only CodeMirror identities are never persisted to the host or Lu.
+  const bufferIdentities = useRef(new Map());
+  function resetBufferIdentity(key, projectId, relativePath, savedRevision) {
+    const identity = newBufferIdentity(projectId, relativePath, savedRevision, crypto.randomUUID());
+    bufferIdentities.current.set(key, identity);
+    return identity;
+  }
+  function onEditorSelection(key, state) {
+    editorStates.current.set(key, state);
+  }
   useEffect(() => {
     // Read-only, project-independent inventory. No provider lookup executes.
     Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
@@ -312,6 +324,49 @@ function App() {
     setHint((all ? 'Replaced ' + planned.count + ' matches' : 'Replaced one match') +
       ' in the editor draft. Use Undo to reverse or Save to write the file.');
     setProblem('');
+  }
+
+  async function copyDraftReference(tab) {
+    if (!tab || draftReferencePending) return;
+    const state = editorStates.current.get(tab.key);
+    const identity = bufferIdentities.current.get(tab.key);
+    if (!state || !identity || state.sliceDoc() !== tab.draft) {
+      setProblem('This editor draft changed. Select the tab and try again.');
+      return;
+    }
+    const selection = state.selection.main;
+    const from = selection.empty ? state.doc.lineAt(selection.head).from : selection.from;
+    const to = selection.empty ? state.doc.lineAt(selection.head).to : selection.to;
+    let snapshot;
+    try {
+      snapshot = captureBufferSpan(identity, state, from, to);
+    } catch (error) {
+      setProblem('Cannot reference this draft range: ' + String(error));
+      return;
+    }
+    setDraftReferencePending(true);
+    setProblem('');
+    try {
+      const digest = await crypto.subtle.digest('SHA-256',
+        new TextEncoder().encode(state.sliceDoc()));
+      const sha = Array.from(new Uint8Array(digest),
+        byte => byte.toString(16).padStart(2, '0')).join('');
+      // Revalidate after async hashing; even edits undone back to the same
+      // text must invalidate older buffer revisions.
+      const latestState = editorStates.current.get(tab.key);
+      const latestIdentity = bufferIdentities.current.get(tab.key);
+      if (resolveBufferSpan(snapshot, latestIdentity, latestState).status !== 'current' ||
+          latestState.sliceDoc() !== state.sliceDoc()) {
+        throw Error('BUFFER_CHANGED_DURING_COPY');
+      }
+      await navigator.clipboard.writeText(formatBufferReference(snapshot, sha));
+      setHint('Copied a session-only draft reference for ' + tab.relativePath +
+        '. This does not save or publish the buffer.');
+    } catch (error) {
+      setProblem('Could not copy the unsaved draft reference: ' + String(error));
+    } finally {
+      setDraftReferencePending(false);
+    }
   }
 
   async function copySourceReference(tab) {
@@ -1217,9 +1272,11 @@ function App() {
       const stagedTabs = approved.edits.map((edit, index) => {
         const key = keyFor(item.projectId, edit.relativePath);
         const previous = tabs.find(tab => tab.key === key);
+        resetBufferIdentity(key, item.projectId, edit.relativePath, edit.expectedRevision);
         editorStates.current.set(key, createEditorState(
           edit.proposedText, edit.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key, state)
         ));
         return {
           key, projectId: item.projectId, relativePath: edit.relativePath,
@@ -1263,7 +1320,10 @@ function App() {
   function discardProjectTabs(projectId) {
     setReview(previous => previous?.projectId === projectId ? null : previous);
     const affected = tabs.filter(tab => tab.projectId === projectId);
-    affected.forEach(tab => editorStates.current.delete(tab.key));
+    affected.forEach(tab => {
+      editorStates.current.delete(tab.key);
+      bufferIdentities.current.delete(tab.key);
+    });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
@@ -1457,6 +1517,8 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    const previous = bufferIdentities.current.get(key);
+    if (previous) bufferIdentities.current.set(key, advanceBufferIdentity(previous));
     setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
       tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText,
@@ -1488,9 +1550,11 @@ function App() {
           savedText: opened.text, draft: opened.text,
           dirty: false, generation: 0, bufferRevision: 0,
         };
+        resetBufferIdentity(key, opened.projectId, opened.relativePath, opened.revision);
         editorStates.current.set(key, createEditorState(
           opened.text, opened.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key, state)
         ));
         setTabs(previous => [...previous, newTab]);
         setActiveTabKey(key);
@@ -1510,6 +1574,7 @@ function App() {
       void stopLspSession();
     }
     editorStates.current.delete(key);
+    bufferIdentities.current.delete(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
     setTabs(other);
@@ -1533,9 +1598,11 @@ function App() {
       const opened = await invoke('ide_preview_source_file', {
         projectId: tab.projectId, relativePath: tab.relativePath,
       });
+      resetBufferIdentity(tab.key, opened.projectId, opened.relativePath, opened.revision);
       editorStates.current.set(tab.key, createEditorState(
         opened.text, opened.relativePath,
-        (state, draft) => onEditorChange(tab.key, state, draft)
+        (state, draft) => onEditorChange(tab.key, state, draft),
+        state => onEditorSelection(tab.key, state)
       ));
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
@@ -1551,6 +1618,7 @@ function App() {
     if (!tab || !tab.dirty || savingKey || explorerPending) return;
     const content = tab.draft;
     const base = tab.revision;
+    const saveStartedBuffer = bufferIdentities.current.get(tab.key);
     setSavingKey(tab.key);
     setProblem('');
     setHint('');
@@ -1561,7 +1629,15 @@ function App() {
         expectedRevision: base,
         text: content,
       });
-      // If typing continued during the save, the newer draft is kept dirty.
+      // A late response cannot mark a separately reopened editor session clean.
+      const buffer = bufferIdentities.current.get(tab.key);
+      const rebased = rebaseBufferAfterSave(buffer, saveStartedBuffer, saved.revision);
+      if (rebased.status !== 'rebased') {
+        setHint('An earlier draft saved; the current replacement tab must be reviewed before saving.');
+        return true;
+      }
+      bufferIdentities.current.set(tab.key, rebased.identity);
+      // If typing continued during save, preserve the newer unsaved text.
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: saved.revision, savedText: content,
         dirty: item.draft !== content,
@@ -2761,12 +2837,19 @@ function App() {
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
-                    {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                    {activeTab.dirty ? ' Unsaved' : ' Saved'} · Draft rev
+                    {' '}{bufferIdentities.current.get(activeTab.key)?.revision ?? 0}</span>
                   <button className="ghostBtn editorToolButton"
                     disabled={referencePending || explorerPending || !!savingKey}
                     title="Copy a reference to the current saved file and cursor line"
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
+                  </button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={draftReferencePending || explorerPending || !!savingKey}
+                    title="Session-only selected draft reference; does not save, publish or run tools"
+                    onClick={() => copyDraftReference(activeTab)}>
+                    {draftReferencePending ? 'Checking draft…' : 'Copy draft reference'}
                   </button>
                   {lspAvailableForTab && !lspSession && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
