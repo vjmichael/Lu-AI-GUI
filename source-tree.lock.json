@@ -2269,7 +2269,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_artifact_custody.rs",
-      "blob": "c9d359fb55bfa118949292147a46b4597050b702"
+      "blob": "49aaf88c580be4fdc40c445e045f4896e31fe173"
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_execution.rs",
