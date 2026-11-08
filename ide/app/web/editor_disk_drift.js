@@ -5,6 +5,8 @@
  * Native reads must still use the registered cap-std source capability.
  * Results are observations at a moment in time, not save/reload approval.
  */
+import { verifiedRelativeSourcePath } from './editor_working_set.js';
+
 const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const validProject = value => typeof value === 'string' && /^ide-[a-f0-9]{32}$/.test(value);
 export const MAX_DISK_AUDIT_TABS = 48;
@@ -19,7 +21,8 @@ export function diskAuditTargets(tabs, projectId) {
   const seen=new Set();
   return selected.map(tab=>{
     if (typeof tab.key!=='string' || tab.key!==projectId+':'+tab.relativePath ||
-        typeof tab.relativePath!=='string' || !sha(tab.revision) ||
+        verifiedRelativeSourcePath(tab.relativePath)!==tab.relativePath ||
+        !sha(tab.revision) ||
         !Number.isSafeInteger(tab.generation) ||
         !Number.isSafeInteger(tab.bufferRevision) ||
         seen.has(tab.key)) throw Error('B10_INVALID_SOURCE_IDENTITY');
@@ -76,6 +79,9 @@ function boundedRegion(left,right) {
   const leftEnd=a.length-suffix,rightEnd=b.length-suffix;
   return Object.freeze({
     identical:left===right,
+    // A bytewise newline change can yield no differing logical lines. Keep
+    // it visible instead of wrongly claiming that two byte streams match.
+    lineEndingOnlyDifference:left!==right && prefix===a.length && prefix===b.length,
     firstDifferentLine:prefix+1,
     leftChangedLines:Math.max(0,leftEnd-prefix),
     rightChangedLines:Math.max(0,rightEnd-prefix),
