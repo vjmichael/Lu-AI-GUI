@@ -12,6 +12,13 @@ class TestCognitumThreeArm(unittest.TestCase):
             self.assertNotIn("ansf:v1:",question)
             self.assertNotIn(expected.lower(),question.lower())
             if source: self.assertIn(source,{s[0] for s in m.SOURCES})
+    def test_recent_chat_has_true_pinned_evidence_controls(self):
+        ids={case[0] for case in m.CASES}
+        self.assertTrue(m.RECENT_FACT_CASES.issubset(ids))
+        self.assertGreaterEqual(len(m.RECENT_FACT_CASES),3)
+        self.assertEqual(m.bucket("absent"),"unknown")
+        self.assertEqual(m.bucket("c14-installed"),"recent")
+        self.assertEqual(m.bucket("c15-p13b"),"long_gap")
     def test_source_chunks_bounded(self):
         parts=m.chunks("pinned original\n\n"+"abcde "*350)
         self.assertTrue(all(0<len(p)<=1400 for p in parts))

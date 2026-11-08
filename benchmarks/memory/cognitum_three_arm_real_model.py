@@ -62,6 +62,12 @@ CASES = (
  ("absent","What was Cognitum's approved Epsilon-92 orbit budget?",
   "UNKNOWN",None,None),
 )
+# Conventional recent history must also contain relevant real evidence.
+# Otherwise B is unfairly starved and C can "win" by mere source injection.
+RECENT_FACT_CASES = frozenset(("c14-installed","p51-cgroup","m8-release"))
+def bucket(case):
+    return "recent" if case in RECENT_FACT_CASES else (
+        "unknown" if case=="absent" else "long_gap")
 def check_source(root, rel, blob):
     path = root / rel
     if not path.is_file() or path.is_symlink():
@@ -109,7 +115,22 @@ def corpus_from_cognitum(root):
     recent=[
         dict(id="recent-"+str(i),role="user",summary="Active current project",
              text=f"The current conversation is about a local engineering project; administrative checkpoint {i}.")
-        for i in range(9)]
+        for i in range(6)]
+    # The most recent three chat messages contain genuine verbatim excerpts
+    # from pinned Cognitum documents. B and C receive the same short evidence.
+    # Choose by source/proof only at dataset CONSTRUCTION, never at retrieval;
+    # gold source IDs are still absent from test-time C model inputs.
+    for case,_,_,session,support in CASES:
+        if case not in RECENT_FACT_CASES:continue
+        rel=next(x[1] for x in SOURCES if x[0]==session)
+        match=next((x["content"] for x in metadata.values()
+                    if x["path"]==rel and support.lower() in x["content"].lower()),None)
+        if match is None:
+            raise RuntimeError("pinned public source lost recent-chat factual control "+case)
+        i=match.lower().index(support.lower())
+        excerpt=match[max(0,i-180):min(len(match),i+220)]
+        recent.append(dict(id="recent-"+case,role="user",
+                           summary="Verbatim recent Cognitum evidence",text=excerpt))
     fixture["sessions"].append(dict(id="c-active",title="Active conversation",
             chapters=[dict(title="Current bounded chat",entries=recent)]))
     return fixture,metadata,recent
@@ -272,7 +293,7 @@ def run(args):
                 source_info.get(item["source_id"],{}).get("path")==
                 next(s[1] for s in SOURCES if s[0]==session)
                 and support.lower() in item["content"].lower() for item in sources))
-            row={"case_id":case,"trial":trial,"arm":arm,"question":question,
+            row={"case_id":case,"bucket":bucket(case),"trial":trial,"arm":arm,"question":question,
                  "expected":expected,"answer":generated,
                  "correct":norm(generated)==norm(expected),
                  "source_ids":[s["source_id"] for s in sources],
@@ -285,22 +306,42 @@ def run(args):
             put_json(folder,"partial_rows.json",rows)
             print(case,arm,"pass" if row["correct"] else "miss",flush=True)
         summary=metrics(rows)
-        verdict=("ANSF_ADVANTAGE_ON_THIS_COGNITUM_SUITE"
-                 if summary["ansf_hybrid"]["accuracy"]>summary["recent_chat"]["accuracy"]
-                 else "NO_ANSF_ADVANTAGE_ON_THIS_COGNITUM_SUITE")
+        group_scores={}
+        for segment in ("recent","long_gap","unknown"):
+            group_scores[segment]={arm:{
+                "correct":sum(r["correct"] for r in rows if r["bucket"]==segment
+                              and r["arm"]==arm),
+                "total":sum(1 for r in rows if r["bucket"]==segment
+                            and r["arm"]==arm)}
+                for arm in ARMS}
+        if group_scores["recent"]["ansf_hybrid"]["correct"] < group_scores["recent"]["recent_chat"]["correct"]:
+            verdict="ANSF_REGRESSION_ON_RECENT_HISTORY"
+        elif group_scores["unknown"]["ansf_hybrid"]["correct"] < group_scores["unknown"]["recent_chat"]["correct"]:
+            verdict="ANSF_REGRESSION_ON_UNKNOWN_FACTS"
+        elif summary["ansf_hybrid"]["accuracy"]>summary["recent_chat"]["accuracy"]:
+            verdict="ANSF_ADVANTAGE_ON_THIS_COGNITUM_SUITE"
+        else:
+            verdict="NO_ANSF_ADVANTAGE_ON_THIS_COGNITUM_SUITE"
         report={"schema":1,"valid_real_model_execution":True,
                 "oracle_source_ids_used":False,"verdict":verdict,
-                "metrics":summary,"rows":rows,"provenance":evidence,
+                "metrics":summary,"groups":group_scores,"rows":rows,"provenance":evidence,
                 "embedding_dimension":dimension,"trials":args.repeats}
         put_json(folder,"results.json",report)
         lines=["# Cognitum-backed Lu three-arm benchmark (real local GGUF)","",
                "Verdict: **"+verdict+"**. This is headless experimental evidence, not installed-app acceptance.","",
                "All arms use Qwen3-0.6B; ANSF hybrid discovers via production Lu Core SQLite FTS5 + real BGE semantic vectors. No case is given a gold source ID.","",
+               "Conventional recent history contains three genuine pinned Cognitum source excerpts. The experiment also scores long-gap and unknown cases; a recent-history regression is a negative verdict.","",
                "| Arm | Correct | Accuracy | Median model ms | p95 model ms | Supported sources |",
                "|---|---:|---:|---:|---:|---:|"]
         for arm in ARMS:
             m=summary[arm]
             lines.append(f"| {arm} | {m['correct']}/{m['total']} | {m['accuracy']:.1%} | {m['p50_model_ms']:.1f} | {m['p95_model_ms']:.1f} | {m['retrieval_support']} |")
+        lines.extend(["","## Stratified correctness against genuine recent evidence","","| Bucket | No memory | Recent chat | ANSF hybrid |",
+                      "|---|---:|---:|---:|"])
+        for segment in ("recent","long_gap","unknown"):
+            lines.append("| "+segment+" | "+" | ".join(
+                str(group_scores[segment][arm]["correct"])+"/"+
+                str(group_scores[segment][arm]["total"]) for arm in ARMS)+" |")
         lines.extend(["","Pinned Cognitum commit: "+COGNITUM_SHA,
                       "Answer model SHA-256: "+args.model_sha256,
                       "Embedding GGUF SHA-256: "+args.embedding_sha256,
