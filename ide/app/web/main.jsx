@@ -7,6 +7,8 @@ import { captureProjectView, restoreProjectView } from './editor_project_view.js
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
 import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace,
   revalidatedResumeDecision } from './workspace_layout.js';
+import { diskAuditTargets, classifyDiskAudit,
+  summarizeExternalDifference } from './editor_disk_drift.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -97,6 +99,10 @@ function App() {
   // Never persist CodeMirror EditorState, source content or B2 private drafts.
   const [rememberedLayout, setRememberedLayout] = useState(null);
   const [workspaceLayoutBusy, setWorkspaceLayoutBusy] = useState(false);
+  const [diskAuditReport, setDiskAuditReport] = useState(null);
+  const [diskComparison, setDiskComparison] = useState(null);
+  const [diskAuditBusy, setDiskAuditBusy] = useState(false);
+  const diskAuditSerial = useRef(0);
   const workspaceLayoutOp = useRef(null);
   const workspaceLayoutReadVersion = useRef(0);
   const [directory, setDirectory] = useState('');
@@ -262,6 +268,11 @@ function App() {
     projectSearchGeneration.current += 1;
     setProjectSearchResults(null);
     setProjectSearchBusy(false);
+    // No source revision assessment follows a different registered project.
+    diskAuditSerial.current += 1;
+    setDiskAuditReport(null);
+    setDiskComparison(null);
+    setDiskAuditBusy(false);
     gitEvidenceRequest.current += 1;
     setGitEvidenceBusy(false);
     setGitDiff(null);
@@ -1920,6 +1931,13 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    // Any earlier external comparison described a different editor revision.
+    setDiskComparison(previous=>previous?.tabKey===key ? null : previous);
+    setDiskAuditReport(previous=>previous ? {
+      ...previous,
+      rows:previous.rows.map(row=>row.key===key ?
+        {...row,status:'stale',reason:'Draft edited since inspection'} : row),
+    } : previous);
     const previousBuffer = bufferIdentities.current.get(key);
     if (previousBuffer) {
       bufferIdentities.current.set(key,advanceBufferIdentity(previousBuffer));
@@ -2285,6 +2303,126 @@ function App() {
         workspaceLayoutOp.current=null;
         setWorkspaceLayoutBusy(false);
       }
+      finishExplorerIo(ticket);
+    }
+  }
+
+  async function inspectOpenTabDiskRevisions() {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || workspaceLayoutOp.current || explorerIoTicket.current ||
+        savingKey || draftRecoveryBusy || reviewPending || inboxBusy) return;
+    let targets;
+    try { targets=diskAuditTargets(tabsRef.current,projectId); }
+    catch(error) {
+      setProblem('Cannot inspect open tabs: '+String(error));
+      return;
+    }
+    if (!targets.length) {
+      setHint('Open a source file before checking external disk changes.');
+      return;
+    }
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    const serial=++diskAuditSerial.current;
+    setDiskAuditBusy(true);
+    setDiskAuditReport(null);
+    setDiskComparison(null);
+    setProblem('');
+    const rows=[];
+    try {
+      // This is an explicit, bounded read of already-registered source tabs.
+      // Never poll background files and never auto-reload a local draft.
+      for (const target of targets) {
+        const originalState=editorStates.current.get(target.key);
+        let preview=null,unavailable=false;
+        try {
+          preview=await invoke('ide_preview_source_file',{
+            projectId,relativePath:target.relativePath,
+          });
+        } catch {
+          unavailable=true;
+        }
+        if (serial!==diskAuditSerial.current ||
+            explorerIoTicket.current!==ticket ||
+            activeProjectIdRef.current!==projectId) return;
+        const current=tabsRef.current.find(tab=>tab.key===target.key);
+        const state=editorStates.current.get(target.key);
+        const sameState=!!originalState && originalState===state;
+        const result=classifyDiskAudit(target,current,preview,projectId,sameState);
+        rows.push({
+          ...target,
+          status:unavailable && result.status!=='stale'
+            ? 'unavailable' : result.status,
+          diskRevision:result.diskRevision,
+          liveUnsaved:!!current && !!state &&
+            (state.sliceDoc()!==current.savedText),
+        });
+      }
+      if (serial!==diskAuditSerial.current ||
+          activeProjectIdRef.current!==projectId) return;
+      setDiskAuditReport({projectId,rows});
+      const changed=rows.filter(row=>row.status==='changed').length;
+      const unavailable=rows.filter(row=>row.status==='unavailable').length;
+      setHint('Checked '+rows.length+' currently open files. Changed on disk: '+
+        changed+'. Unavailable: '+unavailable+
+        '. No source or editor drafts were modified.');
+    } catch(error) {
+      if (serial===diskAuditSerial.current)
+        setProblem('Read-only disk check failed: '+String(error));
+    } finally {
+      if (serial===diskAuditSerial.current) setDiskAuditBusy(false);
+      finishExplorerIo(ticket);
+    }
+  }
+
+  async function compareEditorWithDisk(tab) {
+    const projectId=activeProjectIdRef.current;
+    if (!tab || tab.projectId!==projectId ||
+        workspaceLayoutOp.current || explorerIoTicket.current ||
+        savingKey || draftRecoveryBusy || reviewPending) return;
+    let target;
+    try { [target]=diskAuditTargets([tab],projectId); }
+    catch(error) {setProblem('Cannot compare disk revision: '+String(error));return;}
+    const originalState=editorStates.current.get(tab.key);
+    if (!originalState) {
+      setProblem('Current editor state is unavailable for comparison.');
+      return;
+    }
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    const serial=++diskAuditSerial.current;
+    setDiskAuditBusy(true);
+    setDiskComparison(null);
+    setProblem('');
+    try {
+      const preview=await invoke('ide_preview_source_file',{
+        projectId,relativePath:tab.relativePath,
+      });
+      if (explorerIoTicket.current!==ticket ||
+          serial!==diskAuditSerial.current ||
+          activeProjectIdRef.current!==projectId) return;
+      const current=tabsRef.current.find(row=>row.key===tab.key);
+      const state=editorStates.current.get(tab.key);
+      const outcome=classifyDiskAudit(target,current,preview,projectId,
+        state===originalState);
+      if (outcome.status==='stale' ||
+          outcome.status==='invalid_native_result' || !state)
+        throw Error('B10_EDITOR_OR_DISK_CONTEXT_CHANGED');
+      const summary=summarizeExternalDifference(
+        current.savedText,state.sliceDoc(),preview.text);
+      // Keep only bounded comparison excerpts, not the complete disk file.
+      setDiskComparison({
+        projectId,tabKey:tab.key,bufferRevision:current.bufferRevision,
+        generation:current.generation,baseRevision:current.revision,
+        diskRevision:outcome.diskRevision,status:outcome.status,summary,
+      });
+      setHint('Read-only disk comparison for '+tab.relativePath+
+        '. Review the excerpts; Reload and Save remain separate explicit actions.');
+    } catch(error) {
+      if (serial===diskAuditSerial.current)
+        setProblem('Cannot compare with current disk source: '+String(error));
+    } finally {
+      if (serial===diskAuditSerial.current) setDiskAuditBusy(false);
       finishExplorerIo(ticket);
     }
   }
@@ -3679,6 +3817,13 @@ function App() {
           <div className="sourcePreview" role="region" aria-label="Source code editor">
             <div className="editorLayoutToolbar">
               <button type="button" className="ghostBtn"
+                aria-label="Check open tabs for external disk changes"
+                disabled={!activeProject || !projectTabs.length || diskAuditBusy ||
+                  explorerPending || !!savingKey || workspaceLayoutBusy}
+                onClick={()=>void inspectOpenTabDiskRevisions()}>
+                {diskAuditBusy ? 'Checking disk…' : 'Check disk changes'}
+              </button>
+              <button type="button" className="ghostBtn"
                 aria-label="Remember open tabs for restart"
                 disabled={!activeProject || !projectTabs.length || workspaceLayoutBusy ||
                   explorerPending || !!savingKey}
@@ -3730,6 +3875,34 @@ function App() {
                 : 'No remembered tab layout. Remember tabs explicitly for restart.'}
               {' '}Never stores unsaved code or Undo. Use Preserve draft for private recovery.
             </p>
+            {diskAuditReport?.projectId===activeProject?.projectId &&
+              <section className="diskAuditPanel" aria-label="External file changes">
+                <div className="diskAuditHeading">
+                  <strong>External file revision check</strong>
+                  <button type="button" className="ghostBtn"
+                    aria-label="Dismiss external disk report"
+                    onClick={()=>setDiskAuditReport(null)}>Dismiss</button>
+                </div>
+                <p>Read-only inspection of {diskAuditReport.rows.length} open files.
+                  Disk files may change after inspection; compare again before acting.
+                  No automatic reload, merge, or Save.</p>
+                <div className="diskAuditRows">
+                  {diskAuditReport.rows.map(row=>
+                    <div className="diskAuditRow" key={row.key}>
+                      <code>{row.relativePath}</code>
+                      <strong>{row.status.replaceAll('_',' ')}</strong>
+                      {row.liveUnsaved && <span> · Unsaved editor</span>}
+                      {row.status==='changed' &&
+                        <button className="ghostBtn" type="button"
+                          disabled={diskAuditBusy || explorerPending}
+                          onClick={()=>{
+                            const live=tabsRef.current.find(tab=>tab.key===row.key);
+                            if (live) void compareEditorWithDisk(live);
+                          }}>Compare disk</button>}
+                    </div>
+                  )}
+                </div>
+              </section>}
             <div className="editorTabs" role="tablist" aria-label="Open source files">
               <button type="button" className="editorTabPage"
                 aria-label="Earlier open source tabs" disabled={!visibleEditorTabs.hiddenBefore}
@@ -3844,6 +4017,12 @@ function App() {
                   </button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    aria-label="Compare current editor with saved disk"
+                    disabled={explorerPending || !!savingKey || diskAuditBusy}
+                    onClick={()=>void compareEditorWithDisk(activeTab)}>
+                    Compare with disk
+                  </button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
                     onClick={() => reloadTab(activeTab)}>Reload</button>
                   <button className="ghostBtn editorToolButton"
@@ -3858,6 +4037,52 @@ function App() {
                   </button>
                 </span>
               </div>
+              {diskComparison?.projectId===activeProject?.projectId &&
+                diskComparison.tabKey===activeTab.key &&
+                diskComparison.bufferRevision===activeTab.bufferRevision &&
+                diskComparison.generation===activeTab.generation &&
+                diskComparison.baseRevision===activeTab.revision &&
+                <section className="diskComparisonPanel" aria-label="Read-only external source comparison">
+                  <div className="diskAuditHeading">
+                    <strong>{diskComparison.status==='current'
+                      ? 'Saved disk revision matches editor base'
+                      : 'Saved disk revision changed outside Lu IDE'}</strong>
+                    <button type="button" className="ghostBtn"
+                      onClick={()=>setDiskComparison(null)}>Close comparison</button>
+                  </div>
+                  <p>Source base <code>{diskComparison.baseRevision.slice(0,12)}…</code>
+                    {' · '}Current disk <code>{diskComparison.diskRevision.slice(0,12)}…</code>.
+                    This is a bounded first-difference excerpt, not a complete diff or merge.
+                    Neither view modifies project files or unsaved drafts.</p>
+                  {[
+                    ['Earlier saved base vs current disk',diskComparison.summary.savedVersusDisk],
+                    ['Live editor draft vs current disk',diskComparison.summary.draftVersusDisk],
+                  ].map(([label,region])=>
+                    <div className="diskComparisonBlock" key={label}>
+                      <strong>{label}</strong>
+                      {region.identical
+                        ? <p>Contents match exactly.</p>
+                        : <>
+                            <p>First difference at line {region.firstDifferentLine}.
+                              {' '}Earlier side: {region.leftChangedLines} changed lines;
+                              disk side: {region.rightChangedLines} changed lines.</p>
+                            <div className="diskCompareColumns">
+                              <div><strong>Editor side · line {region.left.startLine}</strong>
+                                <pre>{region.left.lines.join('\n')||'(empty region)'}</pre>
+                                {(region.left.moreLines>0 || region.left.clippedLines>0) &&
+                                  <small>Additional or clipped lines not shown</small>}
+                              </div>
+                              <div><strong>Current disk · line {region.right.startLine}</strong>
+                                <pre>{region.right.lines.join('\n')||'(empty region)'}</pre>
+                                {(region.right.moreLines>0 || region.right.clippedLines>0) &&
+                                  <small>Additional or clipped lines not shown</small>}
+                              </div>
+                            </div>
+                          </>}
+                    </div>)}
+                  <p>Existing Reload and Save commands retain their own confirmation,
+                    source revision checks and draft-protection rules.</p>
+                </section>}
               {findOpen && <div className="editorFindPanel" role="search" aria-label="Find in active file">
                 <div className="editorFindBar">
                   <input aria-label="Find text" placeholder="Find in file"
