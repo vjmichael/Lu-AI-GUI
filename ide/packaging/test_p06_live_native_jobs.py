@@ -1,6 +1,7 @@
 """P06 live Actions evidence classifier; hostile/no-network source regressions."""
 import copy
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from p06_live_native_jobs import (
@@ -145,6 +146,29 @@ class P06NativeEvidenceTests(unittest.TestCase):
                    return_value={"total_count": 2, "workflow_runs": []}):
             with self.assertRaisesRegex(EvidenceError, "truncated"):
                 _all_pages(resource, "workflow_runs")
+
+    def test_catalog_matches_real_required_windows_linux_workflow_sources(self):
+        root = Path(__file__).resolve().parents[2]
+        self.assertEqual(len(GATES), 5)
+        for gate_id, workflow, jobs, kind in GATES:
+            with self.subTest(gate=gate_id):
+                self.assertTrue(workflow.startswith(".github/workflows/ide-"))
+                source = (root / workflow).read_text(encoding="utf-8")
+                self.assertTrue(source.startswith("name: IDE "))
+                self.assertIn("\njobs:\n", source)
+                for job in jobs:
+                    # GitHub appends matrix OS in parentheses. The workflow
+                    # source must still declare the exact underlying job key.
+                    base_job = job.split(" (", 1)[0]
+                    self.assertIn("\n  " + base_job + ":\n", source)
+                    if " (ubuntu-24.04)" in job:
+                        self.assertIn("ubuntu-24.04", source)
+                    if " (windows-2022)" in job:
+                        self.assertIn("windows-2022", source)
+                self.assertIn(kind, (
+                    "native_source", "protected_native", "unsigned_installed",
+                    "source_dependency",
+                ))
 
     def test_runner_origin_is_pinned_to_exact_repo(self):
         gate = GATES[2]
