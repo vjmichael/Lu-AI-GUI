@@ -39,6 +39,7 @@ use crate::{
     },
     native_background_process::BackgroundProcessSupervisor,
     reviewed_outcome_oracle::{verify_git,verify_media},
+    reviewed_source_guard::{SourceRevisionGuard,RevisionObservation},
     registry::NativeToolRegistry,
     tasks::TaskStore,
 };
@@ -322,6 +323,28 @@ impl NativeTool for ReviewedTool{
                 if !allowed.contains(read_tool_id){
                     return Err(refused("current user task did not authorize resource read"))
                 }
+                // E1-P13: sample the ORIGINAL host-selected source before
+                // the supervised worker starts. The model does not supply
+                // a path, digest, source identity, or verification method.
+                // Hold approved media's pinned file descriptor throughout
+                // worker execution; the real FFprobe still reads separately.
+                let mut revision_guard=match backend.as_ref(){
+                    ReviewedBackend::Git{repository_root,..}=>{
+                        let git_op=match operation{
+                            Operation::Head=>GitReadOperation::HeadCommit,
+                            Operation::TrackedStatus=>GitReadOperation::TrackedStatus,
+                            Operation::Branch=>GitReadOperation::CurrentBranch,
+                            Operation::History=>GitReadOperation::HistoryCount,
+                            _=>return Err(refused("wrong reviewed Git source revision"))
+                        };
+                        SourceRevisionGuard::git(repository_root,git_op)
+                    },
+                    ReviewedBackend::Media{
+                        approved_media_path,media_sha256,..
+                    }=>SourceRevisionGuard::media(
+                        approved_media_path,media_sha256
+                    )
+                };
                 match backend.as_ref(){
                     ReviewedBackend::Git{catalog,broker,resource_id,..}=>{
                         broker.launch(
@@ -386,7 +409,7 @@ impl NativeTool for ReviewedTool{
                 // The actual OS effect is APPLIED, but its reported facts are
                 // not independently trusted until a DIFFERENT host-only
                 // observation of the original reviewed resource agrees.
-                let oracle=match backend.as_ref(){
+                let mut oracle=match backend.as_ref(){
                     ReviewedBackend::Git{repository_root,..}=>{
                         let git_op=match operation{
                             Operation::Head=>GitReadOperation::HeadCommit,
@@ -403,6 +426,25 @@ impl NativeTool for ReviewedTool{
                         approved_media_path,media_sha256,*reviewed_container,&value
                     ),
                 };
+                // A source match observed only *after* the application
+                // returned is insufficient when the approved file or Git
+                // revision changed during its run. Reject a changed source
+                // even if the tool's own claimed count/hash still matches.
+                // When a bounded pre-observation was unavailable, never
+                // upgrade a later isolated observation to VERIFIED.
+                match revision_guard.recheck(){
+                    RevisionObservation::Stable=>{},
+                    RevisionObservation::Changed=>{
+                        oracle.verdict=IndependentOutcomeVerdict::Conflict;
+                        oracle.observed_sha256=None;
+                    },
+                    RevisionObservation::Unsupported=>{
+                        if oracle.verdict==IndependentOutcomeVerdict::Verified{
+                            oracle.verdict=IndependentOutcomeVerdict::Unsupported;
+                            oracle.observed_sha256=None;
+                        }
+                    },
+                }
                 // Persist the SECOND observation against the EXACT effect
                 // bytes. Journal failure MUST deny model-visible success.
                 journal.record_independent_outcome(
