@@ -2749,6 +2749,18 @@ function App() {
     setLinkedReplyText('');
   },[chatId]);
   useEffect(()=>{
+    if(!messageEditor&&!messageProvenance&&!linkedReplyTarget)return;
+    const onEscape=event=>{
+      if(event.key==='Escape'){
+        setMessageEditor(null);
+        setMessageProvenance(null);
+        setLinkedReplyTarget(null);
+      }
+    };
+    window.addEventListener('keydown',onEscape);
+    return ()=>window.removeEventListener('keydown',onEscape);
+  },[messageEditor,messageProvenance,linkedReplyTarget]);
+  useEffect(()=>{
     if(!messageReplay)return;
     const closeOnEscape=event=>{
       if(event.key==='Escape')setMessageReplay(null);
@@ -4152,6 +4164,105 @@ function App() {
               Copy original
             </button>
             <button type="button" onClick={()=>setMessageReplay(null)}>Done</button>
+          </div>
+        </section>
+      </div>}
+      {messageEditor&&chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setMessageEditor(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Edit message display revision"
+          onClick={event=>event.stopPropagation()}>
+          <header><strong>Correct displayed message #{messageEditor.seq}</strong>
+            <button type="button" onClick={()=>setMessageEditor(null)}>Close</button>
+          </header>
+          <small>Human display correction only. The immutable ANSF original,
+            previous model input, and all earlier tool permissions remain unchanged.</small>
+          <label className="messageRevisionEditor">Corrected text
+            <textarea autoFocus rows={8} maxLength={16384}
+              value={messageEditor.text}
+              onChange={event=>setMessageEditor(old=>({
+                ...old,text:event.target.value
+              }))}/>
+          </label>
+          <details className="originalMessageDetails">
+            <summary>View immutable original for comparison</summary>
+            <pre>{messageEditor.original}</pre>
+          </details>
+          <div className="settingsActions">
+            <button type="button" disabled={revisionActionBusy||
+              !messageEditor.text.trim()||
+              messageEditor.text===(
+                displayRevisions[messageEditor.seq]?.currentText
+              )}
+              onClick={()=>void editSavedMessage()}>
+              Save new display revision
+            </button>
+            <button type="button" onClick={()=>setMessageEditor(null)}>Cancel</button>
+          </div>
+        </section>
+      </div>}
+      {messageProvenance&&chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setMessageProvenance(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Immutable message provenance and edit versions"
+          onClick={event=>event.stopPropagation()}>
+          <header><strong>Source and revisions · message #{messageProvenance.entry.seq}</strong>
+            <button type="button" autoFocus
+              onClick={()=>setMessageProvenance(null)}>Close</button>
+          </header>
+          <small>Authenticated ANSF originals are retained even after a display correction.
+            A human correction is not a new model answer or tool-execution receipt.</small>
+          <div className="messageProvenanceVersions">
+            <section>
+              <strong>Original ANSF text · version 0</strong>
+              <small>SHA-256: {messageProvenance.revision.originalSha256}</small>
+              <pre>{messageProvenance.revision.originalText}</pre>
+            </section>
+            {messageProvenance.revision.versions.map(v=>
+              <section key={v.version}>
+                <strong>Version {v.version} · human display correction</strong>
+                <small>SHA-256: {v.sha256}</small>
+                <pre>{v.text}</pre>
+              </section>
+            )}
+            {messageProvenance.revision.replyTo&&<section>
+              <strong>Linked reply provenance</strong>
+              <small>Parent ANSF message: #{messageProvenance.revision.replyTo.parentSeq}
+                {' '}· pinned version {messageProvenance.revision.replyTo.pinnedParentVersion}
+              </small>
+              <small>Parent SHA-256:
+                {' '+messageProvenance.revision.replyTo.pinnedParentSha256}</small>
+              <pre>{messageProvenance.revision.replyTo.pinnedParentExcerpt}</pre>
+              <small>The parent link never changes when the parent is edited later.</small>
+            </section>}
+          </div>
+        </section>
+      </div>}
+      {linkedReplyTarget?.chatId===chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setLinkedReplyTarget(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Write a linked human reply" onClick={event=>event.stopPropagation()}>
+          <header><strong>Reply to saved message #{linkedReplyTarget.seq}</strong>
+            <button type="button" onClick={()=>setLinkedReplyTarget(null)}>Close</button>
+          </header>
+          <small>Target display version {linkedReplyTarget.version} ·
+            pinned SHA-256 {linkedReplyTarget.sha}</small>
+          <blockquote className="messagePinnedQuote">
+            {linkedReplyTarget.displayText}
+          </blockquote>
+          <label className="messageRevisionEditor">New human reply
+            <textarea autoFocus rows={6} maxLength={16384}
+              value={linkedReplyText} onChange={event=>setLinkedReplyText(event.target.value)}
+              placeholder="Write a reply linked to this specific message and version"/>
+          </label>
+          <small>Posting writes a new saved human message and a provenance link.
+            It does not send this text to the AI, call tools, or renew old permissions.</small>
+          <div className="settingsActions">
+            <button type="button" disabled={revisionActionBusy||!linkedReplyText.trim()}
+              onClick={()=>void postLinkedHumanReply()}>
+              Post linked human reply
+            </button>
+            <button type="button" onClick={()=>setLinkedReplyTarget(null)}>Cancel</button>
           </div>
         </section>
       </div>}
