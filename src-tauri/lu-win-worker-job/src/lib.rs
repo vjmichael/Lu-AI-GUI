@@ -267,7 +267,8 @@ pub mod unix_owned {
             }else{installed};
             let meta=match std::fs::symlink_metadata(&candidate){
                 Ok(meta)=>meta,
-                Err(e) if e.kind()==io::ErrorKind::NotFound&&cfg!(debug_assertions)=>
+                Err(e) if e.kind()==io::ErrorKind::NotFound&&cfg!(debug_assertions)
+                    &&std::env::var_os("LU_E1_P08_TEST_GUARD_BINARY").is_none()=>
                     return Ok(None),
                 Err(e)=>return Err(e),
             };
