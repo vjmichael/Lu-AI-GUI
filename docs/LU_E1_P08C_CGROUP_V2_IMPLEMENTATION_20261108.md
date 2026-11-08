@@ -31,8 +31,9 @@ only concern external worker process lifetimes.
   before the kernel membership operation completes successfully.
 - If Lu is SIGKILLed, its pipe closes without relying on Rust Drop.
   The guardian writes `1` into its owned leaf `cgroup.kill`, waits
-  until `cgroup.events` reports recursive `populated 0`, and only then
-  removes the empty cgroup. On orderly host cleanup the parent requires
+  until `cgroup.events` reports recursive `populated 0`, then
+  removes empty nested cgroups bottom-up within a bounded 16-level,
+  1,024-directory, no-symlink walk before removing the leaf. On orderly host cleanup the parent requires
   the guardian's successful exit and absence of the former leaf.
 - A missing delegated subtree or first-party guardian image is a
   **hard admission failure** for this path. There is no unchecked
@@ -54,8 +55,10 @@ The independent Python test:
 
 1. Starts a genuine Rust host which obtains cgroup custody and places a
    worker in the leaf *before* exec.
-2. Spawns a real `setsid()` descendant with a different PGID and proves
-   that it **remains in the same worker cgroup**, not the guardian group.
+2. Spawns a real `setsid()` descendant with a different PGID, then
+   moves it into an **actual nested child cgroup** of the worker leaf.
+   Requires the nested group to report `populated 1`, while the guard
+   remains outside the killable leaf.
 3. Records real `cgroup.events populated=1` and exact
    `/proc/<pid>/cgroup` identities for guardian, worker and child.
 4. Kills the Lu-like host with `SIGKILL`, without Rust Drop, and requires
