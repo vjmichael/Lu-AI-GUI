@@ -967,7 +967,7 @@ mod tests{
         assert_eq!(s.release_without_dispatch(
             &f.plan,&f.chat,&f.origin,&f.owner,1
         ),Err(ScheduleError::ReviewRequired));
-        drop(c);drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
+        drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     fn tool(id:&str,turn:&str)->ToolInvocation{
         ToolInvocation{
@@ -1032,7 +1032,7 @@ mod tests{
         assert_eq!(s.release_without_dispatch(
             &f.plan,&f.chat,&f.origin,&f.owner,1
         ),Err(ScheduleError::ReviewRequired));
-        drop(c);drop(effect);drop(task);drop(s);drop(c);drop(b);drop(a);
+        drop(effect);drop(task);drop(s);drop(c);drop(b);drop(a);
         fs::remove_dir_all(f.root).unwrap();
     }
 }
