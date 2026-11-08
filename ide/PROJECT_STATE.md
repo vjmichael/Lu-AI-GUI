@@ -2,6 +2,9 @@
 
 ## IDE B4: split editor with independent, project-scoped source buffers — November 8, 2026
 
+**B4 installed acceptance source added:** Real Windows unsigned NSIS + WebView2 UIA and Linux Debian + GTK/AT-SPI two-pane editing, per-pane explicit Save and original source SHA isolation workflows are now committed on B4, reusing actual protected-source release notice packaging requirements. Their scheduled GitHub OS runs are **not passing evidence until exact-head jobs complete successfully**. The B4 native workflow now diffs actual reviewed execution/file-write source against its fixed B2 parent rather than checking that a checkout has no unstaged modifications. Original B2/B3 feature gates remain OPEN.
+
+
 B4 branch ide/b4-split-editor-current-stack-20261108 is stacked on B2 draft PR #145. The visible current IDE editor now supports two different open files in side-by-side CodeMirror panes (or stacked at smaller display widths), with independent source tab state/undo, no duplicated buffer identities, a secondary-file selector, Make primary and explicit Save second file. The global Ctrl+S chooses the focused pane rather than saving the wrong source. Source/project closure and project switching invalidate a stale secondary pane. Pure B4 JavaScript tests and actual Windows/Linux native host+frontend+locked Tauri compile CI are committed, but exact-head CI and genuinely installed Windows NSIS/Linux Debian two-pane editing acceptance remain OPEN. No new native tool permission, LSP release, Lu Core integration or disk auto-save. Details: docs/IDE_B4_SPLIT_EDITOR_20261108.md.
 
 
