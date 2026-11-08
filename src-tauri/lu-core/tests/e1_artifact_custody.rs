@@ -41,9 +41,15 @@ impl ToolAuthorizer for Policy{
     }
 }
 fn root()->PathBuf{
-    std::env::temp_dir().join(format!("lu-e1-artifact-real-{}-{}",
+    // Windows timer granularity can repeat timestamps across parallel Rust tests.
+    // A per-process sequence prevents two genuine OS test fixtures sharing
+    // the same SQLite originals/session identity.
+    static NEXT_ROOT:std::sync::atomic::AtomicU64=
+        std::sync::atomic::AtomicU64::new(0);
+    std::env::temp_dir().join(format!("lu-e1-artifact-real-{}-{}-{}",
         std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
-            .unwrap().as_nanos()))
+            .unwrap().as_nanos(),
+        NEXT_ROOT.fetch_add(1,std::sync::atomic::Ordering::Relaxed)))
 }
 fn worker(key:&str)->PathBuf{
     let path=PathBuf::from(std::env::var_os(key)
