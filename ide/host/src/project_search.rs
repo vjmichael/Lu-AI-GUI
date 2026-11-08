@@ -2,7 +2,6 @@
 //! execution, indexing daemon, Lu bridge, or implicit network access.
 use std::{collections::VecDeque, io::Read};
 
-use regex::RegexBuilder;
 use serde::Serialize;
 
 use crate::{
@@ -46,6 +45,38 @@ pub struct ProjectSearchResult {
     pub skipped_files: usize,
     pub matches: Vec<ProjectSearchMatch>,
     pub truncated: bool,
+}
+
+/// Literal saved-text match offsets in ORIGINAL UTF-8 bytes, not positions in
+/// lowercased text. The standard-library Unicode lowercase transform can
+/// expand characters; a valid hit must start AND end at original char bounds.
+/// No new dependency is admitted into the already-reviewed Tauri Cargo.lock.
+fn literal_offsets(line: &str, query: &str, case_sensitive: bool) -> Vec<(usize, usize)> {
+    if case_sensitive {
+        return line
+            .match_indices(query)
+            .map(|(start, found)| (start, start + found.len()))
+            .collect();
+    }
+    let normalized_query = query.to_lowercase();
+    let mut folded = String::with_capacity(line.len());
+    let mut boundaries = Vec::with_capacity(line.len() + 1);
+    boundaries.push((0usize, 0usize));
+    for (offset, ch) in line.char_indices() {
+        for lower in ch.to_lowercase() {
+            folded.push(lower);
+        }
+        boundaries.push((folded.len(), offset + ch.len_utf8()));
+    }
+    folded
+        .match_indices(&normalized_query)
+        .filter_map(|(start, found)| {
+            let end = start + found.len();
+            let first = boundaries.binary_search_by_key(&start, |pair| pair.0).ok()?;
+            let last = boundaries.binary_search_by_key(&end, |pair| pair.0).ok()?;
+            Some((boundaries[first].1, boundaries[last].1))
+        })
+        .collect()
 }
 
 fn excluded(name: &str) -> bool {
@@ -102,12 +133,6 @@ impl IdeWorkspaceRegistry {
         {
             return Err(BrowserError::InvalidSearch);
         }
-        let expression = RegexBuilder::new(&regex::escape(query))
-            .case_insensitive(!case_sensitive)
-            .unicode(true)
-            .size_limit(1 << 20)
-            .build()
-            .map_err(|_| BrowserError::InvalidSearch)?;
         let root = self.source_capability(project_id)?;
         let mut result = ProjectSearchResult {
             schema_version: 1,
@@ -231,18 +256,18 @@ impl IdeWorkspaceRegistry {
                 for (index, raw) in text.split_inclusive('\n').enumerate() {
                     let line = raw.strip_suffix('\n').unwrap_or(raw);
                     let line = line.strip_suffix('\r').unwrap_or(line);
-                    for found in expression.find_iter(line) {
+                    for (found_start, found_end) in literal_offsets(line, query, case_sensitive) {
                         result.matches.push(ProjectSearchMatch {
                             relative_path: relative_path.clone(),
                             revision: revision.clone(),
                             line: index + 1,
-                            column_utf16: line[..found.start()].encode_utf16().count() + 1,
-                            match_length_utf16: line[found.start()..found.end()]
+                            column_utf16: line[..found_start].encode_utf16().count() + 1,
+                            match_length_utf16: line[found_start..found_end]
                                 .encode_utf16()
                                 .count(),
-                            from_byte: (line_start_byte + found.start()) as u64,
-                            to_byte: (line_start_byte + found.end()) as u64,
-                            preview: excerpt(line, found.start(), found.end()),
+                            from_byte: (line_start_byte + found_start) as u64,
+                            to_byte: (line_start_byte + found_end) as u64,
+                            preview: excerpt(line, found_start, found_end),
                         });
                         if result.matches.len() >= MAX_MATCHES {
                             result.truncated = true;
@@ -260,6 +285,18 @@ impl IdeWorkspaceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_lowercase_keeps_original_byte_offsets_and_char_boundaries() {
+        let text = "α😀NEEDLE İ I ẞ";
+        assert_eq!(literal_offsets(text, "needle", false), vec![(6, 12)]);
+        assert_eq!(literal_offsets(text, "needle", true), Vec::new());
+        // Unicode lowercase expands U+0130 into i + combining dot; neither
+        // an inner expansion nor a partial source scalar is a valid hit.
+        assert_eq!(literal_offsets("İ", "i", false), Vec::new());
+        assert_eq!(literal_offsets("İ", "İ", false), vec![(0, 2)]);
+        assert_eq!(literal_offsets("ẞ", "ß", false), vec![(0, 3)]);
+    }
 
     #[test]
     fn excerpt_keeps_the_matched_text_visible() {
