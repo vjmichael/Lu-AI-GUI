@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ad031b7091e5b3e437c386a4e0569c71b61c1f60",
-  "trackedFileCount": 653,
+  "sourceCommitBeforeLock": "8aea9772332e27dd6d16b5f1ec03da5d591344a2",
+  "trackedFileCount": 659,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -58,6 +58,10 @@
     {
       "path": ".github/workflows/lu-e1-p06e-ffprobe.yml",
       "blob": "afe0e53feb52480a3c009cd24d865206f03129c1"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
+      "blob": "d52745ce0c0bfdfddfb93b9f1593881bf4ecbab2"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -332,6 +336,10 @@
       "blob": "01fdcc42396a313382eba362acc09af060e797d5"
     },
     {
+      "path": "docs/LU_E1_P07_REVIEWED_APPLICATION_CHAT_20261107.md",
+      "blob": "35fee861718b7ff03281b011126794e2177f1e4b"
+    },
+    {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
       "blob": "543ab253462842492684377a2dc161284aa04201"
     },
@@ -465,7 +473,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "d279bcde70b88654797848581f6749ddf2ae8570"
+      "blob": "8529b7b2c43c2f80b45cf7030bde7a48278797c5"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -741,7 +749,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "a25bd50994ed2af3c8a8badd63ead62902e79084"
+      "blob": "2e59732ea09d2d2a2113507283f94bc0bd6ce55c"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -806,6 +814,10 @@
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
       "blob": "11fc438c0e54260d62f187fc988c24bb00f366bb"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
+      "blob": "54f7671c73b1fd57ace1185a4c96d009e89449f1"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
@@ -1068,6 +1080,10 @@
       "blob": "f5ae7c2241d9e449defeb3e0c6bfe452b8d55041"
     },
     {
+      "path": "lu-desktop/tests/reviewed-app-desktop.test.mjs",
+      "blob": "cfd94e843edf783777f8d449300309ab17a4cd56"
+    },
+    {
       "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
       "blob": "75b285b65e39c9c00238dd3f2b93a5f7e049fc0d"
     },
@@ -1149,7 +1165,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "2fc98d5dec2e26c127ab85c5305797136393f041"
+      "blob": "8472bf55ca0d235cb95baec6b2f57f15e1b95351"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1585,7 +1601,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "1b62e0d9ce0e62089fc932b11ecd0ec1b5069965"
+      "blob": "27c9b1f653cb22fcd9a2c8a1eda45df6fa462397"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1741,7 +1757,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_capability_inventory.rs",
-      "blob": "7b001659dd326dcd0308093eccea3bc2b8f0ecb2"
+      "blob": "860aa020ee34d596119989c30d72bfce587e56c8"
     },
     {
       "path": "src-tauri/lu-core/src/native_chat_ids.rs",
@@ -1926,6 +1942,10 @@
     {
       "path": "src-tauri/lu-core/src/native_resource_pressure.rs",
       "blob": "53e793194f3fedef9b5edc9321ed6c872a35eb55"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reviewed_app_tool.rs",
+      "blob": "3a2e1ada7bbc8f929240128b33f4b858a2f092a2"
     },
     {
       "path": "src-tauri/lu-core/src/native_rpm.rs",
@@ -2274,6 +2294,10 @@
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_execution.rs",
       "blob": "f13bf62f9ee797c347a9d01fbd51a0d616f9d1b2"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
+      "blob": "4b7cd8ff08e30e71d583641b7f14bb294b000e0a"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
