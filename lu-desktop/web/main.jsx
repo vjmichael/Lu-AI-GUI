@@ -62,6 +62,15 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [requiredName,setRequiredName]=useState('');
   const [requiredVersion,setRequiredVersion]=useState('');
   const [requiredPlan,setRequiredPlan]=useState([]);
+  const [beliefSubject,setBeliefSubject]=useState('model');
+  const [beliefPredicate,setBeliefPredicate]=useState('backend');
+  const [beliefVersion,setBeliefVersion]=useState('1.0');
+  const [beliefValue,setBeliefValue]=useState('');
+  const [beliefSource,setBeliefSource]=useState('');
+  const [beliefCorrection,setBeliefCorrection]=useState('');
+  const [beliefCorrectionReason,setBeliefCorrectionReason]=useState('');
+  const [beliefRows,setBeliefRows]=useState([]);
+  const [beliefBusy,setBeliefBusy]=useState(false);
 
   const requests=useRef(0);
   const scrollRef=useRef(null);
@@ -322,6 +331,53 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     }catch(e){setError('Required package verification unavailable: '+String(e))}
     finally{setResumeBusy(false)}
   }
+  async function readBeliefs(){
+    if(!activeChatId||beliefBusy||!resumeProject.trim()||!resumeTask.trim())return;
+    setBeliefBusy(true);setError('');
+    try{
+      const records=await invoke('lu_m4_read_beliefs',{
+        chatId:activeChatId,projectId:resumeProject.trim(),taskId:resumeTask.trim(),
+        subject:beliefSubject.trim(),predicate:beliefPredicate.trim(),
+        applicationVersion:beliefVersion.trim()
+      });
+      setBeliefRows(records);
+    }catch(e){setError('Original belief review unavailable: '+String(e))}
+    finally{setBeliefBusy(false)}
+  }
+  async function noteBelief(e){
+    e.preventDefault();
+    const sourceId=beliefSource.trim()||
+      (reading?.sourceChatId===activeChatId?reading.sourceId:null);
+    if(!activeChatId||!sourceId||!beliefValue.trim()||beliefBusy)return;
+    setBeliefBusy(true);setError('');
+    try{
+      await invoke('lu_m4_note_reported_claim',{
+        chatId:activeChatId,sourceId,projectId:resumeProject.trim(),
+        taskId:resumeTask.trim(),subject:beliefSubject.trim(),
+        predicate:beliefPredicate.trim(),value:beliefValue.trim(),
+        applicationVersion:beliefVersion.trim()
+      });
+      setBeliefValue('');setBeliefRows([]);
+    }catch(e){setError('Source-anchored claim not recorded: '+String(e))}
+    finally{setBeliefBusy(false)}
+  }
+  async function retractBelief(e){
+    e.preventDefault();
+    if(!activeChatId||!beliefCorrection.trim()||!beliefCorrectionReason.trim()||
+       beliefBusy)return;
+    setBeliefBusy(true);setError('');
+    try{
+      await invoke('lu_m4_retract_claim',{
+        chatId:activeChatId,claimId:beliefCorrection.trim(),
+        correctionSourceId:beliefSource.trim()||
+          (reading?.sourceChatId===activeChatId?reading.sourceId:''),
+        reason:beliefCorrectionReason.trim()
+      });
+      setBeliefCorrection('');setBeliefCorrectionReason('');
+      setBeliefRows([]);
+    }catch(e){setError('Human-sourced correction unavailable: '+String(e))}
+    finally{setBeliefBusy(false)}
+  }
   async function saveCheckpoint(e){
     e.preventDefault();
     const sourceId=resumeSource.trim()||
@@ -398,6 +454,60 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
       <small>New original messages are indexed incrementally. An unindexed or unsuitable embedding model does not grant answers or permissions.</small>
     </details>
 
+    <details className="ansfAssetsMemory" aria-label="M4 belief revision and semantic claims">
+      <summary>M4 semantic claims · source and conflict review</summary>
+      <small>Reported claims are never verified facts. Contradictions, stale versions and corrections must be reviewed; prior claims give no authority to use tools.</small>
+      <form className="ansfAssetForm" onSubmit={noteBelief}>
+        <label>Project and task
+          <small>{resumeProject} · {resumeTask}</small>
+        </label>
+        <label>Subject key
+          <input value={beliefSubject} maxLength={128}
+            onChange={e=>setBeliefSubject(e.target.value)}/>
+        </label>
+        <label>Predicate key
+          <input value={beliefPredicate} maxLength={128}
+            onChange={e=>setBeliefPredicate(e.target.value)}/>
+        </label>
+        <label>Application version
+          <input value={beliefVersion} maxLength={128}
+            onChange={e=>setBeliefVersion(e.target.value)}/>
+        </label>
+        <label>Original user ANSF source ID
+          <input value={beliefSource||
+            (reading?.sourceChatId===activeChatId?reading?.sourceId:'')}
+            onChange={e=>setBeliefSource(e.target.value)} maxLength={224}
+            placeholder="Select an original user message"/>
+        </label>
+        <label>Reported fact or hypothesis
+          <textarea rows={2} maxLength={1024} value={beliefValue}
+            onChange={e=>setBeliefValue(e.target.value)}/>
+        </label>
+        <button type="submit" disabled={beliefBusy||!beliefValue.trim()||
+          !(beliefSource||(reading?.sourceChatId===activeChatId&&reading?.sourceId))}>
+          Record as reported, not verified</button>
+      </form>
+      <button type="button" onClick={()=>void readBeliefs()}
+        disabled={beliefBusy||!beliefSubject.trim()||!beliefPredicate.trim()}>
+        Recheck current source, versions and contradictions</button>
+      {beliefRows.map(x=><article className="ansfHistoryEntry" key={x.claimId}>
+        <small>{x.status} · original {x.originalSourceId}</small>
+        <p>{x.reportedValue}</p><code>{x.claimId}</code>
+      </article>)}
+      <form className="ansfAssetForm" onSubmit={retractBelief}>
+        <label>Claim ID to retract
+          <input maxLength={128} value={beliefCorrection}
+            onChange={e=>setBeliefCorrection(e.target.value)}/>
+        </label>
+        <label>Reason for correction
+          <input maxLength={512} value={beliefCorrectionReason}
+            onChange={e=>setBeliefCorrectionReason(e.target.value)}/>
+        </label>
+        <button type="submit" disabled={beliefBusy||!beliefCorrection.trim()||
+          !beliefCorrectionReason.trim()}>Retract with selected human original…</button>
+      </form>
+      <small>To read this in a real local-model turn, send: Recall belief project {resumeProject} task {resumeTask} subject {beliefSubject} predicate {beliefPredicate} version {beliefVersion}. This recalls historical evidence, not current permissions.</small>
+    </details>
     <details className="ansfAssetsMemory" aria-label="Project continuity">
       <summary>Continue previous work · project checkpoint</summary>
       <small>Source-linked task progress remains available across Lu conversations and model changes. Historical work does not grant a new tool operation. For automatic read-only recovery in a new human chat, send: Resume project lu task windows-installer (use your exact saved project and task IDs).</small>

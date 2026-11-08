@@ -209,8 +209,9 @@ fn discover_sources(root:&Path,request:&Path)->Result<(),String>{
             "what"|"which"|"does"|"when"|"many"|"from"|"with"|"were"|
             "their"|"about"|"into"|"that"|"this"|"have"|"been"|"answer"))
         .take(8).collect::<Vec<_>>();
+    // Each term is already normalized to ASCII alphanumeric above.
+    // A single bounded FTS5 expression is used by every authorized book.
     let fts=words.join(" OR ");
-        .collect::<Vec<_>>().join(" OR ");
     let mut lexical=Vec::new();
     let mut semantic=Vec::new();
     let mut seen=std::collections::HashSet::new();

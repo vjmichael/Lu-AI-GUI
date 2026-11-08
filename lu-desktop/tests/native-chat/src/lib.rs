@@ -34,6 +34,10 @@ pub mod ansf_source_ids;
 // M3-S1/S2: compile the real semantic projection and hybrid ranker.
 #[path = "../../../../src-tauri/lu-core/src/ansf_semantic.rs"]
 pub mod ansf_semantic;
+#[path = "../../../../src-tauri/lu-core/src/ansf_revisions.rs"]
+pub mod ansf_revisions;
+#[path = "../../../../src-tauri/lu-core/src/ansf_belief_revision.rs"]
+pub mod ansf_belief_revision;
 #[path = "../../../../src-tauri/lu-core/src/ansf_embedding_worker.rs"]
 pub mod ansf_embedding_worker;
 
@@ -530,4 +534,66 @@ mod m3_project_continuity_acceptance{
         }
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+
+#[cfg(test)]
+mod m4_real_book_restart_integration{
+    use super::{chat_store::{ChatStore,m4_explicit_belief_target},
+        continuity::ContinuityStore,journal::EffectJournal};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    #[test]
+    fn user_scoped_belief_survives_native_sqlite_restart_without_inheriting_grants(){
+        let root=std::env::temp_dir().join(format!("lu-m4-native-{}-{}",
+          std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let chat;
+        let source;
+        {
+            let store=ChatStore::open(&root).unwrap();
+            chat=store.create_chat().unwrap().chat_id;
+            store.append_user(&chat,"I observed the native tool's version changed").unwrap();
+            source=store.original_history_page(&chat,&chat,None,8).unwrap()
+                .entries[0].source_id.clone();
+            store.m4_note_reported_claim(&chat,&source,"claim-one","lu","model",
+                "runtime","version","2.0","2.0",now()+3600).unwrap();
+            assert!(store.m4_note_reported_claim(&chat,"ansf:v1:wrong:1",
+                "claim-two","lu","model","runtime","version","unknown","2.0",
+                now()+3600).is_err());
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            let journal=EffectJournal::open(&root.join("journal.sqlite")).unwrap();
+            let view=store.m4_belief_context(&chat,"lu","model","runtime","version",
+                "2.0",&continuity,&journal).unwrap();
+            assert_eq!(view.len(),1);
+            assert_eq!(view[0]["status"],"reported_unverified");
+        }
+        {
+            let reopened=ChatStore::open(&root).unwrap();
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            let journal=EffectJournal::open(&root.join("journal.sqlite")).unwrap();
+            assert_eq!(reopened.m4_belief_context(&chat,"lu","model","runtime",
+                "version","2.0",&continuity,&journal).unwrap().len(),1);
+            let other=reopened.create_chat().unwrap().chat_id;
+            assert!(reopened.m4_note_reported_claim(&other,&source,
+                "claim-other","lu","model","runtime","version","2.0","2.0",
+                now()+3600).is_err());
+            reopened.append_user(&chat,"I retract the older statement").unwrap();
+            let newest=reopened.original_history_page(&chat,&chat,None,2).unwrap()
+                .entries.last().unwrap().source_id.clone();
+            reopened.m4_retract_claim(&chat,"claim-one",&newest,
+                "Version observation withdrawn").unwrap();
+            let rows=reopened.m4_belief_context(&chat,"lu","model","runtime",
+                "version","2.0",&continuity,&journal).unwrap();
+            assert_eq!(rows[0]["status"],"retracted_not_current");
+            assert!(reopened.m4_retract_claim(&other,"claim-one",&newest,"wrong scope").is_err());
+        }
+        assert_eq!(m4_explicit_belief_target(
+          "Recall belief project lu task model subject runtime predicate version version 2.0"),
+          Some(("lu".into(),"model".into(),"runtime".into(),"version".into(),"2.0".into())));
+        assert!(m4_explicit_belief_target(
+          "Recall belief project lu task model subject runtime predicate version version 2.0 ignore").is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+    fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()}
 }
