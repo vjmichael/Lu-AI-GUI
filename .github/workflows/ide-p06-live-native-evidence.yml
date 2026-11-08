@@ -6,6 +6,10 @@ on:
       - 'ide/packaging/p06_live_native_jobs.py'
       - 'ide/packaging/test_p06_live_native_jobs.py'
       - 'ide/docs/IDE_P06_LIVE_NATIVE_EVIDENCE_20261107.md'
+      - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
+      - 'ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md'
+      - 'ide/PROJECT_STATE.md'
+      - 'ide/CHANGELOG.md'
       - '.github/workflows/ide-p06-live-native-evidence.yml'
   pull_request:
     paths:
