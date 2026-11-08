@@ -52,11 +52,16 @@ class NativePickerSourceTests(unittest.TestCase):
         windows=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
         section=windows.split("function Confirm-NativeOneUseDialog(",1)[1].split(
             "\ntry {\n  $proc=Start-Process",1)[0]
-        self.assertIn("if ($win.Current.ProcessId -ne $proc.Id)",section)
-        self.assertIn("$name -ne $approvalCaption",section)
+        self.assertIn("if ($win.Current.ProcessId -ne $proc.Id",section)
+        self.assertIn("if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle)",section)
+        self.assertIn("$name.IndexOf($titleFragment",section)
+        self.assertIn("[string]$child.Current.Name -cne $approvalCaption",section)
         self.assertIn("$child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)",section)
-        self.assertNotIn("$child.Current.ProcessId -ne $proc.Id -or",section)
+        self.assertIn("$rect=$child.Current.BoundingRectangle",section)
+        self.assertIn("$windowBounds=$win.Current.BoundingRectangle",section)
+        self.assertIn("exact_owned_native_text_pane_mouse_click",section)
         self.assertIn("real_native_consent_dialog_not_observed",section)
+        self.assertNotIn("window.__TAURI_INTERNALS__",section)
 
     def test_neither_platform_uses_internal_api_or_synthetic_acceptance(self):
         for path in ("ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
