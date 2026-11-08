@@ -14,7 +14,7 @@
 
 | ID | Priority | Implementation outstanding |
 |---|---|---|
-| IMP-01 AGENT-01F | P0 | Host-derived same-turn idempotent real ANSF original-goal DRAFT admission stage, then live model/normal-chat ingress, concurrent admission, UI review and clarified-goal continuity; no model-origin execution permission |
+| IMP-01 AGENT-01F | P0 | Explicit real loaded-GGUF plan proposal through normal chat + current ANSF goal/memory into host-owned review-only DRAFT SOURCE CANDIDATE; complete model/OS proof, host concurrency and an approved fresh-step broker+oracle execution loop; no model-origin permission |
 | IMP-02 MEMORY-LOOP | P0 | ANSF original-source/procedural memory, belief revision, context-change detection and clarification integration in genuine model and resumed task turns |
 | IMP-03 EXEC-INTERFACE | P0 | Actual GGUF-selected installed Git/FFprobe/application operations through existing reviewed broker, not replacement app features |
 | IMP-04 EXEC-AUTH | P0 | Fresh per-step human/host scope, effect/resource/egress control, broker-to-agent live admission without claiming preflight already dispatches |
@@ -68,6 +68,8 @@
 | AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | A/B/C/D durable plan, immutable revisions, historical receipts and bounded scheduler + E broker preflight/native-reviewed UI SOURCE CANDIDATES; actual dispatch/installed E2E OPEN | Exact-head Windows/Linux unit and Tauri checks, original-chat goal verifier, E1 OS execution/custody gates, host-generated plan admission, full NSIS physical acceptance |
 | UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | UX-CHAT01 message reactions/copy/replay/themes + UX-CHAT02 append-only corrections/pinned human replies/provenance SOURCE CANDIDATES; installed E2E OPEN | Exact-head Windows/Linux ANSF/SQLite and React checks, genuine installed Windows keyboard, clipboard, edit/reply/restart, old-effect non-replay acceptance |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
+
+**AGENT-01F stage 2 (November 8):** Source now routes an explicit text-only model plan turn through the existing loaded GGUF backend, strict no-tool JSON step parser, original human turn/current ANSF goal checks, inert durable plan draft and review UI. The reviewed broker checks step kind/expected output but still does **not** dispatch from this plan. Native CI, genuine model results, user-approved step dispatch and independently verified result/restart evidence are **OPEN**. See [AGENT-01F details](LU_AGENT01F_MODEL_PLAN_INGRESS_20261108.md).
 
 ## Change tracking convention
 Each change records task ID, commit SHA, tests (command/platform/results), CI run URL, failures, and deferred manual scenario. `DONE` means evidence exists for the stated scope only. Never treat mock/source-string tests as physical Windows evidence.

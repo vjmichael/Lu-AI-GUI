@@ -43,7 +43,22 @@
  pub enum BridgeError{
     NotHostOwned,WrongHumanTurn,StaleRevision,NotProposed,
     NoOriginalAuthority,WrongCapability,UnverifiedSource,
-    BrokerNotRegistered,
+    BrokerNotRegistered,PlanStepNotReviewedOperation,
+ }
+ // AGENT-01F: a reviewed Git/FFprobe read is not a generic plan-step
+ // executor. Inspecting sources and independently witnessing a source fact
+ // are the only current step classes the broker can serve. A PRESENT or
+ // HUMAN_REVIEW step must not silently become a native execution request.
+ fn supported_reviewed_step(step:&crate::agent_plan_revisions::RevisionStep)->bool{
+    use crate::agent_plan_ledger::PlanStepKind;
+    use crate::agent_plan_revisions::ExpectedDeliverable;
+    matches!(
+        (step.kind,step.expected),
+        (PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)
+        |(PlanStepKind::Inspect,ExpectedDeliverable::SourceReferences)
+        |(PlanStepKind::Inspect,ExpectedDeliverable::StructuredFindings)
+        |(PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)
+    )
  }
  #[allow(clippy::too_many_arguments)]
  pub fn preflight_reviewed_broker(
@@ -67,6 +82,9 @@
         .ok_or(BridgeError::StaleRevision)?;
     if now.revision_sha256!=revision_sha||now.review_state!="APPROVED_PLAN_ONLY"{
         return Err(BridgeError::StaleRevision)
+    }
+    if !now.steps.get(step as usize).is_some_and(supported_reviewed_step){
+        return Err(BridgeError::PlanStepNotReviewedOperation)
     }
     if !sources.goal_event_is_current(chat,&now.goal_id,&now.goal_event_id)
         ||now.assumption_sources.iter().any(|x|
@@ -133,6 +151,26 @@
  }
  #[cfg(test)]
  mod tests{
+    #[test]
+    fn current_reviewed_broker_cannot_dispatch_presentation_or_human_review_steps(){
+        use super::supported_reviewed_step;
+        use crate::agent_plan_ledger::PlanStepKind;
+        use crate::agent_plan_revisions::{RevisionStep,ExpectedDeliverable};
+        let build=|kind,expected|RevisionStep{
+            kind,depends_on:None,deliverable_id:String::new(),expected
+        };
+        assert!(supported_reviewed_step(&build(
+            PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)));
+        assert!(supported_reviewed_step(&build(
+            PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)));
+        for kind in [PlanStepKind::Present,PlanStepKind::HumanReview,PlanStepKind::Analyze]{
+            assert!(!supported_reviewed_step(&build(
+                kind,ExpectedDeliverable::Explanation)));
+        }
+        assert!(!supported_reviewed_step(&build(
+            PlanStepKind::Inspect,ExpectedDeliverable::HumanDecision)));
+    }
+
     use super::*;
     use crate::{
         agent_host_scheduler::{ScheduleBudget,HostFreshStepConsent},

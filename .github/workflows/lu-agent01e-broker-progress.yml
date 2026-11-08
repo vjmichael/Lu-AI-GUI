@@ -10,6 +10,7 @@ on:
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
+      - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
@@ -25,6 +26,7 @@ on:
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
+      - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
@@ -67,6 +69,13 @@ jobs:
             2>&1 | tee agent01e-evidence/ui-bridge-node.log
           grep -Fq '# pass 6' agent01e-evidence/ui-bridge-node.log
           grep -Fq '# fail 0' agent01e-evidence/ui-bridge-node.log
+      - name: AGENT-01F real loaded model ingress source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01f-model-plan-ingress.test.mjs             2>&1 | tee agent01e-evidence/agent01f-ui-bridge.log
+          grep -Fq '# pass 4' agent01e-evidence/agent01f-ui-bridge.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01f-ui-bridge.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -111,7 +120,7 @@ jobs:
             2>&1 | tee agent01e-evidence/broker-native.log
           grep -Fq 'test agent_reviewed_broker_bridge::tests::actual_conversation_authority_not_planner_approval_controls_broker_capabilities ... ok' \
             agent01e-evidence/broker-native.log
-          grep -Fq 'test result: ok. 1 passed; 0 failed;' agent01e-evidence/broker-native.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;' agent01e-evidence/broker-native.log
       - name: Compile genuine desktop read-only recovery projection with actual saved human ChatStore
         shell: bash
         run: |
@@ -153,12 +162,15 @@ jobs:
           for case in \
             real_saved_turn_and_current_goal_stage_only_reviewable_draft \
             interrupted_two_phase_draft_staging_completes_without_duplicate \
+            model_completion_stages_original_goal_review_only \
+            malformed_effectful_or_duplicate_model_json_is_refused \
+            changed_goal_during_model_inference_is_refused \
             cross_chat_unverified_turn_and_pending_clarification_are_denied \
             invalid_steps_and_superseded_human_turn_do_not_write; do
             grep -Fq "test agent_plan_admission::tests::$case ... ok" \
               agent01e-evidence/agent01f-plan-admission.log
           done
-          grep -Fq 'test result: ok. 4 passed; 0 failed;' \
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' \
             agent01e-evidence/agent01f-plan-admission.log
       - name: Parent AGENT-01A/B/C/D integration regressions at exact E head
         shell: bash
