@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **IDE B4 split editor (Nov 8):** Added independently editable side-by-side open-source tabs with separate CodeMirror identities, selection-safe swapping, secondary Save, focused Ctrl+S routing, responsive stacked layout and project-scoped invalidation. Pure tests + native Win/Linux build gates included; genuinely installed two-pane UI acceptance remains OPEN.
+
+
 - **IDE B2 native installed harness (Nov 8):** Added genuine Windows NSIS UIA and Linux Debian GTK AT-SPI/X11 installed editor scenarios for OS picker, session/durable draft clipboard, private checkpoint, process restart, explicit recovery, no implicit source Save and actual package uninstall. Private Unix vault permission checks hardened, autosnapshot pauses on full immutable history. These native jobs must pass before installed acceptance; signing/legal release approval stays deferred.
 
 
