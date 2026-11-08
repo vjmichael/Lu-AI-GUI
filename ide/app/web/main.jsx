@@ -1288,7 +1288,7 @@ function App() {
   async function startProtectedBuild() {
     const projectId = activeProject?.projectId;
     if (!projectId || buildBusy || !buildStatus?.ready ||
-        buildStatus.current || !['rust_check', 'rust_tests', 'lu_ide_host_tests'].includes(intentRecipe)) return;
+        buildStatus.current || !['rust_check', 'rust_build', 'rust_tests', 'lu_ide_host_tests'].includes(intentRecipe)) return;
     setBuildBusy(true);
     setBuildResult(null);
     setProblem('');
@@ -3154,7 +3154,7 @@ function App() {
               <p>{buildStatus?.description || 'No unprotected fallback is provided.'}</p>
               <button className="primaryBtn" type="button"
                 disabled={!activeProject || !buildStatus?.ready || !!buildStatus.current || buildBusy ||
-                  !['rust_check','rust_tests','lu_ide_host_tests'].includes(intentRecipe)}
+                  !['rust_check','rust_build','rust_tests','lu_ide_host_tests'].includes(intentRecipe)}
                 onClick={() => startProtectedBuild()}>
                 {buildBusy ? 'Protected job in progress…' : 'Request protected Run / Test'}
               </button>
@@ -3298,6 +3298,7 @@ function App() {
                 onChange={event => setIntentRecipe(event.target.value)}>
                 <option value="lu_ide_host_tests">Lu IDE host tests</option>
                 <option value="rust_check">Rust project type-check</option>
+                <option value="rust_build">Rust project build</option>
                 <option value="rust_tests">Rust project tests</option>
               </select>
               <button type="button" className="ghostBtn"
