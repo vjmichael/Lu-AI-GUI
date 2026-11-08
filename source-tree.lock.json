@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2d8e252dec1af1a4a878e636e06a9c73ea61fa44",
-  "trackedFileCount": 672,
+  "sourceCommitBeforeLock": "3e5100b933358c6d71722dd49034f21f61b87808",
+  "trackedFileCount": 678,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -70,6 +70,10 @@
     {
       "path": ".github/workflows/lu-e1-p08-reviewed-recovery.yml",
       "blob": "6d2bfa4a2332b714d60c97da8c3cb87a0737db84"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p08c-cgroup-v2.yml",
+      "blob": "685eedc2aea63a13feb95a29e6b0b2522e4be8e1"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -210,6 +214,10 @@
     {
       "path": "benchmarks/e1/e1_p08_setsid_escape_probe.py",
       "blob": "b655a718c5498509e7e24e0944cf14714f8e9a28"
+    },
+    {
+      "path": "benchmarks/e1/e1_p08c_cgroup_crash_acceptance.py",
+      "blob": "d85a8d30684f28d969edd5e885ddab10b6af4f41"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -360,6 +368,10 @@
       "blob": "800eeae5f3dd6053a92ef751ed44a16d82493386"
     },
     {
+      "path": "docs/LU_E1_P08C_CGROUP_V2_IMPLEMENTATION_20261108.md",
+      "blob": "e7c076860e4db315477a9cc3b8055fb9de4a14bb"
+    },
+    {
       "path": "docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md",
       "blob": "46a5eecc94c152d62907904f22678c42cb3816b5"
     },
@@ -505,7 +517,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "91af0530836baab9670faffcf99d0a502cfe16c2"
+      "blob": "8c4a12320e74bc46e215f75ce158a1ca59737a41"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -2649,11 +2661,19 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "ce7a2669b3d354aabc1d655de8de65c167dbaae8"
+      "blob": "ea640082d0e3be10890b286579c316e4b9150d3e"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-crash-parent.rs",
       "blob": "f6ab4ef0e463db0eb19b810babde615b12c91287"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08c-cgroup-crash-host.rs",
+      "blob": "96c312fda66779a6ff9564f9fe8f20aa1b5f7cae"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
+      "blob": "fae762e574843ef2d85830a81da0966876a8f53a"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-group-guard.rs",
@@ -2669,7 +2689,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "84b9c9044c23f368304e3d6c9e567caba59ace34"
+      "blob": "8aee53ecc4251f1ce51ac94f816e638aafb95a44"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/linux_cgroup.rs",
+      "blob": "9a26516301dc72f89d27efdaa57334cab9bad483"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
