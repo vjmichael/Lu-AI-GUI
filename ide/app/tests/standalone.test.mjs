@@ -295,7 +295,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 41, 'native capability catalog includes WO9 bounded workflows and reviewed Git');
+  assert.equal(commands.length, 42, 'native capability catalog preserves existing WO9 operations and adds bounded read-only source search');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -559,4 +559,39 @@ test('Wave C native development truth: diff/history/probe use typed read-only ho
   assert.match(probe, /source_capability\(project_id\)/);
   assert.match(probe, /executable_usable: "not_tested"/);
   assert.doesNotMatch(git + probe, /std::process::Command|Command::new|\.fetch\(/);
+});
+
+
+test('B3 project search is saved-byte and capability-scoped, never an execution or cross-project write', () => {
+  const frontend = read('../web/main.jsx');
+  const native = read('../src-tauri/src/lib.rs');
+  const host = read('../../host/src/project_search.rs');
+  const browser = read('../../host/src/browser.rs');
+  const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
+  const catalog = read('../../host/src/capabilities.rs');
+  const css = read('../web/styles.css');
+  assert.match(native, /async fn ide_find_in_project\s*\(/);
+  assert.match(native, /registry\.find_in_project\(&project_id, &query, case_sensitive\)/);
+  assert.match(native, /ide_find_in_project,/);
+  assert.match(host, /self\.source_capability\(project_id\)/);
+  assert.match(host, /MAX_MATCHES:\s*usize\s*=\s*240/);
+  assert.match(host, /MAX_TOTAL_BYTES:\s*u64\s*=\s*16 \* 1024 \* 1024/);
+  assert.match(host, /MAX_FILES:\s*usize\s*=\s*320/);
+  assert.match(host, /folder\.symlink_metadata\(&name\)/);
+  assert.match(host, /revision_for\(&bytes\)/);
+  assert.match(host, /match_length_utf16/);
+  assert.match(host, /from_byte:/);
+  assert.doesNotMatch(host, /Command::new|std::process|https?:\/\/|write_all\(/);
+  assert.match(browser, /InvalidSearch => "INVALID_SEARCH_QUERY"/);
+  assert.match(catalog, /"source\.findProject"[\s\S]*?"ide_find_in_project"[\s\S]*?"read"/);
+  assert.equal(schemas.operations['source.findProject'].result['$ref'],
+               '#/$defs/ProjectSearchResult');
+  assert.equal(schemas.definitions.ProjectSearchResult.properties.matches.maxItems, 240);
+  assert.match(frontend, /aria-label="Search project text"/);
+  assert.match(frontend, /invoke\('ide_find_in_project'/);
+  assert.match(frontend, /opened\.revision !== match\.revision/);
+  assert.match(frontend, /existing\.dirty/);
+  assert.match(frontend, /activeProjectIdRef\.current !== projectId/);
+  assert.match(frontend, /projectSearchGeneration\.current/);
+  assert.match(css, /\.projectSearchResults/);
 });
