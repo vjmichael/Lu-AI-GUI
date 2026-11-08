@@ -3,6 +3,7 @@
  //! The desktop MUST show a native OS confirmation before constructing
  //! NativePlanConsent. No WebView/model-originated boolean is an approval.
  //! This module never creates a tool grant, worker, scheduler lease or retry.
+ use std::{fs,path::{Path,PathBuf}};
  use crate::chat_store::ChatStore;
  use lu_core::{
      ansf_goals::{project_goal_events,GoalEventKind},
@@ -10,6 +11,35 @@
          HostPlanReferenceVerifier,HostPlanReviewVerifier,HumanDecision,
      },
  };
+ /// Existing, regular host-selected plan SQLite only. Never create an
+ /// approval journal simply because the WebView clicked an action.
+ pub fn existing_plan_file(root:&Path)->Result<PathBuf,String>{
+     let path=root.join("lu-agent-plans.sqlite");
+     let meta=fs::symlink_metadata(&path)
+         .map_err(|_|"No existing agent plan journal")?;
+     if !meta.is_file()||meta.file_type().is_symlink()||meta.len()>64*1024*1024{
+         return Err("Agent plan journal is not a regular bounded file".into())
+     }
+     #[cfg(windows)]
+     {
+         use std::os::windows::fs::MetadataExt;
+         if meta.file_attributes()&0x400!=0{
+             return Err("Linked agent journal refused".into())
+         }
+     }
+     for suffix in ["-wal","-shm"]{
+         let mut sidecar=path.as_os_str().to_os_string();
+         sidecar.push(suffix);
+         let sidecar=PathBuf::from(sidecar);
+         match fs::symlink_metadata(&sidecar){
+             Ok(m) if m.is_file()&&!m.file_type().is_symlink()
+                 &&m.len()<=64*1024*1024=>{},
+             Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+             _=>return Err("Linked or oversized plan journal sidecar".into()),
+         }
+     }
+     Ok(path)
+ }
  pub struct OriginalChatGoalSources<'a>{
      pub chats:&'a ChatStore,
  }
