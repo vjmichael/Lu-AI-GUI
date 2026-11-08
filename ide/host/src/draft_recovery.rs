@@ -214,7 +214,7 @@ impl DraftRecoveryStore {
         let mut opts = OpenOptions::new();
         opts.write(true).create_new(true);
         #[cfg(unix)] {
-            use std::os::unix::fs::OpenOptionsExt;
+            use cap_std::fs::OpenOptionsExt;
             opts.mode(0o600);
         }
         let mut file = self.dir.open_with(&temp, &opts)?;
