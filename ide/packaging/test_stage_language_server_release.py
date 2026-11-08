@@ -4,7 +4,7 @@ import pathlib
 import tempfile
 import unittest
 
-from stage_language_server_release import stage
+from stage_language_server_release import stage, windows_lsp_tree_digest
 
 MANIFEST = pathlib.Path(__file__).with_name("language-servers.manifest.json")
 
@@ -49,6 +49,14 @@ class E2BundleStageTests(unittest.TestCase):
             record = stage(manifest, upstream, service, sha, dest,
                            verify_service_signature=False)
             self.assertEqual(record["schema"], "lu.ide.e2.staged-release.v1")
+            self.assertEqual(
+                record["servers"]["clangd"]["bundleSha256"],
+                windows_lsp_tree_digest(dest / "language-servers/clangd"),
+            )
+            self.assertEqual(
+                record["servers"]["clangd"]["rustEnvPin"],
+                "LU_IDE_E2_CLANGD_BUNDLE_SHA256",
+            )
             self.assertEqual((dest / "language-servers/clangd/bin/clangd.exe").read_bytes(),
                              b"reviewed Windows binary")
             self.assertTrue((dest / "language-servers/clangd/NOTICES/000-LICENSE-MIT").is_file())
