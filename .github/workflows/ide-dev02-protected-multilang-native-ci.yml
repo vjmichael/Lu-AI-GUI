@@ -69,12 +69,12 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-      - name: Host LSP session and cross-platform containment source regression
+      # Host and supervisor are independent Cargo projects without committed\n      # Cargo.lock. Only the Tauri installer graph has a reviewed immutable lock.\n      - name: Host LSP session and cross-platform containment source regression
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --manifest-path ide/host/Cargo.toml --all-targets --locked
-          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,protected-recovery-service,linux-worker' --lib --locked
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,protected-recovery-service,linux-worker' --lib
       - name: Compile actual Tauri native-lsp feature on this OS
         shell: bash
         run: |
