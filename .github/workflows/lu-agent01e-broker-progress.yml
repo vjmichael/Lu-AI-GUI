@@ -74,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test lu-desktop/tests/agent01f-model-plan-ingress.test.mjs             2>&1 | tee agent01e-evidence/agent01f-ui-bridge.log
-          grep -Fq '# pass 4' agent01e-evidence/agent01f-ui-bridge.log
+          grep -Fq '# pass 5' agent01e-evidence/agent01f-ui-bridge.log
           grep -Fq '# fail 0' agent01e-evidence/agent01f-ui-bridge.log
       - uses: actions/upload-artifact@v4
         if: always()

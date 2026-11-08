@@ -4583,9 +4583,25 @@ async fn generate_internal(
                             .and_then(|source|{
                                 let profile=state.catalog_path.parent()
                                     .ok_or_else(||"Lu plan profile unavailable".to_string())?;
-                                agent_plan_admission::stage_completed_model_plan(
+                                let draft=agent_plan_admission::stage_completed_model_plan(
                                     profile,&state.chats,&chat_id,&gid,source,&answer
-                                )
+                                )?;
+                                // Only the production desktop host knows the
+                                // real AGENT-01C/01D implementations. Open
+                                // their EMPTY schemas to make this inert
+                                // draft visible in original conversation
+                                // history. Never create worker receipts,
+                                // owners, dispatch or scheduled claims.
+                                let plan_db=profile.join("lu-agent-plans.sqlite");
+                                let _schedule=lu_core::agent_host_scheduler::
+                                    AgentHostScheduler::open(&plan_db)
+                                        .map_err(|e|format!(
+                                            "Inert scheduler schema unavailable: {e:?}"))?;
+                                let _receipts=lu_core::agent_deliverable_receipts::
+                                    AgentDeliverableReceipts::open(&plan_db)
+                                        .map_err(|e|format!(
+                                            "Empty witness schema unavailable: {e:?}"))?;
+                                Ok(draft)
                             });
                         let notice=match result{
                             Ok(draft)=>serde_json::json!({

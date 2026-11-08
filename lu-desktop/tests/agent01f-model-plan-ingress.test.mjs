@@ -33,3 +33,10 @@ test('model planner always uses host verified current ANSF goal and fails closed
   assert.match(admission,/unrecognized|Unknown model plan step kind|Forward\/self-dependent/);
   assert.match(admission,/changed during inference/);
 });
+
+test('desktop owns complete empty receipt and scheduler schemas while portable draft parser stays independent',()=>{
+  assert.match(host,/AgentHostScheduler::open\(&plan_db\)/);
+  assert.match(host,/AgentDeliverableReceipts::open\(&plan_db\)/);
+  assert.doesNotMatch(admission,/use lu_core::agent_host_scheduler::AgentHostScheduler/);
+  assert.doesNotMatch(admission,/AgentDeliverableReceipts::open\(/);
+});
