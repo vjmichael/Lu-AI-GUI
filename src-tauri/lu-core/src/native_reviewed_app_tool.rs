@@ -126,7 +126,7 @@ fn append_outcome_to_model(
         ||!matches!(method,
             "GIT_HEAD_DIRECT_V1"|"GIT_BRANCH_DIRECT_V1"|
             "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
-            "GIT_HISTORY_UNSUPPORTED_V1"|"MP4_UNSUPPORTED_V1")
+            "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|"MP4_UNSUPPORTED_V1")
         ||status=="VERIFIED"&&method.ends_with("_UNSUPPORTED_V1"){
         return Err(ModelToolError::InvalidResult(
             "unrecognized independent outcome classification".into()))

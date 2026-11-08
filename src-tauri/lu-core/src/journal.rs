@@ -245,7 +245,7 @@ impl EffectJournal {
             ||!matches!(method,
                 "GIT_HEAD_DIRECT_V1"|"GIT_BRANCH_DIRECT_V1"|
                 "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
-                "GIT_HISTORY_UNSUPPORTED_V1"|"MP4_UNSUPPORTED_V1"){
+                "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|"MP4_UNSUPPORTED_V1"){
             return Err(JournalError::InvalidTransition)
         }
         let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|

@@ -348,7 +348,7 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
             ToolTurnOutcome::ToolResult{call_id,ref data,..}=>{
                 assert_eq!(data["ok"],true,"{name} failed");
                 assert_eq!(data["result"][key],expected,"{name} result mismatch");
-                let verification=if matches!(suffix,"gh"|"gb"|"fm"){
+                let verification=if matches!(suffix,"gh"|"gb"|"gc"|"fm"){
                     "VERIFIED"
                 }else{"UNSUPPORTED"};
                 assert_eq!(
@@ -377,8 +377,9 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     assert_eq!(durable_ids.len(),10,"five tools each need an outer and OS effect");
     assert_eq!(durable_ids.iter().collect::<BTreeSet<_>>().len(),10,
         "all durable effect identities must be distinct");
-    // This is a genuinely independent second SQLite witness. Git status
-    // and history MUST remain unsupported rather than falsely verified.
+    // This is a genuinely independent second SQLite witness. Git HEAD,
+    // branch, loose commit history and PCM WAV must be verified, while
+    // Git tracked status remains expressly unsupported.
     let conn=rusqlite::Connection::open(f.dir.join("effects.sqlite")).unwrap();
     let verified:i64=conn.query_row(
         "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='VERIFIED'",
@@ -389,9 +390,18 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     let conflicts:i64=conn.query_row(
         "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='CONFLICT'",
         [],|row|row.get(0)).unwrap();
-    assert_eq!((verified,unsupported,conflicts),(3,2,0));
+    assert_eq!((verified,unsupported,conflicts),(4,1,0));
+    // The actual Git history result must carry the independent graph
+    // method rather than a successful git rev-list stdout claim.
+    let proof:(String,String)=conn.query_row(
+        "SELECT method,verdict FROM lu_independent_outcomes
+         WHERE method='GIT_HISTORY_LOOSE_DAG_V1'",
+        [],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
+    assert_eq!(proof,(
+        "GIT_HISTORY_LOOSE_DAG_V1".to_string(),
+        "VERIFIED".to_string()
+    ));
     drop(conn);
-
     let dir=f.dir.clone();
     drop(turn);drop(f);
     let reopened=EffectJournal::open(&dir.join("effects.sqlite")).unwrap();
@@ -403,6 +413,61 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     fs::remove_dir_all(dir).unwrap();
 }
 
+
+#[test]
+#[ignore="requires native installed Git executable, merge commits and loose objects"]
+fn real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle(){
+    use lu_core::{
+        reviewed_outcome_oracle::verify_git,
+        journal::IndependentOutcomeVerdict
+    };
+    let git=actual_binary("LU_E1_P07_GIT");
+    let root=temp();fs::create_dir_all(&root).unwrap();
+    let repo=root.join("repo");
+    assert!(Command::new(&git).args(["init","-q"]).arg(&repo)
+        .status().unwrap().success());
+    checked_git(&git,&repo,&["config","user.name","Lu"]);
+    checked_git(&git,&repo,&["config","user.email","lu@example.test"]);
+    fs::write(repo.join("base.txt"),"base\n").unwrap();
+    checked_git(&git,&repo,&["add","base.txt"]);
+    checked_git(&git,&repo,&["commit","-q","-m","base"]);
+    let trunk=checked_git(&git,&repo,&["symbolic-ref","--short","HEAD"])
+        .trim().to_owned();
+    checked_git(&git,&repo,&["checkout","-q","-b","lu-e1-p11-feature"]);
+    fs::write(repo.join("feature.txt"),"feature\n").unwrap();
+    checked_git(&git,&repo,&["add","feature.txt"]);
+    checked_git(&git,&repo,&["commit","-q","-m","feature"]);
+    checked_git(&git,&repo,&["checkout","-q",&trunk]);
+    fs::write(repo.join("main.txt"),"trunk\n").unwrap();
+    checked_git(&git,&repo,&["add","main.txt"]);
+    checked_git(&git,&repo,&["commit","-q","-m","trunk"]);
+    checked_git(&git,&repo,&[
+        "merge","-q","--no-ff","lu-e1-p11-feature","-m","merge"
+    ]);
+    let real_count=checked_git(&git,&repo,&["rev-list","--count","HEAD"])
+        .trim().parse::<u64>().unwrap();
+    assert_eq!(real_count,4,"fixture must have four reachable unique commits");
+    let reported=serde_json::json!({
+        "kind":"history_count","historyCommitCount":real_count
+    });
+    let independent=verify_git(
+        &repo,GitReadOperation::HistoryCount,&reported
+    );
+    assert_eq!(independent.verdict,IndependentOutcomeVerdict::Verified,
+        "independent oracle failed to count real native loose Git commits");
+    let forged=serde_json::json!({
+        "kind":"history_count","historyCommitCount":5
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::HistoryCount,&forged).verdict,
+        IndependentOutcomeVerdict::Conflict);
+    // A pack-objects migration is *not* covered by the loose-only
+    // verifier; refuse verification instead of trusting Git's stdout.
+    checked_git(&git,&repo,&["repack","-adq"]);
+    checked_git(&git,&repo,&["prune-packed"]);
+    let after_pack=verify_git(&repo,GitReadOperation::HistoryCount,&reported);
+    assert_eq!(after_pack.verdict,IndependentOutcomeVerdict::Unsupported);
+    fs::remove_dir_all(root).unwrap();
+}
 
 /// Scripted model responses are intentionally not claimed as GGUF planning.
 /// They exercise the *actual* native model-turn loop, typed tool catalogue,

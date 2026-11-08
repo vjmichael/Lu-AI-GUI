@@ -4,7 +4,7 @@
 //! termination test. The separate OracleEvidence is persisted only *after*
 //! the original supervised worker effect reaches APPLIED with its receipt.
 //! We currently verify direct Git HEAD/current-branch facts and ordinary
-//! PCM/IEEE-float RIFF WAV facts. Tracked Git status, Git rev-list history,
+//! PCM/IEEE-float RIFF WAV facts. Tracked Git status,
 //! linked Git worktrees and MP4 are explicitly UNSUPPORTED and never upgrade
 //! to an independently verified result.
 //!
@@ -15,6 +15,7 @@ use serde_json::Value;
 use sha2::{Digest,Sha256};
 use crate::{
     journal::IndependentOutcomeVerdict,
+    independent_git_history::loose_commit_count,
     native_app_typed_git::GitReadOperation,
     native_app_typed_ffprobe::ReviewedContainer,
 };
@@ -124,8 +125,8 @@ fn resolve_git_ref(git_dir:&Path,reference:&str)->Option<String>{
 }
 /// Independently inspect the HEAD/branch files, without invoking Git or
 /// reading stdout. A changed/malformed direct HEAD conflicts with the
-/// worker receipt. Status/history are intentionally not independently
-/// verified: they require independent index/object/traversal semantics.
+/// worker receipt. Tracked status is explicitly unverified; history is
+/// independently traversed only when all reachable Git commits are loose.
 pub fn verify_git(
     root:&Path,operation:GitReadOperation,worker_receipt:&Value,
 )->OracleEvidence{
@@ -134,8 +135,7 @@ pub fn verify_git(
         GitReadOperation::CurrentBranch=>"GIT_BRANCH_DIRECT_V1",
         GitReadOperation::TrackedStatus=>
             return OracleEvidence::unsupported("GIT_STATUS_UNSUPPORTED_V1"),
-        GitReadOperation::HistoryCount=>
-            return OracleEvidence::unsupported("GIT_HISTORY_UNSUPPORTED_V1"),
+        GitReadOperation::HistoryCount=>"GIT_HISTORY_LOOSE_DAG_V1",
     };
     let git=root.join(".git");
     if !git.is_dir(){return OracleEvidence::conflict(method)}
@@ -143,6 +143,28 @@ pub fn verify_git(
         return OracleEvidence::conflict(method)
     };
     match operation{
+        GitReadOperation::HistoryCount=>{
+            let resolved=match head{
+                DirectGitHead::Detached(hash)=>Some(hash),
+                DirectGitHead::Attached(refname)=>resolve_git_ref(&git,&refname),
+            };
+            let Some(hash)=resolved else{
+                return OracleEvidence::unsupported(method)
+            };
+            // Directly decode, hash-check and traverse ALL reachable
+            // loose commit objects. No git, rev-list, shell or hooks.
+            let Some(actual)=loose_commit_count(&git,&hash) else{
+                return OracleEvidence::unsupported(method)
+            };
+            if worker_receipt.get("kind").and_then(Value::as_str)
+                !=Some("history_count")
+                ||worker_receipt.get("historyCommitCount").and_then(Value::as_u64)
+                    !=Some(actual){
+                return OracleEvidence::conflict(method)
+            }
+            OracleEvidence::verified(method,
+                format!("history={hash}:{actual}").as_bytes())
+        },
         GitReadOperation::HeadCommit=>{
             let observed=match head{
                 DirectGitHead::Detached(hash)=>Some(hash),
@@ -384,6 +406,19 @@ mod tests{
             .verdict,IndependentOutcomeVerdict::Conflict);
         assert_eq!(verify_media(&file,&sha,ReviewedContainer::Mp4,&actual)
             .verdict,IndependentOutcomeVerdict::Unsupported);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn history_requires_actual_loose_objects_not_a_git_stdout_claim(){
+        let root=root();let git=root.join(".git");
+        fs::create_dir_all(&git).unwrap();
+        let hash="1234567890123456789012345678901234567890";
+        fs::write(git.join("HEAD"),format!("{hash}\n")).unwrap();
+        // HEAD syntax can be valid and the model/worker can report a count,
+        // but absent independently verified objects MUST be unsupported.
+        assert_eq!(verify_git(&root,GitReadOperation::HistoryCount,
+            &json!({"kind":"history_count","historyCommitCount":1})).verdict,
+            IndependentOutcomeVerdict::Unsupported);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
