@@ -260,22 +260,22 @@
          if current.as_deref()!=Some(revision_sha){
              return Err(DeliverableError::StaleRevision)
          }
-         let existing:Option<(String,String,String,String,String,String)>=
+         let existing:Option<(String,String,String,String,String,String,String)>=
              tx.query_row(
                  "SELECT deliverable_id,original_turn_id,effect_call_id,tool_id,
-                         receipt_sha256,independent_method
+                         receipt_sha256,independent_method,observed_sha256
                   FROM lu_agent_deliverable_receipts
                   WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
                  params![plan,revision_sha,step_index],
                  |r|Ok((
                      r.get(0)?,r.get(1)?,r.get(2)?,
-                     r.get(3)?,r.get(4)?,r.get(5)?
+                     r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?
                  ))
              ).optional()?;
-         if let Some((deliverable,original,effect,tool,receipt,method))=existing{
+         if let Some((deliverable,original,effect,tool,receipt,method,observed_hash))=existing{
              if deliverable!=step.deliverable_id||original!=turn||effect!=call_id
                  ||tool!=observed.tool_id||receipt!=observed.receipt_sha256
-                 ||method!=observed.method{
+                 ||method!=observed.method||observed_hash!=observed.observed_sha256{
                  return Err(DeliverableError::ConflictingReceipt)
              }
              return Ok(ReceiptWrite::AlreadyRecorded)
