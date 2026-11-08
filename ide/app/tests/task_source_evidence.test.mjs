@@ -115,3 +115,24 @@ test('native request is explicit, backend verifies source, no CI status supplied
   assert.doesNotMatch(handler,/ide_save_source_file|ide_observe_task_ci|ide_draft_load/);
   assert.doesNotMatch(handler,/sourceText:|draftText:/);
 });
+
+test('C7 typed native catalog preserves C6 evidence and no execution grant',()=>{
+  const schema=JSON.parse(readFileSync(new URL('../../host/src/capability_schemas.json',
+    import.meta.url),'utf8'));
+  const caps=readFileSync(new URL('../../host/src/capabilities.rs',import.meta.url),'utf8');
+  const link=schema.operations['task.sourceLink'];
+  assert.equal(link.result.$ref,'#/$defs/TaskSummary');
+  assert.deepEqual(link.request.required,[
+    'projectId','taskId','relativePath','expectedSavedRevision',
+    'expectedTaskUpdateEventId',
+  ]);
+  assert.equal(schema.definitions.TaskSummary.properties.sourceLinks.maxItems,12);
+  assert.equal(schema.definitions.TaskSourceLink.properties.source.const,
+    'native_registered_source_read');
+  assert.equal(schema.definitions.TaskSummary.properties.taskAcceptance.const,
+    'not_verified');
+  assert.ok(schema.definitions.TaskEvidenceEvent.properties.sourceLink);
+  assert.equal(schema.definitions.TaskEvidenceEvent.required.includes('sourceLink'),false);
+  assert.match(caps,/"task.sourceLink",[\s\S]*?"ide_link_task_source"/);
+  assert.match(caps,/"catalog_write"/);
+});
