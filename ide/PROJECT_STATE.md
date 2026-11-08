@@ -517,3 +517,6 @@ Isolated draft PR #99 ports B2 session-only unsaved CodeMirror draft identities 
 
 ### P05 B3 native regression repair at exact prior CI
 Windows E2 [run 42435353978](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42435353978) compiled the real Tauri desktop but frontend source contract found stale D1 typed-schema count 41 after adding read-only `source.findProject`; it is updated to 42. Windows and Linux `cargo fmt --check` found two formatting diffs in `project_search_port.rs`, normalized. Required exact-head rerun remains open. Original Cargo.lock and P06 release provenance unchanged; historic PRs retained.
+
+### P05 B3 independent branch-scoped exact-source native CI
+Added a separate Windows 2022 + Ubuntu 26.04 native source workflow with exact source checkout, P06 Cargo/npm immutable SHA checks, host Cargo tests and rustfmt, actual npm/CodeMirror frontend tests, and native Tauri lib check. It is a branch-scoped diagnostic, **not** Ubuntu 24.04 installed acceptance or an externally signed release. Historical P05 38 workflow pins unchanged. Exact-head results pending.

@@ -389,3 +389,5 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 - **IDE P05 B2/B3 ports (Nov 8, draft only):** Separately restored session-only unsaved-buffer references and bounded native saved-project literal search, including exact native source SHA/coordinate results, read-only Tauri interface, code-navigation revalidation, existing B2 session identity, and typed capability metadata. Reverted attempted Cargo lock dependency changes to preserve exact P06 source-lock SHA; native tests still pending. Neither draft closes historical original PRs or relaxes signing.
 
 - **P05 B3 native CI (Nov 8):** Repaired stale D1 typed-schema test count after read-only search registration and formatted native Rust source according to Windows/Linux rustfmt; exact-head native acceptance rerun required.
+
+- **P05 B3 native CI (Nov 8):** Added dedicated Windows/Linux host, frontend and Tauri source matrix on the standalone port branch with immutable P06 lock checks; installed/signed equivalence remains separate and open.
