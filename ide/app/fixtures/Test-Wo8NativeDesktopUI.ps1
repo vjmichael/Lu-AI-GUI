@@ -333,26 +333,19 @@ function Ensure-Wo9DependentsBlocked {
   }
 }
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
-  # Windows native dialogs can be top-level UIA Window OR Pane fragments.
-  # Inspect real desktop children, but accept ONLY controls from the exact
-  # installed Tauri process. Never auto-approve, send synthetic IPC, or act
-  # on a dialog belonging to another PID.
+  # Real WO9 Windows TaskDialog: exact caption exposes UIA Text/Pane, not Button.
+  # Only interact with a separate OS popup owned by this installed process.
   $deadline=(Get-Date).AddSeconds(35)
   $desktop=[System.Windows.Automation.AutomationElement]::RootElement
-  $ownedRoots=0
-  $titleMatches=0
-  $buttonMatches=0
-  $ownedSubtreeButtons=0
-  $matchingCaption=0
-  $captionWithForeignPid=0
-  $matchingCaptionDisabled=0
-  $matchedNameNonButtons=0
+  $ownedRoots=0; $titleMatches=0; $buttonMatches=0
+  $matchedTextPane=0; $unusableNativePopup=0; $unusableBounds=0
+  $unavailableNativeAction=0
   while ((Get-Date) -lt $deadline) {
     $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
       [System.Windows.Automation.Condition]::TrueCondition)
     foreach($win in $roots) {
       try {
-        if ($win.Current.ProcessId -ne $proc.Id) { continue }
+        if ($win.Current.ProcessId -ne $proc.Id -or !$win.Current.IsEnabled) { continue }
         $type=$win.Current.ControlType
         if ($type -ne [System.Windows.Automation.ControlType]::Window -and
             $type -ne [System.Windows.Automation.ControlType]::Pane) { continue }
@@ -360,47 +353,66 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
         $name=[string]$win.Current.Name
         if ($name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
         $titleMatches++
+        $hwnd=[IntPtr]::new([int64]$win.Current.NativeWindowHandle)
+        if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) {
+          $unusableNativePopup++; continue
+        }
+        $windowBounds=$win.Current.BoundingRectangle
+        if ($windowBounds.Width -lt 80 -or $windowBounds.Height -lt 45) {
+          $unusableBounds++; continue
+        }
         $desc=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
           [System.Windows.Automation.Condition]::TrueCondition)
         foreach($child in $desc) {
           try {
-            # Every candidate is a real OS UIA descendant of an exact
-            # app-PID-owned top-level Window/Pane with the approved title.
-            # Hosted UIA providers can report a different/zero descendant
-            # PID; the independently scoped ancestor establishes ownership.
-            # Never enumerate arbitrary desktop buttons for approval.
-            $isButton=$child.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button
-            $name=[string]$child.Current.Name
-            if($isButton){$ownedSubtreeButtons++}
-            if($name -ne $approvalCaption){continue}
-            if(!$isButton){$matchedNameNonButtons++;continue}
-            $matchingCaption++
-            if($child.Current.ProcessId -ne $proc.Id){$captionWithForeignPid++}
-            if(!$child.Current.IsEnabled){$matchingCaptionDisabled++;continue}
-            $buttonMatches++
-            # If InvokePattern is not supported, reject this approval;
-            # do not substitute app IPC, synthetic web clicks, or SendKeys.
-            $pattern=$child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-            $pattern.Invoke()
-            Write-Host 'P04_NATIVE_ONE_USE_DIALOG=real_owned_os_button_invoked'
-            return
-          } catch {
-            # Unavailable native patterns remain deny, never approve.
-          }
+            if ([string]$child.Current.Name -cne $approvalCaption -or
+                !$child.Current.IsEnabled -or $child.Current.IsOffscreen) { continue }
+            $kind=$child.Current.ControlType
+            $isButton=$kind -eq [System.Windows.Automation.ControlType]::Button
+            $isTextPane=$kind -eq [System.Windows.Automation.ControlType]::Text -or
+              $kind -eq [System.Windows.Automation.ControlType]::Pane
+            if (!$isButton -and !$isTextPane) { continue }
+            if ($isButton) {
+              $buttonMatches++
+              try {
+                $child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                Write-Host 'P04_NATIVE_ONE_USE_DIALOG=real_owned_os_button_invoked'
+                return
+              } catch { $unavailableNativeAction++ }
+            }
+            if ($isTextPane) {
+              $matchedTextPane++
+              $rect=$child.Current.BoundingRectangle
+              if ($rect.Width -lt 5 -or $rect.Height -lt 5) {
+                $unusableBounds++; continue
+              }
+              $px=[int][Math]::Round($rect.Left+$rect.Width/2)
+              $py=[int][Math]::Round($rect.Top+$rect.Height/2)
+              if ($px -le $windowBounds.Left+2 -or $px -ge $windowBounds.Right-2 -or
+                  $py -le $windowBounds.Top+2 -or $py -ge $windowBounds.Bottom-2) {
+                $unusableBounds++; continue
+              }
+              if (![P04NativeWebViewWindows]::SetForegroundWindow($hwnd)) {
+                $unavailableNativeAction++; continue
+              }
+              [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($px,$py)
+              [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+              [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+              Write-Host 'P04_NATIVE_ONE_USE_DIALOG=exact_owned_native_text_pane_mouse_click'
+              return
+            }
+          } catch { $unavailableNativeAction++ }
         }
       } catch {}
     }
     Start-Sleep -Milliseconds 350
   }
-  # Bounded OS-only diagnostics: counts, never foreign window titles, user
-  # paths, source contents, window text, or unapproved control activation.
   Write-Host ('P04_NATIVE_CONSENT_OBSERVATION=owned_roots_'+$ownedRoots+
-    ';matched_titles_'+$titleMatches+';subtree_buttons_'+$ownedSubtreeButtons+
-    ';matching_caption_'+$matchingCaption+
-    ';matching_caption_foreign_pid_'+$captionWithForeignPid+
-    ';caption_disabled_'+$matchingCaptionDisabled+
-    ';caption_non_button_'+$matchedNameNonButtons+
-    ';matched_buttons_'+$buttonMatches)
+    ';matched_titles_'+$titleMatches+
+    ';button_candidates_'+$buttonMatches+';text_pane_candidates_'+$matchedTextPane+
+    ';native_popup_unusable_'+$unusableNativePopup+
+    ';unusable_bounds_'+$unusableBounds+
+    ';native_action_unavailable_'+$unavailableNativeAction)
   Deny 'real_native_consent_dialog_not_observed'
 }
 try {
