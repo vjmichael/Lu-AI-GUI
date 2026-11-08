@@ -1049,66 +1049,7 @@ try {
     if ($Scenario -eq 'DraftBufferReferenceRestart') {
       # This is a distinct installed application process. Reopen the known
       # persisted project via its real visible UI, never a native IPC shortcut.
-      if ($ExpectedPreviousBufferId -notmatch '^[a-fA-F0-9-]{36}
-      $source=Join-Path $fixed 'main.rs'
-      $saved=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
-      $editor=Find-Control 'Source editor text' ''
-      if (!$editor.Current.IsKeyboardFocusable) { Deny 'editor_not_accessibly_focusable' }
-      $editor.SetFocus()
-      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
-      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// WO8_EXPLICIT_PERSISTENCE_SENTINEL')
-      Start-Sleep -Milliseconds 900
-      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $saved) {
-        Deny 'unsaved_editor_draft_mutated_disk'
-      }
-      Click 'Review changes'
-      Require 'Save reviewed changes'
-      Click 'Return to editor'
-      Click 'Save · Ctrl+S'
-      $deadline=(Get-Date).AddSeconds(12)
-      do {
-        Start-Sleep -Milliseconds 450
-        $current=[IO.File]::ReadAllText($source)
-        if ($current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { break }
-      } while ((Get-Date) -lt $deadline)
-      if (!$current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { Deny 'explicit_save_not_persisted' }
-      Require 'Saved main.rs'
-      Write-Host 'WO8_INSTALLED_NATIVE_REVIEW_AND_EXPLICIT_SAVE=PASS'
-    } elseif ($Scenario -eq 'P04ReinstalledProject') {
-      # No new picker registration: verify persisted user catalog and source
-      # in the genuinely reinstalled desktop, without writing source bytes.
-      Require 'Source editor text'
-      Require 'main.rs'
-      Write-Host 'P04_INSTALLED_REINSTALL_PERSISTED_PROJECT_AND_EDITOR=PASS'
-    } elseif ($Scenario -eq 'PersistedRestart') {
-      if (![IO.File]::ReadAllText((Join-Path $fixed 'main.rs')).Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) {
-        Deny 'previously_saved_file_missing_after_restart'
-      }
-      Require 'Source editor text'
-      Write-Host 'WO8_NATIVE_PERSISTENT_PROJECT_REOPEN_AND_SOURCE=PASS'
-    } else {
-      Write-Host 'WO8_INSTALLED_NATIVE_FOLDER_REGISTRATION_AND_SOURCE_OPEN=PASS'
-    }
-  }
-  foreach($name in $workerBaseline.Keys) {
-    if ((BoundedProcess $name) -gt $workerBaseline[$name]) {
-      Deny ('unauthorized_worker_autostart_'+$name)
-    }
-  }
-  Write-Host ('WO8_INSTALLED_NATIVE_UI_SCENARIO='+$Scenario+':PASS')
-  Write-Host 'WO8_INSTALLED_PROTECTED_RUN_TEST_DEBUG=NOT_ACCEPTED'
-} finally {
-  if ($proc) {
-    try {
-      $proc.Refresh()
-      if (!$proc.HasExited) {
-        Stop-Process -Id $proc.Id -Force -ErrorAction Stop
-        $proc.WaitForExit(10000) | Out-Null
-      }
-    } catch { Deny 'desktop_process_reap_unverified' }
-  }
-}
-) {
+      if ($ExpectedPreviousBufferId -notmatch '^[a-fA-F0-9-]{36}$') {
         Deny 'missing_previous_native_buffer_identity'
       }
       $source=Join-Path $fixed 'main.rs'
