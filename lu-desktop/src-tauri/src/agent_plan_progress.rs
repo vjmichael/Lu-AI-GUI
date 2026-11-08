@@ -28,6 +28,9 @@
      pub original_human_turn_id:String,
      pub plan_state:String,
      pub latest_revision:u8,
+     /// Exact host-bound revision for an OPTIONAL native confirmation.
+     /// The SHA itself is never a capability token.
+     pub revision_sha256:Option<String>,
      pub revision_review:String,
      pub supervisor_state:String,
      pub step_count:u8,
@@ -131,7 +134,8 @@
              // This plan was only registered, not yet reviewed.
              plans.push(AgentPlanProgress{
                  plan_id:plan,original_human_turn_id:turn,plan_state:state,
-                 latest_revision:0,revision_review:"NO_PROPOSAL".into(),
+                 latest_revision:0,revision_sha256:None,
+                 revision_review:"NO_PROPOSAL".into(),
                  supervisor_state:"NOT_CLAIMED".into(),step_count:0,
                  steps:Vec::new(),
                  next_safe_action:"Prepare a plan proposal for human review. Do not execute.",
@@ -236,6 +240,7 @@
          plans.push(AgentPlanProgress{
              plan_id:plan,original_human_turn_id:turn,plan_state:state,
              latest_revision:revision_number as u8,
+             revision_sha256:Some(revision_sha),
              revision_review:review.into(),
              supervisor_state:owner_state.into(),
              step_count:steps.len() as u8,steps,
