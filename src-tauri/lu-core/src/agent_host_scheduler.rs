@@ -5,7 +5,7 @@
 //! Native worker launch, process reaping and source revision custody require
 //! independently accepted E1 gates. An abandoned session is quarantined,
 //! NOT timed-out into a new owner and NOT silently replayed.
-use std::{path::Path,sync::Mutex};
+use std::{collections::BTreeSet,path::Path,sync::Mutex};
 use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};
 use crate::{
     agent_plan_ledger::{AgentPlanLedger,PlanSnapshot},
@@ -99,7 +99,12 @@ pub struct SchedulerView{
     pub claims:Vec<ScheduledProposal>,
     pub execution:&'static str,
 }
-pub struct AgentHostScheduler{db:Mutex<Connection>}
+pub struct AgentHostScheduler{
+    db:Mutex<Connection>,
+    /// Deliberately NOT persisted. A restarted process knowing an old owner
+    /// ID cannot impersonate the original supervising host.
+    live_owners:Mutex<BTreeSet<(String,String)>>,
+}
 fn exact(value:&str,prefix:&str)->bool{
     value.len()==prefix.len()+32&&value.starts_with(prefix)
         &&value[prefix.len()..].bytes().all(|b|
@@ -258,7 +263,26 @@ impl AgentHostScheduler{
                BEFORE DELETE ON lu_agent_schedule_proposals
                BEGIN SELECT RAISE(ABORT,'Cannot erase durable schedule intent'); END;"
         )?;
-        Ok(Self{db:Mutex::new(db)})
+        Ok(Self{
+            db:Mutex::new(db),
+            live_owners:Mutex::new(BTreeSet::new()),
+        })
+    }
+    fn require_live_owner(&self,plan:&str,owner:&str)
+        ->Result<(),ScheduleError>{
+        let live=self.live_owners.lock()
+            .map_err(|_|ScheduleError::Poisoned)?;
+        if !live.contains(&(plan.into(),owner.into())){
+            return Err(ScheduleError::ReviewRequired)
+        }
+        Ok(())
+    }
+    fn forget_live_owner(&self,plan:&str,owner:&str)
+        ->Result<(),ScheduleError>{
+        let mut live=self.live_owners.lock()
+            .map_err(|_|ScheduleError::Poisoned)?;
+        live.remove(&(plan.into(),owner.into()));
+        Ok(())
     }
     /// Bind ONE host for this plan's full lifetime; no automatic lease
     /// expiry/takeover. A new human revision uses a fresh plan, not a process
@@ -287,6 +311,8 @@ impl AgentHostScheduler{
             params![plan],|r|r.get(0)
         ).optional()?;
         if existing.is_some(){
+            // Same owner ID cannot be inherited after a process restart.
+            self.require_live_owner(plan,owner_id)?;
             let owner=owned(&tx,plan,owner_id,1)?;
             if owner.state!="OWNED"||owner.revision!=revision_sha
                 ||owner.remaining!=budget{
@@ -306,6 +332,9 @@ impl AgentHostScheduler{
                 budget.output_ceiling_bytes]
         )?;
         tx.commit()?;
+        let mut live=self.live_owners.lock()
+            .map_err(|_|ScheduleError::Poisoned)?;
+        live.insert((plan.into(),owner_id.into()));
         Ok(SessionReceipt{epoch:1,write:WriteStatus::New,
             execution:"NOT_AUTHORIZED_FOR_EXECUTION"})
     }
@@ -331,6 +360,7 @@ impl AgentHostScheduler{
         if !request.bounded()||request.max_claims!=1{
             return Err(ScheduleError::InvalidBudget)
         }
+        self.require_live_owner(plan,owner)?;
         let (view,revision)=reviewable(ledger,revisions,sources,plan,chat,origin_turn)?;
         if revision.revision_sha256!=revision_sha{return Err(ScheduleError::StaleRevision)}
         if fresh_turn==origin_turn || Some(fresh_turn)==revision.review_turn_id.as_deref()
@@ -463,6 +493,7 @@ impl AgentHostScheduler{
             ||!exact(claim_id,"q-")||!sha(revision_sha)||epoch!=1{
             return Err(ScheduleError::InvalidId)
         }
+        self.require_live_owner(plan,owner)?;
         let (_,revision)=reviewable(ledger,revisions,sources,plan,chat,origin_turn)?;
         if revision.revision_sha256!=revision_sha{
             return Err(ScheduleError::StaleRevision)
@@ -517,6 +548,7 @@ impl AgentHostScheduler{
         if !scope(plan,chat,turn)||!exact(owner,"h-")||epoch!=1{
             return Err(ScheduleError::InvalidId)
         }
+        self.require_live_owner(plan,owner)?;
         let mut db=self.db.lock().map_err(|_|ScheduleError::Poisoned)?;
         let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         origin_in_tx(&tx,plan,chat,turn)?;
@@ -537,6 +569,7 @@ impl AgentHostScheduler{
             params![plan]
         )?;
         tx.commit()?;
+        self.forget_live_owner(plan,owner)?;
         Ok(WriteStatus::New)
     }
     /// Caller must independently verify the prior HOST ended. Never
@@ -571,6 +604,8 @@ impl AgentHostScheduler{
             params![plan]
         )?;
         tx.commit()?;
+        // Abandoned owner cannot keep mutating this schedule instance.
+        self.forget_live_owner(plan,previous_owner)?;
         Ok(WriteStatus::New)
     }
     /// Clean release only when all planning intents have a verified *past*
@@ -582,6 +617,7 @@ impl AgentHostScheduler{
         if !scope(plan,chat,turn)||!exact(owner,"h-")||epoch!=1{
             return Err(ScheduleError::InvalidId)
         }
+        self.require_live_owner(plan,owner)?;
         let mut db=self.db.lock().map_err(|_|ScheduleError::Poisoned)?;
         let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         origin_in_tx(&tx,plan,chat,turn)?;
@@ -598,6 +634,7 @@ impl AgentHostScheduler{
              WHERE plan_id=?1",params![plan]
         )?;
         tx.commit()?;
+        self.forget_live_owner(plan,owner)?;
         Ok(())
     }
     /// Authenticated read-only host progress. Claim IDs are host generated
@@ -816,7 +853,16 @@ mod tests{
         assert_eq!(s.claim_host(
             &f.plan,&f.chat,&f.origin,&id("h-",99),&f.revision,
             session_budget(),&a,&b,&Sources(true)
-        ),Err(ScheduleError::StaleOwner));
+        ),Err(ScheduleError::ReviewRequired));
+        assert_eq!(s.claim_host(
+            &f.plan,&f.chat,&f.origin,&f.owner,&f.revision,
+            session_budget(),&a,&b,&Sources(true)
+        ),Err(ScheduleError::ReviewRequired));
+        assert_eq!(s.propose_step(
+            &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
+            0,&id("q-",70),&id("g-",71),step_budget(),&a,&b,
+            &Sources(true),&Human,&Fresh(true),&f.root,&c
+        ),Err(ScheduleError::ReviewRequired));
         drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
