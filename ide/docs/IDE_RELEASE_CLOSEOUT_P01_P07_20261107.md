@@ -149,3 +149,8 @@ The isolated filesystem transaction engine now records an fsync-backed `rolling_
 - **P05:** historical PR/workflow cleanup remains deliberately deferred until **all** source, native OS, protected execution, installed GUI and upgrade/rollback equivalents are independently accepted. No old PRs or workflows retired.
 
 **Verification contract:** Source commits and tests in this continuation are not PASSED CI until exact continuation-head Windows/Linux CI is observed. Never promote a queued Ubuntu job, notice coverage, source rollback fixture or an unsigned Windows UI pass into signed/protected installed release approval.
+
+
+### IDE continuation: P03 DAP diagnostic / P04 real GUI native evidence
+
+On the existing P05-retaining P03/P04 continuation draft, amended P03 bounded DAP error classification for LLDB alternative response field layouts, added strict regression tests, and retained original cgroup/AppContainer/SCM/DAP protected execution admission. P04 Linux GTK accepts the genuine native `Select Folder` or `Open Folder` button names only under a real chooser ancestor, and Windows consent requires exact app-owned native dialog and InvokePattern. P05 workflow inventory and independent CI disposition are now both re-pinned against the verified current Git tree for 38/38 retained workflows; zero old PR/workflows retired. At last inspection Ubuntu 24.04 P02 native/installed/P06 license jobs remain queued; do not infer Linux verdict from successful Ubuntu-latest LSP. Signed two-version installer, final commercial licensing and P07/WO10 interface remain OPEN/deferred as previously recorded.

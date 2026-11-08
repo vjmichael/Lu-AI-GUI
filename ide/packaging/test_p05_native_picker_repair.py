@@ -26,6 +26,9 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertNotIn("type_text(str(ROOT.parent))",a)
         self.assertNotIn("_select_real_fixture_directory()",a)
         self.assertIn("_native_picker_confirm()",a)
+        self.assertIn('"select folder"',s)
+        self.assertIn('"open folder"',s)
+        self.assertIn('_native_dialog_ancestor(obj)',s)
         self.assertIn('accessible(ROOT.name, seconds=15)',a)
         self.assertIn('deny("native_folder_chooser_not_accepted")',a)
         self.assertIn("ephemeral_fixture_was_already_registered_before_picker",a)
@@ -45,6 +48,16 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("Closed · ready to reopen",frontend)
         self.assertIn(">Reopen</button>",frontend)
         self.assertIn(">Edit</button>",frontend)
+    def test_windows_git_one_use_approval_stays_under_real_owned_dialog(self):
+        windows=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        section=windows.split("function Confirm-NativeOneUseDialog(",1)[1].split(
+            "\ntry {\n  $proc=Start-Process",1)[0]
+        self.assertIn("if ($win.Current.ProcessId -ne $proc.Id)",section)
+        self.assertIn("$name -ne $approvalCaption",section)
+        self.assertIn("$child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)",section)
+        self.assertNotIn("$child.Current.ProcessId -ne $proc.Id -or",section)
+        self.assertIn("real_native_consent_dialog_not_observed",section)
+
     def test_neither_platform_uses_internal_api_or_synthetic_acceptance(self):
         for path in ("ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
                      "ide/app/fixtures/wo8_linux_editor_atspi.py"):

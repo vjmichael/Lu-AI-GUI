@@ -154,7 +154,9 @@ def _native_dialog_ancestor(node):
 
 
 def _native_picker_confirm():
-    candidates = ("select", "open", "choose folder")
+    # GTK/WebKit distributions expose these actual native chooser captions.
+    # Always require a real AT-SPI button under a genuine file-dialog ancestor.
+    candidates = ("select", "open", "choose folder", "select folder", "open folder")
     checked = 0
     for obj in elements():
         try:
