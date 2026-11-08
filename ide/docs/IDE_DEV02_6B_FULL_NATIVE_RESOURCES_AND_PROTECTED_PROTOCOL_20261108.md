@@ -99,3 +99,31 @@ normal and cancellation evidence at the exact head SHA.
    review remain separate; none is accepted by this candidate engineering.
 
 All production gates remain fail-closed.
+
+
+## Real approved NSIS/Debian stager integration (additional source hardening)
+
+The original Windows and Linux production stagers previously verified and
+copied only each main native binary and its notice files. DEV-02.6B now also
+requires an independently reviewed exact-file native resource inventory
+from each bundled provider's release manifest (both native platforms).
+The release verifier refuses binary-only approved clangd manifests,
+missing inventory review, wrong exact resource SHA, symlinked source path
+components, path traversal, case-aliased destinations and resource/notice
+collisions. There is no implicit installer download or permission escalation.
+
+Both stage_language_server_release.py and
+stage_linux_language_server_release.py copy all manifest-approved resource
+bytes under their fixed worker-relative paths (e.g. bin/original-runtime.dll
+and lib/clang/23/include/stddef.h), rehash the staged result, and incorporate
+it into the already-existing whole-tree digest pinned into the Rust executable.
+The original P04 license notice/Authenticode tests and root-owned Linux
+resource requirement still apply. Synthetic release source tests now
+exercise both OS resource preservation and hostile denial.
+
+The original release manifest remains entirely unapproved with
+releaseApproved=false and no bundled binaries; the source contract does not
+constitute independent author/legal permission. A production inventory
+requires original full-release provenance and a complete dynamic dependency
+audit before it can be marked reviewed. Actual resource asset bytes and
+independent signer identities were not supplied to this task.
