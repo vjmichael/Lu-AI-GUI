@@ -631,7 +631,11 @@ pub const REVIEWED_QUEUE_MARKER:&str=
         let (chats,_)=self.list()?;
         let mut owner:Option<String>=None;
         for chat in chats{
-            if self.trusted_user_turn_text(&chat.chat_id,turn_id).is_some(){
+            // A missing/corrupt catalog-owned ANSF book is not silently
+            // downgraded to "no match" during startup recovery.
+            let book=self.require(&chat.chat_id)?;
+            if book.authenticated_chat_turn(&chat.chat_id,turn_id)
+                .map_err(to_err)?.is_some(){
                 if owner.is_some(){
                     return Err("Multiple chats own one reviewed turn identity".into())
                 }
