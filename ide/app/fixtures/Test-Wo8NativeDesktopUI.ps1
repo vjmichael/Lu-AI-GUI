@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev01Integrated','Dev01RecoveryRestart')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -206,6 +206,57 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
     Write-Host ('P02_NATIVE_UIA_SNAPSHOT_ERROR='+$_.Exception.GetType().Name)
   }
   Deny ('ui_element_not_exposed_'+$query.Replace(' ','_'))
+}
+function Confirm-Dev01OwnedBrowserPrompt([string]$message) {
+  # No synthetic JS dialogs or unchecked Enter key: find actual operating-
+  # system UI Automation dialog tied to the installed process and matching
+  # the exact destructive-operation prompt.
+  $deadline=(Get-Date).AddSeconds(22)
+  while ((Get-Date) -lt $deadline) {
+    $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+    $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    foreach($win in $windows) {
+      try {
+        $handle=[IntPtr]::new([int64]$win.Current.NativeWindowHandle)
+        if ($handle -eq [IntPtr]::Zero) { continue }
+        $owned=($win.Current.ProcessId -eq $proc.Id -or
+          [P04NativeWebViewWindows]::GetWindow($handle,4) -eq $proc.MainWindowHandle)
+        if (!$owned) { continue }
+        $all=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        $messageObserved=$false
+        $ok=$null
+        foreach($node in $all) {
+          $name=[string]$node.Current.Name
+          if ($name -eq $message -or $name.Contains($message)) { $messageObserved=$true }
+          if ($name -in @('OK','Yes','Confirm') -and
+              $node.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+              $node.Current.IsEnabled) { $ok=$node }
+        }
+        if (!$messageObserved -or !$ok) { continue }
+        $button=$ok.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+        $button.Invoke()
+        Write-Host 'DEV01_NATIVE_OWNED_CONFIRMATION=real_UIAutomation'
+        return
+      } catch {}
+    }
+    Start-Sleep -Milliseconds 300
+  }
+  Deny 'dev01_real_owned_confirmation_not_exposed'
+}
+function Dev01-Require([string]$label,[int]$seconds=20) {
+  [void](Find-Control $label '' $seconds)
+}
+function Dev01-TypeInto([string]$accessibleName,[string]$value) {
+  if ($value -match '[+^%~(){}\[\]]') { Deny 'dev01_keyboard_metacharacter_not_reviewed' }
+  $field=Find-Control $accessibleName 'Edit' 16
+  if (!$field.Current.IsEnabled -or !$field.Current.IsKeyboardFocusable) {
+    Deny ('dev01_native_text_input_unusable_'+$accessibleName.Replace(' ','_'))
+  }
+  $field.SetFocus()
+  [System.Windows.Forms.SendKeys]::SendWait('^a')
+  [System.Windows.Forms.SendKeys]::SendWait($value)
 }
 function Click([string]$label) {
   $element=Find-Control $label 'Button'
@@ -458,7 +509,7 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
+  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev01RecoveryRestart')) {
     # Native folder chooser must be opened through UI, never by trusting input path.
     Click '+ Open folder'
     Start-Sleep -Seconds 2
@@ -478,7 +529,7 @@ try {
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
+    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev01RecoveryRestart')) {
       # Native chooser name is not an IDE project registration.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
@@ -920,6 +971,151 @@ try {
       Require 'Stack: observed'
       Require 'Kernel tree cleanup: reported by protected supervisor'
       Write-Host 'WO8_INSTALLED_NATIVE_PROTECTED_BUILD_AND_DEBUG_INSPECTION=PASS'
+    }
+    if ($Scenario -eq 'Dev01Integrated') {
+      # Every assertion below observes a genuinely installed native Tauri
+      # process, OS UIA controls and disposable real project files. No
+      # Tauri IPC, WebView scripts, devtools, or direct database shortcuts.
+      $moved=Join-Path $fixed 'move-me.rs'
+      $renamed=Join-Path $fixed 'renamed.rs'
+      $side=Join-Path $fixed 'side.rs'
+      $source=Join-Path $fixed 'main.rs'
+      if (!(Test-Path $moved -PathType Leaf) -or !(Test-Path $side -PathType Leaf) -or
+          (Test-Path $renamed)) { Deny 'dev01_fixture_not_pristine' }
+      $sourceBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      $moveBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $moved).Hash
+
+      # Real native app Quick Open index of >500 source files (legacy 500 cap).
+      Click 'Quick open · Ctrl+P'
+      Dev01-Require 'Quick open · current project'
+      Dev01-Require 'Indexed 867 files' 35
+      Dev01-Require 'Native bounded index'
+      Click 'Close · Esc'
+      Write-Host 'DEV01_INSTALLED_WINDOWS_LARGE_PROJECT_QUICK_OPEN=PASS'
+
+      # Source file is first opened, then explicitly closed. Open tabs are
+      # deliberately not eligible for rename/trash, including clean tabs.
+      Click 'move-me.rs'
+      Click 'Close move-me.rs'
+      Click 'Rename / move'
+      Dev01-TypeInto 'Rename/move file to existing project folder' 'renamed.rs'
+      Click 'Move without overwrite'
+      $deadline=(Get-Date).AddSeconds(20)
+      while ((Get-Date) -lt $deadline -and !(Test-Path -LiteralPath $renamed)) {
+        Start-Sleep -Milliseconds 350
+      }
+      if ((Test-Path -LiteralPath $moved) -or
+          !(Test-Path -LiteralPath $renamed) -or
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $renamed).Hash -ne $moveBefore) {
+        Deny 'dev01_native_move_not_committed_or_bytes_changed'
+      }
+      Write-Host 'DEV01_INSTALLED_WINDOWS_NATIVE_NO_CLOBBER_FILE_MOVE=PASS'
+
+      Click 'renamed.rs'
+      Click 'Close renamed.rs'
+      Click 'Trash file'
+      Confirm-Dev01OwnedBrowserPrompt 'Move renamed.rs to project-local recoverable trash?'
+      $deadline=(Get-Date).AddSeconds(15)
+      while ((Get-Date) -lt $deadline -and (Test-Path $renamed)) {
+        Start-Sleep -Milliseconds 350
+      }
+      if (Test-Path $renamed) { Deny 'dev01_native_trash_failed_to_move_source' }
+      $trash=Join-Path $fixed '.lu-ide-trash'
+      if (!(Test-Path -LiteralPath $trash -PathType Container) -or
+          @(Get-ChildItem -LiteralPath $trash -Filter '*.payload' -File).Count -ne 1 -or
+          @(Get-ChildItem -LiteralPath $trash -Filter '*.json' -File).Count -ne 1) {
+        Deny 'dev01_native_trash_manifest_or_payload_missing'
+      }
+      Click 'Project trash'
+      Dev01-Require 'Recoverable project trash'
+      Dev01-Require 'renamed.rs'
+      Click 'Restore'
+      Confirm-Dev01OwnedBrowserPrompt 'Restore renamed.rs from project trash?'
+      $deadline=(Get-Date).AddSeconds(15)
+      while ((Get-Date) -lt $deadline -and !(Test-Path -LiteralPath $renamed)) {
+        Start-Sleep -Milliseconds 350
+      }
+      if (!(Test-Path $renamed) -or
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $renamed).Hash -ne $moveBefore -or
+          @(Get-ChildItem -LiteralPath $trash -Filter '*.payload' -File).Count -ne 0) {
+        Deny 'dev01_native_restore_failed_or_content_mismatched'
+      }
+      Write-Host 'DEV01_INSTALLED_WINDOWS_TRASH_AND_RESTORE=PASS'
+
+      # Split must display two separately opened, real source files.
+      Click 'main.rs'
+      Click 'side.rs'
+      Click 'Split editor'
+      Dev01-Require 'Primary source editor pane'
+      Dev01-Require 'Secondary source editor pane'
+      Dev01-Require 'Save secondary'
+      # The default alternative is the other existing tab, main.rs.
+      $secondary=Find-Control 'Secondary source editor pane' '' 12
+      $children=$secondary.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+      $editor=$null
+      foreach($child in $children) {
+        if ([string]$child.Current.Name -eq 'Source editor text' -and
+            $child.Current.IsKeyboardFocusable) { $editor=$child; break }
+      }
+      if (!$editor) { Deny 'dev01_secondary_codemirror_not_real_accessible_editor' }
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// DEV01_INSTALLED_SPLIT_SAVED')
+      Click 'Save secondary'
+      $deadline=(Get-Date).AddSeconds(15)
+      do {
+        Start-Sleep -Milliseconds 350
+        $savedText=[IO.File]::ReadAllText($source)
+      } while ((Get-Date) -lt $deadline -and
+        !$savedText.Contains('DEV01_INSTALLED_SPLIT_SAVED'))
+      if (!$savedText.Contains('DEV01_INSTALLED_SPLIT_SAVED')) {
+        Deny 'dev01_secondary_explicit_save_missing'
+      }
+      Write-Host 'DEV01_INSTALLED_WINDOWS_SPLIT_EDITOR_SECONDARY_SAVE=PASS'
+
+      # Now enter another unsaved draft and force-kill the app in finally.
+      $afterSavedHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// DEV01_RECOVER_AFTER_KILL')
+      Start-Sleep -Milliseconds 2300
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne
+          $afterSavedHash) { Deny 'dev01_autosaved_unsaved_draft_to_project' }
+      Click 'Recover unsaved drafts'
+      Dev01-Require 'Local unsaved draft checkpoints'
+      Dev01-Require 'Current session'
+      Write-Host 'DEV01_INSTALLED_WINDOWS_DRAFT_CHECKPOINT_BEFORE_KILL=PASS'
+      Write-Host 'DEV01_INSTALLED_WINDOWS_REAL_PROCESS_KILL_REQUIRED_FOR_RESTART_ACCEPTANCE'
+    }
+    if ($Scenario -eq 'Dev01RecoveryRestart') {
+      # The previous invocation force-killed the installed desktop, not an
+      # in-process mock. Require genuine prior-session persisted draft.
+      $source=Join-Path $fixed 'main.rs'
+      $before=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      if (![IO.File]::ReadAllText($source).Contains('DEV01_INSTALLED_SPLIT_SAVED') -or
+          [IO.File]::ReadAllText($source).Contains('DEV01_RECOVER_AFTER_KILL')) {
+        Deny 'dev01_fixture_source_not_separated_from_unsaved_draft'
+      }
+      Dev01-Require 'Previous-session drafts available' 25
+      Click 'Recover unsaved drafts'
+      Dev01-Require 'Older application session'
+      Click 'Recover into unsaved tab'
+      Dev01-Require 'Recovered main.rs into an unsaved editor tab' 20
+      Dev01-Require 'Unsaved'
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $before) {
+        Deny 'dev01_recovery_modified_source_before_explicit_save'
+      }
+      Click 'Save · Ctrl+S'
+      $deadline=(Get-Date).AddSeconds(16)
+      while ((Get-Date) -lt $deadline -and
+          ![IO.File]::ReadAllText($source).Contains('DEV01_RECOVER_AFTER_KILL')) {
+        Start-Sleep -Milliseconds 400
+      }
+      if (![IO.File]::ReadAllText($source).Contains('DEV01_RECOVER_AFTER_KILL')) {
+        Deny 'dev01_explicit_save_after_recovery_not_persisted'
+      }
+      Write-Host 'DEV01_INSTALLED_WINDOWS_PREVIOUS_SESSION_DRAFT_RECOVERY=PASS'
     }
     if ($Scenario -eq 'ExternalConflict') {
       # A real external editor replaces the file after the CodeMirror draft is
