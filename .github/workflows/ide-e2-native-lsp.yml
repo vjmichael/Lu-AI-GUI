@@ -51,6 +51,9 @@ jobs:
         with:
           toolchain: '1.99.1'
           components: rustfmt
+      - name: Parse real native clangd PowerShell before expensive OS compilation
+        shell: pwsh
+        run: ./ide/supervisor/fixtures/Test-P03ClangdCI.ps1
       - name: Compile protected SCM service and real E2 host
         shell: pwsh
         run: |
