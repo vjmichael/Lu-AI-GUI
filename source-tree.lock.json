@@ -1,11 +1,15 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "481fda4c576194704f28895d73f32a290c5001e7",
-  "trackedFileCount": 695,
+  "sourceCommitBeforeLock": "109c83bfa88a25473ee703f683f3a30fc680cd7d",
+  "trackedFileCount": 698,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
       "blob": "650f9b656f3dfe4090bd0673d1de20b5ecfd38f4"
+    },
+    {
+      "path": ".github/workflows/lu-agent01b-plan-revisions.yml",
+      "blob": "6f1eada9b6e581c21191ab0c63de74f9793293cf"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -300,6 +304,10 @@
       "blob": "fb4ef3879528ac19858766574cac1e672c576fee"
     },
     {
+      "path": "docs/LU_AGENT01B_IMMUTABLE_PLAN_REVISIONS_20261108.md",
+      "blob": "55474b6606cf91bf2eda4f363da284fd88681cad"
+    },
+    {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
       "blob": "976d8080d3b2940b467fec4c5296829a8d601bea"
     },
@@ -557,7 +565,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "f4aae9f7de7fd8e7d4e363d5949cadf803c757c1"
+      "blob": "9670176c86dc20fce249ee662eb8817a28b3116f"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1089,7 +1097,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "d64c74bc6bf52e4b629bd285c6155f269da861ed"
+      "blob": "f82a0246221073eccee7e678f7efc878ca8872c4"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1445,7 +1453,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
-      "blob": "32ca734b1194fb30ae86aa4c2e196def0ee98c5a"
+      "blob": "4df9a632bf10861620b042f97cd1bb6777171556"
+    },
+    {
+      "path": "src-tauri/lu-core/src/agent_plan_revisions.rs",
+      "blob": "4d1cab3878322db5cd396dd002c5e3fdf60bd005"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -1729,7 +1741,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "429c093c978146c6912ecf563e18a0f011008fcd"
+      "blob": "889e831839a65f3fb1a781950116c53a0232057f"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
