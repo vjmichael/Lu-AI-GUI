@@ -72,6 +72,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "versioned server IDs, language coverage, license and fixed launcher hints; execution disabled"
         ),
         capability!(
+            "job.discoverProfiles",
+            "ide_discover_project_run_profiles",
+            "Inspect project build/test profiles",
+            "Inspect fixed Rust, Python, JS and C/C++ manifest conventions and bounded tests folder hints in a registered project; no code or scripts are executed.",
+            "read",
+            "active native-picker registered project, read-only fixed manifest probes; no caller-supplied executable, script, path or environment",
+            "saved manifest SHA, bounded conventional test hints and explicit unavailable native routes; no grant, worker, toolchain or task acceptance"
+        ),
+        capability!(
             "job.prepare",
             "ide_prepare_execution_intent",
             "Prepare a non-executable job request",
@@ -561,7 +570,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 47);
+        assert_eq!(catalog.capabilities.len(), 48);
         assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -597,7 +606,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 43);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 45);
     }
 
     #[test]
