@@ -40,9 +40,16 @@ class UpstreamNoticeTests(unittest.TestCase):
     def test_invalid_sha_refused(self):
         with self.assertRaisesRegex(NoticeDenied, "missing_exact_source_sha"):
             verify_sources(self.root, "main", self.fetch)
-    def test_windows_crlf_conversion_is_not_tampering(self):
+    def test_windows_crlf_conversion_is_not_accepted_as_byte_exact(self):
         first = next(iter(self.data))
         self.data[first] = self.data[first].replace(b"\n", b"\r\n")
-        self.assertTrue(verify_sources(self.root, "a"*40, self.fetch)["allSourcesRetrieved"])
+        with self.assertRaisesRegex(NoticeDenied, "source_notice_differs_from_upstream"):
+            verify_sources(self.root, "a"*40, self.fetch)
+    def test_checkout_crlf_mutation_is_denied_even_if_meaning_same(self):
+        first = next(iter(SOURCES))
+        local = self.folder / first
+        local.write_bytes(local.read_bytes().replace(b"\n", b"\r\n"))
+        with self.assertRaisesRegex(NoticeDenied, "source_notice_differs_from_upstream"):
+            verify_sources(self.root, "a"*40, self.fetch)
 if __name__ == "__main__":
     unittest.main()
