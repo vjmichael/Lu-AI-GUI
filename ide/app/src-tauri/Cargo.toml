@@ -9,9 +9,10 @@ description = "Standalone desktop IDE, optionally interoperable with Lu"
 
 [features]
 default = []
-# Release-only native Windows LSP host. Never enabled by the default IDE build.
-# Requires reviewed compile-time executable digests and installed D7D SCM.
-native-lsp = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/lsp-transport", "lu-ide-execution-supervisor/protected-recovery-service"]
+# Opt-in, pinned native Windows/Linux LSP host. Never enabled by default.
+# Windows requires the reviewed D7D SCM; Linux requires root-owned bundle,
+# root-owned bwrap and delegated kernel cgroup-v2, with no permissive fallback.
+native-lsp = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/lsp-transport", "lu-ide-execution-supervisor/protected-recovery-service", "lu-ide-execution-supervisor/linux-worker"]
 # WO6 opt-in protected build/test. Both native OS workers are linked only
 # behind this explicit feature and still require exact installed release pins.
 # Linux runs fixed root-owned Cargo under cgroup-v2/Bubblewrap; Windows runs
