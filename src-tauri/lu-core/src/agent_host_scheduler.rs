@@ -139,7 +139,7 @@ fn reviewable(
     }
     Ok((plan_view,rev))
 }
-fn origin_in_tx(tx:&rusqlite::Transaction<'_>,plan:&str,chat:&str,origin_turn:&str)
+fn identity_in_tx(tx:&rusqlite::Transaction<'_>,plan:&str,chat:&str,origin_turn:&str)
     ->Result<String,ScheduleError>{
     let result:Option<(String,String,String)>=tx.query_row(
         "SELECT conversation_id,human_turn_id,state FROM lu_agent_plans
@@ -148,11 +148,17 @@ fn origin_in_tx(tx:&rusqlite::Transaction<'_>,plan:&str,chat:&str,origin_turn:&s
     ).optional()?;
     let Some((c,t,state))=result else{return Err(ScheduleError::UnknownPlan)};
     if c!=chat||t!=origin_turn{return Err(ScheduleError::WrongOrigin)}
+    if !matches!(state.as_str(),
+        "DRAFT"|"OBSERVATIONS_ONLY"|"NEEDS_REVIEW"|"CANCEL_REQUESTED"){
+        return Err(ScheduleError::CorruptState)
+    }
+    Ok(state)
+}
+fn origin_in_tx(tx:&rusqlite::Transaction<'_>,plan:&str,chat:&str,origin_turn:&str)
+    ->Result<String,ScheduleError>{
+    let state=identity_in_tx(tx,plan,chat,origin_turn)?;
     if matches!(state.as_str(),"NEEDS_REVIEW"|"CANCEL_REQUESTED"){
         return Err(ScheduleError::ReviewRequired)
-    }
-    if !matches!(state.as_str(),"DRAFT"|"OBSERVATIONS_ONLY"){
-        return Err(ScheduleError::CorruptState)
     }
     Ok(state)
 }
@@ -261,7 +267,40 @@ impl AgentHostScheduler{
              );
              CREATE TRIGGER IF NOT EXISTS lu_schedule_proposal_no_delete
                BEFORE DELETE ON lu_agent_schedule_proposals
-               BEGIN SELECT RAISE(ABORT,'Cannot erase durable schedule intent'); END;"
+               BEGIN SELECT RAISE(ABORT,'Cannot erase durable schedule intent'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_schedule_owner_no_delete
+               BEFORE DELETE ON lu_agent_schedule_owners
+               BEGIN SELECT RAISE(ABORT,'Cannot erase durable supervisor fence'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_schedule_owner_immutable
+               BEFORE UPDATE OF owner_id,epoch,revision_sha256,max_claims,
+                   token_ceiling,tool_ceiling,wall_ceiling_ms,output_ceiling
+                   ON lu_agent_schedule_owners
+               BEGIN SELECT RAISE(ABORT,'Cannot change host ownership or limits'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_schedule_owner_state_guard
+               BEFORE UPDATE OF state ON lu_agent_schedule_owners
+               WHEN NOT (
+                   OLD.state='OWNED' AND NEW.state IN
+                     ('CANCEL_REQUESTED','RECOVERY_REQUIRED','RELEASED')
+                   OR OLD.state='CANCEL_REQUESTED'
+                     AND NEW.state='RECOVERY_REQUIRED'
+               )
+               BEGIN SELECT RAISE(ABORT,'Illegal supervisor transition'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_schedule_proposal_immutable
+               BEFORE UPDATE OF plan_id,revision_sha256,step_index,
+                   claim_id,owner_id,epoch,fresh_human_turn_id,
+                   token_reservation,tool_reservation,
+                   wall_reservation_ms,output_reservation
+                   ON lu_agent_schedule_proposals
+               BEGIN SELECT RAISE(ABORT,'Cannot rebind step proposal identity'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_schedule_proposal_transition
+               BEFORE UPDATE OF state ON lu_agent_schedule_proposals
+               WHEN NOT(
+                   OLD.state='PROPOSED_NO_EXECUTION'
+                   AND NEW.state IN(
+                     'OBSERVED_VERIFIED_HISTORICAL',
+                     'CANCEL_INTENT_UNCERTAIN','ABANDONED_UNCERTAIN')
+               )
+               BEGIN SELECT RAISE(ABORT,'Illegal proposal transition'); END;"
         )?;
         Ok(Self{
             db:Mutex::new(db),
@@ -588,7 +627,9 @@ impl AgentHostScheduler{
         }
         let mut db=self.db.lock().map_err(|_|ScheduleError::Poisoned)?;
         let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        origin_in_tx(&tx,plan,chat,turn)?;
+        // Quarantine remains available if the original plan was already
+        // cancelled or marked uncertain; never grants new execution.
+        identity_in_tx(&tx,plan,chat,turn)?;
         let state=owned(&tx,plan,previous_owner,1)?;
         if state.state=="RECOVERY_REQUIRED"{
             return Ok(WriteStatus::AlreadyRecorded)
@@ -715,6 +756,7 @@ impl AgentHostScheduler{
 #[cfg(test)]
 mod tests{
     use super::*;
+    use rusqlite::params;
     use crate::{
         agent_plan_ledger::{PlanStepKind,PlanStepSpec},
         agent_plan_revisions::{
@@ -848,6 +890,14 @@ mod tests{
         ),Err(ScheduleError::WrongOrigin));
         assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a).unwrap().unwrap().state,
             "OWNED");
+        let db=Connection::open(&f.db).unwrap();
+        assert!(db.execute(
+            "UPDATE lu_agent_schedule_owners SET owner_id=?1 WHERE plan_id=?2",
+            params![id("h-",99),&f.plan]).is_err());
+        assert!(db.execute(
+            "DELETE FROM lu_agent_schedule_owners WHERE plan_id=?1",
+            params![&f.plan]).is_err());
+        drop(db);
         drop(s);drop(c);drop(b);drop(a);
         let (a,b,c,s)=opened(&f);
         assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a).unwrap().unwrap().epoch,1);
