@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -920,6 +920,113 @@ try {
       Require 'Stack: observed'
       Require 'Kernel tree cleanup: reported by protected supervisor'
       Write-Host 'WO8_INSTALLED_NATIVE_PROTECTED_BUILD_AND_DEBUG_INSPECTION=PASS'
+    }
+    if ($Scenario -eq 'Dev02ProtectedLsp') {
+      # This lane runs only against an actual installed protected release
+      # with verified provider bundle and the independently installed SCM.
+      # Never turn on LSP through JavaScript, mocked IPC, PATH clangd or
+      # an uncontained same-user child as a substitute for UI consent.
+      [void](VerifiedInstalledService)
+      $files=@('main.rs','main.cpp','hello.py','Cargo.toml')
+      foreach ($name in $files) {
+        if (!(Test-Path -LiteralPath (Join-Path $fixed $name) -PathType Leaf)) {
+          Deny ('dev02_real_installed_fixture_missing_'+$name.Replace('.','_'))
+        }
+      }
+      function Native-LspPositionAtCall {
+        $editor=Find-Control 'Source editor text' '' 15
+        if (!$editor.Current.IsKeyboardFocusable) { Deny 'dev02_editor_not_focusable' }
+        $editor.SetFocus()
+        [System.Windows.Forms.SendKeys]::SendWait('^{HOME}')
+        [System.Windows.Forms.SendKeys]::SendWait('{DOWN}{DOWN}{END}{LEFT 5}')
+        Start-Sleep -Milliseconds 500
+        return $editor
+      }
+      function Observe-RealLspWorker([string]$name,[int]$before) {
+        $deadline=(Get-Date).AddSeconds(24)
+        while ((Get-Date) -lt $deadline) {
+          if ((BoundedProcess $name) -gt $before) { return }
+          Start-Sleep -Milliseconds 350
+        }
+        Deny ('dev02_native_protected_lsp_process_not_observed_'+$name)
+      }
+      function Require-LspReaped([string]$name,[int]$before) {
+        $deadline=(Get-Date).AddSeconds(20)
+        while ((Get-Date) -lt $deadline) {
+          if ((BoundedProcess $name) -le $before) { return }
+          Start-Sleep -Milliseconds 350
+        }
+        Deny ('dev02_protected_lsp_worker_not_reaped_'+$name)
+      }
+      function Test-RealInstalledSemanticProvider(
+        [string]$language,[string]$file,[string]$server
+      ) {
+        $prior=BoundedProcess $server
+        Click $file
+        Require ('Start '+$server)
+        Click ('Start '+$server)
+        Confirm-NativeOneUseDialog 'Allow language analysis' 'Allow this session'
+        Observe-RealLspWorker $server $prior
+        Require ('Protected '+$server+' session started')
+        Click 'Problems'
+        [void](Find-Control 'Language server problems' '' 30)
+        $editor=Native-LspPositionAtCall
+        try {
+          $pattern=$editor.GetCurrentPattern(
+            [System.Windows.Automation.TextPattern]::Pattern)
+          $ranges=$pattern.GetSelection()
+          if (!$ranges -or $ranges.Count -ne 1) { Deny 'dev02_real_caret_missing' }
+          $before=$ranges[0].Clone()
+        } catch { Deny 'dev02_real_editor_textpattern_not_available' }
+        Click 'Hover'
+        [void](Find-Control 'Symbol information' '' 25)
+        Click 'Complete'
+        [void](Find-Control 'Suggestions' '' 25)
+        Click 'Definition'
+        Start-Sleep -Milliseconds 900
+        $afterEditor=Find-Control 'Source editor text' '' 12
+        try {
+          $afterPattern=$afterEditor.GetCurrentPattern(
+            [System.Windows.Automation.TextPattern]::Pattern)
+          $afterRanges=$afterPattern.GetSelection()
+          if (!$afterRanges -or $afterRanges.Count -ne 1 -or
+              $before.Compare($afterRanges[0])) {
+            Deny 'dev02_same_file_definition_did_not_move_real_caret'
+          }
+        } catch {
+          if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
+          Deny 'dev02_native_definition_caret_unverifiable'
+        }
+        Write-Host ('DEV02_INSTALLED_WINDOWS_'+$language.ToUpperInvariant()+
+          '_DIAGNOSTICS_COMPLETION_HOVER_DEFINITION=PASS')
+        Click ('Stop '+$server)
+        Require 'Language-server session stopped'
+        Require-LspReaped $server $prior
+      }
+      Test-RealInstalledSemanticProvider 'rust' 'main.rs' 'rust-analyzer'
+      Test-RealInstalledSemanticProvider 'cpp' 'main.cpp' 'clangd'
+
+      $priorRuff=BoundedProcess 'ruff'
+      Click 'hello.py'
+      Require 'Ruff · diagnostics only'
+      Click 'Start Ruff'
+      Confirm-NativeOneUseDialog 'Allow language analysis' 'Allow this session'
+      Observe-RealLspWorker 'ruff' $priorRuff
+      Require 'Protected Ruff session started'
+      Click 'Problems'
+      [void](Find-Control 'Language server problems' '' 30)
+      [void](Find-Control 'unused' '' 25)
+      foreach ($action in @('Complete','Hover','Definition')) {
+        $control=Find-Control $action 'Button'
+        if ($control.Current.IsEnabled) {
+          Deny ('dev02_unreviewed_python_semantic_command_enabled_'+$action)
+        }
+      }
+      Click 'Stop Ruff'
+      Require 'Language-server session stopped'
+      Require-LspReaped 'ruff' $priorRuff
+      Write-Host 'DEV02_INSTALLED_WINDOWS_PYTHON_RUFF_PROTECTED_DIAGNOSTICS=PASS'
+      Write-Host 'DEV02_INSTALLED_WINDOWS_ALL_THREE_PROTECTED_PROVIDERS=PASS'
     }
     if ($Scenario -eq 'ExternalConflict') {
       # A real external editor replaces the file after the CodeMirror draft is
