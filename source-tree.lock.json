@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7534972f596f91f912ed42b9540bb609ee886670",
+  "sourceCommitBeforeLock": "c935ba05c105ec29bd7bb858e1aaf3ba2fa14fbe",
   "trackedFileCount": 724,
   "files": [
     {
@@ -1809,7 +1809,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/independent_git_pack.rs",
-      "blob": "7ba29c1eaec2eceb1071576be151f652481e48ca"
+      "blob": "480681d3dac24ffc7ab8b5848509b7dcba98d8cc"
     },
     {
       "path": "src-tauri/lu-core/src/independent_git_status.rs",
@@ -1817,7 +1817,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/independent_mp4.rs",
-      "blob": "81ac3415e974634599d5413620ea2901e4c3f42a"
+      "blob": "4c1983c8230cced09c60ab8e50afc9446f6d4c77"
     },
     {
       "path": "src-tauri/lu-core/src/inference_bridge.rs",
