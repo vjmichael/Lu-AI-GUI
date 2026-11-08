@@ -201,7 +201,8 @@ impl WorkspaceLayoutStore {
             return Err("B9_LAYOUT_TOO_LARGE");
         }
         safe_record(&path)?;
-        let nonce = OsRng.next_u64();
+        let mut random = OsRng;
+        let nonce = random.next_u64();
         let temp = self.root.join(format!(".b9-{}-{nonce:016x}.tmp", std::process::id()));
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
