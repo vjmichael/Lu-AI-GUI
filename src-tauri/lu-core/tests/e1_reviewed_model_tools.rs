@@ -348,7 +348,7 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
             ToolTurnOutcome::ToolResult{call_id,ref data,..}=>{
                 assert_eq!(data["ok"],true,"{name} failed");
                 assert_eq!(data["result"][key],expected,"{name} result mismatch");
-                let verification=if matches!(suffix,"gh"|"gb"|"gc"|"fm"){
+                let verification=if matches!(suffix,"gh"|"gs"|"gb"|"gc"|"fm"){
                     "VERIFIED"
                 }else{"UNSUPPORTED"};
                 assert_eq!(
@@ -377,9 +377,9 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     assert_eq!(durable_ids.len(),10,"five tools each need an outer and OS effect");
     assert_eq!(durable_ids.iter().collect::<BTreeSet<_>>().len(),10,
         "all durable effect identities must be distinct");
-    // This is a genuinely independent second SQLite witness. Git HEAD,
-    // branch, loose commit history and PCM WAV must be verified, while
-    // Git tracked status remains expressly unsupported.
+    // E1-P12: the approved Git index and committed HEAD tree, packed
+    // commit DAG, and PCM WAV are separately observed. No Git/FFprobe
+    // command is rerun by the independent source observers.
     let conn=rusqlite::Connection::open(f.dir.join("effects.sqlite")).unwrap();
     let verified:i64=conn.query_row(
         "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='VERIFIED'",
@@ -390,15 +390,15 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     let conflicts:i64=conn.query_row(
         "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='CONFLICT'",
         [],|row|row.get(0)).unwrap();
-    assert_eq!((verified,unsupported,conflicts),(4,1,0));
+    assert_eq!((verified,unsupported,conflicts),(5,0,0));
     // The actual Git history result must carry the independent graph
     // method rather than a successful git rev-list stdout claim.
     let proof:(String,String)=conn.query_row(
         "SELECT method,verdict FROM lu_independent_outcomes
-         WHERE method='GIT_HISTORY_LOOSE_DAG_V1'",
+         WHERE method='GIT_HISTORY_OBJECT_DAG_V2'",
         [],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
     assert_eq!(proof,(
-        "GIT_HISTORY_LOOSE_DAG_V1".to_string(),
+        "GIT_HISTORY_OBJECT_DAG_V2".to_string(),
         "VERIFIED".to_string()
     ));
     drop(conn);
@@ -460,13 +460,222 @@ fn real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle(){
     });
     assert_eq!(verify_git(&repo,GitReadOperation::HistoryCount,&forged).verdict,
         IndependentOutcomeVerdict::Conflict);
-    // A pack-objects migration is *not* covered by the loose-only
-    // verifier; refuse verification instead of trusting Git's stdout.
+    // A real pack migration is now covered by the bounded Git INDEX/PACK
+    // parser. It must still check object identities and every parent.
     checked_git(&git,&repo,&["repack","-adq"]);
     checked_git(&git,&repo,&["prune-packed"]);
     let after_pack=verify_git(&repo,GitReadOperation::HistoryCount,&reported);
-    assert_eq!(after_pack.verdict,IndependentOutcomeVerdict::Unsupported);
+    assert_eq!(after_pack.verdict,IndependentOutcomeVerdict::Verified);
+    // Corrupt a real pack after successful proof. The independent reader
+    // must reject its checksum, rather than trusting Git's old count.
+    let pack_dir=repo.join(".git/objects/pack");
+    let pack=fs::read_dir(&pack_dir).unwrap()
+        .filter_map(Result::ok)
+        .map(|entry|entry.path())
+        .find(|path|path.extension().is_some_and(|x|x=="pack"))
+        .expect("Git repack must make a native .pack");
+    let mut bytes=fs::read(&pack).unwrap();
+    let last=bytes.len()-1;
+    bytes[last]^=0x40;
+    // Native Git writes packs read-only (0444) on Linux and may set a
+    // readonly attribute on Windows. Only this owned *test fixture* is
+    // made writable before intentional checksum corruption.
+    let mut permissions=fs::metadata(&pack).unwrap().permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(&pack,permissions).unwrap();
+    fs::write(&pack,bytes).unwrap();
+    assert_eq!(verify_git(&repo,GitReadOperation::HistoryCount,&reported).verdict,
+        IndependentOutcomeVerdict::Unsupported);
     fs::remove_dir_all(root).unwrap();
+}
+
+/// E1-P12: real index, HEAD tree and file-state regression on each OS.
+/// The production oracle itself does NOT invoke git; this setup uses native
+/// Git to ground the claimed porcelain value independently.
+#[test]
+#[ignore="requires native installed Git for tracked-index worktree acceptance"]
+fn real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded(){
+    use lu_core::{
+        journal::IndependentOutcomeVerdict,
+        reviewed_outcome_oracle::verify_git
+    };
+    let git=actual_binary("LU_E1_P07_GIT");
+    let root=temp();let repo=root.join("repo");
+    fs::create_dir_all(&root).unwrap();
+    assert!(Command::new(&git).args(["init","-q"]).arg(&repo)
+        .status().unwrap().success());
+    checked_git(&git,&repo,&["config","user.name","Lu"]);
+    checked_git(&git,&repo,&["config","user.email","lu@example.test"]);
+    fs::write(repo.join("alpha.txt"),b"alpha\n").unwrap();
+    fs::write(repo.join("beta.txt"),b"beta\n").unwrap();
+    checked_git(&git,&repo,&["add","alpha.txt","beta.txt"]);
+    checked_git(&git,&repo,&["commit","-q","-m","base"]);
+    let clean=serde_json::json!({
+        "kind":"tracked_status","trackedChangedEntries":0
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&clean).verdict,
+        IndependentOutcomeVerdict::Verified);
+    fs::write(repo.join("alpha.txt"),b"changed\n").unwrap();
+    let dirty=serde_json::json!({
+        "kind":"tracked_status","trackedChangedEntries":1
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&dirty).verdict,
+        IndependentOutcomeVerdict::Verified);
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&clean).verdict,
+        IndependentOutcomeVerdict::Conflict);
+    fs::remove_file(repo.join("beta.txt")).unwrap();
+    let two=serde_json::json!({
+        "kind":"tracked_status","trackedChangedEntries":2
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&two).verdict,
+        IndependentOutcomeVerdict::Verified);
+    checked_git(&git,&repo,&["add","alpha.txt"]);
+    // Git sees a mixture of staged and unstaged changes. This deliberately
+    // restricted observer will NOT call a count independently verified.
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&two).verdict,
+        IndependentOutcomeVerdict::Unsupported);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// This test intentionally generates many nearly identical real Git blobs so
+/// native git pack-objects chooses OFS_DELTA. It then checks the complete
+/// original bytes through Lu's own PACK/IDX source observer, not through git.
+#[test]
+#[ignore="requires installed Git to create real OFS_DELTA packed blobs"]
+fn real_git_delta_packs_reconstruct_original_verified_blob_bytes(){
+    use lu_core::independent_git_history::ObjectReader;
+    let git=actual_binary("LU_E1_P07_GIT");
+    let root=temp();let repo=root.join("repo");
+    fs::create_dir_all(&root).unwrap();
+    assert!(Command::new(&git).args(["init","-q"]).arg(&repo)
+        .status().unwrap().success());
+    checked_git(&git,&repo,&["config","user.name","Lu"]);
+    checked_git(&git,&repo,&["config","user.email","lu@example.test"]);
+    let mut expected=Vec::new();
+    for i in 0..20usize{
+        let content=format!(
+            "{}\nchanged line {i}\n{}\n",
+            "Common data that stays the same ".repeat(600),
+            "common suffix ".repeat(600)
+        ).into_bytes();
+        let file=repo.join("file.txt");
+        fs::write(&file,&content).unwrap();
+        let oid=checked_git(&git,&repo,&["hash-object","file.txt"])
+            .trim().to_owned();
+        expected.push((oid,content));
+        checked_git(&git,&repo,&["add","file.txt"]);
+        checked_git(&git,&repo,&[
+            "commit","-q","-m",&format!("similar revision {i}")
+        ]);
+    }
+    checked_git(&git,&repo,&["repack","-adq","--depth=50","--window=50"]);
+    checked_git(&git,&repo,&["prune-packed"]);
+    let pack_dir=repo.join(".git/objects/pack");
+    let idx=fs::read_dir(&pack_dir).unwrap().filter_map(Result::ok)
+        .map(|entry|entry.path())
+        .find(|path|path.extension().is_some_and(|ext|ext=="idx"))
+        .expect("real Git must create an idx");
+    let diagnostic=Command::new(&git).arg("verify-pack").arg("-v")
+        .arg(&idx).output().unwrap();
+    assert!(diagnostic.status.success(),"Git fixture pack invalid");
+    let details=String::from_utf8(diagnostic.stdout).unwrap();
+    let delta_count=details.lines().filter(|line|{
+        let parts=line.split_whitespace().collect::<Vec<_>>();
+        parts.len()>=7&&parts.get(1)==Some(&"blob")
+            &&parts.get(5).is_some_and(|v|v.parse::<usize>().is_ok())
+    }).count();
+    assert!(delta_count>=1,"fixture did not create a real packed blob delta");
+    let mut reader=ObjectReader::new(&repo.join(".git"));
+    for (oid,original) in &expected{
+        let (kind,found)=reader.read(oid)
+            .unwrap_or_else(||panic!("real packed object cannot be reconstructed: {oid}"));
+        assert_eq!(kind,"blob");
+        assert_eq!(&found,original,"independent delta bytes mismatch");
+    }
+    // Corrupt the true packed source and prove that no previously
+    // verified object identity is trusted from a stale cache.
+    drop(reader);
+    let pack=idx.with_extension("pack");
+    let mut bytes=fs::read(&pack).unwrap();
+    *bytes.last_mut().unwrap()^=0x21;
+    // Native Git writes packs read-only (0444) on Linux and may set a
+    // readonly attribute on Windows. Only this owned *test fixture* is
+    // made writable before intentional checksum corruption.
+    let mut permissions=fs::metadata(&pack).unwrap().permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(&pack,permissions).unwrap();
+    fs::write(&pack,bytes).unwrap();
+    assert!(ObjectReader::new(&repo.join(".git")).read(&expected[0].0).is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Uses genuine FFmpeg to generate the file, then the installed FFprobe
+/// executable is launched under Lu's real reviewed worker supervisor.
+/// Only the independent host ISO-BMFF parser can promote the final result.
+#[tokio::test]
+#[ignore="requires native installed FFmpeg/FFprobe/Git on Windows and Linux"]
+async fn real_mp4_video_and_aac_audio_are_independently_verified(){
+    use lu_core::journal::IndependentOutcomeVerdict;
+    use lu_core::reviewed_outcome_oracle::verify_media;
+    let git=actual_binary("LU_E1_P07_GIT");
+    let ffprobe=actual_binary("LU_E1_P07_FFPROBE");
+    let ffmpeg=actual_binary("LU_E1_P12_FFMPEG");
+    for mode in ["video","audio"]{
+        let mut f=Fixture::new(&git,Some(&ffprobe),true,true);
+        let output=f.dir.join(format!("{mode}.mp4"));
+        let mut command=Command::new(&ffmpeg);
+        command.args(["-nostdin","-hide_banner","-loglevel","error",
+            "-f","lavfi"]);
+        if mode=="video"{
+            command.args(["-i","color=c=blue:s=64x64:r=10",
+                "-t","1","-an","-c:v","mpeg4","-q:v","4",
+                "-pix_fmt","yuv420p"]);
+        }else{
+            command.args(["-i","sine=frequency=440:sample_rate=44100",
+                "-t","1","-vn","-c:a","aac","-b:a","64k"]);
+        }
+        command.args(["-movflags","+faststart","-use_editlist","0","-y"]);
+        let status=command.arg(&output).status().unwrap();
+        assert!(status.success(),"real FFmpeg {mode} fixture unavailable");
+        f.media=output;
+        let mut record=media_config(&ffprobe,&f.media);
+        record.reviewed_container=ReviewedContainer::Mp4;
+        let names=register_reviewed_application_tools(
+            &f.registry,&mut f.catalog,f.auth.clone(),origin(),
+            Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
+            Arc::clone(&f.effects),Arc::new(Allow),
+            vec![],Some(record)
+        ).unwrap();
+        assert_eq!(names,vec!["lu_reviewed_media_facts"]);
+        let mut turn=f.turn(&["lu_reviewed_media_facts"]).unwrap();
+        let result=turn.handle_model_reply_observed_durable(
+            r#"{"kind":"tool","name":"lu_reviewed_media_facts","arguments":{}}"#,
+            &f.catalog,&f.registry,&f.auth,&Allow,&|_|{},&f.effects
+        ).await.unwrap();
+        let ToolTurnOutcome::ToolResult{call_id,ref data,..}=result
+            else{panic!("actual FFprobe MP4 tool failed to return")};
+        assert_eq!(data["ok"],true,"real FFprobe worker failed for {mode}");
+        assert_eq!(data["result"]["independentOutcome"]["status"],"VERIFIED",
+            "real {mode} MP4 must be independently checked by box parser");
+        assert_eq!(data["result"]["independentOutcome"]["method"],
+            "MP4_BOXES_DIRECT_V1");
+        let inner=format!("{call_id}-fm");
+        let receipt=f.effects.get(&inner).unwrap().unwrap();
+        assert_eq!(receipt.state,EffectState::Applied);
+        let original:serde_json::Value=
+            serde_json::from_slice(&receipt.receipt.unwrap()).unwrap();
+        let verified=verify_media(
+            &f.media,&hash(&f.media),ReviewedContainer::Mp4,&original
+        );
+        assert_eq!(verified.verdict,IndependentOutcomeVerdict::Verified);
+        let mut forged=original.clone();
+        forged["durationMilliseconds"]=serde_json::json!(15_000);
+        assert_eq!(verify_media(
+            &f.media,&hash(&f.media),ReviewedContainer::Mp4,&forged
+        ).verdict,IndependentOutcomeVerdict::Conflict);
+        drop(turn);
+        f.cleanup();
+    }
 }
 
 /// Scripted model responses are intentionally not claimed as GGUF planning.
