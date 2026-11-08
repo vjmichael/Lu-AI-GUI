@@ -105,10 +105,24 @@ class TestPayloadObservation(unittest.TestCase):
             capture(newroot, SHA, "windows-2022", "installed_candidate")
 
     def test_special_files_and_casefold_collisions_fail(self):
-        (self.root / "Readme.TXT").write_bytes(b"collision")
-        with self.assertRaisesRegex(Denied, "cross_platform_case_collision"):
-            capture(*self.args)
-        (self.root / "Readme.TXT").unlink()
+        # NTFS is case-insensitive for ASCII names: writing Readme.TXT
+        # would overwrite README.txt rather than create a second entry.
+        # Unicode sharp-s and 'ss' are distinct filesystem names, but
+        # Python's casefold() deliberately collapses them for portable
+        # package manifests. Exercise the actual filesystem enumeration.
+        left = self.root / "Straße.txt"
+        right = self.root / "STRASSE.TXT"
+        self.assertEqual(left.name.casefold(), right.name.casefold())
+        left.write_bytes(b"first distinct payload")
+        right.write_bytes(b"second distinct payload")
+        self.assertFalse(os.path.samefile(left, right),
+                         "host filesystem collapsed the collision fixture")
+        try:
+            with self.assertRaisesRegex(Denied, "cross_platform_case_collision"):
+                capture(*self.args)
+        finally:
+            left.unlink()
+            right.unlink()
         (self.root / "EMPTY.txt").touch()
         observed = capture(*self.args)
         self.assertEqual(observed["fileCount"], 4)
