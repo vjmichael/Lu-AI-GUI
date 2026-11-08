@@ -385,6 +385,7 @@ function App() {
       secondaryTab,lspNativeDiagnostics[secondaryTab.key]) : [],
     [secondaryTab,lspNativeDiagnostics]);
   function selectPrimaryEditorTab(key) {
+    if (mergeBusy || mergeApplyRequest) return;
     setTabWindowStart(previous=>centerSelectedTab(projectTabs,key,previous));
     if (splitEditorOpen && key === secondaryTabKey && activeTabKey !== key)
       setSecondaryTabKey(activeTabKey);
@@ -1723,7 +1724,8 @@ function App() {
   }
 
   async function operation(command, args) {
-    if (pending || savingKey || explorerPending || explorerIoTicket.current ||
+    if (pending || savingKey || mergeBusy || mergeApplyRequest ||
+        explorerPending || explorerIoTicket.current ||
         workspaceLayoutOp.current) return;
     if (command === 'ide_close_project' &&
       tabs.some(tab => tab.projectId === args.projectId && tab.dirty) &&
@@ -1780,7 +1782,7 @@ function App() {
   }
 
   async function openDirectory(project, path) {
-    if (explorerPending || !project) return;
+    if (explorerPending || mergeBusy || mergeApplyRequest || !project) return;
     const ticket = beginExplorerIo();
     if (!ticket) return;
     const originalProjectId = activeProjectIdRef.current;
@@ -2149,7 +2151,8 @@ function App() {
 
   async function rememberWorkspaceForRestart() {
     const projectId=activeProjectIdRef.current;
-    if (!projectId || workspaceLayoutOp.current || explorerPending ||
+    if (!projectId || mergeBusy || mergeApplyRequest ||
+        workspaceLayoutOp.current || explorerPending ||
         explorerIoTicket.current || savingKey || draftRecoveryBusy) return;
     let layout;
     try {
@@ -2216,7 +2219,8 @@ function App() {
 
   async function resumeRememberedWorkspace() {
     const projectId=activeProjectIdRef.current;
-    if (!projectId || !rememberedLayout || workspaceLayoutOp.current ||
+    if (!projectId || !rememberedLayout || mergeBusy || mergeApplyRequest ||
+        workspaceLayoutOp.current ||
         explorerPending || explorerIoTicket.current || savingKey ||
         draftRecoveryBusy || reviewPending) return;
     let layout;
@@ -2328,7 +2332,8 @@ function App() {
 
   async function inspectOpenTabDiskRevisions() {
     const projectId=activeProjectIdRef.current;
-    if (!projectId || workspaceLayoutOp.current || explorerIoTicket.current ||
+    if (!projectId || mergeBusy || mergeApplyRequest ||
+        workspaceLayoutOp.current || explorerIoTicket.current ||
         savingKey || draftRecoveryBusy || reviewPending || inboxBusy) return;
     let targets;
     try { targets=diskAuditTargets(tabsRef.current,projectId); }
@@ -2396,7 +2401,7 @@ function App() {
 
   async function compareEditorWithDisk(tab) {
     const projectId=activeProjectIdRef.current;
-    if (!tab || tab.projectId!==projectId ||
+    if (!tab || tab.projectId!==projectId || mergeBusy || mergeApplyRequest ||
         workspaceLayoutOp.current || explorerIoTicket.current ||
         savingKey || draftRecoveryBusy || reviewPending) return;
     let target;
@@ -2609,7 +2614,8 @@ function App() {
 
   function closeCleanBackgroundTabs() {
     const projectId=activeProjectIdRef.current;
-    if (!projectId || savingKey || explorerPending || explorerIoTicket.current ||
+    if (!projectId || savingKey || mergeBusy || mergeApplyRequest ||
+        explorerPending || explorerIoTicket.current ||
         workspaceLayoutOp.current || draftRecoveryBusy || reviewPending || inboxBusy) return;
     // An editor transaction can be newer than the last React tab render.
     // The pure planner refuses to close a tab unless its actual CodeMirror
@@ -2643,7 +2649,8 @@ function App() {
   function closeTab(key) {
     const selected = tabs.find(tab => tab.key === key);
     if (!selected) return;
-    if (savingKey === key || workspaceLayoutOp.current) return;
+    if (savingKey === key || mergeBusy || mergeApplyRequest ||
+        workspaceLayoutOp.current) return;
     if (selected.dirty && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
     if (lspSession?.projectId === selected.projectId &&
@@ -2663,7 +2670,8 @@ function App() {
   }
 
   async function reloadTab(tab) {
-    if (!tab || savingKey || reviewPending || workspaceLayoutOp.current) return;
+    if (!tab || savingKey || reviewPending || mergeBusy ||
+        mergeApplyRequest || workspaceLayoutOp.current) return;
     setReview(null);
     if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
     if (lspSession?.projectId === tab.projectId &&
@@ -2705,8 +2713,8 @@ function App() {
   }
 
   async function saveTab(tab) {
-    if (!tab || !tab.dirty || savingKey || explorerPending ||
-        explorerIoTicket.current || workspaceLayoutOp.current) return;
+    if (!tab || !tab.dirty || savingKey || mergeBusy || mergeApplyRequest ||
+        explorerPending || explorerIoTicket.current || workspaceLayoutOp.current) return;
     const content = tab.draft;
     const base = tab.revision;
     const saveStartedBuffer=bufferIdentities.current.get(tab.key);
@@ -2751,7 +2759,8 @@ function App() {
   }
 
   async function reviewTab(tab) {
-    if (!tab || !tab.dirty || reviewPending || explorerPending ||
+    if (!tab || !tab.dirty || reviewPending || mergeBusy ||
+        mergeApplyRequest || explorerPending ||
         explorerIoTicket.current || savingKey) return;
     setReviewPending(true);
     setProblem('');
@@ -4199,6 +4208,13 @@ function App() {
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button type="button" className="ghostBtn editorToolButton"
+                    aria-label="Review external disk changes for merge"
+                    disabled={explorerPending || !!savingKey || mergeBusy ||
+                      !!mergeApplyRequest || workspaceLayoutBusy}
+                    onClick={()=>void prepareExternalMerge(activeTab)}>
+                    {mergeBusy ? 'Rechecking…' : 'Review external merge'}
+                  </button>
+                  <button type="button" className="ghostBtn editorToolButton"
                     aria-label="Compare current editor with saved disk"
                     disabled={explorerPending || !!savingKey || diskAuditBusy}
                     onClick={()=>void compareEditorWithDisk(activeTab)}>
@@ -4267,6 +4283,62 @@ function App() {
                   <p>Existing Reload and Save commands retain their own confirmation,
                     source revision checks and draft-protection rules.</p>
                 </section>}
+              {mergeReview?.projectId===activeProject?.projectId &&
+                mergeReview.tabKey===activeTab.key &&
+                mergeReview.generation===activeTab.generation &&
+                mergeReview.savedRevision===activeTab.revision &&
+                mergeReview.bufferRevision===activeTab.bufferRevision &&
+                <section className="mergeReviewPanel"
+                  aria-label="Reviewed external three-way merge" aria-live="polite">
+                  <div className="diskAuditHeading">
+                    <strong>Three-way merge · {mergeReview.plan.conflicts.length} conflict(s)</strong>
+                    <button type="button" className="ghostBtn"
+                      disabled={mergeBusy} onClick={()=>{
+                        setMergeReview(null);setMergeChoices({});
+                      }}>Dismiss merge</button>
+                  </div>
+                  <p>Base <code>{mergeReview.savedRevision.slice(0,12)}…</code>
+                    {' · '}Current disk <code>{mergeReview.diskRevision.slice(0,12)}…</code>.
+                    Distinct line edits combine. Overlapping changes require a
+                    choice. No project write, automatic conflict decision or disk Save.</p>
+                  {mergeReview.plan.conflicts.map(conflict=>
+                    <fieldset className="mergeConflict" key={conflict.id}>
+                      <legend>{conflict.id} · original line {conflict.firstBaseLine}</legend>
+                      <div className="mergeConflictChoices">
+                        {[
+                          ['draft','Keep my editor change',conflict.draftText],
+                          ['disk','Keep current disk change',conflict.diskText],
+                          ['base','Keep earlier saved base',conflict.baseText],
+                        ].map(([value,label,content])=>{
+                          const excerpt=conflictExcerpt(content);
+                          return <label className="mergeConflictChoice" key={value}>
+                            <span><input type="radio" name={'b11-'+conflict.id}
+                              checked={mergeChoices[conflict.id]===value}
+                              disabled={mergeBusy} onChange={()=>
+                                setMergeChoices(previous=>({...previous,
+                                  [conflict.id]:value}))}/>
+                              {label}</span>
+                            <pre>{excerpt.lines.join('')||'(empty selection)'}</pre>
+                            {(excerpt.extraLines>0 || excerpt.clipped) &&
+                              <small>Only the first {excerpt.lines.length}
+                                {' '}bounded lines are shown</small>}
+                          </label>;
+                        })}
+                      </div>
+                    </fieldset>)}
+                  <p>Choose every conflict before applying. Only a bounded,
+                    user-reviewed editor transaction is permitted, and Undo
+                    remains available afterward. Your pre-merge private draft
+                    checkpoints are not deleted.</p>
+                  <button type="button" className="primaryBtn"
+                    aria-label="Apply reviewed merge to unsaved editor only"
+                    disabled={mergeBusy || !!mergeApplyRequest || explorerPending ||
+                      mergeReview.plan.conflicts.some(c=>!mergeChoices[c.id])}
+                    onClick={()=>void applyReviewedExternalMerge()}>
+                    {mergeBusy ? 'Revalidating…' :
+                      'Apply to unsaved editor · no disk Save'}
+                  </button>
+                </section>}
               {findOpen && <div className="editorFindPanel" role="search" aria-label="Find in active file">
                 <div className="editorFindBar">
                   <input aria-label="Find text" placeholder="Find in file"
@@ -4328,6 +4400,9 @@ function App() {
                   setReplaceRequest(previous => previous?.nonce === nonce ? null : previous);
                   if (!applied) setProblem('Editor changed before replacement. Review the current draft and retry.');
                 }}
+                mergeApplyRequest={mergeApplyRequest?.tabKey===activeTab.key
+                  ? mergeApplyRequest : null}
+                onMergeApplied={(nonce,applied)=>finishReviewedExternalMerge(nonce,applied)}
                 key={activeTab.key + ':' + activeTab.generation}
                 tabIdentity={activeTab.key + ':' + activeTab.generation}
                 editorState={editorStates.current.get(activeTab.key)}
