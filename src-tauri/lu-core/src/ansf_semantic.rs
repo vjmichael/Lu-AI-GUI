@@ -98,13 +98,14 @@ impl AnsfStore{
                )
              ORDER BY e.id ASC LIMIT ?3"
         )?;
-        stmt.query_map(params![session_id,embedding_model,limit as i64],|r|{
+        let entries=stmt.query_map(params![session_id,embedding_model,limit as i64],|r|{
             Ok(Entry{
                 id:r.get(0)?,session_id:r.get(1)?,chapter_id:r.get(2)?,
                 message_id:r.get(3)?,role:r.get(4)?,summary:r.get(5)?,
                 content:r.get(6)?
             })
-        })?.collect::<Result<Vec<_>,_>>().map_err(Into::into)
+        })?.collect::<Result<Vec<_>,_>>()?;
+        Ok(entries)
     }
     pub fn semantic_indexed_count(
         &self,session_id:&str,embedding_model:&str

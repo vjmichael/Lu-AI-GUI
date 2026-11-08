@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "93131f3fd9a40f08b3d22b8237d574330ed6ecaf",
+  "sourceCommitBeforeLock": "a6b752ce198018e57f5a99e7ef6fdacfcbfd96f7",
   "trackedFileCount": 582,
   "files": [
     {
@@ -1137,7 +1137,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_semantic.rs",
-      "blob": "4a4620834f09bf17a585ee7ea4ec89c5dfac8041"
+      "blob": "60571b1a9e423b2757b4267ca2fb4ac47575f72a"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_source_ids.rs",
