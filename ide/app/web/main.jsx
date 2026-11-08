@@ -11,6 +11,8 @@ import { diskAuditTargets, classifyDiskAudit,
   summarizeExternalDifference } from './editor_disk_drift.js';
 import { planThreeWayMerge, renderReviewedMerge,
   conflictExcerpt, mergeCanApply } from './editor_conflict_merge.js';
+import { planTaskSourceLink, sourceLinkDisplay,
+  checkedSourceReobservation } from './task_source_evidence.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -178,6 +180,14 @@ function App() {
   ]);
   const [taskBusy, setTaskBusy] = useState(false);
   const taskRequest = useRef(0);
+  // C7 editor task links reuse C6's native append-only development ledger.
+  // No independent task store, source text, draft or automatic status change.
+  const [editorTaskCatalog,setEditorTaskCatalog] = useState(null);
+  const [editorTaskId,setEditorTaskId] = useState('');
+  const [editorTaskBusy,setEditorTaskBusy] = useState(false);
+  const editorTaskRequest = useRef(0);
+  const [taskSourceChecks,setTaskSourceChecks] = useState({});
+  const taskSourceCheckRequest = useRef(0);
   const contextRequest = useRef(0);
   const checkpointRequest = useRef(0);
   const [gitStatus, setGitStatus] = useState(null);
@@ -321,6 +331,12 @@ function App() {
     setExactCiBusy(false);
     taskRequest.current += 1;
     setTaskBusy(false);
+    editorTaskRequest.current += 1;
+    taskSourceCheckRequest.current += 1;
+    setEditorTaskCatalog(null);
+    setEditorTaskId('');
+    setEditorTaskBusy(false);
+    setTaskSourceChecks({});
     setTaskIdInput('');
     setTaskTitleInput('');
     setTaskStateInput('in_progress');
@@ -1413,6 +1429,121 @@ function App() {
         setProblem('Could not record task progress: ' + String(error));
     } finally {
       if (request === taskRequest.current) setTaskBusy(false);
+    }
+  }
+
+  async function loadEditorTaskCatalog() {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || editorTaskBusy || savingKey || explorerIoTicket.current)
+      return;
+    const request=++editorTaskRequest.current;
+    setEditorTaskBusy(true);
+    setProblem('');
+    try {
+      const result=await invoke('ide_read_project_context',{projectId});
+      if (request!==editorTaskRequest.current ||
+          activeProjectIdRef.current!==projectId) return;
+      if (result?.projectId!==projectId || !Array.isArray(result.tasks))
+        throw Error('C7_TASK_CATALOG_INVALID');
+      const tasks=result.tasks.filter(t=>typeof t.taskId==='string').slice(0,64);
+      setEditorTaskCatalog({projectId,tasks});
+      setEditorTaskId(previous=>tasks.some(t=>t.taskId===previous)
+        ? previous : tasks[0]?.taskId??'');
+      setHint('Loaded '+tasks.length+
+        ' existing native development tasks. No task was changed.');
+    } catch(error) {
+      if (request===editorTaskRequest.current &&
+          activeProjectIdRef.current===projectId)
+        setProblem('Could not load development tasks: '+String(error));
+    } finally {
+      if (request===editorTaskRequest.current)setEditorTaskBusy(false);
+    }
+  }
+
+  async function linkActiveSourceToTask(tab) {
+    const projectId=activeProjectIdRef.current;
+    if (!tab || !editorTaskCatalog || editorTaskCatalog.projectId!==projectId ||
+        editorTaskBusy || taskBusy || savingKey || explorerPending ||
+        explorerIoTicket.current || workspaceLayoutOp.current || mergeBusy)
+      return;
+    const state=editorStates.current.get(tab.key);
+    let plan;
+    try {
+      plan=planTaskSourceLink(editorTaskCatalog.tasks,editorTaskId,
+        tab,state?.sliceDoc(),projectId);
+    } catch(error){setProblem('Cannot link source to task: '+String(error));return;}
+    if (!window.confirm('Link the current SAVED disk revision of '+tab.relativePath+
+      ' to task '+editorTaskId+'? '+
+      (plan.hasUnrecordedDraft
+        ? 'Your unsaved editor edits are NOT included. '
+        : '')+
+      'This records a source observation, not task completion or CI approval.'))
+      return;
+    const token=++editorTaskRequest.current;
+    setEditorTaskBusy(true);
+    setProblem('');
+    try {
+      const result=await invoke('ide_link_task_source',plan.request);
+      if (token!==editorTaskRequest.current ||
+          activeProjectIdRef.current!==projectId) return;
+      if(result?.taskId!==editorTaskId ||
+          result.updateEventId!==plan.boundUpdateEventId ||
+          !result.sourceLinks?.some(link=>
+            link.relativePath===tab.relativePath &&
+            link.savedRevision===plan.request.expectedSavedRevision))
+        throw Error('C7_LINK_RESULT_UNTRUSTED');
+      setEditorTaskCatalog(previous=>previous?.projectId===projectId
+        ? {...previous,tasks:previous.tasks.map(task=>
+          task.taskId===result.taskId?result:task)}:previous);
+      setHint('Host recorded the saved file revision for '+result.taskId+
+        '. Unsaved editor work and task acceptance remain unverified.');
+      // If Continuity is already visible, force a fresh native read later.
+      setProjectContext(previous=>previous?.projectId===projectId
+        ? {...previous,tasks:previous.tasks.map(task=>
+          task.taskId===result.taskId?result:task)}:previous);
+    } catch(error){
+      if(token===editorTaskRequest.current &&
+          activeProjectIdRef.current===projectId)
+        setProblem('Could not link source file: '+String(error)+
+          '. Refresh tasks if the task revision changed.');
+    } finally {
+      if(token===editorTaskRequest.current)setEditorTaskBusy(false);
+    }
+  }
+
+  async function recheckLinkedTaskSource(task,link) {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || !task || !link || !projectContext ||
+        projectContext.projectId!==projectId || explorerIoTicket.current)
+      return;
+    const token=++taskSourceCheckRequest.current;
+    const key=task.taskId+':'+link.relativePath;
+    setTaskSourceChecks(previous=>({...previous,[key]:{state:'checking'}}));
+    try {
+      const preview=await invoke('ide_preview_source_file',{
+        projectId,relativePath:link.relativePath,
+      });
+      if(token!==taskSourceCheckRequest.current ||
+          activeProjectIdRef.current!==projectId) return;
+      const currentTask=projectContext.tasks.find(t=>t.taskId===task.taskId);
+      const currentLink=currentTask?.sourceLinks?.find(item=>
+        item.relativePath===link.relativePath);
+      if (!currentTask || !currentLink ||
+          currentLink.savedRevision!==link.savedRevision ||
+          currentTask.updateEventId!==task.updateEventId)
+        throw Error('C7_TASK_LINK_CHANGED');
+      const result=checkedSourceReobservation(link,currentTask,projectId,preview);
+      setTaskSourceChecks(previous=>({...previous,[key]:{
+        state:result.matchesRecordedSavedRevision?'matched_disk':'changed_disk',
+        diskRevision:result.observedDiskRevision,
+        taskUpdateCurrent:result.linkedToCurrentTaskUpdate,
+      }}));
+    } catch(error) {
+      if(token===taskSourceCheckRequest.current &&
+          activeProjectIdRef.current===projectId)
+        setTaskSourceChecks(previous=>({...previous,[key]:{
+          state:'unavailable_or_stale',error:String(error).slice(0,100),
+        }}));
     }
   }
 
