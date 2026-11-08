@@ -54,11 +54,11 @@ New files:
 - ide/host/src/project_run_profiles.rs
 - ide/host/tests/project_run_profiles.rs (six native filesystem tests)
 - ide/app/web/project_run_profiles.js
-- ide/app/tests/project_run_profiles.test.mjs (eight frontend checks)
+- ide/app/tests/project_run_profiles.test.mjs (nine frontend checks)
 
 Updated native command registry, 48 fixed capability entries, 45 typed
 schema definitions, Jobs screen, CSS, this documentation and project
-handoff. Source checks: all eight frontend test bodies passed in a
+handoff. Source checks: all nine frontend test bodies passed in a
 development V8/Node-assert emulation against fetched exact GitHub source.
 **Not** a Node/npm, Rust compiler, GitHub OS or installed GUI result.
 
