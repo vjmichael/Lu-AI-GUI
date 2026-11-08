@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "710692857b7a0c0456a5f64c6b2b8dc1aabeec67",
+  "sourceCommitBeforeLock": "94236c7a0fae36f0b724f348074fe1ae674e14df",
   "trackedFileCount": 714,
   "files": [
     {
@@ -1009,7 +1009,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01e-progress-ui.test.mjs",
-      "blob": "a9570c45a09c37cda0e54df89afdeaa99896efb4"
+      "blob": "baaead669415fba10d0168fb34aec012789e7334"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
