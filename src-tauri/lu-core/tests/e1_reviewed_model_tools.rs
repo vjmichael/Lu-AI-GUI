@@ -531,6 +531,72 @@ fn real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded(){
     fs::remove_dir_all(root).unwrap();
 }
 
+/// This test intentionally generates many nearly identical real Git blobs so
+/// native git pack-objects chooses OFS_DELTA. It then checks the complete
+/// original bytes through Lu's own PACK/IDX source observer, not through git.
+#[test]
+#[ignore="requires installed Git to create real OFS_DELTA packed blobs"]
+fn real_git_delta_packs_reconstruct_original_verified_blob_bytes(){
+    use lu_core::independent_git_history::ObjectReader;
+    let git=actual_binary("LU_E1_P07_GIT");
+    let root=temp();let repo=root.join("repo");
+    fs::create_dir_all(&root).unwrap();
+    assert!(Command::new(&git).args(["init","-q"]).arg(&repo)
+        .status().unwrap().success());
+    checked_git(&git,&repo,&["config","user.name","Lu"]);
+    checked_git(&git,&repo,&["config","user.email","lu@example.test"]);
+    let mut expected=Vec::new();
+    for i in 0..20usize{
+        let content=format!(
+            "{}\nchanged line {i}\n{}\n",
+            "Common data that stays the same ".repeat(600),
+            "common suffix ".repeat(600)
+        ).into_bytes();
+        let file=repo.join("file.txt");
+        fs::write(&file,&content).unwrap();
+        let oid=checked_git(&git,&repo,&["hash-object","file.txt"])
+            .trim().to_owned();
+        expected.push((oid,content));
+        checked_git(&git,&repo,&["add","file.txt"]);
+        checked_git(&git,&repo,&[
+            "commit","-q","-m",&format!("similar revision {i}")
+        ]);
+    }
+    checked_git(&git,&repo,&["repack","-adq","--depth=50","--window=50"]);
+    checked_git(&git,&repo,&["prune-packed"]);
+    let pack_dir=repo.join(".git/objects/pack");
+    let idx=fs::read_dir(&pack_dir).unwrap().filter_map(Result::ok)
+        .map(|entry|entry.path())
+        .find(|path|path.extension().is_some_and(|ext|ext=="idx"))
+        .expect("real Git must create an idx");
+    let diagnostic=Command::new(&git).arg("verify-pack").arg("-v")
+        .arg(&idx).output().unwrap();
+    assert!(diagnostic.status.success(),"Git fixture pack invalid");
+    let details=String::from_utf8(diagnostic.stdout).unwrap();
+    let delta_count=details.lines().filter(|line|{
+        let parts=line.split_whitespace().collect::<Vec<_>>();
+        parts.len()>=7&&parts.get(1)==Some(&"blob")
+            &&parts.get(5).is_some_and(|v|v.parse::<usize>().is_ok())
+    }).count();
+    assert!(delta_count>=1,"fixture did not create a real packed blob delta");
+    let mut reader=ObjectReader::new(&repo.join(".git"));
+    for (oid,original) in &expected{
+        let (kind,found)=reader.read(oid)
+            .unwrap_or_else(||panic!("real packed object cannot be reconstructed: {oid}"));
+        assert_eq!(kind,"blob");
+        assert_eq!(&found,original,"independent delta bytes mismatch");
+    }
+    // Corrupt the true packed source and prove that no previously
+    // verified object identity is trusted from a stale cache.
+    drop(reader);
+    let pack=idx.with_extension("pack");
+    let mut bytes=fs::read(&pack).unwrap();
+    *bytes.last_mut().unwrap()^=0x21;
+    fs::write(&pack,bytes).unwrap();
+    assert!(ObjectReader::new(&repo.join(".git")).read(&expected[0].0).is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Uses genuine FFmpeg to generate the file, then the installed FFprobe
 /// executable is launched under Lu's real reviewed worker supervisor.
 /// Only the independent host ISO-BMFF parser can promote the final result.
