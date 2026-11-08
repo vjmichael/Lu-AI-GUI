@@ -1933,6 +1933,45 @@
         "provenance"
       ]
     },
+    "AdapterStep": {
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "stepId":{"type":"string","enum":["pytest_fixed","node_builtin_test_fixed","cmake_configure_fixed","cmake_build_fixed","ctest_fixed"]},
+        "toolId":{"type":"string","enum":["reviewed_python_interpreter","reviewed_node_runtime","reviewed_cmake_and_ninja_bundle","reviewed_ctest_bundle"]},
+        "fixedArgs":{"type":"array","items":{"type":"string","minLength":1,"maxLength":70},"maxItems":8},
+        "inputOrigin":{"type":"string","enum":["sealed_workspace_only","sealed_output_from_prior_step_only"]},
+        "authority":{"type":"string","const":"contract_only_not_executable"}
+      },
+      "required":["stepId","toolId","fixedArgs","inputOrigin","authority"]
+    },
+    "ReviewedAdapterContract": {
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "schemaVersion":{"type":"integer","const":1},
+        "projectId":{"type":"string","pattern":"^ide-[a-f0-9]{32}$"},
+        "profileId":{"type":"string","enum":["python_pytest","js_tests","cpp_cmake_build"]},
+        "manifestRelativePath":{"type":"string","enum":["pyproject.toml","package.json","CMakeLists.txt"]},
+        "observedSavedManifestSha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "observedCleanGitHead":{"type":"string","pattern":"^[a-fA-F0-9]{40}$"},
+        "reviewFingerprint":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "toolchainBundleId":{"type":"string","enum":["python_pytest_bundle_unverified","node_builtin_test_bundle_unverified","cmake_ninja_ctest_bundle_unverified"]},
+        "steps":{"type":"array","items":{"$ref":"#/$defs/AdapterStep"},"minItems":1,"maxItems":3},
+        "requiredGuards":{"type":"array","items":{"type":"string","minLength":1,"maxLength":80},"minItems":8,"maxItems":8},
+        "reviewState":{"type":"string","const":"native_contract_observed_not_approved"},
+        "snapshotState":{"type":"string","const":"not_sealed"},
+        "toolchainState":{"type":"string","const":"not_pinned_or_installed"},
+        "nativeWorkerState":{"type":"string","const":"no_reviewed_platform_adapter"},
+        "executionAuthorized":{"type":"boolean","const":false},
+        "commandDispatched":{"type":"boolean","const":false},
+        "sourceTextExported":{"type":"boolean","const":false},
+        "installedAppAccepted":{"type":"boolean","const":false}
+      },
+      "required":["schemaVersion","projectId","profileId","manifestRelativePath",
+        "observedSavedManifestSha256","observedCleanGitHead","reviewFingerprint",
+        "toolchainBundleId","steps","requiredGuards","reviewState","snapshotState",
+        "toolchainState","nativeWorkerState","executionAuthorized","commandDispatched",
+        "sourceTextExported","installedAppAccepted"]
+    },
     "ProjectRunProfile": {
       "type": "object",
       "additionalProperties": false,
@@ -3056,6 +3095,18 @@
         "required":["projectId"]
       },
       "result":{"$ref":"#/$defs/ProjectRunProfileDiscovery"}
+    },
+    "job.reviewAdapter": {
+      "request":{
+        "type":"object","additionalProperties":false,
+        "properties":{
+          "projectId":{"type":"string","pattern":"^ide-[a-f0-9]{32}$"},
+          "profileId":{"type":"string","enum":["python_pytest","js_tests","cpp_cmake_build"]},
+          "expectedSavedManifestSha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}
+        },
+        "required":["projectId","profileId","expectedSavedManifestSha256"]
+      },
+      "result":{"$ref":"#/$defs/ReviewedAdapterContract"}
     },
     "job.prepare": {
       "request": {
