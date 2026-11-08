@@ -2292,7 +2292,7 @@ function App() {
   function closeCleanBackgroundTabs() {
     const projectId=activeProjectIdRef.current;
     if (!projectId || savingKey || explorerPending || explorerIoTicket.current ||
-        draftRecoveryBusy || reviewPending || inboxBusy) return;
+        workspaceLayoutOp.current || draftRecoveryBusy || reviewPending || inboxBusy) return;
     // An editor transaction can be newer than the last React tab render.
     // The pure planner refuses to close a tab unless its actual CodeMirror
     // text still exactly matches the saved disk-base text.
@@ -2325,7 +2325,7 @@ function App() {
   function closeTab(key) {
     const selected = tabs.find(tab => tab.key === key);
     if (!selected) return;
-    if (savingKey === key) return;
+    if (savingKey === key || workspaceLayoutOp.current) return;
     if (selected.dirty && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
     if (lspSession?.projectId === selected.projectId &&
@@ -2345,7 +2345,7 @@ function App() {
   }
 
   async function reloadTab(tab) {
-    if (!tab || savingKey || reviewPending) return;
+    if (!tab || savingKey || reviewPending || workspaceLayoutOp.current) return;
     setReview(null);
     if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
     if (lspSession?.projectId === tab.projectId &&
@@ -2387,7 +2387,8 @@ function App() {
   }
 
   async function saveTab(tab) {
-    if (!tab || !tab.dirty || savingKey || explorerPending) return;
+    if (!tab || !tab.dirty || savingKey || explorerPending ||
+        workspaceLayoutOp.current) return;
     const content = tab.draft;
     const base = tab.revision;
     const saveStartedBuffer=bufferIdentities.current.get(tab.key);
@@ -3722,6 +3723,13 @@ function App() {
                 <span>Two distinct buffers · saves remain explicit</span>
               </>}
             </div>
+            <p className="treeCaution" aria-live="polite">
+              {rememberedLayout
+                ? 'Remembered '+rememberedLayout.files.length+
+                  ' relative file paths privately. Restore explicitly rechecks saved disk files.'
+                : 'No remembered tab layout. Remember tabs explicitly for restart.'}
+              {' '}Never stores unsaved code or Undo. Use Preserve draft for private recovery.
+            </p>
             <div className="editorTabs" role="tablist" aria-label="Open source files">
               <button type="button" className="editorTabPage"
                 aria-label="Earlier open source tabs" disabled={!visibleEditorTabs.hiddenBefore}
