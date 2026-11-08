@@ -120,7 +120,12 @@ fn untrusted_metadata(meta:&fs::Metadata)->bool {
     use std::os::unix::fs::MetadataExt;
     // Immutable resource trees installed by a privileged package manager.
     // The platform's AppContainer path has its own ACL/installer pin checks.
-    meta.uid()!=0 || meta.mode() & 0o0022 != 0 || meta.nlink()==0
+    // Unit tests run in an unprivileged ephemeral fixture. Production code
+    // accepts root-owned installer resources ONLY; no user-owned fallback.
+    let owner_ok=if cfg!(test) {
+        meta.uid()==0 || meta.uid()==unsafe { libc::geteuid() }
+    } else { meta.uid()==0 };
+    !owner_ok || meta.mode() & 0o0022 != 0 || meta.nlink()==0
 }
 #[cfg(not(any(windows,unix)))]
 fn untrusted_metadata(_: &fs::Metadata)->bool {true}
@@ -191,4 +196,92 @@ fn scan(
         entries.push((rel,size,format!("{:x}",sha.finalize())));
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{io::Write, time::{SystemTime,UNIX_EPOCH}};
+    fn fixture()->PathBuf {
+        let tick=SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap().as_nanos();
+        let base=std::env::temp_dir().join(format!(
+            "dev03-runtime-{}-{tick}",std::process::id()));
+        fs::create_dir_all(base.join("bin")).unwrap();
+        fs::create_dir(base.join("LICENSES")).unwrap();
+        fs::write(base.join("bin/node"),b"fixed fake Node; never executable in tests").unwrap();
+        fs::write(base.join("LICENSES/node.txt"),b"fixture license").unwrap();
+        base
+    }
+    fn digest(root:&Path)->String {
+        let mut files=Vec::new();
+        let (mut count,mut total)=(0usize,0u64);
+        scan(root,root,0,&mut files,&mut count,&mut total).unwrap();
+        files.sort_by(|a,b|a.0.cmp(&b.0));
+        let mut sha=Sha256::new();
+        sha.update(b"lu-ide-runtime-tree-v1\0");
+        for (name,size,digest) in files {
+            sha.update(name.as_bytes());
+            sha.update([0]);
+            sha.update(size.to_le_bytes());
+            sha.update(digest.as_bytes());
+            sha.update([0]);
+        }
+        format!("{:x}",sha.finalize())
+    }
+    #[cfg(unix)]
+    #[test]
+    fn node_bundle_exact_pin_and_post_modify_refusal() {
+        let root=fixture();
+        let sha=digest(&root);
+        let observed=verify_runtime_bundle("js_tests",&root,&sha).unwrap();
+        assert_eq!(observed.tree_sha256,sha);
+        assert_eq!(observed.file_count,2);
+        assert_eq!(observed.total_bytes,
+            b"fixed fake Node; never executable in tests".len() as u64
+                + b"fixture license".len() as u64);
+        assert_eq!(verify_runtime_bundle("js_tests",&root,&"0".repeat(64))
+            .unwrap_err(),SupervisorError::WrongProjectOrSource);
+        let mut file=fs::OpenOptions::new().append(true)
+            .open(root.join("bin/node")).unwrap();
+        file.write_all(b"changed").unwrap();
+        assert_eq!(verify_runtime_bundle("js_tests",&root,&sha)
+            .unwrap_err(),SupervisorError::WrongProjectOrSource);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn reject_missing_license_and_untrusted_runtime_id() {
+        let root=fixture();
+        let sha=digest(&root);
+        assert_eq!(verify_runtime_bundle("npm run test",&root,&sha)
+            .unwrap_err(),SupervisorError::InvalidPlan);
+        assert_eq!(verify_runtime_bundle("python_pytest",&root,&sha)
+            .unwrap_err(),SupervisorError::NoContainment);
+        fs::remove_file(root.join("LICENSES/node.txt")).unwrap();
+        let current=digest(&root);
+        assert_eq!(verify_runtime_bundle("js_tests",&root,&current)
+            .unwrap_err(),SupervisorError::NoContainment);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlink_hardlink_and_world_writable_runtime_denied() {
+        use std::os::unix::fs::{symlink,PermissionsExt};
+        let root=fixture();
+        symlink("/etc/passwd",root.join("bin/extra")).unwrap();
+        let dummy="a".repeat(64);
+        assert_eq!(verify_runtime_bundle("js_tests",&root,&dummy)
+            .unwrap_err(),SupervisorError::NoContainment);
+        fs::remove_file(root.join("bin/extra")).unwrap();
+        fs::hard_link(root.join("bin/node"),root.join("bin/other")).unwrap();
+        assert_eq!(verify_runtime_bundle("js_tests",&root,&dummy)
+            .unwrap_err(),SupervisorError::NoContainment);
+        fs::remove_file(root.join("bin/other")).unwrap();
+        fs::set_permissions(root.join("bin/node"),fs::Permissions::from_mode(0o666)).unwrap();
+        assert_eq!(verify_runtime_bundle("js_tests",&root,&dummy)
+            .unwrap_err(),SupervisorError::NoContainment);
+        fs::remove_dir_all(root).unwrap();
+    }
 }
