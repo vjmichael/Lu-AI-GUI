@@ -1,0 +1,78 @@
+name: IDE DEV-01.4 native persistent draft recovery
+on:
+  push:
+    branches: ['ide/dev01-persistent-draft-recovery-20261108']
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev01-draft-recovery-native-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev01-draft-recovery-native-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-draft-recovery:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Exact SHA and immutable OS dependency lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+      - name: Real Linux desktop native dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Rust host real app-data restart and hostile-state tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: All editor frontend source and build tests
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Tauri native desktop typecheck
+        shell: bash
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib --locked
+      - name: Strict source-only evidence classification
+        shell: bash
+        run: |
+          echo "DEV01_DRAFT_RECOVERY_NATIVE_SOURCE=PASS"
+          echo "DEV01_INSTALLED_CRASH_RECOVERY=NOT_ACCEPTED"
+          echo "DEV01_SOURCE_ENCRYPTION_AND_FULL_DURABILITY=NOT_ACCEPTED"
+          echo "DEV01_FINAL_RELEASE_SIGNING_LEGAL=NOT_ACCEPTED"

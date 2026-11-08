@@ -9,7 +9,7 @@ mod build_backend;
 mod debug_backend;
 use std::{path::PathBuf, sync::Arc};
 
-use lu_ide_workspace::{execution_intents::ExecutionIntents, continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
+use lu_ide_workspace::{draft_recovery::DraftRecoveryStore, execution_intents::ExecutionIntents, continuity::DevelopmentLedger, inventory_history::InventorySnapshots, inbox::{ApprovedStaging, IdeProposalInbox, ProposalDetail, ProposalSummary}, IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -1069,6 +1069,71 @@ async fn ide_review_source_change(
     .map_err(|_| "REVIEW_TASK_UNAVAILABLE".to_string())?
 }
 
+/// Native user-app-data draft vault, independent from project sources.
+#[tauri::command]
+async fn ide_recovery_checkpoint(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<DraftRecoveryStore>>,
+    project_id: String, relative_path: String,
+    base_revision: String, buffer_revision: u64, draft_text: String,
+) -> Result<lu_ide_workspace::draft_recovery::DraftRecoverySummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let vault = Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.check_recovery_project(&project_id)
+            .map_err(|e| e.code().to_owned())?;
+        vault.checkpoint(&project_id, &relative_path,
+            &base_revision, buffer_revision, &draft_text)
+            .map_err(|e| e.code().to_owned())
+    }).await.map_err(|_| "DRAFT_CHECKPOINT_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_recovery_list(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<DraftRecoveryStore>>,
+    project_id: String,
+) -> Result<Vec<lu_ide_workspace::draft_recovery::DraftRecoverySummary>, String> {
+    let registry = Arc::clone(registry.inner());
+    let vault = Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.check_recovery_project(&project_id)
+            .map_err(|e| e.code().to_owned())?;
+        vault.list(&project_id).map_err(|e| e.code().to_owned())
+    }).await.map_err(|_| "DRAFT_LIST_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_recovery_adopt(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<DraftRecoveryStore>>,
+    project_id: String, relative_path: String,
+    expected_draft_sha256: String,
+) -> Result<lu_ide_workspace::draft_recovery::RecoveredDraft, String> {
+    let registry = Arc::clone(registry.inner());
+    let vault = Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.check_recovery_project(&project_id)
+            .map_err(|e| e.code().to_owned())?;
+        vault.adopt(&project_id, &relative_path, &expected_draft_sha256)
+            .map_err(|e| e.code().to_owned())
+    }).await.map_err(|_| "DRAFT_ADOPT_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_recovery_forget(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<DraftRecoveryStore>>,
+    project_id: String, relative_path: String,
+    expected_draft_sha256: String,
+) -> Result<(), String> {
+    let registry = Arc::clone(registry.inner());
+    let vault = Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.check_recovery_project(&project_id)
+            .map_err(|e| e.code().to_owned())?;
+        vault.forget(&project_id, &relative_path, &expected_draft_sha256)
+            .map_err(|e| e.code().to_owned())
+    }).await.map_err(|_| "DRAFT_FORGET_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Exact-source no-clobber rename/move of one regular file in the same
 /// native registered project. Directories and cross-project moves are denied.
 #[tauri::command]
@@ -1286,6 +1351,9 @@ pub fn run() {
                 .map_err(|_| std::io::Error::other("standalone IDE registry failed to open"))?;
             let ledger = DevelopmentLedger::new(data.join("development-ledger.jsonl"))
                 .map_err(|_| std::io::Error::other("standalone IDE ledger failed to open"))?;
+            let recovery = DraftRecoveryStore::open(data.join("draft-recovery"))
+                .map_err(|_| std::io::Error::other("IDE private draft vault failed to open"))?;
+            app.manage(Arc::new(recovery));
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
@@ -1371,6 +1439,10 @@ pub fn run() {
             ide_review_source_change,
             ide_save_source_file,
             ide_create_source_entry,
+            ide_recovery_checkpoint,
+            ide_recovery_list,
+            ide_recovery_adopt,
+            ide_recovery_forget,
             ide_move_source_file,
             ide_trash_source_file,
             ide_list_trashed_sources,

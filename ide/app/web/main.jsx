@@ -89,6 +89,11 @@ function App() {
   const [quickOpenProjectId, setQuickOpenProjectId] = useState(null);
   const quickOpenRequest = useRef(0);
   const [tabs, setTabs] = useState([]);
+  const [recoveryItems, setRecoveryItems] = useState([]);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const recoveryBlocked = useRef(new Set());
   const [activeTabKey, setActiveTabKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
   const [review, setReview] = useState(null);
@@ -176,6 +181,8 @@ function App() {
 
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   const currentDirectoryRef = useRef('');
   currentDirectoryRef.current = directory;
 
@@ -237,6 +244,59 @@ function App() {
     setLspHover(null);
     setLspJumpRequest(null);
     setLspCompletionApplyRequest(null);
+  }, [activeProject?.projectId]);
+
+  // DEV-01.4: auto-checkpoint only *dirty* source buffers to native user
+  // app-data. Never use browser localStorage, the project root, or an
+  // executable/LLM worker for recovery. Last ~700ms may be lost on hard crash.
+  useEffect(() => {
+    const dirty = tabs.filter(tab => tab.dirty && (tab.bufferRevision ?? 0) > 0);
+    if (!dirty.length) return;
+    const task = setTimeout(() => {
+      dirty.forEach(tab => {
+        const key = tab.projectId + ':' + tab.relativePath;
+        const current = tabsRef.current.find(item => item.key === tab.key);
+        if (recoveryBlocked.current.has(key) || !current || !current.dirty ||
+            current.bufferRevision !== tab.bufferRevision ||
+            current.revision !== tab.revision) return;
+        void invoke('ide_recovery_checkpoint', {
+          projectId: tab.projectId, relativePath: tab.relativePath,
+          baseRevision: tab.revision, bufferRevision: tab.bufferRevision,
+          draftText: tab.draft,
+        }).catch(error => {
+          if (String(error).includes('DRAFT_RECOVERY_PREVIOUS_SESSION_REVIEW_REQUIRED')) {
+            recoveryBlocked.current.add(key);
+          }
+          if (activeProjectIdRef.current === tab.projectId)
+            setRecoveryError('Unsaved draft checkpoint requires attention: ' + String(error));
+        });
+      });
+    }, 700);
+    return () => clearTimeout(task);
+  }, [tabs]);
+
+  useEffect(() => {
+    const projectId = activeProject?.projectId;
+    if (!projectId) {
+      setRecoveryItems([]);
+      setRecoveryOpen(false);
+      return;
+    }
+    let alive = true;
+    void invoke('ide_recovery_list', {projectId})
+      .then(items => {
+        if (!alive || activeProjectIdRef.current !== projectId) return;
+        if (!Array.isArray(items) || items.length > 64)
+          throw Error('INVALID_NATIVE_RECOVERY_LIST');
+        items.filter(item => item.fromPreviousSession).forEach(item =>
+          recoveryBlocked.current.add(projectId + ':' + item.relativePath));
+        setRecoveryItems(items);
+        setRecoveryError('');
+      }).catch(error => {
+        if (alive && activeProjectIdRef.current === projectId)
+          setRecoveryError('Native recovery inventory unavailable: ' + String(error));
+      });
+    return () => { alive = false; };
   }, [activeProject?.projectId]);
 
   const quickOpenMatches = matchQuickOpenFiles(quickOpenPaths, quickOpenQuery);
@@ -1516,6 +1576,114 @@ function App() {
     } finally { setTrashBusy(false); }
   }
 
+  async function refreshRecoveryItems() {
+    if (!activeProject || recoveryBusy) return;
+    const pid = activeProject.projectId;
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const items = await invoke('ide_recovery_list', {projectId: pid});
+      if (!Array.isArray(items) || items.length > 64)
+        throw Error('INVALID_NATIVE_RECOVERY_LIST');
+      if (activeProjectIdRef.current === pid) {
+        setRecoveryItems(items);
+        items.filter(item => item.fromPreviousSession).forEach(item =>
+          recoveryBlocked.current.add(pid + ':' + item.relativePath));
+      }
+    } catch (error) {
+      if (activeProjectIdRef.current === pid)
+        setRecoveryError('Cannot list native checkpoints: ' + String(error));
+    } finally { setRecoveryBusy(false); }
+  }
+
+  async function adoptRecoveredDraft(item) {
+    if (!activeProject || recoveryBusy || explorerPending || savingKey ||
+        item.projectId !== activeProject.projectId) return;
+    const pid = activeProject.projectId;
+    const key = keyFor(pid, item.relativePath);
+    if (tabsRef.current.some(tab => tab.key === key && tab.dirty)) {
+      setRecoveryError('Close or Save the currently edited draft before adopting the checkpoint.');
+      return;
+    }
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const saved = await invoke('ide_preview_source_file', {
+        projectId: pid, relativePath: item.relativePath,
+      });
+      if (saved?.projectId !== pid || saved?.relativePath !== item.relativePath ||
+          saved.revision !== item.baseRevision) {
+        throw Error('SAVED_SOURCE_CHANGED_REVIEW_REQUIRED');
+      }
+      const restored = await invoke('ide_recovery_adopt', {
+        projectId: pid, relativePath: item.relativePath,
+        expectedDraftSha256: item.draftSha256,
+      });
+      if (!restored || restored.projectId !== pid ||
+          restored.relativePath !== item.relativePath ||
+          restored.baseRevision !== saved.revision ||
+          restored.draftSha256 !== item.draftSha256 ||
+          typeof restored.draftText !== 'string') throw Error('INVALID_NATIVE_RECOVERY_RECEIPT');
+      // Recheck native disk revision after adoption before displaying text.
+      const checked = await invoke('ide_preview_source_file', {
+        projectId: pid, relativePath: item.relativePath,
+      });
+      if (checked.revision !== saved.revision ||
+          activeProjectIdRef.current !== pid ||
+          tabsRef.current.some(tab => tab.key === key && tab.dirty)) {
+        throw Error('SAVED_SOURCE_OR_EDITOR_CHANGED_DURING_RESTORE');
+      }
+      editorStates.current.set(key, createEditorState(
+        restored.draftText, restored.relativePath,
+        (state, draft) => onEditorChange(key, state, draft),
+      ));
+      setTabs(previous => {
+        const existing = previous.find(tab => tab.key === key);
+        if (existing?.dirty) return previous;
+        const recovered = {
+          key, projectId: pid, relativePath: restored.relativePath,
+          revision: saved.revision, savedText: saved.text,
+          draft: restored.draftText,
+          dirty: restored.draftText !== saved.text,
+          generation: (existing?.generation ?? 0) + 1,
+          bufferRevision: restored.bufferRevision + 1,
+        };
+        return existing ? previous.map(tab => tab.key === key ? recovered : tab) :
+          [...previous, recovered];
+      });
+      setActiveTabKey(key);
+      setSection('explorer');
+      recoveryBlocked.current.delete(pid + ':' + item.relativePath);
+      setHint('Recovered ' + item.relativePath +
+        ' into an unsaved editor tab. Nothing was written to project source.');
+      const items = await invoke('ide_recovery_list', {projectId: pid});
+      if (activeProjectIdRef.current === pid && Array.isArray(items))
+        setRecoveryItems(items);
+    } catch (error) {
+      setRecoveryError('Checkpoint preserved. Recovery refused: ' + String(error));
+    } finally { setRecoveryBusy(false); }
+  }
+
+  async function discardRecoveryItem(item) {
+    if (!activeProject || recoveryBusy || item.projectId !== activeProject.projectId) return;
+    if (!window.confirm('Permanently discard the local unsaved draft checkpoint for ' +
+      item.relativePath + '? This does NOT delete or save a source file.')) return;
+    const pid=activeProject.projectId;
+    setRecoveryBusy(true);
+    try {
+      await invoke('ide_recovery_forget', {
+        projectId: pid, relativePath: item.relativePath,
+        expectedDraftSha256: item.draftSha256,
+      });
+      recoveryBlocked.current.delete(pid + ':' + item.relativePath);
+      const items=await invoke('ide_recovery_list',{projectId: pid});
+      if (activeProjectIdRef.current === pid && Array.isArray(items))
+        setRecoveryItems(items);
+    } catch (error) {
+      setRecoveryError('Recovery checkpoint was not discarded: ' + String(error));
+    } finally { setRecoveryBusy(false); }
+  }
+
   async function createNativeEntry(event) {
     event.preventDefault();
     if (!activeProject || entryCreateBusy || explorerPending || savingKey ||
@@ -1833,6 +2001,19 @@ function App() {
           lspSession.relativePath === tab.relativePath) {
         await stopLspSession();
       }
+      // A successful revision-checked disk Save may retire only the matching
+      // checkpoint. A concurrently newer draft's different SHA is preserved.
+      void crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))
+        .then(buffer => Array.from(new Uint8Array(buffer),
+          byte => byte.toString(16).padStart(2, '0')).join(''))
+        .then(sha => invoke('ide_recovery_forget', {
+          projectId: tab.projectId, relativePath: tab.relativePath,
+          expectedDraftSha256: sha,
+        }))
+        .catch(() => {
+          if (activeProjectIdRef.current === tab.projectId)
+            setRecoveryError('Source saved; an older recovery checkpoint may still need review.');
+        });
       setHint('Saved ' + tab.relativePath + ' to disk.');
       return true;
     } catch (error) {
@@ -3042,6 +3223,37 @@ function App() {
                 disabled={explorerPending || !!savingKey || entryCreateBusy}
                 onClick={openQuickOpen} title="Find files in this project (Ctrl+P)">Quick open · Ctrl+P</button>
             </div>
+            <div className="sourceRecoveryActions">
+              <button type="button" className="ghostBtn"
+                disabled={recoveryBusy}
+                onClick={() => { setRecoveryOpen(!recoveryOpen); void refreshRecoveryItems(); }}>
+                {recoveryOpen ? 'Hide draft recovery' : 'Recover unsaved drafts'}
+              </button>
+              {recoveryItems.some(item => item.fromPreviousSession) &&
+                <span className="recoveryWarning">Previous-session drafts available</span>}
+            </div>
+            {recoveryOpen && <section className="sourceRecoveryPanel"
+              aria-label="Native unsaved draft recovery">
+              <strong>Local unsaved draft checkpoints</strong>
+              <p>Stored in Lu IDE app data, not in the project. Saving is always explicit.</p>
+              {recoveryBusy && <p role="status">Checking native recovery receipts…</p>}
+              {recoveryError && <p role="alert" className="treeCaution">{recoveryError}</p>}
+              {!recoveryBusy && recoveryItems.length === 0 &&
+                <p>No native draft checkpoints found.</p>}
+              {recoveryItems.map(item => <div className="sourceRecoveryEntry"
+                key={item.relativePath}>
+                <strong>{item.relativePath}</strong>
+                <small>{item.fromPreviousSession ? 'Older application session' :
+                  'Current session'} · revision {item.bufferRevision}</small>
+                <button type="button" className="ghostBtn"
+                  disabled={recoveryBusy || explorerPending}
+                  onClick={() => void adoptRecoveredDraft(item)}>Recover into unsaved tab</button>
+                <button type="button" className="ghostBtn"
+                  disabled={recoveryBusy}
+                  onClick={() => void discardRecoveryItem(item)}>Discard checkpoint</button>
+              </div>)}
+              <small>Disk conflicts are denied. Recovery never auto-overwrites saved files.</small>
+            </section>}
             <div className="sourceFileActions" aria-label="Selected file operations">
               <span>{selectedFilePath || 'Select a file for safe move or trash'}</span>
               <button type="button" className="ghostBtn"

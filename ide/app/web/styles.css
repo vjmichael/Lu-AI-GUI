@@ -296,3 +296,16 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .sourceTrashEntry .ghostBtn{align-self:flex-start}
 .sourceTrashPanel button:focus-visible,.sourceFileActions button:focus-visible{
   outline:2px solid #efcb42;outline-offset:2px}
+
+/* DEV-01.4 app-data draft recovery; no "success" decoration for unverified data. */
+.sourceRecoveryActions{display:flex;flex-wrap:wrap;gap:6px;padding:9px 8px;align-items:center}
+.recoveryWarning{font-size:11px;color:#efc98b}
+.sourceRecoveryPanel{padding:9px;background:#152a3d;border-top:1px solid #4f677f;
+  display:grid;gap:8px;max-height:310px;overflow:auto}
+.sourceRecoveryPanel>strong{font-size:12px}
+.sourceRecoveryPanel p,.sourceRecoveryPanel small{font-size:11px;color:#c9dae9}
+.sourceRecoveryEntry{display:grid;gap:5px;padding:8px;border:1px solid #54708c;
+  border-radius:5px;overflow-wrap:anywhere}
+.sourceRecoveryEntry strong{font-size:11px}
+.sourceRecoveryEntry .ghostBtn{justify-self:start}
+.sourceRecoveryEntry button:focus-visible{outline:2px solid #efcb42;outline-offset:2px}
