@@ -324,6 +324,11 @@ pub(crate) async fn lu_reviewed_app_ask(
             );
             let tasks=Arc::new(lu_core::tasks::TaskStore::open(&task_root)
                 .map_err(|_|"Cannot open reviewed task journal")?);
+            // E1-P15: record the exact already-authenticated original
+            // chat/user turn in the existing durable task SQLite journal.
+            // Refuse reuse of a journal bound to another human conversation.
+            tasks.bind_reviewed_human_turn(&chat_id,&gid_run)
+                .map_err(|_|"Reviewed task journal origin binding failed")?;
             let effects=Arc::new(EffectJournal::open(&effect_root)
                 .map_err(|_|"Cannot open reviewed effect journal")?);
             let supervisor=Arc::new(
