@@ -49,6 +49,12 @@ test('Windows native acceptance requires independently signed LocalService and r
     '--bundles nsis',
     'LuIdeRecoveryBroker',
     'NT AUTHORITY\\LocalService',
+    'Install-ProtectedRecoveryService.ps1',
+    '-ApprovedHostExecutable $exe',
+    '-ExpectedHostSha256 $sha -Start',
+    "Join-Path $env:ProgramFiles ('Lu-IDE-DEV02-Native-'",
+    "DENIED: installed native LSP desktop host not Authenticode signed",
+    "DENIED: restricted broker still exists after uninstall",
     'Dev02ProtectedLsp',
     "Confirm-NativeOneUseDialog 'Allow language analysis' 'Allow this session'",
     'Observe-RealLspWorker',
@@ -59,6 +65,8 @@ test('Windows native acceptance requires independently signed LocalService and r
     'DEV02_INSTALLED_WINDOWS_ALL_THREE_PROTECTED_PROVIDERS=PASS',
     'DEV02_WINDOWS_REAL_INSTALLED_NSIS_UNINSTALL=PASS',
   ]) assert.ok(windows.includes(marker)||windowsWorkflow.includes(marker),marker);
+  assert.ok(!windowsWorkflow.includes('& sc.exe create LuIdeRecoveryBroker'),
+    'native Windows SCM service cannot bypass reviewed restricted installer');
   for(const forbidden of ['continue-on-error: true','--no-verify',
     'window.__TAURI_INTERNALS__', 'test-mock-lsp']) {
     assert.ok(!windowsWorkflow.includes(forbidden),forbidden);
