@@ -246,3 +246,25 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .lspSuggestion span{color:#a3b7cc;white-space:normal}
 .lspResultPanel pre{font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;
   color:#c4d6e8;margin:0 0 5px;font-family:Consolas,monospace}
+
+/* DEV-01 read-only quick-open dialog; CSS cannot disguise a partial index. */
+.quickOpenBackdrop{position:fixed;inset:0;z-index:120;background:rgba(3,8,15,.78);
+  display:flex;align-items:flex-start;justify-content:center;padding:9vh 18px 20px}
+.quickOpenDialog{box-sizing:border-box;width:min(680px,100%);max-height:78vh;
+  display:flex;flex-direction:column;gap:10px;background:#1b2838;color:#f1f5fa;
+  border:1px solid #74899e;border-radius:10px;box-shadow:0 22px 58px rgba(0,0,0,.6);
+  padding:18px;overflow:hidden}
+.quickOpenTop{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.quickOpenDialog label{font-size:12px;color:#c4d6e8}
+.quickOpenDialog input{box-sizing:border-box;width:100%;background:#091725;color:#f3f8ff;
+  padding:11px;border:1px solid #6885a2;border-radius:5px;font:inherit}
+.quickOpenDialog input:focus-visible,.quickOpenResult:focus-visible,
+.quickOpenDialog button:focus-visible{outline:2px solid #efcb42;outline-offset:2px}
+.quickOpenResults{display:flex;flex-direction:column;overflow:auto;max-height:50vh;
+  gap:2px;min-height:35px}
+.quickOpenResult{font:inherit;text-align:left;padding:9px 11px;cursor:pointer;
+  border:1px solid transparent;border-radius:5px;color:#e0edf8;background:transparent;
+  white-space:normal;overflow-wrap:anywhere}
+.quickOpenResult:hover,.quickOpenResult.selected{background:#29435d;border-color:#537e9c}
+.quickOpenScope{font-size:11px;line-height:1.5;color:#bdcede;margin:4px 0 0}
+@media(max-width:600px){.quickOpenBackdrop{padding-top:4vh}.quickOpenDialog{padding:12px}}
