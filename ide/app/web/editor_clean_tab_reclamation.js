@@ -13,7 +13,7 @@ export function planCleanBackgroundTabClosure(
     tabs, projectId, protectedKeys, getLiveEditorText) {
   if (!Array.isArray(tabs) || typeof projectId !== 'string' || !projectId ||
       !(protectedKeys instanceof Set) || typeof getLiveEditorText !== 'function')
-    return {closeKeys:[],protectedKeys:[],reason:'INVALID_TAB_CLEANUP_CONTEXT'};
+    return {closeKeys:[],retainedKeys:[],reason:'INVALID_TAB_CLEANUP_CONTEXT'};
   const closeKeys = [];
   const keptKeys = [];
   for (const tab of tabs) {
@@ -34,7 +34,7 @@ export function planCleanBackgroundTabClosure(
   }
   return {
     closeKeys,
-    protectedKeys:keptKeys,
+    retainedKeys:keptKeys,
     reason:closeKeys.length ? null : 'NO_VERIFIED_CLEAN_BACKGROUND_TABS',
   };
 }
