@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "78f432966f802c1b46b38387c412433c00395ced",
-  "trackedFileCount": 590,
+  "sourceCommitBeforeLock": "4f786086cd520a78ceda8902f93a3fa02202f9f0",
+  "trackedFileCount": 593,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -38,6 +38,10 @@
     {
       "path": ".github/workflows/lu-m3-cognitum-real-benchmark.yml",
       "blob": "523f6ee2b1e203bfe2945ad1cec9c75a23607049"
+    },
+    {
+      "path": ".github/workflows/lu-m4-verified-memory.yml",
+      "blob": "d3bf903e4ea53e4faf68cf37e3903d4c0e68a369"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -250,6 +254,10 @@
     {
       "path": "docs/LU_M3_SEMANTIC_S1_S4_20261107.md",
       "blob": "fd5bcbec2cc17941e5456313abe9911381a5ab0a"
+    },
+    {
+      "path": "docs/LU_M4_VERIFIED_PROCEDURAL_MEMORY_20261107.md",
+      "blob": "5f98febfac7a44971356096e52edebfc7ee84e1e"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -1133,7 +1141,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "0c7e861f37e0da06672a56aa5da5b348fa0a0261"
+      "blob": "85d2e79f787e7e427e5552066d048268592c3a31"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_artifact_links.rs",
@@ -1178,6 +1186,10 @@
     {
       "path": "src-tauri/lu-core/src/ansf_sync.rs",
       "blob": "0565564828be47cea9f4732ac84601ab5c3f375d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_verified_procedures.rs",
+      "blob": "761b26a2ba79b0f51d10b9107584141d1dc97384"
     },
     {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
@@ -1381,7 +1393,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "2940c6e207d58b709926814c32370dffb70622be"
+      "blob": "ca46558770e25a9ccb63633b3cdefb4a7f421577"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
