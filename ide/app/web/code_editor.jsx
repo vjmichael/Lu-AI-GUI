@@ -201,8 +201,20 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     // selection update since human review invalidates this request.
     if (view.state!==req.expectedEditorState ||
         view.state.sliceDoc()!==req.expectedDraft ||
-        typeof req.mergedText!=='string' || req.mergedText.length>128*1024) {
+        typeof req.mergedText!=='string' || req.mergedText.length>128*1024 ||
+        typeof req.diskText!=='string') {
       fail();return;
+    }
+    // This immutable EditorState was created with an explicit newline facet.
+    // A full-document transaction may normalize incoming line endings to
+    // that facet. Refuse a disk/merge newline-style mismatch rather than
+    // silently changing exact source bytes or pretending a safe rebase.
+    const currentSeparator=view.state.facet(EditorState.lineSeparator) || '\\n';
+    const breaksMatch=text=>[...text.matchAll(/\\r\\n|\\n|\\r/g)]
+      .every(match=>match[0]===currentSeparator);
+    if (!breaksMatch(req.mergedText) || !breaksMatch(req.diskText)) {
+      mergeCallback.current?.(req.nonce,false,'B11_LINE_ENDING_RELOAD_REQUIRED');
+      return;
     }
     try {
       // One undoable CodeMirror transaction; DO NOT createEditorState or
