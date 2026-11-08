@@ -813,6 +813,7 @@ function App() {
   const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
+  const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
@@ -2505,10 +2506,23 @@ function App() {
     if (!targetChat)return;
     setToolHistoryBusy(true);
     try{
-      const entries=await invoke('lu_tool_turn_history',{chatId:targetChat});
-      setToolHistoryByChat(prev=>({...prev,[targetChat]:entries||[]}));
-    }catch(error){
-      if (currentChat.current===targetChat)setError('Tool evidence unavailable: '+String(error));
+      // Both reads are host-selected and independent. A partial/malformed
+      // agent ledger cannot hide already verified native tool audit records.
+      const results=await Promise.allSettled([
+        invoke('lu_tool_turn_history',{chatId:targetChat}),
+        invoke('lu_agent_plan_progress',{chatId:targetChat})
+      ]);
+      if(results[0].status==='fulfilled'){
+        setToolHistoryByChat(prev=>({...prev,[targetChat]:results[0].value||[]}));
+      }
+      if(results[1].status==='fulfilled'){
+        setAgentProgressByChat(prev=>({...prev,[targetChat]:results[1].value||[]}));
+      }
+      const failures=results.filter(x=>x.status==='rejected');
+      if(failures.length && currentChat.current===targetChat){
+        setError('Some durable task evidence is unavailable: '+
+          failures.map(x=>String(x.reason)).join(' | '));
+      }
     }finally{setToolHistoryBusy(false)}
   }
   async function refreshWriteRecovery(targetChat = chatId) {
@@ -4027,6 +4041,44 @@ function App() {
             <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
           </div>
+          <section className="readProposalCard" role="region"
+            aria-label="Durable agent planning and recovery">
+            <strong>Agent work plans — original conversation</strong>
+            <small>Read-only, host-owned step history. Approval applies only to a
+              plan revision, not tool execution. A previous checked receipt is
+              historical evidence, not proof of current source or worker state.</small>
+            {(agentProgressByChat[chatId]||[]).length===0 &&
+              <small>No durable agent plans are linked to this conversation yet.
+                Ordinary chat and reviewed tools remain available through their
+                existing separate authorization.</small>}
+            {(agentProgressByChat[chatId]||[]).map(plan=>
+              <div className="readProposalCard" key={plan.planId}
+                role="group" aria-label={'Agent plan '+plan.planId}>
+                <strong>Plan {plan.planId.slice(0,14)} · {plan.planState.replaceAll('_',' ')}</strong>
+                <small>Revision {plan.latestRevision} · Human review:
+                  {' '+plan.revisionReview.replaceAll('_',' ')} · Supervisor:
+                  {' '+plan.supervisorState.replaceAll('_',' ')}</small>
+                <small>Original saved human turn: {plan.originalHumanTurnId}</small>
+                {plan.steps.map(step=>
+                  <div className="readProposalCard"
+                    key={step.stepIndex} role="group"
+                    aria-label={'Agent step '+(step.stepIndex+1)}>
+                    <strong>Step {step.stepIndex+1}: {step.purpose.replaceAll('_',' ').toLowerCase()}</strong>
+                    <small>Expected result: {step.expectedDeliverable.replaceAll('_',' ').toLowerCase()}</small>
+                    <small>Dependency: {step.dependsOn===null?
+                      'none':'step '+(step.dependsOn+1)} ·
+                      {' '+step.scheduleState.replaceAll('_',' ').toLowerCase()}</small>
+                    {step.historicalWitnessLinked&&
+                      <small>Independent witness reference was recorded.
+                        Live source, process custody and receipt must be rechecked.</small>}
+                  </div>
+                )}
+                <small>Next safe action: {plan.nextSafeAction}</small>
+                <small>Execution authority: none. No automatic retry or
+                  continuation is available from this history view.</small>
+              </div>
+            )}
+          </section>
           {(toolHistoryByChat[chatId]||[]).length===0&&
             <small>No persisted native model/tool events in this conversation.</small>}
           {(toolHistoryByChat[chatId]||[]).map(item=>
