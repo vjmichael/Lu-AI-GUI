@@ -161,6 +161,10 @@ pub trait HostPlanReferenceVerifier:Send+Sync{
     fn goal_event_belongs_to_chat(
         &self,conversation_id:&str,goal_id:&str,goal_event_id:&str
     )->bool;
+    /// The same goal event must still be the active, unreplaced revision.
+    fn goal_event_is_current(
+        &self,conversation_id:&str,goal_id:&str,goal_event_id:&str
+    )->bool;
     fn assumption_source_is_readable(
         &self,conversation_id:&str,stable_ansf_source_id:&str
     )->bool;
@@ -505,6 +509,8 @@ impl AgentPlanRevisionStore{
         }
         if !source.goal_event_belongs_to_chat(
             chat,&proposal.goal_id,&proposal.goal_event_id)
+            ||!source.goal_event_is_current(
+                chat,&proposal.goal_id,&proposal.goal_event_id)
             ||proposal.assumption_sources.iter().any(|s|
                 !source.assumption_source_is_readable(chat,s)){
             return Err(RevisionError::UnverifiedSource)
@@ -605,6 +611,7 @@ impl AgentPlanRevisionStore{
         revision_sha256:&str,decision:HumanDecision,
         human:&dyn TrustedUserTurnVerifier,
         reviewed:&dyn HostPlanReviewVerifier,
+        sources:&dyn HostPlanReferenceVerifier,
     )->Result<RecordState,RevisionError>{
         if !exact(plan,"p-")||!exact(chat,"c-")
             ||!exact(review_turn,"g-")||!valid_sha(revision_sha256){
@@ -625,6 +632,16 @@ impl AgentPlanRevisionStore{
         if current.revision_sha256!=revision_sha256
             ||review_turn==current.source_human_turn_id{
             return Err(RevisionError::StaleParent)
+        }
+        // A review may REJECT any stale plan. APPROVAL must independently
+        // recheck the goal remains active and all assumption sources accessible.
+        // A plan never inherits approval after a source/goal revision change.
+        if decision==HumanDecision::Approve
+            &&(!sources.goal_event_is_current(
+                chat,&current.goal_id,&current.goal_event_id)
+            ||current.assumption_sources.iter().any(|s|
+                !sources.assumption_source_is_readable(chat,s))){
+            return Err(RevisionError::UnverifiedSource)
         }
         if let Some(old)=current.review_turn_id.as_deref(){
             if old==review_turn && current.review_state==match decision{
@@ -673,6 +690,9 @@ mod tests{
     struct Sources{allowed:bool}
     impl HostPlanReferenceVerifier for Sources{
         fn goal_event_belongs_to_chat(&self,_chat:&str,_goal:&str,_event:&str)->bool{
+            self.allowed
+        }
+        fn goal_event_is_current(&self,_chat:&str,_goal:&str,_event:&str)->bool{
             self.allowed
         }
         fn assumption_source_is_readable(&self,_chat:&str,_source:&str)->bool{
@@ -782,22 +802,26 @@ mod tests{
             &Human{granted:true},&Sources{allowed:true}).unwrap();
         let review_turn=id("g-",10);
         assert_eq!(store.record_review(&p,&c,&review_turn,&r.revision_sha256,
-            HumanDecision::Approve,&Human{granted:true},&Review{allowed:false}),
+            HumanDecision::Approve,&Human{granted:true},&Review{allowed:false},&Sources{allowed:true}),
             Err(RevisionError::UnverifiedReview));
         assert_eq!(store.record_review(&p,&c,&t,&r.revision_sha256,
-            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true}),
+            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true},&Sources{allowed:true}),
             Err(RevisionError::StaleParent));
         assert_eq!(store.record_review(&p,&c,&review_turn,&r.revision_sha256,
-            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true}),
+            HumanDecision::Approve,&Human{granted:true},
+            &Review{allowed:true},&Sources{allowed:false}),
+            Err(RevisionError::UnverifiedSource));
+        assert_eq!(store.record_review(&p,&c,&review_turn,&r.revision_sha256,
+            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true},&Sources{allowed:true}),
             Ok(RecordState::New));
         assert_eq!(store.record_review(&p,&c,&review_turn,&r.revision_sha256,
-            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true}),
+            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true},&Sources{allowed:true}),
             Ok(RecordState::AlreadyRecorded));
         let old=store.latest(&p,&c).unwrap().unwrap();
         assert_eq!(old.review_state,"APPROVED_PLAN_ONLY");
         assert_eq!(old.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
         assert_eq!(store.record_review(&p,&c,&id("g-",11),&r.revision_sha256,
-            HumanDecision::Reject,&Human{granted:true},&Review{allowed:true}),
+            HumanDecision::Reject,&Human{granted:true},&Review{allowed:true},&Sources{allowed:true}),
             Err(RevisionError::DuplicateConflict));
         // A subsequent goal revision never inherits a prior human approval.
         let mut revised=proposal(1,2);
@@ -810,7 +834,7 @@ mod tests{
         assert_eq!(store.history(&p,&c).unwrap()[0].review_state,
             "APPROVED_PLAN_ONLY");
         assert_eq!(store.record_review(&p,&c,&review_turn,&r.revision_sha256,
-            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true}),
+            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true},&Sources{allowed:true}),
             Err(RevisionError::StaleParent));
         assert_eq!(next.revision_index,2);
         let db=Connection::open(&path).unwrap();
