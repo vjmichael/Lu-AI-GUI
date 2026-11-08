@@ -695,6 +695,7 @@ fn command_for(
 ) -> Result<(PathBuf, Vec<u16>), SupervisorError> {
     let (subcommand, manifest) = match plan.recipe_id.as_str() {
         "rust_check" => ("check", "Cargo.toml"),
+        "rust_build" => ("build", "Cargo.toml"),
         "rust_tests" => ("test", "Cargo.toml"),
         "lu_ide_host_tests" => ("test", "ide/host/Cargo.toml"),
         _ => return Err(SupervisorError::InvalidPlan),
