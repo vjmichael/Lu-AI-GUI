@@ -27,6 +27,10 @@ linux-worker = []
 windows-worker = []
 # Explicit production opt-in; never use same-user D7C child as release authority.
 protected-recovery-service = ["windows-worker"]
+# Reviewed multi-language fixed runtime recipes. This is opt-in and can only
+# launch after a native installer supplies exact root-owned, hash-pinned
+# offline bundles plus the original OS containment and fresh authorization.
+multilang-worker = []
 # Explicit compile-time opt-in for disposable native CI ONLY. This is not a
 # production worker feature and must not be inherited by Tauri/NSIS builds.
 ci-native-null-lease = ["windows-worker"]
