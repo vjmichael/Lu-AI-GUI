@@ -569,3 +569,40 @@ ordinary cooperative Git/FFprobe descendants. True delegated cgroup
 custody and abnormal-host-crash cleanup are independent E1-P08C OPEN
 gates, not a mandatory sandbox on Lu Core. See
 docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md.
+
+## E1-P08C — Linux delegated cgroup-v2 custody source candidate (Nov 8, 2026)
+
+Preserved the existing process-group guardian for cooperative reviewed
+Git/FFprobe operations, unchanged. Created a separate Linux-only
+first-party `LinuxCgroupGuardian` API in `lu-win-worker-job`, a small
+`lu-linux-cgroup-guard` binary, and a test-only crash fixture. The
+new guardian stays in the host's delegated parent cgroup while a worker
+joins an exact newly created child cgroup through a pinned
+`cgroup.procs` FD **in pre_exec**. On abnormal Lu host SIGKILL the
+lifetime pipe reaches EOF, triggering actual `cgroup.kill=1`, bounded
+`cgroup.events populated 0` verification and removal of the leaf.
+The native API fails closed if delegation/binary/kernel admission is
+missing. **This is not a mandatory sandbox on Lu Core.**
+
+Dedicated Ubuntu 24.04 workflow provisions a real `Delegate=yes`
+systemd service as an external CI OS setup step (requires sudo **only
+for test provisioning**), runs Lu-like native host/guardian/worker as
+non-root and injects host SIGKILL while a `setsid()` grandchild is
+active. Requires actual cgroup membership, pre-exec admission, group
+survival before crash, kernel cleanup, and unrelated process survival;
+compiles the library on Windows too. **Current exact-head native
+results OPEN; no installed Linux acceptance claim.**
+
+**Security boundary still OPEN:** same-UID external programs which can
+write their ancestor's `cgroup.procs` may migrate OUT of the leaf,
+which a leaf `cgroup.kill` cannot reach. This source candidate only
+seeks independent *setsid*/PGID escape proof. Do not advertise complete
+adversarial descendant containment until trusted systemd-managed or
+other nonmigratable membership and a hostile migration/daemonization
+native regression pass. Native cgroup fixture additionally places the
+`setsid()` descendant in a real nested child cgroup and requires
+recursive `cgroup.kill` plus bounded nested-cgroup directory cleanup.
+No model-visible generic external command adapter or blanket new
+guarantee added.
+
+See `docs/LU_E1_P08C_CGROUP_V2_IMPLEMENTATION_20261108.md`.
