@@ -159,11 +159,22 @@ jobs:
                 $currentSource.Contains('WO8_UNSAVED_LOCAL_DRAFT')) {
               throw 'DENIED: external conflict incorrectly saved IDE draft or lost external edit'
             }
-            $searchFixture=Join-Path $env:RUNNER_TEMP ('lu-ide-p05-b3-search-'+$env:GITHUB_RUN_ID)
-            New-Item -ItemType Directory -Path $searchFixture | Out-Null
-            [IO.File]::WriteAllText((Join-Path $searchFixture 'main.rs'),"fn main() { println!(`"search`"); }`n")
-            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario SearchProjectSaved -FixtureRoot $searchFixture
+            # Reuse the exact same registered, previously verified native
+            # project. A fifth newly registered project introduced unrelated
+            # app selection/catalog state into the saved-search OS witness.
+            # Search still modifies bytes only as an external test writer
+            # and must reject stale SHA navigation within real WebView UIA.
+            $searchSource=Join-Path $fixture 'main.rs'
+            $searchBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $searchSource).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario SearchProjectSaved -FixtureRoot $fixture
             if (!$?) { throw 'DENIED: actual Windows installed saved-project search stale/reload test failed' }
+            $searchAfter=(Get-FileHash -Algorithm SHA256 -LiteralPath $searchSource).Hash
+            $searchSaved=[IO.File]::ReadAllText($searchSource)
+            if ($searchAfter -eq $searchBefore -or
+                !$searchSaved.Contains('P05_B3_FIXED_MATCH') -or
+                !$searchSaved.Contains('P05_B3_CHANGED_AFTER_SEARCH')) {
+              throw 'DENIED: installed B3 external SHA-change fixture not observed'
+            }
             Write-Host 'P05_B3_INSTALLED_NATIVE_WINDOWS_REVISION_SAFE_SEARCH=PASS'
             $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
             if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
