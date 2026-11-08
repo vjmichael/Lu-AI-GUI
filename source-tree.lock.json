@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1c04cbb8eb9ea46a7a93278793d51c9a88f66e8f",
+  "sourceCommitBeforeLock": "7b4209825cda49b1396b1e1599a2913672fd46a3",
   "trackedFileCount": 686,
   "files": [
     {
@@ -1657,7 +1657,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/independent_git_history.rs",
-      "blob": "73ed630ce0ad46b3c54cae06c1fca090391b6d63"
+      "blob": "5627801f741b34ee0a51bfb02b44a6319ccd51c8"
     },
     {
       "path": "src-tauri/lu-core/src/independent_git_pack.rs",
