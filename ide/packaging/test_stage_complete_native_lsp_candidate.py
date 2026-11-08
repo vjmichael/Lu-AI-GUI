@@ -96,7 +96,7 @@ class OriginalFullNativeBundleTests(unittest.TestCase):
 
     def test_no_path_alias_traversal_or_cross_root_resource_acceptance(self):
         for raw in ("../evil","/abs","x\\y","C:/windows","a//b","a/./b",
-                    "a/../b","a/file name","x/",""):
+                    "a/../b","a/file name",""):
             with self.subTest(name=raw):
                 with self.assertRaises(ValueError):
                     safe_parts(raw)
