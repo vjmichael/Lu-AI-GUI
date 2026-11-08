@@ -37,6 +37,12 @@ jobs:
         with:
           # Pinned upstream Windows Python used only for OS test DLL closure.
           python-version: '3.10.11'
+      - name: Protect sealed AppContainer adapter startup source contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python ide/supervisor/fixtures/debug/test_windows_dap_appcontainer_source.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed Windows AppContainer debugger startup contract failed' }
       - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
         shell: pwsh
         run: |
