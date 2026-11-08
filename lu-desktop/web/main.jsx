@@ -4010,9 +4010,11 @@ function App() {
         {toolActivityOpen && <section className="readProposalCard"
           role="region" aria-label="Read-only native tool activity">
           <strong>Native tool activity</strong>
-          <small>Host-recorded Reader and Workspace tool-turn evidence. No
-            permission is restored by inspecting this history; write effects
-            remain in the separate File operations recovery panel.</small>
+          <small>Host-recorded Reader, Workspace, Git and reviewed-app tool-turn evidence.
+            Model answers are not OS receipts. Reviewed-app effect counts come from
+            separate durable SQLite journals; an interrupted worker is not proven
+            terminated by its journal state. Viewing never restores permission
+            or replays an operation.</small>
           <div className="settingsActions">
             <button type="button" className="subtleButton"
               disabled={toolHistoryBusy}
@@ -4033,6 +4035,15 @@ function App() {
                 {item.toolFeedback} tool results ·
                 {item.rejectedEvents} rejections ·
                 {item.repairedResponses} structured repairs</small>
+              {item.source==='Reviewed app' && <small>
+                Reviewed app effect journal: {item.reviewedEffects
+                  ? `${item.reviewedEffects.appliedWithReceipt} applied with retained receipt · ${item.reviewedEffects.uncertain} uncertain · ${item.reviewedEffects.failed} failed · ${item.reviewedEffects.executing} executing · ${item.reviewedEffects.prepared} prepared`
+                  : 'No effect journal exists; no verified worker outcome can be inferred.'}
+              </small>}
+              {item.source==='Reviewed app' && <small>
+                APPLIED is a persisted journal classification, not independent proof
+                of current external process state, durable effects or OS descendant reaping.
+              </small>}
             </div>)}
         </section>}
         {(wave2RecoveryByChat[chatId] || []).length > 0 && <section
@@ -5010,7 +5021,7 @@ function App() {
             </label>}
             <button type="button" className="subtleButton"
               disabled={!chatId}
-              title="Inspect actual persisted Reader/Workspace model tool loops without replaying effects"
+              title="Inspect host-recorded Reader/Workspace/Git and reviewed-app model audits and durable native effect states without replaying tools"
               onClick={()=>{setToolActivityOpen(v=>!v);void refreshToolActivity(chatId);}}>
               {toolActivityOpen?'Hide tool activity':'Tool activity'}
             </button>
