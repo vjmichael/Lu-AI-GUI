@@ -1,0 +1,187 @@
+name: IDE DEV-02 protected installed Windows language services
+# Manual, dedicated self-hosted Windows runner with admin service control,
+# independently signed SCM executable and separately approved LSP asset bytes.
+# Default user build never enables native-lsp or runs project scripts.
+# Current manifest releaseApproved=false, so no production/LSP pass is possible
+# until the owner explicitly completes separate redistribution review.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  genuine-installed-windows-protected-lsp:
+    runs-on: [self-hosted, Windows, lu-ide-protected]
+    timeout-minutes: 120
+    env:
+      CARGO_INCREMENTAL: 0
+      LU_IDE_REVIEWED_LSP_BUNDLE_ROOT: C:\LuIdeReviewedAssets\language-servers
+      LU_IDE_REVIEWED_SIGNED_SERVICE: C:\LuIdeReviewedAssets\windows_recovery_service.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Require reviewed pinned assets and independent signed SCM service
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.sha }}') {
+            throw 'DENIED: integrated desktop checkout not exact SHA'
+          }
+          if ((git rev-parse HEAD:ide/app/package-lock.json).Trim() -ne 'dfe4412bfacfc22ad1149f5213f4a26aa49b4067') {
+            throw 'DENIED: unexpected npm dependency lock'
+          }
+          if ((git rev-parse HEAD:ide/app/src-tauri/Cargo.lock).Trim() -ne '87d0045a4be1c78651f080300aba71c14dbe1f30') {
+            throw 'DENIED: unexpected Cargo dependency lock'
+          }
+          $root=$env:LU_IDE_REVIEWED_LSP_BUNDLE_ROOT
+          $service=$env:LU_IDE_REVIEWED_SIGNED_SERVICE
+          if (!(Test-Path -LiteralPath $root -PathType Container) -or
+              !(Test-Path -LiteralPath $service -PathType Leaf) -or
+              (Get-Item -LiteralPath $service).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
+            throw 'DENIED: reviewed pinned asset/service unavailable or linked'
+          }
+          if ((Get-AuthenticodeSignature -LiteralPath $service).Status -ne 'Valid') {
+            throw 'DENIED: independent broker must have valid Authenticode signature'
+          }
+          if (!$env:LU_IDE_REVIEWED_SIGNED_SERVICE_SHA256 -or
+              $env:LU_IDE_REVIEWED_SIGNED_SERVICE_SHA256 -notmatch '^[a-fA-F0-9]{64}$' -or
+              (Get-FileHash -Algorithm SHA256 -LiteralPath $service).Hash -ine
+                $env:LU_IDE_REVIEWED_SIGNED_SERVICE_SHA256) {
+            throw 'DENIED: independent reviewed broker pin unavailable/mismatch'
+          }
+          if (Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'") {
+            throw 'DENIED: test requires a disposable absent native protected service'
+          }
+          python ide/packaging/verify_language_servers.py --release --manifest ide/packaging/language-servers.manifest.json --bundle-root $root
+          if ($LASTEXITCODE -ne 0) {
+            throw 'DENIED: three-provider release and full upstream notices unapproved'
+          }
+      - name: Stage reviewed native provider assets and independently signed SCM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest='ide/app/src-tauri/reviewed-lsp-resources'
+          python ide/packaging/stage_language_server_release.py --manifest ide/packaging/language-servers.manifest.json --bundle-root $env:LU_IDE_REVIEWED_LSP_BUNDLE_ROOT --service-executable $env:LU_IDE_REVIEWED_SIGNED_SERVICE --service-sha256 $env:LU_IDE_REVIEWED_SIGNED_SERVICE_SHA256 --destination $dest
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: offline Windows service/binaries staging failed' }
+          $receipt=Get-Content -Raw (Join-Path $dest 'release-evidence.json') | ConvertFrom-Json
+          if (@($receipt.servers.PSObject.Properties).Count -ne 3 -or
+              !$receipt.servers.clangd -or !$receipt.servers.'rust-analyzer' -or !$receipt.servers.ruff) {
+            throw 'DENIED: all three original reviewed native providers required'
+          }
+          foreach($server in @($receipt.servers.PSObject.Properties)) {
+            $pin=[string]$server.Value.bundleSha256
+            $variable=[string]$server.Value.rustEnvPin
+            if ($pin -notmatch '^[a-f0-9]{64}$' -or
+                $variable -notmatch '^LU_IDE_E2_[A-Z_]+_BUNDLE_SHA256$') {
+              throw 'DENIED: invalid staged full native bundle digest'
+            }
+            Add-Content -Path $env:GITHUB_ENV -Value ($variable+'='+$pin)
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value ('LU_IDE_E2_D7D_SERVICE_SHA256='+$receipt.serviceSha256)
+          Write-Host 'DEV02_WINDOWS_REVIEWED_LSP_FULL_TREE_PINS=PASS'
+      - name: Build actual native-lsp Tauri Windows executable and bundled notices
+        working-directory: ide/app
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed npm install failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native frontend tests failed' }
+          cargo test --manifest-path src-tauri/Cargo.toml --features native-lsp --lib --locked
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact native protected host tests failed' }
+          cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: locked Cargo fetch failed' }
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: resolved Windows dependency evidence missing' }
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha $env:SOURCE_SHA --output src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: upstream library notices missing' }
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha $env:SOURCE_SHA --upstream-receipt src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: verified package notices missing' }
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.dev02.windows.conf.json --bundles nsis --features native-lsp
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine native-lsp NSIS build failed' }
+      - name: Actually install signed service and NSIS, exercise OS-owned consent/UIA and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $packages=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($packages.Count -ne 1) { throw 'DENIED: one reviewed installer required' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha '${{ github.sha }}' --require-upstream --artifact $packages[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real NSIS notices invalid' }
+          $install=Join-Path $env:RUNNER_TEMP ('lu-ide-dev02-native-'+$env:GITHUB_RUN_ID)
+          $project=Join-Path $env:RUNNER_TEMP ('lu-ide-dev02-lsp-project-'+$env:GITHUB_RUN_ID)
+          if ((Test-Path $install) -or (Test-Path $project)) { throw 'DENIED: disposable runner not clean' }
+          New-Item -ItemType Directory -Path $project | Out-Null
+          [IO.File]::WriteAllText((Join-Path $project 'Cargo.toml'), '[package]'+"`n"+'name = "lu-ide-e2-acceptance"'+"`n"+'version = "0.1.0"'+"`n"+'edition = "2021"'+"`n"+'[lib]'+"`n"+'path = "main.rs"'+"`n")
+          [IO.File]::WriteAllText((Join-Path $project 'main.rs'),"fn compute_value() -> i32 { 7 }`nfn main() {`n    let _v = compute_value();`n    let _bad = unknown_symbol;`n}`n")
+          [IO.File]::WriteAllText((Join-Path $project 'main.cpp'),"int compute_value() { return 7; }`nint main() {`n    int v = compute_value();`n    return v + unknown_symbol;`n}`n")
+          [IO.File]::WriteAllText((Join-Path $project 'hello.py'),"import os`ndef greet():`n    print('hello')`ngreet()`n")
+          $original=@{}
+          foreach ($file in @('Cargo.toml','main.rs','main.cpp','hello.py')) {
+            $original[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash
+          }
+          $installed=$false; $brokerCreated=$false
+          try {
+            $proc=Start-Process -FilePath $packages[0].FullName -ArgumentList @('/S',('/D='+$install)) -PassThru -Wait
+            $exe=Join-Path $install 'lu-ide-desktop.exe'
+            if ($proc.ExitCode -ne 0 -or !(Test-Path $exe)) {
+              throw 'DENIED: actual reviewed NSIS installation failed'
+            }
+            $installed=$true
+            $service=Join-Path $install 'resources\recovery\windows_recovery_service.exe'
+            if (!(Test-Path $service) -or
+              (Get-FileHash -Algorithm SHA256 -LiteralPath $service).Hash -ine $env:LU_IDE_REVIEWED_SIGNED_SERVICE_SHA256 -or
+              (Get-AuthenticodeSignature -LiteralPath $service).Status -ne 'Valid') {
+              throw 'DENIED: installed protected broker not independently signed/pinned'
+            }
+            $sc=& sc.exe create LuIdeRecoveryBroker ('binPath= "'+$service+'"') 'obj= "NT AUTHORITY\LocalService"' 'start= demand'
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent installed protected service creation failed' }
+            $brokerCreated=$true
+            & sc.exe start LuIdeRecoveryBroker | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine LocalService broker could not start' }
+            $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Dev02ProtectedLsp -FixtureRoot $project
+            if (!$?) { throw 'DENIED: Windows UIA protected three-language acceptance failed' }
+            foreach($file in @('Cargo.toml','main.rs','main.cpp','hello.py')) {
+              if ((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash -ne $original[$file]) {
+                throw 'DENIED: protected language analysis unexpectedly mutated source '+$file
+              }
+            }
+            Write-Host 'DEV02_WINDOWS_REAL_INSTALLED_THREE_PROTECTED_LANGUAGES=PASS'
+          } finally {
+            if ($brokerCreated) {
+              & sc.exe stop LuIdeRecoveryBroker | Out-Null
+              & sc.exe delete LuIdeRecoveryBroker | Out-Null
+            }
+            if ($installed) {
+              $uninstallers=@(Get-ChildItem $install -Filter '*uninstall*.exe' -File -ErrorAction SilentlyContinue)
+              if ($uninstallers.Count -ne 1) { throw 'DENIED: real Windows NSIS uninstaller unavailable' }
+              $removal=Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
+              if ($removal.ExitCode -ne 0 -or (Test-Path $exe)) {
+                throw 'DENIED: genuine installed Windows package not removed'
+              }
+              Write-Host 'DEV02_WINDOWS_REAL_INSTALLED_NSIS_UNINSTALL=PASS'
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev02-windows-installed-lsp-reviewed-evidence
+          path: |
+            ide/app/src-tauri/reviewed-lsp-resources/release-evidence.json
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: warn
+          retention-days: 7

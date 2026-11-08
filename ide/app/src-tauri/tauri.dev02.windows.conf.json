@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": {
+      "verification-notices/": "THIRD_PARTY_LICENSES",
+      "reviewed-lsp-resources/language-servers/": "language-servers",
+      "reviewed-lsp-resources/recovery/": "recovery",
+      "reviewed-lsp-resources/release-evidence.json": "release-evidence.json"
+    }
+  }
+}
