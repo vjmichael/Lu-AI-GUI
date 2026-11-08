@@ -17,7 +17,7 @@ class NativeBenchmarkContract(unittest.TestCase):
         self.assertEqual(set(KINDS),set(EXPECTED))
         self.assertNotEqual(EXPECTED["docx"]["required"],EXPECTED["xlsx"]["required"])
         self.assertEqual(len(MODEL_SHA),64)
-        self.assertEqual(SCHEMA,"lu-e1-p05-real-three-arm-v1")
+        self.assertEqual(SCHEMA,"lu-e1-p05-real-three-arm-v2")
 
     def test_metrics_do_not_confuse_knowledge_and_artifact_creation(self):
         rows=[
@@ -36,6 +36,19 @@ class NativeBenchmarkContract(unittest.TestCase):
         self.assertEqual(stats["direct_model"]["taskSuccessRate"],0)
         self.assertEqual(stats["native_utility"]["taskSuccessRate"],1)
         self.assertEqual(stats["reviewed_app"]["unauthorizedAttemptsBlocked"],1)
+
+    def test_both_real_native_creators_must_have_format_parity_in_scoring(self):
+        rows=[
+            {"mode":mode,"kind":kind,"latencyMs":10.0,"taskSuccess":True,
+             "unauthorizedAttempts":1,"unauthorizedAttemptsBlocked":1}
+            for mode in ("native_utility","reviewed_app") for kind in KINDS
+        ]
+        summary=aggregate(rows,False)
+        for mode in ("native_utility","reviewed_app"):
+            self.assertEqual(summary[mode]["trials"],2)
+            self.assertEqual(summary[mode]["taskSuccessRate"],1.0)
+            self.assertTrue(all(summary[mode]["byFormat"][kind]["total"]==1
+                                for kind in KINDS))
 
     def test_missing_or_empty_real_binary_refused(self):
         with tempfile.TemporaryDirectory() as root:

@@ -31,6 +31,7 @@ use lu_core::{
     native_atomic_write::create_new_atomic_in_dir,
     native_background_process::BackgroundProcessSupervisor,
     native_spreadsheet_create::{render_xlsx,CellValue,SpreadsheetCell},
+    native_docx_create::{render_docx,DocxBlock,DocxBlockKind},
     tasks::TaskStore,
 };
 
@@ -132,8 +133,9 @@ fn run()->Result<(),Box<dyn std::error::Error>>{
     let setup_ms=setup_start.elapsed().as_secs_f64()*1000.0;
     let start=Instant::now();
     let mut blocked=0usize;
-    let supported=mode=="reviewed_app"||kind==ArtifactKind::Xlsx;
-    if mode=="native_utility"&&supported{
+    // Native DOCX and XLSX creators are both present: compare like-for-like.
+    let supported=true;
+    if mode=="native_utility"{
         let publish=call("utility-write",PUBLISH_TOOL_ID,PUBLISH_TYPE,
             PUBLISH_REQUEST);
         let desc=descriptor(PUBLISH_TOOL_ID,ToolEffect::WriteWorkspace,
@@ -149,10 +151,16 @@ fn run()->Result<(),Box<dyn std::error::Error>>{
                 }
                 effects.mark_executing(&publish.call_id)
                     .map_err(|_|err("Failed executing utility journal"))?;
-                let bytes=render_xlsx("E1",&cells())
-                    .map_err(|_|err("Native Lu spreadsheet rendering failed"))?;
+                let bytes=match kind{
+                    ArtifactKind::Docx=>render_docx(&[DocxBlock{
+                        kind:DocxBlockKind::Paragraph,
+                        text:"Lu E1 artifact custody verified".into()
+                    }]).map_err(|_|err("Native Lu Word rendering failed"))?,
+                    ArtifactKind::Xlsx=>render_xlsx("E1",&cells())
+                        .map_err(|_|err("Native Lu spreadsheet rendering failed"))?,
+                };
                 independently_validate_office(kind,&bytes,expected)
-                    .map_err(|_|err("Independent utility workbook read failed"))?;
+                    .map_err(|_|err("Independent utility Office semantic read failed"))?;
                 create_new_atomic_in_dir(
                     &dir,output_name,"bench-e1-utility-20261107",&bytes
                 ).map_err(|_|err("Host atomic utility publication failed"))?;
@@ -235,7 +243,7 @@ fn run()->Result<(),Box<dyn std::error::Error>>{
         (bytes.len(),Some(digest),pass)
     }else{(0,None,false)};
     println!("{}",serde_json::to_string(&json!({
-        "schema":"lu-e1-p05-native-real-arm-v1",
+        "schema":"lu-e1-p05-native-real-arm-v2",
         "mode":mode,
         "kind":args[1],
         "nativeOs":env::consts::OS,
@@ -251,7 +259,10 @@ fn run()->Result<(),Box<dyn std::error::Error>>{
         "journalBacked":supported,
         "producerAttribution":if mode=="reviewed_app"{
             "actual-reviewed-first-party-worker-stdout"
-        }else{"host-native-lu-spreadsheet-utility"},
+        }else{match kind{
+            ArtifactKind::Docx=>"host-native-lu-word-utility",
+            ArtifactKind::Xlsx=>"host-native-lu-spreadsheet-utility",
+        }},
         "actualThirdPartyApp":false,
         "installedWindows":false,
         "modelUsed":false,

@@ -34,7 +34,7 @@ EXPECTED={
         "required":["E1","Status","Reviewed","Frames","48"],
     },
 }
-SCHEMA="lu-e1-p05-real-three-arm-v1"
+SCHEMA="lu-e1-p05-real-three-arm-v2"
 def digest(path):
     h=hashlib.sha256()
     with open(path,"rb") as f:
@@ -59,7 +59,7 @@ def native_trial(binary,worker,kind,mode,root):
         row=json.loads(p.stdout)
     except json.JSONDecodeError as error:
         raise RuntimeError("Native runner emitted no trustworthy JSON") from error
-    if row.get("schema")!="lu-e1-p05-native-real-arm-v1":
+    if row.get("schema")!="lu-e1-p05-native-real-arm-v2":
         raise RuntimeError("Wrong actual native benchmark schema")
     if row.get("mode")!=mode or row.get("kind")!=kind:
         raise RuntimeError("Task/arm identity mismatch")
@@ -76,8 +76,9 @@ def native_trial(binary,worker,kind,mode,root):
         # Cross-language independent semantic witness for exact task values,
         # in addition to the native Rust document/worksheet reader.
         check_ooxml_exact(target,kind)
-    supported=(mode=="reviewed_app" or kind=="xlsx")
-    expected_attempts=1 if supported else 0
+    # Both Lu native creators exist: DOCX must not be labelled unsupported.
+    supported=True
+    expected_attempts=1
     if row.get("supported") is not supported or row.get("journalBacked") is not supported:
         raise RuntimeError("Native capability/receipt coverage differs from sealed task")
     if (row.get("unauthorizedAttempts")!=expected_attempts or
@@ -136,7 +137,7 @@ def model_trial(base,kind,trial):
     knowledge=all(token.casefold() in text.casefold()
                   for token in EXPECTED[kind]["required"])
     return {
-        "schema":"lu-e1-p05-native-real-arm-v1",
+        "schema":"lu-e1-p05-native-real-arm-v2",
         "mode":"direct_model","kind":kind,
         "source":"actual-local-qwen-gguf-chat",
         "latencyMs":round(elapsed,2),
@@ -239,7 +240,8 @@ def run(args):
                   else "NATIVE_ARMS_ONLY_MODEL_NOT_EXECUTED"),
         "limitations":{
             "directModelCannotWriteArtifacts":True,
-            "nativeUtilityDocxCreationNotImplemented":True,
+            "nativeUtilityDocxCreationNotImplemented":False,
+            "nativeUtilityAndReviewedAppBothCreateDocxAndXlsx":True,
             "appArmIsReviewedFirstPartyFixtureNotThirdParty":True,
             "modelAndNativeTasksDifferInOutputMedium":True,
             "runtimeArtifactProducerAttributionOnlyForFirstPartyPipe":True,
@@ -264,8 +266,8 @@ def run(args):
             f"{stats.get('unauthorizedAttemptsBlocked','N/A')} |"
         )
     summary+=["","These are fixed, independently graded disposable tasks. The "
-              "model arm has no file access, the Lu utility lacks DOCX output, "
-              "and the reviewed app is a first-party fixture. Do not treat "
+              "model arm has no file access; both native arms really create "
+              "DOCX and XLSX. The reviewed app is a first-party fixture. Do not treat "
               "these as general-app superiority or installed v1.0 proof."]
     (args.output_dir/"e1_p05_summary.md").write_text(
         "\n".join(summary)+"\n",encoding="utf-8")
