@@ -49,7 +49,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
   const desktop = read('../src-tauri/src/lib.rs');
   assert.match(desktop, /LSP_PROTECTED_WORKER_UNVERIFIED/);
-  assert.match(desktop, /cfg\(not\(all\(windows, feature = "native-lsp"\)\)\)/);
+  assert.match(desktop, /cfg\(not\(all\(any\(windows, target_os = "linux"\), feature = "native-lsp"\)\)\)/);
   for(const term of ['lu_generate','lu_load_model','shell_exec','exec_process','package_install']) {
     assert.ok(!web.includes(term), term);
   }
