@@ -153,29 +153,55 @@ def _native_dialog_ancestor(node):
     return False
 
 
-def _native_picker_confirm():
-    # GTK/WebKit distributions expose these actual native chooser captions.
-    # Always require a real AT-SPI button under a genuine file-dialog ancestor.
-    candidates = ("select", "open", "choose folder", "select folder", "open folder")
-    checked = 0
+def _native_picker_confirm(attempt=0):
+    # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
+    # chooser action THREE times and the dialog never closed. A generic
+    # "Open" can also be GTK's navigation button. Prefer actual Select
+    # Folder and bottom-right action geometry, retaining native ancestry.
+    priority = {"select folder": 0, "choose folder": 1,
+                "select": 2, "open folder": 3, "open": 4}
+    ranked = []
     for obj in elements():
         try:
             name = (obj.name or "").strip().casefold()
             role = (obj.getRoleName() or "").casefold()
-            if name in candidates and ("button" in role) and _native_dialog_ancestor(obj):
-                checked += 1
-                action = obj.queryAction()
-                for i in range(action.nActions):
-                    if action.getName(i).casefold() in ("click", "press", "activate"):
-                        if action.doAction(i):
-                            print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=real_atspi_action", flush=True)
-                            return
+            if name not in priority or "button" not in role or not _native_dialog_ancestor(obj):
+                continue
+            if not obj.getState().contains(pyatspi.STATE_ENABLED):
+                continue
+            try:
+                rect = obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+                if rect.width < 8 or rect.height < 8:
+                    continue
+                y, x = int(rect.y), int(rect.x)
+            except Exception:
+                # A genuine OS action may lack component geometry; sort last,
+                # never accept an untrusted non-dialog element as a substitute.
+                y, x = -1, -1
+            ranked.append((priority[name], -y, -x, len(ranked), name, obj))
+        except Exception:
+            continue
+    ranked.sort(key=lambda record: record[:4])
+    # Consecutive failed OS confirmation attempts must not hit the same
+    # first generic toolbar Open when multiple native candidates exist.
+    start = min(attempt, max(0, len(ranked) - 1))
+    for item in ranked[start:] + ranked[:start]:
+        try:
+            _, _, _, _, name, obj = item
+            action = obj.queryAction()
+            for i in range(action.nActions):
+                if action.getName(i).casefold() in ("click", "press", "activate"):
+                    if action.doAction(i):
+                        print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=real_atspi_action;"
+                              "caption=" + name.replace(" ", "_") +
+                              ";ranked_candidates=" + str(len(ranked)) +
+                              ";attempt=" + str(attempt), flush=True)
+                        return
         except Exception:
             continue
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
-          "matching_dialog_buttons=" + str(checked), flush=True)
+          "matching_dialog_buttons=" + str(len(ranked)), flush=True)
     deny("native_dialog_confirmation_not_found")
-
 
 def _native_chooser_still_open():
     # Only a *real* GTK file chooser under this disposable X11 session;
@@ -206,7 +232,7 @@ def _select_real_fixture_directory():
                 if node.queryComponent().grabFocus():
                     key("space")
                     print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",flush=True)
-                    return
+                    return True
             except Exception:
                 pass
             try:
@@ -214,13 +240,13 @@ def _select_real_fixture_directory():
                 index=node.getIndexInParent()
                 if parent is not None and index>=0 and parent.querySelection().selectChild(index):
                     print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",flush=True)
-                    return
+                    return True
             except Exception:
                 pass
         except Exception:
             continue
     print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES="+str(exact),flush=True)
-    deny("native_fixture_directory_not_selected")
+    return False
 
 
 def select_native_folder():
@@ -244,12 +270,28 @@ def select_native_folder():
     # dialog remained open afterward. Confirm only while the authentic OS
     # chooser remains; never issue a blind keypress on the main WebView.
     attempts = 0
-    while _native_chooser_still_open() and attempts < 3:
-        _native_picker_confirm()
+    while _native_chooser_still_open() and attempts < 4:
+        if attempts == 1:
+            # GTK SELECT_FOLDER may have navigated INSIDE the target instead
+            # of selecting its directory row. Use only a real native dialog
+            # keyboard to go up and select the exact fixture child. If GTK
+            # does not expose that row, reassert the exact path in its native
+            # location entry without blindly accepting an unrelated window.
+            key("alt+Up")
+            time.sleep(0.7)
+            if not _select_real_fixture_directory():
+                key("ctrl+l")
+                type_text(str(ROOT))
+                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_in_native_chooser",flush=True)
+                time.sleep(0.5)
+        if not _native_chooser_still_open():
+            break
+        _native_picker_confirm(attempts)
         attempts += 1
         time.sleep(0.7)
     if _native_chooser_still_open():
-        print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_still_open_after_three_real_actions",flush=True)
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_still_open_after_bounded_real_actions;"
+              "attempts=" + str(attempts),flush=True)
         deny("native_folder_chooser_not_accepted")
     print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
           "confirmations=" + str(attempts),flush=True)

@@ -124,6 +124,32 @@ function NativeAccessibilityRoots {
     } catch {}
   }
 }
+function Warm-InstalledWebViewAccessibility {
+  # A real Windows NSIS run on SHA 05141c9 found a genuine installed shell
+  # and renderer HWND but only ONE UIA descendant before the WebView content
+  # became accessible. Reassert exact app foreground and use harmless native
+  # OS Tab focus changes. Never invoke backend APIs or fake a React result.
+  for($attempt=0; $attempt -lt 3; $attempt++) {
+    try {
+      [void](Find-Control 'Workspace projects' '' 6)
+      if($attempt -gt 0) { Write-Host ('P04_NATIVE_WEBVIEW_FOCUS_RECOVERY=real_uia_after_os_tab_'+$attempt) }
+      return
+    } catch {
+      $main=WindowRoot
+      if(!$main) { Deny 'installed_native_window_unavailable_during_focus_recovery' }
+      $hwnd=$proc.MainWindowHandle
+      [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+      Start-Sleep -Milliseconds 180
+      if([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
+        Deny 'installed_native_window_could_not_be_focused'
+      }
+      [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+      Start-Sleep -Milliseconds 450
+    }
+  }
+  Deny 'installed_webview_accessibility_not_ready_after_native_focus'
+}
+
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
   $end=(Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $end) {
@@ -419,6 +445,7 @@ try {
   $proc=Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
   $root=Find-Control 'Lu IDE' '' 30
   $stage='shell'
+  Warm-InstalledWebViewAccessibility
   Require 'Workspace projects'
   Require 'Not connected'
   Click 'Capabilities'

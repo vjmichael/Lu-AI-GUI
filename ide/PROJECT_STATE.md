@@ -508,3 +508,6 @@ The active draft PR #97 continues P02–P06. Windows WO9 real OS popup caption i
 
 ## Native CI and release scope — Nov 7/8 continuation
 Owner defers Windows publisher certificate, Linux signing key and external legal sign-off; no release waiver. Native WO9 Windows both consent dialogs and exact Git stage/commit passed before CI fixture process-baseline variable collision; corrected. Added independent Ubuntu 26.04 unsigned GTK editor/rollback/ZIP diagnostic without replacing still-queued Ubuntu 24.04 required gates. P05 original PRs, nine unported blobs and 38 original workflow gates remain intact; P03 protected LLDB-DAP OS tests still open.
+
+### Native test-failure diagnostics and bounded GUI recovery
+Nov 7/8 exact-head Ubuntu26 installed app: real rollback, notice bytes and GUI window PASS; GTK folder picker remained open after three legitimate AT-SPI actions, so editor remained open. New exact candidate ranking, bottom/right dialog control selection and native Alt+Up exact folder selection fallback await repeat. Win WO9: native installed app's renderer existed but UIA subtree was empty at startup; added exact foreground OS Tab-based accessibility warmup with hard failure if actual UIA missing. P03 protected debugger remains open; signing/independent legal review deferred.

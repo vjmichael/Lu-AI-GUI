@@ -24,8 +24,8 @@ class NativePickerSourceTests(unittest.TestCase):
         a=s.split("def select_native_folder():",1)[1].split("def editor_project():",1)[0]
         self.assertIn("type_text(str(ROOT))",a)
         self.assertNotIn("type_text(str(ROOT.parent))",a)
-        self.assertNotIn("_select_real_fixture_directory()",a)
-        self.assertIn("_native_picker_confirm()",a)
+        self.assertIn("_select_real_fixture_directory()",a)
+        self.assertIn("_native_picker_confirm(attempts)",a)
         self.assertIn('"select folder"',s)
         self.assertIn('"open folder"',s)
         self.assertIn('_native_dialog_ancestor(obj)',s)
@@ -62,6 +62,30 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("exact_owned_native_text_pane_mouse_click",section)
         self.assertIn("real_native_consent_dialog_not_observed",section)
         self.assertNotIn("window.__TAURI_INTERNALS__",section)
+
+    def test_linux_real_dialog_prefers_exact_select_and_spatial_acceptance(self):
+        native=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
+        chooser=native.split("def _native_picker_confirm(",1)[1].split(
+            "def _native_chooser_still_open():",1)[0]
+        self.assertIn('"select folder": 0', chooser)
+        self.assertIn('getExtents(pyatspi.DESKTOP_COORDS)',chooser)
+        self.assertIn('ranked.sort(key=lambda record: record[:4])',chooser)
+        self.assertIn('start = min(attempt',chooser)
+        self.assertIn('_native_dialog_ancestor(obj)',chooser)
+        self.assertIn('native_dialog_confirmation_not_found',chooser)
+        self.assertIn('if not _select_real_fixture_directory():',native)
+        self.assertIn('key("alt+Up")',native)
+        self.assertIn('type_text(str(ROOT))',native)
+    def test_installed_windows_startup_only_uses_real_os_focus_before_uia(self):
+        native=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        startup=native.split('function Warm-InstalledWebViewAccessibility {',1)[1].split(
+            'function Find-Control(',1)[0]
+        self.assertIn("Find-Control 'Workspace projects' '' 6",startup)
+        self.assertIn('[P04NativeWebViewWindows]::GetForegroundWindow()',startup)
+        self.assertIn('[System.Windows.Forms.SendKeys]::SendWait(\'{TAB}\')',startup)
+        self.assertIn('installed_webview_accessibility_not_ready_after_native_focus',startup)
+        self.assertIn("Warm-InstalledWebViewAccessibility\n  Require 'Workspace projects'",native)
+        self.assertNotIn('window.__TAURI_INTERNALS__',startup)
 
     def test_wo9_git_head_never_overwrites_worker_autostart_baseline(self):
         native=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
