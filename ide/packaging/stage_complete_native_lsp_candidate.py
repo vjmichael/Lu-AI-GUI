@@ -130,7 +130,7 @@ def normalize_original_tree(names: list[str], executable: str) -> dict[str, str]
     return mapped
 
 
-def copy_verified(reader, target: Path, expected: int, total: list[int],
+def copy_verified(reader, target: Path, expected: int | None, total: list[int],
                   per_file: int, max_total: int) -> dict:
     digest = hashlib.sha256()
     count = 0
@@ -143,8 +143,9 @@ def copy_verified(reader, target: Path, expected: int, total: list[int],
                 raise ValueError("native full resource tree exceeds worker quota")
             digest.update(data)
             output.write(data)
-    if count < 1 or (expected and count != expected):
-        raise ValueError("original resource file is empty or has wrong length")
+    if ((expected is None and count < 1) or
+            (expected is not None and count != expected)):
+        raise ValueError("original native resource length mismatch")
     return {"sha256":digest.hexdigest(), "bytes":count}
 
 
@@ -168,7 +169,7 @@ def stage_provider(archive: Path, kind: str, executable: str, destination: Path,
             target = destination.joinpath(*relative.split("/"))
             if kind == "gzip":
                 with gzip.open(archive, "rb") as stream:
-                    result = copy_verified(stream,target,0,total,max_file,max_total)
+                    result = copy_verified(stream,target,None,total,max_file,max_total)
             else:
                 stream = opened.open(member) if kind == "zip" else opened.extractfile(member)
                 if stream is None:
