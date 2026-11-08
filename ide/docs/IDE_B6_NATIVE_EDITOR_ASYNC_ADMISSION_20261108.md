@@ -59,3 +59,36 @@ measurements from installed Windows and Ubuntu.
 - Review current-head installed B4/B5 receipts *before* considering their
   release/GUI gates complete. B6 remains source-implemented, unaccepted.
 - No Lu Core source or runtime isolation policy is changed by this branch.
+
+## Native B6 execution observations, exact source and GTK diagnostic repair
+
+- Exact B6 source `bdba0657d8b5d3c30387ae46c5c82e4ed30d5675`,
+  native Ubuntu 26.04 installed job #128847599505 on run #42518812684:
+  **117/117** real Node frontend tests passed; original Debian license
+  provenance completed, actual .deb installed and graphical window launched.
+- **Installed GTK FAILED:** actual AT-SPI chooser still visible after initial
+  generic Open, corrected one-time navigation suppression, X11 keyboard
+  fallback and OS-bounded chooser clicks. The native log proved Xvfb
+  lacked `_NET_ACTIVE_WINDOW` because no EWMH window manager was launched.
+  The package was removed on failure.
+- The WO8 installed Debian wrapper now starts the already-staged Openbox in
+  the **same Xvfb/DBus session** as the Python GTK acceptance fixture and
+  requires an observed `_NET_SUPPORTING_WM_CHECK` root-window property
+  before interacting. A failure to start/prove the WM is an explicit denial.
+  The WM child is reaped on shell exit. No Tauri internal JS/IPC shortcut
+  or weakening of exact project registration was introduced.
+- This repair requires a new **real installed** Ubuntu 26.04 result and
+  remains unaccepted until that new job demonstrates selection, source edit,
+  explicit Save, restart/conflict, and package removal. Native Windows
+  2022/Ubuntu 24.04 B6 jobs and B4/B5 installed memory receipts remain
+  independent open gates.
+
+## Repo-wide CI queue evidence (separate branch)
+
+Dedicated maintenance workflow run #42518984700 was independently audited:
+the uploaded preview/apply ZIP recorded 34 terminal GitHub
+`status=completed, conclusion=cancelled` results, 0 unverified or errors.
+All 34 IDs were separately re-fetched from GitHub and matched. They concern
+superseded Lu Core heads on E1 native evidence, E1-P06D and E1-P10 branches;
+the current branch head was preserved and 267 eligible candidates were
+left deferred. No B5/IDE current-head required run was cancelled by this job.

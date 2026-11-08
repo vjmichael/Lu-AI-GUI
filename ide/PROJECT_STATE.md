@@ -1,5 +1,23 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## B6 real Ubuntu26 native result and EWMH repair — November 8, 2026
+
+B6 native Ubuntu26 run #42518812684 completed 117/117 Node
+tests, built the real licensed Debian and installed/launched the GUI. GTK
+folder selection still failed: bare Xvfb lacked EWMH _NET_ACTIVE_WINDOW,
+so the OS chooser keyboard activation could not run; bounded OS clicks
+also failed. B6 now launches native Openbox and witnesses
+_NET_SUPPORTING_WM_CHECK in the same installed GTK X11 session.
+**Retest OPEN; installed GTK acceptance not obtained.** Windows2022 and
+Ubuntu24 native B6 jobs remain queued; genuine B4/B5 memory JSON absent.
+
+Lu Core queue cleanup maintenance run #42518984700:
+34 requests accepted and 34 terminal cancelled (0 pending/unknown),
+independently verified by individual GitHub run fetches; 267 further
+eligible candidates deferred by conservative batch cap. No current-head
+checks were in the accepted set. See B6 source doc and the GitHub
+maintenance audit artifact for provenance.
+
 ## IDE B6 async native read / tab-admission safety — November 8, 2026
 
 On branch `ide/b6-async-editor-admission-20261108` stacked on B5 PR #147

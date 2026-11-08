@@ -64,5 +64,17 @@ class ChooserPolicyTests(unittest.TestCase):
                         "Unexpected executable block after the native app cleanup")
 
 
+    def test_real_installed_gtk_wrapper_requires_ewmh_window_manager(self):
+        script = Path(__file__).with_name("Test-Wo8InstalledDeb.sh").read_text(
+            encoding="utf-8")
+        self.assertIn('command -v openbox >/dev/null', script)
+        self.assertIn('openbox >/dev/null 2>&1 &', script)
+        self.assertIn('xprop -root _NET_SUPPORTING_WM_CHECK', script)
+        self.assertIn('WO8_NATIVE_LINUX_DENIED:ewmh_window_manager_not_verified',script)
+        self.assertIn('WO8_NATIVE_LINUX_X11_EWMH_WM=verified', script)
+        self.assertIn('/usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py', script)
+        self.assertIn('|| deny linux_native_editor_acceptance_failed',script)
+
+
 if __name__ == "__main__":
     unittest.main()
