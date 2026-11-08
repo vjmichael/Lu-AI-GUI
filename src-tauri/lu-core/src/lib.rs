@@ -131,6 +131,7 @@ pub mod independent_git_pack;
 pub mod independent_git_status;
 pub mod independent_mp4;
 pub mod reviewed_outcome_oracle;
+pub mod reviewed_source_guard;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
 pub mod native_archive_batch;

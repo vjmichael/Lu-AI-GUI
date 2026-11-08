@@ -10,6 +10,7 @@
 //! repository guarantee unless every precondition below succeeded.
 use std::{collections::{BTreeMap,BTreeSet},fs,io::Read,path::{Component,Path}};
 use crate::independent_git_history::{sha1_digest,ObjectReader};
+use sha2::{Digest,Sha256};
 // Git's committed object identity is verified by the independent reader.
 
 const MAX_INDEX:usize=4*1024*1024;
@@ -160,6 +161,12 @@ fn blob_oid(file:&[u8])->String{
 /// approved Git index exactly. This excludes staged changes and rename
 /// detection, so each tracked path contributes at most one worktree change.
 pub fn tracked_worktree_changes(repo:&Path,head:&str)->Option<u32>{
+    tracked_worktree_snapshot(repo,head).map(|(count,_)|count)
+}
+/// A bounded content-sensitive revision witness for the exact approved
+/// committed tree, index and individual tracked worktree bytes. Equal dirty
+/// counts with different content MUST yield different witnesses.
+pub fn tracked_worktree_snapshot(repo:&Path,head:&str)->Option<(u32,String)>{
     let git=repo.join(".git");
     if head.len()!=40{return None} // SHA-256 indexes need a separate parser
     // Committed attributes or external clean/smudge filters can alter the
@@ -184,13 +191,21 @@ pub fn tracked_worktree_changes(repo:&Path,head:&str)->Option<u32>{
     if index!=tracked{return None} // staged changes NOT claimed verified
     let mut changed=0u32;
     let mut bytes_read=0u64;
+    let mut revision=Sha256::new();
+    revision.update(head.as_bytes());
+    revision.update(tree_id.as_bytes());
     for (name,expected) in tracked{
+        revision.update((name.len() as u32).to_be_bytes());
+        revision.update(name.as_bytes());
+        revision.update(expected.as_bytes());
         let file=repo.join(&name);
         if !file.exists(){
-            // Missing tracked file counts as exactly one porcelain entry.
+            // Absence and file content are distinct fingerprint states.
+            revision.update([0u8]);
             changed=changed.checked_add(1)?;
             continue
         }
+        revision.update([1u8]);
         no_links(&file)?;
         let metadata=fs::symlink_metadata(&file).ok()?;
         if !metadata.is_file()||metadata.len()>MAX_FILE{return None}
@@ -203,11 +218,13 @@ pub fn tracked_worktree_changes(repo:&Path,head:&str)->Option<u32>{
         // Guard against EOL normalization, textconv, binary filters:
         // only simple byte-identical Linux/Windows files are supported.
         if content.contains(&b'\r'){return None}
-        if blob_oid(&content)!=expected{
+        let actual=blob_oid(&content);
+        revision.update(actual.as_bytes());
+        if actual!=expected{
             changed=changed.checked_add(1)?;
         }
     }
-    Some(changed)
+    Some((changed,format!("{:x}",revision.finalize())))
 }
 #[cfg(test)]
 mod tests{

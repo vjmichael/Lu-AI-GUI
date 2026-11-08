@@ -497,7 +497,8 @@ fn real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle(){
 fn real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded(){
     use lu_core::{
         journal::IndependentOutcomeVerdict,
-        reviewed_outcome_oracle::verify_git
+        reviewed_outcome_oracle::{verify_git,git_source_revision},
+        reviewed_source_guard::{SourceRevisionGuard,RevisionObservation}
     };
     let git=actual_binary("LU_E1_P07_GIT");
     let root=temp();let repo=root.join("repo");
@@ -521,6 +522,20 @@ fn real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded(){
     });
     assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&dirty).verdict,
         IndependentOutcomeVerdict::Verified);
+    // The count remains ONE across two distinct dirty file bodies.
+    // A point-in-time model reply would look identical, but the E1-P13
+    // source revision must detect the change and refuse its proof.
+    let previous=git_source_revision(&repo,GitReadOperation::TrackedStatus)
+        .expect("independent Git status fingerprint");
+    let mut revision=SourceRevisionGuard::git(&repo,GitReadOperation::TrackedStatus);
+    assert_eq!(revision.recheck(),RevisionObservation::Stable);
+    fs::write(repo.join("alpha.txt"),b"another-dirty-content\n").unwrap();
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&dirty).verdict,
+        IndependentOutcomeVerdict::Verified);
+    let after=git_source_revision(&repo,GitReadOperation::TrackedStatus)
+        .expect("second independent Git status fingerprint");
+    assert_ne!(previous,after,"equal dirty counts must not hide new content");
+    assert_eq!(revision.recheck(),RevisionObservation::Changed);
     assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&clean).verdict,
         IndependentOutcomeVerdict::Conflict);
     fs::remove_file(repo.join("beta.txt")).unwrap();

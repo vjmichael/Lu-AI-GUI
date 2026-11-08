@@ -4049,8 +4049,10 @@ function App() {
               </small>}
               {item.source==='Reviewed app' && <small>
                 Verified means a distinct host-only source check matched the
-                recorded application result at the time. It does not prove that
-                files remain unchanged or that processes are still terminated.
+                recorded application result and an approved-source revision check
+                remained stable before and after the supervised worker. It is not
+                an atomic filesystem snapshot and does not prove that files will
+                remain unchanged or that processes are still terminated.
                 APPLIED alone means an execution receipt, not semantic truth.
               </small>}
             </div>)}

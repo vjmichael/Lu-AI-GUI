@@ -710,3 +710,44 @@ security, broader Git and MP4 format handling and resource identity
 race hardening retain their own independent gates.
 
 See `docs/LU_E1_P12_INDEPENDENT_GIT_STATUS_PACK_MP4_20261108.md`.
+
+## E1-P13 — approved-source revision custody across reviewed worker execution (Nov 8, 2026)
+
+**Source branch:** `lu/e1-p13-revision-custody-20261108` stacked on
+E1-P12 PR #142. The existing host-enrolled and original-human-turn
+approved Git/FFprobe application operation now captures a source
+revision before supervised worker launch and rechecks afterward,
+**before** recording independent VERIFIED outcome and publishing model
+tool feedback. If the source changes mid-operation, the immutable
+native effect stays APPLIED (actual OS execution happened) while the
+independent semantic outcome becomes **CONFLICT**, and the model does
+not receive a successful native tool result. An unsupported pre-witness
+prevents subsequent verification promotion.
+
+For ordinary WAV/MP4 media up to 256 MiB, the host pins the original
+open file descriptor across worker execution, verifies enrolled SHA-256,
+and checks the pinned file plus a fresh path read after the worker.
+Unix device/inode identity prevents same-length/same-content pathname
+replacement. Windows FILE_SHARE_READ permits the reviewed FFprobe to
+read while denying new write/delete/rename opens; independent content
+and metadata checks still apply. For Git, the independent observation
+covers committed HEAD, current branch, history or a full content-level
+tracked worktree fingerprint, not merely equal dirty-file counts.
+
+The new exact-head Windows/Linux CI tests real-file changes, Unix
+renaming/symlinks, Windows competing-write denial, Git branch mutation,
+real Git equal-count-but-different-content changes, multi-line packed
+refs and the existing actual supervised Git/FFprobe loop. **Native
+acceptance OPEN until current-head receipts pass.** E1-P09/P10 parent
+native failures have been diagnosed separately: P09 Windows runs 3
+actual Rust tests but its workflow expects 4+, and P10's actual
+Windows/Linux packed-ref test incorrectly used a single-line reader
+for multi-line `packed-refs`. The latter source fix is now present in
+this candidate; both ancestor PRs require final same-head repairs and
+native re-verification before merge.
+
+This is NOT a transactional filesystem snapshot; preexisting writers,
+mutate-and-restore attacks, large media, and unsupported Git/MP4 states
+are explicit separate gates. It does not upgrade E1-P08C descendant
+process custody or claim OS-level total application sandboxing. Full
+details: `docs/LU_E1_P13_SOURCE_REVISION_CUSTODY_20261108.md`.
