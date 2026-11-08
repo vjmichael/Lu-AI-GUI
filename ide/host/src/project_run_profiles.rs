@@ -7,7 +7,7 @@ use crate::{browser::BrowserError, IdeWorkspaceRegistry};
 use serde::Serialize;
 use std::io::ErrorKind;
 
-const MAX_PROFILE_COUNT: usize = 6;
+const MAX_PROFILE_COUNT: usize = 7;
 const MAX_HINTS_PER_LANGUAGE: usize = 20;
 
 #[derive(Debug, Clone, Serialize)]
@@ -66,6 +66,9 @@ const SPECS: [Spec; MAX_PROFILE_COUNT] = [
     Spec { id: "lu_ide_host_tests", title: "Lu IDE host tests · Cargo",
         language: "rust", operation: "test", manifest: "ide/host/Cargo.toml",
         native_recipe: Some("lu_ide_host_tests") },
+    Spec { id: "rust_build", title: "Rust · Cargo build",
+        language: "rust", operation: "build", manifest: "Cargo.toml",
+        native_recipe: Some("rust_build") },
 ];
 
 fn manifest_observation(
@@ -171,10 +174,10 @@ mod tests {
     use super::*;
     #[test]
     fn only_fixed_existing_cargo_recipes_may_be_selected() {
-        assert_eq!(SPECS.len(), 6);
+        assert_eq!(SPECS.len(), 7);
         for spec in SPECS.iter().filter(|s| s.native_recipe.is_some()) {
             assert!(matches!(spec.native_recipe,
-                Some("rust_check" | "rust_tests" | "lu_ide_host_tests")));
+                Some("rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests")));
         }
         assert_eq!(SPECS.iter().filter(|s| s.native_recipe.is_none()).count(), 3);
         assert!(!test_name("javascript", "tests/setup.js"));
