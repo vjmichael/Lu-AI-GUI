@@ -33,9 +33,9 @@ impl RuntimeProfile {
     /// prerequisites is denied even when its hash is syntactically valid.
     pub fn required(self, windows: bool) -> &'static [&'static str] {
         match (self, windows) {
-            (Self::PythonPytest, true) => &["bin/python.exe", "Lib/pytest/__init__.py",
+            (Self::PythonPytest, true) => &["bin/python.exe", "Lib/site-packages/pytest/__init__.py",
                 "LICENSES/python.txt", "LICENSES/pytest.txt"],
-            (Self::PythonPytest, false) => &["bin/python3", "lib/pytest/__init__.py",
+            (Self::PythonPytest, false) => &["bin/python3", "lib/python3.13/site-packages/pytest/__init__.py",
                 "LICENSES/python.txt", "LICENSES/pytest.txt"],
             (Self::NodeTests, true) => &["bin/node.exe", "LICENSES/node.txt"],
             (Self::NodeTests, false) => &["bin/node", "LICENSES/node.txt"],
