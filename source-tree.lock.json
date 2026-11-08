@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9db90b4e1b5d2507d24e9a61225d233fa609dbd0",
+  "sourceCommitBeforeLock": "2d8e252dec1af1a4a878e636e06a9c73ea61fa44",
   "trackedFileCount": 672,
   "files": [
     {
@@ -713,7 +713,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "787ad205a99e4f9df2ccf4d76dadbb18dded6da1"
+      "blob": "f396f6cc102d9aad6423b43523ac96053bfad1a1"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
