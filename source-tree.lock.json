@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3e5100b933358c6d71722dd49034f21f61b87808",
+  "sourceCommitBeforeLock": "55aa062be644e5292c3b4367600614021d8066e2",
   "trackedFileCount": 678,
   "files": [
     {
@@ -217,7 +217,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p08c_cgroup_crash_acceptance.py",
-      "blob": "d85a8d30684f28d969edd5e885ddab10b6af4f41"
+      "blob": "64a1043c64c76273b817b67a069f647cf883923c"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -369,7 +369,7 @@
     },
     {
       "path": "docs/LU_E1_P08C_CGROUP_V2_IMPLEMENTATION_20261108.md",
-      "blob": "e7c076860e4db315477a9cc3b8055fb9de4a14bb"
+      "blob": "e08306c386781b3404eb1b6da1cb74eda9acfbc5"
     },
     {
       "path": "docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md",
@@ -517,7 +517,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "8c4a12320e74bc46e215f75ce158a1ca59737a41"
+      "blob": "49392beff86198a1cf6f08476e8659cd6a1400ee"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -2669,7 +2669,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08c-cgroup-crash-host.rs",
-      "blob": "96c312fda66779a6ff9564f9fe8f20aa1b5f7cae"
+      "blob": "9423c7e7cedd03c88d5c07a78ef74f2babe8e1fd"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
@@ -2693,7 +2693,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/linux_cgroup.rs",
-      "blob": "9a26516301dc72f89d27efdaa57334cab9bad483"
+      "blob": "37681fc05edde6e6eaf6c5a4a4e3be26be7cd681"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
