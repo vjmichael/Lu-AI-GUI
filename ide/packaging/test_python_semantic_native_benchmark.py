@@ -6,7 +6,8 @@ import unittest
 
 from python_semantic_native_benchmark import (
     FIXTURE_COUNT, fixtures, framing, read_packet, completions,
-    hover_is_real, definition_is_inside_source, SCHEMA,
+    hover_is_real, definition_is_inside_source,
+    same_local_uri, definition_response_class, SCHEMA,
 )
 from stage_ty_semantic_candidate_ci import PINS, VERSION
 
@@ -40,6 +41,36 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
         self.assertFalse(definition_is_inside_source(
             [{"uri":"file:///outside.py"}],uri))
         self.assertEqual(SCHEMA,"lu.ide.dev02.python-real-lsp-comparison.v1")
+
+    def test_same_file_definition_requires_equivalent_local_file_uri(self):
+        from urllib.parse import quote
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"case_00.py"
+            path.write_text("def f(): pass\n",encoding="utf-8")
+            uri=path.as_uri()
+            self.assertTrue(same_local_uri(uri,uri))
+            self.assertTrue(definition_is_inside_source(
+                [{"targetUri":uri,"targetRange":{}}],uri))
+            self.assertTrue(definition_is_inside_source(
+                {"uri":uri,"range":{}},uri))
+            self.assertFalse(definition_is_inside_source(
+                {"uri":(path.with_name("outside.py")).as_uri()},uri))
+            for invalid in (
+                uri+"?query=1", uri+"#fragment", "https://example.org/case_00.py",
+                "file://evil.example/case_00.py", "javascript:alert(1)",
+                "", None,
+            ):
+                self.assertFalse(same_local_uri(invalid,uri))
+            self.assertEqual(definition_response_class(None),"null_or_empty")
+            self.assertEqual(definition_response_class({"unexpected":1}),"no_location_uri")
+            if os.name=="nt":
+                # Drive-letter spelling is not a different authorized source.
+                changed=uri.replace(uri[8],uri[8].swapcase(),1)
+                self.assertTrue(same_local_uri(changed,uri))
+            else:
+                self.assertFalse(same_local_uri(
+                    path.with_name("CASE_00.py").as_uri(),uri))
 
     def test_ty_beta_releases_are_pinned_for_both_native_platforms(self):
         self.assertEqual(VERSION,"0.0.99")
