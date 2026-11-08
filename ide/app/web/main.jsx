@@ -5,7 +5,8 @@ import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_edito
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
-  TREE_ENTRY_PAGE, verifiedRelativeSourcePath } from './editor_working_set.js';
+  TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
+  lateReloadCanCommit } from './editor_working_set.js';
 import { locateMatches, planReplacement } from './find_replace.js';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
@@ -93,6 +94,8 @@ function App() {
   const [listing, setListing] = useState(null);
   const [visibleTreeCount, setVisibleTreeCount] = useState(INITIAL_VISIBLE_TREE_ENTRIES);
   const [explorerPending, setExplorerPending] = useState(false);
+  // Synchronous reservation; React state alone does not stop same-tick double opens.
+  const explorerIoTicket = useRef(null);
   const [tabs, setTabs] = useState([]);
   const [activeTabKey, setActiveTabKey] = useState(null);
   const [tabWindowStart, setTabWindowStart] = useState(0);
@@ -1640,7 +1643,7 @@ function App() {
   }
 
   async function operation(command, args) {
-    if (pending || savingKey || explorerPending) return;
+    if (pending || savingKey || explorerPending || explorerIoTicket.current) return;
     if (command === 'ide_close_project' &&
       tabs.some(tab => tab.projectId === args.projectId && tab.dirty) &&
       !window.confirm('Discard unsaved changes in this project?')) return;
@@ -1682,24 +1685,45 @@ function App() {
     }
   }
 
-  async function openDirectory(project, path) {
-    if (explorerPending) return;
+  function beginExplorerIo() {
+    if (explorerIoTicket.current) return null;
+    const ticket = Symbol('explorer-read');
+    explorerIoTicket.current = ticket;
     setExplorerPending(true);
+    return ticket;
+  }
+  function finishExplorerIo(ticket) {
+    if (explorerIoTicket.current !== ticket) return;
+    explorerIoTicket.current = null;
+    setExplorerPending(false);
+  }
+
+  async function openDirectory(project, path) {
+    if (explorerPending || !project) return;
+    const ticket = beginExplorerIo();
+    if (!ticket) return;
+    const originalProjectId = activeProjectIdRef.current;
     setProblem('');
     try {
       const result = await invoke('ide_list_source_directory', {
         projectId: project.projectId, relativeDir: path
       });
-      if (activeProject?.projectId !== project.projectId) {
-        const previous = tabs.filter(tab => tab.projectId === project.projectId);
+      if (explorerIoTicket.current !== ticket ||
+          activeProjectIdRef.current !== originalProjectId) return;
+      if (result?.projectId !== project.projectId || result?.relativeDir !== path ||
+          !Array.isArray(result.entries))
+        throw new Error('DIRECTORY_RESULT_NOT_SCOPED');
+      if (originalProjectId !== project.projectId) {
+        const previous = tabsRef.current.filter(tab => tab.projectId === project.projectId);
         setActiveTabKey(previous.length ? previous[previous.length - 1].key : null);
       }
       setActiveProject(project);
       setDirectory(path);
       setListing(result);
       setSection('explorer');
-    } catch (error) { setProblem(String(error)); }
-    finally { setExplorerPending(false); }
+    } catch (error) {
+      if (explorerIoTicket.current === ticket) setProblem(String(error));
+    } finally { finishExplorerIo(ticket); }
   }
 
   async function startLspSession() {
@@ -1882,20 +1906,29 @@ function App() {
         ') reached. Close an unused tab; saved-source search is unchanged.');
       return;
     }
-    setExplorerPending(true);
+    const ticket = beginExplorerIo();
+    if (!ticket) return;
     setProblem('');
     try {
       // Never trust a search hit alone: re-read and rehash saved disk bytes.
       const opened = await invoke('ide_preview_source_file', {
         projectId, relativePath: match.relativePath,
       });
-      if (activeProjectIdRef.current !== projectId ||
+      if (explorerIoTicket.current !== ticket ||
+          activeProjectIdRef.current !== projectId ||
           generation !== projectSearchGeneration.current)
-        return; // A different project or search took over.
+        return; // A different project, read or search took over.
       if (opened.projectId !== projectId || opened.relativePath !== match.relativePath ||
           opened.revision !== match.revision)
         throw new Error('FILE_CHANGED_ON_DISK: search again');
-      const existing = tabs.find(tab => tab.key === key);
+      const existing = tabsRef.current.find(tab => tab.key === key);
+      const admission = lateSourceOpenDecision(tabsRef.current,projectId,
+        match.relativePath,opened,activeProjectIdRef.current,key);
+      if (admission.action === 'discard_stale') return;
+      if (admission.action === 'deny') {
+        setProblem('Open-file limit reached while loading this result; existing drafts preserved.');
+        return;
+      }
       if (existing && (existing.dirty || existing.revision !== opened.revision ||
                         existing.savedText !== opened.text)) {
         setActiveTabKey(key);
@@ -1938,7 +1971,7 @@ function App() {
           generation === projectSearchGeneration.current)
         setProblem('Cannot open that saved search hit: ' + String(error));
     } finally {
-      setExplorerPending(false);
+      finishExplorerIo(ticket);
     }
   }
 
@@ -1955,28 +1988,41 @@ function App() {
   }
 
   async function selectEntry(entry) {
-    if (!activeProject || explorerPending) return;
+    if (!activeProject || explorerPending || explorerIoTicket.current) return;
     if (entry.kind === 'directory') {
       await openDirectory(activeProject, entry.relativePath);
     } else if (entry.kind === 'file') {
-      const key = keyFor(activeProject.projectId, entry.relativePath);
-      if (tabs.some(tab => tab.key === key)) {
+      const projectId = activeProject.projectId;
+      const key = keyFor(projectId, entry.relativePath);
+      if (tabsRef.current.some(tab => tab.key === key)) {
         selectPrimaryEditorTab(key);
         return;
       }
-      const tabAdmission=admitOpenTabs(tabsRef.current,activeProject.projectId,[key]);
+      const tabAdmission=admitOpenTabs(tabsRef.current,projectId,[key]);
       if (!tabAdmission.allowed) {
         setProblem('Open-file budget ('+MAX_OPEN_TABS_PER_PROJECT+
           ') reached. Close an unused file to preserve existing drafts and Undo.');
         return;
       }
-      setExplorerPending(true);
+      const ticket = beginExplorerIo();
+      if (!ticket) return;
       setProblem('');
       try {
         const opened = await invoke('ide_preview_source_file', {
-          projectId: activeProject.projectId,
-          relativePath: entry.relativePath,
+          projectId, relativePath: entry.relativePath,
         });
+        if (explorerIoTicket.current !== ticket) return;
+        const decision = lateSourceOpenDecision(tabsRef.current,projectId,
+          entry.relativePath,opened,activeProjectIdRef.current,key);
+        if (decision.action === 'discard_stale') return;
+        if (decision.action === 'select_existing') {
+          setActiveTabKey(key); // Never replace another request's unsaved draft.
+          return;
+        }
+        if (decision.action === 'deny') {
+          setProblem('Open-file limit reached during read. No draft or Undo history was evicted.');
+          return;
+        }
         const newTab = {
           key, projectId: opened.projectId,
           relativePath: opened.relativePath, revision: opened.revision,
@@ -1993,8 +2039,9 @@ function App() {
         setTabs(previous => [...previous, newTab]);
         setActiveTabKey(key);
         void checkExistingDraft(newTab);
-      } catch (error) { setProblem(String(error)); }
-      finally { setExplorerPending(false); }
+      } catch (error) {
+        if (explorerIoTicket.current === ticket) setProblem(String(error));
+      } finally { finishExplorerIo(ticket); }
     }
   }
 
@@ -2028,12 +2075,17 @@ function App() {
         lspSession.relativePath === tab.relativePath) {
       await stopLspSession();
     }
-    setExplorerPending(true);
+    const ticket = beginExplorerIo();
+    if (!ticket) return;
     setProblem('');
     try {
       const opened = await invoke('ide_preview_source_file', {
         projectId: tab.projectId, relativePath: tab.relativePath,
       });
+      const latestTab = tabsRef.current.find(item => item.key === tab.key);
+      if (explorerIoTicket.current !== ticket ||
+          !lateReloadCanCommit(tab,latestTab,opened,activeProjectIdRef.current))
+        throw new Error('Reload stopped: project, source or draft changed during native read.');
       clearPrivateDraftSession(tab.key);
       resetBufferIdentity(tab.key,opened.projectId,opened.relativePath,opened.revision);
       editorStates.current.set(tab.key, createEditorState(
@@ -2041,15 +2093,17 @@ function App() {
         (state, draft) => onEditorChange(tab.key, state, draft),
         state => onEditorSelection(tab.key,state)
       ));
-      void checkExistingDraft(tab);
+      void checkExistingDraft({...tab,revision:opened.revision,
+        savedText:opened.text,draft:opened.text,dirty:false});
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
         draft: opened.text, dirty: false, generation: item.generation + 1,
         bufferRevision: (item.bufferRevision ?? 0) + 1,
       } : item));
       setHint('Reloaded ' + tab.relativePath + ' from disk.');
-    } catch (error) { setProblem(String(error)); }
-    finally { setExplorerPending(false); }
+    } catch (error) {
+      if (explorerIoTicket.current === ticket) setProblem(String(error));
+    } finally { finishExplorerIo(ticket); }
   }
 
   async function saveTab(tab) {
