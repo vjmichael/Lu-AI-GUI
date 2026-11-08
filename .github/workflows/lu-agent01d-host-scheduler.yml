@@ -1,0 +1,93 @@
+name: Lu AGENT-01D Bounded Host Scheduler Native Candidate
+on:
+  push:
+    branches: ['lu/agent01d-fenced-host-scheduler-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - '.github/workflows/lu-agent01d-host-scheduler.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - '.github/workflows/lu-agent01d-host-scheduler.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01d-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-sqlite-fencing:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check exact Git source identity
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01d-evidence
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            | tee agent01d-evidence/source.txt
+      - name: Real AGENT-01D production Rust/SQLite tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_host_scheduler::tests -- --nocapture \
+            2>&1 | tee agent01d-evidence/host-scheduling-native.log
+          for name in \
+            only_one_durable_host_can_own_a_plan_and_nothing_is_executable \
+            fresh_human_consent_and_requested_resource_ceiling_are_required \
+            cancel_intent_and_host_quarantine_do_not_reap_or_replay_workers \
+            stale_goal_and_stale_plan_revision_cannot_receive_a_step \
+            no_independent_receipt_means_no_completion_and_no_next_step \
+            independently_checked_historical_receipt_unlocks_only_a_new_proposal; do
+            grep -Fq "test agent_host_scheduler::tests::$name ... ok" \
+              agent01d-evidence/host-scheduling-native.log
+          done
+          grep -Fq 'test result: ok. 6 passed; 0 failed;' \
+            agent01d-evidence/host-scheduling-native.log
+      - name: Run original AGENT-01A/B/C behavior against current integrated head
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scope in agent_plan_ledger::tests agent_plan_revisions::tests \
+                       agent_deliverable_receipts::tests; do
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+              --lib "$scope" -- --nocapture \
+              2>&1 | tee -a agent01d-evidence/parent-regressions.log
+          done
+          grep -Fq 'test result: FAILED.' agent01d-evidence/parent-regressions.log \
+            && exit 1 || true
+      - name: State exact acceptance boundary
+        shell: bash
+        run: |
+          echo 'AGENT-01D is source/native SQLite scheduling decision logic only: all worker receipts here are synthetic fixture bytes. NO Git/FFprobe process was launched, GGUF used, Job Object or cgroup-v2 containment proven, or installed Windows app run. The scheduler has no executable dispatch or restart-takeover API.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01d-sqlite-${{ matrix.os }}
+          path: agent01d-evidence/
+          retention-days: 14
+          if-no-files-found: warn
