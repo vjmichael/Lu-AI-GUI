@@ -156,7 +156,7 @@ jobs:
         shell: pwsh
         run: |
           Push-Location lu-desktop
-          npm ci
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
           npm run build
           npm run check
           Pop-Location
