@@ -640,3 +640,29 @@ test('B2 private durable draft identity and recovery never grant project source 
   assert.equal(schemas.operations['draft.discard'].result.type,'null');
   assert.match(catalog,/"draft\.checkpoint"[\s\S]*?"ide_draft_checkpoint"/);
 });
+
+
+test('B4 two-pane layout preserves distinct native-registered CodeMirror tabs and focused Save', () => {
+  const ui=read('../web/main.jsx');
+  const css=read('../web/styles.css');
+  const pure=read('../web/editor_layout.js');
+  assert.match(ui,/import \{ secondaryEditor, initialSecondaryKey, canSaveFocusedPane \} from '\.\/editor_layout\.js'/);
+  assert.match(ui,/aria-label="Toggle split editor"/);
+  assert.match(ui,/aria-label="Second editor file"/);
+  assert.match(ui,/initialSecondaryKey\(projectTabs,activeProject\?\.projectId,activeTabKey\)/);
+  assert.match(ui,/secondaryEditor\(\s*projectTabs, activeProject\?\.projectId, activeTab\?\.key, secondaryTabKey\)/);
+  assert.match(ui,/data-ide-editor-pane="primary"/);
+  assert.match(ui,/data-ide-editor-pane="secondary"/);
+  assert.match(ui,/className="splitSecondaryPane"/);
+  assert.match(ui,/key=\{secondaryTab\.key \+ ':' \+ secondaryTab\.generation \+ ':secondary'\}/);
+  assert.match(ui,/editorState=\{editorStates\.current\.get\(secondaryTab\.key\)\}/);
+  assert.match(ui,/onClick=\{\(\) => void saveTab\(secondaryTab\)\}/);
+  assert.match(ui,/canSaveFocusedPane\(focusedPane,activeTab,secondaryTab\)/);
+  assert.match(ui,/clearPrivateDraftSession\(key\)/);
+  assert.match(ui,/setSecondaryTabKey\(null\)/);
+  assert.match(ui,/setSplitEditorOpen\(false\)/);
+  assert.match(css,/\.splitEditorGrid\.enabled/);
+  assert.match(css,/\.splitSecondaryPane/);
+  assert.match(pure,/secondaryKey === primaryKey/);
+  assert.doesNotMatch(pure,/invoke\(|fetch\(|navigator\.clipboard|Command::new/);
+});
