@@ -191,6 +191,20 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
+      - name: Validate Linux genuine accessibility driver syntax before installing
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile ide/app/fixtures/dev01_linux_installed_atspi.py ide/app/fixtures/wo8_linux_editor_atspi.py
+          python3 - <<'PY'
+          from pathlib import Path
+          driver=Path("ide/app/fixtures/dev01_linux_installed_atspi.py").read_text()
+          for action in ("native.select_native_folder()", "native.editor_project()",
+                         "first.kill()", "second = native.start()", "native.activate("):
+              assert action in driver, action
+          assert "window.__TAURI_INTERNALS__" not in driver
+          print("DEV01_LINUX_GENUINE_ATSPI_DRIVER_SOURCE=PASS")
+          PY
       - name: Real Linux frontend, source graph, and provenance
         shell: bash
         working-directory: ide/app
