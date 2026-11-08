@@ -4,7 +4,8 @@ import {performance} from 'node:perf_hooks';
 import {
  MAX_OPEN_TABS_PER_PROJECT,VISIBLE_TABS,
  admitOpenTabs,tabWindow,pageTabWindow,centerSelectedTab,
- visibleTreeEntries,INITIAL_VISIBLE_TREE_ENTRIES,TREE_ENTRY_PAGE
+ visibleTreeEntries,INITIAL_VISIBLE_TREE_ENTRIES,TREE_ENTRY_PAGE,
+ verifiedRelativeSourcePath
 } from '../web/editor_working_set.js';
 const A='ide-'+'a'.repeat(32),B='ide-'+'b'.repeat(32);
 const tab=(i,projectId=A)=>({key:projectId+':src/f'+i+'.rs',
@@ -73,4 +74,15 @@ test('B5 10k-tab synthetic strip benchmark remains bounded, reports actual time'
  assert.equal(rows,1200*VISIBLE_TABS);
  console.log('B5_SYNTHETIC_10000_TAB_WINDOW_1200_RENDER_SELECTIONS_MS='+elapsedMs.toFixed(3));
  console.log('B5_GENUINE_INSTALLED_EDITOR_MEMORY_LATENCY_ACCEPTANCE=OPEN');
+});
+
+test('direct project-relative open validates before existing native capability read',()=>{
+ assert.equal(verifiedRelativeSourcePath('src/main.rs'),'src/main.rs');
+ assert.equal(verifiedRelativeSourcePath('   packages/foo/test.py   '),'packages/foo/test.py');
+ for(const bad of ['',null,'../secret','a/../secret','./source','/root/file',
+   'C:/Windows/system.ini','src\\foo.rs','a//b','a/', 'a/./b',
+   'ok'+String.fromCharCode(0)+'bad','src/'+String.fromCharCode(10)+'file',
+   'a'.repeat(1025)]){
+   assert.equal(verifiedRelativeSourcePath(bad),null,String(bad));
+ }
 });
