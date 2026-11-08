@@ -91,7 +91,7 @@ class NativePickerSourceTests(unittest.TestCase):
                     'region.width < 320', 'region.height < 180',
                     'width > region.width', 'height > region.height',
                     'region.x + 3 < mid_x', 'region.y + 3 < mid_y',
-                    'key("alt+o" if attempt % 2 == 0 else "Return")'):
+                    'key(("alt+o", "alt+s", "Return", "alt+s")[attempt % 4])'):
             self.assertIn(key,focus)
         self.assertIn("if _x11_focused_chooser_keyboard(attempt):",native)
         self.assertIn("if not _registered_native_project_is_exposed():",native)
@@ -140,7 +140,16 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn('if not _select_real_fixture_directory():',native)
         self.assertIn('type_text(str(ROOT.parent))',native)
         self.assertIn('_native_exact_fixture_typeahead()',native)
-        self.assertNotIn('type_text(str(ROOT))',native)
+        location=native.split('def _native_exact_fixture_location():',1)[1].split(
+            'def select_native_folder():',1)[0]
+        for required in ('ROOT.is_dir()', 'SOURCE.is_file()',
+                         '_native_chooser_still_open()', 'getactivewindow',
+                         'getwindowname', 'ctrl+l', 'ctrl+a',
+                         'type_text(str(ROOT))', 'key("Return")'):
+            self.assertIn(required, location)
+        self.assertIn('_native_exact_fixture_location()',native)
+        self.assertNotIn('invoke_tauri',location)
+        self.assertNotIn('window.__TAURI_INTERNALS__',location)
     def test_installed_linux_gui_reuses_a_live_ewmh_manager_per_xvfb_session(self):
         native=(ROOT/"ide/app/fixtures/Test-Wo8InstalledDeb.sh").read_text(encoding="utf-8")
         wm=(ROOT/"ide/app/fixtures/wo8_linux_wm_session.sh").read_text(encoding="utf-8")
