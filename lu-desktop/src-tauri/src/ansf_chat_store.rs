@@ -95,9 +95,6 @@ pub struct ContinuityView{
     pub blockers:Vec<String>,
 }
 
-#[derive(Debug,Clone,Serialize)]
-#[serde(rename_all="camelCase")]
-
 pub fn m3_explicit_resume_target(prompt:&str)->Option<(String,String)>{
     if prompt.len()>256||prompt.contains('\0'){return None}
     let words=prompt.split_whitespace().collect::<Vec<_>>();
@@ -112,6 +109,8 @@ pub fn m3_explicit_resume_target(prompt:&str)->Option<(String,String)>{
     Some((words[2].into(),words[4].into()))
 }
 
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
 pub struct HistoryWindowPage{
     pub entries:Vec<HistoryWindowEntry>,
     pub next_cursor:Option<i64>,
