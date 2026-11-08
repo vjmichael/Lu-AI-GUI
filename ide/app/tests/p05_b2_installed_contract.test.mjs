@@ -6,7 +6,7 @@ test('P05 B2 native Windows draft must use real CodeMirror and clipboard, with n
   const script = read('../fixtures/Test-Wo8NativeDesktopUI.ps1');
   const part = script.split("if ($Scenario -eq 'DraftBufferReference') {",2)[1]?.split("if ($Scenario -eq 'EditorPersistence') {",1)[0];
   assert.ok(part, 'native installed scenario missing');
-  for (const term of ["Source editor text","Copy draft reference","System.Windows.Forms.Clipboard",
+  for (const term of ["Source editor text","Keypress-DraftClipboardCopy","System.Windows.Forms.Clipboard",
     "Get-FileHash","draft_reference_implicit_disk_save",
     "draft_undo_did_not_advance_same_session_revision",
     "P05_B2_INSTALLED_DRAFT_REFERENCE_COPY_UNDO_NO_IMPLICIT_SAVE=PASS"]) assert.ok(part.includes(term),term);
@@ -43,14 +43,14 @@ test('B2 native installed Save must rebase reference and restart must rotate ses
   for (const expected of [
     "draft_post_undo_implicit_disk_save",
     "P05_B2_EXPLICIT_SAVE", "Click 'Save · Ctrl+S'", "Saved main.rs",
-    "Copy draft reference", "baseDisk=", "draftSha256=",
+    "Keypress-DraftClipboardCopy", "baseDisk=", "draftSha256=",
     "saved_draft_reference_not_rebased_to_actual_native_disk_sha",
     "P05_B2_NATIVE_SESSION_BUFFER_ID=",
     "P05_B2_INSTALLED_DRAFT_EXPLICIT_SAVE_REBASE=PASS",
   ]) assert.ok(before.includes(expected), expected);
   for (const expected of [
     "ExpectedPreviousBufferId", "previous_actual_disk_save_missing_after_restart",
-    "Copy draft reference", "Get-FileHash", "baseDisk=",
+    "Keypress-DraftClipboardCopy", "Get-FileHash", "baseDisk=",
     "native_restart_reused_stale_session_draft_reference",
     "P05_B2_INSTALLED_RESTART_NEW_SESSION_ID_AND_SAVED_SHA=PASS",
   ]) assert.ok(after.includes(expected), expected);
