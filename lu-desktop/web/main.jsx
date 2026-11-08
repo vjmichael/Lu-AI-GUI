@@ -4036,17 +4036,32 @@ function App() {
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {displayedHistory.map((entry,i) => <div key={entry.seq??i}
+        {displayedHistory.map((entry,i) => {
+          const revision=displayRevisions[entry.seq];
+          const displayText=revision?.currentText??entry.text;
+          return <div key={entry.seq??i}
           data-ansf-seq={entry.seq??undefined}
           className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}
           style={{backgroundColor:entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble,
             color:textForBackground(entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble)}}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
-          <MessageText text={entry.text} role={entry.role}/>
+          {revision?.replyTo&&<button type="button" className="messageReplyReference"
+            onClick={()=>setMessageProvenance({entry,revision})}
+            aria-label={'Inspect reply provenance for message '+entry.seq}>
+            ↳ Reply to original #{revision.replyTo.parentSeq},
+            version {revision.replyTo.pinnedParentVersion}:
+            {' '+revision.replyTo.pinnedParentExcerpt}
+          </button>}
+          <MessageText text={displayText} role={entry.role}/>
+          {revision?.currentVersion>0&&<small className="messageEditedNotice">
+            Human-edited display · revision {revision.currentVersion}.
+            Original model input and tool history unchanged.
+          </small>}
           {Number.isSafeInteger(entry.seq)&&entry.seq>0&&
             <div className="messageActions" role="group" aria-label={'Actions for saved message '+entry.seq}>
-              <button type="button" onClick={()=>void copySavedMessage(entry)}
-                aria-label="Copy saved message">Copy</button>
+              <button type="button"
+                onClick={()=>void copySavedMessage({...entry,text:displayText})}
+                aria-label="Copy displayed message">Copy</button>
               <button type="button" onClick={()=>setMessageReplay({
                 chatId,seq:entry.seq,role:entry.role,text:entry.text
               })} aria-label="Replay original saved message">Replay</button>
@@ -4054,8 +4069,30 @@ function App() {
                 onClick={()=>reuseSavedUserPrompt(entry)} aria-label="Reuse saved prompt without sending">
                 Reuse prompt
               </button>}
-              <button type="button" onClick={()=>quoteSavedMessage(entry)}
-                aria-label="Quote saved message in composer">Quote</button>
+              <button type="button" onClick={()=>quoteSavedMessage({
+                ...entry,text:displayText
+              })} aria-label="Quote displayed message in composer">Quote</button>
+              {canEdit(entry)&&revision&&<>
+                <button type="button"
+                  onClick={()=>setMessageEditor({
+                    seq:entry.seq,role:entry.role,version:revision.currentVersion,
+                    sha:revision.currentSha256,text:revision.currentText,
+                    original:revision.originalText
+                  })} aria-label="Edit displayed message without changing original">
+                  Edit display
+                </button>
+                <button type="button"
+                  onClick={()=>setMessageProvenance({entry,revision})}
+                  aria-label="View original, revisions and provenance">
+                  Versions / source
+                </button>
+                <button type="button" onClick={()=>{
+                  const target=draftReplyTarget(entry,revision);
+                  if(target){setLinkedReplyTarget({...target,chatId});setLinkedReplyText('')}
+                }} aria-label="Reply with a new linked human message">
+                  Reply
+                </button>
+              </>}
               <div className="messageReactions" role="group" aria-label="React to this message">
                 {MESSAGE_REACTIONS.map(emoji=>
                   <button type="button" key={emoji}
@@ -4067,7 +4104,17 @@ function App() {
                   </button>)}
               </div>
             </div>}
-        </div>)}
+        </div>;
+        })}
+        {(revisionPendingByChat[chatId]||0)>0&&
+          <div className="replyRecoveryNotice" role="status">
+            {revisionPendingByChat[chatId]} reply link(s) need examination.
+            Reconciliation checks only already-saved human messages.
+            <button type="button" disabled={revisionActionBusy}
+              onClick={()=>void reconcileExistingHumanReplies()}>
+              Reconcile saved reply links
+            </button>
+          </div>}
         {historyWindow.hasNewer&&<button type="button" className="subtleButton"
           onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
         {visibleJob && <div className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite" aria-atomic="true">
