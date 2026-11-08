@@ -109,6 +109,20 @@ test('tab and result limits are explicit, not fake full-project coverage',()=>{
   assert.equal(MAX_PROJECT_PROBLEMS,200);
 });
 
+test('later-file errors outrank earlier-file warning flood within display budget',()=>{
+  const a=tab('a','a.rs'), b=tab('b','b.rs');
+  const warnings=Array.from({length:200},(_,i)=>diagnostic(2,'warning '+i));
+  const snapshot=projectProblems([a,b],{
+    a:response(a,warnings), b:response(b,[diagnostic(1,'critical later file')])
+  },a.projectId);
+  assert.equal(snapshot.total,201);
+  assert.equal(snapshot.items.length,200);
+  assert.equal(snapshot.items[0].message,'critical later file');
+  assert.equal(snapshot.items[0].relativePath,'b.rs');
+  assert.equal(snapshot.capacityLimited,true);
+  assert.equal(snapshot.truncated,true);
+});
+
 test('invalid query/budget/data rejects rather than accepting untrusted inputs',()=>{
   const file=tab('a','src/a.rs');
   for(const options of [{query:'a'.repeat(129)},{severity:'critical'},{limit:201},
