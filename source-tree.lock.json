@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2530929f78bddff020d230b8c33382c9a11859be",
+  "sourceCommitBeforeLock": "81f575b73d5bd690edbd7e9e6ecfcb956373d774",
   "trackedFileCount": 726,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "cced1953acb0ed768a307e2dead29e04d0da24c3"
+      "blob": "6e2d787fcbff488ecc98cd8713f7619ebf8f5ec7"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -485,7 +485,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "8ffaced0dfa6856e6b440b796e5a949b85c01e24"
+      "blob": "0f0820ed402419d61b5ab81cad5e3bf16f823903"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -617,7 +617,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "1da3128a0c39cad99e15124e624267f5f05e18d3"
+      "blob": "5466a4a7f8d16ce14200cdaddcb2bb8df6a0f9fe"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -825,7 +825,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
-      "blob": "a515dbf385a03f81e5f1e65798167d7d188d0c61"
+      "blob": "7b9f059d9ccbb5dc19dac4042d41cb925d8754e1"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
