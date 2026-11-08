@@ -381,3 +381,11 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .dev03ProfileCard>small{color:#a5cada;overflow-wrap:anywhere}
 .dev03ProfileCard>.ghostBtn{align-self:start}
 @media(max-width:900px){.dev03ProfileGrid{grid-template-columns:minmax(0,1fr)}}
+
+/* DEV-03.2B: immutable, strictly non-executable native adapter review. */
+.dev03AdapterReview{display:flex;flex-direction:column;gap:8px}
+.dev03AdapterReview>.ghostBtn{align-self:start}
+.dev03AdapterReceipt{display:flex;flex-direction:column;gap:6px;padding:9px;border:1px solid #6a7884;border-radius:6px;background:#101f2d}
+.dev03AdapterReceipt>strong{color:#f1cf9a}
+.dev03AdapterReceipt p{font-size:11px;overflow-wrap:anywhere;margin:0;color:#bed0df}
+.dev03AdapterReceipt code{color:#e5edf5;white-space:normal;overflow-wrap:anywhere}
