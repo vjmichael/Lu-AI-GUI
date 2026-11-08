@@ -90,7 +90,16 @@ jobs:
               # PE import parsing is diagnostic-only: Windows system DLLs may
               # resolve outside this pinned private bundle. Never claim a
               # complete transitive runtime or an AppContainer success here.
-              if ($dll -notmatch '^[a-z0-9_.-]+\.dll "Test-only clangd SHA $((Get-FileHash (Join-Path $bundle 'bin\clangd.exe') -Algorithm SHA256).Hash)"
+              if ($dll -notmatch '^[a-z0-9_.-]+\.dll$') {
+                throw 'DENIED: malformed clangd direct PE import name'
+              }
+              if (!(Test-Path -LiteralPath (Join-Path $bundle ('bin\' + $dll)) -PathType Leaf)) {
+                [void]$missing.Add($dll)
+              }
+            }
+            Write-Host ('P03_CLANGD_DIRECT_IMPORTS_NOT_IN_PRIVATE_BUNDLE='+$missing.Count+'; diagnostic_only')
+          }
+          Write-Host "Test-only clangd SHA $((Get-FileHash (Join-Path $bundle 'bin\clangd.exe') -Algorithm SHA256).Hash)"
           # Diagnostic-only: reject an invalid copied executable or arguments
           # BEFORE the later real restricted-AppContainer acceptance. This
           # trusted fixed binary version check does NOT constitute containment.
