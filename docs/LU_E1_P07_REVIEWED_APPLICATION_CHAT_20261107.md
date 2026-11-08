@@ -57,18 +57,33 @@ file system access. The existing first-party Git reader remains available.
 Workflow: .github/workflows/lu-e1-p07-reviewed-app.yml.
 - Source SHA/lock verification and React/Node UI contract tests.
 - Four native registry/codec/authority denial/revocation tests.
-- One real installed Git+FFprobe model-shaped JSON tool integration test
-  on Ubuntu 24.04 and Windows 2025, including two typed normalized
-  feedback results and four separate persisted outer/inner effect receipts.
+- Real installed Git+FFprobe model-shaped JSON test on Ubuntu 24.04 and
+  Windows 2025: all five advertised operations return independently checked
+  typed facts, with ten distinct APPLIED outer+inner effects after SQLite reopen.
+- A second native test enters the actual ReviewedApplicationTurnSession
+  model/tool loop using scripted model outputs, real Git, a second model step
+  consuming actual verified tool feedback, and revocation on completion.
+  This is NOT genuine GGUF tool selection.
 - Windows Tauri compile with frontend build and two desktop host tests.
   The compile-only engine resource placeholders cannot count as real
   GGUF inference.
 
-Even when these tests pass, the actual installed Windows local GGUF
-model selecting tools in a visible Lu conversation, full user dialog,
-cancellation behavior, and any physical-machine performance evidence
-remain separate acceptance gates. A handcrafted model-shaped request is
-NOT genuine model inference. Prior E1-P03/P04B/P05/P06B/C/D/E open
+A dedicated real-model workflow (.github/workflows/lu-e1-p07-genuine-gguf.yml)
+now checks out the exact source SHA, builds a pinned llama.cpp CPU backend,
+downloads and SHA-256 verifies Qwen3-0.6B Q4_K_M GGUF, starts that real local
+model, and passes its unmodified /completion JSON replies through Lu's actual
+ReviewedApplicationTurnSession. It requires the model itself to choose Git
+HEAD and FFprobe WAV facts, receive the correct OS-native typed feedback,
+give accurate final responses, and persist/reopen outer OS effect and
+model-turn audit receipts. The localhost Python helper is *test-only
+inference transport*, never an external tool executor or production backend.
+No tool JSON is scripted in this test, and no bypass/host routing is allowed.
+
+This new acceptance gate is configured, NOT passed until an exact-commit
+GitHub Actions run yields genuine model/OS evidence. The separate physical
+Windows installed-app/WebView/AMD inference and user-dialog acceptance is
+deferred toward v1.0 per the owner schedule; it is not waived. Passing the
+Linux real-model host loop cannot be reported as installed-Windows evidence. Prior E1-P03/P04B/P05/P06B/C/D/E open
 native and genuine-model gates must not be silently closed.
 
 ## Later work
@@ -77,3 +92,16 @@ General reviewed app APIs, writable editor/Office/media workflows,
 terminal tools, binary upgrades, user policy controls and stronger
 handle-pinned filesystem custody remain future separately authorized
 work. Production Lu Core stays native and non-sandboxed.
+
+## Lu Dev 41 source closeout — verification pending
+
+Current source candidate adds two tests against actual installed OS executables:
+all five reviewed operation results with ten unique journal receipts, and a
+scripted model stepping through the production Lu conversation tool loop.
+It also introduces the separate SHA-pinned genuine Qwen GGUF workflow with
+raw-model tool selection (no generated/canned requests), strict Git/media
+fact grading, and audit/effect reopening. The real GGUF workflow is Linux
+CPU-native by design; it is not the physical installed Windows test. None
+of these tests is considered passed until its exact-head native run reports
+success and evidence is inspected. Any compiler, native worker or actual
+model-selection failure must be recorded and repaired against the exact SHA.
