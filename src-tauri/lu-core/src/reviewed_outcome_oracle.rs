@@ -333,8 +333,9 @@ fn parse_wav(bytes:&[u8])->Option<WavFacts>{
 }
 /// Independently re-read the host-approved WAV, check its full SHA-256 and
 /// parse RIFF/fmt/data ourselves. The same FFprobe binary is never invoked.
-/// Only simple PCM/floating WAV files qualify. MP4 remains UNSUPPORTED,
-/// even when a supervised FFprobe process exits successfully.
+/// Only simple PCM/floating WAV and strictly parsed ordinary MP4 files can
+/// qualify. Unsupported or mismatched media never becomes verified merely
+/// because supervised FFprobe exited successfully.
 pub fn verify_media(
     media:&Path,expected_sha:&str,kind:ReviewedContainer,worker_receipt:&Value,
 )->OracleEvidence{

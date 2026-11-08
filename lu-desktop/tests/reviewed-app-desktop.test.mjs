@@ -91,8 +91,10 @@ test('E1-P10 shows independent at-observation proof, not worker or model authori
   assert.match(journal,/state!="APPLIED"/);
   assert.match(oracle,/WAV_PCM_DIRECT_V1/);
   assert.match(oracle,/GIT_HEAD_DIRECT_V1/);
-  assert.match(oracle,/GIT_STATUS_UNSUPPORTED_V1/);
-  assert.match(oracle,/MP4_UNSUPPORTED_V1/);
+  assert.match(oracle,/GIT_STATUS_INDEX_TREE_V1/);
+  assert.match(oracle,/tracked_worktree_snapshot\(/);
+  assert.match(oracle,/MP4_BOXES_DIRECT_V1/);
+  assert.match(oracle,/parse_mp4\(&bytes\)/);
   assert.doesNotMatch(oracle,/Command::new|\.spawn\(/);
   assert.match(audit,/INDEPENDENTLY_VERIFIED_AT_OBSERVATION/);
   assert.match(audit,/OUTCOME_CONFLICT/);
