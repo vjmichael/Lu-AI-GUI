@@ -118,7 +118,7 @@ fn validate_plan(value: &JobPlan) -> bool {
         && hex_sha(&value.project_id[4..], 32)
         && (matches!(
             value.recipe_id.as_str(),
-            "rust_check" | "rust_tests" | "lu_ide_host_tests"
+            "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
         ) || (cfg!(feature = "lsp-transport")
             && matches!(
                 value.recipe_id.as_str(),
