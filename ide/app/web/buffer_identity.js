@@ -136,3 +136,27 @@ export function draftRecoveryAssessment(record, projectId, path, diskSha) {
   return record.baseDiskRevision === diskSha
     ? 'same_saved_base' : 'disk_revision_changed';
 }
+
+
+export function parsePersistentDraftReference(input) {
+  if (typeof input !== 'string' || input.length > 2048) {
+    throw Error('INVALID_PERSISTENT_DRAFT_REFERENCE');
+  }
+  // Reject interpolation, URI schemes, newlines and forged extra arguments.
+  const match = /^ide-draft:v1 project=(ide-[a-f0-9]{32}) path=("(?:\\.|[^"\\])*") checkpoint=([a-f0-9]{64}) buffer=([a-zA-Z0-9-]{8,128}) revision=([0-9]+) baseDisk=([a-f0-9]{64}) draftSha256=([a-f0-9]{64}) lifetime=persistent-private-app-data$/.exec(input);
+  if (!match) throw Error('INVALID_PERSISTENT_DRAFT_REFERENCE');
+  let relativePath;
+  try { relativePath = JSON.parse(match[2]); }
+  catch { throw Error('INVALID_PERSISTENT_DRAFT_REFERENCE'); }
+  if (typeof relativePath !== 'string' || relativePath.length > 1024 ||
+      relativePath.startsWith('/') || relativePath.includes('\\') ||
+      relativePath.split('/').some(part => !part || part==='.' || part==='..') ||
+      !Number.isSafeInteger(Number(match[5]))) {
+    throw Error('INVALID_PERSISTENT_DRAFT_REFERENCE');
+  }
+  return Object.freeze({
+    projectId:match[1],relativePath,checkpointId:match[3],
+    bufferId:match[4],bufferRevision:Number(match[5]),
+    baseDiskRevision:match[6],draftSha256:match[7],
+  });
+}
