@@ -70,7 +70,7 @@ test('Windows native acceptance requires independently signed LocalService and r
   // The actual LocalService identity and private ACLs belong to the reviewed
   // native installer, not a weak hand-built sc.exe service in this workflow.
   for(const expected of [
-    "NT AUTHORITY\\\\LocalService", "Get-AuthenticodeSignature",
+    "NT AUTHORITY" + String.fromCharCode(92) + "LocalService", "Get-AuthenticodeSignature",
     "sc.exe sidtype", "sc.exe privs", "approvedHostUserSid",
     "AreAccessRulesProtected", "service configuration ACL not private",
   ]) assert.ok(protectedInstaller.includes(expected),expected);
