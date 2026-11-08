@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3070460fcc6b0b5aceb0e28848b8070d66c17cc4",
-  "trackedFileCount": 634,
+  "sourceCommitBeforeLock": "e2066c16ba67ad62ac8062327fdf75de334649f7",
+  "trackedFileCount": 636,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -161,11 +161,19 @@
     },
     {
       "path": "benchmarks/e1/e1_p05_real_three_arm.py",
-      "blob": "8151a02e9c0b6e16e5772af6d3c820dfb5869f25"
+      "blob": "21a26be3da102d30d467f815a99e06f07f8c026f"
+    },
+    {
+      "path": "benchmarks/e1/e1_p05_xml_oracle.py",
+      "blob": "6ab4516b6d528e40b0e013b7559594b5e5563da3"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_real_contract.py",
       "blob": "fea86bfa2483ff4a01170d9ca8e9a8518c772991"
+    },
+    {
+      "path": "benchmarks/e1/test_e1_p05_xml_oracle.py",
+      "blob": "4d43ad1c19a120c34197015961cecc8af9b9a7f3"
     },
     {
       "path": "benchmarks/memory/cognitum_three_arm_real_model.py",
@@ -273,7 +281,7 @@
     },
     {
       "path": "docs/LU_E1_P05_COMPARATIVE_20261107.md",
-      "blob": "1bd132d074b12a1eaeb441b626494c0fe1e599e8"
+      "blob": "89af8b9f6c558bbf74d43c9aec5bd1b1d324f2cb"
     },
     {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
@@ -405,7 +413,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "2a14dccc345aa4f6d96e659e9497cdf634691cdf"
+      "blob": "f8c9b92c338f81e85ad282fa49fd27ec4bdc5a05"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",

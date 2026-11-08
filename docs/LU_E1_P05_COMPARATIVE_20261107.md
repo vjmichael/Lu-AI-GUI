@@ -45,3 +45,7 @@ Without \`--engine\` AND \`--model\`, this creates a **NATIVE_ARMS_ONLY_MODEL_NO
 - **Not measured:** autonomous model tool routing, dynamic app selection, arbitrary document edits, semantic video/audio results, interactive WebView, user satisfaction, real AMD Vulkan offload, installed Windows/NSIS, publisher signing, or full arbitrary third-party process sandboxing. These remain open near the appropriate E1 or v1.0 release phase.
 
 **Release decision:** the source may be submitted as a benchmark candidate, but E1-P05 can only be graded after actual final-head native and local GGUF CI receipts exist. No unobserved metrics, invented model generations or model superiority conclusions are permitted.
+
+## E1-P05B — independent Python semantic evidence check
+
+Candidate stacked on E1-P05: the Python harness independently parses the actual bounded DOCX/XLSX ZIP/XML bytes, follows the package/workbook relationships, checks the exact approved Word paragraph or all four typed Excel cells, and refuses duplicate/unsafe/oversized archive entries and orphaned parts. It does not simply credit a ZIP filename. Native Rust readers remain an independent first verifier. The harness also rejects a missing host-policy veto attempt or unsupported/journal status inconsistent with the task, instead of accepting two absent attempt counters as equal. Hostile structural fixtures are **contract tests**, never represented as real Windows/Linux worker runs. The genuine exact-head native and Qwen GGUF gates are still open pending Actions evidence; no installed-Windows claims.
