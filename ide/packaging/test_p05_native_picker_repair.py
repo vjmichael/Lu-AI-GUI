@@ -22,8 +22,9 @@ class NativePickerSourceTests(unittest.TestCase):
     def test_linux_true_absolute_folder_and_ui_registration(self):
         s=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         a=s.split("def select_native_folder():",1)[1].split("def editor_project():",1)[0]
-        self.assertIn("type_text(str(ROOT))",a)
-        self.assertNotIn("type_text(str(ROOT.parent))",a)
+        self.assertIn("type_text(str(ROOT.parent))",a)
+        self.assertNotIn("type_text(str(ROOT))",a)
+        self.assertIn("_native_exact_fixture_typeahead()",a)
         self.assertIn("_select_real_fixture_directory()",a)
         self.assertIn("_native_picker_confirm(attempts)",a)
         self.assertIn('"select folder"',s)
@@ -137,8 +138,32 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn('_native_dialog_ancestor(obj)',chooser)
         self.assertIn('native_dialog_confirmation_not_found',chooser)
         self.assertIn('if not _select_real_fixture_directory():',native)
-        self.assertIn('key("alt+Up")',native)
-        self.assertIn('type_text(str(ROOT))',native)
+        self.assertIn('type_text(str(ROOT.parent))',native)
+        self.assertIn('_native_exact_fixture_typeahead()',native)
+        self.assertNotIn('type_text(str(ROOT))',native)
+    def test_installed_linux_gui_reuses_a_live_ewmh_manager_per_xvfb_session(self):
+        native=(ROOT/"ide/app/fixtures/Test-Wo8InstalledDeb.sh").read_text(encoding="utf-8")
+        wm=(ROOT/"ide/app/fixtures/wo8_linux_wm_session.sh").read_text(encoding="utf-8")
+        for requirement in ("WO8_NATIVE_LINUX_EWMH_WINDOW_MANAGER=PASS",
+                            "_NET_SUPPORTING_WM_CHECK", "openbox --sm-disable",
+                            'kill -0 "$wm_pid"', '"$@"'):
+            self.assertIn(requirement,wm)
+        self.assertIn("bash ide/app/fixtures/wo8_linux_wm_session.sh",native)
+        chooser=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
+        selection=chooser.split("def select_native_folder():",1)[1].split("def editor_project():",1)[0]
+        self.assertIn("type_text(str(ROOT.parent))",selection)
+        self.assertIn("_select_real_fixture_directory()",selection)
+        self.assertIn("_native_exact_fixture_typeahead()",selection)
+        self.assertIn('deny("native_folder_chooser_not_accepted")',selection)
+        safe=chooser.split("def _native_exact_fixture_typeahead():",1)[1].split(
+            "def select_native_folder():",1)[0]
+        for guard in ("_native_chooser_still_open()", "getactivewindow",
+                      "getwindowname", "ROOT.name", "_native_dialog_ancestor(obj)",
+                      "grabFocus()", "type_text(ROOT.name)"):
+            self.assertIn(guard,safe)
+        self.assertNotIn("window.__TAURI_INTERNALS__",safe)
+        self.assertNotIn("invoke_tauri",safe)
+
     def test_installed_windows_startup_only_uses_real_os_focus_before_uia(self):
         native=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
         startup=native.split('function Warm-InstalledWebViewAccessibility {',1)[1].split(
