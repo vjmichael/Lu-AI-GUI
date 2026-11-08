@@ -1,0 +1,74 @@
+name: IDE B4 split editor native Windows Linux source and desktop compile
+on:
+  push:
+    branches: ['ide/b4-split-editor-current-stack-20261108']
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - 'ide/docs/IDE_B4_SPLIT_EDITOR_20261108.md'
+      - '.github/workflows/ide-b4-split-editor-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  actual-native-frontend-and-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify exact source identity, no dependency drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 ide/packaging/verify_tauri_minor.py --repo-root .
+          test -f ide/app/src-tauri/Cargo.lock
+          test -f ide/app/package-lock.json
+          if git diff --quiet HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
+            echo 'B4_NO_UNREVIEWED_NATIVE_EXECUTION_AUTHORITY_CHANGE=PASS'
+          else
+            echo 'DENIED: B4 must not expand worker or source write authority'
+            exit 2
+          fi
+      - name: Linux native GTK WebKit build prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Execute actual CodeMirror split identity and all IDE UI regressions
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          echo 'B4_DISTINCT_REGISTERED_TWO_EDITOR_TABS_AND_FOCUSED_SAVE_SOURCE=PASS'
+      - name: Check native registered-project host and current Tauri command graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo 'B4_EXACT_NATIVE_OS_HOST_AND_TAURI_COMPILE=PASS'
+          echo 'B4_ACTUALLY_INSTALLED_WINDOWS_AND_LINUX_TWO_PANE_UI=OPEN'
