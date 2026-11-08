@@ -54,3 +54,8 @@ Source repair for the next exact-head native run:
 - Keep the same 20 fixture files, same native source checks, and same 18/20 hover/definition and 10/20 completion acceptance floors. A candidate is not selected from an unaccepted or incomplete benchmark.
 
 The binary test still operates in a disposable CI workspace without a production Lu worker, license approval or installed UI access. New OS receipts are needed before closing this gate.
+
+
+### Ty official shutdown protocol repair
+
+Source review of ty's **own** upstream `scripts/build_ty_pgo.py` found its real LSP fixture performs `request("shutdown")`, `notify("exit")`, then **`process.stdin.close()` before `process.wait(timeout=10)`**. The first Lu comparison benchmark omitted that EOF step, potentially turning a process waiting for a clean input close into an apparent lifecycle problem. Our source now follows the same ordering, logs exact exit state and verifies that a nonzero exit remains **reaped but not clean**. Added a deterministic regression that refuses waiting before EOF and fails a nonzero-exit clean interpretation. This is an evidence-preserving repair; real Windows/Linux repeat must confirm clean terminal return before acceptance. Upstream source: https://github.com/astral-sh/ty/blob/main/scripts/build_ty_pgo.py
