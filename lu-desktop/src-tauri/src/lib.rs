@@ -37,6 +37,7 @@ mod reviewed_app_audit;
 mod reviewed_task_continuity;
 mod agent_plan_progress;
 mod agent_plan_review;
+mod chat_message_interactions;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -5260,6 +5261,39 @@ async fn lu_agent_cancel_plan(
     }).await.map_err(|_|"Plan cancellation review failed")?
 }
 
+/// UX-CHAT01: decorations are host-owned, persisted separately from
+/// immutable ANSF messages and never consumed as inference/tool authority.
+#[tauri::command]
+fn lu_message_decorations(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,seqs:Vec<i64>,
+)->Result<chat_message_interactions::ChatDecorations,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message decoration profile directory unavailable")?;
+    chat_message_interactions::read(root,&chat_id,&seqs,&state.chats)
+}
+#[tauri::command]
+fn lu_set_message_reaction(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,seq:i64,emoji:Option<String>,
+)->Result<Option<chat_message_interactions::MessageReaction>,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message decoration profile directory unavailable")?;
+    chat_message_interactions::set_reaction(
+        root,&chat_id,seq,emoji.as_deref(),&state.chats
+    )
+}
+#[tauri::command]
+fn lu_set_chat_appearance(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,
+    appearance:chat_message_interactions::ChatAppearance,
+)->Result<chat_message_interactions::ChatAppearance,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Message decoration profile directory unavailable")?;
+    chat_message_interactions::set_appearance(
+        root,&chat_id,&appearance,&state.chats
+    )
+}
 /// AGENT-01E: host-owned read-only original-conversation plan history.
 /// This command does not authorize or schedule a worker. The WebView supplies
 /// ONLY a selected chat ID, never an arbitrary SQLite path, claim or grant.
@@ -7613,6 +7647,9 @@ pub fn run() {
             lu_agent_plan_progress,
             lu_agent_review_plan,
             lu_agent_cancel_plan,
+            lu_message_decorations,
+            lu_set_message_reaction,
+            lu_set_chat_appearance,
             lu_deny_native_action_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,
