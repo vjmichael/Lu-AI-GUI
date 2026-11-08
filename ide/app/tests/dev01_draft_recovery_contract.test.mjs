@@ -21,7 +21,7 @@ test('unsaved drafts never use browser storage or project source paths',()=>{
 test('previous-session record never silently replaced; native commits stay inside vault',()=>{
   for(const text of [
     'DraftRecoveryError::PreviousSession', 'MAX_RECORDS: usize = 64',
-    'MAX_RECORD_BYTES', 'self.write_lock.lock()', 'record.session_id != self.session_id',
+    'MAX_RECORD_BYTES', 'self.write_lock.lock()', 'previous.session_id != self.session_id',
     'self.dir.rename(&temp, &self.dir, file_name(',
     'record.buffer_revision == 0', 'revision_for(record.draft_text.as_bytes())',
     'record.draft_sha256 != expected_draft_sha256',
