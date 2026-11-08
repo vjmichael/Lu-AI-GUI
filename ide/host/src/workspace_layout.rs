@@ -231,11 +231,7 @@ impl WorkspaceLayoutStore {
         Ok(layout)
     }
 
-    pub fn clear(&self, registry: &IdeWorkspaceRegistry, project_id: &str)
-        -> Result<bool>
-    {
-        registry.source_capability(project_id)
-            .map_err(|_| "B9_PROJECT_NOT_OPEN")?;
+    fn remove_record(&self, project_id: &str) -> Result<bool> {
         let _gate = self.lock.lock().map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
         let path = self.file(project_id)?;
         if safe_record(&path)?.is_none() {
@@ -246,6 +242,29 @@ impl WorkspaceLayoutStore {
         File::open(&self.root).and_then(|dir| dir.sync_all())
             .map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
         Ok(true)
+    }
+
+    pub fn clear(&self, registry: &IdeWorkspaceRegistry, project_id: &str)
+        -> Result<bool>
+    {
+        registry.source_capability(project_id)
+            .map_err(|_| "B9_PROJECT_NOT_OPEN")?;
+        self.remove_record(project_id)
+    }
+
+    /// Called only by the native unregister command BEFORE removing a
+    /// known catalog entry. Closed registered projects are eligible too.
+    /// Never touch their source folders or the separate B2 draft vault.
+    pub fn purge_for_unregister(&self, registry: &IdeWorkspaceRegistry,
+        project_id: &str) -> Result<bool>
+    {
+        if !wire::valid_project_id(project_id)
+            || !registry.projects().map_err(|_| "B9_PROJECT_NOT_REGISTERED")?
+                .iter().any(|item| item.project_id == project_id)
+        {
+            return Err("B9_PROJECT_NOT_REGISTERED");
+        }
+        self.remove_record(project_id)
     }
 }
 
