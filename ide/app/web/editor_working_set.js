@@ -71,3 +71,45 @@ export function verifiedRelativeSourcePath(value) {
       path.split('/').some(part=>!part || part==='.' || part==='..')) return null;
   return path;
 }
+
+
+/**
+ * B6: A native file preview can finish after the tab budget, project selection,
+ * or draft state has changed. Admission at request START is not authorization
+ * to replace editor state when the response arrives.
+ */
+export function lateSourceOpenDecision(tabs, projectId, relativePath, opened, liveProjectId, key) {
+  if (!projectId || liveProjectId !== projectId ||
+      opened?.projectId !== projectId || opened?.relativePath !== relativePath ||
+      typeof opened.text !== 'string' || typeof opened.revision !== 'string' ||
+      typeof key !== 'string' || !key) {
+    return {action:'discard_stale', reason:'SOURCE_PREVIEW_CONTEXT_CHANGED'};
+  }
+  if (!Array.isArray(tabs))
+    return {action:'discard_stale', reason:'INVALID_EDITOR_ADMISSION'};
+  // An existing editor may be dirty. Never reset its identity or Undo history.
+  if (tabs.some(tab=>tab?.key === key))
+    return {action:'select_existing', reason:null};
+  const admission=admitOpenTabs(tabs,projectId,[key]);
+  return admission.allowed
+    ? {action:'open_new', reason:null}
+    : {action:'deny', reason:admission.reason};
+}
+
+/** Reload is a destructive replacement of a draft and requires a fresh
+ *  snapshot of the same tab. In-flight edits, close/reopen or project switching
+ *  make the old confirmation obsolete; leave the newer draft untouched.
+ */
+export function lateReloadCanCommit(expected, current, opened, liveProjectId) {
+  if (!expected || !current || expected.key !== current.key ||
+      current.projectId !== expected.projectId ||
+      current.relativePath !== expected.relativePath) return false;
+  if (lateSourceOpenDecision([],expected.projectId,expected.relativePath,opened,
+        liveProjectId,expected.key).action !== 'open_new') return false;
+  return current.generation === expected.generation &&
+    current.bufferRevision === expected.bufferRevision &&
+    current.revision === expected.revision &&
+    current.savedText === expected.savedText &&
+    current.draft === expected.draft &&
+    current.dirty === expected.dirty;
+}
