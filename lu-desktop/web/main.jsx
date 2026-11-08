@@ -2656,8 +2656,10 @@ function App() {
   useEffect(()=>{
     const id=chatId;
     if(!id)return;
-    const seqs=history.filter(x=>Number.isSafeInteger(x.seq)&&x.seq>0)
-      .map(x=>x.seq);
+    const seqs=history.filter(x=>
+      Number.isSafeInteger(x.seq)&&x.seq>0&&
+      (x.role==='user'||x.role==='assistant')
+    ).map(x=>x.seq);
     const slices=[];
     for(let start=0;start<seqs.length;start+=64){
       slices.push(seqs.slice(start,start+64));
