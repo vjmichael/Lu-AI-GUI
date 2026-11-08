@@ -23,7 +23,12 @@ use lu_core::{
     native_app_typed_git::{GitReadOperation,HostReviewedGitRead},
     native_app_typed_ffprobe::{HostReviewedMediaProbe,ReviewedContainer},
     native_background_process::BackgroundProcessSupervisor,
-    native_reviewed_app_tool::register_reviewed_application_tools,
+    native_reviewed_app_tool::{
+        register_reviewed_application_tools,ReviewedApplicationTurnSession,
+    },
+    supervised_tool_generation::{ModelStepGenerator,NativeGenerationError,NativeTurnRecord},
+    inference_host::Cancellation,
+    model_turn_journal::ModelTurnJournal,
     registry::NativeToolRegistry,
     tasks::TaskStore,
 };
@@ -368,4 +373,80 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     }
     drop(reopened);
     fs::remove_dir_all(dir).unwrap();
+}
+
+
+/// Scripted model responses are intentionally not claimed as GGUF planning.
+/// They exercise the *actual* native model-turn loop, typed tool catalogue,
+/// durable outer dispatch, OS application worker and model continuation.
+struct ScriptedReviewedModel{
+    outputs:std::collections::VecDeque<String>,
+    prompts:Vec<String>,
+}
+impl ModelStepGenerator for ScriptedReviewedModel{
+    fn generate_step(
+        &mut self,prompt:&str,max_tokens:u32,cancel:&Cancellation
+    )->Result<String,NativeGenerationError>{
+        assert!(max_tokens>0);
+        assert!(!cancel.is_cancelled());
+        self.prompts.push(prompt.to_owned());
+        Ok(self.outputs.pop_front().expect("model requested unexpected extra step"))
+    }
+}
+#[tokio::test]
+#[ignore="requires actual installed native Git; model text is scripted, not GGUF"]
+async fn scripted_model_enters_real_reviewed_turn_session_and_receives_os_feedback(){
+    let git=actual_binary("LU_E1_P07_GIT");
+    let f=Fixture::new(&git,None,true,false);
+    fs::remove_dir_all(f.repo.join(".git")).unwrap();
+    assert!(Command::new(&git).arg("init").arg("-q").arg(&f.repo)
+        .status().unwrap().success());
+    fs::write(f.repo.join("tracked.txt"),b"approved").unwrap();
+    checked_git(&git,&f.repo,&["add","tracked.txt"]);
+    checked_git(&git,&f.repo,&[
+        "-c","user.name=Lu","-c","user.email=lu@example.test",
+        "commit","-q","-m","approved"
+    ]);
+    let expected_head=checked_git(&git,&f.repo,&["rev-parse","HEAD"])
+        .trim().to_string();
+    let audit=ModelTurnJournal::open(&f.dir.join("turn-audit.sqlite")).unwrap();
+    let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
+        f.auth.clone(),origin(),"e1-p07-space".into(),
+        Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
+        Arc::clone(&f.effects),Arc::new(Allow),
+        vec![git_config(&git,&f.repo)],None,
+    ).unwrap();
+    let schemas=session.schemas().unwrap();
+    assert_eq!(schemas.len(),1);
+    assert!(session.capabilities().unwrap().len()==1);
+    let mut model=ScriptedReviewedModel{
+        outputs:std::collections::VecDeque::from(vec![
+            r#"{"kind":"tool","name":"lu_reviewed_git_head","arguments":{}}"#
+                .to_string(),
+            r#"{"kind":"final","text":"Verified the approved Git HEAD."}"#
+                .to_string(),
+        ]),
+        prompts:Vec::new(),
+    };
+    let report=session.run_journaled_observed(
+        "Please verify the HEAD of the approved repository",
+        &mut model,&Cancellation::default(),&audit,&|_|{}
+    ).await.unwrap();
+    assert_eq!(report.tool_calls,1);
+    assert_eq!(report.host_routed_calls,0);
+    assert_eq!(report.model_generations,2);
+    assert_eq!(report.answer,"Verified the approved Git HEAD.");
+    assert_eq!(model.prompts.len(),2);
+    assert!(model.prompts[0].contains("lu_reviewed_git_head"));
+    assert!(model.prompts[1].contains(&expected_head),
+        "model continuation must include the actual verified Git result");
+    assert!(report.records.iter().any(|record|{
+        matches!(record,NativeTurnRecord::ToolFeedback(value)
+            if value["result"]["headCommit"]==expected_head)
+    }));
+    // A completed conversation revokes the short-lived grant: no later
+    // assistant text or replay can authorize another third-party execution.
+    assert!(f.auth.permitted_tool_ids(&origin()).is_err());
+    drop(session);drop(audit);
+    f.cleanup();
 }
