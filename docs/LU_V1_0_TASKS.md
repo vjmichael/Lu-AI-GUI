@@ -455,3 +455,11 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - Atomic separate-SQLite verified-output receipts preserve immutable same-call artifact digest/OS file identity across restart; changed-bytes replacement is denied. The oracle reports \`exact_semantics_verified=true\` for the specific file **only**, while \`artifact_producer_independently_attributed=false\` and \`external_application_output_verified=false\` remain explicit.
 - Genuine Linux/Windows test workflow submitted for output bytes, row/cell-like semantics, revocation, malformed process receipt, duplicates, SQLite restart and artifact tampering. Tests use a **fixture P03 journal receipt**, not a real app-producing-artifact test. Full P03 real-worker acceptance remains independently queued, and E1-P04 producer attribution and broader document/spreadsheet/film output oracles remain **OPEN**.
 - **Next:** E1-P04 real worker-to-artifact custody, additional application-format semantic validators; then E1-P05 measured model/utilities/approved-app comparison. Do not mark E1-P04 production-accepted from source alone.
+
+
+## E1-P04B real worker artifact custody (November 7, 2026)
+
+- Dedicated stacked P04B source implements *actual* bounded stdout binary custody for reviewed DOCX/XLSX workers, with 256 MiB Windows Job/Linux address-space limit, native OS child owner and verified P/D/A stream. No worker-chosen filesystem destination.
+- Separate current-user-turn ExecuteCode + WriteWorkspace host grants, independent Office document text / worksheet cell semantic oracle, cap-std trusted directory create-new-only atomic publication, file re-read byte witness and separate SQLite process and publication receipts. Failures keep the journal UNCERTAIN; no replay.
+- Exact-head hosted Windows/Linux CI must build the real app producer, a slow cancellation fixture, and a forged-but-hash-valid OOXML fixture; tests run explicitly under --ignored so they cannot be silently skipped. Producer attribution refers **only to the reviewed first-party worker's owned pipe**, not a general external app.
+- E1-P04 generic third-party operation and physical installed Windows remain OPEN; proceed to E1-P05 with genuine task baselines and conservative missing-result reporting.

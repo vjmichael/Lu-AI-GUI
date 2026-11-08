@@ -42,6 +42,9 @@ pub struct BackgroundProcessSupervisor {
     // In-memory, one-use private WGC pixel transport. Never TaskStore,
     // WebView, disk, network or model tool output. Drop scrubs raw BGRA.
     observe_frames:Mutex<BTreeMap<String,(String,CapturedBgra)>>,
+    // Host-owned stdout pipe custody for reviewed DOCX/XLSX workers. Never
+    // exposes worker-chosen paths, raw bytes in SQLite or a model API.
+    output_artifacts:Mutex<BTreeMap<String,(String,CapturedArtifact)>>,
 }
 fn valid_id(s:&str)->bool{
     !s.is_empty()&&s.len()<=128
@@ -88,10 +91,24 @@ pub struct CapturedBgra{
 impl Drop for CapturedBgra{
     fn drop(&mut self){self.bytes.fill(0);}
 }
-struct ScanProof{sha256:String,bytes:u64,frame:Option<CapturedBgra>}
+/// A finite OS-identified child stdout payload. Not automatically a
+/// verified *meaningful* document; independent P04 parsers decide that.
+pub struct CapturedArtifact{
+    pub format:String,
+    pub bytes:Vec<u8>,
+    pub sha256:String,
+}
+impl Drop for CapturedArtifact{
+    fn drop(&mut self){self.bytes.fill(0);}
+}
+struct ScanProof{
+    sha256:String,bytes:u64,frame:Option<CapturedBgra>,
+    artifact:Option<CapturedArtifact>,
+}
 fn read_worker_progress(
     pipe:impl Read,store:&TaskStore,task_id:&str,
-    expected_image_source:Option<&'static str>
+    expected_image_source:Option<&'static str>,
+    expected_artifact_kind:Option<&'static str>,
 )->Option<ScanProof>{
     let mut input=BufReader::new(pipe);
     let mut line=Vec::with_capacity(96);
@@ -106,7 +123,9 @@ fn read_worker_progress(
             match input.read(&mut byte){
                 Ok(0)=>return if !line.is_empty()
                     ||(expected_image_source.is_some()
-                        &&final_result.as_ref().is_some_and(|p:&ScanProof|p.frame.is_none())){
+                        &&final_result.as_ref().is_some_and(|p:&ScanProof|p.frame.is_none()))
+                    ||(expected_artifact_kind.is_some()
+                        &&final_result.as_ref().is_some_and(|p:&ScanProof|p.artifact.is_none())){
                     // A partial trailing line after a complete binary frame
                     // is never a valid extension of the reviewed protocol.
                     None
@@ -145,6 +164,30 @@ fn read_worker_progress(
                 .is_err(){return None;}
             final_result=Some(ScanProof{
                 sha256:digest.into(),bytes:last_bytes,frame:None,
+                artifact:None,
+            });
+        }else if let Some(meta)=text.strip_prefix("A\t"){
+            // A single bounded artifact follows an independently checked
+            // P/D progress receipt. ONLY an exact host-reviewed one-shot
+            // document mode may send this protocol extension.
+            let kind=expected_artifact_kind?;
+            if final_result.as_ref().is_none_or(|p|p.artifact.is_some())
+                ||expected_image_source.is_some(){return None}
+            let fields:Vec<_>=meta.split('\t').collect();
+            if fields.len()!=3||fields[0]!=kind{return None}
+            let size=fields[1].parse::<usize>().ok()?;
+            if !(16..=1024*1024).contains(&size){return None}
+            let sha=fields[2];
+            if sha.len()!=64||!sha.bytes().all(|b|
+                b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){return None}
+            let mut bytes=vec![0u8;size];
+            if input.read_exact(&mut bytes).is_err(){bytes.fill(0);return None}
+            if format!("{:x}",Sha256::digest(&bytes))!=sha{
+                bytes.fill(0);
+                return None
+            }
+            final_result.as_mut()?.artifact=Some(CapturedArtifact{
+                format:kind.into(),bytes,sha256:sha.into()
             });
         }else if let Some(meta)=text.strip_prefix("B\t"){
             // A separate WGC OS-reviewed image mode may append ONE bounded
@@ -189,6 +232,7 @@ impl BackgroundProcessSupervisor {
         Self{
             store,owned:Mutex::new(BTreeMap::new()),
             observe_frames:Mutex::new(BTreeMap::new()),
+            output_artifacts:Mutex::new(BTreeMap::new()),
         }
     }
     /// Host-only admission. The caller must obtain the user's task grant
@@ -214,6 +258,18 @@ impl BackgroundProcessSupervisor {
             ||plan.max_runtime_seconds!=Some(90)){
             return Err(BackgroundProcessError::InvalidPlan);
         }
+        let expected_artifact_kind=if plan.args.first().and_then(|arg|arg.to_str())
+             ==Some("--lu-e1-artifact-one-shot"){
+            if !plan.progress_protocol||plan.args.len()!=2
+              ||plan.max_runtime_seconds!=Some(15){
+                return Err(BackgroundProcessError::InvalidPlan)
+            }
+            match plan.args[1].to_str(){
+                Some("docx")=>Some("docx"),
+                Some("xlsx")=>Some("xlsx"),
+                _=>return Err(BackgroundProcessError::InvalidPlan),
+            }
+        }else{None};
         let executable=verified_executable(&plan.executable,&plan.expected_sha256)?;
         let mut workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
         if workers.contains_key(&plan.task_id){
@@ -240,7 +296,8 @@ impl BackgroundProcessSupervisor {
         {
             let quota=match plan.args.first().and_then(|s|s.to_str()){
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
-                Some("--lu-e1-version-one-shot")=>Some(256*1024*1024u64),
+                Some("--lu-e1-version-one-shot")|
+                Some("--lu-e1-artifact-one-shot")=>Some(256*1024*1024u64),
                 _=>None
             };
             lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
@@ -274,8 +331,8 @@ impl BackgroundProcessSupervisor {
         // hard Windows Job Object memory ceiling. This does not make
         // unreviewed third-party executables, network or file I/O safe.
         #[cfg(windows)]
-        if plan.args.first().and_then(|s|s.to_str())==
-            Some("--lu-e1-version-one-shot")
+        if matches!(plan.args.first().and_then(|s|s.to_str()),
+            Some("--lu-e1-version-one-shot"|"--lu-e1-artifact-one-shot"))
             &&job.set_memory_limit(256*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
@@ -328,7 +385,9 @@ impl BackgroundProcessSupervisor {
             let store=Arc::clone(&self.store);
             let task_id=plan.task_id.clone();
             let reader=std::thread::spawn(move||
-                read_worker_progress(pipe,&store,&task_id,expected_image_source)
+                read_worker_progress(
+                    pipe,&store,&task_id,expected_image_source,expected_artifact_kind
+                )
             );
             workers.get_mut(&plan.task_id)
                 .expect("just registered running worker")
@@ -374,6 +433,15 @@ impl BackgroundProcessSupervisor {
             };
             result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
             if matches!(outcome,Some(true)){
+                if let Some(artifact)=proof.as_mut().and_then(|p|p.artifact.take()){
+                    let mut owned=self.output_artifacts.lock()
+                        .map_err(|_|BackgroundProcessError::Poisoned)?;
+                    if owned.len()<4{
+                        owned.insert(id.clone(),(workspace.clone(),artifact));
+                    }
+                    // Otherwise drop and scrub bytes; no success is claimed
+                    // until the authorized broker consumes the private slot.
+                }
                 if let Some(frame)=proof.as_mut().and_then(|p|p.frame.take()){
                     let mut pending=self.observe_frames.lock()
                         .map_err(|_|BackgroundProcessError::Poisoned)?;
@@ -385,6 +453,30 @@ impl BackgroundProcessSupervisor {
             }
         }
         Ok(count)
+    }
+    /// Exact owner, one-use artifact custody from this supervisor's actual
+    /// OS child stdout pipe. The caller must validate semantic document
+    /// content, persist into a host-owned staging file, and audit the journal.
+    pub fn take_local_output_artifact(
+        &self,task_id:&str,workspace_id:&str
+    )->Result<Option<CapturedArtifact>,BackgroundProcessError>{
+        let mut owned=self.output_artifacts.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        if owned.get(task_id).is_some_and(|(owner,_)|owner!=workspace_id){
+            return Err(BackgroundProcessError::WrongWorkspace)
+        }
+        Ok(owned.remove(task_id).map(|(_,artifact)|artifact))
+    }
+    pub fn discard_local_output_artifact(
+        &self,task_id:&str,workspace_id:&str
+    )->Result<(),BackgroundProcessError>{
+        let mut owned=self.output_artifacts.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        if owned.get(task_id).is_some_and(|(owner,_)|owner!=workspace_id){
+            return Err(BackgroundProcessError::WrongWorkspace)
+        }
+        owned.remove(task_id);
+        Ok(())
     }
     /// Host-only, one-use, chat-owned local WGC frame retrieval. The caller
     /// MUST verify active Observe consent, keep the image tainted and admit
@@ -489,7 +581,7 @@ mod tests{
         store.start("media123").unwrap();
         let digest="a".repeat(64);
         let frames=format!("P\t0\t20\nP\t10\t20\nP\t20\t20\nD\t{digest}\n");
-        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",None).is_some());
+        assert!(read_worker_progress(Cursor::new(frames.into_bytes()),&store,"media123",None,None).is_some());
         let record=store.get("media123").unwrap().unwrap();
         assert_eq!(record.progress,100);
         assert_eq!(record.detail,format!("SHA-256: {digest}"));
@@ -513,7 +605,7 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create("t",Some("w"),None).unwrap();
             store.start("t").unwrap();
-            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",None).is_none());
+            assert!(read_worker_progress(Cursor::new(frames.as_bytes()),&store,"t",None,None).is_none());
             assert!(store.get("t").unwrap().unwrap().progress<100);
         }
     }
@@ -529,7 +621,7 @@ mod tests{
         let mut message=format!("P\t1\t1\nD\t{digest}\nB\tnative-foreground-window-v1\t2\t1\t{hash}\n").into_bytes();
         message.extend_from_slice(&bgra);
         let frame=read_worker_progress(Cursor::new(message.clone()),&store,
-            "obs-frame-1",Some("native-foreground-window-v1")).unwrap().frame.unwrap();
+            "obs-frame-1",Some("native-foreground-window-v1"),None).unwrap().frame.unwrap();
         assert_eq!((frame.width,frame.height,frame.row_pitch),(2,1,8));
         assert_eq!(frame.bytes,bgra);
         let record=store.get("obs-frame-1").unwrap().unwrap();
@@ -537,13 +629,13 @@ mod tests{
         // Without explicit host-owned image mode, even an otherwise valid
         // binary payload MUST be rejected.
         assert!(read_worker_progress(Cursor::new(message),&store,
-            "obs-frame-1",None).is_none());
+            "obs-frame-1",None,None).is_none());
         // A foreground-host plan cannot accept a valid packet mislabeled
         // as a primary monitor, or a source without exact OS-backed mode.
         let mut wrong_source=format!("P\t1\t1\nD\t{digest}\nB\tnative-primary-monitor-v1\t2\t1\t{hash}\n").into_bytes();
         wrong_source.extend_from_slice(&bgra);
         assert!(read_worker_progress(Cursor::new(wrong_source),&store,
-            "obs-frame-1",Some("native-foreground-window-v1")).is_none());
+            "obs-frame-1",Some("native-foreground-window-v1"),None).is_none());
     }
     #[test]
     fn os_owned_image_pipe_enters_real_png_admission_and_remains_off_network(){
@@ -559,7 +651,7 @@ mod tests{
         let mut packet=format!("P\t1\t1\nD\t{digest}\nB\tnative-foreground-window-v1\t2\t1\t{hash}\n").into_bytes();
         packet.extend_from_slice(&bgra);
         let scanned=read_worker_progress(Cursor::new(packet),&store,
-            "obs-frame-2",Some("native-foreground-window-v1")).unwrap();
+            "obs-frame-2",Some("native-foreground-window-v1"),None).unwrap();
         let frame=scanned.frame.unwrap();
         let admitted=admit_wgc_frame_locally(
             &frame.bytes,frame.width,frame.height,frame.row_pitch,true
@@ -590,8 +682,49 @@ mod tests{
             let store=TaskStore::open(Path::new(":memory:")).unwrap();
             store.create(&id,Some("c-native"),None).unwrap();
             store.start(&id).unwrap();
-            assert!(read_worker_progress(Cursor::new(packet),&store,&id,Some("native-foreground-window-v1")).is_none());
+            assert!(read_worker_progress(Cursor::new(packet),&store,&id,Some("native-foreground-window-v1"),None).is_none());
         }
+    }
+    #[test]
+    fn reviewed_artifact_stdout_protocol_requires_sha_kind_and_complete_bytes(){
+        use std::io::Cursor;
+        let content=b"PK\x03\x04-owned-reviewed-workbook-bytes";
+        let content_hash=format!("{:x}",Sha256::digest(content));
+        let progress_hash="b".repeat(64);
+        let mut packet=format!(
+            "P\t1\t1\nD\t{progress_hash}\nA\txlsx\t{}\t{content_hash}\n",
+            content.len()
+        ).into_bytes();
+        packet.extend_from_slice(content);
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        store.create("a-owned",Some("w"),None).unwrap();
+        store.start("a-owned").unwrap();
+        let result=read_worker_progress(
+            Cursor::new(packet.clone()),&store,"a-owned",None,Some("xlsx")
+        ).unwrap();
+        let artifact=result.artifact.unwrap();
+        assert_eq!(artifact.format,"xlsx");
+        assert_eq!(artifact.sha256,content_hash);
+        assert_eq!(artifact.bytes,content);
+        assert!(read_worker_progress(
+            Cursor::new(packet.clone()),&store,"a-owned",None,Some("docx")
+        ).is_none());
+        assert!(read_worker_progress(
+            Cursor::new(packet.clone()),&store,"a-owned",None,None
+        ).is_none());
+        let mut broken=packet.clone();
+        *broken.last_mut().unwrap()^=1;
+        assert!(read_worker_progress(
+            Cursor::new(broken),&store,"a-owned",None,Some("xlsx")
+        ).is_none());
+        let truncated=packet[..packet.len()-1].to_vec();
+        assert!(read_worker_progress(
+            Cursor::new(truncated),&store,"a-owned",None,Some("xlsx")
+        ).is_none());
+        let mut extra=packet;extra.push(b'X');
+        assert!(read_worker_progress(
+            Cursor::new(extra),&store,"a-owned",None,Some("xlsx")
+        ).is_none());
     }
     #[test]
     fn unreviewed_executable_never_creates_a_job(){
