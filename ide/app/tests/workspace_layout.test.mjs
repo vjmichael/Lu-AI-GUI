@@ -33,6 +33,16 @@ test('only navigation fields, hashes and dirty indicator survive serialization',
   assert.deepEqual(checkedRememberedWorkspace(layout,A).files,layout.files);
 });
 
+test('stale foreign primary selection falls back to an actual live project tab',()=>{
+  const files=[tab(0),tab(1)];
+  const value=rememberedWorkspaceFromTabs(files,A,tab(4,B).key,null,true,99,
+    key=>files.find(row=>row.key===key)?.draft);
+  assert.equal(value.primaryPath,files[1].relativePath);
+  assert.equal(value.secondaryPath,null);
+  assert.equal(value.splitOpen,true);
+  assert.equal(value.tabWindowStart,47);
+});
+
 test('in-flight typing newer than React is recorded as dirty without source bytes',()=>{
   const file=tab(1);
   const live=new Map([[file.key,'modified after render']]);
