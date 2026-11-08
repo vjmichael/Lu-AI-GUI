@@ -226,6 +226,9 @@ impl AgentPlanLedger{
         }
         let mut db=self.db.lock().map_err(|_|PlanLedgerError::Poisoned)?;
         let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Check original saved-turn scope BEFORE even an idempotent event
+        // lookup: a guessed event token is never an authorization bypass.
+        let state=self_state(&tx,plan,chat,turn)?;
         let existing:Option<(String,i64,String)>=tx.query_row(
             "SELECT plan_id,step_index,event FROM lu_agent_plan_events
              WHERE host_event_id=?1",params![event_id],
@@ -237,7 +240,6 @@ impl AgentPlanLedger{
             }
             return Err(PlanLedgerError::ConflictingId)
         }
-        let state=self_state(&tx,plan,chat,turn)?;
         if state=="CANCEL_REQUESTED"||state=="NEEDS_REVIEW"{
             return Err(PlanLedgerError::InvalidTransition)
         }
@@ -513,6 +515,9 @@ mod tests{
         ledger.observe(&p,&c,&t,0,&e,HostObservation::UnverifiedEvidence).unwrap();
         assert_eq!(ledger.observe(&p,&c,&t,0,&e,
             HostObservation::UnverifiedEvidence),Ok(PlanWrite::AlreadyRecorded));
+        assert_eq!(ledger.observe(&p,&format!("c-{:032x}",98),
+            &t,0,&e,HostObservation::UnverifiedEvidence),
+            Err(PlanLedgerError::WrongOrigin));
         assert_eq!(ledger.observe(&p,&c,&t,1,&e,
             HostObservation::UnverifiedEvidence),Err(PlanLedgerError::ConflictingId));
         let b=format!("e-{:032x}",4);
