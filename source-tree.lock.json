@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0b074c6043bb837e6aa49c6fd564f7ea3f02aeaa",
-  "trackedFileCount": 719,
+  "sourceCommitBeforeLock": "7534972f596f91f912ed42b9540bb609ee886670",
+  "trackedFileCount": 724,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -200,6 +200,10 @@
       "blob": "75a0b73487d03bbc05a44fe56e1c36aa6f881cce"
     },
     {
+      "path": ".github/workflows/lu-ux-chat02-revisions-replies.yml",
+      "blob": "924f19729cfd45f809321736138486c396b8fd95"
+    },
+    {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
       "blob": "c3af6cbde3bb64cf01ff1067669a943a20ee88d4"
     },
@@ -389,7 +393,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "b44d5d9ab6c98c9ac8ed245a691917dda07f8aa5"
+      "blob": "1a26d25a4734c75ce90f39f905bcac63810e6503"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
@@ -592,6 +596,10 @@
       "blob": "1525ebfd84c849b5af51bf8eed77e8e038d888dc"
     },
     {
+      "path": "docs/LU_UX_CHAT02_MESSAGE_REVISIONS_REPLIES_20261108.md",
+      "blob": "c397e1dad3fbb46d7387d1213d44f4f7200ff5f5"
+    },
+    {
       "path": "docs/LU_V1_01_WINDOWS_ICON_IMPORT_DEV_20261103.md",
       "blob": "9aa609c5a8612489d5e08e326bca24638c0dfeee"
     },
@@ -605,7 +613,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "4d0c035b1a8438a9decbda06c8be3300724ea0aa"
+      "blob": "243b8d3c312e136147466ab3459ebfc321680feb"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -821,7 +829,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "f396f6cc102d9aad6423b43523ac96053bfad1a1"
+      "blob": "3f563e71b55741148f8bf10544c87d4018a0ca96"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -853,7 +861,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",
-      "blob": "0d3b04262c7b9ef5da90e07b5f52267793554fff"
+      "blob": "e80743bc0c3a6b937f54edd043f2fb7ead1a68ee"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/chat_message_revisions.rs",
+      "blob": "5e076508811a075e3dcae790685c97697309c60a"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -893,7 +905,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "2543cf029253e80c897e20c334b0d848bf8201cd"
+      "blob": "a7c0e52ca869428e486f65e5b7b6a8db6652d53e"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1157,7 +1169,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "f2be3522819dc1366d7e81223ade230d7bb9a5dd"
+      "blob": "cbfa18247d7fe559386308f1241e6b156993c9d5"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1264,6 +1276,10 @@
       "blob": "c9425824ecc84756216b574fd1e015b40ba00a16"
     },
     {
+      "path": "lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs",
+      "blob": "044aa00bb581682e7179e48a0c36d97d1cdb7989"
+    },
+    {
       "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
       "blob": "75b285b65e39c9c00238dd3f2b93a5f7e049fc0d"
     },
@@ -1345,7 +1361,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "8c9be497aab7c08485e5bfc84e5c74b8eff159f9"
+      "blob": "52392096fa981ce102bd8539f75730e3fdf68c80"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1360,6 +1376,10 @@
       "blob": "2d8937c330640e2912bd07590cb4b2074a781d53"
     },
     {
+      "path": "lu-desktop/web/message_revisions.mjs",
+      "blob": "64a5203e46f823923eb39f82ca87ac2041c9cf19"
+    },
+    {
       "path": "lu-desktop/web/response_view.mjs",
       "blob": "fd2f9a2f0d9cc4593733656d5d1e7c3ffdbfaeb1"
     },
@@ -1369,7 +1389,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "0b9d3335c94552f99ea40ccc7242136c2e7a9535"
+      "blob": "2dea7827b9c584a27d89ee95380161421c6cdc54"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
@@ -1585,7 +1605,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_live_chat.rs",
-      "blob": "178da7a56b0e433c45f2fcb22253a59ab58e7dfb"
+      "blob": "7af44fb3a4b7e4263e375aa21871f48b5e473dca"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_revisions.rs",
