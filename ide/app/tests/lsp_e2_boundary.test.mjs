@@ -21,7 +21,7 @@ test('E2 real server launch still requires a separately verified D7D native work
   assert.match(desktop, /async fn ide_lsp_read_diagnostics/);
   assert.match(desktop, /async fn ide_lsp_start_session/);
   assert.match(desktop, /async fn ide_lsp_stop_session/);
-  assert.match(desktop, /cfg\(not\(all\(windows, feature = "native-lsp"\)\)\)/);
+  assert.match(desktop, /cfg\(not\(all\(any\(windows, target_os = "linux"\), feature = "native-lsp"\)\)\)/);
   assert.match(desktop, /LSP_PROTECTED_WORKER_UNVERIFIED/);
   const host = read('../src-tauri/src/lsp_backend.rs');
   assert.match(host, /blocking_show\(\)/);
