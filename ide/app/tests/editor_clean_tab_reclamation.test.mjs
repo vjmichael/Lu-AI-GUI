@@ -7,7 +7,7 @@ const A='ide-'+'a'.repeat(32), B='ide-'+'b'.repeat(32);
 const tab=(p,i,overrides={})=>({
   projectId:p,key:p+':src/file'+i+'.rs',relativePath:'src/file'+i+'.rs',
   draft:'saved code',savedText:'saved code',dirty:false,generation:0,
-  ...overrides,
+  bufferRevision:0,...overrides,
 });
 function plan(tabs,protect=[],actual=new Map(tabs.map(t=>[t.key,t.draft]))) {
   return planCleanBackgroundTabClosure(tabs,A,new Set(protect),
@@ -36,6 +36,16 @@ test('never closes a dirty editor, even when React tab text claims clean',()=>{
 test('misleading dirty flag cannot override divergent React draft',()=>{
   const t=tab(A,3,{dirty:false,draft:'unsaved newer version'});
   assert.deepEqual(plan([t]).closeKeys,[]);
+});
+
+test('Undo-back-to-clean and Save do not discard existing edit history',()=>{
+  // The displayed document may equal saved source even after many edits.
+  // Closing its tab would also discard the per-tab CodeMirror Undo stack.
+  const afterUndo=tab(A,4,{dirty:false,bufferRevision:12});
+  const afterSave=tab(A,5,{dirty:false,bufferRevision:3});
+  const result=plan([afterUndo,afterSave]);
+  assert.deepEqual(result.closeKeys,[]);
+  assert.deepEqual(result.retainedKeys,[afterUndo.key,afterSave.key]);
 });
 
 test('missing or inaccessible CodeMirror state fails closed',()=>{
