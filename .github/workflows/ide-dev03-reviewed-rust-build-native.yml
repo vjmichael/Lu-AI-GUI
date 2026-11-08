@@ -30,17 +30,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           B=80486012e817de2f6c64892695e66ebb99292286
           git merge-base --is-ancestor "$B" HEAD
-          git diff --exit-code "$B" HEAD -- \
-            ide/sandbox ide/host/src/browser.rs \
-            ide/supervisor/src/windows_broker.rs \
-            ide/supervisor/src/windows_service_security.rs \
-            ide/supervisor/src/windows_recovery_service.rs \
-            ide/supervisor/src/windows_service_client.rs \
-            ide/supervisor/src/windows_cap_tree.rs \
-            ide/supervisor/src/linux_lsp_worker.rs \
-            ide/supervisor/src/snapshot.rs || true
-          # Snapshot is intentionally updated only for fixed build; verify
-          # no changed process-containment authority, admission or broker.
+          # Snapshot is intentionally extended for fixed rust_build only.
+          # Never suppress failures in broker/admission invariants.
           git diff --exit-code "$B" HEAD -- \
             ide/sandbox ide/host/src/browser.rs \
             ide/supervisor/src/windows_broker.rs \
