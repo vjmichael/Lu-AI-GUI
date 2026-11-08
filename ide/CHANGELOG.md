@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **C7 native task-to-source evidence (Nov 8):** Reuses the C6 app-private append-only task ledger. Explicit native `ide_link_task_source` records up to 12 registered project-relative file SHA observations per task and exact task-update event, rechecking saved source through the original read-only cap-std browser. Explorer can select an existing task and link a saved file; Continuity shows historical/stale file links and explicit disk rechecks. Unsaved drafts, CI verdicts, task acceptance and project-file writes are excluded. Extended typed capability catalog from 46 to 47 and schema definitions from 42 to 43. Nine frontend tests pass under V8 emulation; five real filesystem Rust tests committed but native Windows/Linux and installed app acceptance remain OPEN.
+
+
 - **B11 reviewed external-source merge (Nov 8):** Adds conservative 3-way base/draft/current-disk line merge to the existing B10 disk-change inspector. Nonoverlapping edits combine; overlapping conflicts require separate explicit human base/draft/disk choices. A fresh native preview must match exact reviewed SHA, source and immutable CodeMirror state before applying one Undo-able editor transaction. No disk Save, external process, new native command, automatic conflict choice, or private draft deletion. LF/CRLF normalization mismatch refuses to apply. 18 new source tests passed under exact-source V8 assertion emulation, plus 1,488 generated merge checks; actual native Windows/Linux and installed NSIS/Debian acceptance remain OPEN.
 
 
