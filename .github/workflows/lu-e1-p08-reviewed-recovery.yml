@@ -153,6 +153,15 @@ jobs:
             2>&1 | tee e1-p08-guardian-evidence/linux-crash-recovery.log
           grep -q 'E1_P08_LINUX_ORPHAN_GUARD_PASS=1' \
             e1-p08-guardian-evidence/linux-crash-recovery.log
+      - name: Kernel negative control — setsid descendant must escape killpg
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/e1_p08_setsid_escape_probe.py
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py \
+            2>&1 | tee e1-p08-guardian-evidence/setsid-escape-negative-control.log
+          grep -q 'E1_P08_GROUP_ESCAPE_PROVEN=1' \
+            e1-p08-guardian-evidence/setsid-escape-negative-control.log
       - name: Do not claim proof when actual Linux evidence is missing
         if: always()
         shell: bash
