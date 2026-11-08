@@ -131,7 +131,7 @@ jobs:
           env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" WO9_EXPORT_ROOT="$exportdir" \
             WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 \
             dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
-            bash -c 'openbox >/dev/null 2>&1 & exec /usr/bin/python3 ide/app/fixtures/wo9_linux_workflow_atspi.py'
+            bash ide/app/fixtures/wo8_linux_wm_session.sh /usr/bin/python3 ide/app/fixtures/wo9_linux_workflow_atspi.py
           test "$(find "$exportdir" -name '*.zip' -type f | wc -l)" -eq 1
           sudo dpkg --remove "$package"
           test ! -x /usr/bin/lu-ide-desktop
