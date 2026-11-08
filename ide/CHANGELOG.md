@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **IDE B2 native installed harness (Nov 8):** Added genuine Windows NSIS UIA and Linux Debian GTK AT-SPI/X11 installed editor scenarios for OS picker, session/durable draft clipboard, private checkpoint, process restart, explicit recovery, no implicit source Save and actual package uninstall. Private Unix vault permission checks hardened, autosnapshot pauses on full immutable history. These native jobs must pass before installed acceptance; signing/legal release approval stays deferred.
+
+
 - **IDE B2 durable drafts (Nov 8):** Ported PR #43 session-only revisioned CodeMirror buffer identities and Unicode/CRLF/Undo/Save rebase tests to current stack. Added app-private immutable, fsynced SHA-bound draft checkpoints, CAS stale-writer denial, bounded retention, explicit recover/discard, durable clipboard refs and private opt-in continuous backup. No implicit source Save, worker or Lu Core IPC. Native Windows/Linux + real installed UI acceptance remains pending; original PRs #43/#45 retained.
 
 
