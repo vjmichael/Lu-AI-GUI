@@ -82,3 +82,28 @@ export function explainToolOutcome(source,state){
   }
   return Object.hasOwn(OTHER,state)?OTHER[state]:FALLBACK;
 }
+
+
+// E1-P15: explanation only. The native host determines these states after
+// joining the original human turn, worker receipts and independent records.
+// The frontend cannot change a state, authorize a new task or resume one.
+const RECOVERY=Object.freeze({
+  RECONCILIATION_REQUIRED:Object.freeze({
+    title:'Manual reconciliation required',
+    explanation:'Some original task, model-call, process or independent verification evidence is absent, uncertain or contradictory. Do not replay this task.',
+    action:'Inspect the original source and unresolved records. A later operation must be a new, independently authorized request.'
+  }),
+  FRESH_REQUEST_ONLY:Object.freeze({
+    title:'Past checks recorded',
+    explanation:'All listed past operations have independently verified historical receipts. This is not proof that sources remain unchanged or that any process is currently contained.',
+    action:'For more work, send a new request with fresh authorization and source review; never resume an old effect automatically.'
+  })
+});
+const RECOVERY_UNKNOWN=Object.freeze({
+  title:'Recovery decision unavailable',
+  explanation:'No trustworthy continuation decision was provided by the native host.',
+  action:'Do not automatically continue or replay an operation.'
+});
+export function explainReviewedContinuation(value){
+  return Object.hasOwn(RECOVERY,value) ? RECOVERY[value] : RECOVERY_UNKNOWN;
+}
