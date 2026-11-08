@@ -1086,6 +1086,71 @@ async fn ide_review_source_change(
     .map_err(|_| "REVIEW_TASK_UNAVAILABLE".to_string())?
 }
 
+/// B2 recovery is in IDE private app data, NEVER in the user's project.
+/// All four calls first validate an open native-picker project-relative file.
+#[tauri::command]
+async fn ide_draft_checkpoint(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<lu_ide_workspace::draft_vault::DraftVault>>,
+    input: lu_ide_workspace::draft_vault::DraftCheckpointInput,
+) -> Result<lu_ide_workspace::draft_vault::DraftSnapshot,String> {
+    let registry=Arc::clone(registry.inner());
+    let vault=Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        registry.preview_source_file(&input.project_id,&input.relative_path)
+            .map_err(|e|e.code().to_owned())?;
+        vault.checkpoint(input).map_err(str::to_owned)
+    }).await.map_err(|_|"DRAFT_CHECKPOINT_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_draft_latest(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<lu_ide_workspace::draft_vault::DraftVault>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<Option<lu_ide_workspace::draft_vault::DraftSnapshot>,String> {
+    let registry=Arc::clone(registry.inner());
+    let vault=Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        registry.preview_source_file(&project_id,&relative_path)
+            .map_err(|e|e.code().to_owned())?;
+        vault.latest(&project_id,&relative_path).map_err(str::to_owned)
+    }).await.map_err(|_|"DRAFT_RECOVERY_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_draft_load(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<lu_ide_workspace::draft_vault::DraftVault>>,
+    project_id: String,
+    relative_path: String,
+    checkpoint_id: String,
+) -> Result<lu_ide_workspace::draft_vault::DraftSnapshot,String> {
+    let registry=Arc::clone(registry.inner());
+    let vault=Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        registry.preview_source_file(&project_id,&relative_path)
+            .map_err(|e|e.code().to_owned())?;
+        vault.load(&project_id,&relative_path,&checkpoint_id).map_err(str::to_owned)
+    }).await.map_err(|_|"DRAFT_LOAD_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_draft_discard(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    vault: State<'_, Arc<lu_ide_workspace::draft_vault::DraftVault>>,
+    project_id: String,
+    relative_path: String,
+    expected_head: String,
+) -> Result<(),String> {
+    let registry=Arc::clone(registry.inner());
+    let vault=Arc::clone(vault.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        registry.preview_source_file(&project_id,&relative_path)
+            .map_err(|e|e.code().to_owned())?;
+        vault.discard(&project_id,&relative_path,&expected_head)
+            .map_err(str::to_owned)
+    }).await.map_err(|_|"DRAFT_DISCARD_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// An explicit user-initiated save with optimistic file-revision protection.
 /// There is no model-origin tool path or unrestricted filesystem write command.
 #[tauri::command]
@@ -1205,6 +1270,10 @@ pub fn run() {
                 .map_err(|_| std::io::Error::other("standalone IDE registry failed to open"))?;
             let ledger = DevelopmentLedger::new(data.join("development-ledger.jsonl"))
                 .map_err(|_| std::io::Error::other("standalone IDE ledger failed to open"))?;
+            let drafts=lu_ide_workspace::draft_vault::DraftVault::open(
+                data.join("private-draft-recovery"))
+                .map_err(|_|std::io::Error::other("IDE private draft vault unavailable"))?;
+            app.manage(Arc::new(drafts));
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
@@ -1286,6 +1355,10 @@ pub fn run() {
             ide_unregister_project,
             ide_list_source_directory,
             ide_find_in_project,
+            ide_draft_checkpoint,
+            ide_draft_latest,
+            ide_draft_load,
+            ide_draft_discard,
             ide_preview_source_file,
             ide_read_source_span,
             ide_review_source_change,
