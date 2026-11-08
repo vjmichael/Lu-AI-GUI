@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, ubuntu-26.04]
+        os: [windows-2022, ubuntu-24.04, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     env:
@@ -78,4 +78,6 @@ jobs:
       - name: Fixed scope evidence
         run: |
           echo "P05_B3_NATIVE_SOURCE_CI=PASS"
+          echo "P05_B3_LINUX_RELEASE_TARGET=ubuntu_24_04_native_source_lane"
+          echo "P05_B3_LINUX_26_DIAGNOSTIC_ONLY=NOT_RELEASE_PARITY"
           echo "P05_B3_SIGNED_RELEASE_AND_INSTALLED_EQUIVALENCE=NOT_ACCEPTED"
