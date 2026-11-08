@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_editor.jsx';
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
+import { captureProjectView, restoreProjectView } from './editor_project_view.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -180,6 +181,9 @@ function App() {
   const draftInFlight = useRef(new Set());
   const draftLookupVersion = useRef(new Map());
   const tabsRef = useRef([]);
+  // In-memory navigation only. Draft text/Undo remain owned by original tabs.
+  // No localStorage, OS-path, background worker or implicit native file reopen.
+  const projectEditorViews = useRef(new Map());
   tabsRef.current = tabs;
   function resetBufferIdentity(key, projectId, relativePath, savedRevision) {
     const identity = newBufferIdentity(projectId, relativePath,
@@ -267,9 +271,8 @@ function App() {
     // Invalidate any provider data from the previous workspace. No cross-
     // project response may be shown or applied to the newly selected editor.
     setLspNativeDiagnostics({});
-    setSplitEditorOpen(false);
-    setSecondaryTabKey(null);
-    setTabWindowStart(0);
+    // B7: project switch restores its own pane selection in openDirectory.
+    // Do not reset that restored split view in this asynchronous effect.
     setProjectProblemsOpen(false);
     setProjectProblemSearch('');
     setLspCompletions(null);
@@ -278,8 +281,11 @@ function App() {
     setLspCompletionApplyRequest(null);
   }, [activeProject?.projectId]);
 
-  const activeTab = useMemo(() => tabs.find(tab => tab.key === activeTabKey) || null,
-    [tabs,activeTabKey]);
+  // A selected key from another project must never supply LSP, editor, Save
+  // or revision state while React is switching registered workspaces.
+  const activeTab = useMemo(() => tabs.find(tab => tab.key === activeTabKey &&
+    tab.projectId === activeProject?.projectId) || null,
+    [tabs,activeTabKey,activeProject?.projectId]);
   const currentLanguageId = languageForPath(activeTab?.relativePath);
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
     !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
@@ -1598,6 +1604,19 @@ function App() {
         };
       });
       const stagedKeys = new Set(stagedTabs.map(tab => tab.key));
+      if (activeProjectIdRef.current &&
+          activeProjectIdRef.current !== item.projectId) {
+        const previousView = captureProjectView(tabsRef.current,
+          activeProjectIdRef.current,activeTabKey,secondaryTabKey,
+          splitEditorOpen,tabWindowStart);
+        if (previousView)
+          projectEditorViews.current.set(activeProjectIdRef.current,previousView);
+        // Explicit proposal staging selects a new draft; do not inherit the
+        // old project's secondary editor or overlay.
+        setSplitEditorOpen(false);
+        setSecondaryTabKey(null);
+        setTabWindowStart(0);
+      }
       setTabs(previous => [...previous.filter(tab => !stagedKeys.has(tab.key)), ...stagedTabs]);
       setActiveProject(project);
       setListing(rootListing);
@@ -1628,6 +1647,8 @@ function App() {
   useEffect(() => { void refresh(); }, []);
 
   function discardProjectTabs(projectId) {
+    // A closed/unregistered workspace's stored view is no longer trustworthy.
+    projectEditorViews.current.delete(projectId);
     setReview(previous => previous?.projectId === projectId ? null : previous);
     const affected = tabs.filter(tab => tab.projectId === projectId);
     affected.forEach(tab => {
@@ -1635,8 +1656,11 @@ function App() {
       clearPrivateDraftSession(tab.key);
     });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
-    setSecondaryTabKey(null);
-    setSplitEditorOpen(false);
+    // Unregistering an INACTIVE project must not collapse the visible split.
+    if (activeProjectIdRef.current === projectId) {
+      setSecondaryTabKey(null);
+      setSplitEditorOpen(false);
+    }
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
     }
@@ -1714,8 +1738,19 @@ function App() {
           !Array.isArray(result.entries))
         throw new Error('DIRECTORY_RESULT_NOT_SCOPED');
       if (originalProjectId !== project.projectId) {
-        const previous = tabsRef.current.filter(tab => tab.projectId === project.projectId);
-        setActiveTabKey(previous.length ? previous[previous.length - 1].key : null);
+        if (originalProjectId) {
+          const previousView = captureProjectView(tabsRef.current,
+            originalProjectId,activeTabKey,secondaryTabKey,
+            splitEditorOpen,tabWindowStart);
+          if (previousView)
+            projectEditorViews.current.set(originalProjectId,previousView);
+        }
+        const restoredView = restoreProjectView(tabsRef.current,
+          project.projectId,projectEditorViews.current.get(project.projectId));
+        setActiveTabKey(restoredView.primaryKey);
+        setSecondaryTabKey(restoredView.secondaryKey);
+        setSplitEditorOpen(restoredView.splitOpen);
+        setTabWindowStart(restoredView.tabWindowStart);
       }
       setActiveProject(project);
       setDirectory(path);
