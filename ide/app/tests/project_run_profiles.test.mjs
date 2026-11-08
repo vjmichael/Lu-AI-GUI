@@ -13,6 +13,7 @@ const expected=[
   ['js_tests','javascript','test','package.json',null],
   ['cpp_cmake_build','cpp','build','CMakeLists.txt',null],
   ['lu_ide_host_tests','rust','test','ide/host/Cargo.toml','lu_ide_host_tests'],
+  ['rust_build','rust','build','Cargo.toml','rust_build'],
 ];
 function fixture() {
   return {schemaVersion:1,projectId:project,
@@ -33,13 +34,14 @@ function fixture() {
   };
 }
 
-test('six fixed manifest profiles and exactly three existing protected Cargo recipes',()=>{
+test('seven fixed profiles and exactly four existing protected Cargo recipes',()=>{
   const safe=safeProjectRunProfileDiscovery(fixture(),project);
-  assert.equal(safe.profiles.length,6);
+  assert.equal(safe.profiles.length,7);
   assert.equal(safe.executionAuthorized,false);
-  assert.equal(safe.profiles.filter(p=>p.existingRecipe).length,3);
+  assert.equal(safe.profiles.filter(p=>p.existingRecipe).length,4);
   assert.equal(selectExistingProtectedRecipe(safe,'rust_check',project),'rust_check');
   assert.equal(selectExistingProtectedRecipe(safe,'rust_tests',project),'rust_tests');
+  assert.equal(selectExistingProtectedRecipe(safe,'rust_build',project),'rust_build');
   assert.equal(selectExistingProtectedRecipe(safe,'lu_ide_host_tests',project),
     'lu_ide_host_tests');
 });
