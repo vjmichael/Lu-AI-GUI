@@ -19,7 +19,11 @@ export function planCleanBackgroundTabClosure(
   for (const tab of tabs) {
     if (!tab || tab.projectId !== projectId ||
         typeof tab.key !== 'string' || !tab.key) continue;
+    // A file can look clean after Undo or explicit Save yet still own
+    // meaningful CodeMirror history. Only never-edited (revision zero)
+    // background tabs are eligible for this conservative RAM reclamation.
     if (protectedKeys.has(tab.key) || tab.dirty !== false ||
+        tab.bufferRevision !== 0 ||
         typeof tab.savedText !== 'string' || tab.draft !== tab.savedText) {
       keptKeys.push(tab.key);
       continue;
