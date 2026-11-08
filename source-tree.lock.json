@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "00e7b533683a723dbfffa6a504e985de407e6800",
-  "trackedFileCount": 595,
+  "sourceCommitBeforeLock": "16e61f2d056975fa2b286ac86c2557b12a22a082",
+  "trackedFileCount": 596,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -41,7 +41,7 @@
     },
     {
       "path": ".github/workflows/lu-m4-verified-memory.yml",
-      "blob": "d3bf903e4ea53e4faf68cf37e3903d4c0e68a369"
+      "blob": "b097a780889861588b54622d4fe89f3d230d0d7a"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -541,7 +541,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "14a3cfce9fdf01041dc5fad2d6c5be1f6add3c84"
+      "blob": "4a1403effd9c3ba111b59a17c18ca4fc487b43d7"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -609,7 +609,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "e3a47166d6fbcd0a7a8a2f4fb5b35b73b501c6fd"
+      "blob": "a25bd50994ed2af3c8a8badd63ead62902e79084"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -828,6 +828,10 @@
       "blob": "290ec628912525592efac46698c3bf6795035d29"
     },
     {
+      "path": "lu-desktop/tests/m4-belief-contract.test.mjs",
+      "blob": "6a4d9ab24b7c91d069cfd833d7f434bd2dab0374"
+    },
+    {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
       "blob": "bed636bd5f57242fbffcb9e006de7a0a9234d52f"
     },
@@ -841,7 +845,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "c96fe644ce6e6b6c20a627d597adc159adf12d50"
+      "blob": "299459667b75819010092197d4c5281bbd6b432b"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1005,7 +1009,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "320a967420f70f51a208077f8ca50540daa89649"
+      "blob": "2fc98d5dec2e26c127ab85c5305797136393f041"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

@@ -11,6 +11,7 @@ use lu_core::{
     ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent,VisibleChatMessage},
     ansf_source_ids::AnsfSourceId,
     ansf_semantic::fuse_source_ranks,
+    ansf_belief_revision::{Claim,AssessedClaim,ClaimState},
     continuity::{ContinuityStore,TaskCheckpoint,ContextChangeReview,compare_task_checkpoints},
 };
 use rand::{rngs::OsRng,RngCore};
@@ -93,6 +94,31 @@ pub struct ContinuityView{
     pub completed_work:String,
     pub next_action:String,
     pub blockers:Vec<String>,
+}
+
+/// Only current HUMAN text is eligible; recalled documents cannot invoke this.
+pub fn m4_explicit_belief_target(
+    prompt:&str
+)->Option<(String,String,String,String,String)>{
+    let w=prompt.split_whitespace().collect::<Vec<_>>();
+    if w.len()!=12||!w[0].eq_ignore_ascii_case("Recall")||
+       !w[1].eq_ignore_ascii_case("belief")||
+       !w[2].eq_ignore_ascii_case("project")||
+       !w[4].eq_ignore_ascii_case("task")||
+       !w[6].eq_ignore_ascii_case("subject")||
+       !w[8].eq_ignore_ascii_case("predicate")||
+       !w[10].eq_ignore_ascii_case("version"){return None}
+    for id in [w[3],w[5],w[7],w[9]]{
+        if id.is_empty()||id.len()>128||
+           !id.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'_'|b'-'|b'.')){
+            return None
+        }
+    }
+    if w[11].is_empty()||w[11].len()>128||
+       !w[11].bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'_'|b'-'|b'.')){
+        return None
+    }
+    Some((w[3].into(),w[5].into(),w[7].into(),w[9].into(),w[11].into()))
 }
 
 pub fn m3_explicit_resume_target(prompt:&str)->Option<(String,String)>{
@@ -910,6 +936,88 @@ impl ChatStore {
             entries:entries.into_iter().map(Into::into).collect(),
             next_cursor,has_more
         })
+    }
+
+    /// Record only a specifically chosen CURRENT human ANSF original as a
+    /// *reported* claim, not a verified fact. The host mints claim_id and
+    /// verifies human interaction before invoking; this API never grants tools.
+    pub fn m4_note_reported_claim(
+        &self,chat_id:&str,source_id:&str,claim_id:&str,
+        project_id:&str,task_id:&str,subject:&str,predicate:&str,
+        value:&str,application_version:&str,expires_unix:u64
+    )->Result<String,String>{
+        let book=self.require(chat_id)?;
+        let source=AnsfSourceId::parse(source_id).map_err(to_err)?;
+        if source.session_id()!=chat_id{return Err("Claim source must be in the current chat".into())}
+        let original=book.read_entry(chat_id,source.entry_id())
+            .map_err(to_err)?.ok_or("Original source unavailable")?;
+        if original.role!="user"||original.stable_source_id().map_err(to_err)?!=source_id{
+            return Err("Only an original human message may create a reported claim".into())
+        }
+        let claim=Claim{
+            claim_id:claim_id.into(),session_id:chat_id.into(),
+            source_entry_id:source.entry_id(),project_id:project_id.into(),
+            task_id:task_id.into(),subject_key:subject.into(),predicate_key:predicate.into(),
+            value:value.into(),application_version:application_version.into(),
+            expires_unix,supersedes_id:None
+        };
+        book.record_reported_claim(&claim).map_err(to_err)?;
+        Ok(claim_id.to_owned())
+    }
+    pub fn m4_retract_claim(
+        &self,chat_id:&str,claim_id:&str,correction_source_id:&str,reason:&str
+    )->Result<(),String>{
+        let book=self.require(chat_id)?;
+        let source=AnsfSourceId::parse(correction_source_id).map_err(to_err)?;
+        if source.session_id()!=chat_id{
+            return Err("Correction source must belong to the selected original book".into())
+        }
+        let entry=book.read_entry(chat_id,source.entry_id())
+            .map_err(to_err)?.ok_or("Correction original unavailable")?;
+        if entry.role!="user"{
+            return Err("Belief correction must originate from an actual human source".into())
+        }
+        book.retract_reported_or_verified_claim(
+            claim_id,chat_id,entry.id,reason
+        ).map_err(to_err)
+    }
+    /// Read only the original currently owned ANSF book and existing native
+    /// verification records. Conservative default never promotes an alleged
+    /// historical receipt to independently certified without a host witness.
+    pub fn m4_belief_context(
+        &self,chat_id:&str,project_id:&str,task_id:&str,
+        subject:&str,predicate:&str,application_version:&str,
+        continuity:&ContinuityStore,journal:&lu_core::journal::EffectJournal
+    )->Result<Vec<serde_json::Value>,String>{
+        let book=self.require(chat_id)?;
+        let assessed:Vec<AssessedClaim>=book.assess_claims(
+            chat_id,project_id,task_id,subject,predicate,
+            application_version,continuity,journal,|_|false
+        ).map_err(to_err)?;
+        if assessed.len()>24{
+            return Err("Too many conflicting beliefs; request human review".into())
+        }
+        assessed.into_iter().map(|a|{
+            let id=AnsfSourceId::new(chat_id.to_owned(),a.claim.source_entry_id)
+                .map_err(to_err)?.encode();
+            let status=match a.state{
+                ClaimState::Reported=>"reported_unverified",
+                ClaimState::IndependentlyVerified=>"independently_verified",
+                ClaimState::Contradicted=>"contradicted_human_review_required",
+                ClaimState::Stale=>"stale_not_current",
+                ClaimState::Retracted=>"retracted_not_current",
+                ClaimState::Superseded=>"superseded_not_current"
+            };
+            Ok(serde_json::json!({
+                "claimId":a.claim.claim_id,"originalSourceId":id,
+                "subject":a.claim.subject_key,"predicate":a.claim.predicate_key,
+                "reportedValue":a.claim.value,"status":status,
+                "sourceSha256":a.source_sha256,
+                "version":a.claim.application_version,
+                "expiresUnix":a.claim.expires_unix,
+                "notToolAuthorization":true
+            }))
+        }).collect::<Result<Vec<_>,String>>()
     }
 
     /// A human-confirmed operational checkpoint ties work to the ORIGINAL

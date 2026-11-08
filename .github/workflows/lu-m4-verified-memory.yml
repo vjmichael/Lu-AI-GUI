@@ -42,5 +42,9 @@ jobs:
         run: node scripts/verify-source-tree.mjs
       - name: Real native ANSF procedural-memory promotion and invalidation regressions
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_verified_procedures::tests -- --nocapture
+      - name: M4 belief revision, supersession and independently verified source state
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture
+      - name: Genuine desktop ANSF journal restart and scoped source tests (no WebView mocks)
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m4_real_book_restart_integration -- --nocapture
       - name: Existing ANSF source revisions and checkpoint receipt regressions
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib continuity::tests -- --nocapture
