@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **IDE B2 durable drafts (Nov 8):** Ported PR #43 session-only revisioned CodeMirror buffer identities and Unicode/CRLF/Undo/Save rebase tests to current stack. Added app-private immutable, fsynced SHA-bound draft checkpoints, CAS stale-writer denial, bounded retention, explicit recover/discard, durable clipboard refs and private opt-in continuous backup. No implicit source Save, worker or Lu Core IPC. Native Windows/Linux + real installed UI acceptance remains pending; original PRs #43/#45 retained.
+
+
 - **IDE B3 current-stack port (Nov 8):** Ported original PR #46 bounded saved-source Find in Project to the current advanced Lu IDE branch. Native capability-rooted search and Unicode/CRLF/security tests retained; added typed source.findProject read operation, actual Tauri handler, 42-capability parity and React CodeMirror results pane with saved revision rechecks, dirty-draft preservation and stale cross-project response suppression. Dedicated native Windows/Linux exact-head source/desktop compilation workflow added. Installed UI acceptance and original B2/B3 source consolidation remain open; no auto-save, Lu execution or signing claims.
 
 
