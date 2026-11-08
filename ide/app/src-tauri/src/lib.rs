@@ -1,7 +1,7 @@
 //! Standalone IDE desktop. All project directories originate in the OS picker,
 //! not from JavaScript, model output, or a Lu IPC call.
 #![forbid(unsafe_code)]
-#[cfg(all(windows, feature = "native-lsp"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
 #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
 mod build_backend;
@@ -764,7 +764,7 @@ struct LanguageWorkerStatus {
 /// independently attested process + permission evidence.
 #[tauri::command]
 async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
-    #[cfg(all(windows, feature = "native-lsp"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
         let installed = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>().is_some();
         let supported = tauri::async_runtime::spawn_blocking(move || {
@@ -774,12 +774,12 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
         if !supported.is_empty() {
             return LanguageWorkerStatus {
                 ready: true, code: "LSP_REVIEWED_INSTALLATION_AVAILABLE",
-                detail: "Pinned native language server available. Starting a session still requires human approval and protected worker admission.",
+                detail: "Reviewed native language server installed; human consent and actual OS worker containment are required for every session.",
                 supported_languages: supported,
             };
         }
     }
-    #[cfg(not(all(windows, feature = "native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     let _ = app;
     LanguageWorkerStatus {
         ready: false,
@@ -791,14 +791,15 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
 
 /// E2 native feature commands are *always fail-closed by default*. A named
 /// WebView operation never grants an executable right merely by existing.
-/// Only the reviewed native-lsp build can execute, after an OS approval dialog.
+/// Only the reviewed, opt-in Windows/Linux native-lsp build can execute,
+/// after an OS approval dialog and independent kernel/Job containment.
 #[tauri::command]
 async fn ide_lsp_start_session(
     app: AppHandle,
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(all(windows, feature = "native-lsp"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
         let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
@@ -810,7 +811,7 @@ async fn ide_lsp_start_session(
             native.start(&app, &registry, typed)
         ).await.map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
-    #[cfg(not(all(windows, feature = "native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
 }
 #[tauri::command]
@@ -819,7 +820,7 @@ async fn ide_lsp_change_document(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(all(windows, feature = "native-lsp"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
         let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
@@ -831,7 +832,7 @@ async fn ide_lsp_change_document(
             native.change(&registry,typed)
         ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
-    #[cfg(not(all(windows, feature = "native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
 }
 #[tauri::command]
@@ -840,7 +841,7 @@ async fn ide_lsp_feature(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(all(windows, feature = "native-lsp"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
         let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
@@ -852,7 +853,7 @@ async fn ide_lsp_feature(
             native.feature(&registry,typed)
         ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
-    #[cfg(not(all(windows, feature = "native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
 }
 #[tauri::command]
@@ -861,7 +862,7 @@ async fn ide_lsp_read_diagnostics(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(all(windows, feature = "native-lsp"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
         let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
@@ -873,12 +874,12 @@ async fn ide_lsp_read_diagnostics(
             native.diagnostics(&registry,typed)
         ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
-    #[cfg(not(all(windows, feature = "native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {let _=(app,registry,request);Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
 }
 #[tauri::command]
 async fn ide_lsp_stop_session(app: AppHandle) -> Result<(), String> {
-    #[cfg(all(windows, feature = "native-lsp"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
         let state=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
@@ -887,7 +888,7 @@ async fn ide_lsp_stop_session(app: AppHandle) -> Result<(), String> {
             native.stop()
         ).await.map_err(|_|"LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
-    #[cfg(not(all(windows, feature = "native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {let _=app;Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())}
 }
 
@@ -1211,7 +1212,7 @@ pub fn run() {
                 Ok(native) => { app.manage(Arc::new(native)); },
                 Err(code) => eprintln!("IDE protected debugger unavailable: {code}"),
             }
-            #[cfg(all(windows, feature = "native-lsp"))]
+            #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
             match lsp_backend::NativeLspRuntime::new(app.handle()) {
                 Ok(native) => {app.manage(Arc::new(native));},
                 Err(code) => eprintln!("IDE LSP remains disabled: {code}"),
