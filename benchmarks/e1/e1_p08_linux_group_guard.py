@@ -44,6 +44,7 @@ def main():
             stderr=subprocess.DEVNULL
         )
         pgid = worker = descendant = None
+        owned_pidfds = {}
         try:
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
@@ -65,6 +66,11 @@ def main():
                 raise RuntimeError("Group members disappeared before crash injection")
             if not live(control.pid) or os.getpgid(control.pid) == pgid:
                 raise RuntimeError("Control process was not independently owned")
+            # Pin each tested OS PID identity *before* killing the Lu host.
+            # Cleanup can then signal only those exact processes, never
+            # a recycled process-group number recovered from a file.
+            owned_pidfds = {pid: os.pidfd_open(pid)
+                            for pid in (pgid, worker, descendant)}
             print(f"E1_P08_KERNEL_BEFORE guardian={pgid} worker={worker} descendant={descendant} control={control.pid}", flush=True)
             os.kill(parent.pid, signal.SIGKILL)
             parent.wait(timeout=5)
@@ -86,12 +92,15 @@ def main():
             if parent.poll() is None:
                 parent.kill()
                 parent.wait(timeout=5)
-            if pgid and live(pgid):
-                # Cleanup on test failure is not acceptance proof.
+            # On failure, terminate exact kernel-pinned identities only.
+            # Never killpg a stale PID copied from the fixture file.
+            for fd in owned_pidfds.values():
                 try:
-                    os.killpg(pgid, signal.SIGKILL)
+                    signal.pidfd_send_signal(fd, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+                finally:
+                    os.close(fd)
             if control.poll() is None:
                 control.terminate()
             control.wait(timeout=5)
