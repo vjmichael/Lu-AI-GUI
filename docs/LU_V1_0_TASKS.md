@@ -644,3 +644,32 @@ E1-P08C migration protection and semantic coverage of Git status,
 Git history and MP4 remain independent OPEN gates.
 
 See `docs/LU_E1_P10_INDEPENDENT_OPERATION_OUTCOMES_20261108.md`.
+
+## E1-P11 — independent Git loose-commit DAG verification (Nov 8, 2026)
+
+**Source candidate:** `lu/e1-p11-independent-git-history-20261108`
+stacked on E1-P10 PR #136. Adds first-party `independent_git_history.rs`
+which directly opens bounded, real zlib Git commit objects, validates
+SHA-1/SHA-256 object IDs and complete commit headers, walks every parent
+across merges, and counts unique reachable commits without invoking Git
+a second time. The E1-P10 reviewed model-tool history operation now
+reports VERIFIED only when the actual reviewed result agrees with this
+separate source observer, durable CONFLICT if the observed facts differ,
+or UNSUPPORTED when the repository exceeds the conservative supported
+scope (packed objects, shallow, graft, replace refs, malformed Git,
+linked object stores, >4096 commits). This does not change permissions
+or sandbox Lu Core.
+
+Native exact-head Windows/Linux tests include SHA-1 known answers,
+synthetic compressed merge objects, hostile object/refs cases, a real
+four-commit merge made using installed Git, a forged reported count,
+repacking to deliberately remove loose objects, and the entire
+five-operation supervised Git/FFprobe model-tool path now expecting
+**4 VERIFIED and 1 UNSUPPORTED** independently observed outcomes.
+E1-P09 Tool activity already presents verified/unsupported/conflict
+counts. No raw repository data is exposed to model/tools through the
+new oracle. **Native acceptance OPEN until exact-head jobs finish**;
+physical Windows installed application, autonomous local GGUF use,
+Git worktree status, packed object history and MP4 remain separate.
+
+Details: `docs/LU_E1_P11_INDEPENDENT_GIT_HISTORY_20261108.md`.
