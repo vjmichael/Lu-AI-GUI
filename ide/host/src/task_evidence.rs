@@ -15,6 +15,7 @@ use crate::{
 
 pub const MAX_TASKS: usize = 64;
 pub const MAX_GATES: usize = 4;
+pub const MAX_TASK_SOURCE_LINKS: usize = 12;
 const GATES: [&str; 4] = [
     "source_review",
     "exact_head_ci",
@@ -45,6 +46,17 @@ pub struct TaskCiObservation {
     pub task_acceptance: String,
 }
 
+/// C7: host-observed saved-source identity, NEVER a draft or completion receipt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskSourceLink {
+    pub relative_path: String,
+    pub saved_revision: String,
+    pub bound_update_event_id: String,
+    pub observed_unix_seconds: u64,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TaskEvent {
@@ -59,6 +71,8 @@ pub struct TaskEvent {
     pub linked_worktree: String,
     pub bound_update_event_id: Option<String>,
     pub ci: Option<TaskCiObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_link: Option<TaskSourceLink>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -85,6 +99,7 @@ pub struct TaskSummary {
     pub ci_link_state: &'static str,
     pub acceptance_gates: Vec<TaskGateEvidence>,
     pub task_acceptance: &'static str,
+    pub source_links: Vec<TaskSourceLink>,
 }
 
 fn valid_task_id(s: &str) -> bool {
@@ -108,6 +123,18 @@ fn valid_gates(gates: &[String]) -> bool {
             .iter()
             .enumerate()
             .all(|(i, gate)| !gates[..i].iter().any(|prev| prev == gate))
+}
+
+fn valid_source_link(link: &TaskSourceLink) -> bool {
+    crate::browser::validate_relative(&link.relative_path, false).is_ok()
+        && link.saved_revision.len() == 64
+        && link.saved_revision.bytes().all(|b|
+            b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && link.bound_update_event_id.starts_with("evt-")
+        && link.bound_update_event_id.len() == 36
+        && link.bound_update_event_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+        && link.source == "native_registered_source_read"
+        && link.observed_unix_seconds > 0
 }
 
 fn valid_commit(sha: &str) -> bool {
@@ -175,7 +202,8 @@ pub fn project_tasks(
                 ) else {
                     return Err(ContinuityError::Corrupt);
                 };
-                if !valid_note(title, 120, true)
+                if task.source_link.is_some()
+                    || !valid_note(title, 120, true)
                     || !valid_note(next, 240, true)
                     || !STATES.contains(&status.as_str())
                     || !valid_gates(&task.required_gates)
@@ -189,6 +217,11 @@ pub fn project_tasks(
                 {
                     return Err(ContinuityError::Corrupt);
                 }
+                // Historical source associations survive a human task-note
+                // revision, but their bound_update_event_id remains old and
+                // must never be displayed as freshly reviewed evidence.
+                let prior_links = tasks.get(&task.task_id)
+                    .map(|prior| prior.source_links.clone()).unwrap_or_default();
                 tasks.insert(
                     task.task_id.clone(),
                     TaskSummary {
@@ -205,6 +238,7 @@ pub fn project_tasks(
                         ci_link_state: "not_observed",
                         acceptance_gates: Vec::new(),
                         task_acceptance: "not_verified",
+                        source_links: prior_links,
                     },
                 );
                 if tasks.len() > MAX_TASKS {
@@ -222,6 +256,7 @@ pub fn project_tasks(
                     || task.status.is_some()
                     || task.next_action.is_some()
                     || !task.required_gates.is_empty()
+                    || task.source_link.is_some()
                     || task.bound_update_event_id.as_deref()
                         != Some(existing.update_event_id.as_str())
                     || existing.linked_commit.as_deref() != Some(ci.commit_sha.as_str())
@@ -237,6 +272,35 @@ pub fn project_tasks(
                     return Err(ContinuityError::Corrupt);
                 }
                 existing.observed_ci = Some(ci.clone());
+            }
+            ("task.source.link", "source_observation") => {
+                let Some(existing) = tasks.get_mut(&task.task_id) else {
+                    return Err(ContinuityError::Corrupt);
+                };
+                let Some(link) = task.source_link.as_ref() else {
+                    return Err(ContinuityError::Corrupt);
+                };
+                if task.title.is_some() || task.status.is_some()
+                    || task.next_action.is_some() || !task.required_gates.is_empty()
+                    || task.ci.is_some()
+                    || task.bound_update_event_id.as_deref()
+                        != Some(existing.update_event_id.as_str())
+                    || link.bound_update_event_id != existing.update_event_id
+                    || !valid_source_link(link)
+                    || task.linked_commit != existing.linked_commit
+                    || task.linked_worktree != existing.linked_worktree
+                {
+                    return Err(ContinuityError::Corrupt);
+                }
+                if let Some(prior) = existing.source_links.iter_mut()
+                    .find(|prior| prior.relative_path == link.relative_path)
+                {
+                    *prior = link.clone();
+                } else if existing.source_links.len() < MAX_TASK_SOURCE_LINKS {
+                    existing.source_links.push(link.clone());
+                } else {
+                    return Err(ContinuityError::Corrupt);
+                }
             }
             _ => return Err(ContinuityError::Corrupt),
         }
@@ -360,6 +424,7 @@ impl DevelopmentLedger {
             linked_worktree: git.worktree.to_owned(),
             bound_update_event_id: None,
             ci: None,
+            source_link: None,
         };
         let record = event(project_id, "task.update", "human_task_note_recorded", task)?;
         self.append_transaction(|prior| {
@@ -368,6 +433,85 @@ impl DevelopmentLedger {
             let view = project_tasks(&combined, project_id, current_head)?
                 .into_iter()
                 .find(|t| t.task_id == task_id)
+                .ok_or(ContinuityError::Corrupt)?;
+            Ok((record, view))
+        })
+    }
+
+    /// C7: link a human-selected task to an independently observed
+    /// source file, without accepting UI-supplied source bytes or a CI verdict.
+    /// A link is an historical observation, not an accepted task result.
+    pub fn record_task_source(
+        &self, registry: &IdeWorkspaceRegistry, project_id: &str,
+        task_id: &str, relative_path: &str, expected_saved_revision: &str,
+    ) -> Result<TaskSummary, ContinuityError> {
+        if !valid_task_id(task_id)
+            || crate::browser::validate_relative(relative_path, false).is_err()
+            || expected_saved_revision.len() != 64
+            || !expected_saved_revision.bytes().all(|b|
+                b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err(ContinuityError::InvalidInput);
+        }
+        registry.registered_git_root(project_id)
+            .map_err(|_| ContinuityError::ProjectUnavailable)?;
+        let git = registry.inspect_git_worktree(project_id);
+        let tasks = project_tasks(&self.events()?, project_id,
+            git.local_head.as_deref())?;
+        let before = tasks.into_iter()
+            .find(|task| task.task_id == task_id)
+            .ok_or(ContinuityError::TaskNotFound)?;
+        let preview = registry.preview_source_file(project_id, relative_path)
+            .map_err(|_| ContinuityError::ProjectUnavailable)?;
+        if preview.revision != expected_saved_revision
+            || preview.project_id != project_id
+            || preview.relative_path != relative_path
+        {
+            return Err(ContinuityError::TaskStale);
+        }
+        let rechecked_head = registry.inspect_git_worktree(project_id);
+        if git.local_head != rechecked_head.local_head
+            || git.worktree != rechecked_head.worktree
+        {
+            return Err(ContinuityError::TaskStale);
+        }
+        let link = TaskSourceLink {
+            relative_path: relative_path.to_owned(),
+            saved_revision: preview.revision,
+            bound_update_event_id: before.update_event_id.clone(),
+            observed_unix_seconds: now()?,
+            source: "native_registered_source_read".to_owned(),
+        };
+        let record = event(project_id, "task.source.link",
+            "registered_saved_source_observed_not_task_acceptance",
+            TaskEvent {
+                task_id: task_id.to_owned(), kind: "source_observation".to_owned(),
+                title: None, status: None, next_action: None,
+                required_gates: Vec::new(),
+                linked_commit: before.linked_commit.clone(),
+                linked_worktree: before.linked_worktree.clone(),
+                bound_update_event_id: Some(before.update_event_id.clone()),
+                ci: None, source_link: Some(link),
+            })?;
+        self.append_transaction(|prior| {
+            let current = project_tasks(prior, project_id,
+                rechecked_head.local_head.as_deref())?
+                .into_iter().find(|task| task.task_id == task_id)
+                .ok_or(ContinuityError::TaskNotFound)?;
+            if current.update_event_id != before.update_event_id
+                || current.linked_commit != before.linked_commit
+                || current.linked_worktree != before.linked_worktree
+                || (current.source_links.len() >= MAX_TASK_SOURCE_LINKS
+                    && !current.source_links.iter().any(|link|
+                        link.relative_path == relative_path))
+            {
+                return Err(ContinuityError::TaskStale);
+            }
+            let mut appended = prior.to_vec();
+            appended.push(record.clone());
+            let view = project_tasks(&appended, project_id,
+                rechecked_head.local_head.as_deref())?
+                .into_iter().find(|task| task.task_id == task_id)
                 .ok_or(ContinuityError::Corrupt)?;
             Ok((record, view))
         })
@@ -419,6 +563,7 @@ impl DevelopmentLedger {
             linked_worktree: after.worktree.to_owned(),
             bound_update_event_id: Some(task.update_event_id.clone()),
             ci: Some(snapshot_ci(&observed)?),
+            source_link: None,
         };
         let record = event(
             project_id,
@@ -467,6 +612,7 @@ mod tests {
                 linked_worktree: "dirty".into(),
                 bound_update_event_id: None,
                 ci: None,
+                source_link: None,
             },
         )
         .unwrap()
@@ -518,6 +664,7 @@ mod tests {
                 linked_worktree: "dirty".into(),
                 bound_update_event_id: Some(update.event_id.clone()),
                 ci: Some(receipt),
+                source_link: None,
             },
         )
         .unwrap();
