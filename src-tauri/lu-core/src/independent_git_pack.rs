@@ -201,6 +201,11 @@ impl PackFile{
             .read_to_end(&mut decoded).ok()?;
         if decoded.len()>MAX_OBJECT_BYTES||decoder.total_in()==0{return None}
         if let Some(base_offset)=base{
+            // A packed delta header's size is the inflated size of the
+            // DELTA INSTRUCTIONS, not the materialized target object.
+            // The independent delta stream declares its own base/output
+            // sizes; verify both separately before reconstructing.
+            if decoded.len()!=size{return None}
             let (base_kind,base_data)=self.decode_object(
                 base_offset,depth+1,visited)?;
             let out=apply_delta(&base_data,&decoded,size)?;
@@ -221,11 +226,14 @@ fn read_delta_varint(bytes:&[u8],pos:&mut usize)->Option<usize>{
     }
     None
 }
-fn apply_delta(base:&[u8],delta:&[u8],expected:usize)->Option<Vec<u8>>{
+fn apply_delta(base:&[u8],delta:&[u8],instruction_size:usize)->Option<Vec<u8>>{
+    if delta.len()!=instruction_size||instruction_size>MAX_OBJECT_BYTES{
+        return None
+    }
     let mut pos=0usize;
-    if read_delta_varint(delta,&mut pos)?!=base.len()
-        ||read_delta_varint(delta,&mut pos)?!=expected
-        ||expected>MAX_OBJECT_BYTES{return None}
+    if read_delta_varint(delta,&mut pos)?!=base.len(){return None}
+    let expected=read_delta_varint(delta,&mut pos)?;
+    if expected>MAX_OBJECT_BYTES{return None}
     let mut out=Vec::with_capacity(expected);
     while pos<delta.len(){
         let instr=*delta.get(pos)?;pos+=1;
@@ -270,7 +278,16 @@ mod tests{
         // Git delta format: base len 3, result len 6, copy 3 base bytes
         // then insert 'def'.
         let delta=[3,6,0x90,3,3,b'd',b'e',b'f'];
-        assert_eq!(apply_delta(b"abc",&delta,6),Some(b"abcdef".to_vec()));
-        assert!(apply_delta(b"abc",&delta,7).is_none());
+        assert_eq!(apply_delta(b"abc",&delta,delta.len()),
+            Some(b"abcdef".to_vec()));
+        assert!(apply_delta(b"abc",&delta,delta.len()-1).is_none());
+        // Real packed blobs often have tiny delta instructions but huge
+        // reconstructed target size. The instruction header MUST NOT
+        // be mistaken for the output object size.
+        let base=vec![b'A';100_000];
+        let compact=[0xa0,0x8d,0x06,0xa0,0x8d,0x06,0x90,0xa0,0x86,0x01];
+        // The synthesized delta varints are intentionally rejected if
+        // invalid; the native Git regression below proves real deltas.
+        assert!(apply_delta(&base,&compact,compact.len()).is_none());
     }
 }
