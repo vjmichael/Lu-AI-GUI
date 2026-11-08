@@ -167,10 +167,13 @@ fn event(
         outcome: outcome.to_owned(),
         source_revision: None,
         source_path: None,
-        summary: if operation == "task.update" {
-            "Human task note recorded; verification separate"
-        } else {
-            "Native public GitHub Actions observation linked; acceptance separate"
+        summary: match operation {
+            "task.update" => "Human task note recorded; verification separate",
+            "task.source.link" =>
+                "Native saved-source observation linked; task acceptance not verified",
+            "task.ci.observe" =>
+                "Native public GitHub Actions observation linked; acceptance separate",
+            _ => return Err(ContinuityError::InvalidInput),
         }
         .to_owned(),
         task: Some(task),
