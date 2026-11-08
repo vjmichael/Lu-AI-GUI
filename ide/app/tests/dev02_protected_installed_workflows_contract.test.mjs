@@ -7,6 +7,7 @@ const linux = text('../fixtures/dev02_linux_installed_lsp_atspi.py');
 const windows = text('../fixtures/Test-Wo8NativeDesktopUI.ps1');
 const linuxWorkflow = text('../../../.github/workflows/ide-dev02-linux-installed-protected-lsp.yml');
 const windowsWorkflow = text('../../../.github/workflows/ide-dev02-windows-installed-protected-lsp.yml');
+const protectedInstaller = text('../../supervisor/fixtures/Install-ProtectedRecoveryService.ps1');
 const sourceWorkflow = text('../../../.github/workflows/ide-dev02-protected-multilang-native-ci.yml');
 
 test('Linux native acceptance uses real installed Tauri, root-owned reviewed releases and OS-owned consent', () => {
@@ -48,7 +49,6 @@ test('Windows native acceptance requires independently signed LocalService and r
     '--features native-lsp',
     '--bundles nsis',
     'LuIdeRecoveryBroker',
-    'NT AUTHORITY\\LocalService',
     'Install-ProtectedRecoveryService.ps1',
     '-ApprovedHostExecutable $exe',
     '-ExpectedHostSha256 $sha -Start',
@@ -67,6 +67,13 @@ test('Windows native acceptance requires independently signed LocalService and r
   ]) assert.ok(windows.includes(marker)||windowsWorkflow.includes(marker),marker);
   assert.ok(!windowsWorkflow.includes('& sc.exe create LuIdeRecoveryBroker'),
     'native Windows SCM service cannot bypass reviewed restricted installer');
+  // The actual LocalService identity and private ACLs belong to the reviewed
+  // native installer, not a weak hand-built sc.exe service in this workflow.
+  for(const expected of [
+    "NT AUTHORITY\\\\LocalService", "Get-AuthenticodeSignature",
+    "sc.exe sidtype", "sc.exe privs", "approvedHostUserSid",
+    "AreAccessRulesProtected", "service configuration ACL not private",
+  ]) assert.ok(protectedInstaller.includes(expected),expected);
   for(const forbidden of ['continue-on-error: true','--no-verify',
     'window.__TAURI_INTERNALS__', 'test-mock-lsp']) {
     assert.ok(!windowsWorkflow.includes(forbidden),forbidden);
