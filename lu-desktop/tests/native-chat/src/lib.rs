@@ -631,7 +631,7 @@ mod m5_native_replay_acceptance{
             source_chat=chats.create_chat().unwrap().chat_id;
             active_chat=chats.create_chat().unwrap().chat_id;
             chats.append_user_with_turn_id(
-                &source_chat,"g-m5-source-one",
+                &source_chat,"g-00000000000000000000000000000051",
                 "The juniper backend report says Vulkan. This is user testimony, not independent verification."
             ).unwrap();
             first_source=chats.original_history_page(
@@ -642,7 +642,7 @@ mod m5_native_replay_acceptance{
                 "juniper","backend","Vulkan","2.0",now()+3600
             ).unwrap();
             chats.append_user_with_turn_id(
-                &source_chat,"g-m5-source-two",
+                &source_chat,"g-00000000000000000000000000000052",
                 "Another juniper backend report says ROCm; the earlier claim may be obsolete."
             ).unwrap();
             second_source=chats.original_history_page(
@@ -661,12 +661,12 @@ mod m5_native_replay_acceptance{
                 &["Conflicting version evidence".into()],&continuity
             ).unwrap();
             chats.append_user_with_turn_id(
-                &source_chat,"g-m5-prior-permission",
+                &source_chat,"g-00000000000000000000000000000053",
                 "Historical authorizations cannot be reused in a new chat."
             ).unwrap();
             // The old turn identity belongs ONLY to the source conversation.
             assert!(chats.trusted_user_turn_text(
-                &active_chat,"g-m5-prior-permission"
+                &active_chat,"g-00000000000000000000000000000053"
             ).is_none());
             // Simulate a cold stop of the desktop profile and SQLite handles.
         }
@@ -710,7 +710,7 @@ mod m5_native_replay_acceptance{
             ));
             // An old grant does not become a current turn.
             assert!(chats.trusted_user_turn_text(
-                &active_chat,"g-m5-prior-permission"
+                &active_chat,"g-00000000000000000000000000000053"
             ).is_none());
             assert!(chats.known_source_for_turn(
                 &active_chat,"ansf:v1:invalid:100"
@@ -767,7 +767,7 @@ mod m5_native_replay_acceptance{
                 r["status"]=="retracted_not_current"
             ).count(),1);
             assert!(chats.trusted_user_turn_text(
-                &active_chat,"g-m5-prior-permission"
+                &active_chat,"g-00000000000000000000000000000053"
             ).is_none());
         }
         fs::remove_dir_all(root).unwrap();
