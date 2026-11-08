@@ -326,21 +326,19 @@ impl AgentPlanLedger{
         ->Result<usize,PlanLedgerError>{
         let mut db=self.db.lock().map_err(|_|PlanLedgerError::Poisoned)?;
         let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let count=tx.execute(
-            "UPDATE lu_agent_plan_steps SET state='NEEDS_REVIEW'
-             WHERE state='OBSERVED_UNVERIFIED'",[]
-        )?;
+        // Capture ONLY formerly unverified observations as recovered.
+        // Existing explicit NEEDS_REVIEW rows must not be mislabeled as a
+        // restart interruption or acquire a fabricated recovery event.
         tx.execute(
             "INSERT INTO lu_agent_plan_events
              (plan_id,step_index,host_event_id,event)
              SELECT plan_id,step_index,NULL,'RECOVERED_NEEDS_REVIEW'
-             FROM lu_agent_plan_steps WHERE state='NEEDS_REVIEW'
-             AND NOT EXISTS(
-                SELECT 1 FROM lu_agent_plan_events e
-                WHERE e.plan_id=lu_agent_plan_steps.plan_id
-                AND e.step_index=lu_agent_plan_steps.step_index
-                AND e.event='RECOVERED_NEEDS_REVIEW'
-             )",[]
+             FROM lu_agent_plan_steps
+             WHERE state='OBSERVED_UNVERIFIED'",[]
+        )?;
+        let count=tx.execute(
+            "UPDATE lu_agent_plan_steps SET state='NEEDS_REVIEW'
+             WHERE state='OBSERVED_UNVERIFIED'",[]
         )?;
         tx.execute(
             "UPDATE lu_agent_plans SET state='NEEDS_REVIEW',
