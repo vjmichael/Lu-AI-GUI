@@ -683,7 +683,12 @@ test('B5 large-project preview obeys native file bounds, retains Undo, windows U
   assert.match(working,/INITIAL_VISIBLE_TREE_ENTRIES = 120/);
   assert.match(ui,/admitOpenTabs\(tabsRef\.current,item\.projectId,/);
   assert.match(ui,/admitOpenTabs\(tabsRef\.current,projectId,\[key\]\)/);
-  assert.match(ui,/admitOpenTabs\(tabsRef\.current,activeProject\.projectId,\[key\]\)/);
+  // B6 now snapshots the project before the await and re-admits against
+  // live tabs AFTER native I/O. The original B5 closure-based assertion
+  // would reject the stronger no-draft-overwrite contract.
+  assert.match(ui,/const tabAdmission=admitOpenTabs\(tabsRef\.current,projectId,\[key\]\)/);
+  assert.match(ui,/lateSourceOpenDecision\(tabsRef\.current,projectId,/);
+  assert.match(ui,/explorerIoTicket\.current !== ticket/);
   assert.match(ui,/visibleEditorTabs\.visible\.map\(tab/);
   assert.match(ui,/visibleTree\.visible\.map\(entry/);
   assert.match(ui,/aria-label="Earlier open source tabs"/);
