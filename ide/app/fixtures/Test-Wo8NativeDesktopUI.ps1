@@ -333,30 +333,53 @@ function Ensure-Wo9DependentsBlocked {
   }
 }
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
+  # Windows native dialogs can be top-level UIA Window OR Pane fragments.
+  # Inspect real desktop children, but accept ONLY controls from the exact
+  # installed Tauri process. Never auto-approve, send synthetic IPC, or act
+  # on a dialog belonging to another PID.
   $deadline=(Get-Date).AddSeconds(35)
   $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+  $ownedRoots=0
+  $titleMatches=0
+  $buttonMatches=0
   while ((Get-Date) -lt $deadline) {
-    $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
-      ([System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-        [System.Windows.Automation.ControlType]::Window)))
-    foreach($win in $windows) {
+    $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    foreach($win in $roots) {
       try {
-        if ($win.Current.ProcessId -ne $proc.Id -or
-            $win.Current.Name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        if ($win.Current.ProcessId -ne $proc.Id) { continue }
+        $type=$win.Current.ControlType
+        if ($type -ne [System.Windows.Automation.ControlType]::Window -and
+            $type -ne [System.Windows.Automation.ControlType]::Pane) { continue }
+        $ownedRoots++
+        $name=[string]$win.Current.Name
+        if ($name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        $titleMatches++
         $desc=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
           [System.Windows.Automation.Condition]::TrueCondition)
         foreach($child in $desc) {
-          if ($child.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
-              $child.Current.Name -eq $approvalCaption -and $child.Current.IsEnabled) {
+          try {
+            if ($child.Current.ProcessId -ne $proc.Id -or
+                $child.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button -or
+                $child.Current.Name -ne $approvalCaption -or
+                !$child.Current.IsEnabled) { continue }
+            $buttonMatches++
             $child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            Write-Host 'P04_NATIVE_ONE_USE_DIALOG=real_owned_os_button_invoked'
             return
+          } catch {
+            # An unusable native button is denial, not a reason to fall back
+            # to synthetic JavaScript/host commands or a foreign control.
           }
         }
       } catch {}
     }
     Start-Sleep -Milliseconds 350
   }
+  # Bounded OS-only diagnostics: counts, never foreign window titles, user
+  # paths, source contents, window text, or unapproved control activation.
+  Write-Host ('P04_NATIVE_CONSENT_OBSERVATION=owned_roots_'+$ownedRoots+
+    ';matched_titles_'+$titleMatches+';matched_buttons_'+$buttonMatches)
   Deny 'real_native_consent_dialog_not_observed'
 }
 try {
