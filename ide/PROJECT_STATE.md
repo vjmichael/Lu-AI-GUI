@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-02.6A actual native LSP dependency audit and version smoke (November 8, 2026)
+
+Draft PR #140 stacked on DEV-02.5 #138 adds a genuine Windows/Linux CI test-only static PE-import/delay-import and ELF NEEDED/RPATH/GLIBC audit of original pinned clangd, rust-analyzer and Ruff archives. It stages original native library siblings safely in disposable CI and runs only bounded exact `--version` commands, uploading JSON-only receipts. Native exact-head OS results are pending and **no version smoke is accepted until CI passes**. This does not validate full LLVM resource/DLL closure, installed NSIS/.deb app/editor, actual protected Lu worker, LSP protocol, user-consent, legal notice distribution, or signing. Production language-server manifest remains releaseApproved=false. See docs/IDE_DEV02_6_NATIVE_DEPENDENCY_SMOKE_20261108.md.
+
 ## DEV-02.5 disposable native LSP candidate install (November 8, 2026)
 
 Draft PR #138 stacked on DEV-02.4 #134 adds Windows/Linux CI-only original SHA256-pinned archive + four actual original-notice verification for clangd 23.1.0, rust-analyzer 2026-11-02 and Ruff 0.17.4. It creates a seven-file sealed test ZIP and hash-installs the files in disposable RUNNER_TEMP with tamper/foreign path denial; only JSON receipts may be uploaded. **Exact-head native CI is queued, not accepted.** This is not an NSIS/Debian installed application, a dependency-closure proof (especially LLVM DLLs), protected-process execution or Pyright semantic release. The existing production manifest remains releaseApproved=false and final signing/legal review deferred. Details: docs/IDE_DEV02_5_DISPOSABLE_NATIVE_LSP_TEST_PAYLOAD_20261108.md.

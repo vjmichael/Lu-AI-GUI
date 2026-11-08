@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **DEV-02.6A native closure research (Nov 8):** Draft PR #140 introduces Windows PE import/delay-import inspection and Linux ELF dependency/glibc/RPATH inspection of original SHA-locked native server archives, plus bounded actual Windows/Linux CI-only `--version` probes and hostile fixture regressions. Original library layout/hashes are recorded; JSON-only evidence. New exact-head native CI pending. Real protected LSP, LLVM resources, release approval, genuine installed desktop and final signing/legal gate remain open.
+
 - **DEV-02.5 test-only native package (Nov 8):** Created a separate PR #138 stacked on DEV-02.4 for SHA256-locked original release candidate ZIP packaging with original clangd/rust-analyzer/Ruff notices; disposable Windows/Linux hash-install readback and hostile tamper tests; no binary artifacts uploaded. Native exact-head results pending. No approved redistribution, production LSP execution, full LLVM dependency closure, genuine signed NSIS/deb installed acceptance or legal signoff claimed.
 
 - **IDE closeout native improvements (Nov 7):** Linux real delegated `clangd` PASS on prior exact head; fixed Windows native clangd CI PowerShell and immutable P05 38-workflow dual-ledger pins. Added bounded LLDB-DAP alternate error schema classification, strict GTK chooser button captions and exact installed Windows native consent root/InvokePattern safety tests. Source commit only until new-head native Windows/Linux CI and installed GUI are observed; legal/signed release false.
