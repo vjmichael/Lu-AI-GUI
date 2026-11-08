@@ -7,6 +7,8 @@
 //! std::process::Command spawn still has a small pre-assignment race; therefore
 //! this is defense-in-depth, NOT proof of fully race-free process containment.
 
+#[cfg(target_os="linux")]
+pub mod linux_cgroup;
 #[cfg(windows)]
 pub mod system_memory;
 #[cfg(windows)]
