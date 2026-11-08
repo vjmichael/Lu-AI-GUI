@@ -294,8 +294,12 @@ def definition_is_inside_source(result,uri:str)->bool:
     ) for x in items)
 
 
-def definition_response_class(result) -> str:
-    """Non-sensitive shape on a failed synthetic fixture URI comparison."""
+def definition_response_class(result, expected_uri: str|None=None) -> str:
+    """Non-sensitive shape and OS existence facts on a failed fixture URI.
+
+    Never print a raw provider path or user-provided URI. A correct native
+    same-file decision still requires the actual file identity check.
+    """
     items=result if isinstance(result,list) else [result] if isinstance(result,dict) else []
     if not items: return "null_or_empty"
     obj=items[0]
@@ -304,9 +308,28 @@ def definition_response_class(result) -> str:
     if not isinstance(uri,str): return "no_location_uri"
     try:
         parsed=urllib.parse.urlsplit(uri)
+        facts=""
+        if isinstance(expected_uri,str):
+            other=urllib.parse.urlsplit(expected_uri)
+            local=urllib.request.url2pathname(parsed.path)
+            registered=urllib.request.url2pathname(other.path)
+            actual=os.path.exists(local)
+            expected_exists=os.path.exists(registered)
+            # Distinguish a genuinely different target from a Windows
+            # file-URL spelling/conversion bug. These are booleans only.
+            facts=("_candidate_exists_"+str(int(actual))+
+                   "_registered_exists_"+str(int(expected_exists))+
+                   "_same_basename_"+str(int(
+                       os.path.basename(local).casefold()==
+                       os.path.basename(registered).casefold()))+
+                   "_same_text_casefold_"+str(int(
+                       os.path.normcase(local)==os.path.normcase(registered)))+
+                   "_candidate_absolute_"+str(int(os.path.isabs(local)))+
+                   "_expected_absolute_"+str(int(os.path.isabs(registered))))
         return ("scheme_"+parsed.scheme[:12]+
             ("_remote" if parsed.netloc not in ("","localhost") else "_local")+
-            ("_file_extension_py" if parsed.path.lower().endswith(".py") else "_other_extension"))
+            ("_file_extension_py" if parsed.path.lower().endswith(".py") else "_other_extension")+
+            facts)
     except ValueError:
         return "malformed_location_uri"
 
@@ -371,7 +394,7 @@ def score(label:str,argv:list[str],project:Path,sources)->dict:
                     if verify(value):
                         data[kind]+=1
                     else:
-                        reason=(definition_response_class(value)
+                        reason=(definition_response_class(value,uri)
                                 if kind=="definition" else "empty_or_mismatched_response")
                         data["failures"].append(f"{path.name}:{kind}:{reason}")
                 except (TimeoutError,RuntimeError,OSError) as error:
