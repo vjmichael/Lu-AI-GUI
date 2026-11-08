@@ -149,6 +149,20 @@ Append rows only after actual inspected work. Record all failed reruns as well a
 
 | 2026-11-08 | DEV-02.4 real Python semantic LSP benchmark | [Draft PR #134](https://github.com/vjmichael/Lu-AI-GUI/pull/134) `65fb61c11d37c4a513da8b3b1497842cdf237975` stacked on #132 | [Real Windows2022/Ubuntu24 CI candidate comparison 42494557323](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42494557323), queued. Test-only exact BasedPyright `1.40.2` npm + Node22 and official SHA-pinned native ty `0.0.99` use a framed JSON-RPC LSP client on 20 generated actual Python files; measure native hover, same-file definition, completion, diagnostics, p50/p95, process shutdown/reaping. Fixed source unit tests protect source positions, framing, URI matching and release pins. | **REAL MODEL/PROTOCOL MEASUREMENTS OPEN; NOT A LU INSTALLED PYTHON SEMANTIC FEATURE.** Neither candidate selected, redistribution/licensing/runtime fully reviewed, protected worker enabled or installed GUI accepted. Ruff remains diagnostic-only, native launch defaults off. |
 
+### DEV-02 official LSP archive and original-license immutable candidate receipts (November 8, 2026)
+
+Actual upstream archive bytes were downloaded on **Ubuntu24 native CI**, SHA-256 checked against the original GitHub release asset digests and exactly one expected executable was extracted and measured per OS. [Exact-head run 42493579611](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42493579611) SUCCESS; [binary digest artifact 13622683744](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42493579611/artifacts/13622683744); [original notices artifact 13622572455](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42493579611/artifacts/13622572455). All originally downloaded bytes were transient; workflow published **only** hashes and original public notices, no executable artifact. Candidate executables:
+
+| Server release | Windows x86-64 exe SHA256 | Linux x86-64 exe SHA256 |
+| --- | --- | --- |
+| clangd 23.1.0 | `dbd52c13d21ef9d284f4f0627efe76c81adf2fe0998f230127f554a54fc9dde7` | `5a535973dd1274270c8a0d34677fe4758d8c9aaa164aa3701602c957c42dc9e2` |
+| rust-analyzer 2026-11-02 | `d3329bc43f34d6fb1657f9e024bfd8ede68539cf70aba1350b240edc39b76195` | `23ac93011a30b2d1689e2bde2fa1034c996dc7de8bdc887930747eee01c8f66f` |
+| Ruff 0.17.4 | `0e71094b51a4241cb725e76e6375c55c8433dd06ec380ab987c970edd1618565` | `4ef33997b4bb7c5f141527e90b2da0abe918108362ca1b9825c4d13adce0e347` |
+
+Verified upstream notice SHA256: LLVM 23.1.0 `8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee`; rust-analyzer MIT `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3` and Apache `62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a`; Ruff original `2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18`.
+
+**Technical partial gate closed:** exact six upstream archive and four original notice byte identities, hardened archive intake and offline LSP candidate security tests are verified. **Not closed:** full transitive dependency and Windows clangd private DLL inventory, signed SCM/desktop release identity, legal copyright/distribution approval, exact installed package file layout, actual root-owned Linux delegation and genuine installed UI/provider containment. The release manifest remains `releaseApproved=false`; no executable is bundled in default Lu IDE. These are **candidate SHA values**, not installer/build full-tree pins. Do not conflate original source notices with approval to redistribute the compiled bundle.
+
 ## 7. Owner decisions and explicit holds
 
 - **Defer until end of development:** publisher's final legal/redistribution review, performed against the verified *final shipped binaries* and notices. Continue maintaining existing license risk inventory now. Neither zero missing notices nor a passing test grants additional redistribution rights.
