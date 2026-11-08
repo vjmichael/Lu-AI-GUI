@@ -29,6 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -43,7 +44,12 @@ jobs:
           python3 ide/packaging/verify_tauri_minor.py --repo-root .
           test -f ide/app/src-tauri/Cargo.lock
           test -f ide/app/package-lock.json
-          if git diff --quiet HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
+          B2_BASE=97940239e1af4a6c8edbdfa3a176579d01ae5f18
+          git merge-base --is-ancestor "$B2_BASE" HEAD || {
+            echo 'DENIED: B4 not descended from exact accepted source baseline'
+            exit 2
+          }
+          if git diff --quiet "$B2_BASE" HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/host/src/browser.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
             echo 'B4_NO_UNREVIEWED_NATIVE_EXECUTION_AUTHORITY_CHANGE=PASS'
           else
             echo 'DENIED: B4 must not expand worker or source write authority'
