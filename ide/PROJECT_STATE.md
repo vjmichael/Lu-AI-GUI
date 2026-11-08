@@ -644,3 +644,8 @@ Review of official `astral-sh/ty/scripts/build_ty_pgo.py` confirms a necessary t
 ## B7 project workspace navigation continuity — Nov 8
 
 Source branch `ide/b7-project-workspace-continuity-20261108` is stacked after B6 exact source `a562ed08ee511fa28faf9aff1c25b89a95d86eaf`. Project switch captures/restores the active source tab, secondary pane and tab-window position strictly from current registered tabs; it cannot revive a closed file or copy private drafts. Unregistering an inactive project does not tear down the active split. No persistence of raw editor data or expansion of native authority. Documentation: `ide/docs/IDE_B7_PROJECT_WORKSPACE_NAVIGATION_20261108.md`. Full Node / installed Windows/Linux tests remain open; older B4/B5/B6 acceptance gates are preserved for later review.
+
+
+## B8 safe clean background working-set reclamation — Nov 8
+
+Source branch `ide/b8-safe-clean-tab-reclamation-20261108` stacks on B7 (`dbe9bd026a2949e678892815fce36d6d8a07b7b9`). User-visible `Close clean tabs` keeps selected/secondary panes, any dirty editor, any previously edited buffer with Undo history, in-flight private draft checkpoint/Save and LSP session tabs. A second live CodeMirror text check prevents stale React state from losing newly typed text. No project file Save, native read/write, network access, background worker or register/unregister operation. Source tests in `ide/app/tests/editor_clean_tab_reclamation.test.mjs`, documentation in `ide/docs/IDE_B8_EXPLICIT_CLEAN_TAB_RECLAMATION_20261108.md`. Full npm/native Windows/Linux and installed app performance evidence remains OPEN; user requested deferring acceptance review while B-series development continues.
