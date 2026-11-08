@@ -21,7 +21,9 @@ only if all are true:
    the primary or secondary visible editor tab.
 2. The tab is not marked dirty, its current React draft equals its saved base,
    **and its actual CodeMirror EditorState document independently equals that
-   saved base** at the time of the button action.
+   saved base** at the time of the button action. Its tab buffer revision must
+   still be **zero**: Undo-back-to-clean and already-saved edited tabs retain
+   meaningful Undo history and are not eligible.
 3. It is not involved in a native Save, an in-flight private checkpoint or
    pending checkpoint debounce, a reviewed source operation, or a live LSP
    worker session.
@@ -39,7 +41,7 @@ project-switch navigation context.
 
 ## Verification
 
-`ide/app/tests/editor_clean_tab_reclamation.test.mjs` adds eight Node cases
+`ide/app/tests/editor_clean_tab_reclamation.test.mjs` adds nine Node cases
 covering live dirty state that contradicts stale React, project isolation,
 dual-pane protection, missing states, a 48-tab workload and the UI contract
 with no native writes.
