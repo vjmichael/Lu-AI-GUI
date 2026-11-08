@@ -532,5 +532,19 @@ malformed filenames and Unix symlinks. Dedicated exact-head Ubuntu 24.04,
 Windows 2025 and Windows desktop Tauri workflow added. **Source candidate,
 native/installed acceptance OPEN**. This is effect/ledger recovery, NOT
 proof that a Linux child survived or was reaped after parent death.
+The original authenticated ANSF user turn now receives a persisted
+interrupted assistant history marker, matched and deduplicated by turn ID
+using indexed SQLite event state. Completed responses are never rewritten;
+queued Send markers cover a crash before worker journals exist. Normal
+reviewed errors also become visible unsuccessful history checkpoints.
+Linux-only source adds a first-party lifetime guardian that anchors the
+reviewed worker's private PGID and SIGKILLs its own group on Lu pipe EOF,
+including parent SIGKILL. Dedicated real-host-crash, real-grandchild
+and unrelated-process survival tests are submitted; cgroup/setsid
+escape containment and adopted-child reaping are NOT proven.
+The debug-only crash fixture is gated by an opt-in Cargo feature and
+the future Linux single installer still needs the guardian sibling binary.
+**Exact-head Windows/Linux CI and kernel crash proof are OPEN.**
 The physical installed-Windows acceptance remains deferred toward v1.0.
-See docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md.
+See docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md and
+docs/LU_E1_P08_LINUX_GROUP_GUARD_20261108.md.
