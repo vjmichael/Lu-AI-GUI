@@ -484,3 +484,7 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 ## E1-P05C — native Word/XLSX benchmark parity repair (November 7, 2026)
 
 Static source review exposed an error: `native_docx_create::render_docx` and `lu.docx.create` were already present in Lu Core. Original P05 v1 incorrectly marked native DOCX as unsupported, biasing app-vs-utility results. E1-P05C source now renders real DOCX and XLSX for the exact same native tasks, under WriteWorkspace and journal control, with actual independent Office readback and one host-policy denial attempt per task. Evidence schema is v2, not comparable to v1. Real Windows/Linux worker and pinned Qwen receipts remain independently required; physical installed Windows remains deferred near v1.0.
+
+## E1-P06A — typed reviewed third-party adapters (November 7, 2026)
+
+A host-only fixed version-operation adapter registry now checks explicit original-turn ExecuteCode authority, independent host veto, exact native PE/ELF SHA and file identity, sealed typed payload, bounded output/runtime declarations and read-grant separation. The adapter cannot spawn a process or claim independent application output/network isolation. Three genuine local-binary fixture tests submitted in Linux/Windows native workflow; **hosted CI still pending**. Real external process execution, version parsing, durable journal, OS sandbox and cancellation belong to P06B/P06C. Preserve E1-P03/P04B/P05C unresolved acceptance and deferred physical installed Windows gate.
