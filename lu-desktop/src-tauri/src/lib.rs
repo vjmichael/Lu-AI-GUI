@@ -707,6 +707,25 @@ impl DesktopState {
                 reviewed_recovery.partial_turns
             );
         }
+        let chats=ChatStore::open(&root)?;
+        // A per-turn ledger is not a chat message. Match its generation ID to
+        // a trusted original ANSF user turn, then persist the interrupted
+        // marker in that chat only. Completed turns are never rewritten.
+        let mut reported=0usize;
+        let mut unlinked=0usize;
+        for turn in &reviewed_recovery.turns_to_report{
+            match chats.mark_reviewed_turn_interrupted(turn)?{
+                Some(true)=>reported+=1,
+                Some(false)=>{},
+                None=>unlinked+=1,
+            }
+        }
+        if reported>0||unlinked>0{
+            eprintln!(
+                "LU_E1_P08_REVIEWED_CHAT_RECOVERY notified={} unlinked={}",
+                reported,unlinked
+            );
+        }
         // Under DesktopOwner's exclusive process lease, previous image
         // PREPARED exports are UNCERTAIN. Never replay a selected Save path.
         let mut image_history=lu_core::native_image_revision_history::ImageRevisionLedger::open(
@@ -881,7 +900,7 @@ impl DesktopState {
             source_reuse:lu_core::ai_operations::SourceReuseIndex::new(),
             models_dir,
             catalog_path,
-            chats: ChatStore::open(&root)?,
+            chats,
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
