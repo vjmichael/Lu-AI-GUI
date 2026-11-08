@@ -56,7 +56,13 @@ struct Recipe {
     display: &'static str,
     proposed_action: &'static str,
 }
-static RECIPES: [Recipe; 3] = [
+static RECIPES: [Recipe; 4] = [
+    Recipe {
+        id: "rust_build",
+        manifest: "Cargo.toml",
+        display: "Rust project build",
+        proposed_action: "cargo build --locked --offline --manifest-path Cargo.toml",
+    },
     Recipe {
         id: "rust_check",
         manifest: "Cargo.toml",
