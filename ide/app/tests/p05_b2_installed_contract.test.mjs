@@ -17,7 +17,7 @@ test('Native B2 unsigned NSIS acceptance must preserve exact source and license 
   for (const term of ['runs-on: windows-2022','-NoProfile -Sta',
     'DraftBufferReference','npm ci --ignore-scripts',
     'collect_verification_licenses.py','verify_p04_license_bundle.py',
-    'P05_B2_INSTALLED_NATIVE_WINDOWS_DRAFT_NO_IMPLICIT_SAVE=PASS',
+    'P05_B2_INSTALLED_NATIVE_WINDOWS_DRAFT_UNDO_SAVE_RESTART=PASS',
     "uninstallers","Get-FileHash"]) assert.ok(ci.includes(term),term);
   assert.doesNotMatch(ci,/New-SelfSignedCertificate|releaseApproved: true/);
 });
