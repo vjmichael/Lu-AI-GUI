@@ -233,6 +233,9 @@ fn bump_seq(conn:&Connection)->Result<u64,String>{
         .map_err(to_err)?;
     current_seq(conn)
 }
+pub const REVIEWED_QUEUE_MARKER:&str=
+    "Reviewed application request queued for native tool verification.";
+
 impl ChatStore {
     pub fn open(root:&Path)->Result<Self,String>{
         fs::create_dir_all(root).map_err(to_err)?;
@@ -615,9 +618,6 @@ impl ChatStore {
         self.append(chat_id,LiveKind::AssistantCancelled,"",None,
             Some(generation_id),None,None)
     }
-pub const REVIEWED_QUEUE_MARKER:&str=
-    "Reviewed application request queued for native tool verification.";
-
     /// E1-P08: host-only startup projection of a recovered reviewed-app turn.
     /// Existing ANSF user-turn IDs are authoritative. Never infer chat ownership
     /// from a model-provided path or from worker stdout.
