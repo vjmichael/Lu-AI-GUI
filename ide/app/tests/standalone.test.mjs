@@ -681,9 +681,9 @@ test('B5 large-project preview obeys native file bounds, retains Undo, windows U
   assert.match(working,/MAX_OPEN_TABS_PER_PROJECT = 48/);
   assert.match(working,/VISIBLE_TABS = 12/);
   assert.match(working,/INITIAL_VISIBLE_TREE_ENTRIES = 120/);
-  assert.match(ui,/admitOpenTabs\(tabs,item\.projectId,/);
-  assert.match(ui,/admitOpenTabs\(tabs,projectId,\[key\]\)/);
-  assert.match(ui,/admitOpenTabs\(tabs,activeProject\.projectId,\[key\]\)/);
+  assert.match(ui,/admitOpenTabs\(tabsRef\.current,item\.projectId,/);
+  assert.match(ui,/admitOpenTabs\(tabsRef\.current,projectId,\[key\]\)/);
+  assert.match(ui,/admitOpenTabs\(tabsRef\.current,activeProject\.projectId,\[key\]\)/);
   assert.match(ui,/visibleEditorTabs\.visible\.map\(tab/);
   assert.match(ui,/visibleTree\.visible\.map\(entry/);
   assert.match(ui,/aria-label="Earlier open source tabs"/);
