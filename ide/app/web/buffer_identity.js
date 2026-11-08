@@ -106,3 +106,33 @@ export function formatBufferReference(span, sha256) {
     ' bytes=' + span.fromByte + '..' + span.toByte +
     ' lifetime=session-only';
 }
+
+
+/** A persistent reference resolves only against an exact immutable native
+ * private draft checkpoint. It does not authorize project writes or expose
+ * the actual source contents to a clipboard. */
+export function formatPersistentDraftReference(record) {
+  if (!record || record.schemaVersion !== 1 ||
+      !/^[a-f0-9]{64}$/.test(record.checkpointId ?? '') ||
+      !/^[a-f0-9]{64}$/.test(record.draftSha256 ?? '') ||
+      !/^[a-f0-9]{64}$/.test(record.baseDiskRevision ?? '') ||
+      !Number.isSafeInteger(record.bufferRevision) ||
+      typeof record.projectId !== 'string' ||
+      typeof record.relativePath !== 'string')
+    throw Error('INVALID_PERSISTENT_DRAFT_REFERENCE');
+  return 'ide-draft:v1 project=' + record.projectId +
+    ' path=' + JSON.stringify(record.relativePath) +
+    ' checkpoint=' + record.checkpointId +
+    ' buffer=' + record.bufferId + ' revision=' + record.bufferRevision +
+    ' baseDisk=' + record.baseDiskRevision +
+    ' draftSha256=' + record.draftSha256 +
+    ' lifetime=persistent-private-app-data';
+}
+
+export function draftRecoveryAssessment(record, projectId, path, diskSha) {
+  if (!record || record.projectId !== projectId ||
+      record.relativePath !== path || !/^[a-f0-9]{64}$/.test(diskSha))
+    return 'untrusted_draft_reference';
+  return record.baseDiskRevision === diskSha
+    ? 'same_saved_base' : 'disk_revision_changed';
+}
