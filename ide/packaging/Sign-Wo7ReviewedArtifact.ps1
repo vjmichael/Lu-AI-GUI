@@ -39,6 +39,38 @@ $certificate=Get-ChildItem Cert:\CurrentUser\My,Cert:\LocalMachine\My |
   Where-Object { $_.Thumbprint -ieq $SignerThumbprint -and $_.HasPrivateKey } |
   Select-Object -First 1
 if (!$certificate) { Deny 'reviewed_real_signing_certificate_unavailable' }
+$utc=[DateTime]::UtcNow
+if ($certificate.NotBefore.ToUniversalTime() -gt $utc -or
+    $certificate.NotAfter.ToUniversalTime() -le $utc) {
+  Deny 'signing_identity_not_currently_valid'
+}
+# Cryptographic trust must be established by the Windows chain engine,
+# not by the mere presence of a thumbprint or a local self-signed cert.
+$codeSigningOid='1.3.6.1.5.5.7.3.3'
+$hasCodeSigning=$false
+foreach ($extension in $certificate.Extensions) {
+  if ($extension.Oid.Value -ne '2.5.29.37') { continue }
+  $eku=[System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new(
+    $extension,$extension.Critical)
+  foreach ($usage in $eku.EnhancedKeyUsages) {
+    if ($usage.Value -eq $codeSigningOid) { $hasCodeSigning=$true }
+  }
+}
+if (!$hasCodeSigning) { Deny 'certificate_not_valid_for_code_signing' }
+$chain=[System.Security.Cryptography.X509Certificates.X509Chain]::new()
+try {
+  $chain.ChainPolicy.RevocationMode=[System.Security.Cryptography.X509Certificates.X509RevocationMode]::Online
+  $chain.ChainPolicy.RevocationFlag=[System.Security.Cryptography.X509Certificates.X509RevocationFlag]::EntireChain
+  $chain.ChainPolicy.VerificationFlags=[System.Security.Cryptography.X509Certificates.X509VerificationFlags]::NoFlag
+  [void]$chain.ChainPolicy.ApplicationPolicy.Add(
+    [System.Security.Cryptography.Oid]::new($codeSigningOid))
+  if (!$chain.Build($certificate) -or $chain.ChainElements.Count -lt 2) {
+    Deny 'trusted_public_code_signing_chain_not_verified'
+  }
+} finally {
+  $chain.Dispose()
+}
+Write-Host 'WO7_SIGNER_IDENTITY=trusted_chain_private_key_and_code_signing_eku_verified'
 $prior=Get-AuthenticodeSignature -LiteralPath $path
 if ($prior.Status -eq 'Valid') { Deny 'already_signed_release_asset_refuse_mutation' }
 & $tool sign /fd SHA256 /sha1 $SignerThumbprint /tr $TimestampUrl /td SHA256 $path
