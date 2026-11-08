@@ -153,3 +153,12 @@ The truthful custody outcome is: **produced by the reviewed first-party worker's
 The end-to-end native matrix actually compiles a reviewed DOCX/XLSX producer, a real slow worker for process cancellation and a forged-content worker which sends correct transport SHA but invalid OOXML. It runs real Linux/Windows OS subprocess tests using \`--ignored\`, verifying producer pipe custody, independent semantic validation, exact create-new publication, receipts surviving SQLite restart, format disagreement, malformed OOXML, wrong-user-origin cancellation, revocation, invalid old call ID, and wrong workspace. Ordinary Cargo tests alone **do not** count these OS integration cases.
 
 Open review items: actual exact-head compiler/native test receipts; narrow typed app-adapter integration into the Lu desktop host, separate full external-app sandbox/resource policy, and general document/spreadsheet authorship beyond fixed reviewed test fixtures. Owner's physical Windows test remains scheduled near v1.0.
+
+
+## E1-P05 — genuine three-arm headless benchmark candidate
+
+The next stacked work group adds \`src-tauri/lu-core/examples/e1_p05_native_task.rs\`, \`benchmarks/e1/e1_p05_real_three_arm.py\`, contract tests and \`.github/workflows/lu-e1-p05-three-arm.yml\`. See \`docs/LU_E1_P05_COMPARATIVE_20261107.md\` for the full controlled task definition, exact local model SHA pin, real Windows/Linux task runner, K/I/A/F metrics, repeat design and limitations.
+
+Benchmark arms on the same *two* fixed DOCX/XLSX tasks: actual local model **text-only** specification, actual existing Lu Core spreadsheet utility, and actual reviewed first-party worker stdout artifact custody (P04B). Observations are real when run; if Qwen GGUF is unavailable, it generates only \`NATIVE_ARMS_ONLY_MODEL_NOT_EXECUTED\` with direct model metrics \`NOT_EXECUTED\`, never a synthetic third arm. Native utility DOCX generation is explicitly \`UNSUPPORTED\`. No unreviewed app, arbitrary shell, model-selected effect, independent publisher identity, installed WebView or physical Windows result is claimed.
+
+E1-P05 source-only implementation is **not** accepted until exact-head three-arm Qwen and hosted Windows/Linux native results have actually completed with source hashes and raw artifacts. E1-P04 real producer and E1-P03 cancellation gates remain distinct dependencies.
