@@ -104,3 +104,17 @@ fn symlinked_private_directory_is_refused(){
         Some("DRAFT_UNSAFE_DIRECTORY"));
     fs::remove_dir_all(base).unwrap();
 }
+
+
+#[cfg(unix)]
+#[test]
+fn existing_world_readable_private_draft_directory_is_denied(){
+    use std::os::unix::fs::PermissionsExt;
+    let base=root();
+    fs::create_dir(&base).unwrap();
+    let unsafe_root=base.join("private-drafts");
+    fs::create_dir(&unsafe_root).unwrap();
+    fs::set_permissions(&unsafe_root,fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(DraftVault::open(unsafe_root).err(),Some("DRAFT_UNSAFE_DIRECTORY"));
+    fs::remove_dir_all(base).unwrap();
+}
