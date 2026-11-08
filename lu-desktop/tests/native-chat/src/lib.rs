@@ -48,6 +48,8 @@ pub mod journal;
 
 #[path = "../../../../src-tauri/lu-core/src/continuity.rs"]
 pub mod continuity;
+#[path = "../../../../src-tauri/lu-core/src/agent_plan_ledger.rs"]
+pub mod agent_plan_ledger;
 
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
@@ -824,6 +826,55 @@ mod m5_native_replay_acceptance{
                 "m5-cp-interrupted",&journal
             ).unwrap().is_empty());
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+
+#[cfg(test)]
+mod agent01a_real_human_journal_acceptance{
+    use super::{chat_store::ChatStore,agent_plan_ledger::{
+        AgentPlanLedger,PlanLedgerError,PlanStepKind,PlanStepSpec,PlanWrite
+    }};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    #[test]
+    fn only_the_real_saved_human_turn_can_bind_durable_plan(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01-real-chat-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let pid=format!("p-{:032x}",3);
+        let tid=format!("g-{:032x}",4);
+        let fake=format!("g-{:032x}",5);
+        let steps=[PlanStepSpec{kind:PlanStepKind::CollectSource,depends_on:None},
+            PlanStepSpec{kind:PlanStepKind::HumanReview,depends_on:Some(0)}];
+        let chat_id={
+            let chats=ChatStore::open(&root).unwrap();
+            let one=chats.create_chat().unwrap();
+            let two=chats.create_chat().unwrap();
+            let ledger=AgentPlanLedger::open(&root.join("agent.sqlite")).unwrap();
+            assert_eq!(ledger.register(&pid,&one.chat_id,&tid,&steps,&chats),
+                Err(PlanLedgerError::UnverifiedHumanTurn));
+            chats.append_user_with_turn_id(
+                &one.chat_id,&tid,"Inspect the reviewed facts first").unwrap();
+            assert_eq!(ledger.register(&pid,&one.chat_id,&tid,&steps,&chats),
+                Ok(PlanWrite::New));
+            assert_eq!(ledger.register(&format!("p-{:032x}",9),
+                &two.chat_id,&tid,&steps,&chats),
+                Err(PlanLedgerError::UnverifiedHumanTurn));
+            assert_eq!(ledger.register(&format!("p-{:032x}",10),
+                &one.chat_id,&fake,&steps,&chats),
+                Err(PlanLedgerError::UnverifiedHumanTurn));
+            one.chat_id
+        };
+        let chats=ChatStore::open(&root).unwrap();
+        let ledger=AgentPlanLedger::open(&root.join("agent.sqlite")).unwrap();
+        assert_eq!(ledger.register(&pid,&chat_id,&tid,&steps,&chats),
+            Ok(PlanWrite::AlreadyRecorded));
+        assert_eq!(ledger.snapshot(&pid,&chat_id,&tid).unwrap().unwrap().steps.len(),2);
+        drop(ledger);drop(chats);
         fs::remove_dir_all(root).unwrap();
     }
 }

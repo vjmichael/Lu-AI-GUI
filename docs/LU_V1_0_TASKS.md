@@ -28,7 +28,7 @@
 | TOOLS-04 | P1 | Archive listing/inspection before archive extraction or creation | TODO | Zip-slip, symlink, decompression bomb limits, duplicate members, OS CI |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
 | MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |\n| CONTEXT-01 | P0 | Canonical recoverable goals, provenance, cross-chat context and task handoff (never authority transfer) | DOCS RECOVERED | Durable Lu Core continuity + host-authenticated recall integration and crash/restart tests |
-| AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | TODO | Multi-step failure recovery |
+| AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | P1/A non-executing durable plan ledger SOURCE CANDIDATE; actual scheduler / OS receipts / installed E2E OPEN | Cross-OS real SQLite + human turn tests, independently verified worker custody and explicit fresh authorization before multi-step continuation |
 | UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | IN PROGRESS | UI automated tests |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
 
@@ -751,3 +751,11 @@ mutate-and-restore attacks, large media, and unsupported Git/MP4 states
 are explicit separate gates. It does not upgrade E1-P08C descendant
 process custody or claim OS-level total application sandboxing. Full
 details: `docs/LU_E1_P13_SOURCE_REVISION_CUSTODY_20261108.md`.
+
+## AGENT-01A — durable human-scoped non-executing multi-step plan ledger (Nov 8, 2026)
+
+- New independent `lu/agent01a-durable-plan-ledger-20261108` source candidate stacked on E1-P14, **not** E1-P15. AGENT-01A does not need to believe any pending native OS result to validate its own plan bookkeeping.
+- Production `agent_plan_ledger.rs` adds an exactly authenticated human-turn plan record; max 32 typed steps; backward dependency edges; atomic/idempotent observation events; explicit review and cancellation-intent states; cross-chat refusal; and repeatable restart reconciliation. It **cannot** launch or resume any tool, or claim OS child termination or independently verified result. It intentionally returns `NOT_AUTHORIZED_FOR_EXECUTION`.
+- Real production ChatStore's persisted `TrustedUserTurnVerifier` is exercised by the portable native-chat integration test. Dedicated exact-head Windows/Linux SQLite and test artifacts queued; no CI acceptance or physical installed application acceptance is claimed.
+- Remaining AGENT-01B through 01E: goal/assumption revision history and deliverables, independently verified external effect/receipt joins, host-fenced authorizing scheduler, conversation progress cards and installed-app E2E. Only integrate actual execution once the E1-P03/P06/P07/P10/P12/P13 native gates and E1-P15 continuity evidence pass.
+- Detailed implementation/acceptance: `docs/LU_AGENT01A_DURABLE_PLAN_LEDGER_20261108.md`.
