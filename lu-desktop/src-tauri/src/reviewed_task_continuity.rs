@@ -121,22 +121,47 @@ fn checkpoint(task:&Connection,task_id:&str,turn:&str)
         .map_err(|_|"Invalid checkpoint progress")).transpose()?;
     Ok((state=="COMPLETED",progress,count as u32))
 }
-fn outcome_for(effect:&Connection,call_id:&str,receipt:Option<&[u8]>)
+fn expected_method(tool:&str,method:&str)->bool{
+    match tool{
+        "lu.reviewed.git.head"=>method=="GIT_HEAD_DIRECT_V1",
+        "lu.reviewed.git.status"=>method=="GIT_STATUS_INDEX_TREE_V1",
+        "lu.reviewed.git.branch"=>method=="GIT_BRANCH_DIRECT_V1",
+        "lu.reviewed.git.history"=>matches!(method,
+            "GIT_HISTORY_LOOSE_DAG_V1"|"GIT_HISTORY_OBJECT_DAG_V2"),
+        "lu.reviewed.media.facts"=>matches!(method,
+            "WAV_PCM_DIRECT_V1"|"MP4_BOXES_DIRECT_V1"),
+        _=>false,
+    }
+}
+fn outcome_for(effect:&Connection,call_id:&str,tool:&str,receipt:Option<&[u8]>)
     ->Result<&'static str,String>{
     if !table_exists(effect,"lu_independent_outcomes")?{
         return Ok("NOT_INDEPENDENTLY_CHECKED")
     }
-    let row:Option<(String,String)>=effect.query_row(
-        "SELECT verdict,receipt_sha256 FROM lu_independent_outcomes WHERE call_id=?1",
-        params![call_id],|r|Ok((r.get(0)?,r.get(1)?))
+    let row:Option<(String,String,String,Option<String>)>=effect.query_row(
+        "SELECT verdict,receipt_sha256,method,observed_sha256
+         FROM lu_independent_outcomes WHERE call_id=?1",
+        params![call_id],|r|Ok((
+            r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?
+        ))
     ).optional().map_err(|_|"Independent outcome lookup unavailable")?;
-    let Some((verdict,digest))=row else{return Ok("NOT_INDEPENDENTLY_CHECKED")};
+    let Some((verdict,digest,method,observed))=row else{
+        return Ok("NOT_INDEPENDENTLY_CHECKED")
+    };
     let Some(receipt)=receipt else{return Ok("RECEIPT_MISMATCH")};
     if digest!=format!("{:x}",Sha256::digest(receipt)){
         return Ok("RECEIPT_MISMATCH")
     }
     match verdict.as_str(){
-        "VERIFIED"=>Ok("VERIFIED_AT_OBSERVATION"),
+        "VERIFIED"=>{
+            let valid_observed=observed.as_deref().is_some_and(|sha|
+                sha.len()==64 && sha.bytes().all(|b|b.is_ascii_hexdigit()
+                    &&!b.is_ascii_uppercase()));
+            if !valid_observed || !expected_method(tool,&method){
+                return Ok("OUTCOME_INCONSISTENT")
+            }
+            Ok("VERIFIED_AT_OBSERVATION")
+        },
         "UNSUPPORTED"=>Ok("UNSUPPORTED"),
         "CONFLICT"=>Ok("CONFLICT"),
         _=>Err("Unknown independent outcome verdict".into())
@@ -218,7 +243,7 @@ pub(crate) fn reviewed_turn_continuity(
         let receipt_ok=size.is_some_and(|len|len>0&&len<=MAX_RECEIPT)
             &&receipt.as_deref().is_some_and(|v|v.len() as i64==size.unwrap_or(0));
         let outcome=if state=="APPLIED" &&receipt_ok{
-            outcome_for(&effect,&call,receipt.as_deref())?
+            outcome_for(&effect,&call,&tool,receipt.as_deref())?
         }else if state=="APPLIED"{
             "RECEIPT_MISMATCH"
         }else{"NOT_INDEPENDENTLY_CHECKED"};
