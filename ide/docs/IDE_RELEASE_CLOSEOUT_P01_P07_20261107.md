@@ -1,5 +1,8 @@
 # Lu IDE — Release Closeout Phase Ledger (P01–P07)
 
+> **Active blocker-first implementation queue, Nov 7 Phoenix / Nov 8 UTC:** [Lu IDE Product Readiness & Blocker Ledger](IDE_PRODUCT_READINESS_BLOCKER_LEDGER_20261108.md). This **supplements rather than replaces** the phase acceptance table below: open P05 B2 clipboard, B3 Windows source, P04 installed Linux chooser, P03 native protected debugger, P06 R1 Linux/observer, P06 R2 Windows source, and integrated installed/package acceptance. See each task ID for current exact head and native job evidence. Historical statuses below describe earlier checkpoints and cannot promote today's OS/release acceptance. Final publisher legal review is deferred until **actual final packaged files** are inventoried; signed identity and P07/WO10 remain separately deferred.
+
+
 **Established:** 2026-11-07 · **Owning project:** standalone `ide/` in `vjmichael/Lu-AI-GUI`.  
 **Policy:** A source commit, unit test, or CI start is not installed-app/native OS acceptance. Exact SHA, OS evidence, and independent verification are required. Do not quietly promote unknown, skipped or failed evidence.
 
