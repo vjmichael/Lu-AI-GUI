@@ -2614,13 +2614,26 @@ function App() {
     if(!id)return;
     let active=true;
     const seqs=history.filter(entry=>Number.isSafeInteger(entry.seq)&&entry.seq>0)
-      .slice(-64).map(entry=>entry.seq);
-    invoke('lu_message_decorations',{chatId:id,seqs}).then(data=>{
+      .map(entry=>entry.seq);
+    const windows=[];
+    for(let start=0;start<seqs.length;start+=64){
+      windows.push(seqs.slice(start,start+64));
+    }
+    if(!windows.length)windows.push([]);
+    // Each host query is strictly <=64 immutable visible message IDs.
+    // Pagination can keep more than 64 rows in hot memory; merge decoration
+    // windows so older reactions don't vanish when a newer page is loaded.
+    Promise.all(windows.map(batch=>invoke('lu_message_decorations',{
+      chatId:id,seqs:batch
+    }))).then(pages=>{
       if(!active)return;
+      const reactionsBySeq=Object.assign({},...pages.map(
+        page=>visibleReactionBySeq(page?.reactions)
+      ));
       setMessageDecorationsByChat(prev=>({
         ...prev,[id]:{
-          appearance:safeAppearance(data?.appearance),
-          reactionsBySeq:visibleReactionBySeq(data?.reactions)
+          appearance:safeAppearance(pages[0]?.appearance),
+          reactionsBySeq
         }
       }));
     }).catch(error=>{
