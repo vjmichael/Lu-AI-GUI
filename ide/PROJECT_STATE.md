@@ -1,5 +1,29 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE B6 async native read / tab-admission safety — November 8, 2026
+
+On branch `ide/b6-async-editor-admission-20261108` stacked on B5 PR #147
+(commit `029f5b13`), source changes guard late native directory/file/search
+responses with a synchronous read ticket and current project identity;
+revalidate 48/project and 96/global tab capacity AFTER native preview,
+preserving a concurrently opened dirty draft; refuse stale reload when
+CodeMirror state, buffer revision or registered project changed in flight.
+Added five Node regression cases. This fixes a source-level race identified
+during B5 review without changing native authorization, file writes or LSP
+worker execution. **Native/frontend tests and installed OS race acceptance
+remain OPEN.** No B4/B5 CI, OS memory or UI performance gate is considered
+closed; B6 is on an isolated branch so existing exact-head PR #147 required
+checks remain scheduled. See
+`ide/docs/IDE_B6_NATIVE_EDITOR_ASYNC_ADMISSION_20261108.md`.
+
+**Observed native incident unrelated to B5 memory acceptance:** the Ubuntu
+26.04 supplemental installed WO8 run #42514897905 installed/launched the
+desktop and passed prior failed-upgrade recovery but failed when the GTK
+folder chooser remained visible after four real OS accessibility confirmation
+attempts. This is a genuine chooser automation failure; the exact-head B4/B5
+Windows and Ubuntu 24.04 installed performance JSON artifacts are still
+unverified and must not be inferred from the supplemental failure.
+
 ## Installed B4/B5 performance evidence follow-through — November 8, 2026
 
 B4 and B5 exact-head native/installed Windows and Linux jobs were still queued or pending at last GitHub inspection, not actual runtime failures. The only completed earlier B3 source matrix #42504529949 failed two stale contract assertions, whose later B2 source fixes are unproven until native CI actually executes. To establish real-world B5 results without creating another redundant build matrix, the B5 branch extends its inherited **genuine B4 unsigned installed NSIS and Debian** OS fixtures. After B4 two-pane work, the same installed binary exercises a 48-source project (including >128KiB and <512KiB files), visible native file-input, 49th-tab denial, 12 first/last tab round trips, typing/Undo/explicit Save, and original file integrity through WebView2 UI Automation/GTK AT-SPI and actual system clipboard. Windows sums installed PID + current Win32_Process descendant working/private bytes; Linux sums /proc descendant RSS/virtual bytes. JSON receipt artifacts report observed P95 open/switch round trips and process-memory samples; they are NOT synthetic Node figures, frame time or total machine RAM. **Neither the measurements nor B4/B5 acceptance has been obtained until exact-head installed OS jobs execute and both receipts are reviewed.** See docs/IDE_B5_LARGE_PROJECT_WORKING_SET_20261108.md.
