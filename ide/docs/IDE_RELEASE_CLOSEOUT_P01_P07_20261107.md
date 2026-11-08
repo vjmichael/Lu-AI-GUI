@@ -4,6 +4,8 @@
 
 
 **Established:** 2026-11-07 · **Owning project:** standalone `ide/` in `vjmichael/Lu-AI-GUI`.  
+**IDE 13 repair checkpoint (Nov 8 UTC):** A1 P06-R2 Windows casefold fixture fixed on #111 at `455e51e` ([native source run 42447297702](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42447297702) queued); A2 B3 Windows shell mismatch corrected at `b8a8c36` on #100; A3 B2 installed Windows clipboard OS-keyboard activation attempt at `ed4e2d5` on #99. **All three are source-implemented and pending complete exact-head native reruns; P03/P04/P05/P06 remain OPEN.** No B2/B3 branch integration, historical PR/CI removal, production signature, legal approval or Lu Core connection. See the product blocker ledger for runner-specific failure evidence and task order.
+
 **Policy:** A source commit, unit test, or CI start is not installed-app/native OS acceptance. Exact SHA, OS evidence, and independent verification are required. Do not quietly promote unknown, skipped or failed evidence.
 
 **Authoritative source before P01 consolidation:** `ide/wo9-advanced-workflows-20261107` @ `0d271606c8bcaeabe799cb970e0b6d4aefd25089` (draft [WO9 PR #75](https://github.com/vjmichael/Lu-AI-GUI/pull/75)).  
