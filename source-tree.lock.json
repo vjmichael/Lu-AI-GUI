@@ -57,7 +57,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p06e-ffprobe.yml",
-      "blob": "afe0e53feb52480a3c009cd24d865206f03129c1"
+      "blob": "c193fd112f2d2fa816a5dce30c327248a7c2d412"
     },
     {
       "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
