@@ -18,6 +18,9 @@ class E2BundleStageTests(unittest.TestCase):
         (upstream / "w/clangd.exe").write_bytes(b"reviewed Windows binary")
         (upstream / "l/clangd").write_bytes(b"reviewed Linux binary")
         (upstream / "notices/LICENSE-MIT").write_text("reviewed license notice")
+        (upstream / "w/original-runtime.dll").write_bytes(b"original reviewed LLVM DLL")
+        (upstream / "l/lib/clang/23/include").mkdir(parents=True)
+        (upstream / "l/lib/clang/23/include/stddef.h").write_bytes(b"reviewed clang resource")
         service = root / "signed-service.exe"
         service.write_bytes(b"simulated signed service fixture")
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -34,6 +37,21 @@ class E2BundleStageTests(unittest.TestCase):
                 "linux-x86_64": hashlib.sha256(b"reviewed Linux binary").hexdigest(),
             },
             "licenseNoticeFiles": ["notices/LICENSE-MIT"],
+            "nativeResourceManifestReviewed": True,
+            "nativeResourceFilesByPlatform": {
+                "windows-x86_64": {
+                    "bin/original-runtime.dll": {
+                        "path":"w/original-runtime.dll",
+                        "sha256":hashlib.sha256(b"original reviewed LLVM DLL").hexdigest(),
+                    },
+                },
+                "linux-x86_64": {
+                    "lib/clang/23/include/stddef.h": {
+                        "path":"l/lib/clang/23/include/stddef.h",
+                        "sha256":hashlib.sha256(b"reviewed clang resource").hexdigest(),
+                    },
+                },
+            },
         })
         manifest["releaseApproved"] = True
         manifest_file = root / "manifest.json"
@@ -60,6 +78,11 @@ class E2BundleStageTests(unittest.TestCase):
             self.assertEqual((dest / "language-servers/clangd/bin/clangd.exe").read_bytes(),
                              b"reviewed Windows binary")
             self.assertTrue((dest / "language-servers/clangd/NOTICES/000-LICENSE-MIT").is_file())
+            self.assertEqual(
+                (dest / "language-servers/clangd/bin/original-runtime.dll").read_bytes(),
+                b"original reviewed LLVM DLL",
+            )
+            self.assertEqual(record["servers"]["clangd"]["originalNativeResourceFiles"],1)
             self.assertEqual((dest / "recovery/windows_recovery_service.exe").read_bytes(),
                              service.read_bytes())
             with self.assertRaises(ValueError):

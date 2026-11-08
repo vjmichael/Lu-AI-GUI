@@ -22,15 +22,86 @@ HEX = re.compile(r"^[a-f0-9]{64}$")
 def safe_file(root: pathlib.Path, relative: str) -> pathlib.Path:
     if not relative or relative.startswith(("/", "\\")):
         raise ValueError("absolute/empty path")
-    item = pathlib.PurePosixPath(relative)
-    if any(part in {"", ".", ".."} for part in item.parts) or "\\" in relative:
+    if "\\" in relative or any(part in {"", ".", ".."} for part in relative.split("/")):
         raise ValueError("path escape")
-    result = root.joinpath(*item.parts)
-    if result.is_symlink() or not result.is_file():
-        raise ValueError("missing or linked bundle asset")
+    item = pathlib.PurePosixPath(relative)
+    if root.is_symlink():
+        raise ValueError("linked resource root")
+    result = root
+    for part in item.parts:
+        result = result / part
+        if result.is_symlink():
+            raise ValueError("symlink in original resource path")
+    if not result.is_file():
+        raise ValueError("missing original bundle asset")
     if not result.resolve().is_relative_to(root.resolve()):
         raise ValueError("bundle path escaped root")
     return result
+
+
+
+
+def reviewed_native_resources(row: dict, root: pathlib.Path, platform: str):
+    """Release-only extra ORIGINAL resources in fixed worker-relative layout.
+
+    A binary-only clangd release is NOT a complete native payload. Independent
+    reviewer populates this immutable manifest after full upstream archive and
+    license/dependency inventory. The test-only original archive receipt is
+    not a substitute for signoff.
+    """
+    if platform not in PLATFORMS:
+        raise ValueError("unknown native resource platform")
+    declared = row.get("nativeResourceFilesByPlatform")
+    approved = row.get("nativeResourceManifestReviewed")
+    if row.get("category") != "native":
+        if declared or approved:
+            raise ValueError("node LSP cannot impersonate native resource manifest")
+        return []
+    if not approved or not isinstance(declared, dict) or set(declared) != PLATFORMS:
+        raise ValueError("complete independently reviewed native resource manifest required")
+    entries = declared[platform]
+    if not isinstance(entries, dict) or len(entries) > 490 or (
+        row.get("id") == "clangd" and not entries
+    ):
+        raise ValueError("clangd requires reviewed original LLVM resources and file quota")
+    result = []
+    seen = {"bin/" + ("clangd.exe" if platform.startswith("windows") else "clangd")
+            if row.get("id") == "clangd" else
+            "bin/" + row["id"] + (".exe" if platform.startswith("windows") else "")}
+    total = 0
+    for relative, item in entries.items():
+        if not isinstance(relative,str) or not relative or len(relative)>1024 or (
+            relative.startswith(("/", "\\")) or "\\" in relative
+        ):
+            raise ValueError("untrusted native resource destination")
+        parts=relative.split("/")
+        if (len(parts)>18 or any(not part or part in (".","..") or
+            len(part)>200 or not re.fullmatch(r"[A-Za-z0-9._+-]+",part)
+            for part in parts) or parts[0].casefold()=="notices"):
+            raise ValueError("unsafe native original resource layout")
+        folded=relative.casefold()
+        if folded in seen:
+            raise ValueError("duplicate/case-aliased original native resource")
+        seen.add(folded)
+        if not isinstance(item,dict) or set(item)!={"path","sha256"} or (
+            not isinstance(item["sha256"],str) or
+            not HEX.fullmatch(item["sha256"])
+        ):
+            raise ValueError("resource missing original source and exact SHA")
+        file=safe_file(root,item["path"])
+        if file.stat().st_size>256*1024*1024:
+            raise ValueError("original resource exceeds protected Windows per-file quota")
+        digest=hashlib.sha256()
+        with file.open("rb") as stream:
+            while part:=stream.read(1024*1024):
+                digest.update(part)
+        if digest.hexdigest()!=item["sha256"]:
+            raise ValueError("original resource SHA mismatch")
+        total+=file.stat().st_size
+        if total>512*1024*1024:
+            raise ValueError("resource set exceeds stricter protected Windows total quota")
+        result.append((relative,file,item["sha256"]))
+    return sorted(result)
 
 
 def verify(manifest: pathlib.Path, root: pathlib.Path, release: bool = False) -> list[str]:
@@ -88,6 +159,10 @@ def verify(manifest: pathlib.Path, root: pathlib.Path, release: bool = False) ->
                     digest.update(block)
             if digest.hexdigest() != checksum:
                 raise ValueError(f"{ident}: {platform} binary digest mismatch")
+        # An independent approved release cannot silently discard all
+        # original clangd DLLs/Clang resources. Check BOTH OS inventories.
+        for native_platform in sorted(PLATFORMS):
+            reviewed_native_resources(row,root,native_platform)
         for notice in notices:
             candidate = safe_file(root, notice)
             if candidate.stat().st_size > 1024 * 1024 or candidate.stat().st_size == 0:

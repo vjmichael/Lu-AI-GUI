@@ -18,7 +18,7 @@ import shutil
 import sys
 import tempfile
 
-from verify_language_servers import safe_file, verify
+from verify_language_servers import safe_file, verify, reviewed_native_resources
 
 PLATFORM = "linux-x86_64"
 EXECUTABLES = {
@@ -111,6 +111,16 @@ def stage_linux(
             binary.chmod(0o755)
             if file_digest(binary) != expected:
                 raise ValueError("binary digest changed while staging")
+            # Original native DLL/ELF and Clang resource closure must survive
+            # Debian staging, not only the main executable and legal notice.
+            native_resources=reviewed_native_resources(row,source_root,PLATFORM)
+            for relative,original,expected_resource in native_resources:
+                asset=server_root.joinpath(*relative.split("/"))
+                asset.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(original,asset)
+                asset.chmod(0o755 if ".so" in asset.name else 0o644)
+                if file_digest(asset)!=expected_resource:
+                    raise ValueError("original native resource mutated during staging")
             notices = server_root / "NOTICES"
             notices.mkdir(mode=0o755)
             for index, relative in enumerate(row["licenseNoticeFiles"]):
@@ -131,6 +141,7 @@ def stage_linux(
                 "bundleSha256": checksum,
                 "rustEnvPin": ENV_PINS[ident],
                 "licenseNotices": len(row["licenseNoticeFiles"]),
+                "originalNativeResourceFiles":len(native_resources),
                 "releaseVersion": row["releaseVersion"],
             }
         (stage_root / "linux-lsp-staging-evidence.json").write_text(

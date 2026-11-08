@@ -18,6 +18,9 @@ class LinuxProtectedLspStageTests(unittest.TestCase):
         (source / "win/clangd.exe").write_bytes(b"reviewed win clangd")
         (source / "linux/clangd").write_bytes(b"reviewed linux clangd")
         (source / "notices/LICENSE-LLVM").write_text("reviewed SPDX license")
+        (source / "win/original-runtime.dll").write_bytes(b"reviewed DLL")
+        (source / "linux/lib/clang/23/include").mkdir(parents=True)
+        (source / "linux/lib/clang/23/include/stddef.h").write_bytes(b"reviewed original Clang header")
         data = json.loads(ORIGINAL.read_text(encoding="utf-8"))
         row = next(item for item in data["servers"] if item["id"] == "clangd")
         row.update({
@@ -34,6 +37,21 @@ class LinuxProtectedLspStageTests(unittest.TestCase):
                 "linux-x86_64": hashlib.sha256(b"reviewed linux clangd").hexdigest(),
             },
             "licenseNoticeFiles": ["notices/LICENSE-LLVM"],
+            "nativeResourceManifestReviewed": True,
+            "nativeResourceFilesByPlatform": {
+                "windows-x86_64": {
+                    "bin/original-runtime.dll": {
+                        "path":"win/original-runtime.dll",
+                        "sha256":hashlib.sha256(b"reviewed DLL").hexdigest(),
+                    },
+                },
+                "linux-x86_64": {
+                    "lib/clang/23/include/stddef.h": {
+                        "path":"linux/lib/clang/23/include/stddef.h",
+                        "sha256":hashlib.sha256(b"reviewed original Clang header").hexdigest(),
+                    },
+                },
+            },
         })
         data["releaseApproved"] = True
         manifest = root / "fixture-manifest.json"
@@ -70,6 +88,11 @@ class LinuxProtectedLspStageTests(unittest.TestCase):
                 (destination / "language-servers/clangd/NOTICES/000-LICENSE-LLVM").read_text(),
                 "reviewed SPDX license",
             )
+            self.assertEqual(
+                (destination / "language-servers/clangd/lib/clang/23/include/stddef.h").read_bytes(),
+                b"reviewed original Clang header",
+            )
+            self.assertEqual(evidence["servers"]["clangd"]["originalNativeResourceFiles"],1)
             receipt = json.loads((destination / "linux-lsp-staging-evidence.json").read_text())
             self.assertEqual(receipt["servers"]["clangd"]["bundleSha256"], pin)
             with self.assertRaises(ValueError):
