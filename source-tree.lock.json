@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6f873108a32bd320de6f5b33c871f2d864012b1b",
+  "sourceCommitBeforeLock": "1a533c1ae4990a93f9e963bdc67da0b068a753db",
   "trackedFileCount": 728,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "4f7445c95f1b4d5d7afbb24c50056237a06f2953"
+      "blob": "576a60bc1b8616e8336b0ecf514e590b50121dab"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -829,7 +829,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
-      "blob": "da1d9af763f75d58f21d928c73dabf847d5e556b"
+      "blob": "64fe6ab88020e02e8c5dfbe47677c1dad833bf8d"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
@@ -917,7 +917,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "1612d4f8353fef5797f420a4fc43480f71a8ad37"
+      "blob": "6b41401192611a6dcc9045753fc590bbee1fb9d6"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1049,7 +1049,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01f-model-plan-ingress.test.mjs",
-      "blob": "956ea8e390523a5fd457695797d8ec8dcfedbd60"
+      "blob": "2efee0b364cf99b8829f66243b90ebfd17534cdf"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
