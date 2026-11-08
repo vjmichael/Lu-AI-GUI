@@ -599,7 +599,10 @@ which a leaf `cgroup.kill` cannot reach. This source candidate only
 seeks independent *setsid*/PGID escape proof. Do not advertise complete
 adversarial descendant containment until trusted systemd-managed or
 other nonmigratable membership and a hostile migration/daemonization
-native regression pass. No model-visible generic external command
-adapter or blanket new guarantee added.
+native regression pass. Native cgroup fixture additionally places the
+`setsid()` descendant in a real nested child cgroup and requires
+recursive `cgroup.kill` plus bounded nested-cgroup directory cleanup.
+No model-visible generic external command adapter or blanket new
+guarantee added.
 
 See `docs/LU_E1_P08C_CGROUP_V2_IMPLEMENTATION_20261108.md`.
