@@ -548,3 +548,24 @@ the future Linux single installer still needs the guardian sibling binary.
 The physical installed-Windows acceptance remains deferred toward v1.0.
 See docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md and
 docs/LU_E1_P08_LINUX_GROUP_GUARD_20261108.md.
+
+## E1-P08B/C — exact native repair and escape-capable worker decision (Nov 8, 2026)
+
+Earlier E1-P08 hosted native receipts at run 42454451010: Windows
+portable 3/3 PASSED; Ubuntu 24.04 portable 4/4 PASSED; Windows Tauri
+compile FAILED with Rust E0369 in the previously committed reviewed
+desktop mode test. Replaced the invalid `matches!("git"|"media",...)`
+expression with independently valid literal match tests. Exact-current-head
+Windows Tauri proof remains OPEN, as does the new guardian test matrix.
+
+Linux kernel negative control reproduced `setsid()` child survival
+after original-group SIGKILL, despite remaining in the same cgroup;
+the child was cleaned up via a kernel-pinned pidfd. Submitted the
+negative control to dedicated native CI. **Decision: cgroup-v2 delegated
+subtree + cgroup.kill is necessary before Lu can promise complete
+termination of descendants that escape a process group.** Current
+group guardian remains lower-assurance and explicitly scoped to
+ordinary cooperative Git/FFprobe descendants. True delegated cgroup
+custody and abnormal-host-crash cleanup are independent E1-P08C OPEN
+gates, not a mandatory sandbox on Lu Core. See
+docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md.
