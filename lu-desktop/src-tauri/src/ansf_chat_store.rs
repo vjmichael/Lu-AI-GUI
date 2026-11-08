@@ -615,6 +615,54 @@ impl ChatStore {
         self.append(chat_id,LiveKind::AssistantCancelled,"",None,
             Some(generation_id),None,None)
     }
+    /// E1-P08: host-only startup projection of a recovered reviewed-app turn.
+    /// Existing ANSF user-turn IDs are authoritative. Never infer chat ownership
+    /// from a model-provided path or from worker stdout.
+    /// Some(true): a new interrupted notice; Some(false): already terminal /
+    /// already notified; None: no authenticated human-turn mapping exists.
+    pub fn mark_reviewed_turn_interrupted(
+        &self,turn_id:&str
+    )->Result<Option<bool>,String>{
+        const NOTICE:&str="Reviewed application operation interrupted by Lu restart. No tool was automatically retried; an in-flight effect may be uncertain. Review the result before starting a new request.";
+        if !valid_id(turn_id,"g-"){return Err("Invalid reviewed turn ID".into())}
+        let (chats,_)=self.list()?;
+        let mut owner:Option<String>=None;
+        for chat in chats{
+            if self.trusted_user_turn_text(&chat.chat_id,turn_id).is_some(){
+                if owner.is_some(){
+                    return Err("Multiple chats own one reviewed turn identity".into())
+                }
+                owner=Some(chat.chat_id);
+            }
+        }
+        let Some(chat_id)=owner else{return Ok(None)};
+        let book=self.require(&chat_id)?;
+        let mut after=0i64;
+        let mut terminal=false;
+        let mut already_notified=false;
+        loop{
+            let page=book.live_chat_events_after(&chat_id,after,100)
+                .map_err(to_err)?;
+            if page.is_empty(){break}
+            for stored in page{
+                after=stored.seq;
+                if stored.event.generation_id.as_deref()!=Some(turn_id){continue}
+                match stored.event.kind{
+                    LiveKind::AssistantCompleted|LiveKind::AssistantCancelled=>
+                        terminal=true,
+                    LiveKind::AssistantProgress if stored.event.text==NOTICE=>
+                        already_notified=true,
+                    _=>{}
+                }
+            }
+        }
+        if terminal||already_notified{return Ok(Some(false))}
+        // Adds a durable ANSF display checkpoint with interrupted=true,
+        // cancelled=false. A crash after the immutable event append but
+        // before catalog update is detected on the following startup.
+        self.append_progress(&chat_id,turn_id,NOTICE)?;
+        Ok(Some(true))
+    }
     pub fn append_browser_observation(&self,chat_id:&str,generation_id:&str,
         call_id:&str,tool:&str,summary:&str)->Result<(),String>{
         if self.trusted_user_turn_text(chat_id,generation_id).is_none(){
@@ -1160,6 +1208,53 @@ mod tests{
         std::env::temp_dir().join(format!("lu-ansf-desktop-{}-{}",
             std::process::id(),SystemTime::now()
                 .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn reviewed_restart_notice_is_chat_scoped_visible_and_idempotent(){
+        let root=tmp();
+        let interrupted=format!("g-{:032x}",11);
+        let completed=format!("g-{:032x}",12);
+        let unknown=format!("g-{:032x}",13);
+        let chat_id;
+        let other_id;
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            chat_id=chats.create_chat().unwrap().chat_id;
+            other_id=chats.create_chat().unwrap().chat_id;
+            chats.append_user_with_turn_id(&chat_id,&interrupted,
+                "Inspect selected Git repository").unwrap();
+            chats.append_progress(&chat_id,&interrupted,
+                "Unverified work in progress").unwrap();
+            chats.append_user_with_turn_id(&other_id,&completed,
+                "Check selected media").unwrap();
+            chats.append_progress(&other_id,&completed,"verified media").unwrap();
+            chats.complete(&other_id,&completed).unwrap();
+        }
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            assert_eq!(chats.mark_reviewed_turn_interrupted(&interrupted).unwrap(),
+                Some(true));
+            assert_eq!(chats.mark_reviewed_turn_interrupted(&interrupted).unwrap(),
+                Some(false));
+            assert_eq!(chats.mark_reviewed_turn_interrupted(&completed).unwrap(),
+                Some(false));
+            assert_eq!(chats.mark_reviewed_turn_interrupted(&unknown).unwrap(),
+                None);
+            let entries=chats.history(&chat_id).unwrap();
+            assert_eq!(entries.len(),2);
+            assert!(entries[1].interrupted&&!entries[1].cancelled);
+            assert!(entries[1].text.contains("interrupted by Lu restart"));
+            let unrelated=chats.history(&other_id).unwrap();
+            assert_eq!(unrelated[1].text,"verified media");
+            assert!(!unrelated[1].interrupted);
+            let win=chats.history_window(&chat_id,None,"older",64).unwrap();
+            assert!(format!("{win:?}").contains("interrupted by Lu restart"));
+        }
+        let chats=ChatStore::open(&root).unwrap();
+        assert_eq!(chats.mark_reviewed_turn_interrupted(&interrupted).unwrap(),
+            Some(false));
+        assert_eq!(chats.history(&chat_id).unwrap().len(),2);
+        drop(chats);fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn sqlite_is_primary_for_new_messages_and_restarts(){
