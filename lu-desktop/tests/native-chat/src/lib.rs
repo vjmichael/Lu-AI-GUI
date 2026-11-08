@@ -17,6 +17,8 @@ pub mod agent_plan_progress;
 pub mod agent_plan_review;
 #[path = "../../../src-tauri/src/chat_message_interactions.rs"]
 pub mod chat_message_interactions;
+#[path = "../../../src-tauri/src/chat_message_revisions.rs"]
+pub mod chat_message_revisions;
 
 // Real M2 ANSF goal events and chat journal compile together without Tauri.
 #[path = "../../../../src-tauri/lu-core/src/ansf_goals.rs"]

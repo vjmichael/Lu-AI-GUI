@@ -14,6 +14,7 @@ import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.m
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
+import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget} from './message_revisions.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -703,6 +704,13 @@ function App() {
   // UX-CHAT01: per-chat decoration state does not enter model context.
   const [messageDecorationsByChat,setMessageDecorationsByChat]=useState({});
   const [messageReplay,setMessageReplay]=useState(null);
+  const [revisionHistoryByChat,setRevisionHistoryByChat]=useState({});
+  const [revisionPendingByChat,setRevisionPendingByChat]=useState({});
+  const [messageEditor,setMessageEditor]=useState(null);
+  const [messageProvenance,setMessageProvenance]=useState(null);
+  const [linkedReplyTarget,setLinkedReplyTarget]=useState(null);
+  const [linkedReplyText,setLinkedReplyText]=useState('');
+  const [revisionActionBusy,setRevisionActionBusy]=useState(false);
   const [messageDecorationBusy,setMessageDecorationBusy]=useState(false);
   // Active transcript is a bounded visible window, not the entire ANSF book.
   const [historyWindow,setHistoryWindow]=useState({
@@ -2643,9 +2651,117 @@ function App() {
     });
     return ()=>{active=false};
   },[chatId,history]);
+  // Display-only revision projection over the same bounded original ANSF
+  // history window. Never replaces original history or model context.
+  useEffect(()=>{
+    const id=chatId;
+    if(!id)return;
+    const seqs=history.filter(x=>
+      Number.isSafeInteger(x.seq)&&x.seq>0&&
+      (x.role==='user'||x.role==='assistant')
+    ).map(x=>x.seq);
+    const slices=[];
+    for(let start=0;start<seqs.length;start+=64){
+      slices.push(seqs.slice(start,start+64));
+    }
+    if(!slices.length)slices.push([]);
+    let active=true;
+    Promise.all(slices.map(batch=>invoke('lu_message_revision_page',{
+      chatId:id,seqs:batch
+    }))).then(pages=>{
+      if(!active)return;
+      const all=pages.flatMap(page=>page?.entries||[]);
+      const pending=Math.max(0,...pages.map(page=>page?.pendingReplyLinks||0));
+      setRevisionHistoryByChat(prev=>({
+        ...prev,[id]:revisionsBySequence(all)
+      }));
+      setRevisionPendingByChat(prev=>({...prev,[id]:pending}));
+    }).catch(error=>{
+      if(active&&currentChat.current===id){
+        setError('Message revision history unavailable: '+String(error));
+      }
+    });
+    return ()=>{active=false};
+  },[chatId,history]);
+  async function editSavedMessage(){
+    const editor=messageEditor;
+    if(!chatId||!editor||revisionActionBusy)return;
+    setRevisionActionBusy(true);
+    try{
+      const row=await invoke('lu_edit_message_display',{
+        chatId,seq:editor.seq,expectedVersion:editor.version,
+        expectedSha:editor.sha,text:editor.text
+      });
+      setRevisionHistoryByChat(prev=>({
+        ...prev,[chatId]:{
+          ...(prev[chatId]||{}),[row.seq]:row
+        }
+      }));
+      setMessageEditor(null);
+    }catch(error){
+      setError('Display correction not saved: '+String(error));
+    }finally{setRevisionActionBusy(false)}
+  }
+  async function postLinkedHumanReply(){
+    const target=linkedReplyTarget;
+    const id=chatId;
+    if(!id||!target||!linkedReplyText.trim()||revisionActionBusy)return;
+    setRevisionActionBusy(true);
+    try{
+      const receipt=await invoke('lu_post_linked_reply',{
+        chatId:id,parentSeq:target.seq,parentVersion:target.version,
+        parentSha:target.sha,text:linkedReplyText
+      });
+      if(!receipt||receipt.status!=='LINKED_ORIGINAL_HUMAN_TURN_NO_MODEL_EXECUTION'){
+        throw Error('Original reply linkage not confirmed');
+      }
+      setLinkedReplyTarget(null);
+      setLinkedReplyText('');
+      await refreshChats();
+      if(currentChat.current===id){
+        const entries=await loadLatestUiHistory(id);
+        if(currentChat.current===id)setHistory(entries);
+      }
+      setActivity('Posted a linked human reply; no model/tool execution.');
+    }catch(error){
+      setError('Reply outcome uncertain: '+String(error)+
+        ' Inspect history and reconcile; do not repost automatically.');
+    }finally{setRevisionActionBusy(false)}
+  }
+  async function reconcileExistingHumanReplies(){
+    if(!chatId||revisionActionBusy)return;
+    const id=chatId;
+    setRevisionActionBusy(true);
+    try{
+      const linked=await invoke('lu_reconcile_message_replies',{chatId:id});
+      setActivity('Reconciled '+linked+' already-saved reply link(s); no messages resent.');
+      if(currentChat.current===id){
+        const entries=await loadLatestUiHistory(id);
+        if(currentChat.current===id)setHistory(entries);
+      }
+    }catch(error){
+      setError('Reply reconciliation failed: '+String(error));
+    }finally{setRevisionActionBusy(false)}
+  }
   useEffect(()=>{
     setMessageReplay(null);
+    setMessageEditor(null);
+    setMessageProvenance(null);
+    setLinkedReplyTarget(null);
+    setLinkedReplyText('');
   },[chatId]);
+  useEffect(()=>{
+    if(!messageEditor&&!messageProvenance&&!linkedReplyTarget)return;
+    const onEscape=event=>{
+      if(event.key==='Escape'){
+        setMessageEditor(null);
+        setMessageProvenance(null);
+        setLinkedReplyTarget(null);
+      }
+    };
+    window.addEventListener('keydown',onEscape);
+    return ()=>window.removeEventListener('keydown',onEscape);
+  },[messageEditor,messageProvenance,linkedReplyTarget]);
   useEffect(()=>{
     if(!messageReplay)return;
     const closeOnEscape=event=>{
@@ -2658,6 +2774,7 @@ function App() {
     messageDecorationsByChat[chatId]?.appearance
   );
   const chatReactions=messageDecorationsByChat[chatId]?.reactionsBySeq||{};
+  const displayRevisions=revisionHistoryByChat[chatId]||{};
   async function refreshWriteRecovery(targetChat = chatId) {
     if (!targetChat) { setWriteRecovery([]); return; }
     const records = await invoke('lu_write_recovery', {chatId: targetChat});
@@ -3933,17 +4050,32 @@ function App() {
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {displayedHistory.map((entry,i) => <div key={entry.seq??i}
+        {displayedHistory.map((entry,i) => {
+          const revision=displayRevisions[entry.seq];
+          const displayText=revision?.currentText??entry.text;
+          return <div key={entry.seq??i}
           data-ansf-seq={entry.seq??undefined}
           className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}
           style={{backgroundColor:entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble,
             color:textForBackground(entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble)}}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
-          <MessageText text={entry.text} role={entry.role}/>
+          {revision?.replyTo&&<button type="button" className="messageReplyReference"
+            onClick={()=>setMessageProvenance({entry,revision})}
+            aria-label={'Inspect reply provenance for message '+entry.seq}>
+            ↳ Reply to original #{revision.replyTo.parentSeq},
+            version {revision.replyTo.pinnedParentVersion}:
+            {' '+revision.replyTo.pinnedParentExcerpt}
+          </button>}
+          <MessageText text={displayText} role={entry.role}/>
+          {revision?.currentVersion>0&&<small className="messageEditedNotice">
+            Human-edited display · revision {revision.currentVersion}.
+            Original model input and tool history unchanged.
+          </small>}
           {Number.isSafeInteger(entry.seq)&&entry.seq>0&&
             <div className="messageActions" role="group" aria-label={'Actions for saved message '+entry.seq}>
-              <button type="button" onClick={()=>void copySavedMessage(entry)}
-                aria-label="Copy saved message">Copy</button>
+              <button type="button"
+                onClick={()=>void copySavedMessage({...entry,text:displayText})}
+                aria-label="Copy displayed message">Copy</button>
               <button type="button" onClick={()=>setMessageReplay({
                 chatId,seq:entry.seq,role:entry.role,text:entry.text
               })} aria-label="Replay original saved message">Replay</button>
@@ -3951,8 +4083,30 @@ function App() {
                 onClick={()=>reuseSavedUserPrompt(entry)} aria-label="Reuse saved prompt without sending">
                 Reuse prompt
               </button>}
-              <button type="button" onClick={()=>quoteSavedMessage(entry)}
-                aria-label="Quote saved message in composer">Quote</button>
+              <button type="button" onClick={()=>quoteSavedMessage({
+                ...entry,text:displayText
+              })} aria-label="Quote displayed message in composer">Quote</button>
+              {canEdit(entry)&&revision&&<>
+                <button type="button"
+                  onClick={()=>setMessageEditor({
+                    seq:entry.seq,role:entry.role,version:revision.currentVersion,
+                    sha:revision.currentSha256,text:revision.currentText,
+                    original:revision.originalText
+                  })} aria-label="Edit displayed message without changing original">
+                  Edit display
+                </button>
+                <button type="button"
+                  onClick={()=>setMessageProvenance({entry,revision})}
+                  aria-label="View original, revisions and provenance">
+                  Versions / source
+                </button>
+                <button type="button" onClick={()=>{
+                  const target=draftReplyTarget(entry,revision);
+                  if(target){setLinkedReplyTarget({...target,chatId});setLinkedReplyText('')}
+                }} aria-label="Reply with a new linked human message">
+                  Reply
+                </button>
+              </>}
               <div className="messageReactions" role="group" aria-label="React to this message">
                 {MESSAGE_REACTIONS.map(emoji=>
                   <button type="button" key={emoji}
@@ -3964,7 +4118,17 @@ function App() {
                   </button>)}
               </div>
             </div>}
-        </div>)}
+        </div>;
+        })}
+        {(revisionPendingByChat[chatId]||0)>0&&
+          <div className="replyRecoveryNotice" role="status">
+            {revisionPendingByChat[chatId]} reply link(s) need examination.
+            Reconciliation checks only already-saved human messages.
+            <button type="button" disabled={revisionActionBusy}
+              onClick={()=>void reconcileExistingHumanReplies()}>
+              Reconcile saved reply links
+            </button>
+          </div>}
         {historyWindow.hasNewer&&<button type="button" className="subtleButton"
           onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
         {visibleJob && <div className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite" aria-atomic="true">
@@ -4002,6 +4166,105 @@ function App() {
               Copy original
             </button>
             <button type="button" onClick={()=>setMessageReplay(null)}>Done</button>
+          </div>
+        </section>
+      </div>}
+      {messageEditor&&chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setMessageEditor(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Edit message display revision"
+          onClick={event=>event.stopPropagation()}>
+          <header><strong>Correct displayed message #{messageEditor.seq}</strong>
+            <button type="button" onClick={()=>setMessageEditor(null)}>Close</button>
+          </header>
+          <small>Human display correction only. The immutable ANSF original,
+            previous model input, and all earlier tool permissions remain unchanged.</small>
+          <label className="messageRevisionEditor">Corrected text
+            <textarea autoFocus rows={8} maxLength={16384}
+              value={messageEditor.text}
+              onChange={event=>setMessageEditor(old=>({
+                ...old,text:event.target.value
+              }))}/>
+          </label>
+          <details className="originalMessageDetails">
+            <summary>View immutable original for comparison</summary>
+            <pre>{messageEditor.original}</pre>
+          </details>
+          <div className="settingsActions">
+            <button type="button" disabled={revisionActionBusy||
+              !messageEditor.text.trim()||
+              messageEditor.text===(
+                displayRevisions[messageEditor.seq]?.currentText
+              )}
+              onClick={()=>void editSavedMessage()}>
+              Save new display revision
+            </button>
+            <button type="button" onClick={()=>setMessageEditor(null)}>Cancel</button>
+          </div>
+        </section>
+      </div>}
+      {messageProvenance&&chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setMessageProvenance(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Immutable message provenance and edit versions"
+          onClick={event=>event.stopPropagation()}>
+          <header><strong>Source and revisions · message #{messageProvenance.entry.seq}</strong>
+            <button type="button" autoFocus
+              onClick={()=>setMessageProvenance(null)}>Close</button>
+          </header>
+          <small>Authenticated ANSF originals are retained even after a display correction.
+            A human correction is not a new model answer or tool-execution receipt.</small>
+          <div className="messageProvenanceVersions">
+            <section>
+              <strong>Original ANSF text · version 0</strong>
+              <small>SHA-256: {messageProvenance.revision.originalSha256}</small>
+              <pre>{messageProvenance.revision.originalText}</pre>
+            </section>
+            {messageProvenance.revision.versions.map(v=>
+              <section key={v.version}>
+                <strong>Version {v.version} · human display correction</strong>
+                <small>SHA-256: {v.sha256}</small>
+                <pre>{v.text}</pre>
+              </section>
+            )}
+            {messageProvenance.revision.replyTo&&<section>
+              <strong>Linked reply provenance</strong>
+              <small>Parent ANSF message: #{messageProvenance.revision.replyTo.parentSeq}
+                {' '}· pinned version {messageProvenance.revision.replyTo.pinnedParentVersion}
+              </small>
+              <small>Parent SHA-256:
+                {' '+messageProvenance.revision.replyTo.pinnedParentSha256}</small>
+              <pre>{messageProvenance.revision.replyTo.pinnedParentExcerpt}</pre>
+              <small>The parent link never changes when the parent is edited later.</small>
+            </section>}
+          </div>
+        </section>
+      </div>}
+      {linkedReplyTarget?.chatId===chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setLinkedReplyTarget(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Write a linked human reply" onClick={event=>event.stopPropagation()}>
+          <header><strong>Reply to saved message #{linkedReplyTarget.seq}</strong>
+            <button type="button" onClick={()=>setLinkedReplyTarget(null)}>Close</button>
+          </header>
+          <small>Target display version {linkedReplyTarget.version} ·
+            pinned SHA-256 {linkedReplyTarget.sha}</small>
+          <blockquote className="messagePinnedQuote">
+            {linkedReplyTarget.displayText}
+          </blockquote>
+          <label className="messageRevisionEditor">New human reply
+            <textarea autoFocus rows={6} maxLength={16384}
+              value={linkedReplyText} onChange={event=>setLinkedReplyText(event.target.value)}
+              placeholder="Write a reply linked to this specific message and version"/>
+          </label>
+          <small>Posting writes a new saved human message and a provenance link.
+            It does not send this text to the AI, call tools, or renew old permissions.</small>
+          <div className="settingsActions">
+            <button type="button" disabled={revisionActionBusy||!linkedReplyText.trim()}
+              onClick={()=>void postLinkedHumanReply()}>
+              Post linked human reply
+            </button>
+            <button type="button" onClick={()=>setLinkedReplyTarget(null)}>Cancel</button>
           </div>
         </section>
       </div>}

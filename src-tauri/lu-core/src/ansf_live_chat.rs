@@ -556,6 +556,27 @@ impl AnsfStore{
             |r|Ok((r.get(0)?,r.get(1)?))
         ).optional().map_err(Into::into)
     }
+    /// UX-CHAT02: exact host-authenticated, immutable visible message
+    /// sequence associated with one original human turn. Never infer by
+    /// matching potentially duplicated prompt text or latest chat row.
+    pub fn authenticated_chat_turn_visible_seq(
+        &self,session_id:&str,turn_id:&str
+    )->Result<Option<(i64,String)>,AnsfError>{
+        if !valid_session(session_id)||!opaque(turn_id,"g-"){
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        conn.query_row(
+            "SELECT e.seq,e.text FROM ansf_live_chat_events e
+             JOIN ansf_visible_chat d ON d.session_id=e.session_id
+               AND d.first_seq=e.seq AND d.role='user'
+             WHERE e.session_id=?1 AND e.kind='user'
+               AND e.origin='host' AND e.user_turn_id=?2
+               AND e.source_entry_id IS NOT NULL",
+            params![session_id,turn_id],
+            |r|Ok((r.get(0)?,r.get(1)?))
+        ).optional().map_err(Into::into)
+    }
     /// Indexed latest human-origin authenticated user turn. No imported,
     /// unauthenticated or Reader event ever appears in this result.
     pub fn latest_authenticated_chat_turn(&self,session_id:&str)

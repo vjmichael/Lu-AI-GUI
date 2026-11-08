@@ -412,3 +412,37 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 /* Background-specific foreground color also applies to empty-chat guidance. */
 .messages .welcome p{color:inherit;opacity:.77}
+
+
+/* UX-CHAT02: original/revision provenance and pinned human reply links. */
+.messageEditedNotice{display:block;margin-top:9px;padding:5px 8px;
+  border-left:3px solid currentColor;font-size:11px;opacity:.85}
+.messageReplyReference{display:block;max-width:100%;margin-top:10px;
+  padding:7px 10px;background:transparent;color:inherit;opacity:.88;
+  border:1px dashed currentColor;border-radius:7px;text-align:left;
+  font-size:11px;overflow-wrap:anywhere}
+.messageReplyReference:hover{opacity:1}
+.messageRevisionEditor{display:grid;gap:9px;margin:18px 0 12px;font-size:12px}
+.messageRevisionEditor textarea{width:100%;min-height:125px;resize:vertical;
+  padding:11px 12px;background:#112137;color:#f4faff;
+  border:1px solid #6a89aa;border-radius:9px;line-height:1.55}
+.originalMessageDetails{margin:9px 0;border:1px solid #3e566f;
+  border-radius:8px;padding:8px}
+.originalMessageDetails summary{cursor:pointer;color:#d1e0ef}
+.originalMessageDetails pre,.messageProvenanceVersions pre{white-space:pre-wrap;
+  word-break:break-word;font:12px/1.55 Consolas,monospace;color:inherit;
+  max-height:200px;overflow-y:auto;margin:9px 0}
+.messageProvenanceVersions{max-height:65vh;overflow:auto;margin:15px 0}
+.messageProvenanceVersions section{margin:10px 0;padding:11px 13px;
+  border:1px solid #49627d;border-radius:9px;background:#18283b}
+.messageProvenanceVersions strong{display:block}
+.messageProvenanceVersions small{color:#a7c5e3}
+.messagePinnedQuote{margin:12px 0;padding:10px 13px;border-left:3px solid #7bb1e7;
+  white-space:pre-wrap;overflow-wrap:anywhere;background:#1a324a}
+.replyRecoveryNotice{margin:14px 0;padding:12px;border:1px solid #ae8a53;
+  border-radius:8px;background:#3b3025;color:#ffe2ba;font-size:12px}
+.replyRecoveryNotice button{display:block;margin-top:9px;
+  padding:7px 11px;border:1px solid #c0a16e;border-radius:7px;
+  color:inherit;background:#55422d}
+.messageRevisionEditor textarea:focus-visible,
+.messageReplyReference:focus-visible{outline:2px solid #a4d0ff;outline-offset:2px}
