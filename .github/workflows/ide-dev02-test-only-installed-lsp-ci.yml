@@ -141,6 +141,7 @@ jobs:
           fi
           deb="${packages[0]}"
           pkg="$(dpkg-deb --field "$deb" Package)"
+          export DEV02_TECHNICAL_PACKAGE="$pkg"
           if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
             echo 'DENIED: package already installed outside CI scope' >&2
             exit 2
@@ -164,7 +165,7 @@ jobs:
           from pathlib import Path
           root=Path(os.environ["RUNNER_TEMP"])/"lu-ide-technical-resources"
           r=json.loads((root/"technical-lsp-resource-receipt.json").read_text())
-          paths=subprocess.check_output(["dpkg","-L","lu-ide-desktop"],text=True).splitlines()
+          paths=subprocess.check_output(["dpkg","-L",os.environ["DEV02_TECHNICAL_PACKAGE"]],text=True).splitlines()
           for provider,record in r["resources"].items():
               expected=provider if provider!="clangd" else "clangd"
               suffix=f"/language-servers/{provider}/bin/{expected}"
