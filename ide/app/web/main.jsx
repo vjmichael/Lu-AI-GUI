@@ -1487,9 +1487,12 @@ function App() {
       const stagedTabs = approved.edits.map((edit, index) => {
         const key = keyFor(item.projectId, edit.relativePath);
         const previous = tabs.find(tab => tab.key === key);
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,item.projectId,edit.relativePath,edit.expectedRevision);
         editorStates.current.set(key, createEditorState(
           edit.proposedText, edit.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key,state)
         ));
         return {
           key, projectId: item.projectId, relativePath: edit.relativePath,
@@ -1533,7 +1536,10 @@ function App() {
   function discardProjectTabs(projectId) {
     setReview(previous => previous?.projectId === projectId ? null : previous);
     const affected = tabs.filter(tab => tab.projectId === projectId);
-    affected.forEach(tab => editorStates.current.delete(tab.key));
+    affected.forEach(tab => {
+      editorStates.current.delete(tab.key);
+      clearPrivateDraftSession(tab.key);
+    });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
@@ -1732,6 +1738,11 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    const previousBuffer = bufferIdentities.current.get(key);
+    if (previousBuffer) {
+      bufferIdentities.current.set(key,advanceBufferIdentity(previousBuffer));
+      scheduleDraftPreserve(key);
+    }
     setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
       tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText,
@@ -1798,7 +1809,8 @@ function App() {
       const state = existing
         ? editorStates.current.get(key)
         : createEditorState(opened.text, opened.relativePath,
-            (editorState, draft) => onEditorChange(key, editorState, draft));
+            (editorState, draft) => onEditorChange(key, editorState, draft),
+            state => onEditorSelection(key,state));
       if (!state) throw new Error('EDITOR_STATE_UNAVAILABLE');
       const line = state.doc.line(match.line);
       const from = line.from + match.columnUtf16 - 1;
@@ -1807,6 +1819,8 @@ function App() {
           state.doc.sliceString(from, to).length !== match.matchLengthUtf16)
         throw new Error('SEARCH_RANGE_UNVERIFIABLE');
       if (!existing) {
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
         editorStates.current.set(key, state);
         setTabs(previous => [...previous, {
           key, projectId, relativePath: opened.relativePath,
@@ -1816,6 +1830,8 @@ function App() {
         }]);
       }
       setActiveTabKey(key);
+      if (!existing) void checkExistingDraft({key,projectId,
+        relativePath:opened.relativePath});
       setFindRequest({ tabKey: key, from, to,
         nonce: ++projectSearchOpenNonce.current });
       setSection('explorer');
@@ -1851,12 +1867,16 @@ function App() {
           savedText: opened.text, draft: opened.text,
           dirty: false, generation: 0, bufferRevision: 0,
         };
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,opened.projectId,opened.relativePath,opened.revision);
         editorStates.current.set(key, createEditorState(
           opened.text, opened.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key,state)
         ));
         setTabs(previous => [...previous, newTab]);
         setActiveTabKey(key);
+        void checkExistingDraft(newTab);
       } catch (error) { setProblem(String(error)); }
       finally { setExplorerPending(false); }
     }
@@ -1873,6 +1893,7 @@ function App() {
       void stopLspSession();
     }
     editorStates.current.delete(key);
+    clearPrivateDraftSession(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
     setTabs(other);
@@ -1896,10 +1917,14 @@ function App() {
       const opened = await invoke('ide_preview_source_file', {
         projectId: tab.projectId, relativePath: tab.relativePath,
       });
+      clearPrivateDraftSession(tab.key);
+      resetBufferIdentity(tab.key,opened.projectId,opened.relativePath,opened.revision);
       editorStates.current.set(tab.key, createEditorState(
         opened.text, opened.relativePath,
-        (state, draft) => onEditorChange(tab.key, state, draft)
+        (state, draft) => onEditorChange(tab.key, state, draft),
+        state => onEditorSelection(tab.key,state)
       ));
+      void checkExistingDraft(tab);
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
         draft: opened.text, dirty: false, generation: item.generation + 1,
@@ -1914,6 +1939,7 @@ function App() {
     if (!tab || !tab.dirty || savingKey || explorerPending) return;
     const content = tab.draft;
     const base = tab.revision;
+    const saveStartedBuffer=bufferIdentities.current.get(tab.key);
     setSavingKey(tab.key);
     setProblem('');
     setHint('');
@@ -1924,6 +1950,14 @@ function App() {
         expectedRevision: base,
         text: content,
       });
+      // A native Save does not authorize rebasing a replaced editor identity.
+      const currentBuffer=bufferIdentities.current.get(tab.key);
+      const rebased=rebaseBufferAfterSave(currentBuffer,saveStartedBuffer,saved.revision);
+      if (rebased.status!=='rebased') {
+        setHint('A previous editor instance was saved; current draft was not altered.');
+        return true;
+      }
+      bufferIdentities.current.set(tab.key,rebased.identity);
       // If typing continued during the save, the newer draft is kept dirty.
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: saved.revision, savedText: content,
