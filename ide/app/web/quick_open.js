@@ -83,8 +83,8 @@ export function matchQuickOpenFiles(paths, query, limit = QUICK_OPEN_MAX_RESULTS
     const lower = path.toLocaleLowerCase();
     if (needle && !lower.includes(needle)) continue;
     const leaf = lower.slice(lower.lastIndexOf('/') + 1);
-    const score = leaf === needle ? 0 : leaf.startsWith(needle) ? 1 :
-      leaf.includes(needle) ? 2 : 3;
+    const score = lower === needle ? 0 : leaf === needle ? 1 :
+      leaf.startsWith(needle) ? 2 : leaf.includes(needle) ? 3 : 4;
     ranked.push({path, score});
   }
   ranked.sort((a, b) => a.score - b.score || a.path.localeCompare(b.path));
