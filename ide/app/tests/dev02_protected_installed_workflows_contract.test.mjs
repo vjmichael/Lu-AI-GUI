@@ -24,14 +24,11 @@ test('Linux native acceptance uses real installed Tauri, root-owned reviewed rel
     "native.editor_project()",
     'genuine_native_approval()',
     "if not native._native_dialog_ancestor(control)",
-    "run_semantic('",
     'run_semantic("rust"',
     'run_semantic("cpp"',
     'run_python()',
     'DEV02_LINUX_INSTALLED_ALL_THREE_PROTECTED_PROVIDERS=PASS',
-    'first.kill()',
   ]) {
-    if (marker === 'first.kill()') continue; // LSP lifetime ends on explicit Stop, not a simulated crash.
     assert.ok(linux.includes(marker) || linuxWorkflow.includes(marker),marker);
   }
   for (const forbidden of ['continue-on-error: true','--no-verify',
