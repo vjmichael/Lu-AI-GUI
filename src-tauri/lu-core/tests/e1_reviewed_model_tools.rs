@@ -483,6 +483,123 @@ fn real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle(){
     fs::remove_dir_all(root).unwrap();
 }
 
+/// E1-P12: real index, HEAD tree and file-state regression on each OS.
+/// The production oracle itself does NOT invoke git; this setup uses native
+/// Git to ground the claimed porcelain value independently.
+#[test]
+#[ignore="requires native installed Git for tracked-index worktree acceptance"]
+fn real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded(){
+    use lu_core::{
+        journal::IndependentOutcomeVerdict,
+        reviewed_outcome_oracle::verify_git
+    };
+    let git=actual_binary("LU_E1_P07_GIT");
+    let root=temp();let repo=root.join("repo");
+    fs::create_dir_all(&root).unwrap();
+    assert!(Command::new(&git).args(["init","-q"]).arg(&repo)
+        .status().unwrap().success());
+    checked_git(&git,&repo,&["config","user.name","Lu"]);
+    checked_git(&git,&repo,&["config","user.email","lu@example.test"]);
+    fs::write(repo.join("alpha.txt"),b"alpha\n").unwrap();
+    fs::write(repo.join("beta.txt"),b"beta\n").unwrap();
+    checked_git(&git,&repo,&["add","alpha.txt","beta.txt"]);
+    checked_git(&git,&repo,&["commit","-q","-m","base"]);
+    let clean=serde_json::json!({
+        "kind":"tracked_status","trackedChangedEntries":0
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&clean).verdict,
+        IndependentOutcomeVerdict::Verified);
+    fs::write(repo.join("alpha.txt"),b"changed\n").unwrap();
+    let dirty=serde_json::json!({
+        "kind":"tracked_status","trackedChangedEntries":1
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&dirty).verdict,
+        IndependentOutcomeVerdict::Verified);
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&clean).verdict,
+        IndependentOutcomeVerdict::Conflict);
+    fs::remove_file(repo.join("beta.txt")).unwrap();
+    let two=serde_json::json!({
+        "kind":"tracked_status","trackedChangedEntries":2
+    });
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&two).verdict,
+        IndependentOutcomeVerdict::Verified);
+    checked_git(&git,&repo,&["add","alpha.txt"]);
+    // Git sees a mixture of staged and unstaged changes. This deliberately
+    // restricted observer will NOT call a count independently verified.
+    assert_eq!(verify_git(&repo,GitReadOperation::TrackedStatus,&two).verdict,
+        IndependentOutcomeVerdict::Unsupported);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Uses genuine FFmpeg to generate the file, then the installed FFprobe
+/// executable is launched under Lu's real reviewed worker supervisor.
+/// Only the independent host ISO-BMFF parser can promote the final result.
+#[tokio::test]
+#[ignore="requires native installed FFmpeg/FFprobe/Git on Windows and Linux"]
+async fn real_mp4_video_and_aac_audio_are_independently_verified(){
+    use lu_core::journal::IndependentOutcomeVerdict;
+    use lu_core::reviewed_outcome_oracle::verify_media;
+    let git=actual_binary("LU_E1_P07_GIT");
+    let ffprobe=actual_binary("LU_E1_P07_FFPROBE");
+    let ffmpeg=actual_binary("LU_E1_P12_FFMPEG");
+    for mode in ["video","audio"]{
+        let mut f=Fixture::new(&git,Some(&ffprobe),true,true);
+        let output=f.dir.join(format!("{mode}.mp4"));
+        let mut command=Command::new(&ffmpeg);
+        command.args(["-nostdin","-hide_banner","-loglevel","error",
+            "-f","lavfi"]);
+        if mode=="video"{
+            command.args(["-i","color=c=blue:s=64x64:r=10",
+                "-t","1","-an","-c:v","mpeg4","-q:v","4",
+                "-pix_fmt","yuv420p"]);
+        }else{
+            command.args(["-i","sine=frequency=440:sample_rate=44100",
+                "-t","1","-vn","-c:a","aac","-b:a","64k"]);
+        }
+        command.args(["-movflags","+faststart","-use_editlist","0","-y"]);
+        let status=command.arg(&output).status().unwrap();
+        assert!(status.success(),"real FFmpeg {mode} fixture unavailable");
+        f.media=output;
+        let mut record=media_config(&ffprobe,&f.media);
+        record.reviewed_container=ReviewedContainer::Mp4;
+        let names=register_reviewed_application_tools(
+            &f.registry,&mut f.catalog,f.auth.clone(),origin(),
+            Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
+            Arc::clone(&f.effects),Arc::new(Allow),
+            vec![],Some(record)
+        ).unwrap();
+        assert_eq!(names,vec!["lu_reviewed_media_facts"]);
+        let mut turn=f.turn(&["lu_reviewed_media_facts"]).unwrap();
+        let result=turn.handle_model_reply_observed_durable(
+            r#"{"kind":"tool","name":"lu_reviewed_media_facts","arguments":{}}"#,
+            &f.catalog,&f.registry,&f.auth,&Allow,&|_|{},&f.effects
+        ).await.unwrap();
+        let ToolTurnOutcome::ToolResult{call_id,ref data,..}=result
+            else{panic!("actual FFprobe MP4 tool failed to return")};
+        assert_eq!(data["ok"],true,"real FFprobe worker failed for {mode}");
+        assert_eq!(data["result"]["independentOutcome"]["status"],"VERIFIED",
+            "real {mode} MP4 must be independently checked by box parser");
+        assert_eq!(data["result"]["independentOutcome"]["method"],
+            "MP4_BOXES_DIRECT_V1");
+        let inner=format!("{call_id}-fm");
+        let receipt=f.effects.get(&inner).unwrap().unwrap();
+        assert_eq!(receipt.state,EffectState::Applied);
+        let original:serde_json::Value=
+            serde_json::from_slice(&receipt.receipt.unwrap()).unwrap();
+        let verified=verify_media(
+            &f.media,&hash(&f.media),ReviewedContainer::Mp4,&original
+        );
+        assert_eq!(verified.verdict,IndependentOutcomeVerdict::Verified);
+        let mut forged=original.clone();
+        forged["durationMilliseconds"]=serde_json::json!(15_000);
+        assert_eq!(verify_media(
+            &f.media,&hash(&f.media),ReviewedContainer::Mp4,&forged
+        ).verdict,IndependentOutcomeVerdict::Conflict);
+        drop(turn);
+        f.cleanup();
+    }
+}
+
 /// Scripted model responses are intentionally not claimed as GGUF planning.
 /// They exercise the *actual* native model-turn loop, typed tool catalogue,
 /// durable outer dispatch, OS application worker and model continuation.
