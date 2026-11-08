@@ -321,6 +321,7 @@ impl AgentHostScheduler{
         sources:&dyn HostPlanReferenceVerifier,
         human:&dyn TrustedUserTurnVerifier,
         consent:&dyn HostFreshStepConsent,
+        profile:&Path,receipts:&AgentDeliverableReceipts,
     )->Result<WriteStatus,ScheduleError>{
         if !scope(plan,chat,origin_turn)||!exact(owner,"h-")
             ||!exact(claim_id,"q-")||!exact(fresh_turn,"g-")
@@ -347,9 +348,21 @@ impl AgentHostScheduler{
             ||view.steps[step as usize].state!="PLANNED"{
             return Err(ScheduleError::InvalidTransition)
         }
-        // A pre-existing independent witness is not a new command; an
-        // unverified dependency (including AGENT-01A OBSERVED_UNVERIFIED)
-        // is NEVER silently treated as a passed step.
+        // Do not trust the previously cached scheduler witness alone.
+        // Reopen the ORIGINAL task/effect journal via AGENT-01C and require
+        // its historical, independently checked receipt STILL agrees.
+        // Even this cross-database observation never becomes an OS permit.
+        if let Some(parent)=expected.depends_on{
+            let live=receipts.history(
+                plan,chat,origin_turn,profile,ledger,revisions,sources
+            ).map_err(|_|ScheduleError::DependencyUnverified)?;
+            if !live.iter().any(|row|row.revision_sha256==revision_sha
+                &&row.step_index==parent
+                &&row.status=="VERIFIED_AT_OBSERVATION"){
+                return Err(ScheduleError::DependencyUnverified)
+            }
+        }
+        // An AGENT-01A OBSERVED_UNVERIFIED task does not satisfy a dependency.
         let mut db=self.db.lock().map_err(|_|ScheduleError::Poisoned)?;
         let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         origin_in_tx(&tx,plan,chat,origin_turn)?;
@@ -763,11 +776,13 @@ mod tests{
             revision:appended.revision_sha256,owner}
     }
     fn opened(f:&Fixture)->(
-        AgentPlanLedger,AgentPlanRevisionStore,AgentHostScheduler
+        AgentPlanLedger,AgentPlanRevisionStore,
+        AgentDeliverableReceipts,AgentHostScheduler
     ){
         (
             AgentPlanLedger::open(&f.db).unwrap(),
             AgentPlanRevisionStore::open(&f.db).unwrap(),
+            AgentDeliverableReceipts::open(&f.db).unwrap(),
             AgentHostScheduler::open(&f.db).unwrap()
         )
     }
@@ -779,7 +794,7 @@ mod tests{
     #[test]
     fn only_one_durable_host_can_own_a_plan_and_nothing_is_executable(){
         let f=fixture();
-        let (a,b,s)=opened(&f);
+        let (a,b,c,s)=opened(&f);
         let first=claim(&f,&s,&a,&b);
         assert_eq!(first.write,WriteStatus::New);
         assert_eq!(first.epoch,1);
@@ -795,73 +810,73 @@ mod tests{
         ),Err(ScheduleError::WrongOrigin));
         assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a).unwrap().unwrap().state,
             "OWNED");
-        drop(s);drop(b);drop(a);
-        let (a,b,s)=opened(&f);
+        drop(s);drop(c);drop(b);drop(a);
+        let (a,b,c,s)=opened(&f);
         assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a).unwrap().unwrap().epoch,1);
         assert_eq!(s.claim_host(
             &f.plan,&f.chat,&f.origin,&id("h-",99),&f.revision,
             session_budget(),&a,&b,&Sources(true)
         ),Err(ScheduleError::StaleOwner));
-        drop(s);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
+        drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
     fn fresh_human_consent_and_requested_resource_ceiling_are_required(){
-        let f=fixture();let (a,b,s)=opened(&f);
+        let f=fixture();let (a,b,c,s)=opened(&f);
         claim(&f,&s,&a,&b);
         let q=id("q-",20);
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&q,&f.origin,step_budget(),&a,&b,&Sources(true),
-            &Human,&Fresh(true)
+            &Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::NoFreshConsent));
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&q,&id("g-",21),step_budget(),&a,&b,&Sources(true),
-            &Human,&Fresh(false)
+            &Human,&Fresh(false),&f.root,&c
         ),Err(ScheduleError::NoFreshConsent));
         let mut oversized=step_budget();
         oversized.model_token_ceiling=10_000;
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&q,&id("g-",21),oversized,&a,&b,&Sources(true),
-            &Human,&Fresh(true)
+            &Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::InvalidBudget));
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&q,&id("g-",21),step_budget(),&a,&b,&Sources(true),
-            &Human,&Fresh(true)
+            &Human,&Fresh(true),&f.root,&c
         ),Ok(WriteStatus::New));
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&q,&id("g-",21),step_budget(),&a,&b,&Sources(true),
-            &Human,&Fresh(true)
+            &Human,&Fresh(true),&f.root,&c
         ),Ok(WriteStatus::AlreadyRecorded));
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&id("q-",22),&id("g-",23),step_budget(),&a,&b,&Sources(true),
-            &Human,&Fresh(true)
+            &Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::AlreadyClaimed));
         // A model cannot get the scheduler to skip dependencies by claiming
         // AGENT-01A "OBSERVED_UNVERIFIED" is a completed outcome.
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             1,&id("q-",24),&id("g-",25),step_budget(),&a,&b,&Sources(true),
-            &Human,&Fresh(true)
+            &Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::DependencyUnverified));
         let view=s.view(&f.plan,&f.chat,&f.origin,&a).unwrap().unwrap();
         assert_eq!(view.claims.len(),1);
         assert_eq!(view.claims[0].claim_state,"PROPOSED_NO_EXECUTION");
         assert_eq!(view.execution,"NOT_AUTHORIZED_FOR_EXECUTION");
-        drop(s);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
+        drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
     fn cancel_intent_and_host_quarantine_do_not_reap_or_replay_workers(){
-        let f=fixture();let (a,b,s)=opened(&f);
+        let f=fixture();let (a,b,c,s)=opened(&f);
         claim(&f,&s,&a,&b);
         s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,0,
             &id("q-",27),&id("g-",28),step_budget(),
-            &a,&b,&Sources(true),&Human,&Fresh(true)
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
         ).unwrap();
         assert_eq!(s.quarantine_abandoned(
             &f.plan,&f.chat,&f.origin,&f.owner,&Stopped(false)
@@ -886,19 +901,19 @@ mod tests{
         assert_eq!(projection.claims[0].claim_state,"CANCEL_INTENT_UNCERTAIN");
         // Status stays uncertain even when host stopped. It never claims a
         // child process was terminated.
-        drop(s);drop(b);drop(a);
-        let (a,b,s)=opened(&f);
+        drop(s);drop(c);drop(b);drop(a);
+        let (a,b,c,s)=opened(&f);
         assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a)
             .unwrap().unwrap().state,"RECOVERY_REQUIRED");
         assert_eq!(s.claim_host(
             &f.plan,&f.chat,&f.origin,&id("h-",99),&f.revision,
             session_budget(),&a,&b,&Sources(true)
         ),Err(ScheduleError::StaleOwner));
-        drop(s);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
+        drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
     fn stale_goal_and_stale_plan_revision_cannot_receive_a_step(){
-        let f=fixture();let (a,b,s)=opened(&f);
+        let f=fixture();let (a,b,c,s)=opened(&f);
         assert_eq!(s.claim_host(
             &f.plan,&f.chat,&f.origin,&f.owner,&f.revision,
             session_budget(),&a,&b,&Sources(false)
@@ -907,7 +922,7 @@ mod tests{
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,0,
             &id("q-",32),&id("g-",33),step_budget(),
-            &a,&b,&Sources(false),&Human,&Fresh(true)
+            &a,&b,&Sources(false),&Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::UnreviewedRevision));
         let mut changed=RevisionProposal{
             goal_id:id("goal-",5),goal_event_id:id("m-",34),
@@ -930,22 +945,21 @@ mod tests{
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,0,
             &id("q-",32),&id("g-",33),step_budget(),
-            &a,&b,&Sources(true),&Human,&Fresh(true)
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::StaleRevision));
         assert_ne!(next.revision_sha256,f.revision);
         // No old owner's automatic adoption of a changed goal.
-        drop(s);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
+        drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
     fn no_independent_receipt_means_no_completion_and_no_next_step(){
-        let f=fixture();let (a,b,s)=opened(&f);
+        let f=fixture();let (a,b,c,s)=opened(&f);
         claim(&f,&s,&a,&b);
         s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&id("q-",41),&id("g-",42),step_budget(),
-            &a,&b,&Sources(true),&Human,&Fresh(true)
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
         ).unwrap();
-        let c=AgentDeliverableReceipts::open(&f.db).unwrap();
         assert_eq!(s.acknowledge_historical_receipt(
             &f.plan,&f.chat,&f.origin,&f.owner,1,
             &f.revision,0,&id("q-",41),&f.root,&a,&b,&c,&Sources(true)
@@ -953,7 +967,7 @@ mod tests{
         assert_eq!(s.release_without_dispatch(
             &f.plan,&f.chat,&f.origin,&f.owner,1
         ),Err(ScheduleError::ReviewRequired));
-        drop(c);drop(s);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
+        drop(c);drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     fn tool(id:&str,turn:&str)->ToolInvocation{
         ToolInvocation{
@@ -964,12 +978,12 @@ mod tests{
     }
     #[test]
     fn independently_checked_historical_receipt_unlocks_only_a_new_proposal(){
-        let f=fixture();let (a,b,s)=opened(&f);
+        let f=fixture();let (a,b,c,s)=opened(&f);
         claim(&f,&s,&a,&b);
         s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             0,&id("q-",50),&id("g-",51),step_budget(),
-            &a,&b,&Sources(true),&Human,&Fresh(true)
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
         ).unwrap();
         // Actual production TaskStore + EffectJournal, but these are FIXTURE
         // bytes: they are NOT an OS/Git/FFprobe child process acceptance.
@@ -994,7 +1008,6 @@ mod tests{
             worker,b"worker receipt",IndependentOutcomeVerdict::Verified,
             "GIT_HEAD_DIRECT_V1",Some(&"a".repeat(64))
         ).unwrap();
-        let c=AgentDeliverableReceipts::open(&f.db).unwrap();
         assert!(c.record_observed(
             &f.plan,&f.chat,&f.origin,&f.revision,0,worker,
             &f.root,&a,&b,&Sources(true)
@@ -1012,14 +1025,14 @@ mod tests{
         assert_eq!(s.propose_step(
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
             1,&id("q-",52),&id("g-",53),step_budget(),
-            &a,&b,&Sources(true),&Human,&Fresh(true)
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
         ),Ok(WriteStatus::New));
         assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a)
             .unwrap().unwrap().requested_claims,2);
         assert_eq!(s.release_without_dispatch(
             &f.plan,&f.chat,&f.origin,&f.owner,1
         ),Err(ScheduleError::ReviewRequired));
-        drop(c);drop(effect);drop(task);drop(s);drop(b);drop(a);
+        drop(c);drop(effect);drop(task);drop(s);drop(c);drop(b);drop(a);
         fs::remove_dir_all(f.root).unwrap();
     }
 }
