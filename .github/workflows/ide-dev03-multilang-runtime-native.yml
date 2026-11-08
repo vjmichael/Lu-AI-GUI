@@ -116,3 +116,35 @@ jobs:
           path: .dev03-receipts/native.txt
           if-no-files-found: error
           retention-days: 14
+
+  python-runtime-candidate:
+    name: Python 3.13.5 pytest offline candidate / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Python runtime candidate with offline relocated pytest smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python ide/tools/provision_python_candidate.py \
+            --stage .dev03-python-stage --output .dev03-python-candidate.zip
+          python -c "import json,zipfile; z=zipfile.ZipFile('.dev03-python-candidate.zip'); m=json.loads(z.read('runtime-manifest.json')); assert m['runtimeExecutionEnabled'] is False and m['approval']=='candidate_not_approved'; print('CANDIDATE_SHA='+m['runtimeTreeSha256'])"
+          echo DEV03_PYTHON_CANDIDATE_NOT_INSTALLER_APPROVED=PASS
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ide-dev03-python-3.13.5-pytest-8.4.1-candidate-${{ matrix.os }}
+          path: .dev03-python-candidate.zip
+          if-no-files-found: error
+          retention-days: 14
