@@ -85,3 +85,15 @@ user-supplied PID is involved.
 The test is source-submitted, **not yet a verified passing OS result**.
 All original E1-P07 GGUF model selection and physical installed Windows
 acceptance gates remain separate.
+
+## E1-P08C decision, Nov 8
+
+An actual Linux `setsid()` descendant survived the death of its original
+process group in an independent local kernel reproduction. A real OS
+negative-control is now required in CI using
+`benchmarks/e1/e1_p08_setsid_escape_probe.py`. This conclusively limits
+what the PGID guardian promises: ordinary in-group descendants only.
+**Strong all-descendant termination for an escape-capable app requires
+a delegated cgroup-v2 subtree and a verified `cgroup.kill`/empty-state
+receipt.** This next kernel custody gate is OPEN, not implemented.
+See `docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md`.
